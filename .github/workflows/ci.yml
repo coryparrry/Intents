@@ -112,7 +112,10 @@ jobs:
       # The Xcode 27 hosted image is a macOS 27 ARM public-preview runner.
       # Compile the full scheme for UI-impacting changes, but execute only core tests.
       - name: Enable UI snapshots
-        run: echo "TEST_RUNNER_INTENTS_SNAPSHOT_DIR=$RUNNER_TEMP/ui-snapshots" >> "$GITHUB_ENV"
+        run: |
+          echo "TEST_RUNNER_INTENTS_SNAPSHOT_DIR=$RUNNER_TEMP/ui-snapshots" >> "$GITHUB_ENV"
+          defaults write com.coryparry.FoundationEvals SUEnableAutomaticChecks -bool false
+          defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
       - name: Build app and selected test bundles
         env:
           INCLUDE_UI: ${{ needs.changes.outputs.ui }}
@@ -155,12 +158,9 @@ jobs:
               echo "built binary contains: $label"
             fi
           done
+          plutil -p "$built/Contents/Info.plist" | grep -E "CFBundleVersion|CFBundleShortVersionString" || true
+          ls "$built/Contents/MacOS" || true
           echo "::endgroup::"
-          "$lsregister" -dump | grep -E "^path:.*\.app" | sed -E 's/^path: +//; s/ \(0x[0-9a-f]+\)$//' \
-            | grep -iE "/(intents|foundationevals)\.app$" | while IFS= read -r app; do
-              [[ "$app" != "$built" ]] && "$lsregister" -u "$app" && echo "unregistered $app"
-            done || true
-          "$lsregister" -f "$built" || true
           xcodebuild test-without-building \
             -project FoundationEvals/FoundationEvals.xcodeproj \
             -scheme FoundationEvals \
