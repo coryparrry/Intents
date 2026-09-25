@@ -136,6 +136,32 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO
+      - name: Run selected UI tests
+        if: ${{ needs.changes.outputs.ui == 'true' }}
+        continue-on-error: true
+        timeout-minutes: 14
+        run: |
+          xcodebuild test-without-building \
+            -project FoundationEvals/FoundationEvals.xcodeproj \
+            -scheme FoundationEvals \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/ui-tests.xcresult" \
+            -only-testing:FoundationEvalsUITests/FoundationEvalsUITests \
+            -only-testing:FoundationEvalsUITests/IntentLabGuidanceUITests \
+            -only-testing:FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration \
+            -only-testing:FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Export UI test attachments
+        if: ${{ always() && needs.changes.outputs.ui == 'true' }}
+        continue-on-error: true
+        run: |
+          mkdir -p "$RUNNER_TEMP/ui-snapshots/ui-tests"
+          if [[ -d "$RUNNER_TEMP/ui-tests.xcresult" ]]; then
+            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/ui-tests.xcresult" --output-path "$RUNNER_TEMP/ui-snapshots/ui-tests" || true
+          fi
+          cp -R /private/tmp/foundation-evals-ui-tests/Screenshots "$RUNNER_TEMP/ui-snapshots/ui-tests/" 2>/dev/null || true
       - name: Upload UI snapshots
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
