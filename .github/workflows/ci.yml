@@ -114,6 +114,7 @@ jobs:
       - name: Build app and selected test bundles
         env:
           INCLUDE_UI: ${{ needs.changes.outputs.ui }}
+          TEST_RUNNER_INTENTS_SNAPSHOT_DIR: ${{ runner.temp }}/ui-snapshots
         run: |
           python3 script/ci_core_scheme.py
           if [[ "$INCLUDE_UI" == true ]]; then
@@ -134,3 +135,10 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO
+      - name: Upload UI snapshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ui-snapshots
+          path: ${{ runner.temp }}/ui-snapshots
+          if-no-files-found: warn
