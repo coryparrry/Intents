@@ -105,7 +105,7 @@ struct ScenarioReportView: View {
                 .font(.callout)
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+                .workspaceInset(radius: 9)
 
             ForEach(ScenarioLane.allCases) { lane in
                 laneSection(lane, run: run, definition: frozenDefinition)
@@ -147,7 +147,7 @@ struct ScenarioReportView: View {
             }
         }
         .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .workspaceSurface(radius: 10)
     }
 
     private func attemptCard(_ result: ScenarioLaneResult, run: ScenarioRun) -> some View {
@@ -190,7 +190,7 @@ struct ScenarioReportView: View {
             }
         }
         .padding(10)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        .workspaceInset(radius: 8)
     }
 
     private func environmentSection(_ run: ScenarioRun) -> some View {

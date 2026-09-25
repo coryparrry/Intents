@@ -186,7 +186,7 @@ struct ScenarioEditorView: View {
                     IntentLabHelp("Explain why this check matters. For Semantic review, write the criteria a reviewer should use.")
                 }
                 .padding(10)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                .workspaceInset(radius: 8)
             }
 
         }
@@ -309,7 +309,7 @@ struct ScenarioEditorView: View {
                         .disabled(suggestion.approved)
                     }
                     .padding(10)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    .workspaceInset(radius: 8)
                 }
             }
             .padding(.top, 6)
@@ -413,7 +413,7 @@ private struct ScenarioParameterEditor: View {
             valueEditor
         }
         .padding(10)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        .workspaceInset(radius: 8)
     }
 
     @ViewBuilder private var parameterControls: some View {

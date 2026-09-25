@@ -50,11 +50,7 @@ struct RunAnalysisSection: View {
             }
         }
         .padding(18)
-        .background(.thinMaterial, in: .rect(cornerRadius: 14))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.secondary.opacity(0.14))
-        }
+        .workspaceSurface()
         .onChange(of: run.id) { _, _ in
             selectedBaselineID = RunBaselineSelection.defaultID(for: run, candidates: baselineRuns)
         }

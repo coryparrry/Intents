@@ -35,7 +35,7 @@ struct SpotlightSearchTraceView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 8))
+        .workspaceInset(radius: 8)
         .accessibilityElement(children: .contain)
     }
 }

@@ -173,7 +173,7 @@ struct AppleTestConnectionView: View {
                         .textSelection(.enabled)
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                        .workspaceInset(radius: 8)
                 }
             }
             .textFieldStyle(.roundedBorder)
@@ -237,7 +237,7 @@ struct AppleTestConnectionView: View {
                 }
             }
             .padding(14)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+            .workspaceInset(radius: 10)
         }
     }
 

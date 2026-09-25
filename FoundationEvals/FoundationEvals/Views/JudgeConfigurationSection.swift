@@ -63,7 +63,7 @@ struct JudgeConfigurationSection: View {
                             }
                         }
                         .padding(12)
-                        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+                        .workspaceInset(radius: 8)
                     }
                 } else {
                     Text("The subject model also scores the response. Use an independent connection when model separation matters.")

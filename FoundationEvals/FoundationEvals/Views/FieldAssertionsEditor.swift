@@ -66,7 +66,7 @@ private struct FieldAssertionRow: View {
             }
         }
         .padding(10)
-        .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 8))
+        .workspaceInset(radius: 8)
     }
 
     private var valuePrompt: String {
