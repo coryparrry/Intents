@@ -4,7 +4,6 @@ struct ContentView: View {
     @Bindable var store: EvaluationStore
     @State private var scenarioCoordinator: ScenarioCoordinator
     @Environment(DeveloperRunnerStore.self) private var runners
-    @State private var showsDevices = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     init(store: EvaluationStore) {
@@ -27,23 +26,8 @@ struct ContentView: View {
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
         }
         .frame(minWidth: 1_000, minHeight: 700)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .sheet(isPresented: $showsDevices) { DeveloperDevicesView(runners: runners) }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Devices", systemImage: "laptopcomputer.and.iphone") { showsDevices = true }
-                    .help("Connect your app and manage device runners")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                WorkspaceResetControl(store: store)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                SettingsLink {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .help("Judge connections and app settings")
-            }
-        }
+        .background(WorkspaceStyle.canvas)
+        .toolbar(removing: .title)
         .background { SuiteAutosaveObserver(store: store) }
         .onChange(of: runners.activeRuns) { previous, current in
             for status in current.values where [.failed, .timedOut, .disconnected].contains(status.phase) {
@@ -68,7 +52,7 @@ struct ContentView: View {
     private var workspaceNavigation: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             WorkspaceSidebar(store: store)
-                .navigationSplitViewColumnWidth(min: 210, ideal: 245, max: 300)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
             switch store.selection {
             case .overview:
