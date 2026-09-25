@@ -97,7 +97,7 @@ struct WorkspaceHealthPanel: View {
                     }
                     legend("Passing", count: passed, color: WorkspaceStyle.success)
                     legend("Needs attention", count: attention, color: WorkspaceStyle.warning)
-                    legend("Not run or awaiting assessment", count: awaiting, color: Color.secondary.opacity(0.45))
+                    legend("Not yet assessed", count: awaiting, color: Color.secondary.opacity(0.45))
                     if loading > 0 { legend("Loading", count: loading, color: Color.secondary.opacity(0.25)) }
                 }
                 .frame(maxWidth: 300, alignment: .leading)
@@ -116,8 +116,9 @@ struct WorkspaceHealthPanel: View {
                     WorkspaceMetric(title: "Needs attention", value: isLoaded ? attention.formatted() : "—",
                                     detail: "Changed or incomplete", symbol: "flag.fill", color: WorkspaceStyle.warning)
                     WorkspaceMetric(title: "Last check",
-                                    value: latest.map { $0.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)) } ?? "—",
-                                    detail: latest == nil ? "No runs yet" : "Most recent saved run",
+                                    value: latest.map(Self.shortTimestamp) ?? "—",
+                                    detail: latest.map { $0.formatted(.relative(presentation: .named, unitsStyle: .wide)) }
+                                        ?? "No runs yet",
                                     symbol: "clock", color: .teal)
                 }
             }
@@ -150,6 +151,12 @@ struct WorkspaceHealthPanel: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Suite health")
         .accessibilityValue(isLoaded ? "\(passed) of \(total) suites passing" : "Loading")
+    }
+
+    private static func shortTimestamp(_ date: Date) -> String {
+        Calendar.current.isDateInToday(date)
+            ? date.formatted(date: .omitted, time: .shortened)
+            : date.formatted(.dateTime.month(.abbreviated).day())
     }
 
     private func legend(_ title: String, count: Int, color: Color) -> some View {

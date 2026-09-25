@@ -16,7 +16,7 @@ struct WorkflowTraceView: View {
                         Text("Workflow trace")
                             .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                         Text(run.suiteName).font(.title2.weight(.bold)).lineLimit(1)
-                        HStack(spacing: 14) {
+                        WorkspaceFlowLayout(spacing: 14, lineSpacing: 4) {
                             WorkspaceMetaLabel(run.execution?.modelDisplayName ?? run.environment.model, symbol: "cpu")
                             WorkspaceMetaLabel(run.scoringMode.title, symbol: "checkmark.seal")
                             WorkspaceMetaLabel(
@@ -27,7 +27,8 @@ struct WorkflowTraceView: View {
                         }
                         .font(.callout).foregroundStyle(.secondary)
                     }
-                    Spacer(minLength: 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
                     if let sample {
                         Picker("Case", selection: Binding(get: { sample.id }, set: { sampleID = $0 })) {
                             ForEach(run.results) { result in
@@ -35,7 +36,7 @@ struct WorkflowTraceView: View {
                             }
                         }
                         .accessibilityIdentifier("Trace case")
-                        .frame(maxWidth: 360)
+                        .frame(minWidth: 180, maxWidth: 320)
                     }
                 }
                 if let sample {
