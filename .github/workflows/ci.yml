@@ -141,6 +141,26 @@ jobs:
         continue-on-error: true
         timeout-minutes: 14
         run: |
+          lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+          built="$RUNNER_TEMP/DerivedData/Build/Products/Debug/Intents.app"
+          echo "::group::App copies"
+          ls -la "$RUNNER_TEMP/DerivedData/Build/Products/Debug" || true
+          for run in "$RUNNER_TEMP"/DerivedData/Build/Products/*.xctestrun; do
+            echo "$run"; plutil -p "$run" | grep -E "UITargetAppPath|TestHostPath|BlueprintName" || true
+          done
+          mdfind "kMDItemCFBundleIdentifier == 'com.coryparry.FoundationEvals'" || true
+          "$lsregister" -dump | grep -E "^path:.*\.app" | grep -iE "intents|foundationevals" || true
+          for label in "Filter runs" "Search run history"; do
+            if grep -aq "$label" "$built/Contents/MacOS/Intents" "$built"/Contents/MacOS/*.dylib 2>/dev/null; then
+              echo "built binary contains: $label"
+            fi
+          done
+          echo "::endgroup::"
+          "$lsregister" -dump | grep -E "^path:.*\.app" | sed -E 's/^path: +//; s/ \(0x[0-9a-f]+\)$//' \
+            | grep -iE "/(intents|foundationevals)\.app$" | while IFS= read -r app; do
+              [[ "$app" != "$built" ]] && "$lsregister" -u "$app" && echo "unregistered $app"
+            done || true
+          "$lsregister" -f "$built" || true
           xcodebuild test-without-building \
             -project FoundationEvals/FoundationEvals.xcodeproj \
             -scheme FoundationEvals \
