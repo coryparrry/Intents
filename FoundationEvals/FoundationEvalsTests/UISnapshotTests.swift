@@ -24,7 +24,6 @@ struct UISnapshotTests {
             fixture.store.selection = .overview
             try await host.settle(2.5)
             try host.write(to: output.appending(path: "01-overview-\(suffix).png"))
-            try host.writeLayer(to: output.appending(path: "00-layer-overview-\(suffix).png"))
 
             fixture.store.selection = .suite
             try await host.settle(1.5)
@@ -170,22 +169,6 @@ private final class SnapshotWindow {
         guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: bitmap)
         guard let data = bitmap.representation(using: .png, properties: [:]) else { return }
-        try data.write(to: url)
-    }
-
-    func writeLayer(to url: URL) throws {
-        guard let view = window.contentView?.superview, let layer = view.layer else { return }
-        let scale = window.backingScaleFactor
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: Int(view.bounds.width * scale), pixelsHigh: Int(view.bounds.height * scale),
-            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-        ), let context = NSGraphicsContext(bitmapImageRep: rep) else { return }
-        context.cgContext.scaleBy(x: scale, y: scale)
-        layer.render(in: context.cgContext)
-        context.flushGraphics()
-        guard let data = rep.representation(using: .png, properties: [:]) else { return }
         try data.write(to: url)
     }
 
