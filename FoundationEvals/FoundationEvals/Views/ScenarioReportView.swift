@@ -21,9 +21,7 @@ struct ScenarioReportView: View {
                     emptyState
                 }
             }
-            .padding(28)
-            .frame(maxWidth: 1_100, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .workspacePage()
         }
     }
 

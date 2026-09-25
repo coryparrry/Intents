@@ -12,7 +12,7 @@ final class IntentLabArrayEntryUITests: XCTestCase {
         defer { app.terminate() }
         app.activate()
         app.typeKey("2", modifierFlags: .command)
-        app.buttons["Scenario"].click()
+        app.radioButtons["Scenario"].click()
         app.buttons["Parameters"].click()
 
         let parameterType = app.popUpButtons.matching(identifier: "Parameter type").firstMatch

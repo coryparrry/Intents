@@ -8,23 +8,16 @@ struct IntentLabView: View {
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                IntentLabHeader(coordinator: coordinator, section: $section)
-                Divider()
+                IntentLabHeader(coordinator: coordinator)
                 switch section {
                 case .setup:
                     ScrollView {
-                        AppleTestConnectionView(coordinator: coordinator)
-                            .frame(maxWidth: 1_080)
-                            .padding(28)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                        AppleTestConnectionView(coordinator: coordinator).workspacePage()
                     }
                     .frame(minHeight: 0, maxHeight: .infinity)
                 case .scenario:
                     ScrollView {
-                        ScenarioEditorView(coordinator: coordinator, projects: projects)
-                            .frame(maxWidth: 1_080)
-                            .padding(28)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                        ScenarioEditorView(coordinator: coordinator, projects: projects).workspacePage()
                     }
                     .frame(minHeight: 0, maxHeight: .infinity)
                 case .results:
@@ -34,6 +27,32 @@ struct IntentLabView: View {
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
         }
         .background(WorkspaceStyle.canvas)
+        .navigationTitle("Intent Lab")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Intent Lab section", selection: $section) {
+                    ForEach(IntentLabSection.allCases) { item in Text(item.rawValue).tag(item) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("Intent Lab section")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                if coordinator.isRunning {
+                    Button("Cancel", systemImage: "stop.fill", role: .destructive) { Task { await coordinator.cancel() } }
+                        .labelStyle(.titleAndIcon)
+                        .help("Cancel the running scenario")
+                } else {
+                    Button { Task { await coordinator.run() } } label: {
+                        Label("Run scenario", systemImage: "play.fill").labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(coordinator.preflight?.isReady != true)
+                    .help(coordinator.preflight?.isReady == true ? "Run the saved scenario" : "Finish setup to run a scenario")
+                }
+            }
+        }
         .task { await coordinator.load() }
         .alert(
             "Intent Lab",
@@ -59,62 +78,46 @@ private enum IntentLabSection: String, CaseIterable, Identifiable {
 
 private struct IntentLabHeader: View {
     @Bindable var coordinator: ScenarioCoordinator
-    @Binding var section: IntentLabSection
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("Intent Lab")
-                            .font(.system(size: 26, weight: .semibold))
-                            .accessibilityIdentifier("Intent Lab page title")
-                        Text("An App Intent makes an app action available to system features such as Shortcuts. With Siri support configured, you can test requests too.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    if coordinator.isRunning {
-                        Button("Cancel", role: .destructive) { Task { await coordinator.cancel() } }
-                    } else {
-                        Button("Run scenario", systemImage: "play.fill") { Task { await coordinator.run() } }
-                            .buttonStyle(.borderedProminent)
-                            .buttonBorderShape(.capsule)
-                            .controlSize(.large)
-                            .disabled(coordinator.preflight?.isReady != true)
-                    }
-                }
-                Label("Setup: connect your app · Scenario: define a test · Results: see what passed", systemImage: "checklist")
-                    .font(.caption2).foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 14) {
+            WorkspaceIconTile(symbol: "waveform.badge.magnifyingglass", tint: .indigo, size: 40)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Intent Lab")
+                    .font(.system(size: 22, weight: .bold)).tracking(-0.2)
+                    .accessibilityIdentifier("Intent Lab page title")
+                Text("Test App Intents and Siri requests on a connected iPhone, then inspect the evidence for each part.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            HStack(spacing: 26) {
-                ForEach(IntentLabSection.allCases) { item in
-                    Button {
-                        section = item
-                    } label: {
-                        VStack(spacing: 13) {
-                            Text(item.rawValue)
-                                .font(.callout.weight(section == item ? .semibold : .regular))
-                                .foregroundStyle(section == item ? Color.primary : .secondary)
-                            Capsule().fill(section == item ? Color.accentColor : .clear).frame(height: 2)
-                        }
-                        .fixedSize(horizontal: true, vertical: false)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(section == item ? .isSelected : [])
-                }
-                Spacer(minLength: 8)
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("Intent Lab section")
+            Spacer(minLength: 16)
+            IntentLabReadiness(coordinator: coordinator)
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 22)
+        .padding(.horizontal, WorkspaceStyle.pagePadding)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(WorkspaceStyle.surface)
+        .overlay(alignment: .bottom) { Divider() }
     }
+}
 
+private struct IntentLabReadiness: View {
+    let coordinator: ScenarioCoordinator
+
+    var body: some View {
+        if coordinator.isRunning {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Running on device").font(.callout).foregroundStyle(.secondary)
+            }
+        } else if coordinator.preflight?.isReady == true {
+            WorkspacePill("Ready to run", symbol: "checkmark.circle.fill", color: WorkspaceStyle.success)
+        } else {
+            WorkspacePill("Setup needed", symbol: "circle.dashed", color: .secondary)
+        }
+    }
 }
 
 struct IntentLabCard<Content: View>: View {
@@ -143,12 +146,7 @@ struct ScenarioOutcomeBadge: View {
     let outcome: ScenarioOutcome
 
     var body: some View {
-        Label(title, systemImage: symbol)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.1), in: Capsule())
+        WorkspacePill(title, symbol: symbol, color: color)
     }
 
     private var title: String {
@@ -173,76 +171,10 @@ struct ScenarioOutcomeBadge: View {
 
     private var color: Color {
         switch outcome {
-        case .passed: .green
-        case .failed: .red
-        case .needsReview: .orange
+        case .passed: WorkspaceStyle.success
+        case .failed: WorkspaceStyle.failure
+        case .needsReview: WorkspaceStyle.warning
         case .notObserved, .notApplicable: .secondary
         }
-    }
-}
-
-protocol IntentLabEditorPage: CaseIterable, Identifiable, Hashable {
-    var title: String { get }
-    var subtitle: String { get }
-    var symbol: String { get }
-}
-
-/// Mirrors the suite setup navigation and editor pane, including its compact layout.
-struct IntentLabEditorLayout<Page: IntentLabEditorPage, Content: View>: View {
-    let heading: String
-    @Binding var selection: Page
-    @ViewBuilder var content: Content
-    @State private var availableWidth: CGFloat = 900
-
-    var body: some View {
-        let wide = availableWidth >= 824
-        let layout = wide
-            ? AnyLayout(HStackLayout(alignment: .top, spacing: 24))
-            : AnyLayout(VStackLayout(alignment: .leading, spacing: 22))
-        layout {
-            if wide {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(heading)
-                        .font(.system(size: 9, weight: .semibold)).tracking(1.3)
-                        .foregroundStyle(.secondary).padding(.horizontal, 10).padding(.bottom, 9)
-                    ForEach(Array(Page.allCases)) { page in
-                        Button { selection = page } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: page.symbol).frame(width: 17)
-                                Text(page.title)
-                                Spacer(minLength: 0)
-                                if page == selection {
-                                    RoundedRectangle(cornerRadius: 2).fill(Color.accentColor).frame(width: 3, height: 15)
-                                }
-                            }
-                            .font(.callout.weight(page == selection ? .semibold : .regular))
-                            .foregroundStyle(page == selection ? Color.accentColor : .secondary)
-                            .padding(.horizontal, 10).padding(.vertical, 11)
-                            .background(page == selection ? Color.accentColor.opacity(0.07) : .clear,
-                                        in: .rect(cornerRadius: 8))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(page == selection ? .isSelected : [])
-                        .accessibilityHint(page.subtitle)
-                    }
-                }
-                .frame(width: 175)
-            } else {
-                Picker(heading, selection: $selection) {
-                    ForEach(Array(Page.allCases)) { page in Text(page.title).tag(page) }
-                }
-                .pickerStyle(.menu).fixedSize()
-            }
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(selection.title).font(.title2.weight(.bold))
-                    Text(selection.subtitle).font(.callout).foregroundStyle(.secondary)
-                }
-                content
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
     }
 }

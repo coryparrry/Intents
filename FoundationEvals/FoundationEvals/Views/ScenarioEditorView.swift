@@ -7,7 +7,7 @@ struct ScenarioEditorView: View {
     @State private var page: ScenarioEditorPage = .outcome
 
     var body: some View {
-        IntentLabEditorLayout(heading: "SCENARIO", selection: $page) {
+        WorkspacePaneLayout(heading: "Scenario", selection: $page) {
             switch page {
             case .outcome: outcomeSection
             case .fixture: fixtureSection
@@ -817,7 +817,7 @@ private enum ParameterEditorType: String, CaseIterable, Identifiable {
     }
 }
 
-private enum ScenarioEditorPage: String, IntentLabEditorPage {
+private enum ScenarioEditorPage: String, WorkspacePane {
     case outcome, fixture, evidence, parameters, assertions, settings
     var id: Self { self }
     var title: String {
@@ -848,6 +848,16 @@ private enum ScenarioEditorPage: String, IntentLabEditorPage {
         case .parameters: "curlybraces"
         case .assertions: "checklist"
         case .settings: "slider.horizontal.3"
+        }
+    }
+    var tint: Color {
+        switch self {
+        case .outcome: .blue
+        case .fixture: .brown
+        case .evidence: .green
+        case .parameters: .pink
+        case .assertions: .indigo
+        case .settings: .gray
         }
     }
 }
