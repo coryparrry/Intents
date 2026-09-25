@@ -9,7 +9,7 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct UISnapshotTests {
-    @Test func captureMainWindowScreens() throws {
+    @Test func captureMainWindowScreens() async throws {
         guard let path = ProcessInfo.processInfo.environment["INTENTS_SNAPSHOT_DIR"], !path.isEmpty else { return }
         let output = URL(filePath: path, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -22,36 +22,37 @@ struct UISnapshotTests {
             defer { host.close() }
 
             fixture.store.selection = .overview
-            host.settle(2.5)
+            try await host.settle(2.5)
             try host.write(to: output.appending(path: "01-overview-\(suffix).png"))
+            try host.writeLayer(to: output.appending(path: "00-layer-overview-\(suffix).png"))
 
             fixture.store.selection = .suite
-            host.settle(1.5)
+            try await host.settle(1.5)
             try host.write(to: output.appending(path: "02-suite-cases-\(suffix).png"))
 
             if host.selectSegment(titled: "Results") {
-                host.settle(1)
+                try await host.settle(1)
                 try host.write(to: output.appending(path: "03-suite-results-\(suffix).png"))
             }
             if host.selectSegment(titled: "Setup") {
-                host.settle(1)
+                try await host.settle(1)
                 try host.write(to: output.appending(path: "04-suite-setup-\(suffix).png"))
             }
-            if host.selectSegment(titled: "Cases") { host.settle(0.5) }
+            if host.selectSegment(titled: "Cases") { try await host.settle(0.5) }
 
             fixture.store.selection = .run(fixture.latestRunID)
-            host.settle(1.5)
+            try await host.settle(1.5)
             if host.selectSegment(titled: "Report") {
-                host.settle(1.5)
+                try await host.settle(1.5)
                 try host.write(to: output.appending(path: "05-run-report-\(suffix).png"))
             }
             if host.selectSegment(titled: "Workflow trace") {
-                host.settle(1)
+                try await host.settle(1)
                 try host.write(to: output.appending(path: "06-run-trace-\(suffix).png"))
             }
 
             fixture.store.selection = .intentLab
-            host.settle(2)
+            try await host.settle(2)
             try host.write(to: output.appending(path: "07-intent-lab-\(suffix).png"))
         }
     }
@@ -157,12 +158,10 @@ private final class SnapshotWindow {
         window.contentViewController = nil
     }
 
-    func settle(_ seconds: TimeInterval) {
-        let deadline = Date().addingTimeInterval(seconds)
-        while Date() < deadline {
-            window.contentView?.layoutSubtreeIfNeeded()
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        }
+    /// Suspends rather than spinning the run loop so parallel main-actor tests keep making progress.
+    func settle(_ seconds: Double) async throws {
+        try await Task.sleep(for: .seconds(seconds))
+        window.contentView?.layoutSubtreeIfNeeded()
     }
 
     func write(to url: URL) throws {
@@ -171,6 +170,22 @@ private final class SnapshotWindow {
         guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: bitmap)
         guard let data = bitmap.representation(using: .png, properties: [:]) else { return }
+        try data.write(to: url)
+    }
+
+    func writeLayer(to url: URL) throws {
+        guard let view = window.contentView?.superview, let layer = view.layer else { return }
+        let scale = window.backingScaleFactor
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(view.bounds.width * scale), pixelsHigh: Int(view.bounds.height * scale),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ), let context = NSGraphicsContext(bitmapImageRep: rep) else { return }
+        context.cgContext.scaleBy(x: scale, y: scale)
+        layer.render(in: context.cgContext)
+        context.flushGraphics()
+        guard let data = rep.representation(using: .png, properties: [:]) else { return }
         try data.write(to: url)
     }
 

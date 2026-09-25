@@ -111,10 +111,11 @@ jobs:
           PY
       # The Xcode 27 hosted image is a macOS 27 ARM public-preview runner.
       # Compile the full scheme for UI-impacting changes, but execute only core tests.
+      - name: Enable UI snapshots
+        run: echo "TEST_RUNNER_INTENTS_SNAPSHOT_DIR=$RUNNER_TEMP/ui-snapshots" >> "$GITHUB_ENV"
       - name: Build app and selected test bundles
         env:
           INCLUDE_UI: ${{ needs.changes.outputs.ui }}
-          TEST_RUNNER_INTENTS_SNAPSHOT_DIR: ${{ runner.temp }}/ui-snapshots
         run: |
           python3 script/ci_core_scheme.py
           if [[ "$INCLUDE_UI" == true ]]; then
