@@ -8,115 +8,159 @@ struct WorkspaceSuiteRow: View {
     let open: () -> Void
     let run: () -> Void
 
+    private var detail: String {
+        guard let summary else { return "Loading saved results…" }
+        var parts = ["\(summary.caseCount) \(summary.caseCount == 1 ? "case" : "cases")", "\(summary.repetitions)× repetitions"]
+        if let checked = summary.lastCheckedAt {
+            parts.append("checked " + checked.formatted(.relative(presentation: .named)))
+        }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(spacing: 0) {
             Button(action: open) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "checklist")
-                        .font(.system(size: 17, weight: .medium)).foregroundStyle(Color.accentColor)
-                        .frame(width: 36, height: 36)
-                        .background(Color.accentColor.opacity(0.08), in: .rect(cornerRadius: 10))
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(summary?.name ?? name).font(.callout.weight(.semibold))
-                            .foregroundStyle(.primary).lineLimit(2)
-                        if let summary {
-                            Text("\(summary.caseCount) \(summary.caseCount == 1 ? "case" : "cases") · \(summary.repetitions)× repetitions")
-                                .font(.caption).foregroundStyle(.secondary)
-                            WorkspaceStatusBadge(state: summary.state)
-                            if let error = summary.loadError {
-                                Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            } else if summary.repositoryChanged {
-                                Text("Repository definition changed").font(.caption).foregroundStyle(WorkspaceStyle.warning)
-                            }
-                        } else {
-                            Text("Loading saved results…").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    WorkspaceIconTile(symbol: "checklist", tint: .accentColor, size: 32)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(summary?.name ?? name).font(.body.weight(.semibold))
+                            .foregroundStyle(.primary).lineLimit(1)
+                        Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        if let error = summary?.loadError {
+                            Text(error).font(.caption).foregroundStyle(WorkspaceStyle.warning).lineLimit(2)
+                        } else if summary?.repositoryChanged == true {
+                            Text("Repository definition changed").font(.caption).foregroundStyle(WorkspaceStyle.warning)
                         }
                     }
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 12)
+                    if summary?.approvedRunID != nil {
+                        Image(systemName: "checkmark.seal.fill").foregroundStyle(WorkspaceStyle.success)
+                            .help("Baseline approved").accessibilityLabel("Baseline approved")
+                    }
+                    if let summary { WorkspaceStatusBadge(state: summary.state) }
                 }
-                .padding(.vertical, 18).padding(.leading, 20)
+                .padding(.vertical, 12).padding(.leading, 18).padding(.trailing, 10)
             }
             .buttonStyle(WorkspaceRowButtonStyle())
             .disabled(disabled)
-            VStack(alignment: .trailing, spacing: 14) {
+            Group {
                 if isRunning {
                     ProgressView().controlSize(.small).accessibilityLabel("Running suite")
                 } else {
-                    Button(action: run) { Image(systemName: "play.fill").font(.system(size: 10)) }
-                        .buttonStyle(.bordered).buttonBorderShape(.circle)
-                        .accessibilityLabel("Run \(summary?.name ?? name)")
-                        .help(summary?.loadError ?? "Run checks")
-                        .disabled(disabled || summary == nil || summary?.state == .unavailable)
-                }
-                if summary?.approvedRunID != nil {
-                    Image(systemName: "checkmark.seal").foregroundStyle(WorkspaceStyle.success)
-                        .help("Baseline approved").accessibilityLabel("Baseline approved")
+                    Button(action: run) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 20))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Run \(summary?.name ?? name)")
+                    .help(summary?.loadError ?? "Run checks")
+                    .disabled(disabled || summary == nil || summary?.state == .unavailable)
                 }
             }
-            .padding(.top, 20).padding(.trailing, 18)
+            .frame(width: 30)
+            .padding(.trailing, 14)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("Suite overview \(name)")
     }
 }
 
-struct WorkspaceCoverageCard: View {
+/// The project's health at a glance: a ring of suite states beside the headline numbers.
+struct WorkspaceHealthPanel: View {
     let summaries: [SuiteOverviewSummary]
     let total: Int
+    let isLoaded: Bool
+    let compact: Bool
+
     private var passed: Int { summaries.filter { $0.state == .passed }.count }
     private var attention: Int { summaries.filter { $0.state.needsAttention }.count }
     private var awaiting: Int { summaries.filter { $0.state == .notRun || $0.state == .collected }.count }
     private var loading: Int { max(0, total - summaries.count) }
+    private var cases: Int { summaries.reduce(0) { $0 + $1.caseCount } }
+    private var latest: Date? { summaries.compactMap(\.lastCheckedAt).max() }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text("Suite health").font(.headline)
-                Spacer()
-                Image(systemName: "waveform.path.ecg").foregroundStyle(.secondary)
+        let layout = compact
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 28))
+        layout {
+            HStack(spacing: 24) {
+                ring
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Suite health").font(.headline)
+                        Text("Each suite’s latest check against its current definition.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    legend("Passing", count: passed, color: WorkspaceStyle.success)
+                    legend("Needs attention", count: attention, color: WorkspaceStyle.warning)
+                    legend("Not run or awaiting assessment", count: awaiting, color: Color.secondary.opacity(0.45))
+                    if loading > 0 { legend("Loading", count: loading, color: Color.secondary.opacity(0.25)) }
+                }
+                .frame(maxWidth: 300, alignment: .leading)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(loading > 0 ? "—" : passed.formatted())
-                    .font(.system(size: 32, weight: .semibold, design: .rounded))
-                Text("/ \(total)").font(.title3).foregroundStyle(.tertiary)
-                Spacer()
-                Text(loading > 0 ? "loading" : "passing").font(.caption).foregroundStyle(.secondary)
-            }
-            GeometryReader { geometry in
-                HStack(spacing: 3) {
-                    segment(passed, color: WorkspaceStyle.success, width: geometry.size.width)
-                    segment(attention, color: WorkspaceStyle.warning, width: geometry.size.width)
-                    segment(awaiting + loading, color: .secondary.opacity(0.22), width: geometry.size.width)
+            if !compact { Divider().frame(height: 110) }
+            Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 18) {
+                GridRow {
+                    WorkspaceMetric(title: "Suites", value: total.formatted(), detail: "In this project",
+                                    symbol: "square.stack", color: .accentColor)
+                    WorkspaceMetric(title: "Test cases",
+                                    value: !isLoaded || summaries.contains { $0.loadError != nil } ? "—" : cases.formatted(),
+                                    detail: summaries.contains { $0.loadError != nil } ? "Some suites unavailable" : "Across your suites",
+                                    symbol: "checklist", color: .indigo)
+                }
+                GridRow {
+                    WorkspaceMetric(title: "Needs attention", value: isLoaded ? attention.formatted() : "—",
+                                    detail: "Changed or incomplete", symbol: "flag.fill", color: WorkspaceStyle.warning)
+                    WorkspaceMetric(title: "Last check",
+                                    value: latest.map { $0.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)) } ?? "—",
+                                    detail: latest == nil ? "No runs yet" : "Most recent saved run",
+                                    symbol: "clock", color: .teal)
                 }
             }
-            .frame(height: 7).accessibilityHidden(true)
-            VStack(spacing: 12) {
-                legend("Passing", count: passed, color: WorkspaceStyle.success)
-                legend("Needs attention", count: attention, color: WorkspaceStyle.warning)
-                legend("Not run / awaiting assessment", count: awaiting, color: .secondary)
-                if loading > 0 { legend("Loading", count: loading, color: .secondary) }
-            }
-            Divider()
-            Text("Based on each suite’s latest check against its current definition.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(20).workspaceSurface()
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .workspaceSurface()
+        .accessibilityElement(children: .contain)
     }
 
-    @ViewBuilder private func segment(_ count: Int, color: Color, width: CGFloat) -> some View {
-        if count > 0 {
-            Capsule().fill(color).frame(width: max(0, width - 6) * CGFloat(count) / CGFloat(max(total, 1)))
+    private var ring: some View {
+        ZStack {
+            WorkspaceRing(
+                segments: [
+                    WorkspaceRingSegment(count: passed, color: WorkspaceStyle.success),
+                    WorkspaceRingSegment(count: attention, color: WorkspaceStyle.warning),
+                    WorkspaceRingSegment(count: awaiting, color: Color.secondary.opacity(0.35))
+                ],
+                total: max(total, 1),
+                lineWidth: 12
+            )
+            VStack(spacing: 0) {
+                Text(isLoaded ? passed.formatted() : "—")
+                    .font(.system(size: 30, weight: .semibold, design: .rounded)).monospacedDigit()
+                Text("of \(total) passing").font(.caption2).foregroundStyle(.secondary)
+            }
         }
+        .frame(width: 118, height: 118)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Suite health")
+        .accessibilityValue(isLoaded ? "\(passed) of \(total) suites passing" : "Loading")
     }
 
     private func legend(_ title: String, count: Int, color: Color) -> some View {
         HStack(spacing: 8) {
-            Circle().fill(color).frame(width: 6, height: 6).accessibilityHidden(true)
-            Text(title).foregroundStyle(.secondary)
-            Spacer(minLength: 2)
-            Text(count.formatted()).monospacedDigit().fontWeight(.medium)
+            WorkspaceStatusDot(color: color, size: 8)
+            Text(title).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 12)
+            Text(count.formatted()).monospacedDigit().fontWeight(.semibold)
         }
-        .font(.caption).accessibilityElement(children: .combine)
+        .font(.callout)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -131,42 +175,45 @@ struct WorkspaceActivityCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Latest checks").font(.headline)
-                Spacer()
-                Image(systemName: "clock").foregroundStyle(.secondary)
-            }
-            .padding(20)
+            WorkspacePanelHeader("Latest checks")
             if recent.isEmpty {
                 WorkspaceEmptyState(symbol: "clock.arrow.circlepath", title: "A fresh start",
                                     detail: "Run a suite to see its latest check here. Every response and trace stays available for review.")
-                    .padding(.top, -8)
+                    .padding(.top, -12)
             } else {
                 ForEach(recent) { summary in
-                    Button { open(summary) } label: {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: "doc.text.magnifyingglass")
-                                .foregroundStyle(.secondary).padding(.top, 2)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(summary.name).font(.caption.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
-                                if let date = summary.lastCheckedAt {
-                                    Text(date, style: .relative).font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Text("\(summary.passedCount) passed · \(summary.failedCount) failed · \(summary.errorCount) errors")
-                                    .font(.caption2).foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 0)
-                            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
-                        }
-                        .padding(.horizontal, 20).padding(.vertical, 12)
-                    }
-                    .buttonStyle(WorkspaceRowButtonStyle()).disabled(disabled)
-                    if summary.id != recent.last?.id { Divider().padding(.leading, 44) }
+                    Button { open(summary) } label: { row(summary) }
+                        .buttonStyle(WorkspaceRowButtonStyle()).disabled(disabled)
+                    if summary.id != recent.last?.id { Divider().padding(.leading, 18) }
                 }
-                Text("Latest saved run per suite")
-                    .font(.caption2).foregroundStyle(.tertiary).padding(20)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading).workspaceSurface()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, recent.isEmpty ? 0 : 6)
+        .workspaceSurface()
+    }
+
+    private func row(_ summary: SuiteOverviewSummary) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                WorkspaceStatusDot(color: summary.state.color, size: 8)
+                Text(summary.name).font(.callout.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                Spacer(minLength: 4)
+                if let date = summary.lastCheckedAt {
+                    Text(date.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))
+                        .font(.caption).foregroundStyle(.tertiary).monospacedDigit()
+                }
+                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+            }
+            WorkspaceProportionBar(segments: [
+                WorkspaceRingSegment(count: summary.passedCount, color: WorkspaceStyle.success),
+                WorkspaceRingSegment(count: summary.failedCount, color: WorkspaceStyle.failure),
+                WorkspaceRingSegment(count: summary.errorCount, color: WorkspaceStyle.warning)
+            ], height: 5)
+            Text("\(summary.passedCount) passed · \(summary.failedCount) failed · \(summary.errorCount) errors")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 11)
+        .accessibilityElement(children: .combine)
     }
 }

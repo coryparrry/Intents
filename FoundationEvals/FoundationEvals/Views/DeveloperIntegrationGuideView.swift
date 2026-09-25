@@ -109,17 +109,22 @@ struct DeveloperConnectionBanner: View {
     @State private var showsDevices = false
 
     var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: "laptopcomputer.and.iphone").font(.title2).foregroundStyle(Color.accentColor)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Test the feature inside your app").font(.callout.weight(.semibold))
-                Text("Connect a Swift app to evaluate it on iPhone, iPad, and Mac.")
-                    .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                WorkspaceIconTile(symbol: "laptopcomputer.and.iphone", tint: .indigo, size: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Test inside your app").font(.callout.weight(.semibold))
+                    Text("Connect a Swift app to evaluate the real feature on iPhone, iPad, and Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            Spacer()
-            Button("Devices & apps", systemImage: "arrow.up.right") { showsDevices = true }
+            Button("Devices & Apps…") { showsDevices = true }
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(20).workspaceSurface()
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .workspaceSurface()
         .sheet(isPresented: $showsDevices) { DeveloperDevicesView(runners: runners) }
     }
 }
