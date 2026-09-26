@@ -265,6 +265,14 @@ user's project.
   The device owner was asked to unlock and keep it awake. Direct and Siri
   outcomes from the updated host remain unverified pending a successful
   connection check and scenario execution.
+- An independent review found that the checked UI-test runner host, external
+  source references, and Xcode's `xcuserdata` needed explicit handling. The
+  host identity/signing and path checks now include the runner app; the source
+  fingerprint includes direct external file/group references and valid
+  `Build`/`Products` source folders while skipping `xcuserdata`. Focused Mac
+  contracts passed 54/54 after these corrections
+  (`/private/tmp/IntentLabCheckedProductsHostTestsFinal.log`); `git diff
+  --check` passed. The physical direct/Siri rerun is still pending the phone.
 - PR #54 workflow run `36272620560` passed route, script, portable regression,
   and app/selected-test jobs at commit `c06fcda`. An earlier autosave test
   deadline failure did not recur; no speculative autosave change was made.

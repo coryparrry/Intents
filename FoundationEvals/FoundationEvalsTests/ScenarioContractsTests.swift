@@ -638,24 +638,29 @@ struct ScenarioContractsTests {
         let project = root.appending(path: "Tasks.xcodeproj", directoryHint: .isDirectory)
         let products = root.appending(path: "Products", directoryHint: .isDirectory)
         let app = products.appending(path: "Tasks.app", directoryHint: .isDirectory)
+        let host = products.appending(path: "TasksUITests-Runner.app", directoryHint: .isDirectory)
         let test = products.appending(path: "TasksUITests.xctest", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: host, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: test, withIntermediateDirectories: true)
         let pbxproj = project.appending(path: "project.pbxproj")
         let appInfo = app.appending(path: "Info.plist")
         let signature = app.appending(path: "_CodeSignature/CodeResources")
+        let hostSignature = host.appending(path: "_CodeSignature/CodeResources")
         let resolved = project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved")
         try FileManager.default.createDirectory(at: signature.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hostSignature.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: resolved.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("project-v1".utf8).write(to: pbxproj)
         try Data("info-v1".utf8).write(to: appInfo)
         try Data("signature-v1".utf8).write(to: signature)
+        try Data("runner-signature-v1".utf8).write(to: hostSignature)
         try Data("package-v1".utf8).write(to: resolved)
         let source = products.appending(path: "Tasks.xctestrun")
         try Data("run-v1".utf8).write(to: source)
         let paths = XCTestRunProductPaths(
-            sourceURL: source, appBundleURL: app, testHostURL: test, testBundleURL: test
+            sourceURL: source, appBundleURL: app, testHostURL: host, testBundleURL: test
         )
         let configuration = XcodeTestConfiguration(
             containerPath: project.path, isWorkspace: false, scheme: "Tasks",
@@ -685,6 +690,28 @@ struct ScenarioContractsTests {
         try Data("scheme-v2".utf8).write(to: workspaceScheme)
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: workspaceConfiguration, products: paths) != workspaceDigest)
 
+        let beforeHostSigning = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        let beforeHostMetadata = XcodeTestExecutor.productMetadataDigest(products: paths)
+        try Data("runner-signature-v2".utf8).write(to: hostSignature)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeHostSigning)
+        #expect(XcodeTestExecutor.productMetadataDigest(products: paths) != beforeHostMetadata)
+
+        let hostInfo = host.appending(path: "Info.plist")
+        let hostExecutable = host.appending(path: "Runner")
+        try PropertyListSerialization.data(
+            fromPropertyList: ["CFBundleIdentifier": "dev.example.TasksUITests-Runner",
+                               "CFBundleExecutable": "Runner"],
+            format: .xml, options: 0
+        ).write(to: hostInfo)
+        try Data("runner-v1".utf8).write(to: hostExecutable)
+        let checkedHost = try XcodeTestExecutor.productIdentity(
+            bundle: host, fallbackBundleIdentifier: configuration.testBundleIdentifier
+        )
+        try Data("runner-v2".utf8).write(to: hostExecutable)
+        #expect(try XcodeTestExecutor.productIdentity(
+            bundle: host, fallbackBundleIdentifier: configuration.testBundleIdentifier
+        ) != checkedHost)
+
         let sourceFile = root.appending(path: "Sources/App.swift")
         try FileManager.default.createDirectory(at: sourceFile.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("struct App {}".utf8).write(to: sourceFile)
@@ -707,12 +734,16 @@ struct ScenarioContractsTests {
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: packageSource.deletingLastPathComponent(), withIntermediateDirectories: true)
         let projectData = try PropertyListSerialization.data(
-            fromPropertyList: ["objects": ["PACKAGE": [
-                "isa": "XCLocalSwiftPackageReference", "relativePath": "../LocalPackage"
-            ]]], format: .xml, options: 0
+            fromPropertyList: ["objects": [
+                "PACKAGE": ["isa": "XCLocalSwiftPackageReference", "relativePath": "../LocalPackage"],
+                "SHARED": ["isa": "PBXFileReference", "path": "../Shared/Intent.swift", "sourceTree": "<group>"],
+            ]], format: .xml, options: 0
         )
         try projectData.write(to: project.appending(path: "project.pbxproj"))
         try Data("public struct Package {}".utf8).write(to: packageSource)
+        let sharedSource = root.appending(path: "Shared/Intent.swift")
+        try FileManager.default.createDirectory(at: sharedSource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("struct Intent {}".utf8).write(to: sharedSource)
         let paths = XCTestRunProductPaths(
             sourceURL: root.appending(path: "Products/App.xctestrun"),
             appBundleURL: root.appending(path: "Products/App.app"),
@@ -728,6 +759,21 @@ struct ScenarioContractsTests {
         let original = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
         try Data("public struct Package { public let changed = true }".utf8).write(to: packageSource)
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != original)
+        let beforeShared = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("struct Intent { let changed = true }".utf8).write(to: sharedSource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeShared)
+
+        let buildNamedSource = appRoot.appending(path: "Build/Helper.swift")
+        try FileManager.default.createDirectory(at: buildNamedSource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let beforeBuildNamedSource = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("struct Helper {}".utf8).write(to: buildNamedSource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeBuildNamedSource)
+
+        let xcodeUserState = project.appending(path: "xcuserdata/user.xcuserdatad/state.xcuserstate")
+        try FileManager.default.createDirectory(at: xcodeUserState.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let beforeUserState = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("editor state".utf8).write(to: xcodeUserState)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforeUserState)
     }
 
     @Test func reusableRunUsesCheckedProductsAndRejectsChangedTestRunPaths() throws {
@@ -736,14 +782,14 @@ struct ScenarioContractsTests {
         let products = derivedData.appending(path: "Build/Products", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: products, withIntermediateDirectories: true)
         let source = products.appending(path: "Fixture_iphoneos.xctestrun")
-        func writeTestRun(appName: String) throws {
+        func writeTestRun(appName: String, hostName: String = "FixtureUITests-Runner") throws {
             let plist: [String: Any] = [
                 "__xctestrun_metadata__": ["FormatVersion": 1],
                 "FixtureUITests": [
                     "BlueprintName": "FixtureUITests",
                     "BlueprintProviderRelativePath": "Fixture.xcodeproj",
                     "UITargetAppPath": "__TESTROOT__/Debug-iphoneos/\(appName).app",
-                    "TestHostPath": "__TESTROOT__/Debug-iphoneos/FixtureUITests-Runner.app",
+                    "TestHostPath": "__TESTROOT__/Debug-iphoneos/\(hostName).app",
                     "TestBundlePath": "__TESTHOST__/PlugIns/FixtureUITests.xctest",
                 ],
             ]
@@ -772,9 +818,12 @@ struct ScenarioContractsTests {
             configuration: configuration,
             appProduct: .init(bundleIdentifier: definition.target.bundleIdentifier,
                               executableName: "Fixture", sha256: "checked-app"),
+            testHostProduct: .init(bundleIdentifier: configuration.testBundleIdentifier,
+                                   executableName: "FixtureUITests-Runner", sha256: "checked-host"),
             testProduct: .init(bundleIdentifier: configuration.testBundleIdentifier,
                                executableName: "FixtureUITests", sha256: "checked-test"),
-            appBundleURL: checked.appBundleURL, testBundleURL: checked.testBundleURL,
+            appBundleURL: checked.appBundleURL, testHostURL: checked.testHostURL,
+            testBundleURL: checked.testBundleURL,
             testRunURL: checked.sourceURL,
             selectedTestProjectURL: URL(filePath: configuration.containerPath),
             buildInputsDigest: "checked-inputs", productMetadataDigest: "checked-metadata"
@@ -786,6 +835,12 @@ struct ScenarioContractsTests {
         ) == checked)
 
         try writeTestRun(appName: "Other")
+        #expect(throws: XcodeTestExecutorError.self) {
+            _ = try XcodeTestExecutor.reusableRunProducts(
+                connection: connection, configuration: configuration
+            )
+        }
+        try writeTestRun(appName: "Fixture", hostName: "OtherRunner")
         #expect(throws: XcodeTestExecutorError.self) {
             _ = try XcodeTestExecutor.reusableRunProducts(
                 connection: connection, configuration: configuration

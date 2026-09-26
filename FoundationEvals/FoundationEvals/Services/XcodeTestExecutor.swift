@@ -98,8 +98,10 @@ struct ScenarioVerifiedConnection: Sendable {
     var receipt: ScenarioConnectionReceipt
     var configuration: XcodeTestConfiguration
     var appProduct: ScenarioProductIdentity
+    var testHostProduct: ScenarioProductIdentity
     var testProduct: ScenarioProductIdentity
     var appBundleURL: URL
+    var testHostURL: URL
     var testBundleURL: URL
     var testRunURL: URL
     var selectedTestProjectURL: URL
@@ -584,8 +586,13 @@ actor XcodeTestExecutor {
         let receipt = try Self.connectionReceipt(in: attachments)
         let verified = ScenarioVerifiedConnection(
             receipt: receipt, configuration: configuration,
-            appProduct: products.app, testProduct: products.test,
-            appBundleURL: paths.appBundleURL, testBundleURL: paths.testBundleURL,
+            appProduct: products.app,
+            testHostProduct: try Self.productIdentity(
+                bundle: paths.testHostURL, fallbackBundleIdentifier: configuration.testBundleIdentifier
+            ),
+            testProduct: products.test,
+            appBundleURL: paths.appBundleURL, testHostURL: paths.testHostURL,
+            testBundleURL: paths.testBundleURL,
             testRunURL: paths.sourceURL,
             selectedTestProjectURL: URL(filePath: owningProjectPath),
             buildInputsDigest: try Self.buildInputsDigest(configuration: configuration, products: paths),
@@ -627,19 +634,24 @@ actor XcodeTestExecutor {
               !receipt.runnerPackageVersion.isEmpty,
               Set(receipt.capabilities).count == receipt.capabilities.count,
               ScenarioHarnessCapabilities.required(for: definition).isSubset(of: Set(receipt.capabilities)),
-              let app = try? productIdentity(
+              let app = try? Self.productIdentity(
                   bundle: connection.appBundleURL,
                   fallbackBundleIdentifier: definition.target.bundleIdentifier
               ),
-              let test = try? productIdentity(
+              let test = try? Self.productIdentity(
                   bundle: connection.testBundleURL,
                   fallbackBundleIdentifier: configuration.testBundleIdentifier
               ),
+              let testHost = try? Self.productIdentity(
+                  bundle: connection.testHostURL,
+                  fallbackBundleIdentifier: configuration.testBundleIdentifier
+              ),
               app == connection.appProduct, test == connection.testProduct,
+              testHost == connection.testHostProduct,
               connection.productMetadataDigest == Self.productMetadataDigest(products: .init(
                   sourceURL: connection.testRunURL,
                   appBundleURL: connection.appBundleURL,
-                  testHostURL: connection.testBundleURL.deletingLastPathComponent(),
+                  testHostURL: connection.testHostURL,
                   testBundleURL: connection.testBundleURL
               )),
               let inputs = try? Self.buildInputsDigest(
@@ -647,7 +659,7 @@ actor XcodeTestExecutor {
                   products: .init(
                       sourceURL: connection.testRunURL,
                       appBundleURL: connection.appBundleURL,
-                      testHostURL: connection.testBundleURL.deletingLastPathComponent(),
+                      testHostURL: connection.testHostURL,
                       testBundleURL: connection.testBundleURL
                   )
               ),
@@ -724,6 +736,9 @@ actor XcodeTestExecutor {
             products.appBundleURL.appending(path: "Info.plist"),
             products.appBundleURL.appending(path: "_CodeSignature/CodeResources"),
             products.appBundleURL.appending(path: "embedded.mobileprovision"),
+            products.testHostURL.appending(path: "Info.plist"),
+            products.testHostURL.appending(path: "_CodeSignature/CodeResources"),
+            products.testHostURL.appending(path: "embedded.mobileprovision"),
             products.testBundleURL.appending(path: "Info.plist"),
             products.testBundleURL.appending(path: "_CodeSignature/CodeResources"),
             products.testBundleURL.appending(path: "embedded.mobileprovision"),
@@ -767,10 +782,11 @@ actor XcodeTestExecutor {
         projects: [URL], into hasher: inout SHA256, fileManager: FileManager
     ) throws {
         let generatedDirectories: Set<String> = [
-            ".git", ".build", ".swiftpm", "DerivedData", "Build", "Products",
-            "node_modules", ".xcuserdata"
+            ".git", ".build", ".swiftpm", "DerivedData",
+            "node_modules", "xcuserdata"
         ]
         var roots = projects.map { $0.deletingLastPathComponent() }
+        var referencedFiles: [URL] = []
         for project in projects {
             let projectFile = project.appending(path: "project.pbxproj")
             guard let data = try? Data(contentsOf: projectFile),
@@ -782,9 +798,23 @@ actor XcodeTestExecutor {
                       !relativePath.isEmpty else { continue }
                 roots.append(URL(filePath: relativePath, relativeTo: project.deletingLastPathComponent()))
             }
+            for object in objects.values {
+                guard let path = object["path"] as? String,
+                      path.hasPrefix("../") || path.hasPrefix("/"),
+                      let kind = object["isa"] as? String,
+                      kind == "PBXFileReference" || kind == "PBXGroup" || kind == "PBXVariantGroup" else {
+                    continue
+                }
+                let reference = URL(filePath: path, relativeTo: project.deletingLastPathComponent())
+                    .standardizedFileURL
+                var isDirectory: ObjCBool = false
+                guard fileManager.fileExists(atPath: reference.path, isDirectory: &isDirectory) else { continue }
+                if isDirectory.boolValue { roots.append(reference) }
+                else { referencedFiles.append(reference) }
+            }
         }
         var visitedDirectories: Set<String> = []
-        var sourceFiles: Set<URL> = []
+        var sourceFiles = Set(referencedFiles)
         while let directory = roots.popLast() {
             let resolved = directory.standardizedFileURL.resolvingSymlinksInPath()
             guard visitedDirectories.insert(resolved.path).inserted else { continue }
@@ -834,7 +864,7 @@ actor XcodeTestExecutor {
 
     static func productMetadataDigest(products: XCTestRunProductPaths) -> String {
         var hasher = SHA256()
-        for bundle in [products.appBundleURL, products.testBundleURL] {
+        for bundle in [products.appBundleURL, products.testHostURL, products.testBundleURL] {
             for name in ["Info.plist", "_CodeSignature/CodeResources", "embedded.mobileprovision"] {
                 hasher.update(data: Data(name.utf8))
                 if let data = try? Data(contentsOf: bundle.appending(path: name), options: [.mappedIfSafe]) {
@@ -861,6 +891,7 @@ actor XcodeTestExecutor {
         )
         guard paths.sourceURL == connection.testRunURL,
               paths.appBundleURL == connection.appBundleURL,
+              paths.testHostURL == connection.testHostURL,
               paths.testBundleURL == connection.testBundleURL else {
             throw XcodeTestExecutorError.resourceMismatch(
                 "The checked app or test runner no longer matches the selected Xcode products. Check the connection again."
@@ -1047,6 +1078,10 @@ actor XcodeTestExecutor {
                 guard let connection = currentConnection(definition: definition, configuration: configuration),
                       connection.appProduct == products.app,
                       connection.testProduct == products.test,
+                      (try? Self.productIdentity(
+                          bundle: productPaths.testHostURL,
+                          fallbackBundleIdentifier: configuration.testBundleIdentifier
+                      )) == connection.testHostProduct,
                       connection.productMetadataDigest == Self.productMetadataDigest(products: productPaths) else {
                     throw XcodeTestExecutorError.resourceMismatch(
                         "The built app, test runner, or integration declaration changed after the connection check. Check the connection again."
@@ -1334,12 +1369,12 @@ actor XcodeTestExecutor {
             )
         }
         return (
-            try productIdentity(bundle: paths.appBundleURL, fallbackBundleIdentifier: definition.target.bundleIdentifier),
-            try productIdentity(bundle: paths.testBundleURL, fallbackBundleIdentifier: configuration.testBundleIdentifier)
+            try Self.productIdentity(bundle: paths.appBundleURL, fallbackBundleIdentifier: definition.target.bundleIdentifier),
+            try Self.productIdentity(bundle: paths.testBundleURL, fallbackBundleIdentifier: configuration.testBundleIdentifier)
         )
     }
 
-    private func productIdentity(bundle: URL, fallbackBundleIdentifier: String) throws -> ScenarioProductIdentity {
+    static func productIdentity(bundle: URL, fallbackBundleIdentifier: String) throws -> ScenarioProductIdentity {
         let info = NSDictionary(contentsOf: bundle.appending(path: "Info.plist")) as? [String: Any]
         let executableName = info?["CFBundleExecutable"] as? String ?? bundle.deletingPathExtension().lastPathComponent
         let executable = bundle.appending(path: executableName)
