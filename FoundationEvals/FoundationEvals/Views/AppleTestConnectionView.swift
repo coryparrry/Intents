@@ -73,6 +73,10 @@ struct AppleTestConnectionView: View {
                     .disabled(coordinator.isDiscoveringConnection)
                 }
 
+                if selectedProjectName != nil {
+                    IntentLabSetupInstallerView(coordinator: coordinator)
+                }
+
                 connectionField(
                     title: "Choose connected iPhone",
                     detail: selectedDeviceDetail
@@ -109,6 +113,24 @@ struct AppleTestConnectionView: View {
                     .disabled(selectedProjectName == nil || coordinator.isDiscoveringConnection)
                 }
 
+                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                    connectionField(
+                        title: "Check installed support",
+                        detail: coordinator.verifiedIntegrationSummary
+                            ?? "Build the selected app and UI tests, then read the compiled integration receipt. This check does not run an app action."
+                    ) {
+                        Button(
+                            coordinator.isVerifyingIntegration ? "Checking…" : "Build and check support",
+                            systemImage: "checkmark.seal"
+                        ) {
+                            Task { await coordinator.verifyInstalledIntegration() }
+                        }
+                        .disabled(!coordinator.projectTrusted
+                                  || coordinator.configuration.destinationIdentifier.isEmpty
+                                  || coordinator.isVerifyingIntegration)
+                    }
+                }
+
                 connectionField(
                     title: "Run",
                     detail: "Keep the iPhone unlocked and approve any intent or Siri access prompt on the device. Then use Run scenario in the toolbar."
@@ -142,16 +164,26 @@ struct AppleTestConnectionView: View {
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
                 }
-                advancedRow("Scheme", help: "The Xcode build configuration that includes the app and tests you want to run. Keep the discovered choice unless you use a different scheme.") {
+                advancedRow("Scheme", help: "The Xcode scheme that includes the app and UI tests you want to run. If you change it, approve the build and run connection again.") {
                     TextField("App scheme", text: Binding(
                         get: { coordinator.configuration.scheme },
-                        set: { coordinator.configuration.scheme = $0; coordinator.invalidatePreflight() }
+                        set: { coordinator.selectScheme($0) }
+                    ))
+                }
+                advancedRow("Build configuration", help: "The Xcode configuration used to build the app and UI tests. Intent Lab selects the scheme's Test configuration when available. If you change it, approve the build and run connection again.") {
+                    TextField("Debug", text: Binding(
+                        get: { coordinator.configuration.configuration },
+                        set: { coordinator.selectBuildConfiguration($0) }
                     ))
                 }
                 advancedRow("UI-test target", help: "The group of automated interface tests containing Intent Lab’s test support. This is a test target, not the app target.") {
                     TextField("AppUITests", text: Binding(
                         get: { coordinator.configuration.testTarget },
-                        set: { coordinator.configuration.testTarget = $0; coordinator.invalidatePreflight() }
+                        set: {
+                            coordinator.configuration.testTarget = $0
+                            coordinator.configuration.selectedTestProductID = nil
+                            coordinator.invalidatePreflight()
+                        }
                     ))
                 }
                 advancedRow("Test bundle ID", help: "The unique identifier of the compiled UI-test bundle. Use the discovered value or copy it from the test target’s Xcode settings.") {
@@ -212,24 +244,32 @@ struct AppleTestConnectionView: View {
                 }
                 if discovery.applications.count > 1 {
                     Picker("Application", selection: Binding(
-                        get: { coordinator.draft.target.bundleIdentifier },
-                        set: { bundleIdentifier in
-                            guard let product = discovery.applications.first(where: { $0.bundleIdentifier == bundleIdentifier }) else { return }
+                        get: { coordinator.configuration.selectedApplicationProductID ?? "" },
+                        set: { identity in
+                            guard let product = discovery.applications.first(where: { $0.id == identity }) else { return }
                             coordinator.selectApplication(product)
                         }
                     )) {
                         Text("Choose application").tag("")
-                        ForEach(discovery.applications) { Text($0.targetName).tag($0.bundleIdentifier) }
+                        ForEach(discovery.applications) { product in
+                            Text(product.projectPath.map { "\(product.targetName) · \(URL(filePath: $0).lastPathComponent)" }
+                                 ?? product.targetName).tag(product.id)
+                        }
                     }
                 }
                 if discovery.uiTestBundles.count > 1 {
-                    Picker("UI-test target", selection: $coordinator.configuration.testTarget) {
+                    Picker("UI-test target", selection: Binding(
+                        get: { coordinator.configuration.selectedTestProductID ?? "" },
+                        set: { identity in
+                            guard let product = discovery.uiTestBundles.first(where: { $0.id == identity }) else { return }
+                            coordinator.selectUITestBundle(product)
+                        }
+                    )) {
                         Text("Choose UI-test target").tag("")
-                        ForEach(discovery.uiTestBundles) { Text($0.targetName).tag($0.targetName) }
-                    }
-                    .onChange(of: coordinator.configuration.testTarget) { _, targetName in
-                        guard let product = discovery.uiTestBundles.first(where: { $0.targetName == targetName }) else { return }
-                        coordinator.selectUITestBundle(product)
+                        ForEach(discovery.uiTestBundles) { product in
+                            Text(product.projectPath.map { "\(product.targetName) · \(URL(filePath: $0).lastPathComponent)" }
+                                 ?? product.targetName).tag(product.id)
+                        }
                     }
                 }
                 Button("Check connection", systemImage: "checklist") {

@@ -29,11 +29,31 @@ targets:
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) INTENT_LAB_TEST_SUPPORT"
-  IntentLabFixtureUITests:
+  IntentLabFixtureV2UITests:
     type: bundle.ui-testing
     platform: iOS
     sources:
       - UITests
+    resources:
+      - UITests/Generated
+    dependencies:
+      - target: IntentLabFixture
+      - package: FoundationEvalsDeveloper
+        product: IntentLabTesting
+      - package: FoundationEvalsDeveloper
+        product: IntentLabContracts
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coryparry.IntentLabFixtureV2UITests
+        INTENT_LAB_HARNESS_VERSION: intent-lab-v2
+        INTENT_LAB_HARNESS_CAPABILITIES: environment-payload direct-intent-execution direct-intent-output preparation accessible-result siri siri-completion invocation-correlation
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+  IntentLabFixtureUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
       - path: ../../Integration/AppIntentsTesting
         excludes:
           - README.md
@@ -59,3 +79,11 @@ schemes:
     test:
       targets:
         - IntentLabFixtureUITests
+  IntentLabFixtureV2:
+    build:
+      targets:
+        IntentLabFixture: all
+        IntentLabFixtureV2UITests: [test]
+    test:
+      targets:
+        - IntentLabFixtureV2UITests

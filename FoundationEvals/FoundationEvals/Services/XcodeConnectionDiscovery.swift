@@ -52,6 +52,22 @@ private final class WorkspaceProjectReferenceParser: NSObject, XMLParserDelegate
     }
 }
 
+private final class SchemeTestActionConfigurationParser: NSObject, XMLParserDelegate {
+    private(set) var buildConfiguration: String?
+
+    func parser(
+        _ parser: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?,
+        attributes attributeDict: [String: String] = [:]
+    ) {
+        if elementName == "TestAction" {
+            buildConfiguration = attributeDict["buildConfiguration"]
+        }
+    }
+}
+
 struct IntentLabDeviceDestination: Codable, Equatable, Identifiable, Sendable {
     var id: String { identifier }
     var identifier: String
@@ -61,12 +77,14 @@ struct IntentLabDeviceDestination: Codable, Equatable, Identifiable, Sendable {
 }
 
 struct XcodeDiscoveredProduct: Codable, Equatable, Identifiable, Sendable {
-    var id: String { targetName }
+    var id: String { "\(projectPath ?? "")#\(targetID ?? targetName)" }
     var targetName: String
     var bundleIdentifier: String
     var productType: String
     var isApplication: Bool
     var isUITestBundle: Bool
+    var projectPath: String? = nil
+    var targetID: String? = nil
     var harnessVersion: String? = nil
     var harnessCapabilities: [String] = []
     var signingConfigured: Bool = false
@@ -153,12 +171,79 @@ struct XcodeConnectionDiscoveryService: Sendable {
                 configuration: configuration
             ))
         }
-        let uniqueProducts = Dictionary(grouping: products, by: \.targetName).compactMap(\.value.first)
+        // Scheme settings may repeat products obtained from the owning project. Prefer
+        // the project-scoped identity; never merge equal display names from two projects.
+        let identified = products.filter { $0.projectPath != nil }
+        let uniqueProducts = identified.isEmpty
+            ? Array(Dictionary(grouping: products, by: \.id).compactMap(\.value.first))
+            : Array(Dictionary(grouping: identified, by: \.id).compactMap(\.value.first))
         let applications = uniqueProducts.filter(\.isApplication).sorted { $0.targetName < $1.targetName }
         let uiTests = uniqueProducts.filter(\.isUITestBundle).sorted { $0.targetName < $1.targetName }
         guard !applications.isEmpty else { throw XcodeConnectionDiscoveryError.noApplication }
-        guard !uiTests.isEmpty else { throw XcodeConnectionDiscoveryError.noUITestTarget }
         return .init(schemes: listing.schemes, applications: applications, uiTestBundles: uiTests)
+    }
+
+    /// Reads the configuration Xcode uses for the selected scheme's Test action.
+    /// A workspace can contain same-named project schemes; require an owner when
+    /// their configurations differ rather than choosing an arbitrary project.
+    static func testActionBuildConfiguration(
+        container: URL,
+        scheme: String,
+        preferredProjectPath: String? = nil,
+        fileManager: FileManager = .default
+    ) throws -> String? {
+        guard !scheme.isEmpty, !scheme.contains("/"), !scheme.contains("\\") else { return nil }
+        let container = container.standardizedFileURL
+        let relativePath = "xcshareddata/xcschemes/\(scheme).xcscheme"
+        var candidates: [URL] = []
+        if container.pathExtension == "xcworkspace" {
+            let workspaceScheme = container.appending(path: relativePath)
+            if fileManager.fileExists(atPath: workspaceScheme.path) {
+                candidates.append(workspaceScheme)
+            }
+            for project in try workspaceProjectURLs(workspace: container, fileManager: fileManager) {
+                let projectScheme = project.appending(path: relativePath)
+                if fileManager.fileExists(atPath: projectScheme.path) {
+                    candidates.append(projectScheme)
+                }
+            }
+        } else if container.pathExtension == "xcodeproj" {
+            let projectScheme = container.appending(path: relativePath)
+            if fileManager.fileExists(atPath: projectScheme.path) {
+                candidates.append(projectScheme)
+            }
+        }
+        guard !candidates.isEmpty else { return nil }
+        if let preferredProjectPath {
+            let owner = URL(filePath: preferredProjectPath).standardizedFileURL
+            let owned = candidates.filter {
+                $0.deletingLastPathComponent().deletingLastPathComponent()
+                    .deletingLastPathComponent().standardizedFileURL.path == owner.path
+            }
+            if !owned.isEmpty { candidates = owned }
+        }
+        let configurations = try candidates.map { schemeURL -> String? in
+            guard let parser = XMLParser(contentsOf: schemeURL) else {
+                throw XcodeConnectionDiscoveryError.invalidOutput("the selected scheme cannot be read")
+            }
+            let collector = SchemeTestActionConfigurationParser()
+            parser.delegate = collector
+            guard parser.parse() else {
+                throw XcodeConnectionDiscoveryError.invalidOutput(
+                    parser.parserError?.localizedDescription ?? "malformed scheme XML"
+                )
+            }
+            return collector.buildConfiguration?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let available = Set(configurations.compactMap { value in
+            value.flatMap { $0.isEmpty ? nil : $0 }
+        })
+        if available.count > 1 || configurations.contains(where: { $0 == nil || $0?.isEmpty == true }) && !available.isEmpty {
+            throw XcodeConnectionDiscoveryError.invalidOutput(
+                "multiple schemes named \(scheme) use different Test build configurations; choose the owning app project or enter a configuration manually"
+            )
+        }
+        return available.first
     }
 
     func discoverDevices() throws -> [IntentLabDeviceDestination] {
@@ -177,10 +262,11 @@ struct XcodeConnectionDiscoveryService: Sendable {
         )
     }
 
-    static func parseBuildSettings(_ data: Data) throws -> [XcodeDiscoveredProduct] {
+    static func parseBuildSettings(_ data: Data, project: URL? = nil) throws -> [XcodeDiscoveredProduct] {
         guard let entries = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw XcodeConnectionDiscoveryError.invalidOutput("build settings are not an array")
         }
+        let targetIDs = project.flatMap { try? targetIdentifiers(in: $0) } ?? [:]
         return entries.compactMap { entry in
             guard let settings = entry["buildSettings"] as? [String: Any],
                   let target = entry["target"] as? String else { return nil }
@@ -197,6 +283,8 @@ struct XcodeConnectionDiscoveryService: Sendable {
                 productType: productType,
                 isApplication: isApp,
                 isUITestBundle: isUITest,
+                projectPath: project?.standardizedFileURL.path,
+                targetID: targetIDs[target],
                 harnessVersion: settings["INTENT_LAB_HARNESS_VERSION"] as? String,
                 harnessCapabilities: ((settings["INTENT_LAB_HARNESS_CAPABILITIES"] as? String) ?? "")
                     .split(whereSeparator: { $0 == " " || $0 == "," })
@@ -205,6 +293,18 @@ struct XcodeConnectionDiscoveryService: Sendable {
                     && !((settings["DEVELOPMENT_TEAM"] as? String) ?? "").isEmpty
             )
         }
+    }
+
+    private static func targetIdentifiers(in project: URL) throws -> [String: String] {
+        let data = try Data(contentsOf: project.appending(path: "project.pbxproj"))
+        guard let root = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let objects = root["objects"] as? [String: [String: Any]] else { return [:] }
+        let pairs: [(String, String)] = objects.compactMap { id, object in
+            guard object["isa"] as? String == "PBXNativeTarget",
+                  let name = object["name"] as? String else { return nil }
+            return (name, id)
+        }
+        return Dictionary(pairs, uniquingKeysWith: { first, _ in first })
     }
 
     static func workspaceProjectURLs(workspace: URL, fileManager: FileManager = .default) throws -> [URL] {
@@ -250,7 +350,7 @@ struct XcodeConnectionDiscoveryService: Sendable {
                 executable: xcodebuildPath,
                 arguments: [selector, container.path, "-target", target, "-configuration", configuration, "-showBuildSettings", "-json"]
             )
-            products.append(contentsOf: try Self.parseBuildSettings(data))
+            products.append(contentsOf: try Self.parseBuildSettings(data, project: container))
         }
         return products
     }

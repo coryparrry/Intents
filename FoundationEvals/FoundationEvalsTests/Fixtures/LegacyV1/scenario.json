@@ -1,0 +1,110 @@
+{
+  "assertions" : [
+    {
+      "expectedValue" : {
+        "string" : {
+          "_0" : "packing-001"
+        }
+      },
+      "explanation" : "The requested packing note is the note the app selected.",
+      "id" : "22222222-2222-4222-8222-222222222222",
+      "kind" : "entityIdentifier",
+      "observationKey" : "selectedNoteID",
+      "required" : true
+    },
+    {
+      "expectedValue" : {
+        "integer" : {
+          "_0" : 0
+        }
+      },
+      "explanation" : "Opening the note must not modify the note store.",
+      "id" : "33333333-3333-4333-8333-333333333333",
+      "kind" : "noMutation",
+      "observationKey" : "noteStoreMutationCount",
+      "required" : true
+    }
+  ],
+  "caseSet" : "regression",
+  "coverage" : {
+    "appFeature" : "optional",
+    "intentIntegration" : "required",
+    "siri" : "required",
+    "siriAttemptCount" : 3
+  },
+  "definitionDigest" : "39c7be7efc7df732a4ea0dbdf5392f3f5763b32c80137af2d69b7e87d043b077",
+  "directControl" : {
+    "intentIdentifier" : "OpenNoteIntent",
+    "outputFields" : [
+      {
+        "name" : "selectedNoteID",
+        "type" : {
+          "primitive" : {
+            "_0" : "string"
+          }
+        }
+      }
+    ],
+    "parameters" : [
+      {
+        "isOptional" : false,
+        "name" : "note",
+        "presence" : {
+          "value" : {
+            "_0" : {
+              "entity" : {
+                "_0" : {
+                  "identifier" : "packing-001",
+                  "typeIdentifier" : "NoteEntity"
+                }
+              }
+            }
+          }
+        },
+        "type" : {
+          "entity" : {
+            "typeIdentifier" : "NoteEntity"
+          }
+        }
+      }
+    ]
+  },
+  "fixture" : {
+    "cleanupOperation" : "resetPackingNotes",
+    "digest" : "fixture-packing-notes-v1",
+    "id" : "packing-notes",
+    "isSynthetic" : true,
+    "preparationOperation" : "resetPackingNotes",
+    "version" : "1"
+  },
+  "goal" : {
+    "approvedFollowUps" : [
+
+    ],
+    "expectedBehavior" : "Open note packing-001 and show its heading without changing the note store.",
+    "languageCode" : "en-GB",
+    "requestText" : "Open the packing note in Intent Lab Fixture"
+  },
+  "id" : "11111111-1111-4111-8111-111111111111",
+  "name" : "Open the packing note",
+  "safety" : {
+    "allowedActions" : [
+      "openNote"
+    ],
+    "deadlineSeconds" : 60,
+    "mutationPolicy" : "readOnly",
+    "permittedConfirmationSteps" : [
+
+    ]
+  },
+  "schemaVersion" : 1,
+  "target" : {
+    "bundleIdentifier" : "com.coryparry.IntentLabFixture",
+    "destinationIdentifier" : "golden-physical-device",
+    "projectPath" : "examples/IntentLabFixture/IntentLabFixture.xcodeproj",
+    "route" : "appShortcut",
+    "scheme" : "IntentLabFixture",
+    "testTarget" : "IntentLabFixtureUITests"
+  },
+  "version" : 1
+}
