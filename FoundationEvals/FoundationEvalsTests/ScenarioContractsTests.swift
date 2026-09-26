@@ -684,6 +684,113 @@ struct ScenarioContractsTests {
         let workspaceDigest = try XcodeTestExecutor.buildInputsDigest(configuration: workspaceConfiguration, products: paths)
         try Data("scheme-v2".utf8).write(to: workspaceScheme)
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: workspaceConfiguration, products: paths) != workspaceDigest)
+
+        let sourceFile = root.appending(path: "Sources/App.swift")
+        try FileManager.default.createDirectory(at: sourceFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("struct App {}".utf8).write(to: sourceFile)
+        let sourceDigest = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("struct App { let changed = true }".utf8).write(to: sourceFile)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != sourceDigest)
+
+        let generatedFile = root.appending(path: "DerivedData/generated.swift")
+        try FileManager.default.createDirectory(at: generatedFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let beforeGenerated = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("generated output".utf8).write(to: generatedFile)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforeGenerated)
+    }
+
+    @Test func connectionFingerprintIncludesLocalPackageSources() throws {
+        let root = try temporaryDirectory()
+        let appRoot = root.appending(path: "App", directoryHint: .isDirectory)
+        let project = appRoot.appending(path: "App.xcodeproj", directoryHint: .isDirectory)
+        let packageSource = root.appending(path: "LocalPackage/Sources/Package.swift")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: packageSource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let projectData = try PropertyListSerialization.data(
+            fromPropertyList: ["objects": ["PACKAGE": [
+                "isa": "XCLocalSwiftPackageReference", "relativePath": "../LocalPackage"
+            ]]], format: .xml, options: 0
+        )
+        try projectData.write(to: project.appending(path: "project.pbxproj"))
+        try Data("public struct Package {}".utf8).write(to: packageSource)
+        let paths = XCTestRunProductPaths(
+            sourceURL: root.appending(path: "Products/App.xctestrun"),
+            appBundleURL: root.appending(path: "Products/App.app"),
+            testHostURL: root.appending(path: "Products/AppUITests-Runner.app"),
+            testBundleURL: root.appending(path: "Products/AppUITests-Runner.app/PlugIns/AppUITests.xctest")
+        )
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "App",
+            testTarget: "AppUITests", testBundleIdentifier: "dev.example.AppUITests",
+            destinationIdentifier: "device", generatedResourceDirectory: root.path,
+            xcodebuildPath: "/bin/echo"
+        )
+        let original = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("public struct Package { public let changed = true }".utf8).write(to: packageSource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != original)
+    }
+
+    @Test func reusableRunUsesCheckedProductsAndRejectsChangedTestRunPaths() throws {
+        let root = try temporaryDirectory()
+        let derivedData = root.appending(path: "Connection/DerivedData", directoryHint: .isDirectory)
+        let products = derivedData.appending(path: "Build/Products", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: products, withIntermediateDirectories: true)
+        let source = products.appending(path: "Fixture_iphoneos.xctestrun")
+        func writeTestRun(appName: String) throws {
+            let plist: [String: Any] = [
+                "__xctestrun_metadata__": ["FormatVersion": 1],
+                "FixtureUITests": [
+                    "BlueprintName": "FixtureUITests",
+                    "BlueprintProviderRelativePath": "Fixture.xcodeproj",
+                    "UITargetAppPath": "__TESTROOT__/Debug-iphoneos/\(appName).app",
+                    "TestHostPath": "__TESTROOT__/Debug-iphoneos/FixtureUITests-Runner.app",
+                    "TestBundlePath": "__TESTHOST__/PlugIns/FixtureUITests.xctest",
+                ],
+            ]
+            try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                .write(to: source)
+        }
+        try writeTestRun(appName: "Fixture")
+        let checked = try XCTestRunInvocationTransport.resolveProducts(
+            derivedData: derivedData, testTarget: "FixtureUITests"
+        )
+        let configuration = XcodeTestConfiguration(
+            containerPath: root.appending(path: "Fixture.xcodeproj").path,
+            isWorkspace: false, scheme: "Fixture", testTarget: "FixtureUITests",
+            testBundleIdentifier: "dev.example.FixtureUITests", destinationIdentifier: "device",
+            generatedResourceDirectory: root.path
+        )
+        let definition = try reusableBasicScenario()
+        let connection = ScenarioVerifiedConnection(
+            receipt: .init(
+                schemaVersion: 1, integration: try #require(definition.integration),
+                targetBundleIdentifier: definition.target.bundleIdentifier,
+                testBundleIdentifier: configuration.testBundleIdentifier,
+                harnessProtocol: ScenarioInvocationIdentity.reusableHarnessVersion,
+                runnerPackageVersion: "test", capabilities: [], inspectedAt: .now
+            ),
+            configuration: configuration,
+            appProduct: .init(bundleIdentifier: definition.target.bundleIdentifier,
+                              executableName: "Fixture", sha256: "checked-app"),
+            testProduct: .init(bundleIdentifier: configuration.testBundleIdentifier,
+                               executableName: "FixtureUITests", sha256: "checked-test"),
+            appBundleURL: checked.appBundleURL, testBundleURL: checked.testBundleURL,
+            testRunURL: checked.sourceURL,
+            selectedTestProjectURL: URL(filePath: configuration.containerPath),
+            buildInputsDigest: "checked-inputs", productMetadataDigest: "checked-metadata"
+        )
+        #expect(connection.derivedDataURL.resolvingSymlinksInPath()
+                == derivedData.resolvingSymlinksInPath())
+        #expect(try XcodeTestExecutor.reusableRunProducts(
+            connection: connection, configuration: configuration
+        ) == checked)
+
+        try writeTestRun(appName: "Other")
+        #expect(throws: XcodeTestExecutorError.self) {
+            _ = try XcodeTestExecutor.reusableRunProducts(
+                connection: connection, configuration: configuration
+            )
+        }
     }
 
     @Test func v2DeclaredBuildSettingsCannotClaimVerifiedReadiness() async throws {

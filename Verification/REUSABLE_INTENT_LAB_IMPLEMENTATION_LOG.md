@@ -250,3 +250,21 @@ user's project.
   `test-without-building` then waited at Xcode destination preflight with
   `Unlock iPhone to Continue`; the device owner was asked to unlock it. The
   support receipt and direct/Siri run remain pending at this checkpoint.
+- After the iPhone was unlocked, the Notes v2 physical connection check passed
+  1/1 and returned a compiled receipt with eight declared capabilities
+  (`/private/tmp/IntentLabPhysicalVerification/IntentLab/Executor/Connection-CB76DDFF-500A-433E-A079-6023E3447BE7/Connection.xcresult`).
+  The first direct Mac Run stopped before intent execution because a second
+  build in fresh DerivedData changed the signed product fingerprint. The host
+  now reuses the exact checked product and checks its paths, executable and
+  signing metadata, integration declaration, and project source inputs before
+  launch. Focused Mac contracts passed 54/54 after the fix
+  (`/private/tmp/IntentLabCheckedProductsHostTests.log`).
+- The updated host's second physical connection attempt signed and built, but
+  Xcode found the iPhone locked at launch and interrupted the UI test after
+  178.6 seconds (`/private/tmp/IntentLabPhysicalVerification/IntentLab/Executor/Connection-2BFEDC92-A46D-4EFB-A97B-90D5166BF27B/xcodebuild.log`).
+  The device owner was asked to unlock and keep it awake. Direct and Siri
+  outcomes from the updated host remain unverified pending a successful
+  connection check and scenario execution.
+- PR #54 workflow run `36272620560` passed route, script, portable regression,
+  and app/selected-test jobs at commit `c06fcda`. An earlier autosave test
+  deadline failure did not recur; no speculative autosave change was made.

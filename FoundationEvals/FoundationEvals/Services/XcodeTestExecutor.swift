@@ -105,6 +105,10 @@ struct ScenarioVerifiedConnection: Sendable {
     var selectedTestProjectURL: URL
     var buildInputsDigest: String
     var productMetadataDigest: String
+
+    var derivedDataURL: URL {
+        testRunURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    }
 }
 
 enum ScenarioHarnessCapabilities {
@@ -749,6 +753,7 @@ actor XcodeTestExecutor {
                 hasher.update(data: Data("<missing>".utf8))
             }
         }
+        try hashProjectSources(projects: projects, into: &hasher, fileManager: fileManager)
         let toolPath = URL(filePath: configuration.xcodebuildPath).resolvingSymlinksInPath().path
         hasher.update(data: Data(toolPath.utf8))
         if let attributes = try? fileManager.attributesOfItem(atPath: toolPath) {
@@ -756,6 +761,75 @@ actor XcodeTestExecutor {
             hasher.update(data: Data(stamp.utf8))
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func hashProjectSources(
+        projects: [URL], into hasher: inout SHA256, fileManager: FileManager
+    ) throws {
+        let generatedDirectories: Set<String> = [
+            ".git", ".build", ".swiftpm", "DerivedData", "Build", "Products",
+            "node_modules", ".xcuserdata"
+        ]
+        var roots = projects.map { $0.deletingLastPathComponent() }
+        for project in projects {
+            let projectFile = project.appending(path: "project.pbxproj")
+            guard let data = try? Data(contentsOf: projectFile),
+                  let plist = try? PropertyListSerialization.propertyList(from: data, format: nil)
+                    as? [String: Any],
+                  let objects = plist["objects"] as? [String: [String: Any]] else { continue }
+            for object in objects.values where object["isa"] as? String == "XCLocalSwiftPackageReference" {
+                guard let relativePath = object["relativePath"] as? String,
+                      !relativePath.isEmpty else { continue }
+                roots.append(URL(filePath: relativePath, relativeTo: project.deletingLastPathComponent()))
+            }
+        }
+        var visitedDirectories: Set<String> = []
+        var sourceFiles: Set<URL> = []
+        while let directory = roots.popLast() {
+            let resolved = directory.standardizedFileURL.resolvingSymlinksInPath()
+            guard visitedDirectories.insert(resolved.path).inserted else { continue }
+            for entry in try fileManager.contentsOfDirectory(
+                at: resolved, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey]
+            ) {
+                let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+                if values.isDirectory == true {
+                    if !generatedDirectories.contains(entry.lastPathComponent),
+                       entry.pathExtension != "xcresult" {
+                        roots.append(entry)
+                    }
+                } else if values.isRegularFile == true {
+                    sourceFiles.insert(entry.standardizedFileURL)
+                    guard sourceFiles.count <= 100_000 else {
+                        throw XcodeTestExecutorError.resourceMismatch(
+                            "The selected project has too many source and resource files to fingerprint."
+                        )
+                    }
+                }
+            }
+        }
+        let sourceExtensions: Set<String> = [
+            "swift", "m", "mm", "h", "hpp", "c", "cc", "cpp", "metal", "plist", "json",
+            "xcconfig", "entitlements", "modulemap", "intentdefinition", "storyboard", "xib",
+            "strings", "stringsdict", "xml", "yml", "yaml", "rb", "sh", "py", "js", "ts", "tsx", "jsx"
+        ]
+        var remainingContentBytes: Int64 = 256 * 1_024 * 1_024
+        for file in sourceFiles.sorted(by: {
+            let firstIsSource = sourceExtensions.contains($0.pathExtension.lowercased())
+            let secondIsSource = sourceExtensions.contains($1.pathExtension.lowercased())
+            return firstIsSource == secondIsSource ? $0.path < $1.path : firstIsSource
+        }) {
+            hasher.update(data: Data(file.path.utf8))
+            let attributes = try fileManager.attributesOfItem(atPath: file.path)
+            let size = attributes[.size] as? NSNumber ?? 0
+            if size.int64Value <= 64 * 1_024 * 1_024,
+               size.int64Value <= remainingContentBytes {
+                hasher.update(data: try Data(contentsOf: file, options: [.mappedIfSafe]))
+                remainingContentBytes -= size.int64Value
+            } else {
+                // Bound hashing for large trees while retaining a write-time change signal.
+                hasher.update(data: Data("\(size):\(attributes[.modificationDate] ?? "unknown")".utf8))
+            }
+        }
     }
 
     static func productMetadataDigest(products: XCTestRunProductPaths) -> String {
@@ -771,6 +845,28 @@ actor XcodeTestExecutor {
             }
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func reusableRunProducts(
+        connection: ScenarioVerifiedConnection,
+        configuration: XcodeTestConfiguration,
+        fileManager: FileManager = .default
+    ) throws -> XCTestRunProductPaths {
+        let paths = try XCTestRunInvocationTransport.resolveProducts(
+            derivedData: connection.derivedDataURL,
+            testTarget: configuration.testTarget,
+            owningProjectURL: connection.selectedTestProjectURL,
+            containerURL: URL(filePath: configuration.containerPath),
+            fileManager: fileManager
+        )
+        guard paths.sourceURL == connection.testRunURL,
+              paths.appBundleURL == connection.appBundleURL,
+              paths.testBundleURL == connection.testBundleURL else {
+            throw XcodeTestExecutorError.resourceMismatch(
+                "The checked app or test runner no longer matches the selected Xcode products. Check the connection again."
+            )
+        }
+        return paths
     }
 
     private func runConnectionCommand(
@@ -840,7 +936,8 @@ actor XcodeTestExecutor {
 
         let invocationID = UUID()
         let invocationDirectory = workDirectory.appending(path: invocationID.uuidString, directoryHint: .isDirectory)
-        let derivedData = invocationDirectory.appending(path: "DerivedData", directoryHint: .isDirectory)
+        let derivedData = selectedConnection?.derivedDataURL
+            ?? invocationDirectory.appending(path: "DerivedData", directoryHint: .isDirectory)
         let resultBundle = invocationDirectory.appending(path: "IntentLab.xcresult", directoryHint: .isDirectory)
         let attachments = invocationDirectory.appending(path: "Attachments", directoryHint: .isDirectory)
         let buildLog = invocationDirectory.appending(path: "xcodebuild.log")
@@ -904,32 +1001,43 @@ actor XcodeTestExecutor {
         }
 
         do {
-            let buildExit = try await runProcess(
-                executable: configuration.xcodebuildPath,
-                arguments: commonArguments + ["build-for-testing"],
-                logURL: buildLog,
-                invocationID: invocationID,
-                destinationIdentifier: configuration.destinationIdentifier,
-                journal: journal,
-                appendLog: false,
-                deadline: .seconds(900)
-            )
-            try throwIfCancelled(invocationID)
-            guard buildExit == 0 else {
-                journal.phase = .stopped
-                journal.updatedAt = Date()
-                try await persistence.saveJournal(journal)
-                reservations[configuration.destinationIdentifier] = nil
-                throw XcodeTestExecutorError.buildFailed(buildExit, tail(of: buildLog))
+            let productPaths: XCTestRunProductPaths
+            if let selectedConnection {
+                guard let connection = currentConnection(definition: definition, configuration: configuration),
+                      connection.testRunURL == selectedConnection.testRunURL else {
+                    throw XcodeTestExecutorError.resourceMismatch(
+                        "The checked app, test runner, or integration declaration changed. Check the connection again."
+                    )
+                }
+                productPaths = try Self.reusableRunProducts(
+                    connection: connection, configuration: configuration, fileManager: fileManager
+                )
+            } else {
+                let buildExit = try await runProcess(
+                    executable: configuration.xcodebuildPath,
+                    arguments: commonArguments + ["build-for-testing"],
+                    logURL: buildLog,
+                    invocationID: invocationID,
+                    destinationIdentifier: configuration.destinationIdentifier,
+                    journal: journal,
+                    appendLog: false,
+                    deadline: .seconds(900)
+                )
+                try throwIfCancelled(invocationID)
+                guard buildExit == 0 else {
+                    journal.phase = .stopped
+                    journal.updatedAt = Date()
+                    try await persistence.saveJournal(journal)
+                    reservations[configuration.destinationIdentifier] = nil
+                    throw XcodeTestExecutorError.buildFailed(buildExit, tail(of: buildLog))
+                }
+                productPaths = try XCTestRunInvocationTransport.resolveProducts(
+                    derivedData: derivedData,
+                    testTarget: configuration.testTarget,
+                    fileManager: fileManager
+                )
             }
-
-            let productPaths = try XCTestRunInvocationTransport.resolveProducts(
-                derivedData: derivedData,
-                testTarget: configuration.testTarget,
-                owningProjectURL: selectedConnection?.selectedTestProjectURL,
-                containerURL: selectedConnection == nil ? nil : URL(filePath: configuration.containerPath),
-                fileManager: fileManager
-            )
+            try throwIfCancelled(invocationID)
             let products = try verifyBuiltProducts(
                 definition: definition,
                 configuration: configuration,
