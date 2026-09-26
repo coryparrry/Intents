@@ -95,9 +95,18 @@ final class ScenarioCoordinator {
             recoveryJournals = try await executor.reconcileInterruptedJournals()
             journals = try await persistence.loadJournals()
             let selected = try await persistence.loadSelectedDefinition()
+            let latestRunDefinition = runs.first.flatMap { latestRun in
+                definitions
+                    .filter { $0.id == latestRun.scenarioID }
+                    .max { $0.version < $1.version }
+            }
+            let latestVersion = definitions.map(\.version).max()
+            let latestVersionDefinition = latestVersion.flatMap { version in
+                definitions.last { $0.version == version }
+            }
             let restored = selected.flatMap { saved in
                 definitions.first { $0.id == saved.id && $0.version == saved.version }
-            } ?? definitions.last
+            } ?? latestRunDefinition ?? latestVersionDefinition
             if let definition = restored {
                 draft = definition
                 selectedIntegration = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
