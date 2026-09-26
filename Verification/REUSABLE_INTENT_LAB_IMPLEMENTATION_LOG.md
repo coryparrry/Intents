@@ -148,12 +148,9 @@ a passing scenario or release requirement without the host report gate.
   failed-outcome release policy; installer preview/apply/recovery/repair and
   compile of both automatic target paths; a clean outside-repository task
   consumer with only package/test integration and app-owned support in its diff.
-- Verified in the live Mac interface: Setup/manual fallback and Basic coverage
-  editing. The actual UI did not run or import a device scenario report.
-- Unverified: physical direct and Siri routes for either app, Mac Run control
-  with a signed test product, and live device Results/MCP report parity and
-  relaunch. Simulator tests, mock MCP tests, and source inspection do not
-  substitute for those checks. Remote resolution was completed later, below.
+- Live Mac interface and physical-device verification was completed later;
+  see “Physical and live-service completion” below. Simulator tests, mock MCP
+  tests, and source inspection were not used as substitutes for those checks.
 
 ## External validation status
 
@@ -276,3 +273,43 @@ user's project.
 - PR #54 workflow run `36272620560` passed route, script, portable regression,
   and app/selected-test jobs at commit `c06fcda`. An earlier autosave test
   deadline failure did not recur; no speculative autosave change was made.
+
+## Physical and live-service completion on 2026-09-26
+
+- Notes v2 compiled connection check passed on the paired iPhone with a
+  version-2 receipt and eight capabilities
+  (`/private/tmp/IntentLabPhysicalVerification/IntentLab/Executor/Connection-377252B6-5186-4D87-AA07-4C1F06C7208C/Connection.xcresult`).
+  Basic direct run `99E9DFC2-F5E4-4A1C-99DB-CD4561AD373C` passed 1/1 but
+  remained exploratory and correctly failed the release gate because Siri and
+  state evidence were missing.
+- A mismatched UI-observation operation ID exposed an editor defect. New UI
+  observations now start without a compiled operation ID, and the UI hides
+  that inapplicable field. The focused macOS regression test passed 1/1
+  (`/private/tmp/IntentLabFinalObservationHostTests.log`). A Siri run with an
+  incomplete phrase, `3820784B-F0A2-47EE-89F2-E8B43FC488C3`, retained direct
+  1/1 and Siri 0/1 as Needs review; the live report exited 30 with
+  `incompleteOrIncompatibleEvidence`. It did not turn the successful XCTest
+  evidence capture into a passing release requirement. Before a retry, a
+  signed physical fixture-reset/query test passed 1/1
+  (`/private/tmp/IntentLabNotesRecovery.xcresult`,
+  `/private/tmp/IntentLabNotesRecovery.log`).
+- Using the app's exact App Shortcut phrase, “Open the packing note in Intent
+  Lab Fixture,” Notes Behaviour run `5EDD6A52-50DC-49D2-A247-BDFB5D7A3291`
+  passed direct 1/1 and Siri 1/1. Release-requirement rerun
+  `06D1EF0B-0106-4CBE-8FA3-CB4E4B577EBB` passed both lanes and its release
+  gate. The live local MCP `scenario-report` CLI exited 0 with `passed` and no
+  failures. After quitting and relaunching the Mac app, Results still showed
+  those outcomes and the live CLI returned the same passing report.
+- The independent Tasks example's first Mac connection check built but Xcode
+  stopped at `Unlock iPhone to Continue`
+  (`/private/tmp/IntentLabTasksPhysicalVerification/IntentLab/Executor/Connection-6E54E634-BF48-4690-9510-BE18D6D2AF64/xcodebuild.log`). After unlock, a
+  fresh physical connection check passed 1/1 and reported eight compiled
+  capabilities (`/private/tmp/IntentLabTasksPhysicalVerification/IntentLab/Executor/Connection-9184E25C-FD07-4B6E-9BDD-B287602C76D3/Connection.xcresult`).
+  Mac Run `594F1D58-BCB6-4547-AF99-AD1B78E2523A` passed its physical
+  XCTest 1/1, direct evidence 1/1, and release gate. Its entity-query evidence
+  read back task `task-001` as complete and unrelated task `task-002` as
+  incomplete (`/private/tmp/IntentLabTasksPhysicalVerification/IntentLab/Executor/594F1D58-BCB6-4547-AF99-AD1B78E2523A/xcodebuild.log`). The live MCP
+  `scenario-report` exited 0 and matched Results
+  (`/private/tmp/IntentLabTasksMCPReport.log`). After quitting and relaunching
+  the Mac app, Results retained the same passing release requirement and the
+  live report again exited 0. The app was closed after inspection.

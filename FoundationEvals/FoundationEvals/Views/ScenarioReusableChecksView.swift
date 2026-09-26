@@ -49,7 +49,7 @@ struct ScenarioReusableChecksView: View {
                 Spacer()
                 Button("Add observation", systemImage: "plus") {
                     var plan = coordinator.draft.observationPlan ?? []
-                    plan.append(.init(id: "observation-\(plan.count + 1)", source: .uiElement, operationID: "", selector: ""))
+                    plan.append(Self.newObservation(index: plan.count + 1))
                     coordinator.draft.observationPlan = plan
                     coordinator.draft.definitionDigest = ""
                 }
@@ -77,7 +77,8 @@ struct ScenarioReusableChecksView: View {
                         Text("UI element").tag(ScenarioPlannedObservationSource.uiElement)
                         Text("Test-only intent").tag(ScenarioPlannedObservationSource.testOnlyIntent)
                     }
-                    if observation.wrappedValue.source != .intentResult {
+                    if observation.wrappedValue.source != .intentResult,
+                       observation.wrappedValue.source != .uiElement {
                         TextField("Compiled operation ID", text: optionalText(observation.operationID))
                     }
                     TextField("Stable selector or property", text: optionalText(observation.selector))
@@ -110,6 +111,10 @@ struct ScenarioReusableChecksView: View {
                 coordinator.draft.definitionDigest = ""
             }
         )
+    }
+
+    static func newObservation(index: Int) -> ScenarioPlannedObservation {
+        .init(id: "observation-\(index)", source: .uiElement, operationID: nil, selector: nil)
     }
 
     private func optionalText(_ value: Binding<String?>) -> Binding<String> {
