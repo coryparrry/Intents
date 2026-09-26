@@ -192,12 +192,17 @@ final class ScenarioCoordinator {
             )
             let buildConfiguration = configuration.configuration
             let selectedScheme = configuration.scheme
+            let signingArguments = configuration.signingArguments
             let discovery = try await Task.detached {
-                try service.discoverProject(container: container, configuration: buildConfiguration)
+                try service.discoverProject(
+                    container: container, configuration: buildConfiguration,
+                    signingArguments: signingArguments
+                )
             }.value
             guard configuration.containerPath == approvedContainerPath,
                   configuration.configuration == buildConfiguration,
-                  configuration.scheme == selectedScheme else { return }
+                  configuration.scheme == selectedScheme,
+                  configuration.signingArguments == signingArguments else { return }
             connectionDiscovery = discovery
             apply(discovery: discovery)
             if configuration.configurationOverride == nil {
@@ -205,11 +210,15 @@ final class ScenarioCoordinator {
                 if schemeConfiguration != configuration.configuration {
                     configuration.configuration = schemeConfiguration
                     let refreshed = try await Task.detached {
-                        try service.discoverProject(container: container, configuration: schemeConfiguration)
+                        try service.discoverProject(
+                            container: container, configuration: schemeConfiguration,
+                            signingArguments: signingArguments
+                        )
                     }.value
                     guard configuration.containerPath == approvedContainerPath,
                           configuration.configuration == schemeConfiguration,
-                          configuration.configurationOverride == nil else { return }
+                          configuration.configurationOverride == nil,
+                          configuration.signingArguments == signingArguments else { return }
                     connectionDiscovery = refreshed
                     apply(discovery: refreshed)
                 }
@@ -248,6 +257,26 @@ final class ScenarioCoordinator {
         configuration.configuration = trimmed.isEmpty
             ? ((try? testActionConfiguration(for: connectionDiscovery)) ?? "Debug") : trimmed
         projectTrusted = false
+        invalidatePreflight()
+    }
+
+    func selectDevelopmentTeam(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = trimmed.isEmpty ? nil : trimmed
+        guard configuration.developmentTeam != selected else { return }
+        configuration.developmentTeam = selected
+        configuration.applicationSigningConfigured = nil
+        configuration.testSigningConfigured = nil
+        projectTrusted = false
+        connectionDiscovery = nil
+        invalidatePreflight()
+    }
+
+    func setAllowsProvisioningUpdates(_ allowed: Bool) {
+        guard configuration.allowProvisioningUpdates != allowed else { return }
+        configuration.allowProvisioningUpdates = allowed
+        projectTrusted = false
+        connectionDiscovery = nil
         invalidatePreflight()
     }
 
@@ -723,6 +752,10 @@ final class ScenarioCoordinator {
         }
         if discovery.applications.count == 1, let application = discovery.applications.first {
             selectApplication(application)
+        } else if let application = discovery.applications.first(where: {
+            $0.id == configuration.selectedApplicationProductID
+        }) {
+            configuration.applicationSigningConfigured = application.signingConfigured
         } else if !discovery.applications.contains(where: { $0.id == configuration.selectedApplicationProductID }) {
             draft.target.bundleIdentifier = ""
             draft.definitionDigest = ""
@@ -731,6 +764,10 @@ final class ScenarioCoordinator {
         }
         if discovery.uiTestBundles.count == 1, let tests = discovery.uiTestBundles.first {
             selectUITestBundle(tests)
+        } else if let tests = discovery.uiTestBundles.first(where: {
+            $0.id == configuration.selectedTestProductID
+        }) {
+            configuration.testSigningConfigured = tests.signingConfigured
         } else if !discovery.uiTestBundles.contains(where: { $0.id == configuration.selectedTestProductID }) {
             configuration.testTarget = ""
             configuration.selectedTestProductID = nil

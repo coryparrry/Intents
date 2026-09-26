@@ -273,6 +273,52 @@ struct ScenarioContractsTests {
         let decoded = try JSONDecoder().decode(XcodeTestConfiguration.self, from: bytes)
         #expect(decoded.configuration == "Debug")
         #expect(decoded.configurationOverride == nil)
+        #expect(decoded.developmentTeam == nil)
+        #expect(decoded.allowProvisioningUpdates == nil)
+    }
+
+    @Test func developmentSigningOverridesRoundTripAndReachBuildCommands() throws {
+        var configuration = XcodeTestConfiguration(
+            containerPath: "/tmp/Fixture.xcodeproj", isWorkspace: false, scheme: "Fixture",
+            testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: "device", generatedResourceDirectory: ""
+        )
+        #expect(configuration.signingArguments.isEmpty)
+        configuration.developmentTeam = " TEAM123 "
+        configuration.allowProvisioningUpdates = true
+        let decoded = try JSONDecoder().decode(
+            XcodeTestConfiguration.self, from: JSONEncoder().encode(configuration)
+        )
+        #expect(decoded.developmentTeam == " TEAM123 ")
+        #expect(decoded.allowProvisioningUpdates == true)
+        #expect(decoded.signingArguments == ["-allowProvisioningUpdates", "DEVELOPMENT_TEAM=TEAM123"])
+        let command = XcodeTestExecutor.xcodeArguments(
+            configuration: decoded, derivedData: URL(filePath: "/tmp/DerivedData")
+        ) + ["build-for-testing"]
+        #expect(command.suffix(3) == ["-allowProvisioningUpdates", "DEVELOPMENT_TEAM=TEAM123", "build-for-testing"])
+        configuration.allowProvisioningUpdates = false
+        #expect(configuration.signingArguments == ["DEVELOPMENT_TEAM=TEAM123"])
+    }
+
+    @Test func discoveryBuildSettingsUsesDevelopmentSigningOverride() throws {
+        let arguments = XcodeConnectionDiscoveryService.buildSettingsArguments(
+            selector: "-project", container: URL(filePath: "/tmp/Fixture.xcodeproj"),
+            targetOrScheme: ["-target", "FixtureUITests"], configuration: "Debug",
+            signingArguments: ["-allowProvisioningUpdates", "DEVELOPMENT_TEAM=TEAM123"]
+        )
+        #expect(arguments == [
+            "-project", "/tmp/Fixture.xcodeproj", "-target", "FixtureUITests",
+            "-configuration", "Debug", "-showBuildSettings", "-json",
+            "-allowProvisioningUpdates", "DEVELOPMENT_TEAM=TEAM123"
+        ])
+        let settings = Data("""
+        [{"target":"FixtureUITests","buildSettings":{
+          "PRODUCT_BUNDLE_IDENTIFIER":"dev.example.FixtureUITests",
+          "PRODUCT_TYPE":"com.apple.product-type.bundle.ui-testing",
+          "DEVELOPMENT_TEAM":"TEAM123"
+        }}]
+        """.utf8)
+        #expect(try XcodeConnectionDiscoveryService.parseBuildSettings(settings).first?.signingConfigured == true)
     }
 
     @Test func frozenDefinitionRoundTripsWithStableDigest() throws {

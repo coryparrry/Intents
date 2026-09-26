@@ -176,6 +176,18 @@ struct AppleTestConnectionView: View {
                         set: { coordinator.selectBuildConfiguration($0) }
                     ))
                 }
+                advancedRow("Development team", help: "Optional Apple team ID for this build and run. This overrides Xcode's team selection for the command without changing project settings. Approve the connection again after editing it.") {
+                    TextField("Apple team ID", text: Binding(
+                        get: { coordinator.configuration.developmentTeam ?? "" },
+                        set: { coordinator.selectDevelopmentTeam($0) }
+                    ))
+                }
+                advancedRow("Provisioning updates", help: "When enabled, Xcode may create or update Apple development certificates, app IDs, and provisioning profiles for this build. Use only with an account permitted to manage signing.") {
+                    Toggle("Allow Xcode to update provisioning", isOn: Binding(
+                        get: { coordinator.configuration.allowProvisioningUpdates == true },
+                        set: { coordinator.setAllowsProvisioningUpdates($0) }
+                    ))
+                }
                 advancedRow("UI-test target", help: "The group of automated interface tests containing Intent Lab’s test support. This is a test target, not the app target.") {
                     TextField("AppUITests", text: Binding(
                         get: { coordinator.configuration.testTarget },

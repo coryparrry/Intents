@@ -126,7 +126,11 @@ struct XcodeConnectionDiscoveryService: Sendable {
     var xcodebuildPath = "/usr/bin/xcodebuild"
     var xcdevicePath = "/usr/bin/xcrun"
 
-    func discoverProject(container: URL, configuration: String = "Debug") throws -> XcodeConnectionDiscovery {
+    func discoverProject(
+        container: URL,
+        configuration: String = "Debug",
+        signingArguments: [String] = []
+    ) throws -> XcodeConnectionDiscovery {
         guard FileManager.default.fileExists(atPath: container.path),
               ["xcodeproj", "xcworkspace"].contains(container.pathExtension) else {
             throw XcodeConnectionDiscoveryError.invalidContainer
@@ -146,7 +150,10 @@ struct XcodeConnectionDiscoveryService: Sendable {
             for scheme in listing.schemes {
                 let data = try run(
                     executable: xcodebuildPath,
-                    arguments: [selector, container.path, "-scheme", scheme, "-configuration", configuration, "-showBuildSettings", "-json"]
+                    arguments: Self.buildSettingsArguments(
+                        selector: selector, container: container, targetOrScheme: ["-scheme", scheme],
+                        configuration: configuration, signingArguments: signingArguments
+                    )
                 )
                 products.append(contentsOf: try Self.parseBuildSettings(data))
             }
@@ -160,7 +167,8 @@ struct XcodeConnectionDiscoveryService: Sendable {
                     projectListing.targets,
                     selector: "-project",
                     container: project,
-                    configuration: configuration
+                    configuration: configuration,
+                    signingArguments: signingArguments
                 ))
             }
         } else {
@@ -168,7 +176,8 @@ struct XcodeConnectionDiscoveryService: Sendable {
                 listing.targets,
                 selector: selector,
                 container: container,
-                configuration: configuration
+                configuration: configuration,
+                signingArguments: signingArguments
             ))
         }
         // Scheme settings may repeat products obtained from the owning project. Prefer
@@ -342,17 +351,33 @@ struct XcodeConnectionDiscoveryService: Sendable {
         _ targets: [String],
         selector: String,
         container: URL,
-        configuration: String
+        configuration: String,
+        signingArguments: [String]
     ) throws -> [XcodeDiscoveredProduct] {
         var products: [XcodeDiscoveredProduct] = []
         for target in targets {
             let data = try run(
                 executable: xcodebuildPath,
-                arguments: [selector, container.path, "-target", target, "-configuration", configuration, "-showBuildSettings", "-json"]
+                arguments: Self.buildSettingsArguments(
+                    selector: selector, container: container, targetOrScheme: ["-target", target],
+                    configuration: configuration, signingArguments: signingArguments
+                )
             )
             products.append(contentsOf: try Self.parseBuildSettings(data, project: container))
         }
         return products
+    }
+
+    static func buildSettingsArguments(
+        selector: String,
+        container: URL,
+        targetOrScheme: [String],
+        configuration: String,
+        signingArguments: [String]
+    ) -> [String] {
+        [selector, container.path] + targetOrScheme
+            + ["-configuration", configuration, "-showBuildSettings", "-json"]
+            + signingArguments
     }
 
     private func run(executable: String, arguments: [String]) throws -> Data {

@@ -218,3 +218,35 @@ user's project.
   signing assets. Explicit approval to create those assets was requested.
   No physical direct/Siri run, signed Mac Run, or live device report is
   claimed until that prerequisite is resolved and actually tested.
+
+## Follow-up validation on 2026-09-26
+
+- The user approved automatic development provisioning. With a per-command
+  `DEVELOPMENT_TEAM` override and `-allowProvisioningUpdates`, signed physical
+  `build-for-testing` completed for Notes v2 and Tasks, without editing project
+  signing settings (`/private/tmp/IntentLabSignedNotes3Z.log`,
+  `/private/tmp/IntentLabSignedTasks3Z.log`). This verifies signing/building,
+  not test execution.
+- The clean outside-repository task consumer fetched published commit
+  `2b02190da849585e41333110e20d383a0bcdd687` over HTTPS with local Git
+  URL rewrites disabled. Its project and `Package.resolved` pinned that SHA,
+  and generic Simulator `build-for-testing` passed
+  (`/private/tmp/IntentLabRemoteResolve.log`,
+  `/private/tmp/IntentLabRemoteConsumerBuild.log`).
+- The user approved connecting the local Intents MCP service. After backing up
+  Codex's configuration, the duplicate unmanaged loopback entry was replaced
+  by the app's managed connector. For existing failed run
+  `C35E76B5-C392-4317-BF7A-7A01D1B770D2`, the live `scenario-report` CLI
+  returned exit 30 and `incompleteOrIncompatibleEvidence` with five release
+  failures. Results showed the same outcome and failures before and after an
+  app relaunch. This establishes persisted report parity for that failed run;
+  it is not evidence of a new physical device result.
+- The host now accepts explicit per-run signing overrides for discovery,
+  connection checks, and Mac Run. Focused host contracts passed 52/52
+  (`/private/tmp/IntentLabSigningOverrideHostTests.log`). In the actual Mac UI,
+  the saved Notes v2 scenario selected the reviewed declaration and a paired
+  iPhone. Its approved support check signed and built successfully
+  (`/private/tmp/IntentLabPhysicalVerification/IntentLab/Executor/Connection-D4B6A69C-F6F4-472E-9F39-2037EC2FE123/xcodebuild.log`). Physical
+  `test-without-building` then waited at Xcode destination preflight with
+  `Unlock iPhone to Continue`; the device owner was asked to unlock it. The
+  support receipt and direct/Siri run remain pending at this checkpoint.

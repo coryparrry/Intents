@@ -50,6 +50,19 @@ struct XcodeTestConfiguration: Codable, Equatable, Sendable {
     /// Project path plus Xcode target ID from discovery. Absent in legacy saved setup.
     var selectedTestProductID: String? = nil
     var selectedApplicationProductID: String? = nil
+    /// Command-line override only; the Xcode project is not modified.
+    var developmentTeam: String? = nil
+    /// Explicit opt-in for Xcode to manage development signing assets.
+    var allowProvisioningUpdates: Bool? = nil
+
+    var signingArguments: [String] {
+        var arguments: [String] = []
+        if allowProvisioningUpdates == true { arguments.append("-allowProvisioningUpdates") }
+        if let team = developmentTeam?.trimmingCharacters(in: .whitespacesAndNewlines), !team.isEmpty {
+            arguments.append("DEVELOPMENT_TEAM=\(team)")
+        }
+        return arguments
+    }
 }
 
 enum ScenarioPreflightState: String, Codable, Sendable {
@@ -403,7 +416,7 @@ actor XcodeTestExecutor {
         )
         check("signing", "Device signing",
               configuration.applicationSigningConfigured == true && configuration.testSigningConfigured == true,
-              "Select a development team for both the app and UI-test targets in Xcode Signing & Capabilities.")
+              "Set a development team for this run or configure both the app and UI-test targets in Xcode Signing & Capabilities.")
         if isReusable {
             for capability in ScenarioHarnessCapabilities.required(for: definition).sorted() {
                 check("capability.\(capability)", capability,
@@ -487,7 +500,10 @@ actor XcodeTestExecutor {
         let discovered = try XcodeConnectionDiscoveryService(
             xcodebuildPath: configuration.xcodebuildPath,
             xcdevicePath: configuration.xcresulttoolPath
-        ).discoverProject(container: URL(filePath: configuration.containerPath), configuration: configuration.configuration)
+        ).discoverProject(
+            container: URL(filePath: configuration.containerPath), configuration: configuration.configuration,
+            signingArguments: configuration.signingArguments
+        )
         let sameName = discovered.uiTestBundles.filter { $0.targetName == configuration.testTarget }
         let selected = sameName.first { $0.id == configuration.selectedTestProductID }
         let sameBundle = discovered.applications.filter {
@@ -524,7 +540,7 @@ actor XcodeTestExecutor {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let buildExit = try await runConnectionCommand(
             configuration: configuration,
-            arguments: xcodeArguments(configuration: configuration, derivedData: derivedData) + ["build-for-testing"],
+            arguments: Self.xcodeArguments(configuration: configuration, derivedData: derivedData) + ["build-for-testing"],
             logURL: log,
             appendLog: false,
             deadline: .seconds(900)
@@ -546,7 +562,7 @@ actor XcodeTestExecutor {
                 "-destination", "id=\(configuration.destinationIdentifier)",
                 "-resultBundlePath", resultBundle.path,
                 "-only-testing:\(configuration.testTarget)/IntentLabScenarioTests/testIntentLabConnection",
-            ],
+            ] + configuration.signingArguments,
             logURL: log,
             appendLog: true,
             deadline: .seconds(180)
@@ -853,7 +869,7 @@ actor XcodeTestExecutor {
             invocation.integration = definition.integration
             invocation.requiredCapabilities = ScenarioHarnessCapabilities.required(for: definition).sorted()
         }
-        let commonArguments = xcodeArguments(
+        let commonArguments = Self.xcodeArguments(
             configuration: configuration,
             derivedData: derivedData
         )
@@ -952,7 +968,7 @@ actor XcodeTestExecutor {
                 "-destination", "id=\(configuration.destinationIdentifier)",
                 "-resultBundlePath", resultBundle.path,
                 "-only-testing:\(configuration.testTarget)/\(testIdentity.className)/\(testIdentity.methodName)",
-            ]
+            ] + configuration.signingArguments
             journal.intendedArguments = testArguments
             journal.updatedAt = Date()
             inFlightJournal = journal
@@ -1068,7 +1084,7 @@ actor XcodeTestExecutor {
         return (true, "\(device.name) is reported by Xcode as an available physical iPhone.")
     }
 
-    private func xcodeArguments(
+    static func xcodeArguments(
         configuration: XcodeTestConfiguration,
         derivedData: URL
     ) -> [String] {
@@ -1078,7 +1094,7 @@ actor XcodeTestExecutor {
             "-configuration", configuration.configuration,
             "-destination", "id=\(configuration.destinationIdentifier)",
             "-derivedDataPath", derivedData.path
-        ]
+        ] + configuration.signingArguments
     }
 
     func runProcess(
