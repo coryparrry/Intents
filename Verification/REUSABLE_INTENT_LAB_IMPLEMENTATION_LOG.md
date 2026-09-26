@@ -151,9 +151,9 @@ a passing scenario or release requirement without the host report gate.
 - Verified in the live Mac interface: Setup/manual fallback and Basic coverage
   editing. The actual UI did not run or import a device scenario report.
 - Unverified: physical direct and Siri routes for either app, Mac Run control
-  with a signed test product, live Results/MCP report parity and report relaunch,
-  and remote resolution of the unpublished package snapshot. Simulator tests,
-  mock MCP tests, and source inspection do not substitute for those checks.
+  with a signed test product, and live device Results/MCP report parity and
+  relaunch. Simulator tests, mock MCP tests, and source inspection do not
+  substitute for those checks. Remote resolution was completed later, below.
 
 ## External validation status
 
@@ -174,3 +174,47 @@ check displays Basic/exploratory coverage accurately in the Evidence editor.
 Changing the selected intent reset the read-only acknowledgement in the live
 UI. The inspection did not run an intent or apply installer changes to a
 user's project.
+
+## Delivery verification on 2026-09-26
+
+- The reviewed integration was ported onto PR #52's current remote head and
+  committed as `2b02190da849585e41333110e20d383a0bcdd687` on
+  `codex/intent-lab-reusable-integration`. The original dirty checkout was
+  preserved. An independent review found that the Tasks example required
+  its scheme's `IntentLabTesting` Test configuration rather than `Debug`.
+  Scheme discovery, explicit overrides, and the Advanced UI were corrected.
+  The focused host contract suite passed 50/50 afterward
+  (`/private/tmp/intent-lab-port-host-test-after-config.log`). The focused
+  scheme/legacy-configuration regressions passed 2/2, and the Notes v2 and
+  Tasks unsigned generic Simulator test products built
+  (`/private/tmp/intent-lab-port-notes-build.log`,
+  `/private/tmp/intent-lab-port-tasks-build.log`). Xcode build settings for
+  Tasks `IntentLabTesting` showed its isolated `.integration-tests` app ID and
+  `INTENT_LAB_TESTING` compilation condition. The rebuilt Mac UI visibly
+  displayed the build-configuration field and reapproval guidance; the app
+  was closed after inspection.
+- Remote package availability is verified. With local Git URL rewrites and
+  system Git configuration disabled, HTTPS `ls-remote` returned that commit.
+  A fresh outside-repository Xcode consumer fetched it from GitHub and pinned
+  the exact SHA in both its project and `Package.resolved`.
+  `/private/tmp/IntentLabRemoteResolve.log` records the fetch and checkout;
+  the checkout's HEAD matches the commit. Its generic iOS Simulator
+  `build-for-testing` passed with signing disabled
+  (`/private/tmp/IntentLabRemoteConsumerBuild.log`). The first build attempt
+  was blocked by sandbox access to Swift/Clang caches; the approved
+  cache-access rerun passed. This proves remote resolution and compilation,
+  not device execution.
+- The Mac Results view showed an existing failed run and its release rejection
+  again after relaunch. The local MCP connector was stopped and not installed,
+  so live Results/MCP parity was not checked. Connecting it would install a
+  persistent Codex connector with access to saved evaluations; approval was
+  requested before that access change.
+- A paired physical iPhone is available. Existing signing assets do not form
+  a complete pair for the Notes v2 or Tasks app and UI-test runner: one team
+  has development certificates without the needed profiles, while Xcode's
+  selected team lacks a development certificate and runner profiles. A
+  proposed `-allowProvisioningUpdates` build was rejected by automatic
+  approval review before execution because it could change Apple account
+  signing assets. Explicit approval to create those assets was requested.
+  No physical direct/Siri run, signed Mac Run, or live device report is
+  claimed until that prerequisite is resolved and actually tested.
