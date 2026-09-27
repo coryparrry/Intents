@@ -14,7 +14,7 @@ Build an evaluation. Inspect the evidence. See what changed.
 ![MCP](https://img.shields.io/badge/Agent_Integration-MCP-7c3aed?style=flat-square)
 [![MIT License](https://img.shields.io/badge/License-MIT-16a34a?style=flat-square)](LICENSE)
 
-[Install](#install) · [First evaluation](#run-your-first-evaluation) · [Models and tools](#models-and-tools) · [Connect an agent](#connect-an-agent) · [Build from source](#build-from-source)
+[Install](#install) · [First evaluation](#run-your-first-evaluation) · [User wiki](docs/wiki/Home.md) · [Models and tools](#models-and-tools) · [Connect an agent](#connect-an-agent) · [Build from source](#build-from-source)
 
 </div>
 
@@ -31,15 +31,14 @@ Intents is a native macOS workbench for testing Apple's Foundation Models. Creat
 | **Models and tools** | Apple's on-device model, compatible Core AI models, custom HTTP providers, and configurable tools. |
 | **Agent integration** | An included MCP server for managing suites, running evaluations, and inspecting results. |
 | **App feature runners** | A public Swift package for evaluating real app closures on a paired iPhone, iPad, or Mac. [Integration guide](docs/DEVELOPER_SWIFT_INTEGRATION.md). |
-| **Intent Lab** | Run frozen App Intent and recognised-text Siri scenarios from a developer-owned UI-test target, then inspect separately labelled evidence. [Setup guide](docs/intent-lab.md). |
+| **Intent Lab** | Run frozen App Intent and recognised-text Siri scenarios from a developer-owned UI-test target, then inspect separately labelled evidence. [Setup guide](docs/wiki/Intent-Lab.md). |
 
 ## Install
 
 Requirements:
 
 - macOS 27 or later
-- A Mac that supports Apple Intelligence
-- Apple Intelligence enabled and the on-device model downloaded
+- For the default on-device model: a Mac that supports Apple Intelligence, with Apple Intelligence enabled and the model downloaded
 
 1. Download and open the latest **Intents.dmg**.
 2. Drag **Intents** onto the **Applications** shortcut in the window.
@@ -47,15 +46,15 @@ Requirements:
 
 The app is signed with Developer ID and notarized by Apple.
 
-Xcode is only needed to build from source.
+Xcode is needed to build from source or use Intent Lab. It is not needed for a normal on-device suite.
 
 ## Run your first evaluation
 
-1. Open **Suite Editor** and enter the instructions shared by your test cases.
-2. Add cases with a prompt and, where appropriate, an expected response or reference answer. You can attach text, JSON, CSV, PDF, and image files as context.
-3. Choose a scoring mode and set the number of repetitions.
-4. Click **Run**. Select a result to inspect its response, score, explanation, timing, token usage, and tool activity.
-5. Reopen runs from **Run History**, choose a saved baseline to compare results, or export a JSON report.
+1. In **Overview**, create a suite. Open **Cases** and add prompts with an expected response or reference answer where appropriate.
+2. Use **Setup → Instructions** for shared instructions and text, JSON, CSV, PDF, or image reference files.
+3. Use **Setup → Scoring** to choose a method and number of repetitions.
+4. Click **Run**. Open the saved run's **Workflow trace** or **Report** to inspect its response, score, explanation, timing, token usage, and tool activity.
+5. Reopen runs from **Results** or the sidebar, use **Compare** for earlier runs, or export a JSON report. See the [user wiki](docs/wiki/Home.md) for detailed steps.
 
 | Scoring mode | Use it for |
 |---|---|
@@ -70,7 +69,7 @@ For AI rubrics, write one observable requirement per line and provide a verified
 
 The default provider is Apple's on-device Foundation Model. You can also load a compatible [Core AI model](docs/coreai-provider.md) or connect a [custom local HTTP provider](docs/custom-provider-protocol.md).
 
-Use the **Features** page to configure custom tools, structured output, streaming, and tool workflows. The [tools and structured output guide](docs/foundation-model-features.md) includes a runnable local HTTP example.
+Use the suite's **Setup** pages to configure custom tools, structured output, streaming, and tool workflows. The [tools and structured output guide](docs/foundation-model-features.md) includes a runnable local HTTP example.
 
 To evaluate the production Swift feature inside another app, add the
 `FoundationEvalsDeveloper` package product and host its explicitly paired runner.
@@ -90,7 +89,7 @@ To connect Codex:
 
 The server provides an agent workflow guide during MCP initialization. Its HTTP endpoint is `http://127.0.0.1:17873/mcp` while the connector is running.
 
-The connector listens only on this Mac and does not require credentials. Connected local clients can read and change evaluation data.
+The connector listens only on this Mac. Intents generates a bearer credential, stores it in the login Keychain, and configures Codex to send it. Connected authenticated local clients can read and change evaluation data; keep the managed configuration private.
 
 ## Your data
 
