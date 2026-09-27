@@ -34,12 +34,13 @@ struct IntentLabProjectInstallerTests {
             uiTestID = objects.first { $0.value["productType"] as? String == "com.apple.product-type.bundle.ui-testing" }!.key
         }
 
-        func request(existingTarget: Bool = true, workspaceURL: URL? = nil) -> IntentLabInstallationRequest {
+        func request(existingTarget: Bool = true, workspaceURL: URL? = nil,
+                     consumerSource: String = "import XCTest\nfinal class IntentLabScenarioTests: XCTestCase {}\n") -> IntentLabInstallationRequest {
             .init(projectURL: project, workspaceURL: workspaceURL,
                   scheme: "FoundationEvals", applicationTargetID: applicationID,
                   uiTestTargetID: existingTarget ? uiTestID : nil, packageURL: package,
                   packageProduct: "IntentLabTesting",
-                  consumerSource: "import XCTest\nfinal class IntentLabScenarioTests: XCTestCase {}\n",
+                  consumerSource: consumerSource,
                   declarationData: Self.declarationData)
         }
 
@@ -66,6 +67,45 @@ struct IntentLabProjectInstallerTests {
         }
     }
 
+    private struct FixtureCommandFailure: LocalizedError {
+        let executable: URL
+        let arguments: [String]
+        let output: String
+        let exitCode: Int32
+
+        var errorDescription: String? {
+            "\(executable.lastPathComponent) exited with code \(exitCode): \(arguments.joined(separator: " "))\n\(output)"
+        }
+    }
+
+    private static func executable(named name: String) -> URL? {
+        let fileManager = FileManager.default
+        for directory in ProcessInfo.processInfo.environment["PATH", default: ""].split(separator: ":") {
+            let candidate = URL(filePath: String(directory)).appending(path: name)
+            if fileManager.isExecutableFile(atPath: candidate.path) { return candidate }
+        }
+        return nil
+    }
+
+    private static func run(_ executable: URL, arguments: [String], in directory: URL) throws -> String {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = executable
+        process.arguments = arguments
+        process.currentDirectoryURL = directory
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let text = String(decoding: data, as: UTF8.self)
+        guard process.terminationStatus == 0 else {
+            throw FixtureCommandFailure(executable: executable, arguments: arguments,
+                                        output: text, exitCode: process.terminationStatus)
+        }
+        return text
+    }
+
     @Test func existingTargetRoundTripAndIdempotence() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
@@ -75,6 +115,8 @@ struct IntentLabProjectInstallerTests {
         let preview = try installer.preview(request)
         #expect(preview.supported)
         #expect(preview.changes.count == 4)
+        #expect(preview.changes.first { $0.url.lastPathComponent == "IntentLabScenarioTests.swift" }?.previous == nil)
+        #expect(preview.changes.first { $0.url.lastPathComponent == "IntentLabIntegration.json" }?.previous == nil)
         #expect(preview.changes.allSatisfy { $0.afterDigest != $0.beforeDigest })
         let receipt = try installer.apply(preview)
         #expect(receipt.changedFiles.count == 4)
@@ -120,6 +162,189 @@ struct IntentLabProjectInstallerTests {
         #expect(testBuild.attribute(forName: "buildForArchiving")?.stringValue == "NO")
     }
 
+    @Test func generatedUITestTargetMatchesSelectedMacOSApp() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let source = """
+        import XCTest
+        import IntentLabTesting
+        @available(macOS 27.0, iOS 27.0, *)
+        @MainActor final class IntentLabScenarioTests: XCTestCase {}
+        """
+        let plan = try IntentLabProjectInstaller().preview(
+            fixture.request(existingTarget: false, consumerSource: source))
+        #expect(plan.supported)
+        let projectChange = try #require(plan.changes.first { $0.url.lastPathComponent == "project.pbxproj" })
+        let root = try PropertyListSerialization.propertyList(from: projectChange.proposed, format: nil) as! [String: Any]
+        let objects = root["objects"] as! [String: [String: Any]]
+        let target = try #require(objects.values.first { $0["name"] as? String == "IntentLabUITests" })
+        let configList = try #require(objects[target["buildConfigurationList"] as! String])
+        let configIDs = configList["buildConfigurations"] as! [String]
+        #expect(!configIDs.isEmpty)
+        for configID in configIDs {
+            let settings = objects[configID]!["buildSettings"] as! [String: Any]
+            #expect(settings["SDKROOT"] as? String == "macosx")
+            #expect(settings["SUPPORTED_PLATFORMS"] as? String == "macosx")
+            #expect(settings["MACOSX_DEPLOYMENT_TARGET"] as? String == "27.0")
+            #expect(settings["IPHONEOS_DEPLOYMENT_TARGET"] == nil)
+        }
+        let sourceChange = try #require(plan.changes.first { $0.url.lastPathComponent == "IntentLabScenarioTests.swift" })
+        #expect(String(decoding: sourceChange.proposed, as: UTF8.self).contains("@available(macOS 27.0, iOS 27.0, *)"))
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENT_LAB_RUN_MAC_INSTALLER_BUILD_TEST"] == "1"))
+    func generatedMacUITestTargetBuildsWithXcode() throws {
+        // This integration lane is opt-in so the portable suite needs no XcodeGen.
+        let xcodegen = try #require(Self.executable(named: "xcodegen"))
+        let xcodebuild = try #require(Self.executable(named: "xcodebuild"))
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory.appending(path: "IntentLabMacBuildFixture-\(UUID().uuidString)")
+        defer { try? fileManager.removeItem(at: root) }
+        let sources = root.appending(path: "Sources")
+        let specDirectory = root.appending(path: "ProjectSpec")
+        try fileManager.createDirectory(at: sources, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: specDirectory, withIntermediateDirectories: true)
+        try Data("""
+        import SwiftUI
+
+        @main
+        struct IntentLabMacFixtureApp: App {
+            var body: some Scene {
+                WindowGroup { Text("Intent Lab installer fixture") }
+            }
+        }
+        """.utf8).write(to: sources.appending(path: "IntentLabMacFixtureApp.swift"))
+        let spec = """
+        name: IntentLabMacInstallerFixture
+        options:
+          deploymentTarget:
+            macOS: "27.0"
+        settings:
+          base:
+            GENERATE_INFOPLIST_FILE: YES
+            MACOSX_DEPLOYMENT_TARGET: "27.0"
+            SDKROOT: macosx
+            SUPPORTED_PLATFORMS: macosx
+            SWIFT_VERSION: "6.0"
+        targets:
+          IntentLabMacInstallerFixture:
+            type: application
+            platform: macOS
+            sources:
+              - Sources
+            settings:
+              base:
+                PRODUCT_BUNDLE_IDENTIFIER: com.example.IntentLabMacInstallerFixture
+        schemes:
+          IntentLabMacInstallerFixture:
+            build:
+              targets:
+                IntentLabMacInstallerFixture: all
+            run:
+              config: Debug
+            test:
+              config: Debug
+        """
+        let specURL = specDirectory.appending(path: "project.yml")
+        try Data(spec.utf8).write(to: specURL)
+        _ = try Self.run(xcodegen, arguments: [
+            "generate", "--spec", specURL.path, "--project", root.path, "--project-root", root.path
+        ], in: root)
+
+        let project = root.appending(path: "IntentLabMacInstallerFixture.xcodeproj")
+        let inspection = try IntentLabProjectInstaller.inspect(projectURL: project)
+        let appTarget = try #require(inspection.applications.first)
+        #expect(inspection.sharedSchemes.contains("IntentLabMacInstallerFixture"))
+        let bundleIdentifier = "com.example.IntentLabMacInstallerFixture"
+        let declaration: [String: Any] = [
+            "schemaVersion": 1,
+            "id": "\(bundleIdentifier).intentlab",
+            "version": "1",
+            "targetBundleIdentifier": bundleIdentifier,
+            "projectIdentity": project.lastPathComponent,
+            "targetIdentity": "IntentLabUITests",
+            "supportedHarnessProtocols": ["intent-lab-v2"],
+            "actions": [["id": "fixtureIntent", "parameters": []]],
+            "resultProjections": [],
+            "preparationOperations": ["none"],
+            "observers": [],
+            "isolation": ["kind": "readOnly"],
+            "capabilities": ["direct-intent-execution", "environment-payload"],
+        ]
+        let consumerSource = """
+        import XCTest
+        import IntentLabTesting
+
+        @available(macOS 27.0, iOS 27.0, *)
+        @MainActor
+        final class IntentLabScenarioTests: XCTestCase {
+            func testIntentLabScenario() throws {
+                try IntentLabScenarioRunner.run(testCase: self, integration: IntentLabBasicIntegration())
+            }
+
+            func testIntentLabConnection() throws {
+                try IntentLabScenarioRunner.checkConnection(testCase: self, integration: IntentLabBasicIntegration())
+            }
+        }
+        """
+        let packageURL = URL(filePath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let request = IntentLabInstallationRequest(
+            projectURL: project, scheme: "IntentLabMacInstallerFixture",
+            applicationTargetID: appTarget.id, packageURL: packageURL,
+            packageProduct: "IntentLabTesting", consumerSource: consumerSource,
+            declarationData: try JSONSerialization.data(withJSONObject: declaration, options: [.sortedKeys]))
+        let installer = IntentLabProjectInstaller()
+        let plan = try installer.preview(request)
+        #expect(plan.supported, "\(plan.manualSteps)")
+        _ = try installer.apply(plan)
+        let verification = try installer.verify(request)
+        #expect(verification.installed, "Missing: \(verification.missing)")
+        _ = try Self.run(xcodebuild, arguments: [
+            "build-for-testing", "-project", project.path,
+            "-scheme", "IntentLabMacInstallerFixture",
+            "-destination", "platform=macOS",
+            "-derivedDataPath", root.appending(path: "DerivedData").path,
+            "CODE_SIGNING_ALLOWED=NO", "-quiet",
+        ], in: root)
+    }
+
+    @Test func unsupportedAppPlatformGetsManualGuidance() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let pbxURL = fixture.project.appending(path: "project.pbxproj")
+        var document = try OpenStepProjectDocument(Data(contentsOf: pbxURL))
+        let root = try PropertyListSerialization.propertyList(from: document.data, format: nil) as! [String: Any]
+        let objects = root["objects"] as! [String: [String: Any]]
+        let app = objects[fixture.applicationID]!
+        let listID = app["buildConfigurationList"] as! String
+        let configIDs = objects[listID]!["buildConfigurations"] as! [String]
+        for configID in configIDs {
+            for (key, value) in [("SDKROOT", "xros"),
+                                 ("SUPPORTED_PLATFORMS", "\"xros xrsimulator\""),
+                                 ("XROS_DEPLOYMENT_TARGET", "27.0")] {
+                let settings = try document.object(configID).dictionary!["buildSettings"]!
+                try document.setKey(key, value: value, in: settings)
+            }
+        }
+        try document.data.write(to: pbxURL)
+        let plan = try IntentLabProjectInstaller().preview(fixture.request(existingTarget: false))
+        #expect(!plan.supported)
+        #expect(plan.manualSteps.first?.contains("supports iOS and macOS apps") == true)
+    }
+
+    @Test func workspaceProjectIdentityDisambiguatesEqualBasenames() {
+        let root = URL(filePath: "/tmp/IntentLabIdentity")
+        let workspace = root.appending(path: "Combined.xcworkspace")
+        let first = IntentLabProjectInstaller.declarationProjectIdentity(
+            projectURL: root.appending(path: "First/Tasks.xcodeproj"), workspaceURL: workspace)
+        let second = IntentLabProjectInstaller.declarationProjectIdentity(
+            projectURL: root.appending(path: "Second/Tasks.xcodeproj"), workspaceURL: workspace)
+        #expect(first == "First/Tasks.xcodeproj")
+        #expect(second == "Second/Tasks.xcodeproj")
+        #expect(first != second)
+    }
+
     @Test func stalePreviewPreservesInterveningEdit() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
@@ -131,6 +356,51 @@ struct IntentLabProjectInstallerTests {
         try changed.write(to: pbxURL)
         #expect(throws: IntentLabProjectInstallerError.self) { try installer.apply(preview) }
         #expect(try Data(contentsOf: pbxURL) == changed)
+        #expect(!FileManager.default.fileExists(atPath: fixture.root.appending(path: ".intent-lab-install-journal.json").path))
+    }
+
+    @Test func previewTreatsUnreadableDeveloperFileAsManualReview() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let sourceURL = fixture.root.appending(path: "IntentLabIntegration/UITests/IntentLabScenarioTests.swift")
+        try FileManager.default.createDirectory(at: sourceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("developer-owned test".utf8).write(to: sourceURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: sourceURL.path)
+        let plan = try IntentLabProjectInstaller().preview(fixture.request())
+        #expect(!plan.supported)
+        #expect(plan.manualSteps.first?.contains("could not be read") == true, "\(plan.manualSteps)")
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: sourceURL.path)
+        #expect(try Data(contentsOf: sourceURL) == Data("developer-owned test".utf8))
+    }
+
+    @Test func applyDoesNotTreatAnUnreadableNewFileAsMissing() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let installer = IntentLabProjectInstaller()
+        let plan = try installer.preview(fixture.request())
+        let sourceChange = try #require(plan.changes.first { $0.url.lastPathComponent == "IntentLabScenarioTests.swift" })
+        #expect(sourceChange.previous == nil)
+        try FileManager.default.createDirectory(at: sourceChange.url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: sourceChange.url.path,
+                                                   withDestinationPath: "unavailable-source.swift")
+        #expect(throws: IntentLabProjectInstallerError.self) { try installer.apply(plan) }
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: sourceChange.url.path) == "unavailable-source.swift")
+        #expect(!FileManager.default.fileExists(atPath: fixture.root.appending(path: ".intent-lab-install-journal.json").path))
+    }
+
+    @Test func applyPreservesAFileCreatedAfterPreview() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let installer = IntentLabProjectInstaller()
+        let plan = try installer.preview(fixture.request())
+        let sourceChange = try #require(plan.changes.first { $0.url.lastPathComponent == "IntentLabScenarioTests.swift" })
+        try FileManager.default.createDirectory(at: sourceChange.url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let developerContent = Data("developer-owned test".utf8)
+        try developerContent.write(to: sourceChange.url, options: .withoutOverwriting)
+        #expect(throws: IntentLabProjectInstallerError.self) { try installer.apply(plan) }
+        #expect(try Data(contentsOf: sourceChange.url) == developerContent)
         #expect(!FileManager.default.fileExists(atPath: fixture.root.appending(path: ".intent-lab-install-journal.json").path))
     }
 
@@ -153,6 +423,74 @@ struct IntentLabProjectInstallerTests {
         try userEdit.write(to: first.url)
         #expect(throws: IntentLabProjectInstallerError.self) { try installer.recover(projectURL: fixture.project) }
         #expect(try Data(contentsOf: first.url) == userEdit)
+    }
+
+    @Test func failedExclusiveInstallWriteKeepsJournalAndPartialFileForReview() throws {
+        struct InjectedWriteFailure: Error {}
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let installer = IntentLabProjectInstaller()
+        let plan = try installer.preview(fixture.request())
+        #expect(plan.supported)
+        let projectURL = fixture.project.appending(path: "project.pbxproj")
+        let schemeURL = fixture.project.appending(
+            path: "xcshareddata/xcschemes/FoundationEvals.xcscheme")
+        let sourceURL = try #require(plan.changes.first {
+            $0.url.lastPathComponent == "IntentLabScenarioTests.swift"
+        }).url
+        let originalProject = try Data(contentsOf: projectURL)
+        let originalScheme = try Data(contentsOf: schemeURL)
+        let partial = Data("partial source".utf8)
+        #expect(throws: InjectedWriteFailure.self) {
+            try installer.apply(plan, writeChange: { data, url, options in
+                if url == sourceURL {
+                    try partial.write(to: url, options: .withoutOverwriting)
+                    throw InjectedWriteFailure()
+                }
+                try data.write(to: url, options: options)
+            })
+        }
+        let journalURL = fixture.root.appending(path: ".intent-lab-install-journal.json")
+        #expect(FileManager.default.fileExists(atPath: journalURL.path))
+        #expect(try Data(contentsOf: sourceURL) == partial)
+        #expect(try Data(contentsOf: projectURL) == originalProject)
+        #expect(try Data(contentsOf: schemeURL) == originalScheme)
+        #expect(throws: IntentLabProjectInstallerError.self) {
+            try installer.recover(projectURL: fixture.project)
+        }
+        #expect(FileManager.default.fileExists(atPath: journalURL.path))
+        try FileManager.default.removeItem(at: sourceURL)
+        _ = try installer.recover(projectURL: fixture.project)
+        #expect(!FileManager.default.fileExists(atPath: journalURL.path))
+    }
+
+    @Test func failedManualExportPreservesPartialFileAndRemovesExactEarlierOutput() throws {
+        struct InjectedWriteFailure: Error {}
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        try Data("name: Consumer".utf8).write(to: fixture.root.appending(path: "project.yml"))
+        let installer = IntentLabProjectInstaller()
+        let plan = try installer.preview(fixture.request())
+        #expect(!plan.supported)
+        let output = fixture.root.appending(path: "Review")
+        let partialURL = output.appending(path: "IntentLabIntegration.json")
+        let partial = Data("partial declaration".utf8)
+        #expect(throws: IntentLabProjectInstallerError.self) {
+            try installer.exportManualFiles(plan, to: output, writeFile: { data, url in
+                if url == partialURL {
+                    try partial.write(to: url, options: .withoutOverwriting)
+                    throw InjectedWriteFailure()
+                }
+                try data.write(to: url, options: .withoutOverwriting)
+            })
+        }
+        #expect(try Data(contentsOf: partialURL) == partial)
+        let earlier = try #require(plan.manualFiles.first).filename
+        #expect(!FileManager.default.fileExists(atPath: output.appending(path: earlier).path))
+        #expect(throws: IntentLabProjectInstallerError.self) {
+            try installer.exportManualFiles(plan, to: output)
+        }
+        #expect(try Data(contentsOf: partialURL) == partial)
     }
 
     @Test func generatorManagedProjectOffersManualPath() throws {

@@ -74,6 +74,12 @@ struct IntentLabDeviceDestination: Codable, Equatable, Identifiable, Sendable {
     var name: String
     var operatingSystemVersion: String?
     var available: Bool
+    var platform: IntentLabDestinationPlatform
+}
+
+enum IntentLabDestinationPlatform: String, Codable, Sendable {
+    case iOS = "com.apple.platform.iphoneos"
+    case macOS = "com.apple.platform.macosx"
 }
 
 struct XcodeDiscoveredProduct: Codable, Equatable, Identifiable, Sendable {
@@ -116,7 +122,7 @@ enum XcodeConnectionDiscoveryError: LocalizedError, Sendable {
         case .commandFailed(let detail): "Xcode project discovery failed: \(detail)"
         case .invalidOutput(let detail): "Xcode returned invalid discovery data: \(detail)"
         case .noSchemes: "The selected container has no shared schemes."
-        case .noApplication: "No iOS application target was found."
+        case .noApplication: "No application target was found."
         case .noUITestTarget: "No signed UI-test target was found. Add the Intent Lab harness to a UI-test target first."
         }
     }
@@ -335,14 +341,16 @@ struct XcodeConnectionDiscoveryService: Sendable {
         }
         return devices.compactMap { device in
             guard (device["simulator"] as? Bool) == false,
-                  device["platform"] as? String == "com.apple.platform.iphoneos",
+                  let platformName = device["platform"] as? String,
+                  let platform = IntentLabDestinationPlatform(rawValue: platformName),
                   let identifier = device["identifier"] as? String,
                   let name = device["name"] as? String else { return nil }
             return .init(
                 identifier: identifier,
                 name: name,
                 operatingSystemVersion: device["operatingSystemVersion"] as? String,
-                available: (device["available"] as? Bool) == true && (device["ignored"] as? Bool) != true
+                available: (device["available"] as? Bool) == true && (device["ignored"] as? Bool) != true,
+                platform: platform
             )
         }.sorted { ($0.available ? 0 : 1, $0.name) < ($1.available ? 0 : 1, $1.name) }
     }

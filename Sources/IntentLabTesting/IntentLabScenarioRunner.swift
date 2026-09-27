@@ -20,6 +20,8 @@ public enum IntentLabScenarioRunner {
             schemaVersion: 1,
             integration: identity,
             targetBundleIdentifier: declaration.targetBundleIdentifier,
+            projectIdentity: declaration.projectIdentity,
+            targetIdentity: declaration.targetIdentity,
             testBundleIdentifier: Bundle(for: type(of: testCase)).bundleIdentifier ?? "unknown",
             harnessProtocol: "intent-lab-v2",
             runnerPackageVersion: packageVersion,
@@ -476,6 +478,8 @@ private struct IntentLabConnectionReceipt: Encodable {
     var schemaVersion: Int
     var integration: IntentLabIntegrationIdentity
     var targetBundleIdentifier: String
+    var projectIdentity: String
+    var targetIdentity: String
     var testBundleIdentifier: String
     var harnessProtocol: String
     var runnerPackageVersion: String

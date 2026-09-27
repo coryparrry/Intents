@@ -2,6 +2,34 @@ import XCTest
 
 final class IntentLabGuidanceUITests: XCTestCase {
     @MainActor
+    func testUnavailableSavedDestinationHasPickerLabel() throws {
+        continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "intent-missing-device")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let intentLab = storage.appendingPathComponent("IntentLab", isDirectory: true)
+        try FileManager.default.createDirectory(at: intentLab, withIntermediateDirectories: true)
+        let configuration: [String: Any] = [
+            "containerPath": "", "isWorkspace": false, "scheme": "IntentLabFixture",
+            "testTarget": "IntentLabFixtureUITests", "testBundleIdentifier": "com.coryparry.IntentLabFixtureUITests",
+            "destinationIdentifier": "missing-device-for-ui-test", "generatedResourceDirectory": "",
+            "configuration": "Debug", "xcodebuildPath": "/usr/bin/xcodebuild", "xcresulttoolPath": "/usr/bin/xcrun"
+        ]
+        try JSONSerialization.data(withJSONObject: configuration).write(
+            to: intentLab.appendingPathComponent("execution-configuration.json")
+        )
+
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launch()
+        defer { app.terminate() }
+        app.typeKey("2", modifierFlags: .command)
+
+        let picker = app.popUpButtons["Run destination"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10))
+        XCTAssertEqual(picker.value as? String, "Saved destination unavailable")
+    }
+
+    @MainActor
     func testGuidanceAndNavigationFitAvailableWindow() throws {
         continueAfterFailure = false
         let app = XCUIApplication()

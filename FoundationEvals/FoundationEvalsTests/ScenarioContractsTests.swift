@@ -205,14 +205,21 @@ struct ScenarioContractsTests {
         let devices = Data("""
         [
           {"identifier":"phone-1","name":"Cory's iPhone","platform":"com.apple.platform.iphoneos","simulator":false,"available":true,"ignored":false,"operatingSystemVersion":"27.0"},
+          {"identifier":"mac-1","name":"This Mac","platform":"com.apple.platform.macosx","simulator":false,"available":true,"ignored":false,"operatingSystemVersion":"27.0"},
           {"identifier":"sim-1","name":"Simulator","platform":"com.apple.platform.iphonesimulator","simulator":true,"available":true}
         ]
         """.utf8)
         let physical = try XcodeConnectionDiscoveryService.parseDevices(devices)
-        #expect(physical == [.init(
-            identifier: "phone-1", name: "Cory's iPhone",
-            operatingSystemVersion: "27.0", available: true
-        )])
+        #expect(physical == [
+            .init(identifier: "phone-1", name: "Cory's iPhone",
+                  operatingSystemVersion: "27.0", available: true, platform: .iOS),
+            .init(identifier: "mac-1", name: "This Mac",
+                  operatingSystemVersion: "27.0", available: true, platform: .macOS),
+        ])
+        let macDestination = XcodeTestExecutor.destinationStatus(identifier: "mac-1", devices: physical)
+        #expect(macDestination.ready && macDestination.platform == .macOS)
+        #expect(macDestination.detail.contains("local Mac"))
+        #expect(!XcodeTestExecutor.destinationStatus(identifier: "sim-1", devices: physical).ready)
     }
 
     @Test func schemeTestActionConfigurationUsesSelectedOwnerAndPreservesDebug() throws {
@@ -332,6 +339,27 @@ struct ScenarioContractsTests {
         let json = String(decoding: data, as: UTF8.self)
         #expect(!json.contains("requiredClaims"))
         #expect(!json.contains("observationPlan"))
+    }
+
+    @Test func verifiedMacConnectionCanSatisfyLocalSigningGate() {
+        let configuration = XcodeTestConfiguration(
+            containerPath: "/tmp/App.xcodeproj", isWorkspace: false, scheme: "App",
+            testTarget: "AppUITests", testBundleIdentifier: "dev.example.AppUITests",
+            destinationIdentifier: "mac-1", generatedResourceDirectory: "/tmp",
+            applicationSigningConfigured: false, testSigningConfigured: false
+        )
+        #expect(XcodeTestExecutor.signingReady(
+            configuration: configuration, destinationPlatform: .macOS,
+            reusableConnectionVerified: true
+        ))
+        #expect(!XcodeTestExecutor.signingReady(
+            configuration: configuration, destinationPlatform: .macOS,
+            reusableConnectionVerified: false
+        ))
+        #expect(!XcodeTestExecutor.signingReady(
+            configuration: configuration, destinationPlatform: .iOS,
+            reusableConnectionVerified: true
+        ))
     }
 
     @Test func selectedDefinitionPersistsByIdentityAcrossRelaunch() async throws {
@@ -600,6 +628,9 @@ struct ScenarioContractsTests {
         #expect(output["displayName"] as? String == "Task ID")
         #expect(path.map { $0["kind"] as? String } == ["property", "index"])
         #expect((object["integration"] as? [String: Any])?["digest"] as? String == definition.integration?.digest)
+        let safety = try #require(object["safety"] as? [String: Any])
+        #expect(safety["mutationPolicy"] as? String == "readOnly")
+        #expect(safety["allowedActions"] == nil)
     }
 
     @Test func connectionReceiptRequiresOneBoundAttachment() throws {
@@ -608,6 +639,7 @@ struct ScenarioContractsTests {
         let receipt = ScenarioConnectionReceipt(
             schemaVersion: 1, integration: try #require(definition.integration),
             targetBundleIdentifier: definition.target.bundleIdentifier,
+            projectIdentity: "Tasks.xcodeproj", targetIdentity: "TasksUITests",
             testBundleIdentifier: "dev.example.TasksUITests", harnessProtocol: "intent-lab-v2",
             runnerPackageVersion: "0.2.0-dev", capabilities: ["direct-intent-execution", "environment-payload"],
             inspectedAt: Date()
@@ -631,6 +663,55 @@ struct ScenarioContractsTests {
         #expect(throws: XcodeTestExecutorError.self) {
             _ = try XcodeTestExecutor.connectionReceipt(in: root)
         }
+    }
+
+    @Test func compiledReceiptRejectsSameNameTargetFromAnotherProject() throws {
+        let root = try temporaryDirectory()
+        let first = root.appending(path: "First/Tasks.xcodeproj")
+        let second = root.appending(path: "Second/Tasks.xcodeproj")
+        let workspace = root.appending(path: "Combined.xcworkspace")
+        for directory in [first, second, workspace] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try Data("""
+        <Workspace version="1.0"><FileRef location="group:First/Tasks.xcodeproj"/>
+        <FileRef location="group:Second/Tasks.xcodeproj"/></Workspace>
+        """.utf8).write(to: workspace.appending(path: "contents.xcworkspacedata"))
+        let definition = try reusableBasicScenario()
+        var receipt = ScenarioConnectionReceipt(
+            schemaVersion: 1, integration: try #require(definition.integration),
+            targetBundleIdentifier: definition.target.bundleIdentifier,
+            projectIdentity: "First/Tasks.xcodeproj", targetIdentity: "TasksUITests",
+            testBundleIdentifier: "dev.example.TasksUITests", harnessProtocol: "intent-lab-v2",
+            runnerPackageVersion: "0.2.0-dev", capabilities: [], inspectedAt: Date()
+        )
+        var configuration = XcodeTestConfiguration(
+            containerPath: workspace.path,
+            isWorkspace: true, scheme: "Combined", testTarget: "TasksUITests",
+            testBundleIdentifier: "dev.example.TasksUITests", destinationIdentifier: "device",
+            generatedResourceDirectory: root.path
+        )
+        configuration.selectedTestProductID = "\(first.path)#FIRST-ID"
+        #expect(XcodeTestExecutor.receiptMatchesSelection(
+            receipt, configuration: configuration, selectedProjectURL: first
+        ))
+        receipt.projectIdentity = "Tasks.xcodeproj"
+        #expect(!XcodeTestExecutor.receiptMatchesSelection(
+            receipt, configuration: configuration, selectedProjectURL: first
+        ))
+        receipt.projectIdentity = "First/Tasks.xcodeproj"
+        configuration.selectedTestProductID = "\(second.path)#SECOND-ID"
+        #expect(!XcodeTestExecutor.receiptMatchesSelection(
+            receipt, configuration: configuration, selectedProjectURL: second
+        ))
+        #expect(!XcodeTestExecutor.receiptMatchesSelection(
+            receipt, configuration: configuration, selectedProjectURL: first
+        ))
+        configuration.selectedTestProductID = "\(first.path)#FIRST-ID"
+        configuration.testTarget = "OtherUITests"
+        #expect(!XcodeTestExecutor.receiptMatchesSelection(
+            receipt, configuration: configuration, selectedProjectURL: first
+        ))
     }
 
     @Test func connectionFingerprintChangesWithSigningAndPackageInputs() throws {
@@ -811,6 +892,7 @@ struct ScenarioContractsTests {
             receipt: .init(
                 schemaVersion: 1, integration: try #require(definition.integration),
                 targetBundleIdentifier: definition.target.bundleIdentifier,
+                projectIdentity: "Fixture.xcodeproj", targetIdentity: configuration.testTarget,
                 testBundleIdentifier: configuration.testBundleIdentifier,
                 harnessProtocol: ScenarioInvocationIdentity.reusableHarnessVersion,
                 runnerPackageVersion: "test", capabilities: [], inspectedAt: .now
@@ -1413,6 +1495,16 @@ struct ScenarioContractsTests {
         await #expect(throws: ScenarioPersistenceError.self) {
             _ = try await persistence.loadJournals()
         }
+        let executor = XcodeTestExecutor(
+            workDirectory: root.appending(path: "Executor"), persistence: persistence
+        )
+        let next = self.invocation(for: definition)
+        await #expect(throws: ScenarioPersistenceError.self) {
+            try await executor.persistPreparingJournal(
+                journal(for: definition, invocation: next, phase: .preparing)
+            )
+        }
+        #expect(await executor.reservation(for: next.destinationIdentifier) == nil)
 
         try await persistence.saveJournal(journal(
             for: definition, invocation: invocation, phase: .running

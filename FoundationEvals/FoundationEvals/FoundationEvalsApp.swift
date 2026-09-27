@@ -105,14 +105,14 @@ struct FoundationEvalsApp: App {
                     store.addCase()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
-                .disabled(store.isRunning || store.isProcessingFiles)
+                .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
 
                 Button("Add Reference Files…") {
                     store.selection = .suite
                     store.isImportingFiles = true
                 }
                 .keyboardShortcut("o", modifiers: [.command])
-                .disabled(store.isRunning || store.isProcessingFiles)
+                .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
 
                 Divider()
 

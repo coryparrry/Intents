@@ -613,13 +613,15 @@ struct MCPStoreAuthorityTests {
             ])
         ]))
         let protocolResponse = await MCPProtocolHandler(
-            authority: MCPStoreAuthority.make(store: store)
+            authority: MCPStoreAuthority.make(store: store),
+            credential: String(repeating: "A", count: 43)
         ).handle(MCPHTTPRequest(
             method: "POST",
             headers: [
                 "Host": "127.0.0.1:17873",
                 "Content-Type": "application/json",
-                "MCP-Protocol-Version": "2025-06-18"
+                "MCP-Protocol-Version": "2025-06-18",
+                "Authorization": "Bearer \(String(repeating: "A", count: 43))"
             ],
             body: requestBody
         ))

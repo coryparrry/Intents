@@ -345,8 +345,7 @@ struct IntentLabSetupInstallerView: View {
         }
         return .init(
             projectURL: URL(filePath: projectPath),
-            workspaceURL: coordinator.configuration.containerPath.hasSuffix(".xcworkspace")
-                ? URL(filePath: coordinator.configuration.containerPath) : nil,
+            workspaceURL: selectedWorkspaceURL,
             scheme: scheme,
             applicationTargetID: appTargetID,
             uiTestTargetID: uiTestTargetID.isEmpty ? nil : uiTestTargetID,
@@ -381,7 +380,8 @@ struct IntentLabSetupInstallerView: View {
             "id": "\(appBundleID).intentlab",
             "version": "1",
             "targetBundleIdentifier": appBundleID,
-            "projectIdentity": URL(filePath: projectPath).lastPathComponent,
+            "projectIdentity": IntentLabProjectInstaller.declarationProjectIdentity(
+                projectURL: URL(filePath: projectPath), workspaceURL: selectedWorkspaceURL),
             "targetIdentity": targetName,
             "supportedHarnessProtocols": ["intent-lab-v2"],
             "actions": [["id": intentIdentifier, "parameters": parameters]],
@@ -402,7 +402,7 @@ struct IntentLabSetupInstallerView: View {
         import XCTest
         import IntentLabTesting
 
-        @available(iOS 27.0, *)
+        @available(macOS 27.0, iOS 27.0, *)
         @MainActor
         final class IntentLabScenarioTests: XCTestCase {
             func testIntentLabScenario() throws {
@@ -414,4 +414,10 @@ struct IntentLabSetupInstallerView: View {
             }
         }
         """
+
+    private var selectedWorkspaceURL: URL? {
+        let containerPath = coordinator.configuration.containerPath
+        guard containerPath.hasSuffix(".xcworkspace") else { return nil }
+        return URL(filePath: containerPath)
+    }
 }

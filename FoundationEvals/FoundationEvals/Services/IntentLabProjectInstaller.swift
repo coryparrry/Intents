@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Darwin
 
 struct IntentLabInstallationRequest: Sendable {
     let projectURL: URL
@@ -101,6 +102,8 @@ struct IntentLabRemovalPreview: Sendable {
 enum IntentLabProjectInstallerError: LocalizedError {
     case unsupported(String)
     case conflict(URL)
+    case unreadableFile(URL)
+    case incompleteManualExport(URL)
     case unsafePath(URL)
     case interruptedTransaction(URL)
 
@@ -108,6 +111,8 @@ enum IntentLabProjectInstallerError: LocalizedError {
         switch self {
         case .unsupported(let reason): reason
         case .conflict(let url): "The project changed since preview: \(url.lastPathComponent). Refresh the preview."
+        case .unreadableFile(let url): "An existing file could not be read: \(url.path). Intent Lab will not treat it as missing or overwrite it. Check access and refresh the preview."
+        case .incompleteManualExport(let url): "A manual export stopped while writing \(url.path). Inspect that file before retrying; Intent Lab left its contents intact."
         case .unsafePath(let url): "The integration path is outside the selected project: \(url.path)."
         case .interruptedTransaction(let url): "An interrupted setup needs recovery before applying changes: \(url.path)."
         }
@@ -148,6 +153,19 @@ struct IntentLabProjectInstaller: Sendable {
                      targetIdentity: testTargetName, capabilities: capabilities, digest: digest(data))
     }
 
+    /// The receipt matcher resolves workspace identities relative to the workspace's
+    /// containing directory. A relative path keeps equal project basenames distinct.
+    static func declarationProjectIdentity(projectURL: URL, workspaceURL: URL?) -> String {
+        let project = projectURL.standardizedFileURL.resolvingSymlinksInPath()
+        guard let workspaceURL else { return project.lastPathComponent }
+        let base = workspaceURL.standardizedFileURL.resolvingSymlinksInPath().deletingLastPathComponent()
+        let targetParts = project.pathComponents
+        let baseParts = base.pathComponents
+        let shared = zip(targetParts, baseParts).prefix { $0 == $1 }.count
+        return (Array(repeating: "..", count: baseParts.count - shared)
+            + targetParts.dropFirst(shared)).joined(separator: "/")
+    }
+
     private struct JournalEntry: Codable {
         let path: String
         let before: Data?
@@ -157,6 +175,34 @@ struct IntentLabProjectInstaller: Sendable {
     private struct Journal: Codable {
         let entries: [JournalEntry]
         let workspacePath: String?
+    }
+
+    private enum AppPlatform: String {
+        case macOS
+        case iOS
+
+        var deploymentSetting: String {
+            switch self {
+            case .macOS: "MACOSX_DEPLOYMENT_TARGET"
+            case .iOS: "IPHONEOS_DEPLOYMENT_TARGET"
+            }
+        }
+
+        var sdkRoot: String {
+            switch self {
+            case .macOS: "macosx"
+            case .iOS: "auto"
+            }
+        }
+    }
+
+    private struct AppConfiguration {
+        let name: String
+        let platform: AppPlatform
+        let deployment: String
+        let bundleIdentifier: String
+        let developmentTeam: String?
+        let supportedPlatforms: String
     }
 
     static func inspect(projectURL: URL, workspaceURL: URL? = nil) throws -> IntentLabProjectInspection {
@@ -222,7 +268,9 @@ struct IntentLabProjectInstaller: Sendable {
             }
         }
         let pbxURL = project.appending(path: "project.pbxproj")
-        let existing = try Data(contentsOf: pbxURL)
+        guard let existing = try readableContents(at: pbxURL) else {
+            return manual(project, request: request, "The selected Xcode project has no project.pbxproj file.")
+        }
         var document = try OpenStepProjectDocument(existing)
         guard let declaration = try? JSONSerialization.jsonObject(with: request.declarationData) as? [String: Any],
               declaration["schemaVersion"] as? Int == 1,
@@ -272,14 +320,22 @@ struct IntentLabProjectInstaller: Sendable {
         guard !request.scheme.contains("/"), !request.scheme.contains("..") else {
             return manual(project, request: request, "Choose a shared scheme with a simple name.")
         }
-        let projectSchemeExists = FileManager.default.fileExists(atPath: projectSchemeURL.path)
-        let workspaceSchemeExists = workspaceSchemeURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+        let projectSchemeData: Data?
+        let workspaceSchemeData: Data?
+        do {
+            projectSchemeData = try readableContents(at: projectSchemeURL)
+            workspaceSchemeData = try workspaceSchemeURL.map { try readableContents(at: $0) } ?? nil
+        } catch let error as IntentLabProjectInstallerError {
+            return manual(project, request: request, error.localizedDescription)
+        }
+        let projectSchemeExists = projectSchemeData != nil
+        let workspaceSchemeExists = workspaceSchemeData != nil
         if projectSchemeExists && workspaceSchemeExists {
             return manual(project, request: request, "Both the workspace and owning project contain a shared scheme named \(request.scheme). Select or consolidate the scheme manually before installation.")
         }
         let schemeURL = workspaceSchemeExists ? workspaceSchemeURL! :
             (projectSchemeExists ? projectSchemeURL : workspaceSchemeURL ?? projectSchemeURL)
-        let schemeData = try? Data(contentsOf: schemeURL)
+        let schemeData = workspaceSchemeExists ? workspaceSchemeData : projectSchemeData
         if schemeData == nil, !created {
             return manual(project, request: request, "Share the selected scheme in Xcode before automatic setup.")
         }
@@ -304,8 +360,12 @@ struct IntentLabProjectInstaller: Sendable {
         }
         for (url, proposed) in [(sourceURL, Data(request.consumerSource.utf8)),
                                 (declarationURL, request.declarationData)] {
-            if let current = try? Data(contentsOf: url), current != proposed {
-                return manual(project, request: request, "The developer-owned \(url.lastPathComponent) differs from the proposed content. Review it manually; setup will not overwrite it.")
+            do {
+                if let current = try readableContents(at: url), current != proposed {
+                    return manual(project, request: request, "The developer-owned \(url.lastPathComponent) differs from the proposed content. Review it manually; setup will not overwrite it.")
+                }
+            } catch let error as IntentLabProjectInstallerError {
+                return manual(project, request: request, error.localizedDescription)
             }
         }
         let nextScheme: Data
@@ -341,10 +401,15 @@ struct IntentLabProjectInstaller: Sendable {
             (sourceURL, "Add the consumer-owned XCTest entry point", Data(request.consumerSource.utf8)),
             (declarationURL, "Add the integration declaration", request.declarationData),
         ]
-        let changes = candidates.compactMap { url, summary, proposed -> IntentLabInstallationChange? in
-            let previous = try? Data(contentsOf: url)
-            guard previous != proposed else { return nil }
-            return .init(url: url, summary: summary, previous: previous, proposed: proposed)
+        let changes: [IntentLabInstallationChange]
+        do {
+            changes = try candidates.compactMap { url, summary, proposed -> IntentLabInstallationChange? in
+                let previous = try readableContents(at: url)
+                guard previous != proposed else { return nil }
+                return .init(url: url, summary: summary, previous: previous, proposed: proposed)
+            }
+        } catch let error as IntentLabProjectInstallerError {
+            return manual(project, request: request, error.localizedDescription)
         }
         return .init(projectURL: project, workspaceURL: workspace, targetName: targetName, changes: changes,
                      manualSteps: [], supported: true,
@@ -352,17 +417,22 @@ struct IntentLabProjectInstaller: Sendable {
                      declarationDigest: Self.digest(request.declarationData), manualFiles: [])
     }
 
-    func apply(_ plan: IntentLabInstallationPlan) throws -> IntentLabInstallationReceipt {
+    func apply(
+        _ plan: IntentLabInstallationPlan,
+        writeChange: (Data, URL, Data.WritingOptions) throws -> Void = { data, url, options in
+            try data.write(to: url, options: options)
+        }
+    ) throws -> IntentLabInstallationReceipt {
         guard plan.supported else { throw IntentLabProjectInstallerError.unsupported(plan.manualSteps.joined(separator: " ")) }
         let projectRoot = plan.projectURL.deletingLastPathComponent()
         let journalURL = projectRoot.appending(path: ".intent-lab-install-journal.json")
         let roots = [projectRoot] + (plan.workspaceURL.map { [$0] } ?? [])
         try ensureSafe(plan.changes.map(\.url) + [journalURL], roots: roots)
-        guard !FileManager.default.fileExists(atPath: journalURL.path) else {
+        guard try readableContents(at: journalURL) == nil else {
             throw IntentLabProjectInstallerError.interruptedTransaction(journalURL)
         }
         for change in plan.changes {
-            guard (try? Data(contentsOf: change.url)) == change.previous else {
+            guard try readableContents(at: change.url) == change.previous else {
                 throw IntentLabProjectInstallerError.conflict(change.url)
             }
         }
@@ -371,22 +441,49 @@ struct IntentLabProjectInstaller: Sendable {
         let journal = Journal(entries: plan.changes.map {
             .init(path: $0.url.path, before: $0.previous, after: $0.proposed)
         }, workspacePath: plan.workspaceURL?.path)
-        try JSONEncoder().encode(journal).write(to: journalURL, options: .atomic)
+        try JSONEncoder().encode(journal).write(to: journalURL, options: .withoutOverwriting)
+        var written: [IntentLabInstallationChange] = []
+        var attemptedChange: IntentLabInstallationChange?
         do {
             for change in plan.changes {
                 try ensureSafe([change.url], roots: roots)
-                guard (try? Data(contentsOf: change.url)) == change.previous else {
+                guard try readableContents(at: change.url) == change.previous else {
                     throw IntentLabProjectInstallerError.conflict(change.url)
                 }
                 try FileManager.default.createDirectory(at: change.url.deletingLastPathComponent(),
                                                         withIntermediateDirectories: true)
-                try change.proposed.write(to: change.url, options: .atomic)
+                attemptedChange = change
+                try writeChange(change.proposed, change.url,
+                                change.previous == nil ? .withoutOverwriting : .atomic)
+                written.append(change)
+                attemptedChange = nil
             }
             try FileManager.default.removeItem(at: journalURL)
             return .init(changedFiles: plan.changes.map(\.url), alreadyInstalled: false,
                          journalURL: nil, declarationDigest: plan.declarationDigest)
         } catch {
-            _ = try? recover(projectURL: plan.projectURL, workspaceURL: plan.workspaceURL)
+            var rollbackConflict = false
+            for change in (written + (attemptedChange.map { [$0] } ?? [])).reversed() {
+                do {
+                    let current = try readableContents(at: change.url)
+                    if current == change.previous { continue }
+                    guard current == change.proposed else {
+                        // A failed exclusive write may have left partial bytes, or
+                        // another process may have created the file. Keep the journal
+                        // so neither case is silently treated as rolled back.
+                        rollbackConflict = true
+                        continue
+                    }
+                    if let previous = change.previous {
+                        try previous.write(to: change.url, options: .atomic)
+                    } else {
+                        try FileManager.default.removeItem(at: change.url)
+                    }
+                } catch {
+                    rollbackConflict = true
+                }
+            }
+            if !rollbackConflict { try? FileManager.default.removeItem(at: journalURL) }
             throw error
         }
     }
@@ -407,7 +504,7 @@ struct IntentLabProjectInstaller: Sendable {
         var conflicts: [URL] = []
         for entry in journal.entries.reversed() {
             let url = URL(fileURLWithPath: entry.path)
-            let current = try? Data(contentsOf: url)
+            let current = try readableContents(at: url)
             if current == entry.after {
                 if let before = entry.before { try before.write(to: url, options: .atomic) }
                 else { try FileManager.default.removeItem(at: url) }
@@ -432,7 +529,13 @@ struct IntentLabProjectInstaller: Sendable {
 
     /// Exports the same reviewable entry point and declaration shown in an
     /// unsupported-project preview. Existing differing files cause a conflict.
-    func exportManualFiles(_ plan: IntentLabInstallationPlan, to directory: URL) throws -> [URL] {
+    func exportManualFiles(
+        _ plan: IntentLabInstallationPlan,
+        to directory: URL,
+        writeFile: (Data, URL) throws -> Void = { data, url in
+            try data.write(to: url, options: .withoutOverwriting)
+        }
+    ) throws -> [URL] {
         guard !plan.supported, !plan.manualFiles.isEmpty else {
             throw IntentLabProjectInstallerError.unsupported("There are no manual integration files to export.")
         }
@@ -441,24 +544,26 @@ struct IntentLabProjectInstaller: Sendable {
         let files = plan.manualFiles.map { ($0, destination.appending(path: $0.filename)) }
         try ensureSafe(files.map(\.1), root: destination)
         for (file, url) in files {
-            if let previous = try? Data(contentsOf: url), previous != file.data {
+            if let previous = try readableContents(at: url), previous != file.data {
                 throw IntentLabProjectInstallerError.conflict(url)
             }
         }
         var created: [(URL, Data)] = []
         do {
             for (file, url) in files {
-                if let current = try? Data(contentsOf: url) {
+                if let current = try readableContents(at: url) {
                     guard current == file.data else { throw IntentLabProjectInstallerError.conflict(url) }
                     continue
                 }
                 do {
                     // withoutOverwriting uses exclusive creation; a concurrent
                     // developer write cannot be replaced after the preview check.
-                    try file.data.write(to: url, options: .withoutOverwriting)
+                    try writeFile(file.data, url)
                 } catch {
-                    if let current = try? Data(contentsOf: url) {
-                        guard current == file.data else { throw IntentLabProjectInstallerError.conflict(url) }
+                    if let current = try readableContents(at: url) {
+                        guard current == file.data else {
+                            throw IntentLabProjectInstallerError.incompleteManualExport(url)
+                        }
                         continue
                     }
                     throw error
@@ -466,8 +571,10 @@ struct IntentLabProjectInstaller: Sendable {
                 created.append((url, file.data))
             }
         } catch {
-            for (url, data) in created where (try? Data(contentsOf: url)) == data {
-                try? FileManager.default.removeItem(at: url)
+            for (url, data) in created {
+                if (try? readableContents(at: url)) == data {
+                    try? FileManager.default.removeItem(at: url)
+                }
             }
             throw error
         }
@@ -547,6 +654,22 @@ struct IntentLabProjectInstaller: Sendable {
             : "package \(request.packageURL.absoluteString) at revision \(request.packageRevision ?? "")"
     }
 
+    /// Returns nil only when the directory entry is proven absent. A present but
+    /// unreadable file must never be treated as a new destination.
+    private func readableContents(at url: URL) throws -> Data? {
+        var information = stat()
+        let result = url.path.withCString { lstat($0, &information) }
+        guard result == 0 else {
+            guard errno == ENOENT else { throw IntentLabProjectInstallerError.unreadableFile(url) }
+            return nil
+        }
+        do {
+            return try Data(contentsOf: url)
+        } catch {
+            throw IntentLabProjectInstallerError.unreadableFile(url)
+        }
+    }
+
     private func ensureSafe(_ urls: [URL], root: URL) throws {
         try ensureSafe(urls, roots: [root])
     }
@@ -590,7 +713,8 @@ struct IntentLabProjectInstaller: Sendable {
             guard (attributes.fileSize ?? 0) <= 512_000 else {
                 throw IntentLabProjectInstallerError.unsupported("A Swift source is too large for bounded entry-point inspection. Review it manually before installing another test class.")
             }
-            let source = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+            guard let data = try readableContents(at: url) else { continue }
+            let source = String(decoding: data, as: UTF8.self)
             if expression.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)) != nil {
                 return url
             }
@@ -790,6 +914,15 @@ struct IntentLabProjectInstaller: Sendable {
               let appList = objects[appListID],
               let configIDs = appList["buildConfigurations"] as? [String],
               !configIDs.isEmpty else { throw IntentLabProjectInstallerError.unsupported("Application build configurations are unavailable.") }
+        let configurations = try appConfigurations(appConfigIDs: configIDs,
+                                                    projectID: projectID,
+                                                    objects: objects)
+        guard let firstConfiguration = configurations.first,
+              configurations.allSatisfy({ $0.platform == firstConfiguration.platform }) else {
+            throw IntentLabProjectInstallerError.unsupported(
+                "The selected application uses more than one platform across its build configurations. Create the UI-test target manually so each configuration can match its platform."
+            )
+        }
         let productID = id("test-product", project)
         let groupID = id("source-group-\(targetName)", project)
         let sourcesID = id("sources", project)
@@ -797,26 +930,16 @@ struct IntentLabProjectInstaller: Sendable {
         let frameworksID = id("frameworks", project)
         let listID = id("configuration-list", project)
         let settingsIDs = configIDs.enumerated().map { id("configuration-\($0.offset)", project) }
-        let appBundleID = configIDs.compactMap { objects[$0]?["buildSettings"] as? [String: Any] }
-            .compactMap { $0["PRODUCT_BUNDLE_IDENTIFIER"] as? String }.first ?? "$(PRODUCT_BUNDLE_IDENTIFIER)"
-        let deployment = configIDs.compactMap { objects[$0]?["buildSettings"] as? [String: Any] }
-            .compactMap { $0["IPHONEOS_DEPLOYMENT_TARGET"] as? String }.first ?? "27.0"
-        let team = configIDs.compactMap { objects[$0]?["buildSettings"] as? [String: Any] }
-            .compactMap { $0["DEVELOPMENT_TEAM"] as? String }.first
         try doc.addObject(id: productID, value: "{isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = \(targetName).xctest; sourceTree = BUILT_PRODUCTS_DIR; }")
         try doc.addObject(id: sourcesID, value: "{isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; }")
         try doc.addObject(id: resourcesID, value: "{isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; }")
         try doc.addObject(id: frameworksID, value: "{isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; }")
-        let configPairs: [(String, String)] = zip(configIDs, settingsIDs).compactMap { oldID, newID in
-            guard let name = objects[oldID]?["name"] as? String else { return nil }
-            return (name, newID)
+        let configPairs = zip(configurations, settingsIDs).map { ($0.0, $0.1) }
+        for (configuration, configID) in configPairs {
+            let settings = "CODE_SIGN_STYLE = Automatic; \(configuration.developmentTeam.map { "DEVELOPMENT_TEAM = \(quoted($0)); " } ?? "")GENERATE_INFOPLIST_FILE = YES; \(configuration.platform.deploymentSetting) = \(quoted(configuration.deployment)); PRODUCT_BUNDLE_IDENTIFIER = \(quoted(configuration.bundleIdentifier + ".IntentLabUITests")); PRODUCT_NAME = \"$(TARGET_NAME)\"; SDKROOT = \(configuration.platform.sdkRoot); SUPPORTED_PLATFORMS = \(quoted(configuration.supportedPlatforms)); SWIFT_VERSION = 6.0; TEST_TARGET_NAME = \(quoted(appName));"
+            try doc.addObject(id: configID, value: "{isa = XCBuildConfiguration; buildSettings = {\(settings)}; name = \(quoted(configuration.name)); }")
         }
-        guard configPairs.count == configIDs.count else { throw IntentLabProjectInstallerError.unsupported("Unnamed build configuration.") }
-        for (name, configID) in configPairs {
-            let settings = "CODE_SIGN_STYLE = Automatic; \(team.map { "DEVELOPMENT_TEAM = \(quoted($0)); " } ?? "")GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = \(quoted(deployment)); PRODUCT_BUNDLE_IDENTIFIER = \(quoted(appBundleID + ".IntentLabUITests")); PRODUCT_NAME = \"$(TARGET_NAME)\"; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = \(quoted(appName));"
-            try doc.addObject(id: configID, value: "{isa = XCBuildConfiguration; buildSettings = {\(settings)}; name = \(quoted(name)); }")
-        }
-        try doc.addObject(id: listID, value: "{isa = XCConfigurationList; buildConfigurations = (\(settingsIDs.joined(separator: ", ")),); defaultConfigurationName = \(quoted(configPairs.first!.0)); }")
+        try doc.addObject(id: listID, value: "{isa = XCConfigurationList; buildConfigurations = (\(settingsIDs.joined(separator: ", ")),); defaultConfigurationName = \(quoted(firstConfiguration.name)); }")
         if supportsSynchronizedGroups {
             try doc.addObject(id: groupID, value: "{isa = PBXFileSystemSynchronizedRootGroup; path = \(quoted("IntentLabIntegration/\(targetName)")); sourceTree = \"<group>\"; }")
         }
@@ -829,6 +952,96 @@ struct IntentLabProjectInstaller: Sendable {
         }
         // Signing is inherited only where the app explicitly exposes a team. The
         // installer does not modify the app's own signing or configurations.
+    }
+
+    private func appConfigurations(appConfigIDs: [String], projectID: String,
+                                    objects: [String: [String: Any]]) throws -> [AppConfiguration] {
+        guard let project = objects[projectID],
+              let projectListID = project["buildConfigurationList"] as? String,
+              let projectConfigIDs = objects[projectListID]?["buildConfigurations"] as? [String] else {
+            throw IntentLabProjectInstallerError.unsupported("Project build configurations are unavailable, so the app platform cannot be derived safely.")
+        }
+        var projectSettingsByName: [String: [String: Any]] = [:]
+        for configID in projectConfigIDs {
+            guard let object = objects[configID], let name = object["name"] as? String else { continue }
+            projectSettingsByName[name] = object["buildSettings"] as? [String: Any] ?? [:]
+        }
+        return try appConfigIDs.map { configID in
+            guard let object = objects[configID], let name = object["name"] as? String else {
+                throw IntentLabProjectInstallerError.unsupported("The application has an unnamed build configuration.")
+            }
+            let targetSettings = object["buildSettings"] as? [String: Any] ?? [:]
+            let inherited = projectSettingsByName[name] ?? [:]
+            let sdkRoot = resolvedSetting("SDKROOT", target: targetSettings, inherited: inherited)
+            let rawPlatforms = resolvedSetting("SUPPORTED_PLATFORMS", target: targetSettings, inherited: inherited)
+            if [sdkRoot, rawPlatforms].compactMap({ $0 }).contains(where: { $0.contains("$(") }) {
+                throw IntentLabProjectInstallerError.unsupported(
+                    "The selected application's SDK or supported platforms use unresolved build-setting expressions. Set SDKROOT and SUPPORTED_PLATFORMS directly before generating a UI-test target."
+                )
+            }
+            var supported = Set((rawPlatforms ?? "").split(whereSeparator: \.isWhitespace).map(String.init))
+            if supported.isEmpty {
+                switch sdkRoot {
+                case "macosx": supported = ["macosx"]
+                case "iphoneos": supported = ["iphoneos", "iphonesimulator"]
+                default: break
+                }
+            }
+            let platform: AppPlatform
+            if supported == ["macosx"] {
+                platform = .macOS
+                guard sdkRoot == nil || ["auto", "macosx"].contains(sdkRoot!) else {
+                    throw unsupportedAppPlatform(supported, sdkRoot: sdkRoot)
+                }
+            } else if !supported.isEmpty && supported.isSubset(of: ["iphoneos", "iphonesimulator"]) {
+                platform = .iOS
+                guard sdkRoot == nil || ["auto", "iphoneos", "iphonesimulator"].contains(sdkRoot!) else {
+                    throw unsupportedAppPlatform(supported, sdkRoot: sdkRoot)
+                }
+            } else {
+                throw unsupportedAppPlatform(supported, sdkRoot: sdkRoot)
+            }
+            guard let deployment = resolvedSetting(platform.deploymentSetting,
+                                                   target: targetSettings, inherited: inherited),
+                  deployment.range(of: #"^\d+(?:\.\d+){0,2}$"#, options: .regularExpression) != nil else {
+                throw IntentLabProjectInstallerError.unsupported(
+                    "The selected application's \(platform.deploymentSetting) is missing or unresolved. Set that deployment target directly before generating a UI-test target."
+                )
+            }
+            guard let bundleIdentifier = resolvedSetting("PRODUCT_BUNDLE_IDENTIFIER",
+                                                          target: targetSettings, inherited: inherited),
+                  !bundleIdentifier.isEmpty, !bundleIdentifier.contains("$(") else {
+                throw IntentLabProjectInstallerError.unsupported(
+                    "The selected application's PRODUCT_BUNDLE_IDENTIFIER is missing or unresolved. Set it directly before generating a UI-test target."
+                )
+            }
+            let canonicalPlatforms = platform == .macOS
+                ? "macosx"
+                : ["iphoneos", "iphonesimulator"].filter(supported.contains).joined(separator: " ")
+            return .init(name: name, platform: platform, deployment: deployment,
+                         bundleIdentifier: bundleIdentifier,
+                         developmentTeam: resolvedSetting("DEVELOPMENT_TEAM", target: targetSettings,
+                                                          inherited: inherited),
+                         supportedPlatforms: canonicalPlatforms)
+        }
+    }
+
+    private func resolvedSetting(_ key: String, target: [String: Any],
+                                 inherited: [String: Any]) -> String? {
+        let targetValue = target[key] as? String
+        let inheritedValue = inherited[key] as? String
+        guard let targetValue else { return inheritedValue }
+        guard targetValue.contains("$(inherited)") else { return targetValue }
+        return targetValue.replacingOccurrences(of: "$(inherited)", with: inheritedValue ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func unsupportedAppPlatform(_ supported: Set<String>, sdkRoot: String?) -> IntentLabProjectInstallerError {
+        let platformNames = supported.sorted().joined(separator: ", ")
+        let sdkDescription = sdkRoot.map { " with SDKROOT \($0)" } ?? ""
+        return .unsupported(
+            "The generated UI-test target supports iOS and macOS apps. The selected application's platform settings (\(platformNames.isEmpty ? "unresolved" : platformNames))\(sdkDescription) are not supported; configure a matching UI-test target manually."
+        )
     }
 
     private func scheme(existing: Data?, project: URL, scheme: String, appID: String,

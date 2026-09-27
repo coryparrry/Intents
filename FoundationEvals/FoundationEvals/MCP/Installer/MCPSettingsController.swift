@@ -57,8 +57,10 @@ final class MCPSettingsController {
 
     private let serverControl: MCPServerControl
     private let installer: CodexMCPInstaller
+    private let credentialStore: MCPCredentialStore
     private let userDefaults: UserDefaults
     private var needsFixedPortMigration: Bool
+    private var runningConfiguration: CodexMCPConfiguration?
 
     private(set) var serverState: MCPConnectorServerState = .stopped
     private(set) var installationState: CodexMCPInstallationState = .notConfigured
@@ -69,11 +71,13 @@ final class MCPSettingsController {
     init(
         serverControl: MCPServerControl,
         userDefaults: UserDefaults = .standard,
-        installer: CodexMCPInstaller = CodexMCPInstaller()
+        installer: CodexMCPInstaller = CodexMCPInstaller(),
+        credentialStore: MCPCredentialStore = .keychain
     ) {
         self.serverControl = serverControl
         self.userDefaults = userDefaults
         self.installer = installer
+        self.credentialStore = credentialStore
         let legacyPort = userDefaults.integer(forKey: Self.legacyPortKey)
         needsFixedPortMigration = (1_024...65_535).contains(legacyPort)
             && legacyPort != CodexMCPConfiguration.defaultPort
@@ -89,7 +93,7 @@ final class MCPSettingsController {
     }
 
     func startServer() async {
-        guard !isBusy, serverState != .running else { return }
+        guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         do {
@@ -138,6 +142,10 @@ final class MCPSettingsController {
         defer { isBusy = false }
         do {
             let receipt = try installer.remove(from: codexConfigurationDirectory)
+            try await serverControl.stop()
+            serverState = .stopped
+            runningConfiguration = nil
+            try credentialStore.remove()
             needsFixedPortMigration = false
             userDefaults.removeObject(forKey: Self.legacyPortKey)
             installationState = .notConfigured
@@ -171,14 +179,24 @@ final class MCPSettingsController {
     func recordServerFailure(_ error: MCPServerError) {
         guard serverState == .starting || serverState == .running else { return }
         serverState = .failed
+        runningConfiguration = nil
         notice = safeDescription(for: error)
     }
 
     func refreshInstallationState() {
         do {
-            let detectedState: CodexMCPInstallationState = try installer.isInstalled(
-                in: codexConfigurationDirectory
-            ) ? .installed : .notConfigured
+            let detectedState: CodexMCPInstallationState
+            if try installer.isInstalled(in: codexConfigurationDirectory) {
+                if let credential = try credentialStore.load(),
+                   let configuration = try? CodexMCPConfiguration(credential: credential),
+                   try installer.isInstalled(in: codexConfigurationDirectory, matching: configuration) {
+                    detectedState = .installed
+                } else {
+                    detectedState = .needsAttention
+                }
+            } else {
+                detectedState = .notConfigured
+            }
             installationState = needsFixedPortMigration && detectedState == .installed
                 ? .needsAttention
                 : detectedState
@@ -188,17 +206,33 @@ final class MCPSettingsController {
     }
 
     private func currentConfiguration() throws -> CodexMCPConfiguration {
-        try CodexMCPConfiguration(port: CodexMCPConfiguration.defaultPort)
+        try CodexMCPConfiguration(
+            port: CodexMCPConfiguration.defaultPort,
+            credential: credentialStore.loadOrCreate()
+        )
     }
 
     private func startServer(using configuration: CodexMCPConfiguration) async throws {
-        guard serverState != .running else { return }
+        if serverState == .running {
+            guard runningConfiguration != configuration else { return }
+            serverState = .stopping
+            do {
+                try await serverControl.stop()
+            } catch {
+                serverState = .running
+                throw error
+            }
+            serverState = .stopped
+            runningConfiguration = nil
+        }
         serverState = .starting
         do {
             try await serverControl.start(configuration)
             serverState = .running
+            runningConfiguration = configuration
         } catch {
             serverState = .failed
+            runningConfiguration = nil
             throw error
         }
     }
@@ -219,6 +253,8 @@ final class MCPSettingsController {
         case let error as CodexMCPInstallerError:
             error.localizedDescription
         case let error as MCPServerError:
+            error.localizedDescription
+        case let error as MCPCredentialError:
             error.localizedDescription
         default:
             "The MCP configuration could not be changed safely."

@@ -73,7 +73,7 @@ enum XCTestRunInvocationTransport {
             var required: Bool
             var applicableLanes: Set<ScenarioLane>?
         }
-        struct Safety: Encodable { var deadlineSeconds: Double }
+        struct Safety: Encodable { var deadlineSeconds: Double; var mutationPolicy: ScenarioMutationPolicy }
 
         var schemaVersion: Int
         var id: UUID
@@ -115,7 +115,8 @@ enum XCTestRunInvocationTransport {
                       applicableLanes: $0.applicableLanes)
             }
             coverage = definition.coverage
-            safety = .init(deadlineSeconds: definition.safety.deadlineSeconds)
+            safety = .init(deadlineSeconds: definition.safety.deadlineSeconds,
+                           mutationPolicy: definition.safety.mutationPolicy)
             purpose = definition.purpose
             checkMode = definition.checkMode
             requiredClaims = definition.requiredClaims

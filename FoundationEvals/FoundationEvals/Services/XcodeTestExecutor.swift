@@ -87,6 +87,8 @@ struct ScenarioConnectionReceipt: Codable, Equatable, Sendable {
     var schemaVersion: Int
     var integration: ScenarioIntegrationIdentity
     var targetBundleIdentifier: String
+    var projectIdentity: String
+    var targetIdentity: String
     var testBundleIdentifier: String
     var harnessProtocol: String
     var runnerPackageVersion: String
@@ -311,6 +313,8 @@ actor XcodeTestExecutor {
     }
 
     func persistPreparingJournal(_ journal: ScenarioExecutionJournal) async throws {
+        // Corrupt prior journals may hide an unresolved attempt.
+        _ = try await persistence.loadJournals()
         let destination = journal.invocation.destinationIdentifier
         let reservation = ScenarioDeviceReservation.reserved(invocationID: journal.id)
         reservations[destination] = reservation
@@ -420,9 +424,14 @@ actor XcodeTestExecutor {
                 ? "Build and run IntentLabScenarioTests/testIntentLabConnection to verify the \(expectedHarnessVersion) consumer and selected products."
                 : "Add INTENT_LAB_HARNESS_VERSION=\(expectedHarnessVersion) to the UI-test target, then include IntentLabScenarioTests/testIntentLabScenario."
         )
-        check("signing", "Device signing",
-              configuration.applicationSigningConfigured == true && configuration.testSigningConfigured == true,
-              "Set a development team for this run or configure both the app and UI-test targets in Xcode Signing & Capabilities.")
+        let destination = physicalDestination(configuration.destinationIdentifier)
+        check("signing", "Signing and test execution",
+              Self.signingReady(configuration: configuration,
+                                destinationPlatform: destination.platform,
+                                reusableConnectionVerified: isReusable && connection != nil),
+              destination.platform == .macOS
+                ? "Set a development team, or complete the Mac connection test to verify local test execution."
+                : "Set a development team for both the app and UI-test targets in Xcode Signing & Capabilities.")
         if isReusable {
             for capability in ScenarioHarnessCapabilities.required(for: definition).sorted() {
                 check("capability.\(capability)", capability,
@@ -441,8 +450,7 @@ actor XcodeTestExecutor {
             check("intentOutputCapability", "Intent output", discoveredCapabilities.contains("direct-intent-output"),
                   "Capture direct App Intent output fields and declare direct-intent-output.")
         }
-        let destination = physicalDestination(configuration.destinationIdentifier)
-        check("destination", "Physical destination", destination.ready, destination.detail)
+        check("destination", "Execution destination", destination.ready, destination.detail)
 
         let definitionIssues = ScenarioValidator.issues(in: definition, requireFrozenDigest: true)
         let definitionReady = !definitionIssues.contains { $0.severity == .error }
@@ -626,6 +634,8 @@ actor XcodeTestExecutor {
         let receipt = connection.receipt
         guard connection.configuration == configuration,
               receipt.schemaVersion == 1,
+              Self.receiptMatchesSelection(receipt, configuration: configuration,
+                                           selectedProjectURL: connection.selectedTestProjectURL),
               receipt.integration == definition.integration,
               receipt.targetBundleIdentifier == definition.target.bundleIdentifier,
               receipt.testBundleIdentifier == connection.testProduct.bundleIdentifier,
@@ -667,6 +677,35 @@ actor XcodeTestExecutor {
               let declaration = try? Data(contentsOf: connection.testBundleURL.appending(path: "IntentLabIntegration.json")),
               SHA256.hash(data: declaration).map({ String(format: "%02x", $0) }).joined()
                 == definition.integration?.digest else { return false }
+        return true
+    }
+
+    static func receiptMatchesSelection(
+        _ receipt: ScenarioConnectionReceipt,
+        configuration: XcodeTestConfiguration,
+        selectedProjectURL: URL
+    ) -> Bool {
+        let project = selectedProjectURL.standardizedFileURL
+        guard let selectedID = configuration.selectedTestProductID,
+              let separator = selectedID.lastIndex(of: "#"),
+              !selectedID[selectedID.index(after: separator)...].isEmpty,
+              URL(filePath: String(selectedID[..<separator])).standardizedFileURL.path == project.path,
+              receipt.targetIdentity == configuration.testTarget else { return false }
+        let declaredProject = receipt.projectIdentity
+        guard !declaredProject.isEmpty, !declaredProject.hasPrefix("/") else { return false }
+        let container = URL(filePath: configuration.containerPath).standardizedFileURL
+        if declaredProject.contains("/") {
+            return URL(filePath: declaredProject, relativeTo: container.deletingLastPathComponent())
+                .standardizedFileURL.path == project.path
+        }
+        guard declaredProject == project.lastPathComponent else { return false }
+        if configuration.isWorkspace {
+            guard let projects = try? XcodeConnectionDiscoveryService.workspaceProjectURLs(workspace: container),
+                  projects.filter({ $0.lastPathComponent == declaredProject }).count == 1,
+                  projects.contains(where: { $0.standardizedFileURL.path == project.path }) else { return false }
+        } else if container.path != project.path {
+            return false
+        }
         return true
     }
 
@@ -1207,24 +1246,44 @@ actor XcodeTestExecutor {
         }
     }
 
-    private func physicalDestination(_ identifier: String) -> (ready: Bool, detail: String) {
+    private func physicalDestination(_ identifier: String) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?) {
         let requested = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requested.isEmpty else {
-            return (false, "Choose an enrolled physical iPhone destination identifier.")
+            return (false, "Choose an available Mac or paired physical iPhone.", nil)
         }
         let devices: [IntentLabDeviceDestination]
         do {
             devices = try XcodeConnectionDiscoveryService().discoverDevices()
         } catch {
-            return (false, "Xcode device discovery failed: \(error.localizedDescription)")
+            return (false, "Xcode device discovery failed: \(error.localizedDescription)", nil)
         }
-        guard let device = devices.first(where: { $0.identifier == requested }) else {
-            return (false, "Xcode did not report the selected identifier as an available device.")
+        return Self.destinationStatus(identifier: requested, devices: devices)
+    }
+
+    static func destinationStatus(
+        identifier: String,
+        devices: [IntentLabDeviceDestination]
+    ) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?) {
+        guard let device = devices.first(where: { $0.identifier == identifier }) else {
+            return (false, "Xcode did not report the selected destination as available.", nil)
         }
         guard device.available else {
-            return (false, "\(device.name) is not an available paired physical iPhone.")
+            return (false, "\(device.name) is unavailable in Xcode.", device.platform)
         }
-        return (true, "\(device.name) is reported by Xcode as an available physical iPhone.")
+        let detail = device.platform == .macOS
+            ? "\(device.name) is available as the local Mac test destination."
+            : "\(device.name) is reported by Xcode as an available physical iPhone."
+        return (true, detail, device.platform)
+    }
+
+    static func signingReady(
+        configuration: XcodeTestConfiguration,
+        destinationPlatform: IntentLabDestinationPlatform?,
+        reusableConnectionVerified: Bool
+    ) -> Bool {
+        (configuration.applicationSigningConfigured == true
+            && configuration.testSigningConfigured == true)
+            || (destinationPlatform == .macOS && reusableConnectionVerified)
     }
 
     static func xcodeArguments(

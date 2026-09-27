@@ -51,8 +51,8 @@ struct AppleTestConnectionView: View {
 
     private var connectionCard: some View {
         IntentLabCard(
-            "Connect an iPhone",
-            subtitle: "Choose the app project and a paired iPhone. Intent Lab discovers the Xcode details for you."
+            "Connect an app",
+            subtitle: "Choose the app project and an available Mac or paired iPhone. Intent Lab discovers the Xcode details for you."
         ) {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 7) {
@@ -78,12 +78,17 @@ struct AppleTestConnectionView: View {
                 }
 
                 connectionField(
-                    title: "Choose connected iPhone",
+                    title: "Choose run destination",
                     detail: selectedDeviceDetail
                 ) {
                     HStack(spacing: 8) {
-                        Picker("Connected iPhone", selection: $coordinator.configuration.destinationIdentifier) {
-                            Text("Choose iPhone").tag("")
+                        Picker("Run destination", selection: $coordinator.configuration.destinationIdentifier) {
+                            Text("Choose destination").tag("")
+                            if !coordinator.configuration.destinationIdentifier.isEmpty,
+                               selectedDeviceName == nil {
+                                Text("Saved destination unavailable")
+                                    .tag(coordinator.configuration.destinationIdentifier)
+                            }
                             ForEach(coordinator.discoveredDevices) { device in
                                 Text(device.available ? device.name : "\(device.name) — unavailable")
                                     .tag(device.identifier)
@@ -96,7 +101,7 @@ struct AppleTestConnectionView: View {
                             Task { await coordinator.refreshDevices() }
                         }
                         .labelStyle(.iconOnly)
-                        .help("Refresh connected iPhones")
+                        .help("Refresh available destinations")
                     }
                 }
 
@@ -133,7 +138,7 @@ struct AppleTestConnectionView: View {
 
                 connectionField(
                     title: "Run",
-                    detail: "Keep the iPhone unlocked and approve any intent or Siri access prompt on the device. Then use Run scenario in the toolbar."
+                    detail: runDetail
                 ) {
                     Image(systemName: coordinator.preflight?.isReady == true ? "play.circle.fill" : "play.circle")
                         .font(.title2)
@@ -204,7 +209,7 @@ struct AppleTestConnectionView: View {
                         set: { coordinator.configuration.testBundleIdentifier = $0; coordinator.invalidatePreflight() }
                     ))
                 }
-                advancedRow("Device identifier", help: "The unique ID of the paired physical iPhone used for this run. Choosing a phone in Connection fills this in.") {
+                advancedRow("Destination identifier", help: "The unique ID of the Mac or paired iPhone used for this run. Choosing a destination in Connection fills this in.") {
                     TextField("000081…", text: Binding(
                         get: { coordinator.configuration.destinationIdentifier },
                         set: { coordinator.configuration.destinationIdentifier = $0; coordinator.invalidatePreflight() }
@@ -297,7 +302,7 @@ struct AppleTestConnectionView: View {
         if let report = coordinator.preflight {
             VStack(alignment: .leading, spacing: 8) {
                 Label(
-                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "iPhone")" : "Connection needs attention",
+                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "selected destination")" : "Connection needs attention",
                     systemImage: report.isReady ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
                 )
                 .foregroundStyle(report.isReady ? .green : .orange)
@@ -364,13 +369,25 @@ struct AppleTestConnectionView: View {
         return URL(filePath: coordinator.configuration.containerPath).lastPathComponent
     }
 
-    private var selectedDeviceName: String? {
-        coordinator.discoveredDevices.first { $0.identifier == coordinator.configuration.destinationIdentifier }?.name
+    private var selectedDevice: IntentLabDeviceDestination? {
+        coordinator.discoveredDevices.first { $0.identifier == coordinator.configuration.destinationIdentifier }
+    }
+
+    private var selectedDeviceName: String? { selectedDevice?.name }
+
+    private var runDetail: String {
+        guard let selectedDevice else {
+            return "Choose an available Mac or paired iPhone before running a scenario."
+        }
+        if selectedDevice.platform == .macOS {
+            return "Keep this Mac available and approve any intent or Siri access prompt. Then use Run scenario in the toolbar."
+        }
+        return "Keep the iPhone unlocked and approve any intent or Siri access prompt on the device. Then use Run scenario in the toolbar."
     }
 
     private var selectedDeviceDetail: String {
-        guard !coordinator.configuration.destinationIdentifier.isEmpty else { return "Select an available paired physical iPhone." }
-        return selectedDeviceName ?? "The saved iPhone is not currently available."
+        guard !coordinator.configuration.destinationIdentifier.isEmpty else { return "Select an available Mac or paired physical iPhone." }
+        return selectedDeviceName ?? "The saved destination is not currently available."
     }
 
     private var approvalDetail: String {
@@ -392,13 +409,13 @@ private enum IntentConnectionPage: String, WorkspacePane {
     }
     var subtitle: String {
         switch self {
-        case .connection: "App project & connected iPhone"
+        case .connection: "App project & run destination"
         case .advanced: "Xcode & device configuration"
         case .harness: "Required test support & evidence"
         }
     }
     var symbol: String {
-        switch self { case .connection: "iphone"; case .advanced: "slider.horizontal.3"; case .harness: "checkmark.shield" }
+        switch self { case .connection: "laptopcomputer.and.iphone"; case .advanced: "slider.horizontal.3"; case .harness: "checkmark.shield" }
     }
     var tint: Color {
         switch self { case .connection: .blue; case .advanced: .gray; case .harness: .green }
