@@ -18,7 +18,7 @@ final class FoundationEvalsUITests: XCTestCase {
         app.typeKey("2", modifierFlags: .command)
 
         XCTAssertTrue(app.staticTexts["Intent Lab"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Connect an iPhone"].exists)
+        XCTAssertTrue(app.staticTexts["Connect an app"].exists)
         XCTAssertTrue(app.buttons["Choose Project…"].exists)
 
         app.radioButtons["Scenario"].click()
