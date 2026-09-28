@@ -102,9 +102,10 @@ struct EditorPerformanceTests {
     }
 
     private func waitForSave(_ store: EvaluationStore) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        // The full CI run schedules hundreds of tests; allow the MainActor debounce task time to run.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(45))
         while store.isDraftSavePending && ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(20))
+            try await Task.sleep(for: .milliseconds(100))
         }
         #expect(!store.isDraftSavePending)
     }

@@ -45,7 +45,7 @@ struct ScenarioAcceptanceTests {
         #expect(stored.acceptanceStatus == .pending)
         #expect(ScenarioReleaseCheckEvaluator.report(definition: definition, run: stored)
             .failures.contains { $0.contains("acceptance receipt") })
-        try await assertMCPRejects(runID: run.id, root: root)
+        try await assertMCPRejectsUnreadableJournal(runID: run.id, root: root)
     }
 
     @Test func receiptNeedsValidatedJournalAndBindsImmutableRunBytes() async throws {
@@ -113,6 +113,19 @@ struct ScenarioAcceptanceTests {
         let output = try result.structuredContent.jsonText()
         #expect(output.contains("acceptance receipt"))
         #expect(output.contains("incompleteOrIncompatibleEvidence"))
+    }
+
+    @MainActor
+    private func assertMCPRejectsUnreadableJournal(runID: UUID, root: URL) async throws {
+        let store = EvaluationStore(supportDirectory: root.deletingLastPathComponent())
+        let result = await MCPStoreAuthority.make(store: store).call(
+            .getScenarioReport(.init(runID: runID))
+        )
+        #expect(result.isError)
+        let output = try result.structuredContent.jsonText()
+        #expect(output.contains("\"code\":\"invalid_request\""))
+        #expect(output.contains("execution journal"))
+        #expect(output.contains("unreadable or has inconsistent identity"))
     }
 
     private func fixture() throws -> (ScenarioDefinition, ScenarioRun, ScenarioExecutionJournal) {
