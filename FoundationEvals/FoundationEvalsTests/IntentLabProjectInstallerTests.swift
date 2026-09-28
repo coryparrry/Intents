@@ -3,6 +3,21 @@ import Testing
 @testable import FoundationEvals
 
 struct IntentLabProjectInstallerTests {
+    @Test func generatedBasicDeclarationCannotClaimStableFixtureProof() throws {
+        let basic = try IntentLabProjectInstaller.validateDeclaration(
+            Fixture.declarationData,
+            targetBundleIdentifier: "com.example.Consumer", testTargetName: "UITests"
+        )
+        #expect(!basic.hasFixtureContentObserver)
+        var declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        declaration["observers"] = [["id": "summarySourceContentDigest"]]
+        let owned = try IntentLabProjectInstaller.validateDeclaration(
+            JSONSerialization.data(withJSONObject: declaration),
+            targetBundleIdentifier: "com.example.Consumer", testTargetName: "UITests"
+        )
+        #expect(owned.hasFixtureContentObserver)
+    }
+
     private struct Fixture {
         static let declarationData = Data("""
         {"schemaVersion":1,"id":"consumer-test","version":"1","targetBundleIdentifier":"com.example.Consumer","projectIdentity":"Consumer","targetIdentity":"UITests","supportedHarnessProtocols":["intent-lab-v2"],"actions":[],"resultProjections":[],"preparationOperations":[],"observers":[],"isolation":{"kind":"readOnly"},"capabilities":["direct-intent-execution","environment-payload"]}

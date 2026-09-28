@@ -91,6 +91,7 @@ struct IntentLabValidatedDeclaration: Sendable {
     let targetBundleIdentifier: String
     let targetIdentity: String
     let capabilities: [String]
+    let hasFixtureContentObserver: Bool
     let digest: String
 }
 
@@ -188,7 +189,7 @@ struct IntentLabProjectInstaller: Sendable {
               declaration["actions"] is [[String: Any]],
               declaration["resultProjections"] is [[String: Any]],
               declaration["preparationOperations"] is [String],
-              declaration["observers"] is [[String: Any]],
+              let observers = declaration["observers"] as? [[String: Any]],
               declaration["isolation"] is [String: Any],
               let capabilities = declaration["capabilities"] as? [String],
               !capabilities.isEmpty,
@@ -198,8 +199,14 @@ struct IntentLabProjectInstaller: Sendable {
                 "Choose a schema v1 declaration for this app and UI-test target with intent-lab-v2 support and complete capabilities."
             )
         }
+        let fixtureObserverIDs: Set<String> = ["intentlab.fixtureDigest", "summarySourceContentDigest"]
+        let hasFixtureContentObserver = observers.contains {
+            guard let observerID = $0["id"] as? String else { return false }
+            return fixtureObserverIDs.contains(observerID)
+        }
         return .init(id: id, version: version, targetBundleIdentifier: targetBundleIdentifier,
-                     targetIdentity: testTargetName, capabilities: capabilities, digest: digest(data))
+                     targetIdentity: testTargetName, capabilities: capabilities,
+                     hasFixtureContentObserver: hasFixtureContentObserver, digest: digest(data))
     }
 
     /// The receipt matcher resolves workspace identities relative to the workspace's

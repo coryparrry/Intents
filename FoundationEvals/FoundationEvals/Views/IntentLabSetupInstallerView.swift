@@ -292,8 +292,8 @@ struct IntentLabSetupInstallerView: View {
                     .uiTestTargets.first { $0.name == reviewedPlan.targetName }
                 let productID = installedTarget.map { "\(projectPath)#\($0.id)" }
                 let applicationProductID = "\(projectPath)#\(appTargetID)"
-                if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
-                    coordinator.startStableCheck()
+                if coordinator.draft.schemaVersion != ScenarioDefinition.reusableSchemaVersion {
+                    coordinator.startReusableCheck()
                 }
                 coordinator.recordInstalledIntegration(
                     .init(id: "\(appBundleID).intentlab", version: "1", digest: digest),
@@ -323,8 +323,12 @@ struct IntentLabSetupInstallerView: View {
             targetBundleIdentifier: appBundleID,
             testTargetName: target.name
         )
-        if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
-            coordinator.startStableCheck()
+        if declaration.hasFixtureContentObserver {
+            if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                coordinator.startStableCheck()
+            }
+        } else if coordinator.draft.schemaVersion != ScenarioDefinition.reusableSchemaVersion {
+            coordinator.startReusableCheck()
         }
         coordinator.recordInstalledIntegration(
             .init(id: declaration.id, version: declaration.version, digest: declaration.digest),
@@ -335,7 +339,9 @@ struct IntentLabSetupInstallerView: View {
             applicationProductID: "\(projectPath)#\(appTargetID)",
             testProductID: "\(projectPath)#\(target.id)"
         )
-        status = "Actual declaration selected. Approve the build, then check its compiled receipt before running."
+        status = declaration.hasFixtureContentObserver
+            ? "Actual declaration selected. Approve the build, then check its compiled receipt before running."
+            : "Read-only Basic declaration selected. It can capture direct checks; add an app-owned fixture observer to qualify a stable multi-route check."
     }
 
     private func makeRequest() throws -> IntentLabInstallationRequest {
