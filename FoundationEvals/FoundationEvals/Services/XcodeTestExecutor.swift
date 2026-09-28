@@ -833,6 +833,8 @@ actor XcodeTestExecutor {
             products.testBundleURL.appending(path: "Info.plist"),
             products.testBundleURL.appending(path: "_CodeSignature/CodeResources"),
             products.testBundleURL.appending(path: "embedded.mobileprovision"),
+        ]
+        var checkedSourceFiles = [
             container.appending(path: "contents.xcworkspacedata"),
             container.appending(path: "xcshareddata/swiftpm/Package.resolved"),
             container.deletingLastPathComponent().appending(path: "Package.resolved"),
@@ -841,15 +843,16 @@ actor XcodeTestExecutor {
             ? (try? XcodeConnectionDiscoveryService.workspaceProjectURLs(workspace: container)) ?? []
             : [container]
         for project in projects {
-            files.append(project.appending(path: "project.pbxproj"))
-            files.append(project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"))
+            checkedSourceFiles.append(project.appending(path: "project.pbxproj"))
+            checkedSourceFiles.append(project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"))
         }
         for schemeContainer in (configuration.isWorkspace ? [container] + projects : projects) {
             let schemes = schemeContainer.appending(path: "xcshareddata/xcschemes", directoryHint: .isDirectory)
             if let entries = try? fileManager.contentsOfDirectory(at: schemes, includingPropertiesForKeys: nil) {
-                files.append(contentsOf: entries.filter { $0.pathExtension == "xcscheme" })
+                checkedSourceFiles.append(contentsOf: entries.filter { $0.pathExtension == "xcscheme" })
             }
         }
+        files.append(contentsOf: checkedSourceFiles)
         var hasher = SHA256()
         for file in Set(files).sorted(by: { $0.path < $1.path }) {
             hasher.update(data: Data(file.standardizedFileURL.path.utf8))
@@ -869,7 +872,9 @@ actor XcodeTestExecutor {
         }
         let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
         // A workspace with no discoverable project cannot claim a Git source.
-        let sourceLocations = projects.isEmpty ? Set<URL>() : projectSources.union([container])
+        let existingConfiguration = checkedSourceFiles.filter { fileManager.fileExists(atPath: $0.path) }
+        let sourceLocations = projects.isEmpty ? Set<URL>()
+            : projectSources.union([container]).union(existingConfiguration)
         return (digest, sourceLocations)
     }
 
@@ -879,6 +884,11 @@ actor XcodeTestExecutor {
     static func sourceRevision(sourceLocations: Set<URL>, buildInputsDigest: String) -> String {
         let fallback = "inputs-sha256:\(buildInputsDigest)"
         guard let first = sourceLocations.first else { return fallback }
+        var firstIsDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: first.path, isDirectory: &firstIsDirectory) else {
+            return fallback
+        }
+        let gitDirectory = firstIsDirectory.boolValue ? first.path : first.deletingLastPathComponent().path
         func git(in directory: String, _ arguments: [String]) -> String? {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
@@ -892,7 +902,7 @@ actor XcodeTestExecutor {
             guard process.terminationStatus == 0 else { return nil }
             return String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        guard let root = git(in: first.deletingLastPathComponent().path,
+        guard let root = git(in: gitDirectory,
                              ["rev-parse", "--show-toplevel"]), !root.isEmpty,
               sourceLocations.allSatisfy({ location in
                   let path = location.standardizedFileURL.resolvingSymlinksInPath().path

@@ -1547,6 +1547,8 @@ struct ScenarioContractsTests {
         let digest = String(repeating: "a", count: 64)
         #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [project, source],
                                                  buildInputsDigest: digest) == "git:\(head)")
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [root, project, source],
+                                                 buildInputsDigest: digest) == "git:\(head)")
         let otherRoot = try temporaryDirectory()
         let otherProject = otherRoot.appending(path: "App.xcodeproj", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: otherProject, withIntermediateDirectories: true)
@@ -1564,6 +1566,47 @@ struct ScenarioContractsTests {
         #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [project, source],
                                                  buildInputsDigest: digest)
                 == "inputs-sha256:\(digest)")
+    }
+
+    @Test func workspaceFingerprintIncludesSiblingConfigurationFiles() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "App/App.xcodeproj", directoryHint: .isDirectory)
+        let workspace = root.appending(path: "Workspace/Check.xcworkspace", directoryHint: .isDirectory)
+        let contents = workspace.appending(path: "contents.xcworkspacedata")
+        let scheme = workspace.appending(path: "xcshareddata/xcschemes/Check.xcscheme")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: scheme.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
+        try Data("<Workspace version=\"1.0\"><FileRef location=\"group:../App/App.xcodeproj\"/></Workspace>".utf8)
+            .write(to: contents)
+        try Data("scheme".utf8).write(to: scheme)
+        let products = root.appending(path: "Products")
+        let paths = XCTestRunProductPaths(
+            sourceURL: products.appending(path: "Check.xctestrun"),
+            appBundleURL: products.appending(path: "App.app"),
+            testHostURL: products.appending(path: "Host.app"),
+            testBundleURL: products.appending(path: "Tests.xctest")
+        )
+        let configuration = XcodeTestConfiguration(
+            containerPath: workspace.path, isWorkspace: true, scheme: "Check",
+            testTarget: "Tests", testBundleIdentifier: "example.Tests",
+            destinationIdentifier: "device", generatedResourceDirectory: root.path,
+            xcodebuildPath: "/bin/echo"
+        )
+        let fingerprint = try XcodeTestExecutor.buildInputsFingerprint(
+            configuration: configuration, products: paths
+        )
+        #expect(fingerprint.sourceLocations.contains {
+            $0.resolvingSymlinksInPath().path == contents.resolvingSymlinksInPath().path
+        })
+        #expect(fingerprint.sourceLocations.contains {
+            $0.resolvingSymlinksInPath().path == scheme.resolvingSymlinksInPath().path
+        })
+        #expect(fingerprint.sourceLocations.contains {
+            $0.resolvingSymlinksInPath().path == project.appending(path: "project.pbxproj")
+                .resolvingSymlinksInPath().path
+        })
     }
 
     @Test func latestFrozenVersionSupersedesOldProjectAssignment() throws {
