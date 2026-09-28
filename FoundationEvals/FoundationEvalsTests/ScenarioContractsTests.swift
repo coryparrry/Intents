@@ -1294,6 +1294,28 @@ struct ScenarioContractsTests {
         #expect(release.summary.contains("Requirements changed"))
     }
 
+    @Test func stableFeatureValidationUsesDeclarationInsteadOfPriorRunIdentity() throws {
+        var stable = try stableScenario()
+        let stablePaths = Set(ScenarioValidator.issues(in: stable).map(\.path))
+        #expect(!stablePaths.contains("schemaVersion"))
+        #expect(!stablePaths.contains("directControl.linkedFeatureRunID"))
+        #expect(!stablePaths.contains("directControl.linkedFeatureID"))
+        #expect(!stablePaths.contains("directControl.linkedFeatureSubjectDigest"))
+        #expect(!stablePaths.contains("featureBinding"))
+
+        stable.featureBinding = nil
+        stable = try stable.frozen()
+        let missingBindingPaths = Set(ScenarioValidator.issues(in: stable).map(\.path))
+        #expect(missingBindingPaths.contains("featureBinding"))
+
+        var reusable = try scenario()
+        reusable.schemaVersion = ScenarioDefinition.reusableSchemaVersion
+        reusable.coverage.appFeature = .required
+        reusable = try reusable.frozen()
+        let reusablePaths = Set(ScenarioValidator.issues(in: reusable).map(\.path))
+        #expect(reusablePaths.contains("directControl.linkedFeatureRunID"))
+    }
+
     @Test func stableContractRejectsChangedRequirementsAndMeasurement() throws {
         let definition = try stableScenario()
         let baseline = stableRun(definition: definition, build: "build-A", outcome: .failed)
