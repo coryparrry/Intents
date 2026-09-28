@@ -750,6 +750,8 @@ struct ScenarioLaneResult: Codable, Equatable, Identifiable, Sendable {
     var artifacts: [ScenarioArtifactReference]
     var observationSources: [String: ScenarioObservationSource]? = nil
     var claims: [ScenarioProofClaim]? = nil
+    /// Independently captured state before the selected native action.
+    var beforeObservations: [String: ScenarioValue]? = nil
 
     init(
         id: UUID = UUID(),
@@ -766,7 +768,8 @@ struct ScenarioLaneResult: Codable, Equatable, Identifiable, Sendable {
         proposedCause: String? = nil,
         artifacts: [ScenarioArtifactReference] = [],
         observationSources: [String: ScenarioObservationSource]? = nil,
-        claims: [ScenarioProofClaim]? = nil
+        claims: [ScenarioProofClaim]? = nil,
+        beforeObservations: [String: ScenarioValue]? = nil
     ) {
         self.id = id
         self.caseID = caseID
@@ -783,6 +786,7 @@ struct ScenarioLaneResult: Codable, Equatable, Identifiable, Sendable {
         self.artifacts = artifacts
         self.observationSources = observationSources
         self.claims = claims
+        self.beforeObservations = beforeObservations
     }
 }
 
@@ -889,6 +893,9 @@ struct ScenarioRun: Codable, Equatable, Identifiable, Sendable {
     var measurementImplementation: ScenarioMeasurementImplementation? = nil
     var comparisonEnvironmentIdentity: ScenarioEnvironmentIdentity? = nil
     var subjectImplementation: ScenarioSubjectImplementation? = nil
+    /// Number of XCTest entry-point executions in this invocation's envelope.
+    /// Nil on immutable legacy run records.
+    var executedTestCount: Int? = nil
 }
 
 struct ScenarioResponseAssessment: Codable, Equatable, Identifiable, Sendable {

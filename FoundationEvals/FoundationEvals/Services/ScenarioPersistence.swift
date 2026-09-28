@@ -5,6 +5,14 @@ struct ScenarioSelectedDefinition: Codable, Equatable, Sendable {
     var version: Int
 }
 
+struct ScenarioPendingNativeSave: Codable, Sendable {
+    var planID: UUID
+    var coordinateID: UUID
+    var run: ScenarioRun
+    var artifactRootPath: String
+    var ledger: ScenarioImportLedger
+}
+
 enum ScenarioPersistenceError: LocalizedError, Sendable {
     case conflictingDefinition
     case immutableRunExists
@@ -12,6 +20,8 @@ enum ScenarioPersistenceError: LocalizedError, Sendable {
     case invalidDefinition(String)
     case invalidRun(String)
     case invalidJournal(String)
+    case immutablePlanExists
+    case immutableExecutionRecordExists
 
     var errorDescription: String? {
         switch self {
@@ -27,6 +37,10 @@ enum ScenarioPersistenceError: LocalizedError, Sendable {
             "The saved scenario run \(name) is unreadable or has inconsistent identity. Repair it before release checks can pass."
         case .invalidJournal(let name):
             "The execution journal \(name) is unreadable or has inconsistent identity. Repair it before device recovery can continue."
+        case .immutablePlanExists:
+            "A different frozen execution plan already exists for this run."
+        case .immutableExecutionRecordExists:
+            "A different terminal execution record already exists for this run."
         }
     }
 }
@@ -44,6 +58,175 @@ actor ScenarioPersistence {
         try fileManager.createDirectory(at: definitionsDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: runsDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: journalsDirectory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: plansDirectory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: recordsDirectory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: progressDirectory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: pendingNativeDirectory, withIntermediateDirectories: true)
+    }
+
+    func savePlan(_ plan: ScenarioExecutionPlan) throws {
+        try prepare()
+        guard !plan.coordinates.isEmpty,
+              Set(plan.coordinates.map(\.id)).count == plan.coordinates.count,
+              !plan.testContractDigest.isEmpty,
+              !plan.definitionDigest.isEmpty,
+              !plan.appProductDigest.isEmpty,
+              !plan.testProductDigest.isEmpty,
+              plan.sourceInputsDigest?.isEmpty == false,
+              Set(plan.coordinates.map { "\($0.caseID):\($0.lane.rawValue):\($0.repetition)" }).count
+                == plan.coordinates.count else {
+            throw ScenarioPersistenceError.invalidRun("execution plan")
+        }
+        let url = plansDirectory.appending(path: "\(plan.id.uuidString).json")
+        let data = try Self.encoder.encode(plan)
+        if fileManager.fileExists(atPath: url.path) {
+            guard try Data(contentsOf: url) == data else { throw ScenarioPersistenceError.immutablePlanExists }
+            return
+        }
+        try data.write(to: url, options: .withoutOverwriting)
+    }
+
+    func loadPlan(id: UUID) throws -> ScenarioExecutionPlan? {
+        let url = plansDirectory.appending(path: "\(id.uuidString).json")
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        let plan = try Self.decoder.decode(ScenarioExecutionPlan.self, from: Data(contentsOf: url))
+        guard plan.id == id else { throw ScenarioPersistenceError.invalidRun("execution plan") }
+        return plan
+    }
+
+    func loadPlans() throws -> [ScenarioExecutionPlan] {
+        guard fileManager.fileExists(atPath: plansDirectory.path) else { return [] }
+        return try fileManager.contentsOfDirectory(at: plansDirectory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" }
+            .map { url in
+                guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
+                      let plan = try loadPlan(id: id) else {
+                    throw ScenarioPersistenceError.invalidRun("execution plan")
+                }
+                return plan
+            }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func saveProgress(_ progress: ScenarioExecutionProgress) throws {
+        try prepare()
+        guard let plan = try loadPlan(id: progress.planID),
+              progress.records.count == plan.coordinates.count,
+              Set(progress.records.map(\.id)) == Set(plan.coordinates.map(\.id)),
+              progress.records.allSatisfy({ plan.coordinates.contains($0.coordinate) }) else {
+            throw ScenarioPersistenceError.invalidRun("execution progress")
+        }
+        try Self.encoder.encode(progress).write(
+            to: progressDirectory.appending(path: "\(progress.planID.uuidString).json"),
+            options: .atomic
+        )
+    }
+
+    func loadProgress(planID: UUID) throws -> ScenarioExecutionProgress? {
+        let url = progressDirectory.appending(path: "\(planID.uuidString).json")
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        let progress = try Self.decoder.decode(ScenarioExecutionProgress.self, from: Data(contentsOf: url))
+        guard progress.planID == planID else {
+            throw ScenarioPersistenceError.invalidRun("execution progress")
+        }
+        return progress
+    }
+
+    /// A plan is durable before dispatch. After a crash, preserve the last
+    /// checkpoint and mark an in-flight coordinate recoveryRequired; never
+    /// silently borrow an older run to fill the missing population.
+    func recoverIncompleteExecutionRecords() throws -> [ScenarioExecutionRecord] {
+        let plans = try loadPlans()
+        let completed = Set(try loadExecutionRecords().map(\.planID))
+        var recovered: [ScenarioExecutionRecord] = []
+        for plan in plans where !completed.contains(plan.id) {
+            let records = try loadProgress(planID: plan.id)?.records
+                ?? plan.coordinates.map(ScenarioExecutionCoordinateRecord.unstarted)
+            // A feature action may be complete but waiting for its history
+            // write. Keep that coordinate editable by the save-only recovery
+            // path; sealing a terminal record here would force a redispatch.
+            if records.contains(where: {
+                $0.coordinate.lane == .appFeature
+                    && $0.state == .recoveryRequired
+                    && $0.evidenceRunID != nil
+            }) || records.contains(where: {
+                $0.coordinate.lane != .appFeature
+                    && $0.state == .recoveryRequired
+                    && (try? loadPendingNativeSave(planID: plan.id, coordinateID: $0.id)) != nil
+            }) { continue }
+            let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
+            try saveExecutionRecord(record)
+            recovered.append(record)
+        }
+        return recovered
+    }
+
+    func saveExecutionRecord(_ record: ScenarioExecutionRecord) throws {
+        try prepare()
+        guard let plan = try loadPlan(id: record.planID),
+              record.id == plan.id,
+              Set(plan.coordinates.map(\.id)) == Set(record.records.map(\.id)),
+              record.records.count == plan.coordinates.count,
+              !record.evidenceDigest.isEmpty,
+              try ScenarioExecutionRecord.make(
+                plan: plan, records: record.records,
+                selectedAssessments: record.selectedAssessments ?? [],
+                completedAt: record.completedAt
+              ).evidenceDigest == record.evidenceDigest else {
+            throw ScenarioPersistenceError.invalidRun("terminal execution record")
+        }
+        let url = recordsDirectory.appending(path: "\(record.id.uuidString).json")
+        let data = try Self.encoder.encode(record)
+        if fileManager.fileExists(atPath: url.path) {
+            guard try Data(contentsOf: url) == data else {
+                throw ScenarioPersistenceError.immutableExecutionRecordExists
+            }
+            return
+        }
+        try data.write(to: url, options: .withoutOverwriting)
+    }
+
+    func loadExecutionRecords() throws -> [ScenarioExecutionRecord] {
+        guard fileManager.fileExists(atPath: recordsDirectory.path) else { return [] }
+        return try fileManager.contentsOfDirectory(at: recordsDirectory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" }
+            .map { try Self.decoder.decode(ScenarioExecutionRecord.self, from: Data(contentsOf: $0)) }
+            .sorted { $0.completedAt > $1.completedAt }
+    }
+
+    func savePendingNativeSave(_ pending: ScenarioPendingNativeSave) throws {
+        try prepare()
+        guard let plan = try loadPlan(id: pending.planID),
+              plan.coordinates.contains(where: { $0.id == pending.coordinateID
+                  && $0.caseID == pending.run.scenarioID }),
+              pending.run.laneResults.count == 1,
+              pending.run.id == pending.run.invocation.id,
+              !pending.artifactRootPath.isEmpty else {
+            throw ScenarioPersistenceError.invalidRun("pending native child")
+        }
+        try Self.encoder.encode(pending).write(
+            to: pendingNativeURL(planID: pending.planID, coordinateID: pending.coordinateID),
+            options: .atomic
+        )
+    }
+
+    func loadPendingNativeSave(planID: UUID, coordinateID: UUID) throws -> ScenarioPendingNativeSave? {
+        let url = pendingNativeURL(planID: planID, coordinateID: coordinateID)
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        let pending = try Self.decoder.decode(ScenarioPendingNativeSave.self, from: Data(contentsOf: url))
+        guard pending.planID == planID, pending.coordinateID == coordinateID else {
+            throw ScenarioPersistenceError.invalidRun("pending native child")
+        }
+        return pending
+    }
+
+    func clearPendingNativeSave(planID: UUID, coordinateID: UUID) throws {
+        let url = pendingNativeURL(planID: planID, coordinateID: coordinateID)
+        if fileManager.fileExists(atPath: url.path) { try fileManager.removeItem(at: url) }
+    }
+
+    private func pendingNativeURL(planID: UUID, coordinateID: UUID) -> URL {
+        pendingNativeDirectory.appending(path: "\(planID.uuidString)-\(coordinateID.uuidString).json")
     }
 
     func saveDefinition(_ definition: ScenarioDefinition) throws {
@@ -254,6 +437,22 @@ actor ScenarioPersistence {
 
     private var journalsDirectory: URL {
         rootDirectory.appending(path: "Journals", directoryHint: .isDirectory)
+    }
+
+    private var plansDirectory: URL {
+        rootDirectory.appending(path: "Plans", directoryHint: .isDirectory)
+    }
+
+    private var recordsDirectory: URL {
+        rootDirectory.appending(path: "ExecutionRecords", directoryHint: .isDirectory)
+    }
+
+    private var progressDirectory: URL {
+        rootDirectory.appending(path: "ExecutionProgress", directoryHint: .isDirectory)
+    }
+
+    private var pendingNativeDirectory: URL {
+        rootDirectory.appending(path: "PendingNativeSaves", directoryHint: .isDirectory)
     }
 
     private func definitionURL(_ definition: ScenarioDefinition) -> URL {

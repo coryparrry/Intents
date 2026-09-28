@@ -78,6 +78,28 @@ actor EvaluationFeatureAdapterRunner {
                         expected: evaluationCase.expected,
                         repetition: repetition
                     ))
+                    if Task.isCancelled {
+                        // An app can finish after cancellation was requested.
+                        // Keep its raw output with this attempt, but never score
+                        // it as a successful sample or dispatch another case.
+                        let late = sample(
+                            evaluationCase: evaluationCase,
+                            repetition: repetition,
+                            response: output.response,
+                            status: .error,
+                            rationale: nil,
+                            usage: output.usage,
+                            duration: milliseconds(since: clock),
+                            errorCategory: "lateAfterCancellation",
+                            errorMessage: "The app returned after cancellation was requested.",
+                            structuredFeatureEvidence: output.structuredEvidence
+                        )
+                        results.append(late)
+                        await progress(late, results.count, total)
+                        cancelled = true
+                        terminationReason = "cancelled"
+                        break outer
+                    }
                     let score = MetricScorer.evaluate(
                         mode: suite.scoringMode,
                         expected: evaluationCase.expected,
