@@ -2267,7 +2267,7 @@ struct ScenarioContractsTests {
         }
 
         let failedIntent = lane(.intentIntegration, .completed, .failed)
-        let noFeatureSummary = "The direct intent failed. No completed passing feature control is available, so the evidence does not establish where the failure arose."
+        let noFeatureSummary = "The direct intent failed. No passing app-feature control was recorded, so the evidence does not establish where the failure arose."
         #expect(ScenarioDiagnosticClassifier.message(for: [failedIntent]) == noFeatureSummary)
         #expect(ScenarioDiagnosticClassifier.message(for: [
             lane(.appFeature, .timedOut, .notObserved), failedIntent
