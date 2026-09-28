@@ -163,6 +163,138 @@ struct IntentLabProjectInstallerTests {
         }
     }
 
+    @Test func coreTestingInstallsTheSiriOnlyProductsAndScaffold() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        var declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        declaration["capabilities"] = ["environment-payload", "preparation", "accessible-result", "siri", "siri-completion"]
+        declaration["observers"] = [[
+            "id": "visibleSiriState", "source": "uiElement", "selector": "intent-lab-visible-state",
+            "type": ["primitive": ["_0": "string"]]
+        ]]
+        let source = """
+        import IntentLabCoreTesting
+        import XCTest
+
+        @available(iOS 27.0, *)
+        @MainActor
+        final class IntentLabScenarioTests: XCTestCase {
+            func testIntentLabScenario() throws {
+                try IntentLabSiriScenarioRunner.run(testCase: self, integration: IntentLabAppAdapter())
+            }
+            func testIntentLabConnection() throws {
+                try IntentLabSiriScenarioRunner.checkConnection(testCase: self, integration: IntentLabAppAdapter())
+            }
+        }
+        """
+        let request = IntentLabInstallationRequest(
+            projectURL: fixture.project, scheme: "FoundationEvals",
+            applicationTargetID: fixture.applicationID, uiTestTargetID: fixture.uiTestID,
+            packageURL: fixture.package, packageProduct: "IntentLabCoreTesting",
+            consumerSource: source,
+            declarationData: try JSONSerialization.data(withJSONObject: declaration))
+        let plan = try IntentLabProjectInstaller().preview(request)
+        #expect(plan.supported)
+        let projectChange = try #require(plan.changes.first { $0.url.lastPathComponent == "project.pbxproj" })
+        let root = try PropertyListSerialization.propertyList(from: projectChange.proposed, format: nil) as! [String: Any]
+        let objects = root["objects"] as! [String: [String: Any]]
+        let target = try #require(objects[fixture.uiTestID])
+        let productNames = (target["packageProductDependencies"] as? [String] ?? [])
+            .compactMap { objects[$0]?["productName"] as? String }
+        #expect(Set(productNames) == ["IntentLabCoreTesting", "IntentLabContracts"])
+        #expect(!productNames.contains("IntentLabTesting"))
+        #expect(source.contains("IntentLabSiriScenarioRunner.run"))
+        #expect(source.contains("IntentLabSiriScenarioRunner.checkConnection"))
+        let scaffold = String(decoding: try #require(plan.changes.first {
+            $0.url.lastPathComponent == "IntentLabAppAdapter.swift"
+        }).proposed, as: UTF8.self)
+        #expect(scaffold.contains("import IntentLabCoreTesting"))
+        #expect(scaffold.contains("IntentLabSiriIntegration"))
+        #expect(!scaffold.contains("import IntentLabTesting"))
+    }
+
+    @Test func coreTestingRequiresSiriSourceContractAndRejectsDirectCapabilities() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let source = "import IntentLabCoreTesting\nIntentLabSiriScenarioRunner.run"
+        let base = IntentLabInstallationRequest(
+            projectURL: fixture.project, scheme: "FoundationEvals",
+            applicationTargetID: fixture.applicationID, uiTestTargetID: fixture.uiTestID,
+            packageURL: fixture.package, packageProduct: "IntentLabCoreTesting",
+            consumerSource: source, declarationData: Fixture.declarationData)
+        let missingSiri = try IntentLabProjectInstaller().preview(.init(
+            projectURL: base.projectURL, workspaceURL: base.workspaceURL, scheme: base.scheme,
+            applicationTargetID: base.applicationTargetID, uiTestTargetID: base.uiTestTargetID,
+            packageURL: base.packageURL, packageProduct: base.packageProduct,
+            consumerSource: "import IntentLabCoreTesting\nIntentLabScenarioRunner.run",
+            declarationData: Fixture.declarationData))
+        #expect(!missingSiri.supported)
+        #expect(missingSiri.manualSteps.first?.contains("IntentLabSiriScenarioRunner") == true)
+
+        var declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        declaration["capabilities"] = ["environment-payload", "direct-intent-execution", "siri"]
+        let directRequest = IntentLabInstallationRequest(
+            projectURL: fixture.project, scheme: "FoundationEvals",
+            applicationTargetID: fixture.applicationID, uiTestTargetID: fixture.uiTestID,
+            packageURL: fixture.package, packageProduct: "IntentLabCoreTesting",
+            consumerSource: source,
+            declarationData: try JSONSerialization.data(withJSONObject: declaration))
+        let direct = try IntentLabProjectInstaller().preview(directRequest)
+        #expect(!direct.supported)
+        #expect(direct.manualSteps.first?.contains("Siri-only") == true)
+    }
+
+    @Test func coreTestingRequiresTypedAppOwnedSiriStateObserver() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        var declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        declaration["capabilities"] = ["environment-payload", "preparation", "accessible-result", "siri", "siri-completion"]
+        let request = IntentLabInstallationRequest(
+            projectURL: fixture.project, scheme: "FoundationEvals",
+            applicationTargetID: fixture.applicationID, uiTestTargetID: fixture.uiTestID,
+            packageURL: fixture.package, packageProduct: "IntentLabCoreTesting",
+            consumerSource: "import IntentLabCoreTesting\nIntentLabSiriScenarioRunner.run",
+            declarationData: try JSONSerialization.data(withJSONObject: declaration))
+        let plan = try IntentLabProjectInstaller().preview(request)
+        #expect(!plan.supported)
+        #expect(plan.changes.isEmpty)
+        #expect(plan.manualSteps.first?.contains("typed app-owned observer") == true)
+        #expect(plan.manualFiles.contains { $0.filename == "IntentLabAppAdapter.swift" })
+    }
+
+    @Test func coreTestingRequiresItsOwnPublishedRevision() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        var declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        declaration["capabilities"] = ["environment-payload", "preparation", "accessible-result", "siri", "siri-completion"]
+        declaration["observers"] = [[
+            "id": "visibleSiriState", "source": "uiElement", "selector": "intent-lab-visible-state",
+            "type": ["primitive": ["_0": "string"]]
+        ]]
+        let declarationData = try JSONSerialization.data(withJSONObject: declaration)
+        let consumerSource = "import IntentLabCoreTesting\nIntentLabSiriScenarioRunner.run"
+        let request = IntentLabInstallationRequest(
+            projectURL: fixture.project, scheme: "FoundationEvals",
+            applicationTargetID: fixture.applicationID, uiTestTargetID: fixture.uiTestID,
+            packageURL: IntentLabPackageRevisionManifest.packageURL,
+            packageProduct: "IntentLabCoreTesting", consumerSource: consumerSource,
+            declarationData: declarationData)
+        #expect(request.packageRevision == nil)
+        let plan = try IntentLabProjectInstaller().preview(request)
+        #expect(!plan.supported)
+        #expect(plan.manualSteps.first?.contains("published exact 40-character revision") == true)
+
+        let explicitRevision = String(repeating: "c", count: 40)
+        let explicitlyPinned = IntentLabInstallationRequest(
+            projectURL: fixture.project, scheme: "FoundationEvals",
+            applicationTargetID: fixture.applicationID, uiTestTargetID: fixture.uiTestID,
+            packageURL: IntentLabPackageRevisionManifest.packageURL,
+            packageRevision: explicitRevision, packageProduct: "IntentLabCoreTesting",
+            consumerSource: consumerSource, declarationData: declarationData)
+        #expect(explicitlyPinned.packageRevision == explicitRevision)
+        #expect(try IntentLabProjectInstaller().preview(explicitlyPinned).supported)
+    }
+
     @Test func createsDedicatedTargetAndSchemeEntry() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }

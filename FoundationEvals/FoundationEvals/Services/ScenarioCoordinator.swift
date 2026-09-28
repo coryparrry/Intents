@@ -511,6 +511,8 @@ final class ScenarioCoordinator {
         isVerifyingIntegration = true
         defer { isVerifyingIntegration = false }
         applyConfigurationToDraft()
+        let checkedDraft = draft
+        let checkedConfiguration = configuration
         do {
             let definition = try draft.frozen()
             let verified = try await executor.verifyConnection(
@@ -518,6 +520,13 @@ final class ScenarioCoordinator {
                 configuration: configuration,
                 projectTrusted: projectTrusted
             )
+            guard draft == checkedDraft, configuration == checkedConfiguration else {
+                declarationCatalog = nil
+                verifiedIntegrationSummary = nil
+                notice = "The test or connection changed while support was being checked. Check support again."
+                invalidatePreflight()
+                return
+            }
             let data = try Data(contentsOf: verified.testBundleURL.appending(path: "IntentLabIntegration.json"))
             let catalog = try ScenarioIntegrationCatalog.decodeVerified(data, identity: verified.receipt.integration)
             guard catalog.targetBundleIdentifier == verified.receipt.targetBundleIdentifier else {

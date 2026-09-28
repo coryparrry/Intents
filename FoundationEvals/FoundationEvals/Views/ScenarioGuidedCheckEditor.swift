@@ -25,16 +25,18 @@ struct ScenarioGuidedActionFeatureView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let catalog = coordinator.declarationCatalog {
-                Picker("App action", selection: Binding(
-                    get: { coordinator.draft.directControl.intentIdentifier },
-                    set: { coordinator.selectDeclaredAction($0) }
-                )) {
-                    Text("Choose an action").tag("")
+            Picker("App action", selection: Binding(
+                get: { coordinator.draft.directControl.intentIdentifier },
+                set: { coordinator.selectDeclaredAction($0) }
+            )) {
+                Text("Choose an action").tag("")
+                if let catalog = coordinator.declarationCatalog {
                     ForEach(catalog.actions) { action in Text(action.id).tag(action.id) }
                 }
-                .accessibilityIdentifier("Declared app action")
-            } else {
+            }
+            .accessibilityIdentifier("Declared app action")
+            .disabled(coordinator.declarationCatalog == nil)
+            if coordinator.declarationCatalog == nil {
                 Label("Rebuild and check support to load the app's actions.", systemImage: "wrench.and.screwdriver")
                     .foregroundStyle(.orange)
             }
@@ -178,7 +180,9 @@ struct ScenarioGuidedExpectationView: View {
         let feature: [(id: String, title: String, type: ScenarioValueType, state: Bool)] =
             coordinator.draft.featureBinding == nil ? []
             : [("feature.response", "App Feature · captured response", .primitive(.string), false)]
-        return feature + catalog.resultProjections.map { ($0.id, "Returned · \($0.id)", $0.type, false) }
+        let returned = coordinator.draft.coverage.intentIntegration == .notApplicable ? []
+            : catalog.resultProjections.map { ($0.id, "Returned · \($0.id)", $0.type, false) }
+        return feature + returned
             + catalog.observers.filter { $0.source.checksApplicationState }
                 .map { ($0.id, "App state · \($0.id)", $0.type, true) }
     }
@@ -199,6 +203,8 @@ struct ScenarioGuidedExpectationView: View {
                 .onChange(of: selection) { _, id in
                     if let choice = choices.first(where: { $0.id == id }) {
                         proposedValue = ScenarioDeclaredExpectedValues.initial(for: choice.type)
+                        checkIntent = coordinator.draft.coverage.intentIntegration != .notApplicable
+                        checkSiri = coordinator.draft.coverage.siri != .notApplicable
                     }
                 }
                 if let choice = choices.first(where: { $0.id == selection }) {
@@ -217,16 +223,23 @@ struct ScenarioGuidedExpectationView: View {
                             Text("The reference and rubric stay in Intents. They are not sent to your app feature.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                    } else {
+                    } else if choice.state {
                         HStack {
                             Toggle("Intent", isOn: $checkIntent)
+                                .disabled(coordinator.draft.coverage.intentIntegration == .notApplicable)
                             Toggle("Siri", isOn: $checkSiri)
+                                .disabled(coordinator.draft.coverage.siri == .notApplicable)
                         }
+                    } else {
+                        Text("Returned values are checked through the App Intent route. Use an app-state observation to check Siri.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     Button("Add expected outcome", systemImage: "plus.circle") { addCheck() }
                         .disabled(proposedValue == nil
                                   || proposedValue.map { !ScenarioValidator.validate(value: $0, as: choice.type).isEmpty } == true
-                                  || (selection != "feature.response" && !checkIntent && !checkSiri)
+                                  || (choice.state && selectedStateLanes.isEmpty)
+                                  || (!choice.state && selection != "feature.response"
+                                      && coordinator.draft.coverage.intentIntegration == .notApplicable)
                                   || (selection == "feature.response" && semanticFeature
                                       && featureRubric.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                         .accessibilityIdentifier("Add expected outcome")
@@ -270,15 +283,24 @@ struct ScenarioGuidedExpectationView: View {
             } catch { coordinator.notice = error.localizedDescription }
             return
         }
-        var lanes: Set<ScenarioLane> = []
-        if checkIntent { lanes.insert(.intentIntegration) }
-        if checkSiri { lanes.insert(.siri) }
         if choice.state {
             coordinator.addStateCheck(observerID: choice.id, kind: .stateTransition,
-                                      expected: expected, lanes: lanes)
+                                      expected: expected, lanes: selectedStateLanes)
         } else {
-            coordinator.addReturnedCheck(projectionID: choice.id, expected: expected, lanes: lanes)
+            coordinator.addReturnedCheck(projectionID: choice.id, expected: expected,
+                                         lanes: [.intentIntegration])
         }
+    }
+
+    private var selectedStateLanes: Set<ScenarioLane> {
+        var lanes: Set<ScenarioLane> = []
+        if checkIntent && coordinator.draft.coverage.intentIntegration != .notApplicable {
+            lanes.insert(.intentIntegration)
+        }
+        if checkSiri && coordinator.draft.coverage.siri != .notApplicable {
+            lanes.insert(.siri)
+        }
+        return lanes
     }
 
 }

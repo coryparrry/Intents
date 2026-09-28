@@ -1404,6 +1404,13 @@ struct ScenarioContractsTests {
         #expect(reusablePaths.contains("directControl.linkedFeatureRunID"))
     }
 
+    @Test func stableCheckRejectsMissingRequiredActionInputBeforeRun() throws {
+        var definition = try stableScenario()
+        definition.directControl.parameters[0].presence = .missing
+        let paths = Set(ScenarioValidator.issues(in: definition, requireFrozenDigest: false).map(\.path))
+        #expect(paths.contains("directControl.parameters[0].presence"))
+    }
+
     @Test func stableContractRejectsChangedRequirementsAndMeasurement() throws {
         let definition = try stableScenario()
         let baseline = stableRun(definition: definition, build: "build-A", outcome: .failed)

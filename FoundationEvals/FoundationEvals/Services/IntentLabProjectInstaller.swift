@@ -33,6 +33,7 @@ struct IntentLabInstallationRequest: Sendable {
         self.uiTestTargetID = uiTestTargetID
         self.packageURL = packageURL
         if packageURL == IntentLabPackageRevisionManifest.packageURL,
+           packageProduct == IntentLabPackageRevisionManifest.product,
            packageRevision?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true,
            let verifiedRevision = IntentLabPackageRevisionManifest.verifiedRevision {
             self.packageRevision = verifiedRevision
@@ -172,6 +173,51 @@ struct IntentLabProjectInstaller: Sendable {
         }
         """
 
+    /// Siri-only adapter scaffold. CoreTesting stays independent of AppIntentsTesting.
+    static let siriAppAdapterScaffold = """
+        import Foundation
+        import IntentLabContracts
+        import IntentLabCoreTesting
+        import XCTest
+
+        @available(macOS 27.0, iOS 27.0, *)
+        @MainActor
+        struct IntentLabAppAdapter: IntentLabSiriIntegration {
+            var supportedCapabilities: Set<String> { [] }
+            var supportsMutatingChecks: Bool { false }
+
+            func prepare(bundleIdentifier: String, context: String,
+                         operationID: String) throws -> XCUIApplication {
+                throw IntentLabExecutionPathError.unsafePreparation
+            }
+
+            func cleanup(bundleIdentifier: String, context: String,
+                         operationID: String) throws {
+                throw IntentLabExecutionPathError.cleanupUnsupported(operationID)
+            }
+
+            func observe(application: XCUIApplication) throws -> [String: IntentLabValue] {
+                throw IntentLabAppAdapterError.unimplementedObservation
+            }
+
+            func completed(observations: [String: IntentLabValue], context: String) -> Bool {
+                false
+            }
+        }
+
+        private enum IntentLabAppAdapterError: LocalizedError {
+            case unimplementedObservation
+
+            var errorDescription: String? {
+                "Implement a Siri-only app-owned observer before claiming an application result."
+            }
+        }
+        """
+
+    private static func adapterScaffold(for packageProduct: String) -> String {
+        packageProduct == "IntentLabCoreTesting" ? siriAppAdapterScaffold : appAdapterScaffold
+    }
+
     /// Validates the exact installed declaration bytes, including its binding to the
     /// selected application and UI-test target. The digest must not be recomputed from
     /// a parsed or generated JSON object because edits and byte order are significant.
@@ -306,9 +352,15 @@ struct IntentLabProjectInstaller: Sendable {
         let projectRoot = project.deletingLastPathComponent()
         let workspace = request.workspaceURL?.standardizedFileURL.resolvingSymlinksInPath()
         if request.packageURL == IntentLabPackageRevisionManifest.packageURL,
+           request.packageProduct == "IntentLabCoreTesting",
            request.packageRevision?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
             return manual(project, request: request,
-                          "This Intents build has no verified default package revision. Select a local development checkout or enter a published 40-character commit, then preview again.")
+                          "IntentLabCoreTesting is not included in the verified default revision for IntentLabTesting. Select a local development checkout or enter a published exact 40-character revision that includes IntentLabCoreTesting, then preview again.")
+        }
+        if request.packageURL == IntentLabPackageRevisionManifest.packageURL,
+           request.packageRevision?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
+            return manual(project, request: request,
+                          "This Intents build has no verified default package revision. Select a local development checkout or enter a published exact 40-character revision, then preview again.")
         }
         guard project.pathExtension == "xcodeproj", FileManager.default.fileExists(atPath: project.path),
               (request.packageURL.isFileURL
@@ -351,6 +403,37 @@ struct IntentLabProjectInstaller: Sendable {
               declaredCapabilities.allSatisfy({ !$0.isEmpty && !$0.contains(where: { $0.isWhitespace }) }),
               Set(declaredCapabilities).count == declaredCapabilities.count else {
             return manual(project, request: request, "The integration declaration needs schema v1 identity, intent-lab-v2 support, action and observation lists, isolation, and unique capabilities before setup can advertise build support.")
+        }
+        if request.packageProduct == "IntentLabCoreTesting" {
+            let sourceImports = request.consumerSource
+                .split(whereSeparator: \.isNewline)
+                .map { String($0).trimmingCharacters(in: .whitespaces) }
+            guard sourceImports.contains("import IntentLabCoreTesting"),
+                  !sourceImports.contains("import IntentLabTesting"),
+                  request.consumerSource.contains("IntentLabSiriScenarioRunner") else {
+                return manual(project, request: request,
+                              "The IntentLabCoreTesting product is Siri-only. Import IntentLabCoreTesting and use IntentLabSiriScenarioRunner in the consumer XCTest source; do not import IntentLabTesting.")
+            }
+            let unsupportedCapabilities: Set<String> = [
+                "direct-intent-execution", "direct-intent-output", "entity-query", "value-query"
+            ]
+            if !Set(declaredCapabilities).isDisjoint(with: unsupportedCapabilities) {
+                return manual(project, request: request,
+                              "IntentLabCoreTesting supports Siri-only execution. Remove direct Intent and entity/value query capabilities, or select IntentLabTesting.")
+            }
+            let hasTypedAppOwnedSiriObserver = (declaration["observers"] as? [[String: Any]] ?? []).contains {
+                guard let id = $0["id"] as? String,
+                      !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      $0["source"] as? String == "uiElement",
+                      let selector = $0["selector"] as? String,
+                      !selector.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      $0["type"] is [String: Any] else { return false }
+                return true
+            }
+            guard hasTypedAppOwnedSiriObserver else {
+                return manual(project, request: request,
+                              "Declare at least one typed app-owned observer with source uiElement and a stable selector for the Siri state outcome, then implement that observation in IntentLabAppAdapter.observe and preview again.")
+            }
         }
         let needsAppAdapter = !Set(declaredCapabilities).isDisjoint(with: [
             "siri", "siri-completion", "accessible-result", "preparation", "invocation-correlation"
@@ -445,12 +528,16 @@ struct IntentLabProjectInstaller: Sendable {
                                     appName: appName, targetID: targetID, targetName: targetName,
                                     objects: objects, supportsSynchronizedGroups: objectVersion >= 77)
             }
-            try addPackage(to: &document, project: project, targetID: targetID,
-                           product: request.packageProduct, packageURL: request.packageURL,
-                           revision: request.packageRevision)
-            if request.packageProduct == "IntentLabTesting" {
+            let productsToInstall: [String]
+            switch request.packageProduct {
+            case "IntentLabTesting", "IntentLabCoreTesting":
+                productsToInstall = [request.packageProduct, "IntentLabContracts"]
+            default:
+                productsToInstall = [request.packageProduct]
+            }
+            for product in productsToInstall {
                 try addPackage(to: &document, project: project, targetID: targetID,
-                               product: "IntentLabContracts", packageURL: request.packageURL,
+                               product: product, packageURL: request.packageURL,
                                revision: request.packageRevision)
             }
             try setHarnessHints(in: &document, targetID: targetID,
@@ -475,7 +562,7 @@ struct IntentLabProjectInstaller: Sendable {
             (sourceURL, "Add the consumer-owned XCTest entry point", Data(request.consumerSource.utf8)),
             (declarationURL, "Add the integration declaration", request.declarationData),
         ]
-        let adapterData = Data(Self.appAdapterScaffold.utf8)
+        let adapterData = Data(Self.adapterScaffold(for: request.packageProduct).utf8)
         let adapterExists = try readableContents(at: adapterURL) != nil
         let allCandidates = candidates + (adapterExists ? [] : [
             (adapterURL, "Scaffold an app-owned adapter that fails until implemented", adapterData)
@@ -716,7 +803,7 @@ struct IntentLabProjectInstaller: Sendable {
                                            data: request.declarationData),
             IntentLabManualIntegrationFile(filename: "IntentLabAppAdapter.swift",
                                            purpose: "App-owned adapter scaffold; all business operations fail until implemented",
-                                           data: Data(Self.appAdapterScaffold.utf8)),
+                                           data: Data(Self.adapterScaffold(for: request.packageProduct).utf8)),
             IntentLabManualIntegrationFile(filename: "IntentLabManualSetup.md",
                                            purpose: "Project and scheme setup instructions",
                                            data: Data(instructions.utf8)),

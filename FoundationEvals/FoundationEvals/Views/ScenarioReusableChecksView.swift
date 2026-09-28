@@ -51,7 +51,7 @@ struct ScenarioReusableChecksView: View {
                 Spacer()
                 Button("Add observation", systemImage: "plus") {
                     var plan = coordinator.draft.observationPlan ?? []
-                    plan.append(.init(id: "observation-\(plan.count + 1)", source: .uiElement, operationID: "", selector: ""))
+                    plan.append(Self.newObservation(index: plan.count + 1))
                     coordinator.draft.observationPlan = plan
                     coordinator.draft.definitionDigest = ""
                 }
@@ -89,6 +89,10 @@ struct ScenarioReusableChecksView: View {
             }
             IntentLabHelp("Select the source that actually reads the outcome. A query or test hook must be implemented by the app's integration; naming one here does not verify it.")
         }
+    }
+
+    static func newObservation(index: Int) -> ScenarioPlannedObservation {
+        .init(id: "observation-\(index)", source: .uiElement, operationID: nil, selector: nil)
     }
 
     private func claimBinding(_ claim: ScenarioProofClaim) -> Binding<Bool> {

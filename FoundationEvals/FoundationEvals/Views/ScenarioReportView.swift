@@ -302,7 +302,6 @@ struct ScenarioReportView: View {
                     coordinator.notice = error.localizedDescription
                 }
             }
-            .workspacePage()
         }
     }
 

@@ -4,6 +4,11 @@ import UniformTypeIdentifiers
 
 /// Static inspection and a file preview run before project build approval.
 struct IntentLabSetupInstallerView: View {
+    private enum SupportMode: String, CaseIterable {
+        case direct = "App Intent"
+        case siri = "Siri"
+    }
+
     @Bindable var coordinator: ScenarioCoordinator
     @State private var projectPaths: [String] = []
     @State private var projectPath = ""
@@ -14,6 +19,7 @@ struct IntentLabSetupInstallerView: View {
     @State private var appBundleID = ""
     @State private var intentIdentifier = ""
     @State private var declaredReadOnly = false
+    @State private var supportMode: SupportMode = .direct
     @State private var packageSource = "https://github.com/coryparrry/Intents.git"
     @State private var packageRevision = ""
     @State private var choosingLocalPackage = false
@@ -63,6 +69,10 @@ struct IntentLabSetupInstallerView: View {
                 TextField("Known App Intent identifier", text: $intentIdentifier)
                 Toggle("This action is read-only", isOn: $declaredReadOnly)
                 IntentLabHelp("The generated Basic integration does not prepare an isolated dataset. Confirm this only for an action that does not mutate app or external state. For a mutating intent, add an isolated test configuration and app-owned preparation/observation adapter before running it.")
+                Picker("Test route", selection: $supportMode) {
+                    ForEach(SupportMode.allCases, id: \.self) { mode in Text(mode.rawValue).tag(mode) }
+                }
+                .pickerStyle(.segmented)
                 TextField("Package Git URL or local development path", text: $packageSource)
                 Button("Choose local package checkout…", systemImage: "folder") {
                     choosingLocalPackage = true
@@ -71,7 +81,9 @@ struct IntentLabSetupInstallerView: View {
                     TextField("Exact published Git revision (40 hex characters)", text: $packageRevision)
                 }
                 IntentLabHelp("For a reusable installation, enter an exact published package revision. A local checkout is for development and will not work after that checkout moves or disappears.")
-                IntentLabHelp("The generated entry point supports Basic direct checks. Behaviour and Siri checks require your app's own observation and completion adapter before the connection can qualify for those routes.")
+                IntentLabHelp(supportMode == .direct
+                    ? "The generated entry point supports Basic direct checks. Behaviour checks require your app's own observation adapter."
+                    : "Siri support uses the XCTest-only package. Add a typed app-owned UI observer with a stable selector to the declaration, then implement preparation, observation, and completion in the adapter. Preview will give manual setup steps until that observer exists. The scaffold does not invent app results.")
                 HStack {
                     Button("Choose installed integration declaration…", systemImage: "checkmark.seal") {
                         choosingInstalledDeclaration = true
@@ -111,6 +123,7 @@ struct IntentLabSetupInstallerView: View {
         .onChange(of: declaredReadOnly) { _, _ in plan = nil }
         .onChange(of: packageSource) { _, _ in plan = nil }
         .onChange(of: packageRevision) { _, _ in plan = nil }
+        .onChange(of: supportMode) { _, _ in plan = nil; coordinator.invalidatePreflight() }
         .fileImporter(isPresented: $choosingLocalPackage, allowedContentTypes: [.folder]) { result in
             do {
                 let url = try result.get()
@@ -276,7 +289,8 @@ struct IntentLabSetupInstallerView: View {
                     .uiTestTargets.first { $0.name == reviewedPlan.targetName }
                 let productID = installedTarget.map { "\(projectPath)#\($0.id)" }
                 let applicationProductID = "\(projectPath)#\(appTargetID)"
-                if coordinator.draft.schemaVersion != ScenarioDefinition.reusableSchemaVersion {
+                if coordinator.draft.schemaVersion != ScenarioDefinition.reusableSchemaVersion
+                    && coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
                     coordinator.startReusableCheck()
                 }
                 coordinator.recordInstalledIntegration(
@@ -307,7 +321,8 @@ struct IntentLabSetupInstallerView: View {
             targetBundleIdentifier: appBundleID,
             testTargetName: target.name
         )
-        if coordinator.draft.schemaVersion != ScenarioDefinition.reusableSchemaVersion {
+        if coordinator.draft.schemaVersion != ScenarioDefinition.reusableSchemaVersion
+            && coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
             coordinator.startReusableCheck()
         }
         coordinator.recordInstalledIntegration(
@@ -351,8 +366,8 @@ struct IntentLabSetupInstallerView: View {
             uiTestTargetID: uiTestTargetID.isEmpty ? nil : uiTestTargetID,
             packageURL: packageURL,
             packageRevision: packageSource.hasPrefix("https://") ? packageRevision : nil,
-            packageProduct: "IntentLabTesting",
-            consumerSource: Self.consumerSource,
+            packageProduct: supportMode == .siri ? "IntentLabCoreTesting" : "IntentLabTesting",
+            consumerSource: supportMode == .siri ? Self.siriConsumerSource : Self.consumerSource,
             declarationData: try declarationData()
         )
     }
@@ -373,8 +388,10 @@ struct IntentLabSetupInstallerView: View {
                 return ["id": field.name, "type": try jsonObject(field.type),
                         "path": try jsonObject(path)]
             } : []
-        var capabilities = ["environment-payload", "direct-intent-execution"]
-        if !projections.isEmpty { capabilities.append("direct-intent-output") }
+        var capabilities = supportMode == .siri
+            ? ["environment-payload", "preparation", "siri", "siri-completion", "accessible-result", "invocation-correlation"]
+            : ["environment-payload", "direct-intent-execution"]
+        if supportMode == .direct && !projections.isEmpty { capabilities.append("direct-intent-output") }
         let declaration: [String: Any] = [
             "schemaVersion": 1,
             "id": "\(appBundleID).intentlab",
@@ -385,7 +402,7 @@ struct IntentLabSetupInstallerView: View {
             "targetIdentity": targetName,
             "supportedHarnessProtocols": ["intent-lab-v2"],
             "actions": [["id": intentIdentifier, "parameters": parameters]],
-            "resultProjections": projections,
+            "resultProjections": supportMode == .siri ? [] : projections,
             "preparationOperations": ["none"],
             "observers": [],
             "isolation": ["kind": "readOnly"],
@@ -411,6 +428,23 @@ struct IntentLabSetupInstallerView: View {
 
             func testIntentLabConnection() throws {
                 try IntentLabScenarioRunner.checkConnection(testCase: self, integration: IntentLabBasicIntegration())
+            }
+        }
+        """
+
+    private static let siriConsumerSource = """
+        import XCTest
+        import IntentLabCoreTesting
+
+        @available(macOS 27.0, iOS 27.0, *)
+        @MainActor
+        final class IntentLabScenarioTests: XCTestCase {
+            func testIntentLabScenario() throws {
+                try IntentLabSiriScenarioRunner.run(testCase: self, integration: IntentLabAppAdapter())
+            }
+
+            func testIntentLabConnection() throws {
+                try IntentLabSiriScenarioRunner.checkConnection(testCase: self, integration: IntentLabAppAdapter())
             }
         }
         """

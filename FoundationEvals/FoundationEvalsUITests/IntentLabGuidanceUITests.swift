@@ -127,6 +127,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         XCTAssertFalse(app.textFields["OpenNoteIntent"].exists, "Stable checks select the compiled action")
         XCTAssertTrue(app.staticTexts["Rebuild and check support to choose an observable result."].exists)
         XCTAssertFalse(app.textFields["Optional feature run UUID"].exists)
+        capture(app.windows.firstMatch, name: "Guided developer check")
     }
 
     @MainActor

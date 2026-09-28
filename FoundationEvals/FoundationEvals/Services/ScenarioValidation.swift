@@ -179,7 +179,9 @@ enum ScenarioValidator {
             }
             switch parameter.presence {
             case .missing:
-                break
+                if isStable && !parameter.isOptional {
+                    error("\(path).presence", "Enter a value for this required app action input before saving or running the test.")
+                }
             case .value(.null):
                 if !parameter.isOptional {
                     error("\(path).presence", "Explicit null is valid only for an optional parameter; use missing to keep an intent default.")

@@ -39,6 +39,9 @@ struct ScenarioEditorView: View {
             outcomeSection
             if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
                 ScenarioGuidedActionFeatureView(coordinator: coordinator, runnerStore: runnerStore)
+                if !coordinator.draft.directControl.parameters.isEmpty {
+                    parametersSection
+                }
             } else {
                 DisclosureGroup("Inputs · \(coordinator.draft.directControl.parameters.count)") {
                     parametersSection.padding(.top, 12)
@@ -211,16 +214,20 @@ struct ScenarioEditorView: View {
     }
 
     private var parametersSection: some View {
-        IntentLabCard("Inputs", subtitle: "Parameters are inputs the action needs, such as which note to open. Match the names and types declared by the app’s intent. If the action takes no inputs, leave this list empty.") {
-            HStack {
-                Spacer()
-                Button("Add parameter", systemImage: "plus") {
-                    coordinator.draft.directControl.parameters.append(
-                        .init(name: "parameter", type: .primitive(.string), isOptional: false, presence: .missing)
-                    )
-                    coordinator.draft.definitionDigest = ""
+        IntentLabCard("Inputs", subtitle: coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion
+            ? "Set the values required by the action selected above. Names and types come from your app's declaration."
+            : "Parameters are inputs the action needs, such as which note to open. Match the names and types declared by the app’s intent. If the action takes no inputs, leave this list empty.") {
+            if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                HStack {
+                    Spacer()
+                    Button("Add parameter", systemImage: "plus") {
+                        coordinator.draft.directControl.parameters.append(
+                            .init(name: "parameter", type: .primitive(.string), isOptional: false, presence: .missing)
+                        )
+                        coordinator.draft.definitionDigest = ""
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
             }
             ForEach(Array(coordinator.draft.directControl.parameters.indices), id: \.self) { index in
                 ScenarioParameterEditor(coordinator: coordinator, index: index, parameter: $coordinator.draft.directControl.parameters[index]) {
