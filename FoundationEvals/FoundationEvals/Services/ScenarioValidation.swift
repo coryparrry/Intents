@@ -594,7 +594,7 @@ enum ScenarioDiagnosticClassifier {
             return "The feature control passed, but the direct intent returned a wrong or incomplete observable result. An application integration or mapping failure is observed."
         }
         if intentFailed {
-            return "The direct intent failed. No completed passing feature control is available, so the evidence does not establish where the failure arose."
+            return "The direct intent failed. No passing app-feature control was recorded, so the evidence does not establish where the failure arose."
         }
         if intentPassed && siriFailed {
             return "The direct intent passed, but the Siri-driven outcome failed. The evidence establishes a Siri-experience failure, not Siri's hidden reasoning or the point where the wrong value was introduced."
