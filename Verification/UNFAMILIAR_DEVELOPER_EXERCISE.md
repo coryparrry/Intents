@@ -56,6 +56,10 @@ it does not substitute for package, native, CLI, or fixture verification.
 
 ## Current status
 
-Prepared from the existing FlipBook source. No independent participant or
-FlipBook test account/device session was available to this implementation
-run, so AD-01 remains unverified. No FlipBook files were changed.
+Prepared from the existing FlipBook source. On 2026-09-28 the repository owner
+and paired iPhone became available, but this does not satisfy the independent
+participant criterion. FlipBook service eligibility has not been verified, and
+the installed Xcode 27.0 AppIntentsTesting bundle could not load on the iOS
+27.2 device because its referenced AppIntentsServices symbol is absent. Use a
+compatible Xcode/device runtime before asking the participant to start the
+timed exercise. AD-01 remains unverified. No FlipBook files were changed.
