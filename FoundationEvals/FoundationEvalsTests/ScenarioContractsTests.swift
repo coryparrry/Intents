@@ -1644,6 +1644,8 @@ struct ScenarioContractsTests {
                                                  buildInputsDigest: digest) == "git:\(head)")
         #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [root, project, source],
                                                  buildInputsDigest: digest) == "git:\(head)")
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [root],
+                                                 buildInputsDigest: digest) == "git:\(head)")
         let otherRoot = try temporaryDirectory()
         let otherProject = otherRoot.appending(path: "App.xcodeproj", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: otherProject, withIntermediateDirectories: true)
@@ -1702,6 +1704,63 @@ struct ScenarioContractsTests {
             $0.resolvingSymlinksInPath().path == project.appending(path: "project.pbxproj")
                 .resolvingSymlinksInPath().path
         })
+    }
+
+    @Test func ignoredWorkspaceSchemeCannotClaimCleanGitSource() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "App.xcodeproj", directoryHint: .isDirectory)
+        let workspace = root.appending(path: "Check.xcworkspace", directoryHint: .isDirectory)
+        let scheme = workspace.appending(path: "xcshareddata/xcschemes/Check.xcscheme")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: scheme.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
+        try Data("<Workspace version=\"1.0\"><FileRef location=\"group:App.xcodeproj\"/></Workspace>".utf8)
+            .write(to: workspace.appending(path: "contents.xcworkspacedata"))
+        try Data("Check.xcworkspace/xcshareddata/xcschemes/\n".utf8)
+            .write(to: root.appending(path: ".gitignore"))
+        let git = Process()
+        git.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        git.arguments = ["-C", root.path, "init", "-q"]
+        try git.run()
+        git.waitUntilExit()
+        #expect(git.terminationStatus == 0)
+        let add = Process()
+        add.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        add.arguments = ["-C", root.path, "add", ".gitignore", "App.xcodeproj/project.pbxproj",
+                         "Check.xcworkspace/contents.xcworkspacedata"]
+        try add.run()
+        add.waitUntilExit()
+        #expect(add.terminationStatus == 0)
+        let commit = Process()
+        commit.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        commit.arguments = ["-C", root.path, "-c", "user.name=Intent Test",
+                            "-c", "user.email=intent@example.invalid", "commit", "-q", "-m", "baseline"]
+        try commit.run()
+        commit.waitUntilExit()
+        #expect(commit.terminationStatus == 0)
+        try Data("scheme".utf8).write(to: scheme)
+
+        let products = root.appending(path: "Products")
+        let configuration = XcodeTestConfiguration(
+            containerPath: workspace.path, isWorkspace: true, scheme: "Check",
+            testTarget: "Tests", testBundleIdentifier: "example.Tests",
+            destinationIdentifier: "device", generatedResourceDirectory: root.path,
+            xcodebuildPath: "/bin/echo"
+        )
+        let fingerprint = try XcodeTestExecutor.buildInputsFingerprint(
+            configuration: configuration,
+            products: XCTestRunProductPaths(
+                sourceURL: products.appending(path: "Check.xctestrun"),
+                appBundleURL: products.appending(path: "App.app"),
+                testHostURL: products.appending(path: "Host.app"),
+                testBundleURL: products.appending(path: "Tests.xctest")
+            )
+        )
+        #expect(fingerprint.sourceLocations.contains(scheme))
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: fingerprint.sourceLocations,
+                                                 buildInputsDigest: fingerprint.digest)
+                == "inputs-sha256:\(fingerprint.digest)")
     }
 
     @Test func latestFrozenVersionSupersedesOldProjectAssignment() throws {
