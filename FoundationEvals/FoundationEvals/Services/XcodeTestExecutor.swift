@@ -631,7 +631,7 @@ actor XcodeTestExecutor {
             outputDirectory: attachments, invocationID: checkID
         )
         let receipt = try Self.connectionReceipt(in: attachments)
-        let buildInputsDigest = try Self.buildInputsDigest(configuration: configuration, products: paths)
+        let fingerprint = try Self.buildInputsFingerprint(configuration: configuration, products: paths)
         let verified = ScenarioVerifiedConnection(
             receipt: receipt, configuration: configuration,
             appProduct: products.app,
@@ -643,9 +643,9 @@ actor XcodeTestExecutor {
             testBundleURL: paths.testBundleURL,
             testRunURL: paths.sourceURL,
             selectedTestProjectURL: URL(filePath: owningProjectPath),
-            buildInputsDigest: buildInputsDigest,
+            buildInputsDigest: fingerprint.digest,
             sourceRevision: Self.sourceRevision(
-                projectURL: URL(filePath: owningProjectPath), buildInputsDigest: buildInputsDigest
+                sourceLocations: fingerprint.sourceLocations, buildInputsDigest: fingerprint.digest
             ),
             productMetadataDigest: Self.productMetadataDigest(products: paths)
         )
@@ -812,6 +812,15 @@ actor XcodeTestExecutor {
         products: XCTestRunProductPaths,
         fileManager: FileManager = .default
     ) throws -> String {
+        try buildInputsFingerprint(configuration: configuration, products: products,
+                                   fileManager: fileManager).digest
+    }
+
+    static func buildInputsFingerprint(
+        configuration: XcodeTestConfiguration,
+        products: XCTestRunProductPaths,
+        fileManager: FileManager = .default
+    ) throws -> (digest: String, sourceLocations: Set<URL>) {
         let container = URL(filePath: configuration.containerPath)
         var files = [
             products.sourceURL,
@@ -850,23 +859,27 @@ actor XcodeTestExecutor {
                 hasher.update(data: Data("<missing>".utf8))
             }
         }
-        try hashProjectSources(projects: projects, into: &hasher, fileManager: fileManager)
+        let projectSources = try hashProjectSources(projects: projects, into: &hasher,
+                                                    fileManager: fileManager)
         let toolPath = URL(filePath: configuration.xcodebuildPath).resolvingSymlinksInPath().path
         hasher.update(data: Data(toolPath.utf8))
         if let attributes = try? fileManager.attributesOfItem(atPath: toolPath) {
             let stamp = "\(attributes[.modificationDate] ?? "unknown"):\(attributes[.size] ?? "unknown")"
             hasher.update(data: Data(stamp.utf8))
         }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        // A workspace with no discoverable project cannot claim a Git source.
+        let sourceLocations = projects.isEmpty ? Set<URL>() : projectSources.union([container])
+        return (digest, sourceLocations)
     }
 
     /// A Git label is only meaningful for a clean checkout. Keep the
     /// independently checked build-input digest as the explicit fallback for
     /// dirty or non-Git projects; never present it as a commit revision.
-    static func sourceRevision(projectURL: URL, buildInputsDigest: String) -> String {
+    static func sourceRevision(sourceLocations: Set<URL>, buildInputsDigest: String) -> String {
         let fallback = "inputs-sha256:\(buildInputsDigest)"
-        let directory = projectURL.deletingLastPathComponent().standardizedFileURL.path
-        func git(_ arguments: [String]) -> String? {
+        guard let first = sourceLocations.first else { return fallback }
+        func git(in directory: String, _ arguments: [String]) -> String? {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
             process.arguments = ["-C", directory] + arguments
@@ -879,18 +892,39 @@ actor XcodeTestExecutor {
             guard process.terminationStatus == 0 else { return nil }
             return String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        guard let root = git(["rev-parse", "--show-toplevel"]), !root.isEmpty,
-              let status = git(["status", "--porcelain", "--untracked-files=all"]), status.isEmpty,
-              let revision = git(["rev-parse", "HEAD"]),
+        guard let root = git(in: first.deletingLastPathComponent().path,
+                             ["rev-parse", "--show-toplevel"]), !root.isEmpty,
+              sourceLocations.allSatisfy({ location in
+                  let path = location.standardizedFileURL.resolvingSymlinksInPath().path
+                  let canonicalRoot = URL(filePath: root).resolvingSymlinksInPath().path
+                  return path == canonicalRoot || path.hasPrefix(canonicalRoot + "/")
+              }),
+              let status = git(in: root, ["status", "--porcelain", "--untracked-files=all"]),
+              status.isEmpty,
+              let trackedOutput = git(in: root, ["ls-files", "-z", "--cached", "--full-name"]),
+              !trackedOutput.isEmpty,
+              let revision = git(in: root, ["rev-parse", "HEAD"]),
               revision.range(of: "^[0-9a-f]{40,64}$", options: .regularExpression) != nil else {
             return fallback
+        }
+        let canonicalRoot = URL(filePath: root).resolvingSymlinksInPath().path
+        let tracked = Set(trackedOutput.split(separator: "\0").map(String.init))
+        for location in sourceLocations {
+            let path = location.standardizedFileURL.resolvingSymlinksInPath().path
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else {
+                return fallback
+            }
+            if !isDirectory.boolValue, !tracked.contains(String(path.dropFirst(canonicalRoot.count + 1))) {
+                return fallback
+            }
         }
         return "git:\(revision)"
     }
 
     private static func hashProjectSources(
         projects: [URL], into hasher: inout SHA256, fileManager: FileManager
-    ) throws {
+    ) throws -> Set<URL> {
         let generatedDirectories: Set<String> = [
             ".git", ".build", ".swiftpm", "DerivedData",
             "node_modules", "xcuserdata"
@@ -970,6 +1004,8 @@ actor XcodeTestExecutor {
                 hasher.update(data: Data("\(size):\(attributes[.modificationDate] ?? "unknown")".utf8))
             }
         }
+        return Set(projects + visitedDirectories.map { URL(filePath: $0) }
+            + sourceFiles.map { $0.resolvingSymlinksInPath() })
     }
 
     static func productMetadataDigest(products: XCTestRunProductPaths) -> String {

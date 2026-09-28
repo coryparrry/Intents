@@ -188,6 +188,7 @@ enum IntentEvidenceQualification {
             appProductDigest: plan.appProductDigest,
             testProductDigest: plan.testProductDigest,
             sourceInputsDigest: plan.sourceInputsDigest ?? "",
+            sourceRevision: plan.sourceRevision,
             runnerBuildID: plan.runnerBuildID, runnerID: plan.runnerID,
             plannedCoordinates: plan.coordinates,
             comparisonPolicy: plan.comparisonPolicy,
@@ -491,8 +492,10 @@ enum IntentEvidenceQualification {
         guard !expectedSource.isEmpty, imported.manifest.sourceRevision == expectedSource else {
             throw IntentEvidenceBundleError.invalid("Unexpected source revision.")
         }
-        guard imported.cases.allSatisfy({
-            $0.plan.sourceRevision == nil || $0.plan.sourceRevision == imported.manifest.sourceRevision
+        guard imported.cases.allSatisfy({ item in
+            let expected = item.plan.sourceRevision
+                ?? item.plan.sourceInputsDigest.map { "inputs-sha256:\($0)" }
+            return expected == imported.manifest.sourceRevision
         }) else {
             throw IntentEvidenceBundleError.invalid("Frozen plan source differs from bundle provenance.")
         }
