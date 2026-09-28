@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "id": "intent-lab-notes-fixture-siri",
+  "version": "2",
+  "targetBundleIdentifier": "com.coryparry.IntentLabFixture",
+  "projectIdentity": "IntentLabFixture.xcodeproj",
+  "targetIdentity": "IntentLabFixtureSiriUITests",
+  "supportedHarnessProtocols": [
+    "intent-lab-v1",
+    "intent-lab-v2"
+  ],
+  "actions": [
+    {
+      "id": "OpenNoteIntent",
+      "parameters": [
+        {
+          "name": "note",
+          "type": {
+            "entity": {
+              "typeIdentifier": "NoteEntity"
+            }
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "SummarizeNoteIntent",
+      "parameters": [
+        {
+          "name": "note",
+          "type": {
+            "entity": {
+              "typeIdentifier": "NoteEntity"
+            }
+          },
+          "required": true
+        }
+      ]
+    }
+  ],
+  "resultProjections": [
+    {
+      "id": "openedNoteID",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      },
+      "path": [
+        {
+          "kind": "property",
+          "name": "value"
+        }
+      ]
+    },
+    {
+      "id": "generatedSummary",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      },
+      "path": [
+        {
+          "kind": "property",
+          "name": "value"
+        }
+      ]
+    }
+  ],
+  "preparationOperations": [
+    "",
+    "reset",
+    "resetNotes",
+    "resetFixture"
+  ],
+  "observers": [
+    {
+      "id": "selectedNoteID",
+      "source": "uiElement",
+      "selector": "intent-lab-selected-note-id",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "noteStoreMutationCount",
+      "source": "uiElement",
+      "selector": "intent-lab-mutation-count",
+      "type": {
+        "primitive": {
+          "_0": "integer"
+        }
+      }
+    },
+    {
+      "id": "invocationContext",
+      "source": "uiElement",
+      "selector": "intent-lab-observed-context",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "applicationEvent",
+      "source": "uiElement",
+      "selector": "intent-lab-last-event",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "visibleResponse",
+      "source": "uiElement",
+      "selector": "intent-lab-visible-summary",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "visibleSummary",
+      "source": "uiElement",
+      "selector": "intent-lab-visible-summary",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "summarySourceNoteID",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-source-note-id",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "summarySourceContentDigest",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-source-digest",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "summaryContext",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-context",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "summaryCompletionID",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-completion-id",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "summaryCaseID",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-case-id",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "summaryAttemptID",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-attempt-id",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    }
+  ],
+  "isolation": {
+    "kind": "synthetic",
+    "readinessOperationID": "reset"
+  },
+  "capabilities": [
+    "environment-payload",
+    "preparation",
+    "accessible-result",
+    "siri",
+    "siri-completion",
+    "invocation-correlation"
+  ],
+  "queryOperations": []
+}

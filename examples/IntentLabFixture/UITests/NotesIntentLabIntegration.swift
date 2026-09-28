@@ -1,18 +1,29 @@
 import Foundation
 import IntentLabContracts
+#if INTENT_LAB_SIRI_ONLY
+import IntentLabCoreTesting
+typealias NotesTestingIntegration = IntentLabSiriIntegration
+#else
 import IntentLabTesting
+typealias NotesTestingIntegration = IntentLabIntegration
+#endif
 import XCTest
 
 @available(iOS 27.0, *)
 @MainActor
-struct NotesIntentLabIntegration: IntentLabIntegration {
+struct NotesIntentLabIntegration: NotesTestingIntegration {
     var supportedCapabilities: Set<String> {
+        #if INTENT_LAB_SIRI_ONLY
+        ["environment-payload", "preparation", "accessible-result", "siri",
+         "siri-completion", "invocation-correlation"]
+        #else
         ["environment-payload", "direct-intent-execution", "direct-intent-output",
          "preparation", "accessible-result", "siri", "siri-completion", "invocation-correlation"]
+        #endif
     }
     func prepare(bundleIdentifier: String, context: String, operationID: String) throws -> XCUIApplication {
         guard ["", "reset", "resetNotes", "resetFixture"].contains(operationID) else {
-            throw IntentLabIntegrationError.unsupportedPreparation(operationID)
+            throw NotesIntegrationError.unsupportedPreparation(operationID)
         }
         let application = XCUIApplication(bundleIdentifier: bundleIdentifier)
         application.launchArguments = ["-intent-lab-reset", "-intent-lab-context", context]
@@ -76,4 +87,15 @@ struct NotesIntentLabIntegration: IntentLabIntegration {
     }
 
     func source(for observationKey: String) -> String { "accessibleUI" }
+}
+
+private enum NotesIntegrationError: LocalizedError {
+    case unsupportedPreparation(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedPreparation(let operation):
+            "The Notes fixture does not provide preparation operation \(operation)."
+        }
+    }
 }

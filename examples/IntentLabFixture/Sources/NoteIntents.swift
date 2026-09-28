@@ -59,6 +59,12 @@ struct SummarizeNoteIntent: AppIntent {
 
     @Parameter(title: "Note") var note: NoteEntity
 
+    init() {}
+
+    init(note: NoteEntity) {
+        self.note = note
+    }
+
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         guard let source = FixtureNotes.note(id: note.id) else { throw FixtureIntentError.missingNote }
         FixtureState.beginSummaryAttempt(noteID: source.id)
@@ -81,6 +87,12 @@ struct FixtureShortcuts: AppShortcutsProvider {
             phrases: ["Open a note in \(.applicationName)"],
             shortTitle: "Open note",
             systemImageName: "note.text"
+        )
+        AppShortcut(
+            intent: SummarizeNoteIntent(note: NoteEntity(id: "packing-001", title: "Packing note")),
+            phrases: ["Summarize the packing note in \(.applicationName)"],
+            shortTitle: "Summarize packing note",
+            systemImageName: "text.quote"
         )
         AppShortcut(
             intent: SummarizeNoteIntent(),

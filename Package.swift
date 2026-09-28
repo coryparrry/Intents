@@ -56,6 +56,7 @@ let package = Package(
         .library(name: "FoundationEvalsDeveloper", targets: ["FoundationEvalsDeveloper"]),
         .library(name: "IntentLabContracts", targets: ["IntentLabContracts"]),
         .library(name: "IntentLabTesting", targets: ["IntentLabTesting"]),
+        .library(name: "IntentLabCoreTesting", targets: ["IntentLabCoreTesting"]),
         .executable(name: "intents-evidence", targets: ["IntentsEvidenceCLI"]),
     ],
     targets: [
@@ -66,8 +67,13 @@ let package = Package(
             publicHeadersPath: "include"
         ),
         .target(
-            name: "IntentLabTesting",
+            name: "IntentLabCoreTesting",
             dependencies: ["IntentLabContracts", "IntentLabSiriBridge"],
+            path: "Sources/IntentLabCoreTesting"
+        ),
+        .target(
+            name: "IntentLabTesting",
+            dependencies: ["IntentLabContracts", "IntentLabCoreTesting"],
             path: "Sources/IntentLabTesting"
         ),
         .target(
@@ -188,6 +194,11 @@ let package = Package(
             name: "IntentLabContractsTests",
             dependencies: ["IntentLabContracts"],
             path: "Tests/IntentLabContractsTests"
+        ),
+        .testTarget(
+            name: "IntentLabCoreTestingTests",
+            dependencies: ["IntentLabCoreTesting", "IntentLabContracts"],
+            path: "Tests/IntentLabCoreTestingTests"
         ),
     ]
 )

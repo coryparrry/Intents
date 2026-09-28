@@ -33,7 +33,10 @@ targets:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      - UITests
+      - path: UITests
+        excludes:
+          - IntentLabSiriScenarioTests.swift
+          - Siri
     resources:
       - UITests/Generated
     dependencies:
@@ -50,6 +53,29 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
+  IntentLabFixtureSiriUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests/NotesIntentLabIntegration.swift
+      - path: UITests/IntentLabSiriScenarioTests.swift
+      - path: UITests/Siri/IntentLabIntegration.json
+        buildPhase: resources
+    dependencies:
+      - target: IntentLabFixture
+      - package: FoundationEvalsDeveloper
+        product: IntentLabCoreTesting
+      - package: FoundationEvalsDeveloper
+        product: IntentLabContracts
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coryparry.IntentLabFixtureSiriUITests
+        INTENT_LAB_HARNESS_VERSION: intent-lab-v2
+        INTENT_LAB_HARNESS_CAPABILITIES: environment-payload preparation accessible-result siri siri-completion invocation-correlation
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) INTENT_LAB_SIRI_ONLY"
   IntentLabFixtureUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -87,3 +113,11 @@ schemes:
     test:
       targets:
         - IntentLabFixtureV2UITests
+  IntentLabFixtureSiri:
+    build:
+      targets:
+        IntentLabFixture: all
+        IntentLabFixtureSiriUITests: [test]
+    test:
+      targets:
+        - IntentLabFixtureSiriUITests
