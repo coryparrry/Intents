@@ -84,6 +84,28 @@ final class IntentLabScenarioTests: XCTestCase {
         XCTAssertEqual(lane.outcome, .failed)
         XCTAssertEqual(lane.observations["selectedNoteID"], .string("garden-001"))
         XCTAssertEqual(lane.assertionResults.first?.observedValue, .string("garden-001"))
+        XCTAssertTrue(Self.hasCompleteObservedResults([lane]))
+    }
+
+    func testIncompleteOrUnobservedResultsFailTheHarness() {
+        let scenario = testScenario()
+        let completed = result(for: .intentIntegration, scenario: scenario, observations: [:], startedAt: Date())
+        let timedOut = failed(
+            for: .siri, scenario: scenario, error: SiriProbeError.outcomeNotObserved,
+            startedAt: Date()
+        )
+        let error = failed(
+            for: .intentIntegration, scenario: scenario,
+            error: NSError(domain: "IntentLabScenarioTests", code: 1), startedAt: Date()
+        )
+        var incomplete = completed
+        incomplete.executionStatus = .invalidEvidence
+
+        XCTAssertFalse(Self.hasCompleteObservedResults([]))
+        XCTAssertFalse(Self.hasCompleteObservedResults([completed, incomplete]))
+        XCTAssertFalse(Self.hasCompleteObservedResults([completed, timedOut]))
+        XCTAssertFalse(Self.hasCompleteObservedResults([completed, error]))
+        XCTAssertFalse(Self.hasCompleteObservedResults(Self.unobservedSiriAttempts(for: scenario)))
     }
 
     func testSemanticAssertionIsHandedToHostForReview() throws {
@@ -351,7 +373,15 @@ final class IntentLabScenarioTests: XCTestCase {
             results: results
         )
         try EvidenceAttachmentWriter.attach(envelope, to: self)
-        XCTAssertTrue(results.allSatisfy { $0.outcome == .passed || $0.outcome == .needsReview })
+        XCTAssertTrue(Self.hasCompleteObservedResults(results))
+    }
+
+    private static func hasCompleteObservedResults(_ results: [IntentLabLaneResult]) -> Bool {
+        // An observed assertion mismatch fails the scenario, not XCTest's evidence capture.
+        !results.isEmpty && results.allSatisfy {
+            $0.executionStatus == .completed &&
+                ($0.outcome == .passed || $0.outcome == .failed || $0.outcome == .needsReview)
+        }
     }
 
     // Keep Siri on XCTest's synchronous invocation stack, where its Objective-C

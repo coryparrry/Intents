@@ -1,30 +1,28 @@
 import IntentLabContracts
+import IntentLabCoreTesting
 import Foundation
 import XCTest
 
 /// Consumer-owned, compiled operations. Scenario text never becomes executable code.
 @available(macOS 27.0, iOS 27.0, *)
 @MainActor
-public protocol IntentLabIntegration {
+public protocol IntentLabIntegration: IntentLabSiriIntegration {
     /// Capabilities backed by compiled operations in this consumer target.
     var supportedCapabilities: Set<String> { get }
     /// Prepare an isolated dataset and launch the application for one attempt.
     func prepare(bundleIdentifier: String, context: String, operationID: String) throws -> XCUIApplication
-    /// Restore the isolated fixture after an attempt. Throw unless the app-owned
-    /// cleanup completed and its postcondition was verified.
+    /// Restore the isolated fixture after an attempt and verify its reset state.
     func cleanup(bundleIdentifier: String, context: String, operationID: String) throws
     /// Read application state independently of the scenario's expected values.
     func observe(application: XCUIApplication) throws -> [String: IntentLabValue]
+    /// Merge application observations with typed declaration-backed queries.
+    func observe(application: XCUIApplication, declaration: IntentLabIntegrationDeclaration?, deadlineSeconds: TimeInterval) throws -> [String: IntentLabValue]
     /// Require a fresh action receipt, in addition to the attempt context.
     func completed(observations: [String: IntentLabValue], context: String) -> Bool
-    /// Provenance of each observed key; unlisted keys default to accessible UI.
-    func source(for observationKey: String) -> String
 }
 
 @available(macOS 27.0, iOS 27.0, *)
 public extension IntentLabIntegration {
-    func source(for observationKey: String) -> String { "accessibleUI" }
-
     func cleanup(bundleIdentifier: String, context: String, operationID: String) throws {
         guard ["", "none", "noop", "readOnly"].contains(operationID) else {
             throw IntentLabIntegrationError.unsupportedCleanup(operationID)
@@ -73,6 +71,7 @@ public enum IntentLabIntegrationError: LocalizedError {
 @MainActor
 public struct IntentLabBasicIntegration: IntentLabIntegration {
     public init() {}
+    public var supportsMutatingChecks: Bool { false }
     public var supportedCapabilities: Set<String> {
         ["environment-payload", "direct-intent-execution", "direct-intent-output",
          "entity-query", "value-query"]

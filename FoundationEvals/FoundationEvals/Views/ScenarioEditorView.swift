@@ -3,6 +3,7 @@ import SwiftUI
 struct ScenarioEditorView: View {
     @Bindable var coordinator: ScenarioCoordinator
     let projects: [EvaluationProject]
+    @Environment(DeveloperRunnerStore.self) private var runnerStore
     @State private var pendingTest: ScenarioDefinition?
     @State private var confirmingDraftReplacement = false
 
@@ -36,13 +37,20 @@ struct ScenarioEditorView: View {
                 .disabled(coordinator.isRunning || coordinator.isDiscoveringConnection || coordinator.isVerifyingIntegration)
             }
             outcomeSection
-            DisclosureGroup("Inputs · \(coordinator.draft.directControl.parameters.count)") {
-                parametersSection.padding(.top, 12)
-            }
-            DisclosureGroup("Result checks · \(coordinator.draft.assertions.count)") {
-                assertionsSection.padding(.top, 12)
+            if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                ScenarioGuidedActionFeatureView(coordinator: coordinator, runnerStore: runnerStore)
+            } else {
+                DisclosureGroup("Inputs · \(coordinator.draft.directControl.parameters.count)") {
+                    parametersSection.padding(.top, 12)
+                }
+                DisclosureGroup("Result checks · \(coordinator.draft.assertions.count)") {
+                    assertionsSection.padding(.top, 12)
+                }
             }
             evidenceSection
+            if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                ScenarioGuidedExpectationView(coordinator: coordinator)
+            }
             validationSummary
             DisclosureGroup("Test data and advanced settings") {
                 VStack(spacing: 16) {
@@ -77,7 +85,7 @@ struct ScenarioEditorView: View {
         if let definition = pendingTest {
             Task { await coordinator.selectSavedDefinition(id: definition.id, version: definition.version) }
         } else {
-            coordinator.startReusableCheck()
+            coordinator.startStableCheck()
         }
     }
 
@@ -87,6 +95,10 @@ struct ScenarioEditorView: View {
             subtitle: "Use the same request and expected result each time you run this test."
         ) {
             VStack(alignment: .leading, spacing: 10) {
+                if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                    Button("Create developer check", systemImage: "plus.circle") { requestTest(nil) }
+                    IntentLabHelp("Create a repeatable check whose requirements stay fixed when the app build changes.")
+                }
                 labeledRow("Test name", help: "Give this test a name you’ll recognize.") {
                     TextField("Test name", text: $coordinator.draft.name)
                 }
@@ -98,8 +110,10 @@ struct ScenarioEditorView: View {
                     TextField("For example, the packing note opens", text: $coordinator.draft.goal.expectedBehavior, axis: .vertical)
                         .lineLimit(2...5)
                 }
-                labeledRow("App action", help: "The action’s code name from your app, for example OpenNoteIntent.") {
-                    TextField("OpenNoteIntent", text: $coordinator.draft.directControl.intentIdentifier)
+                if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                    labeledRow("App action", help: "The action’s code name from your app, for example OpenNoteIntent.") {
+                        TextField("OpenNoteIntent", text: $coordinator.draft.directControl.intentIdentifier)
+                    }
                 }
                 DisclosureGroup("App and language details") {
                     VStack(alignment: .leading, spacing: 12) {
@@ -139,7 +153,7 @@ struct ScenarioEditorView: View {
                 labeledRow("Fixture version", help: "The version of that test data. Change it when the prepared data changes.") {
                     TextField("1", text: $coordinator.draft.fixture.version)
                 }
-                labeledRow("Fixture digest", help: "A fingerprint identifying this version of the test data for comparisons. Copy it from your test setup; Intent Lab does not calculate or verify the data’s contents here.") {
+                labeledRow("Fixture digest", help: "A fingerprint for the prepared test data. Comparison is qualified only when the run proves the actual prepared contents match this digest.") {
                     TextField("Stable fixture digest", text: $coordinator.draft.fixture.digest)
                 }
                 if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
@@ -166,14 +180,16 @@ struct ScenarioEditorView: View {
                     : "The name of the intended cleanup operation, for example resetFixture. Your test support must restore the data; entering a name does not run that operation.") {
                     TextField("resetFixture", text: $coordinator.draft.fixture.cleanupOperation)
                 }
-                labeledRow("Linked feature run", help: "Optional: paste the UUID of a saved app-feature test run to reuse its evidence. Leave empty if you are not linking one.") {
-                    TextField("Optional feature run UUID", text: linkedFeatureRunID)
-                }
-                labeledRow("Feature ID", help: "When App feature is Required, enter the feature ID recorded by the linked evaluation run. This prevents evidence from a different feature being accepted.") {
-                    TextField("Feature ID from the evaluation", text: $coordinator.draft.directControl.linkedFeatureID)
-                }
-                labeledRow("Feature evidence digest", help: "When App feature is Required, enter the subject-evidence digest from the linked evaluation run. This is separate from the fixture digest above.") {
-                    TextField("Digest from the evaluation", text: $coordinator.draft.directControl.linkedFeatureSubjectDigest)
+                if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                    labeledRow("Linked feature run", help: "Optional saved app-feature evidence for a legacy check.") {
+                        TextField("Optional feature run UUID", text: linkedFeatureRunID)
+                    }
+                    labeledRow("Feature ID", help: "The feature ID recorded by the linked evaluation run.") {
+                        TextField("Feature ID from the evaluation", text: $coordinator.draft.directControl.linkedFeatureID)
+                    }
+                    labeledRow("Feature evidence digest", help: "The subject-evidence digest from the linked evaluation run.") {
+                        TextField("Digest from the evaluation", text: $coordinator.draft.directControl.linkedFeatureSubjectDigest)
+                    }
                 }
             }
             .textFieldStyle(.roundedBorder)
@@ -481,21 +497,28 @@ private struct ScenarioParameterEditor: View {
     }
 
     @ViewBuilder private var parameterControls: some View {
-        TextField("Parameter name", text: $parameter.name)
-        Picker("Type", selection: typeSelection) {
-            ForEach(ParameterEditorType.allCases) { type in Text(type.title).tag(type) }
+        if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+            Text(parameter.name).font(.callout.weight(.medium))
+            Text(typeSelection.wrappedValue.title).font(.caption).foregroundStyle(.secondary)
+        } else {
+            TextField("Parameter name", text: $parameter.name)
+            Picker("Type", selection: typeSelection) {
+                ForEach(ParameterEditorType.allCases) { type in Text(type.title).tag(type) }
+            }
+            .accessibilityIdentifier("Parameter type")
+            Toggle("Optional", isOn: $parameter.isOptional)
         }
-        .accessibilityIdentifier("Parameter type")
-        Toggle("Optional", isOn: $parameter.isOptional)
         Picker("Presence", selection: presenceSelection) {
             Text("Missing").tag(ParameterPresenceChoice.missing)
             Text("Set value").tag(ParameterPresenceChoice.value)
-            Text("Explicit null").tag(ParameterPresenceChoice.null)
+            if parameter.isOptional { Text("Explicit null").tag(ParameterPresenceChoice.null) }
         }
         .accessibilityIdentifier("Parameter presence")
-        Button("Remove", systemImage: "trash", role: .destructive, action: remove)
-            .labelStyle(.iconOnly)
-            .accessibilityIdentifier("Remove parameter")
+        if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+            Button("Remove", systemImage: "trash", role: .destructive, action: remove)
+                .labelStyle(.iconOnly)
+                .accessibilityIdentifier("Remove parameter")
+        }
     }
 
     @ViewBuilder private var valueEditor: some View {
@@ -522,26 +545,32 @@ private struct ScenarioParameterEditor: View {
                 DatePicker("Resolved instant", selection: dateValue)
             case .enumeration:
                 HStack {
-                    TextField("Enum type identifier", text: enumTypeIdentifier)
-                    TextField("Allowed cases, comma separated", text: enumAllowedCases)
+                    if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                        TextField("Enum type identifier", text: enumTypeIdentifier)
+                        TextField("Allowed cases, comma separated", text: enumAllowedCases)
+                    }
                     Picker("Enum case", selection: enumValue) {
                         ForEach(enumCases, id: \.self) { Text($0).tag($0) }
                     }
                 }
             case .entity:
                 HStack {
-                    TextField("Entity type identifier", text: entityTypeIdentifier)
+                    if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                        TextField("Entity type identifier", text: entityTypeIdentifier)
+                    }
                     TextField("Stable entity identifier", text: entityValue)
                 }
             case .array:
                 VStack(alignment: .leading, spacing: 6) {
-                    Picker("Array item type", selection: arrayElementSelection) {
-                        Text("String").tag(ParameterEditorType.string)
-                        Text("Boolean").tag(ParameterEditorType.boolean)
-                        Text("Integer").tag(ParameterEditorType.integer)
-                        Text("Number").tag(ParameterEditorType.number)
+                    if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                        Picker("Array item type", selection: arrayElementSelection) {
+                            Text("String").tag(ParameterEditorType.string)
+                            Text("Boolean").tag(ParameterEditorType.boolean)
+                            Text("Integer").tag(ParameterEditorType.integer)
+                            Text("Number").tag(ParameterEditorType.number)
+                        }
+                        .accessibilityIdentifier("Array item type")
                     }
-                    .accessibilityIdentifier("Array item type")
                     TextField("Comma-separated values", text: arrayValues)
                     if coordinator.invalidParameterDraftIndices.contains(index) {
                         Text("Finish each item before saving or running this scenario.")
@@ -758,7 +787,7 @@ enum ScenarioArrayInput {
 
 private enum ParameterPresenceChoice: Hashable { case missing, value, null }
 
-private struct ScenarioExpectedValueEditor: View {
+struct ScenarioExpectedValueEditor: View {
     @Binding var value: ScenarioValue?
 
     var body: some View {

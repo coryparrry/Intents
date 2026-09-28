@@ -140,6 +140,18 @@ class CoverageTests(unittest.TestCase):
                     swift=("ScenarioContractsTests",),
                 )
 
+    def test_project_installer_sources_select_installer_tests(self):
+        for source in (
+            "IntentLabProjectInstaller.swift",
+            "OpenStepProjectDocument.swift",
+        ):
+            with self.subTest(source=source):
+                self.assert_selection(
+                    [routes.APP + "Services/" + source],
+                    native=True,
+                    swift=("IntentLabProjectInstallerTests",),
+                )
+
     def test_sidebar_and_toolbar_do_not_rerun_scoring_or_installer_tests(self):
         for source, suite in (
             ("FullWidthDisclosureStyle.swift", "NavigationInteractionTests"),

@@ -110,7 +110,13 @@ final class FoundationEvalsUITests: XCTestCase {
         prompt.click()
         app.typeKey("a", modifierFlags: .command)
         app.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
-        XCTAssertFalse(app.buttons["Run evaluation"].isEnabled)
+        XCTAssertEqual(prompt.value as? String, "", "The edit must clear the case prompt")
+        // Prompt edits reach suite validation after the debounced save.
+        let runDisabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == false"),
+            object: app.buttons["Run evaluation"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [runDisabled], timeout: 3), .completed)
 
         app.menuBars.menuBarItems["Evaluation"].click()
         XCTAssertFalse(app.menuItems["Run Evaluation"].isEnabled)
@@ -153,7 +159,7 @@ final class FoundationEvalsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Add Case"].exists)
         XCTAssertTrue(app.buttons["Add Case"].isHittable)
-        XCTAssertTrue(app.buttons["Run destination"].exists)
+        XCTAssertTrue(app.buttons["This Mac"].exists)
 
         selectSetup("Instructions", in: app)
         XCTAssertTrue(app.textViews["Model instructions"].exists)

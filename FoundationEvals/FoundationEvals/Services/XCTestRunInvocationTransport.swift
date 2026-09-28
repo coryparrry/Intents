@@ -10,6 +10,7 @@ enum XCTestRunInvocationTransportError: LocalizedError, Sendable {
     case productPathMissing(String)
     case productPathEscapesRoot(String)
     case payloadTooLarge(Int)
+    case invalidExecutionScope
 
     var errorDescription: String? {
         switch self {
@@ -31,6 +32,8 @@ enum XCTestRunInvocationTransportError: LocalizedError, Sendable {
             "The generated test product path escapes the isolated build directory: \(path)"
         case .payloadTooLarge(let byteCount):
             "The frozen Intent Lab invocation is \(byteCount) bytes, above the 256 KiB transport limit."
+        case .invalidExecutionScope:
+            "The selected native route or attempt is not valid for this version 3 check."
         }
     }
 }
@@ -48,8 +51,8 @@ enum XCTestRunInvocationTransport {
     static let invocationEnvironmentKey = "FOUNDATION_EVALS_INTENT_LAB_INVOCATION_B64"
     static let maximumPayloadBytes = 256 * 1_024
 
-    /// Explicit v2 device view: local paths, project settings, linked feature
-    /// references, user prose, and host safety decisions never enter the runner.
+    /// Explicit v2 device view, also used by stable v3 host definitions. Local
+    /// paths, linked feature runs, and host comparison policy stay on the host.
     private struct DeviceScenarioV2: Encodable {
         struct Target: Encodable { var bundleIdentifier: String }
         struct Goal: Encodable { var requestText: String; var languageCode: String }
@@ -73,10 +76,7 @@ enum XCTestRunInvocationTransport {
             var required: Bool
             var applicableLanes: Set<ScenarioLane>?
         }
-        struct Safety: Encodable {
-            var deadlineSeconds: Double
-            var mutationPolicy: ScenarioMutationPolicy
-        }
+        struct Safety: Encodable { var deadlineSeconds: Double; var mutationPolicy: ScenarioMutationPolicy }
 
         var schemaVersion: Int
         var id: UUID
@@ -94,9 +94,12 @@ enum XCTestRunInvocationTransport {
         var requiredClaims: [ScenarioProofClaim]?
         var observationPlan: [ScenarioPlannedObservation]?
         var integration: ScenarioIntegrationIdentity?
+        var executionScope: ScenarioNativeExecutionScope?
 
-        init(_ definition: ScenarioDefinition) {
-            schemaVersion = definition.schemaVersion
+        init(_ definition: ScenarioDefinition, scope: ScenarioNativeExecutionScope?) {
+            // The installed consumer supports wire schema 2. The invocation
+            // still carries the exact v3 frozen definition digest.
+            schemaVersion = ScenarioDefinition.reusableSchemaVersion
             id = definition.id
             version = definition.version
             definitionDigest = definition.definitionDigest
@@ -118,24 +121,29 @@ enum XCTestRunInvocationTransport {
                       applicableLanes: $0.applicableLanes)
             }
             coverage = definition.coverage
-            safety = .init(
-                deadlineSeconds: definition.safety.deadlineSeconds,
-                mutationPolicy: definition.safety.mutationPolicy
-            )
+            safety = .init(deadlineSeconds: definition.safety.deadlineSeconds,
+                           mutationPolicy: definition.safety.mutationPolicy)
             purpose = definition.purpose
             checkMode = definition.checkMode
             requiredClaims = definition.requiredClaims
             observationPlan = definition.observationPlan
             integration = definition.integration
+            executionScope = scope
         }
     }
 
-    static func scenarioPayload(for definition: ScenarioDefinition) throws -> Data {
+    static func scenarioPayload(
+        for definition: ScenarioDefinition,
+        scope: ScenarioNativeExecutionScope? = nil
+    ) throws -> Data {
+        if let scope, !scope.isValid(for: definition) {
+            throw XCTestRunInvocationTransportError.invalidExecutionScope
+        }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
-            ? try encoder.encode(DeviceScenarioV2(definition))
+        return ScenarioHarnessCapabilities.usesReusableProtocol(definition)
+            ? try encoder.encode(DeviceScenarioV2(definition, scope: scope))
             : try encoder.encode(definition)
     }
 
@@ -179,6 +187,7 @@ enum XCTestRunInvocationTransport {
         testTarget: String,
         definition: ScenarioDefinition,
         invocation: ScenarioInvocationIdentity,
+        scope: ScenarioNativeExecutionScope? = nil,
         fileManager: FileManager = .default
     ) throws -> URL {
         guard var root = try propertyList(at: products.sourceURL) else {
@@ -187,7 +196,7 @@ enum XCTestRunInvocationTransport {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let scenarioData = try scenarioPayload(for: definition)
+        let scenarioData = try scenarioPayload(for: definition, scope: scope)
         let invocationData = try encoder.encode(invocation)
         let payloadBytes = scenarioData.count + invocationData.count
         guard payloadBytes <= maximumPayloadBytes else {

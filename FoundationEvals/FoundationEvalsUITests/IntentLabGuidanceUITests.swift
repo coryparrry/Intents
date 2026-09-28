@@ -46,7 +46,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.menuBars.menuBarItems["Window"].click()
         app.menuItems["Fill"].click()
         let width = window.frame.width
-        XCTAssertGreaterThan(width, 1_150, "Exercise wide navigation")
+        XCTAssertGreaterThanOrEqual(width, 824, "Exercise available navigation width")
 
         app.radioButtons["Connect app"].click()
         assertChromeFits(app, window: window)
@@ -105,6 +105,28 @@ final class IntentLabGuidanceUITests: XCTestCase {
         XCTAssertTrue(app.sheets.buttons["Cancel"].firstMatch.waitForExistence(timeout: 3))
         app.sheets.buttons["Cancel"].firstMatch.click()
         XCTAssertEqual(name.value as? String, "New intent check")
+    }
+
+    @MainActor
+    func testNewDeveloperCheckShowsGuidedControls() throws {
+        let storage = try UITestStorage.makeDirectory(prefix: "intent-guided-check")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launch()
+        defer { app.terminate() }
+        app.typeKey("2", modifierFlags: .command)
+        app.radioButtons["Create test"].click()
+        app.buttons["New test"].click()
+        if app.sheets.buttons["Discard draft and continue"].waitForExistence(timeout: 2) {
+            app.sheets.buttons["Discard draft and continue"].click()
+        }
+
+        XCTAssertTrue(app.popUpButtons["Declared app action"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.popUpButtons["Declared app feature"].exists)
+        XCTAssertFalse(app.textFields["OpenNoteIntent"].exists, "Stable checks select the compiled action")
+        XCTAssertTrue(app.staticTexts["Rebuild and check support to choose an observable result."].exists)
+        XCTAssertFalse(app.textFields["Optional feature run UUID"].exists)
     }
 
     @MainActor

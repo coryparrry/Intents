@@ -58,6 +58,7 @@ final class EvaluationStore {
     private let reassessmentService = EvaluationReassessmentService()
     private let supportDirectory: URL
     private let suiteLocalStateWriter: (Data, URL) throws -> Void
+    private let workspaceCatalogWriter: (EvaluationWorkspaceCatalog, URL) throws -> Void
     private let runWriter: (Data, URL) throws -> Void
     private let pendingCompletedRunsWriter: (Data, URL) throws -> Void
     var overviewStorageDirectory: URL { supportDirectory }
@@ -74,6 +75,10 @@ final class EvaluationStore {
     private var pendingCompletedRunsIsDurable = false
     private var latestRunHistorySequence: UInt64 = 0
     private var workspacePersistenceBlocker: String?
+    /// Admission for snapshot feature runs. Their storage and UI selection are
+    /// independent of the selected suite, so workspace navigation may continue.
+    private var snapshotExecutionOwnerID: UUID?
+    private var snapshotUnsavedRuns: [UUID: EvaluationRun] = [:]
 
     private var suiteDirectory: URL {
         EvaluationWorkspacePersistence.suiteDirectory(
@@ -95,6 +100,9 @@ final class EvaluationStore {
         suiteLocalStateWriter: @escaping (Data, URL) throws -> Void = {
             try $0.write(to: $1, options: .atomic)
         },
+        workspaceCatalogWriter: @escaping (EvaluationWorkspaceCatalog, URL) throws -> Void = {
+            try EvaluationWorkspacePersistence.save($0, in: $1)
+        },
         runWriter: @escaping (Data, URL) throws -> Void = {
             try $0.write(to: $1, options: .atomic)
         },
@@ -107,6 +115,7 @@ final class EvaluationStore {
                 .appending(path: "FoundationEvals", directoryHint: .isDirectory)
         supportDirectory = base
         self.suiteLocalStateWriter = suiteLocalStateWriter
+        self.workspaceCatalogWriter = workspaceCatalogWriter
         self.runWriter = runWriter
         self.pendingCompletedRunsWriter = pendingCompletedRunsWriter
 
@@ -194,6 +203,9 @@ final class EvaluationStore {
             }
         }
         let loadedDraft = Self.loadDraft(from: activeDirectory, canonicalSuite: initialSuite)
+        let snapshotRecoveryNotice = Self.recoverSnapshotRuns(
+            catalog: bootstrap.catalog, supportDirectory: base
+        )
         var loadedRuns = Self.loadRuns(
             from: activeDirectory.appending(path: "Runs", directoryHint: .isDirectory),
             projectID: initialProjectID,
@@ -213,6 +225,7 @@ final class EvaluationStore {
         )
         let initialNotice = [startupNotice, legacySuite.notice, loadedSuite.notice,
                              loadedDraft.notice, loadedRuns.notice, recovery.notice,
+                             snapshotRecoveryNotice,
                              loadedJudgeConnections.notice]
             .compactMap { $0 }
             .joined(separator: "\n")
@@ -291,11 +304,25 @@ final class EvaluationStore {
                     supportDirectory: supportDirectory, projectID: project.id, suiteID: record.id
                 )
                 let suite = EvaluationWorkspaceStatePersistence.loadSuite(from: directory).suite
-                let runs = Self.loadRuns(
+                let storedRuns = Self.loadRuns(
                     from: directory.appending(path: "Runs", directoryHint: .isDirectory),
                     projectID: project.id,
                     suiteID: record.id
                 ).runs
+                let pendingURL = directory.appending(path: "pending-completed-runs.json")
+                let runs: [EvaluationRun]
+                if FileManager.default.fileExists(atPath: pendingURL.path) {
+                    if let pending = try? CanonicalJSON.decode(
+                        PendingCompletedRuns.self, from: Data(contentsOf: pendingURL)
+                    ) {
+                        let pendingIDs = Set(pending.runs.map(\.id))
+                        runs = storedRuns.filter { !pendingIDs.contains($0.id) }
+                    } else {
+                        runs = []
+                    }
+                } else {
+                    runs = storedRuns
+                }
                 latest = [latest, runs.first?.startedAt].compactMap { $0 }.max()
                 if let suite,
                    runs.first?.suiteRevision != (try? Self.revision(for: suite)) {
@@ -469,6 +496,69 @@ final class EvaluationStore {
         return newSuite.id
     }
 
+    /// Registers a coordinator-owned feature suite without changing the
+    /// developer's visible project, suite, draft, or navigation selection.
+    /// Reusing an ID with changed requirements requires an explicit new suite
+    /// revision and is never an implicit mutation during execution.
+    @discardableResult
+    func ensureScenarioFeatureSuite(
+        projectID: UUID,
+        suite scenarioSuite: EvaluationSuite,
+        executionOwnerID: UUID? = nil
+    ) throws -> String {
+        try requireIdle(ownerID: executionOwnerID)
+        guard let projectIndex = workspace.projects.firstIndex(where: {
+            $0.id == projectID && !$0.isArchived
+        }) else { throw EvaluationWorkspaceError.missingProject }
+        if let issue = validationIssue(for: scenarioSuite, includeModelReadiness: false) {
+            throw EvaluationStoreError.invalidSuite(issue)
+        }
+        let revision = try Self.revision(for: scenarioSuite)
+        let directory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: supportDirectory, projectID: projectID, suiteID: scenarioSuite.id
+        )
+        if let record = workspace.projects[projectIndex].suites.first(where: { $0.id == scenarioSuite.id }) {
+            guard !record.isArchived,
+                  let saved = try? CanonicalJSON.decode(
+                    EvaluationSuite.self,
+                    from: Data(contentsOf: directory.appending(path: "suite.json"))
+                  ), saved.id == scenarioSuite.id,
+                  try Self.revision(for: saved) == revision else {
+                throw EvaluationStoreError.resourceConflict(
+                    "The scenario feature suite ID already has different saved requirements. Create a new revision for the next run."
+                )
+            }
+            return revision
+        }
+        guard !FileManager.default.fileExists(atPath: directory.path) else {
+            throw EvaluationStoreError.resourceConflict(
+                "An unregistered suite directory already uses this scenario feature suite ID."
+            )
+        }
+        let now = Date()
+        var updatedWorkspace = workspace
+        updatedWorkspace.projects[projectIndex].suites.append(EvaluationSuiteRecord(
+            id: scenarioSuite.id, name: scenarioSuite.name,
+            createdAt: now, updatedAt: now, archivedAt: nil,
+            repositoryDefinitionPath: nil, lastRepositoryRevision: nil
+        ))
+        updatedWorkspace.projects[projectIndex].updatedAt = now
+        do {
+            try EvaluationWorkspacePersistence.createSuiteDirectories(at: directory)
+            try CanonicalJSON.data(for: scenarioSuite).write(
+                to: directory.appending(path: "suite.json"), options: .atomic
+            )
+            try workspaceCatalogWriter(updatedWorkspace, supportDirectory)
+            workspace = updatedWorkspace
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw EvaluationStoreError.persistence(
+                "The scenario feature suite could not be registered: \(error.localizedDescription)"
+            )
+        }
+        return revision
+    }
+
     @discardableResult
     func duplicateSuite(id: UUID) throws -> UUID {
         try requireIdle()
@@ -561,7 +651,11 @@ final class EvaluationStore {
         suiteID: UUID,
         catalogMutation: (inout EvaluationWorkspaceCatalog) -> Void
     ) throws {
-        try requireIdle()
+        try requireWorkspaceWritable()
+        try retryUnsavedRun()
+        if isRunning || activeRun != nil { throw EvaluationStoreError.runBusy }
+        try requireNoReassessmentMutation()
+        if isProcessingFiles || isImportingFiles { throw EvaluationStoreError.fileOperationBusy }
         guard let project = workspace.projects.first(where: { $0.id == projectID }),
               !project.isArchived else { throw EvaluationWorkspaceError.missingProject }
         guard project.suites.contains(where: { $0.id == suiteID && !$0.isArchived }) else {
@@ -682,7 +776,7 @@ final class EvaluationStore {
     private func persistWorkspace() throws {
         try requireWorkspaceWritable()
         do {
-            try EvaluationWorkspacePersistence.save(workspace, in: supportDirectory)
+            try workspaceCatalogWriter(workspace, supportDirectory)
         } catch {
             throw EvaluationStoreError.persistence(error.localizedDescription)
         }
@@ -1336,6 +1430,27 @@ final class EvaluationStore {
             let storedSuite = resolved.suite
             let revision = resolved.revision
             guard storedSuite.releasePolicy.required else { continue }
+            if FileManager.default.fileExists(
+                atPath: directory.appending(path: "pending-completed-runs.json").path
+            ) {
+                let unavailable = EvaluationReleaseCheckReport(
+                    projectID: project.id,
+                    suiteID: record.id,
+                    runID: nil,
+                    assessmentID: nil,
+                    outcome: .incompleteOrIncompatibleEvidence,
+                    summary: "The required suite has completed evidence awaiting a successful save.",
+                    failures: ["Retry saving the completed run before evaluating project readiness."],
+                    generatedAt: Date()
+                )
+                suiteReports.append(.init(
+                    suiteID: record.id,
+                    suiteName: storedSuite.name,
+                    required: true,
+                    report: unavailable
+                ))
+                continue
+            }
             let loadedRuns = Self.loadRuns(
                 from: directory.appending(path: "Runs", directoryHint: .isDirectory),
                 projectID: project.id,
@@ -1576,6 +1691,145 @@ final class EvaluationStore {
             expectedRevision: expectedRevision,
             adapter: adapter,
             progress: progress
+        )
+    }
+
+    /// Runs a frozen feature suite for its owning workspace without selecting
+    /// that workspace in the UI. The adapter is supplied by the coordinator so
+    /// new subject-input contracts do not have to use the legacy adapter's
+    /// expected-answer field. The owner ID identifies this operation locally;
+    /// admission against a scenario-wide lease belongs to the coordinator.
+    func runFeatureAdapterSnapshot(
+        id: UUID,
+        projectID: UUID,
+        suite snapshot: EvaluationSuite,
+        expectedRevision: String,
+        executionOwnerID: UUID? = nil,
+        adapter: any EvaluationFeatureAdapter,
+        progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }
+    ) async throws -> EvaluationRun {
+        let suiteID = snapshot.id
+        guard let project = workspace.projects.first(where: { $0.id == projectID && !$0.isArchived }),
+              project.suites.contains(where: { $0.id == suiteID && !$0.isArchived }) else {
+            throw EvaluationStoreError.resourceNotFound("Snapshot's project or suite")
+        }
+        guard try Self.revision(for: snapshot) == expectedRevision else {
+            throw EvaluationStoreError.staleRevision(current: try Self.revision(for: snapshot))
+        }
+        if let existing = persistedRunLocation(id: id)?.run {
+            guard existing.projectID == projectID, existing.suiteID == suiteID,
+                  existing.suiteRevision == expectedRevision else {
+                throw EvaluationStoreError.resourceConflict("Feature run ID already belongs to another snapshot.")
+            }
+            return existing
+        }
+        if let pending = try retrySnapshotRunSave(id: id, projectID: projectID, suiteID: suiteID) {
+            guard pending.suiteRevision == expectedRevision else {
+                throw EvaluationStoreError.resourceConflict("Feature run ID already belongs to another snapshot.")
+            }
+            return pending
+        }
+        try requireIdle(ownerID: executionOwnerID)
+        if let issue = validationIssue(for: snapshot, includeModelReadiness: false) {
+            throw EvaluationStoreError.invalidSuite(issue)
+        }
+        let judge = try resolvedFeatureJudge(for: snapshot)
+        let evidence = try snapshotSubjectEvidence(
+            runID: id, suite: snapshot, projectID: projectID, suiteID: suiteID
+        )
+        let checkpointURL = snapshotCheckpointURL(id: id, projectID: projectID, suiteID: suiteID)
+        let active = EvaluationActiveRun(
+            id: id, suiteRevision: expectedRevision, startedAt: Date(),
+            completedSamples: 0, totalSamples: snapshot.cases.count * snapshot.repetitions,
+            cancellationRequested: false, projectID: projectID, suiteID: suiteID
+        )
+        do {
+            try persistSnapshotCheckpoint(
+                ActiveRunRecord(summary: active, suite: snapshot, results: [], subjectEvidence: evidence),
+                at: checkpointURL
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: runEvidenceDirectory(
+                projectID: projectID, suiteID: suiteID, runID: id
+            ))
+            throw error
+        }
+        snapshotExecutionOwnerID = executionOwnerID ?? id
+        defer { snapshotExecutionOwnerID = nil }
+        let repository = project.repository?.rootPath
+        let repositorySnapshot: EvaluationRepositorySnapshot? = if let repository {
+            await EvaluationRepositoryInspector.snapshot(rootPath: repository)
+        } else { nil }
+        var run = await featureAdapterRunner.run(
+            id: id, projectID: projectID, repository: repositorySnapshot,
+            suiteRevision: expectedRevision, suite: snapshot, adapter: adapter
+        ) { [weak self] result, completed, total in
+            await self?.checkpointSnapshotProgress(
+                result: result, completed: completed, checkpointURL: checkpointURL
+            )
+            await progress(completed, total)
+        }
+        run.subjectEvidence = evidence
+        if snapshot.scoringMode == .modelJudge,
+           !run.cancelled, run.terminationReason == nil {
+            do {
+                let images = try imageInputs(
+                    for: evidence, projectID: projectID, suiteID: suiteID, runID: id
+                )
+                let assessment = try await reassessmentService.reassess(
+                    run: run, suite: snapshot, images: images, resolved: judge,
+                    scoringContract: try? EvaluationScoringContract(suite: snapshot),
+                    subjectEvidenceDigest: evidence.digest, origin: .initialRun
+                )
+                run.assessments = [assessment]
+                run.selectedAssessmentID = assessment.id
+                if assessment.samples.contains(where: { $0.errorCategory == "cancelled" }) {
+                    run.cancelled = true
+                    run.terminationReason = "cancelled"
+                }
+            } catch {
+                // Preserve the app's completed action. Assessment can be retried
+                // from the immutable output without sending another invocation.
+                run.terminationReason = "assessmentUnavailable"
+            }
+        }
+        run = runPreparedForHistory(run)
+        do {
+            try persistSnapshotCheckpoint(
+                ActiveRunRecord(
+                    summary: active, suite: snapshot, results: run.results,
+                    completedRun: run, subjectEvidence: evidence
+                ), at: checkpointURL
+            )
+        } catch {
+            snapshotUnsavedRuns[id] = run
+            throw error
+        }
+        guard let saved = try retrySnapshotRunSave(id: id, projectID: projectID, suiteID: suiteID) else {
+            throw EvaluationStoreError.persistence("The completed snapshot run could not be saved.")
+        }
+        return saved
+    }
+
+    func runDeveloperFeatureSnapshot(
+        id: UUID,
+        projectID: UUID,
+        suite: EvaluationSuite,
+        expectedRevision: String,
+        runner: DeveloperRunnerSnapshot,
+        feature: DeveloperFeatureDescriptor,
+        client: DeveloperRunnerClient,
+        executionOwnerID: UUID? = nil,
+        timeout: Duration = .seconds(120),
+        progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }
+    ) async throws -> EvaluationRun {
+        let adapter = EvaluationDeveloperFeatureAdapter(
+            runID: id, runner: runner, feature: feature, client: client, timeout: timeout
+        )
+        return try await runFeatureAdapterSnapshot(
+            id: id, projectID: projectID, suite: suite,
+            expectedRevision: expectedRevision, executionOwnerID: executionOwnerID,
+            adapter: adapter, progress: progress
         )
     }
 
@@ -3509,6 +3763,87 @@ final class EvaluationStore {
         }
     }
 
+    private func snapshotCheckpointURL(id: UUID, projectID: UUID, suiteID: UUID) -> URL {
+        EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: supportDirectory, projectID: projectID, suiteID: suiteID
+        )
+        .appending(path: "SnapshotRuns", directoryHint: .isDirectory)
+        .appending(path: "\(id.uuidString).json")
+    }
+
+    private func persistSnapshotCheckpoint(_ record: ActiveRunRecord, at url: URL) throws {
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try CanonicalJSON.data(for: record).write(to: url, options: .atomic)
+        } catch {
+            throw EvaluationStoreError.persistence("Snapshot checkpoint could not be saved: \(error.localizedDescription)")
+        }
+    }
+
+    private func checkpointSnapshotProgress(
+        result: EvaluationSampleResult,
+        completed: Int,
+        checkpointURL: URL
+    ) {
+        guard var record = Self.loadActiveRun(from: checkpointURL),
+              record.completedRun == nil else { return }
+        record.results = (record.results ?? []) + [result]
+        record.summary.completedSamples = completed
+        do {
+            try persistSnapshotCheckpoint(record, at: checkpointURL)
+        } catch {
+            notice = "Run progress could not be checkpointed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Returns a previously completed run after retrying only its history save.
+    /// An unfinished checkpoint is left for interruption recovery on relaunch.
+    @discardableResult
+    func retrySnapshotRunSave(id: UUID, projectID: UUID, suiteID: UUID) throws -> EvaluationRun? {
+        let checkpointURL = snapshotCheckpointURL(id: id, projectID: projectID, suiteID: suiteID)
+        guard FileManager.default.fileExists(atPath: checkpointURL.path) else { return nil }
+        guard var record = Self.loadActiveRun(from: checkpointURL),
+              record.summary.id == id,
+              record.summary.projectID == projectID,
+              record.summary.suiteID == suiteID else {
+            throw EvaluationStoreError.persistence("The snapshot checkpoint is unreadable or belongs to another run.")
+        }
+        if let unsaved = snapshotUnsavedRuns[id] {
+            guard unsaved.projectID == projectID, unsaved.suiteID == suiteID else {
+                throw EvaluationStoreError.resourceConflict("The pending run belongs to another snapshot.")
+            }
+            record.completedRun = unsaved
+            record.results = unsaved.results
+            try persistSnapshotCheckpoint(record, at: checkpointURL)
+        }
+        guard let run = record.completedRun else {
+            throw EvaluationStoreError.resourceConflict(
+                "A previous snapshot execution is unfinished; reopen the app to preserve it as interrupted."
+            )
+        }
+        guard run.id == id, run.projectID == projectID, run.suiteID == suiteID else {
+            throw EvaluationStoreError.persistence("The completed snapshot has inconsistent ownership.")
+        }
+        let runURL = checkpointURL.deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Runs/\(id.uuidString).json")
+        do {
+            try runWriter(CanonicalJSON.data(for: run), runURL)
+            try FileManager.default.removeItem(at: checkpointURL)
+        } catch {
+            throw EvaluationStoreError.persistence(
+                "The app action finished, but its run could not be saved: \(error.localizedDescription). Retry saving without rerunning the app."
+            )
+        }
+        if selectedProjectID == projectID, selectedSuiteID == suiteID {
+            runs.removeAll { $0.id == id }
+            runs.insert(run, at: 0)
+        }
+        snapshotUnsavedRuns[id] = nil
+        return run
+    }
+
     private func runPreparedForHistory(_ run: EvaluationRun) -> EvaluationRun {
         var run = run
         if let sequence = run.historySequence {
@@ -3621,36 +3956,31 @@ final class EvaluationStore {
 
     private func retryCompletedRuns() throws {
         guard let pendingCompletedRuns else { return }
-        // A failed run or state write may leave only part of an experiment on
-        // disk. Rewriting both records makes every retry safe and idempotent.
-        var markerFailure: Error?
         if !pendingCompletedRunsIsDurable {
-            do { try persistPendingCompletedRuns() }
-            catch { markerFailure = error }
-        }
-        do {
-            for run in pendingCompletedRuns.runs { try persistRun(run) }
-            if let experimentID = pendingCompletedRuns.experimentID {
-                guard let index = suiteLocalState.experiments.firstIndex(where: { $0.id == experimentID }) else {
-                    throw EvaluationStoreError.resourceNotFound("Experiment")
-                }
-                let previousRunIDs = suiteLocalState.experiments[index].runIDs
-                suiteLocalState.experiments[index].runIDs = pendingCompletedRuns.runs.map(\.id)
-                do {
-                    try persistSuiteLocalState()
-                } catch {
-                    suiteLocalState.experiments[index].runIDs = previousRunIDs
-                    throw error
-                }
-            }
-        } catch {
-            if let markerFailure {
+            do {
+                try persistPendingCompletedRuns()
+            } catch {
                 throw EvaluationStoreError.persistence(
-                    "\(error.localizedDescription) The retry record also could not be saved: "
-                    + "\(markerFailure.localizedDescription). Keep the app open and retry after restoring storage access."
+                    "The retry record could not be saved: \(error.localizedDescription). "
+                    + "Keep the app open and retry after restoring storage access."
                 )
             }
-            throw error
+        }
+        // A failed run or state write may leave only part of an experiment on
+        // disk. Rewriting both records makes every retry safe and idempotent.
+        for run in pendingCompletedRuns.runs { try persistRun(run) }
+        if let experimentID = pendingCompletedRuns.experimentID {
+            guard let index = suiteLocalState.experiments.firstIndex(where: { $0.id == experimentID }) else {
+                throw EvaluationStoreError.resourceNotFound("Experiment")
+            }
+            let previousRunIDs = suiteLocalState.experiments[index].runIDs
+            suiteLocalState.experiments[index].runIDs = pendingCompletedRuns.runs.map(\.id)
+            do {
+                try persistSuiteLocalState()
+            } catch {
+                suiteLocalState.experiments[index].runIDs = previousRunIDs
+                throw error
+            }
         }
         for run in pendingCompletedRuns.runs.reversed() {
             runs.removeAll { $0.id == run.id }
@@ -3672,10 +4002,22 @@ final class EvaluationStore {
         }
     }
 
-    private func requireIdle() throws {
+    /// Top-level scenario admission reads this synchronously on the main actor.
+    /// It mirrors the active-execution portion of `requireIdle`, including the
+    /// interval before a snapshot child has finished saving its evidence.
+    var hasActiveExecution: Bool {
+        isRunning || activeRun != nil || snapshotExecutionOwnerID != nil
+    }
+
+    private func requireIdle(ownerID: UUID? = nil) throws {
         try requireWorkspaceWritable()
+        if !ScenarioExecutionAdmission.shared.allows(ownerID) {
+            throw EvaluationStoreError.resourceConflict("Another coordinated execution owns the destination.")
+        }
         try retryUnsavedRun()
-        if isRunning || activeRun != nil { throw EvaluationStoreError.runBusy }
+        if hasActiveExecution {
+            throw EvaluationStoreError.runBusy
+        }
         try requireNoReassessmentMutation()
         if isProcessingFiles || isImportingFiles { throw EvaluationStoreError.fileOperationBusy }
     }
@@ -3915,6 +4257,24 @@ final class EvaluationStore {
         return EvaluationResolvedJudgeConnection(connection: connection, apiKey: apiKey)
     }
 
+    /// Resolve a frozen scenario judge choice through the same credential and
+    /// disclosure gate used by suite reassessment. A missing selection is left
+    /// unscored by the scenario adapter; this method never chooses a fallback.
+    func resolvedScenarioJudge(
+        connectionID: UUID,
+        configuration: EvaluationJudgeConfiguration
+    ) throws -> EvaluationResolvedJudgeConnection {
+        guard configuration.mode == .connection,
+              configuration.connectionID == connectionID else {
+            throw EvaluationStoreError.invalidSuite("Choose an independent judge connection for this check.")
+        }
+        let resolved = try resolvedJudge(connectionID: connectionID)
+        guard configuration.hasCurrentExternalEvidenceApproval(for: resolved.connection) else {
+            throw EvaluationCompatibleJudgeError.disclosureNotApproved
+        }
+        return resolved
+    }
+
     private func resolvedJudge(for suite: EvaluationSuite) throws -> EvaluationResolvedJudgeConnection? {
         guard suite.scoringMode == .modelJudge, suite.needsModelJudge,
               suite.judgeConfiguration.usesExternalConnection else { return nil }
@@ -4098,6 +4458,40 @@ final class EvaluationStore {
     private static func loadActiveRun(from url: URL) -> ActiveRunRecord? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? CanonicalJSON.decode(ActiveRunRecord.self, from: data)
+    }
+
+    private static func recoverSnapshotRuns(
+        catalog: EvaluationWorkspaceCatalog,
+        supportDirectory: URL
+    ) -> String? {
+        var notices: [String] = []
+        for project in catalog.projects {
+            for suite in project.suites {
+                let directory = EvaluationWorkspacePersistence.suiteDirectory(
+                    supportDirectory: supportDirectory, projectID: project.id, suiteID: suite.id
+                )
+                let checkpoints = directory.appending(path: "SnapshotRuns", directoryHint: .isDirectory)
+                guard let urls = try? FileManager.default.contentsOfDirectory(
+                    at: checkpoints, includingPropertiesForKeys: [.isRegularFileKey]
+                ) else { continue }
+                let runsDirectory = directory.appending(path: "Runs", directoryHint: .isDirectory)
+                let existing = loadRuns(
+                    from: runsDirectory, projectID: project.id, suiteID: suite.id
+                ).runs
+                for url in urls where url.pathExtension == "json" {
+                    guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+                        continue
+                    }
+                    let recovery = recoverInterruptedRun(
+                        from: url, runsDirectory: runsDirectory, existingRuns: existing
+                    )
+                    if recovery.pending != nil || recovery.notice != nil {
+                        notices.append(recovery.notice ?? "A snapshot run still needs its history save retried.")
+                    }
+                }
+            }
+        }
+        return notices.isEmpty ? nil : notices.joined(separator: "\n")
     }
 
     private static func recoverInterruptedRun(

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import Darwin
 @testable import FoundationEvals
 
 struct IntentLabRegressionTests {
@@ -271,6 +272,194 @@ struct IntentLabRegressionTests {
     }
 
     @MainActor
+    @Test func ordinaryRunAndScenarioStartsDoNotShareTheExecutionDestination() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let evaluation = EvaluationStore(supportDirectory: root)
+        let runners = DeveloperRunnerStore(evaluationStore: evaluation)
+        let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: evaluation)
+        coordinator.bindRunnerStore(runners)
+        await coordinator.load()
+        #expect(coordinator.hasLoaded)
+
+        evaluation.isRunning = true
+        await coordinator.run()
+        #expect(coordinator.notice?.contains("active evaluation") == true)
+        #expect(!coordinator.isRunning)
+        #expect(ScenarioExecutionAdmission.shared.ownerID == nil)
+        evaluation.isRunning = false
+
+        let ordinaryRunnerID = UUID()
+        runners.startTrackedExecution(runID: ordinaryRunnerID) {
+            try? await Task.sleep(for: .seconds(30))
+        }
+        #expect(runners.executingRunID == ordinaryRunnerID)
+        coordinator.notice = nil
+        await coordinator.run()
+        #expect(coordinator.notice?.contains("active evaluation") == true)
+        #expect(ScenarioExecutionAdmission.shared.ownerID == nil)
+        runners.cancelRun(ordinaryRunnerID)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while runners.executingRunID != nil && ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        #expect(runners.executingRunID == nil)
+
+        let scenarioOwner = UUID()
+        try ScenarioExecutionAdmission.shared.acquire(scenarioOwner)
+        defer { ScenarioExecutionAdmission.shared.release(scenarioOwner) }
+        do {
+            _ = try evaluation.startRun(id: UUID(), expectedRevision: "unused")
+            Issue.record("An ordinary evaluation started while the scenario owned the destination.")
+        } catch EvaluationStoreError.resourceConflict(let message) {
+            #expect(message.contains("coordinated execution"))
+        } catch {
+            Issue.record("The ordinary evaluation failed for a reason other than admission: \(error)")
+        }
+        do {
+            _ = try runners.runSelectedSuite(on: UUID(), featureID: "unused")
+            Issue.record("A developer runner started while the scenario owned the destination.")
+        } catch EvaluationStoreError.resourceConflict(let message) {
+            #expect(message.contains("Another evaluation is already running"))
+        } catch {
+            Issue.record("The developer runner failed for a reason other than admission: \(error)")
+        }
+        #expect(runners.executingRunID == nil)
+    }
+
+    @MainActor
+    @Test func savedBatchExportRetainsFullMembershipAndOnlyFreshCaseEvidence() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        let intentLabRoot = root.appending(path: "IntentLab", directoryHint: .isDirectory)
+        let persistence = ScenarioPersistence(rootDirectory: intentLabRoot)
+        let collectionStore = ScenarioCollectionStore(rootDirectory: intentLabRoot)
+        let projectID = UUID()
+        let first = try collectionDefinition(projectID: projectID, name: "First check")
+        let second = try collectionDefinition(projectID: projectID, name: "Second check")
+        let collection = try ScenarioCollection(
+            projectID: projectID, name: "Regression checks",
+            members: [try ScenarioCollectionService.member(first),
+                      try ScenarioCollectionService.member(second)]
+        )
+        let manifest = try ScenarioCollectionService.freezeManifest(
+            collection: collection, definitions: [first, second], scope: .selected,
+            appProductDigest: "checked-app", selectedCaseIDs: [first.id]
+        )
+        let batchCase = try #require(manifest.cases.first)
+        let plan = try ScenarioExecutionPlan.make(
+            definition: first,
+            profile: .init(id: UUID(), projectPath: "/example/App.xcodeproj",
+                           scheme: "App", testTarget: "AppTests",
+                           destinationIdentifier: "device", signingSelection: nil,
+                           trustedConnectionID: nil, buildConfiguration: "Debug"),
+            appProductDigest: manifest.appProductDigest, testProductDigest: "checked-tests",
+            sourceInputsDigest: "checked-source", runnerBuildID: nil, runnerID: nil,
+            plannedCoordinates: manifest.coordinates, id: batchCase.executionPlanID,
+            createdAt: manifest.createdAt
+        )
+        let record = try ScenarioExecutionRecord.make(
+            plan: plan, records: plan.coordinates.map(ScenarioExecutionCoordinateRecord.unstarted)
+        )
+        let result = ScenarioCollectionBatchResult(
+            id: manifest.id, manifestID: manifest.id,
+            executions: [record], recordedAt: Date()
+        )
+        try await persistence.saveDefinition(first)
+        try await persistence.saveDefinition(second)
+        try await persistence.savePlan(plan)
+        try await persistence.saveExecutionRecord(record)
+        try await collectionStore.saveCollection(collection, definitions: [first, second])
+        try await collectionStore.saveManifest(manifest, collection: collection)
+        try await collectionStore.saveResult(result)
+
+        let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: store)
+        await coordinator.load()
+        #expect(coordinator.hasLoaded)
+        let destination = root.appending(path: "partial.intentlabrun")
+        try await coordinator.exportSelectedBatch(to: destination)
+        let imported = try IntentEvidenceBundle.read(destination)
+        #expect(imported.requirements.cases.count == 2)
+        #expect(imported.cases.map(\.definition.id) == [first.id])
+        #expect(imported.batchManifest?.id == manifest.id)
+        #expect(imported.batchResult?.executions.map(\.id) == [record.id])
+    }
+
+    @MainActor
+    @Test func collectionRevisionKeepsOldMembershipAndShowsAddedRemovedChangedCases() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        let persistence = ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab"))
+        let projectID = UUID()
+        let first = try collectionDefinition(projectID: projectID, name: "First")
+        let second = try collectionDefinition(projectID: projectID, name: "Second")
+        let third = try collectionDefinition(projectID: projectID, name: "Third")
+        for definition in [first, second, third] {
+            try await persistence.saveDefinition(definition)
+        }
+        let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: store)
+        await coordinator.load()
+        let baseline = try await coordinator.createCollection(
+            name: "Regression", caseIDs: [first.id, second.id]
+        )
+        let unchanged = try await coordinator.reviseSelectedCollection(
+            caseIDs: [first.id, second.id]
+        )
+        #expect(unchanged == baseline)
+
+        let revised = try await coordinator.reviseSelectedCollection(
+            caseIDs: [second.id, third.id]
+        )
+        #expect(revised.version == 2)
+        let difference = try ScenarioCollectionService.membershipDifference(
+            baseline: baseline, candidate: revised
+        )
+        #expect(difference.first(where: { $0.caseID == first.id })?.change == .removed)
+        #expect(difference.first(where: { $0.caseID == second.id })?.change == .unchanged)
+        #expect(difference.first(where: { $0.caseID == third.id })?.change == .added)
+
+        var changedSecond = second
+        changedSecond.version = 2
+        changedSecond.assertions[0].expectedValue = .string("different-note")
+        changedSecond = try changedSecond.frozen()
+        try await persistence.saveDefinition(changedSecond)
+        let changed = try await coordinator.reviseSelectedCollection(
+            caseIDs: [second.id, third.id]
+        )
+        #expect(changed.version == 3)
+        let nextDifference = try ScenarioCollectionService.membershipDifference(
+            baseline: revised, candidate: changed
+        )
+        #expect(nextDifference.first(where: { $0.caseID == second.id })?.change == .changed)
+        #expect(nextDifference.first(where: { $0.caseID == third.id })?.change == .unchanged)
+        let collectionStore = ScenarioCollectionStore(rootDirectory: root.appending(path: "IntentLab"))
+        #expect(try await collectionStore.loadCollection(id: baseline.id, version: 1) == baseline)
+        #expect(try await collectionStore.loadCollection(id: baseline.id, version: 2) == revised)
+        #expect(try await collectionStore.loadCollection(id: baseline.id, version: 3) == changed)
+    }
+
+    @MainActor
+    @Test func corruptRecoveryJournalPreventsScenarioRun() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let journals = root.appending(path: "IntentLab/Journals", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: journals, withIntermediateDirectories: true)
+        try Data("invalid journal".utf8).write(to: journals.appending(path: "corrupt.json"))
+        let store = EvaluationStore(supportDirectory: root)
+        let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: store)
+
+        await coordinator.load()
+        #expect(!coordinator.hasLoaded)
+        await coordinator.run()
+        #expect(coordinator.notice?.contains("must load successfully") == true)
+        let saved = try await ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab"))
+            .loadDefinitions()
+        #expect(saved.isEmpty)
+    }
+
+    @MainActor
     @Test func approvingWordingCreatesANewFrozenVersion() async throws {
         let root = try temporaryDirectory()
         let store = EvaluationStore(supportDirectory: root)
@@ -531,11 +720,244 @@ struct IntentLabRegressionTests {
         #expect(coordinator.draft == second, "An unknown saved test cannot replace the current draft")
     }
 
+    @MainActor
+    @Test func reloadingRenamedScenarioSelectsLatestVersionOfLastRunScenario() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        let persistence = ScenarioPersistence(
+            rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
+        )
+        var original = ScenarioDefinition.starter()
+        original.name = "Open the packing note"
+        original.target.destinationIdentifier = "physical-device-1"
+        original = try original.frozen()
+        var renamed = original
+        renamed.version = 2
+        renamed.name = "Negative control — wrong expected note"
+        renamed = try renamed.frozen()
+        try await persistence.saveDefinition(original)
+        try await persistence.saveDefinition(renamed)
+
+        let withoutRun = ScenarioCoordinator(supportDirectory: root, evaluationStore: store)
+        await withoutRun.load()
+        #expect(withoutRun.draft.id == renamed.id)
+        #expect(withoutRun.draft.version == renamed.version)
+
+        var unrelated = ScenarioDefinition.starter()
+        unrelated.name = "Zulu unrelated scenario"
+        unrelated.target.destinationIdentifier = "physical-device-1"
+        unrelated = try unrelated.frozen()
+        try await persistence.saveDefinition(unrelated)
+        let now = Date()
+        let invocation = ScenarioInvocationIdentity(
+            id: UUID(), nonce: UUID().uuidString, issuedAt: now,
+            testIdentity: .init(bundleIdentifier: "dev.example.FixtureUITests",
+                                className: "IntentLabScenarioTests", methodName: "testIntentLabScenario"),
+            harnessVersion: ScenarioInvocationIdentity.currentHarnessVersion,
+            destinationIdentifier: "physical-device-1", scenarioDigest: renamed.definitionDigest,
+            resultBundleIdentity: "IntentLab.xcresult"
+        )
+        let failedIntent = ScenarioLaneResult(
+            caseID: renamed.id, attempt: 1, lane: .intentIntegration,
+            executionStatus: .completed, outcome: .failed,
+            startedAt: now, completedAt: now
+        )
+        let failedSiri = (1...(renamed.coverage.siriAttemptCount ?? 3)).map { attempt in
+            ScenarioLaneResult(
+                caseID: renamed.id, attempt: attempt, lane: .siri,
+                executionStatus: .completed, outcome: .failed,
+                startedAt: now, completedAt: now
+            )
+        }
+        let run = ScenarioRun(
+            id: invocation.id, scenarioID: renamed.id, scenarioVersion: renamed.version,
+            scenarioDigest: renamed.definitionDigest, invocation: invocation,
+            startedAt: now, completedAt: now,
+            environment: .init(xcodeVersion: "27", sdkVersion: "27", deviceModel: "iPhone",
+                               operatingSystem: "iOS 27", languageCode: "en", regionCode: "GB",
+                               timeZoneIdentifier: "Europe/London", executedAt: now),
+            executionStatus: .completed, outcome: .failed, laneResults: [failedIntent] + failedSiri,
+            linkedFeatureRunID: nil, importedAt: now
+        )
+        _ = try await persistence.saveRun(run, artifactRoot: nil)
+
+        let reloaded = ScenarioCoordinator(supportDirectory: root, evaluationStore: store)
+        await reloaded.load()
+        #expect(reloaded.selectedRunID == run.id)
+        #expect(reloaded.draft.id == renamed.id)
+        #expect(reloaded.draft.version == renamed.version)
+        #expect(reloaded.draft.name == renamed.name)
+    }
+
+    @MainActor
+    @Test func failedOrUnobservedFinalEvidenceKeepsDeviceQuarantined() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let executor = XcodeTestExecutor(workDirectory: root.appending(path: "Executor"), persistence: persistence)
+        var definition = ScenarioDefinition.starter()
+        definition = try definition.frozen()
+        let now = Date()
+        let invocation = ScenarioInvocationIdentity(
+            id: UUID(), nonce: UUID().uuidString, issuedAt: now,
+            testIdentity: .init(bundleIdentifier: "dev.example.FixtureUITests",
+                                className: "IntentLabScenarioTests", methodName: "testIntentLabScenario"),
+            harnessVersion: ScenarioInvocationIdentity.currentHarnessVersion,
+            destinationIdentifier: "physical-device-1", scenarioDigest: definition.definitionDigest,
+            resultBundleIdentity: "IntentLab.xcresult"
+        )
+        let journal = ScenarioExecutionJournal(
+            phase: .stopped, invocation: invocation, scenarioID: definition.id,
+            scenarioVersion: definition.version, resultBundlePath: "", derivedDataPath: "",
+            buildLogPath: "", intendedExecutable: "", intendedArguments: [],
+            processIdentifier: nil, processStartedAt: nil, updatedAt: now, recoveryReason: nil
+        )
+        let siri = ScenarioLaneResult(
+            caseID: definition.id, attempt: 1, lane: .siri,
+            executionStatus: .timedOut, outcome: .notObserved,
+            startedAt: now, completedAt: now, observations: [:], assertionResults: []
+        )
+        let run = ScenarioRun(
+            id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
+            scenarioDigest: definition.definitionDigest, invocation: invocation,
+            startedAt: now, completedAt: now,
+            environment: .init(xcodeVersion: "27", sdkVersion: "27", deviceModel: "iPhone",
+                               operatingSystem: "iOS 27", languageCode: "en", regionCode: "GB",
+                               timeZoneIdentifier: "Europe/London", executedAt: now),
+            executionStatus: .timedOut, outcome: .notObserved, laneResults: [siri],
+            linkedFeatureRunID: nil, importedAt: now
+        )
+        let final = ScenarioEvidenceAttachment(url: root.appending(path: "final.json"), name: "IntentLabEvidence-final")
+        #expect(!ScenarioCoordinator.canReleaseDevice(
+            processExitCode: 1, attachments: [final], importedRuns: [run]
+        ))
+        #expect(!ScenarioCoordinator.canReleaseDevice(
+            processExitCode: 0, attachments: [final], importedRuns: [run]
+        ))
+        var complete = run
+        complete.executionStatus = .completed
+        complete.outcome = .passed
+        complete.laneResults[0].executionStatus = .completed
+        complete.laneResults[0].outcome = .passed
+        #expect(ScenarioCoordinator.canReleaseDevice(
+            processExitCode: 0, attachments: [final], importedRuns: [complete]
+        ))
+        let cancelled = try #require(ScenarioCoordinator.evidenceForCommit([complete], cancelled: true).first)
+        #expect(cancelled.executionStatus == .invalidEvidence)
+        #expect(cancelled.outcome == .needsReview)
+        #expect(!ScenarioCoordinator.canReleaseDevice(
+            processExitCode: 0, attachments: [final], importedRuns: [cancelled]
+        ))
+        try await executor.finishEvidenceValidation(journal: journal, accepted: false)
+        #expect(await executor.reservation(for: invocation.destinationIdentifier) != nil)
+    }
+
+    @Test func cancellationBetweenBuildAndTestStopsNextProcessBeforeLaunch() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let executor = XcodeTestExecutor(workDirectory: root.appending(path: "Executor"), persistence: persistence)
+        let definition = try ScenarioDefinition.starter().frozen()
+        let invocation = ScenarioInvocationIdentity(
+            id: UUID(), nonce: UUID().uuidString, issuedAt: Date(),
+            testIdentity: .init(bundleIdentifier: "dev.example.FixtureUITests",
+                                className: "IntentLabScenarioTests", methodName: "testIntentLabScenario"),
+            harnessVersion: ScenarioInvocationIdentity.currentHarnessVersion,
+            destinationIdentifier: "physical-device-1", scenarioDigest: definition.definitionDigest,
+            resultBundleIdentity: "IntentLab.xcresult"
+        )
+        let journal = ScenarioExecutionJournal(
+            phase: .preparing, invocation: invocation, scenarioID: definition.id,
+            scenarioVersion: definition.version, resultBundlePath: "", derivedDataPath: "",
+            buildLogPath: "", intendedExecutable: "/bin/sh", intendedArguments: [],
+            processIdentifier: nil, processStartedAt: nil, updatedAt: Date(), recoveryReason: nil
+        )
+        try await executor.persistPreparingJournal(journal)
+        let cancelled = await executor.cancelActiveExecution(grace: .milliseconds(10))
+        #expect(cancelled?.phase == .recoveryRequired)
+        let marker = root.appending(path: "launched")
+        do {
+            _ = try await executor.runProcess(
+                executable: "/bin/sh", arguments: ["-c", "touch \(marker.path)"],
+                logURL: root.appending(path: "process.log"), invocationID: invocation.id,
+                destinationIdentifier: invocation.destinationIdentifier, journal: journal,
+                appendLog: false
+            )
+            Issue.record("A cancelled invocation launched another process.")
+        } catch XcodeTestExecutorError.cancelled {
+            // The cancellation is expected before process launch.
+        } catch {
+            Issue.record("Unexpected cancellation error: \(error)")
+        }
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+        #expect(await executor.reservation(for: invocation.destinationIdentifier) != nil)
+    }
+
+    @Test func journalWriteFailureStopsLaunchedProcess() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let executor = XcodeTestExecutor(workDirectory: root.appending(path: "Executor"), persistence: persistence)
+        let definition = try ScenarioDefinition.starter().frozen()
+        let invocation = ScenarioInvocationIdentity(
+            id: UUID(), nonce: UUID().uuidString, issuedAt: Date(),
+            testIdentity: .init(bundleIdentifier: "dev.example.FixtureUITests",
+                                className: "IntentLabScenarioTests", methodName: "testIntentLabScenario"),
+            harnessVersion: ScenarioInvocationIdentity.currentHarnessVersion,
+            destinationIdentifier: "physical-device-1", scenarioDigest: definition.definitionDigest,
+            resultBundleIdentity: "IntentLab.xcresult"
+        )
+        let journal = ScenarioExecutionJournal(
+            phase: .preparing, invocation: invocation, scenarioID: definition.id,
+            scenarioVersion: definition.version, resultBundlePath: "", derivedDataPath: "",
+            buildLogPath: "", intendedExecutable: "/bin/sh", intendedArguments: [],
+            processIdentifier: nil, processStartedAt: nil, updatedAt: Date(), recoveryReason: nil
+        )
+        let blockedJournal = root.appending(path: "Journals/\(invocation.id.uuidString).json", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: blockedJournal, withIntermediateDirectories: true)
+        let launchedProcess = ProcessIDRecorder()
+        do {
+            _ = try await executor.runProcess(
+                executable: "/bin/sleep", arguments: ["10"],
+                logURL: root.appending(path: "process.log"), invocationID: invocation.id,
+                destinationIdentifier: invocation.destinationIdentifier, journal: journal,
+                appendLog: false,
+                onProcessLaunched: { launchedProcess.record($0) }
+            )
+            Issue.record("The blocked journal unexpectedly saved.")
+        } catch {
+            let processID = try #require(launchedProcess.value)
+            let processCheck = kill(processID, 0)
+            let processError = errno
+            #expect(processCheck == -1)
+            #expect(processError == ESRCH)
+            #expect(!(await executor.hasActiveExecution()))
+        }
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appending(path: "IntentLabRegressionTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private final class ProcessIDRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedValue: Int32?
+
+        var value: Int32? {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedValue
+        }
+
+        func record(_ processID: Int32) {
+            lock.lock()
+            defer { lock.unlock() }
+            storedValue = processID
+        }
     }
 
     private func deadlineDefinition(
@@ -550,5 +972,32 @@ struct IntentLabRegressionTests {
         definition.coverage.siriAttemptCount = siriAttemptCount
         definition.safety.deadlineSeconds = deadlineSeconds
         return definition
+    }
+
+    private func collectionDefinition(projectID: UUID, name: String) throws -> ScenarioDefinition {
+        var definition = ScenarioDefinition.starter(projectID: projectID)
+        definition.id = UUID()
+        definition.name = name
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.coverage = .init(appFeature: .notApplicable, intentIntegration: .required,
+                                    siri: .notApplicable, siriAttemptCount: nil)
+        definition.purpose = .exploratory
+        definition.checkMode = .basic
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        definition.integration = .init(
+            id: "notes", version: "1", digest: String(repeating: "a", count: 64)
+        )
+        definition.directControl.outputFields = [.init(
+            name: "selectedNoteID", type: .primitive(.string),
+            path: [.init(kind: .property, name: "selectedNoteID")]
+        )]
+        definition.observationPlan = [.init(id: "selectedNoteID", source: .intentResult)]
+        definition.assertions = [.init(
+            kind: .returnedField, observationKey: "selectedNoteID",
+            expectedValue: .string("packing-001"),
+            explanation: "The returned note is the requested note.",
+            applicableLanes: [.intentIntegration]
+        )]
+        return try definition.frozen()
     }
 }

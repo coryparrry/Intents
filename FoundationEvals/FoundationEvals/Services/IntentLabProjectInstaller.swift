@@ -2,6 +2,13 @@ import Foundation
 import CryptoKit
 import Darwin
 
+/// Published package commit verified by a clean external SwiftPM consumer.
+enum IntentLabPackageRevisionManifest {
+    static let packageURL = URL(string: "https://github.com/coryparrry/Intents.git")!
+    static let verifiedRevision: String? = "725a815d4bf56474b681e87621901f632a9def9c"
+    static let product = "IntentLabTesting"
+}
+
 struct IntentLabInstallationRequest: Sendable {
     let projectURL: URL
     let workspaceURL: URL?
@@ -25,7 +32,13 @@ struct IntentLabInstallationRequest: Sendable {
         self.applicationTargetID = applicationTargetID
         self.uiTestTargetID = uiTestTargetID
         self.packageURL = packageURL
-        self.packageRevision = packageRevision
+        if packageURL == IntentLabPackageRevisionManifest.packageURL,
+           packageRevision?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true,
+           let verifiedRevision = IntentLabPackageRevisionManifest.verifiedRevision {
+            self.packageRevision = verifiedRevision
+        } else {
+            self.packageRevision = packageRevision
+        }
         self.packageProduct = packageProduct
         self.consumerSource = consumerSource
         self.declarationData = declarationData
@@ -78,6 +91,7 @@ struct IntentLabValidatedDeclaration: Sendable {
     let targetBundleIdentifier: String
     let targetIdentity: String
     let capabilities: [String]
+    let hasFixtureContentObserver: Bool
     let digest: String
 }
 
@@ -103,6 +117,7 @@ enum IntentLabProjectInstallerError: LocalizedError {
     case unsupported(String)
     case conflict(URL)
     case unreadableFile(URL)
+    case incompleteManualExport(URL)
     case unsafePath(URL)
     case interruptedTransaction(URL)
 
@@ -111,6 +126,7 @@ enum IntentLabProjectInstallerError: LocalizedError {
         case .unsupported(let reason): reason
         case .conflict(let url): "The project changed since preview: \(url.lastPathComponent). Refresh the preview."
         case .unreadableFile(let url): "An existing file could not be read: \(url.path). Intent Lab will not treat it as missing or overwrite it. Check access and refresh the preview."
+        case .incompleteManualExport(let url): "A manual export stopped while writing \(url.path). Inspect that file before retrying; Intent Lab left its contents intact."
         case .unsafePath(let url): "The integration path is outside the selected project: \(url.path)."
         case .interruptedTransaction(let url): "An interrupted setup needs recovery before applying changes: \(url.path)."
         }
@@ -120,6 +136,42 @@ enum IntentLabProjectInstallerError: LocalizedError {
 /// Static inspection and mutation only. Builds, package resolution, and scripts remain
 /// behind the app's existing explicit project execution approval.
 struct IntentLabProjectInstaller: Sendable {
+    /// Compiles without business knowledge. A developer must implement each
+    /// operation and explicitly replace Basic integration at the entry point.
+    static let appAdapterScaffold = """
+        import Foundation
+        import IntentLabContracts
+        import IntentLabTesting
+        import XCTest
+
+        @available(macOS 27.0, iOS 27.0, *)
+        @MainActor
+        struct IntentLabAppAdapter: IntentLabIntegration {
+            var supportedCapabilities: Set<String> { [] }
+
+            func prepare(bundleIdentifier: String, context: String,
+                         operationID: String) throws -> XCUIApplication {
+                throw IntentLabIntegrationError.unsupportedPreparation(operationID)
+            }
+
+            func observe(application: XCUIApplication) throws -> [String: IntentLabValue] {
+                throw IntentLabAppAdapterError.unimplementedObservation
+            }
+
+            func completed(observations: [String: IntentLabValue], context: String) -> Bool {
+                false
+            }
+        }
+
+        private enum IntentLabAppAdapterError: LocalizedError {
+            case unimplementedObservation
+
+            var errorDescription: String? {
+                "Implement an app-owned observer before claiming an application result."
+            }
+        }
+        """
+
     /// Validates the exact installed declaration bytes, including its binding to the
     /// selected application and UI-test target. The digest must not be recomputed from
     /// a parsed or generated JSON object because edits and byte order are significant.
@@ -137,7 +189,7 @@ struct IntentLabProjectInstaller: Sendable {
               declaration["actions"] is [[String: Any]],
               declaration["resultProjections"] is [[String: Any]],
               declaration["preparationOperations"] is [String],
-              declaration["observers"] is [[String: Any]],
+              let observers = declaration["observers"] as? [[String: Any]],
               declaration["isolation"] is [String: Any],
               let capabilities = declaration["capabilities"] as? [String],
               !capabilities.isEmpty,
@@ -147,8 +199,14 @@ struct IntentLabProjectInstaller: Sendable {
                 "Choose a schema v1 declaration for this app and UI-test target with intent-lab-v2 support and complete capabilities."
             )
         }
+        let fixtureObserverIDs: Set<String> = ["intentlab.fixtureDigest", "summarySourceContentDigest"]
+        let hasFixtureContentObserver = observers.contains {
+            guard let observerID = $0["id"] as? String else { return false }
+            return fixtureObserverIDs.contains(observerID)
+        }
         return .init(id: id, version: version, targetBundleIdentifier: targetBundleIdentifier,
-                     targetIdentity: testTargetName, capabilities: capabilities, digest: digest(data))
+                     targetIdentity: testTargetName, capabilities: capabilities,
+                     hasFixtureContentObserver: hasFixtureContentObserver, digest: digest(data))
     }
 
     /// The receipt matcher resolves workspace identities relative to the workspace's
@@ -247,6 +305,11 @@ struct IntentLabProjectInstaller: Sendable {
         let project = request.projectURL.standardizedFileURL.resolvingSymlinksInPath()
         let projectRoot = project.deletingLastPathComponent()
         let workspace = request.workspaceURL?.standardizedFileURL.resolvingSymlinksInPath()
+        if request.packageURL == IntentLabPackageRevisionManifest.packageURL,
+           request.packageRevision?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
+            return manual(project, request: request,
+                          "This Intents build has no verified default package revision. Select a local development checkout or enter a published 40-character commit, then preview again.")
+        }
         guard project.pathExtension == "xcodeproj", FileManager.default.fileExists(atPath: project.path),
               (request.packageURL.isFileURL
                 ? FileManager.default.fileExists(atPath: request.packageURL.path)
@@ -288,6 +351,13 @@ struct IntentLabProjectInstaller: Sendable {
               declaredCapabilities.allSatisfy({ !$0.isEmpty && !$0.contains(where: { $0.isWhitespace }) }),
               Set(declaredCapabilities).count == declaredCapabilities.count else {
             return manual(project, request: request, "The integration declaration needs schema v1 identity, intent-lab-v2 support, action and observation lists, isolation, and unique capabilities before setup can advertise build support.")
+        }
+        let needsAppAdapter = !Set(declaredCapabilities).isDisjoint(with: [
+            "siri", "siri-completion", "accessible-result", "preparation", "invocation-correlation"
+        ]) || ((declaration["isolation"] as? [String: Any])?["kind"] as? String != "readOnly")
+        if request.consumerSource.contains("IntentLabBasicIntegration"), needsAppAdapter {
+            return manual(project, request: request,
+                          "Basic support cannot prove app state, Siri completion, or isolated mutation. Implement the exported IntentLabAppAdapter.swift in the owning UI-test target, change the entry point to use it, and verify the compiled connection receipt.")
         }
         guard let root = try PropertyListSerialization.propertyList(from: existing, format: nil) as? [String: Any],
               let objectVersion = Int(root["objectVersion"] as? String ?? ""), (60...110).contains(objectVersion),
@@ -340,7 +410,8 @@ struct IntentLabProjectInstaller: Sendable {
         let integrationDir = projectRoot.appending(path: "IntentLabIntegration/\(targetName)")
         let sourceURL = integrationDir.appending(path: "IntentLabScenarioTests.swift")
         let declarationURL = integrationDir.appending(path: "IntentLabIntegration.json")
-        try ensureSafe([pbxURL, schemeURL, sourceURL, declarationURL],
+        let adapterURL = integrationDir.appending(path: "IntentLabAppAdapter.swift")
+        try ensureSafe([pbxURL, schemeURL, sourceURL, declarationURL, adapterURL],
                        roots: [projectRoot] + (workspace.map { [$0] } ?? []))
         if !created {
             if let existingReference = compiledScenarioReference(in: objects, targetID: targetID,
@@ -377,6 +448,11 @@ struct IntentLabProjectInstaller: Sendable {
             try addPackage(to: &document, project: project, targetID: targetID,
                            product: request.packageProduct, packageURL: request.packageURL,
                            revision: request.packageRevision)
+            if request.packageProduct == "IntentLabTesting" {
+                try addPackage(to: &document, project: project, targetID: targetID,
+                               product: "IntentLabContracts", packageURL: request.packageURL,
+                               revision: request.packageRevision)
+            }
             try setHarnessHints(in: &document, targetID: targetID,
                                 declaredCapabilities: declaredCapabilities)
             try attachSources(to: &document, project: project, targetID: targetID,
@@ -399,9 +475,14 @@ struct IntentLabProjectInstaller: Sendable {
             (sourceURL, "Add the consumer-owned XCTest entry point", Data(request.consumerSource.utf8)),
             (declarationURL, "Add the integration declaration", request.declarationData),
         ]
+        let adapterData = Data(Self.appAdapterScaffold.utf8)
+        let adapterExists = try readableContents(at: adapterURL) != nil
+        let allCandidates = candidates + (adapterExists ? [] : [
+            (adapterURL, "Scaffold an app-owned adapter that fails until implemented", adapterData)
+        ])
         let changes: [IntentLabInstallationChange]
         do {
-            changes = try candidates.compactMap { url, summary, proposed -> IntentLabInstallationChange? in
+            changes = try allCandidates.compactMap { url, summary, proposed -> IntentLabInstallationChange? in
                 let previous = try readableContents(at: url)
                 guard previous != proposed else { return nil }
                 return .init(url: url, summary: summary, previous: previous, proposed: proposed)
@@ -415,7 +496,12 @@ struct IntentLabProjectInstaller: Sendable {
                      declarationDigest: Self.digest(request.declarationData), manualFiles: [])
     }
 
-    func apply(_ plan: IntentLabInstallationPlan) throws -> IntentLabInstallationReceipt {
+    func apply(
+        _ plan: IntentLabInstallationPlan,
+        writeChange: (Data, URL, Data.WritingOptions) throws -> Void = { data, url, options in
+            try data.write(to: url, options: options)
+        }
+    ) throws -> IntentLabInstallationReceipt {
         guard plan.supported else { throw IntentLabProjectInstallerError.unsupported(plan.manualSteps.joined(separator: " ")) }
         let projectRoot = plan.projectURL.deletingLastPathComponent()
         let journalURL = projectRoot.appending(path: ".intent-lab-install-journal.json")
@@ -436,6 +522,7 @@ struct IntentLabProjectInstaller: Sendable {
         }, workspacePath: plan.workspaceURL?.path)
         try JSONEncoder().encode(journal).write(to: journalURL, options: .withoutOverwriting)
         var written: [IntentLabInstallationChange] = []
+        var attemptedChange: IntentLabInstallationChange?
         do {
             for change in plan.changes {
                 try ensureSafe([change.url], roots: roots)
@@ -444,18 +531,25 @@ struct IntentLabProjectInstaller: Sendable {
                 }
                 try FileManager.default.createDirectory(at: change.url.deletingLastPathComponent(),
                                                         withIntermediateDirectories: true)
-                try change.proposed.write(to: change.url,
-                    options: change.previous == nil ? .withoutOverwriting : .atomic)
+                attemptedChange = change
+                try writeChange(change.proposed, change.url,
+                                change.previous == nil ? .withoutOverwriting : .atomic)
                 written.append(change)
+                attemptedChange = nil
             }
             try FileManager.default.removeItem(at: journalURL)
             return .init(changedFiles: plan.changes.map(\.url), alreadyInstalled: false,
                          journalURL: nil, declarationDigest: plan.declarationDigest)
         } catch {
             var rollbackConflict = false
-            for change in written.reversed() {
+            for change in (written + (attemptedChange.map { [$0] } ?? [])).reversed() {
                 do {
-                    guard try readableContents(at: change.url) == change.proposed else {
+                    let current = try readableContents(at: change.url)
+                    if current == change.previous { continue }
+                    guard current == change.proposed else {
+                        // A failed exclusive write may have left partial bytes, or
+                        // another process may have created the file. Keep the journal
+                        // so neither case is silently treated as rolled back.
                         rollbackConflict = true
                         continue
                     }
@@ -514,7 +608,13 @@ struct IntentLabProjectInstaller: Sendable {
 
     /// Exports the same reviewable entry point and declaration shown in an
     /// unsupported-project preview. Existing differing files cause a conflict.
-    func exportManualFiles(_ plan: IntentLabInstallationPlan, to directory: URL) throws -> [URL] {
+    func exportManualFiles(
+        _ plan: IntentLabInstallationPlan,
+        to directory: URL,
+        writeFile: (Data, URL) throws -> Void = { data, url in
+            try data.write(to: url, options: .withoutOverwriting)
+        }
+    ) throws -> [URL] {
         guard !plan.supported, !plan.manualFiles.isEmpty else {
             throw IntentLabProjectInstallerError.unsupported("There are no manual integration files to export.")
         }
@@ -537,10 +637,12 @@ struct IntentLabProjectInstaller: Sendable {
                 do {
                     // withoutOverwriting uses exclusive creation; a concurrent
                     // developer write cannot be replaced after the preview check.
-                    try file.data.write(to: url, options: .withoutOverwriting)
+                    try writeFile(file.data, url)
                 } catch {
                     if let current = try readableContents(at: url) {
-                        guard current == file.data else { throw IntentLabProjectInstallerError.conflict(url) }
+                        guard current == file.data else {
+                            throw IntentLabProjectInstallerError.incompleteManualExport(url)
+                        }
                         continue
                     }
                     throw error
@@ -577,7 +679,8 @@ struct IntentLabProjectInstaller: Sendable {
         let files = [project.appending(path: "project.pbxproj"),
                      scheme,
                      integrationDir.appending(path: "IntentLabScenarioTests.swift"),
-                     integrationDir.appending(path: "IntentLabIntegration.json")]
+                     integrationDir.appending(path: "IntentLabIntegration.json"),
+                     integrationDir.appending(path: "IntentLabAppAdapter.swift")]
         try ensureSafe(files, roots: [project.deletingLastPathComponent()] + (workspace.map { [$0] } ?? []))
         return .init(automated: false, filesToReview: files, steps: [
             "Remove only Intent Lab test-source and declaration references from \(targetName), preserving edited adapters.",
@@ -596,10 +699,11 @@ struct IntentLabProjectInstaller: Sendable {
         let instructions = """
         # Intent Lab manual integration
 
-        1. Review the supplied IntentLabScenarioTests.swift and IntentLabIntegration.json before adding them to a suitable signed UI-test target.
-        2. Add the \(request.packageProduct) package product to the UI-test target only. Package source: \(request.packageURL.isFileURL ? "choose a local package checkout" : package).
+        1. Review the supplied IntentLabScenarioTests.swift, IntentLabIntegration.json, and IntentLabAppAdapter.swift before adding them to a suitable signed UI-test target.
+        2. Add the \(request.packageProduct) and IntentLabContracts package products to the UI-test target only. Package source: \(request.packageURL.isFileURL ? "choose a local package checkout" : package).
         3. Add the UI-test target to a shared test scheme, preserve custom test plans and signing, and set INTENT_LAB_HARNESS_VERSION to intent-lab-v2. Set INTENT_LAB_HARNESS_CAPABILITIES to the capabilities declared in IntentLabIntegration.json.
-        4. Build and run the separate integration receipt check before running scenarios. Static setup alone does not prove the compiled integration is ready.
+        4. The adapter deliberately throws for preparation and observation and reports no supported capabilities. Implement real app-owned operations and change the XCTest entry point to use it before claiming app-state or Siri completion. Never fill observations from expected answers.
+        5. Build and run the separate integration receipt check before running scenarios. Static setup alone does not prove the compiled integration is ready.
 
         Automatic setup stopped because: \(instruction)
         """
@@ -610,6 +714,9 @@ struct IntentLabProjectInstaller: Sendable {
             IntentLabManualIntegrationFile(filename: "IntentLabIntegration.json",
                                            purpose: "Versioned integration declaration",
                                            data: request.declarationData),
+            IntentLabManualIntegrationFile(filename: "IntentLabAppAdapter.swift",
+                                           purpose: "App-owned adapter scaffold; all business operations fail until implemented",
+                                           data: Data(Self.appAdapterScaffold.utf8)),
             IntentLabManualIntegrationFile(filename: "IntentLabManualSetup.md",
                                            purpose: "Project and scheme setup instructions",
                                            data: Data(instructions.utf8)),
@@ -844,10 +951,12 @@ struct IntentLabProjectInstaller: Sendable {
         } else {
             let sourceID = id("source-file-\(targetName)", project)
             let resourceID = id("declaration-file-\(targetName)", project)
+            let adapterID = id("adapter-file-\(targetName)", project)
             let sourceBuildID = id("source-build-\(targetName)", project)
             let resourceBuildID = id("resource-build-\(targetName)", project)
+            let adapterBuildID = id("adapter-build-\(targetName)", project)
             if try !doc.containsObject(groupID) {
-                try doc.addObject(id: groupID, value: "{isa = PBXGroup; children = (\(sourceID), \(resourceID),); path = \(quoted("IntentLabIntegration/\(targetName)")); sourceTree = \"<group>\"; }")
+                try doc.addObject(id: groupID, value: "{isa = PBXGroup; children = (\(sourceID), \(resourceID), \(adapterID),); path = \(quoted("IntentLabIntegration/\(targetName)")); sourceTree = \"<group>\"; }")
             }
             if try !doc.containsObject(sourceID) {
                 try doc.addObject(id: sourceID, value: "{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabScenarioTests.swift; sourceTree = \"<group>\"; }")
@@ -855,14 +964,23 @@ struct IntentLabProjectInstaller: Sendable {
             if try !doc.containsObject(resourceID) {
                 try doc.addObject(id: resourceID, value: "{isa = PBXFileReference; lastKnownFileType = text.json; path = IntentLabIntegration.json; sourceTree = \"<group>\"; }")
             }
+            if try !doc.containsObject(adapterID) {
+                try doc.addObject(id: adapterID, value: "{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabAppAdapter.swift; sourceTree = \"<group>\"; }")
+            }
             if try !doc.containsObject(sourceBuildID) {
                 try doc.addObject(id: sourceBuildID, value: "{isa = PBXBuildFile; fileRef = \(sourceID); }")
             }
             if try !doc.containsObject(resourceBuildID) {
                 try doc.addObject(id: resourceBuildID, value: "{isa = PBXBuildFile; fileRef = \(resourceID); }")
             }
+            if try !doc.containsObject(adapterBuildID) {
+                try doc.addObject(id: adapterBuildID, value: "{isa = PBXBuildFile; fileRef = \(adapterID); }")
+            }
             try doc.append(groupID, toObject: mainGroup, key: "children")
-            for (kind, buildID) in [("PBXSourcesBuildPhase", sourceBuildID), ("PBXResourcesBuildPhase", resourceBuildID)] {
+            try doc.append(adapterID, toObject: groupID, key: "children")
+            for (kind, buildID) in [("PBXSourcesBuildPhase", sourceBuildID),
+                                    ("PBXSourcesBuildPhase", adapterBuildID),
+                                    ("PBXResourcesBuildPhase", resourceBuildID)] {
                 guard let phases = try doc.object(targetID).dictionary?["buildPhases"]?.array else {
                     throw IntentLabProjectInstallerError.unsupported("The UI-test target has no build phases.")
                 }

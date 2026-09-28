@@ -2,6 +2,19 @@ import Foundation
 import XCTest
 
 enum UITestStorage {
+    @MainActor
+    static func selectPane(_ title: String, heading: String, in app: XCUIApplication) {
+        let popUpButton = app.popUpButtons.matching(identifier: heading).firstMatch
+        let menuButton = app.menuButtons.matching(identifier: heading).firstMatch
+        if popUpButton.exists || menuButton.exists {
+            let picker = popUpButton.exists ? popUpButton : menuButton
+            picker.click()
+            app.menuItems[title].click()
+        } else {
+            app.buttons[title].click()
+        }
+    }
+
     // The runner's private temporary directory cannot be opened by the application under test.
     // Access to this shared test-only root is granted by FoundationEvalsUITests.entitlements.
     static let root = URL(filePath: "/private/tmp/foundation-evals-ui-tests", directoryHint: .isDirectory)

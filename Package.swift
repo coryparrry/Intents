@@ -8,11 +8,19 @@ let portableProductionSources = [
     "Models/EvaluationFieldAssertion.swift",
     "Models/EvaluationScoringTypes.swift",
     "Models/ScenarioModels.swift",
+    "Models/ScenarioExecutionModels.swift",
+    "Models/ScenarioCollectionModels.swift",
     "Models/WorkflowTimelineInterval.swift",
     "Services/EvaluationFieldAssertions.swift",
     "Services/MetricScorer.swift",
     "Services/ScenarioComparison.swift",
+    "Services/ScenarioExecutionComparison.swift",
     "Services/ScenarioExecutionRecovery.swift",
+    "Services/ScenarioExpectationAuthoring.swift",
+    "Services/ScenarioCollectionService.swift",
+    "Services/ScenarioCollectionStore.swift",
+    "Services/IntentEvidenceBundle.swift",
+    "Services/IntentEvidenceQualification.swift",
     "Services/ScenarioPersistence.swift",
     "Services/ScenarioValidation.swift",
     "Services/XCTestEvidenceImporter.swift",
@@ -32,6 +40,12 @@ let portableTestSources = [
     "TimelineRenderingTests.swift",
     "RunToolbarProgressTests.swift",
     "ScenarioContractsTests.swift",
+    "ScenarioExpectationAuthoringTests.swift",
+    "ScenarioExecutionPlanTests.swift",
+    "ScenarioCollectionTests.swift",
+    "ScenarioNoMutationTests.swift",
+    "ScenarioExecutionComparisonTests.swift",
+    "IntentEvidenceBundleTests.swift",
     "IntentLabProjectInstallerTests.swift",
 ]
 
@@ -42,6 +56,8 @@ let package = Package(
         .library(name: "FoundationEvalsDeveloper", targets: ["FoundationEvalsDeveloper"]),
         .library(name: "IntentLabContracts", targets: ["IntentLabContracts"]),
         .library(name: "IntentLabTesting", targets: ["IntentLabTesting"]),
+        .library(name: "IntentLabCoreTesting", targets: ["IntentLabCoreTesting"]),
+        .executable(name: "intents-evidence", targets: ["IntentsEvidenceCLI"]),
     ],
     targets: [
         .target(name: "IntentLabContracts", path: "Sources/IntentLabContracts"),
@@ -51,13 +67,23 @@ let package = Package(
             publicHeadersPath: "include"
         ),
         .target(
-            name: "IntentLabTesting",
+            name: "IntentLabCoreTesting",
             dependencies: ["IntentLabContracts", "IntentLabSiriBridge"],
+            path: "Sources/IntentLabCoreTesting"
+        ),
+        .target(
+            name: "IntentLabTesting",
+            dependencies: ["IntentLabContracts", "IntentLabCoreTesting"],
             path: "Sources/IntentLabTesting"
         ),
         .target(
             name: "FoundationEvalsDeveloper",
             path: "Sources/FoundationEvalsDeveloper"
+        ),
+        .executableTarget(
+            name: "IntentsEvidenceCLI",
+            dependencies: ["FoundationEvals"],
+            path: "Sources/IntentsEvidenceCLI"
         ),
         .target(
             name: "FoundationEvals",
@@ -168,6 +194,11 @@ let package = Package(
             name: "IntentLabContractsTests",
             dependencies: ["IntentLabContracts"],
             path: "Tests/IntentLabContractsTests"
+        ),
+        .testTarget(
+            name: "IntentLabCoreTestingTests",
+            dependencies: ["IntentLabCoreTesting", "IntentLabContracts"],
+            path: "Tests/IntentLabCoreTestingTests"
         ),
     ]
 )

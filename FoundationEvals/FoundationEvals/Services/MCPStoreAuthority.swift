@@ -85,12 +85,30 @@ enum MCPStoreAuthority {
                 let definitions = latestDefinitions
                     .filter { $0.projectID == arguments.projectID }
                 let runs: [ScenarioRun]
+                let journals: [ScenarioExecutionJournal]
                 do {
                     runs = try await persistence.loadRuns()
+                    journals = try await persistence.loadJournals()
                 } catch {
                     var incomplete = suiteReport
                     incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " Intent Lab run storage could not be verified: \(error.localizedDescription)"
+                    incomplete.summary += " Intent Lab run or journal storage could not be verified: \(error.localizedDescription)"
+                    incomplete.scenarios = []
+                    return readPayload([
+                        "report": try json(incomplete),
+                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
+                    ])
+                }
+                let definitionIdentities = Set(allDefinitions.map {
+                    "\($0.id.uuidString):\($0.version):\($0.definitionDigest)"
+                })
+                let orphanedRuns = runs.filter {
+                    !definitionIdentities.contains("\($0.scenarioID.uuidString):\($0.scenarioVersion):\($0.scenarioDigest)")
+                }
+                if !orphanedRuns.isEmpty {
+                    var incomplete = suiteReport
+                    incomplete.outcome = .incompleteOrIncompatibleEvidence
+                    incomplete.summary += " \(orphanedRuns.count) saved Intent Lab run(s) have no matching definition; restore or remove their frozen definition before a project release check can pass."
                     incomplete.scenarios = []
                     return readPayload([
                         "report": try json(incomplete),
@@ -115,7 +133,10 @@ enum MCPStoreAuthority {
                     return ScenarioReleaseCheckEvaluator.report(
                         definition: definition,
                         run: run,
-                        comparison: comparison
+                        comparison: comparison,
+                        journalAccepted: run.map {
+                            ScenarioReleaseCheckEvaluator.acceptedJournal(for: $0, in: journals)
+                        }
                     )
                 }
                 let report = EvaluationReleaseCheckEvaluator.integratingScenarios(
@@ -275,8 +296,12 @@ enum MCPStoreAuthority {
                 && $0.startedAt < run.startedAt
         }
         let comparison = baseline.map { ScenarioComparison.compare(baseline: $0, candidate: run) }
+        let journals = try await persistence.loadJournals()
         let release = definition.map {
-            ScenarioReleaseCheckEvaluator.report(definition: $0, run: run, comparison: comparison)
+            ScenarioReleaseCheckEvaluator.report(
+                definition: $0, run: run, comparison: comparison,
+                journalAccepted: ScenarioReleaseCheckEvaluator.acceptedJournal(for: run, in: journals)
+            )
         }
         let sharingCopy = await persistence.redactedSharingCopy(of: run)
         return readPayload([

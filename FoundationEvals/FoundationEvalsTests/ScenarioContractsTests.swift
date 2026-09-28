@@ -231,6 +231,112 @@ struct ScenarioContractsTests {
         #expect(!XcodeTestExecutor.destinationStatus(identifier: "sim-1", devices: physical).ready)
     }
 
+    @Test func schemeTestActionConfigurationUsesSelectedOwnerAndPreservesDebug() throws {
+        let repository = URL(filePath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let tasks = repository.appending(path: "examples/IntentLabTasks/IntentLabTasks.xcodeproj")
+        let notes = repository.appending(path: "examples/IntentLabFixture/IntentLabFixture.xcodeproj")
+        #expect(try XcodeConnectionDiscoveryService.testActionBuildConfiguration(
+            container: tasks, scheme: "IntentLabTasks"
+        ) == "IntentLabTesting")
+        #expect(try XcodeConnectionDiscoveryService.testActionBuildConfiguration(
+            container: notes, scheme: "IntentLabFixtureV2"
+        ) == "Debug")
+
+        let root = try temporaryDirectory()
+        let workspace = root.appending(path: "Combined.xcworkspace", directoryHint: .isDirectory)
+        let first = root.appending(path: "First/App.xcodeproj", directoryHint: .isDirectory)
+        let second = root.appending(path: "Second/App.xcodeproj", directoryHint: .isDirectory)
+        for directory in [workspace, first, second] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try Data("""
+        <Workspace version="1.0">
+          <FileRef location="group:First/App.xcodeproj"/>
+          <FileRef location="group:Second/App.xcodeproj"/>
+        </Workspace>
+        """.utf8).write(to: workspace.appending(path: "contents.xcworkspacedata"))
+        for (project, value) in [(first, "Debug"), (second, "IntentLabTesting")] {
+            let scheme = project.appending(path: "xcshareddata/xcschemes/Combined.xcscheme")
+            try FileManager.default.createDirectory(at: scheme.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("<Scheme><TestAction buildConfiguration=\"\(value)\"/></Scheme>".utf8).write(to: scheme)
+        }
+        #expect(throws: XcodeConnectionDiscoveryError.self) {
+            _ = try XcodeConnectionDiscoveryService.testActionBuildConfiguration(
+                container: workspace, scheme: "Combined"
+            )
+        }
+        #expect(try XcodeConnectionDiscoveryService.testActionBuildConfiguration(
+            container: workspace, scheme: "Combined", preferredProjectPath: second.path
+        ) == "IntentLabTesting")
+    }
+
+    @Test func legacyExecutionConfigurationDecodesWithoutManualOverride() throws {
+        let bytes = Data("""
+        {
+          "containerPath": "/tmp/Legacy.xcodeproj",
+          "isWorkspace": false,
+          "scheme": "Legacy",
+          "testTarget": "LegacyUITests",
+          "testBundleIdentifier": "dev.example.LegacyUITests",
+          "destinationIdentifier": "device",
+          "generatedResourceDirectory": "",
+          "configuration": "Debug",
+          "xcodebuildPath": "/usr/bin/xcodebuild",
+          "xcresulttoolPath": "/usr/bin/xcrun"
+        }
+        """.utf8)
+        let decoded = try JSONDecoder().decode(XcodeTestConfiguration.self, from: bytes)
+        #expect(decoded.configuration == "Debug")
+        #expect(decoded.configurationOverride == nil)
+        #expect(decoded.developmentTeam == nil)
+        #expect(decoded.allowProvisioningUpdates == nil)
+    }
+
+    @Test func developmentSigningOverridesRoundTripAndReachBuildCommands() throws {
+        var configuration = XcodeTestConfiguration(
+            containerPath: "/tmp/Fixture.xcodeproj", isWorkspace: false, scheme: "Fixture",
+            testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: "device", generatedResourceDirectory: ""
+        )
+        #expect(configuration.signingArguments.isEmpty)
+        configuration.developmentTeam = " TEAM123 "
+        configuration.allowProvisioningUpdates = true
+        let decoded = try JSONDecoder().decode(
+            XcodeTestConfiguration.self, from: JSONEncoder().encode(configuration)
+        )
+        #expect(decoded.developmentTeam == " TEAM123 ")
+        #expect(decoded.allowProvisioningUpdates == true)
+        #expect(decoded.signingArguments == ["-allowProvisioningUpdates", "DEVELOPMENT_TEAM=TEAM123"])
+        let command = XcodeTestExecutor.xcodeArguments(
+            configuration: decoded, derivedData: URL(filePath: "/tmp/DerivedData")
+        ) + ["build-for-testing"]
+        #expect(command.suffix(3) == ["-allowProvisioningUpdates", "DEVELOPMENT_TEAM=TEAM123", "build-for-testing"])
+        configuration.allowProvisioningUpdates = false
+        #expect(configuration.signingArguments == ["DEVELOPMENT_TEAM=TEAM123"])
+    }
+
+    @Test func discoveryBuildSettingsUsesDevelopmentSigningOverride() throws {
+        let arguments = XcodeConnectionDiscoveryService.buildSettingsArguments(
+            selector: "-project", container: URL(filePath: "/tmp/Fixture.xcodeproj"),
+            targetOrScheme: ["-target", "FixtureUITests"], configuration: "Debug",
+            signingArguments: ["-allowProvisioningUpdates", "DEVELOPMENT_TEAM=TEAM123"]
+        )
+        #expect(arguments == [
+            "-project", "/tmp/Fixture.xcodeproj", "-target", "FixtureUITests",
+            "-configuration", "Debug", "-showBuildSettings", "-json",
+            "-allowProvisioningUpdates", "DEVELOPMENT_TEAM=TEAM123"
+        ])
+        let settings = Data("""
+        [{"target":"FixtureUITests","buildSettings":{
+          "PRODUCT_BUNDLE_IDENTIFIER":"dev.example.FixtureUITests",
+          "PRODUCT_TYPE":"com.apple.product-type.bundle.ui-testing",
+          "DEVELOPMENT_TEAM":"TEAM123"
+        }}]
+        """.utf8)
+        #expect(try XcodeConnectionDiscoveryService.parseBuildSettings(settings).first?.signingConfigured == true)
+    }
+
     @Test func frozenDefinitionRoundTripsWithStableDigest() throws {
         let definition = try scenario()
         let data = try encoder.encode(definition)
@@ -576,6 +682,9 @@ struct ScenarioContractsTests {
         #expect(output["displayName"] as? String == "Task ID")
         #expect(path.map { $0["kind"] as? String } == ["property", "index"])
         #expect((object["integration"] as? [String: Any])?["digest"] as? String == definition.integration?.digest)
+        let safety = try #require(object["safety"] as? [String: Any])
+        #expect(safety["mutationPolicy"] as? String == "readOnly")
+        #expect(safety["allowedActions"] == nil)
     }
 
     @Test func reusableXCTestRunCarriesFrozenReadOnlyPolicy() throws {
@@ -698,24 +807,29 @@ struct ScenarioContractsTests {
         let project = root.appending(path: "Tasks.xcodeproj", directoryHint: .isDirectory)
         let products = root.appending(path: "Products", directoryHint: .isDirectory)
         let app = products.appending(path: "Tasks.app", directoryHint: .isDirectory)
+        let host = products.appending(path: "TasksUITests-Runner.app", directoryHint: .isDirectory)
         let test = products.appending(path: "TasksUITests.xctest", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: host, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: test, withIntermediateDirectories: true)
         let pbxproj = project.appending(path: "project.pbxproj")
         let appInfo = app.appending(path: "Info.plist")
         let signature = app.appending(path: "_CodeSignature/CodeResources")
+        let hostSignature = host.appending(path: "_CodeSignature/CodeResources")
         let resolved = project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved")
         try FileManager.default.createDirectory(at: signature.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hostSignature.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: resolved.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("project-v1".utf8).write(to: pbxproj)
         try Data("info-v1".utf8).write(to: appInfo)
         try Data("signature-v1".utf8).write(to: signature)
+        try Data("runner-signature-v1".utf8).write(to: hostSignature)
         try Data("package-v1".utf8).write(to: resolved)
         let source = products.appending(path: "Tasks.xctestrun")
         try Data("run-v1".utf8).write(to: source)
         let paths = XCTestRunProductPaths(
-            sourceURL: source, appBundleURL: app, testHostURL: test, testBundleURL: test
+            sourceURL: source, appBundleURL: app, testHostURL: host, testBundleURL: test
         )
         let configuration = XcodeTestConfiguration(
             containerPath: project.path, isWorkspace: false, scheme: "Tasks",
@@ -744,6 +858,164 @@ struct ScenarioContractsTests {
         let workspaceDigest = try XcodeTestExecutor.buildInputsDigest(configuration: workspaceConfiguration, products: paths)
         try Data("scheme-v2".utf8).write(to: workspaceScheme)
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: workspaceConfiguration, products: paths) != workspaceDigest)
+
+        let beforeHostSigning = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        let beforeHostMetadata = XcodeTestExecutor.productMetadataDigest(products: paths)
+        try Data("runner-signature-v2".utf8).write(to: hostSignature)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeHostSigning)
+        #expect(XcodeTestExecutor.productMetadataDigest(products: paths) != beforeHostMetadata)
+
+        let hostInfo = host.appending(path: "Info.plist")
+        let hostExecutable = host.appending(path: "Runner")
+        try PropertyListSerialization.data(
+            fromPropertyList: ["CFBundleIdentifier": "dev.example.TasksUITests-Runner",
+                               "CFBundleExecutable": "Runner"],
+            format: .xml, options: 0
+        ).write(to: hostInfo)
+        try Data("runner-v1".utf8).write(to: hostExecutable)
+        let checkedHost = try XcodeTestExecutor.productIdentity(
+            bundle: host, fallbackBundleIdentifier: configuration.testBundleIdentifier
+        )
+        try Data("runner-v2".utf8).write(to: hostExecutable)
+        #expect(try XcodeTestExecutor.productIdentity(
+            bundle: host, fallbackBundleIdentifier: configuration.testBundleIdentifier
+        ) != checkedHost)
+
+        let sourceFile = root.appending(path: "Sources/App.swift")
+        try FileManager.default.createDirectory(at: sourceFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("struct App {}".utf8).write(to: sourceFile)
+        let sourceDigest = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("struct App { let changed = true }".utf8).write(to: sourceFile)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != sourceDigest)
+
+        let generatedFile = root.appending(path: "DerivedData/generated.swift")
+        try FileManager.default.createDirectory(at: generatedFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let beforeGenerated = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("generated output".utf8).write(to: generatedFile)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforeGenerated)
+    }
+
+    @Test func connectionFingerprintIncludesLocalPackageSources() throws {
+        let root = try temporaryDirectory()
+        let appRoot = root.appending(path: "App", directoryHint: .isDirectory)
+        let project = appRoot.appending(path: "App.xcodeproj", directoryHint: .isDirectory)
+        let packageSource = root.appending(path: "LocalPackage/Sources/Package.swift")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: packageSource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let projectData = try PropertyListSerialization.data(
+            fromPropertyList: ["objects": [
+                "PACKAGE": ["isa": "XCLocalSwiftPackageReference", "relativePath": "../LocalPackage"],
+                "SHARED": ["isa": "PBXFileReference", "path": "../Shared/Intent.swift", "sourceTree": "<group>"],
+            ]], format: .xml, options: 0
+        )
+        try projectData.write(to: project.appending(path: "project.pbxproj"))
+        try Data("public struct Package {}".utf8).write(to: packageSource)
+        let sharedSource = root.appending(path: "Shared/Intent.swift")
+        try FileManager.default.createDirectory(at: sharedSource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("struct Intent {}".utf8).write(to: sharedSource)
+        let paths = XCTestRunProductPaths(
+            sourceURL: root.appending(path: "Products/App.xctestrun"),
+            appBundleURL: root.appending(path: "Products/App.app"),
+            testHostURL: root.appending(path: "Products/AppUITests-Runner.app"),
+            testBundleURL: root.appending(path: "Products/AppUITests-Runner.app/PlugIns/AppUITests.xctest")
+        )
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "App",
+            testTarget: "AppUITests", testBundleIdentifier: "dev.example.AppUITests",
+            destinationIdentifier: "device", generatedResourceDirectory: root.path,
+            xcodebuildPath: "/bin/echo"
+        )
+        let original = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("public struct Package { public let changed = true }".utf8).write(to: packageSource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != original)
+        let beforeShared = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("struct Intent { let changed = true }".utf8).write(to: sharedSource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeShared)
+
+        let buildNamedSource = appRoot.appending(path: "Build/Helper.swift")
+        try FileManager.default.createDirectory(at: buildNamedSource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let beforeBuildNamedSource = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("struct Helper {}".utf8).write(to: buildNamedSource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeBuildNamedSource)
+
+        let xcodeUserState = project.appending(path: "xcuserdata/user.xcuserdatad/state.xcuserstate")
+        try FileManager.default.createDirectory(at: xcodeUserState.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let beforeUserState = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("editor state".utf8).write(to: xcodeUserState)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforeUserState)
+    }
+
+    @Test func reusableRunUsesCheckedProductsAndRejectsChangedTestRunPaths() throws {
+        let root = try temporaryDirectory()
+        let derivedData = root.appending(path: "Connection/DerivedData", directoryHint: .isDirectory)
+        let products = derivedData.appending(path: "Build/Products", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: products, withIntermediateDirectories: true)
+        let source = products.appending(path: "Fixture_iphoneos.xctestrun")
+        func writeTestRun(appName: String, hostName: String = "FixtureUITests-Runner") throws {
+            let plist: [String: Any] = [
+                "__xctestrun_metadata__": ["FormatVersion": 1],
+                "FixtureUITests": [
+                    "BlueprintName": "FixtureUITests",
+                    "BlueprintProviderRelativePath": "Fixture.xcodeproj",
+                    "UITargetAppPath": "__TESTROOT__/Debug-iphoneos/\(appName).app",
+                    "TestHostPath": "__TESTROOT__/Debug-iphoneos/\(hostName).app",
+                    "TestBundlePath": "__TESTHOST__/PlugIns/FixtureUITests.xctest",
+                ],
+            ]
+            try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                .write(to: source)
+        }
+        try writeTestRun(appName: "Fixture")
+        let checked = try XCTestRunInvocationTransport.resolveProducts(
+            derivedData: derivedData, testTarget: "FixtureUITests"
+        )
+        let configuration = XcodeTestConfiguration(
+            containerPath: root.appending(path: "Fixture.xcodeproj").path,
+            isWorkspace: false, scheme: "Fixture", testTarget: "FixtureUITests",
+            testBundleIdentifier: "dev.example.FixtureUITests", destinationIdentifier: "device",
+            generatedResourceDirectory: root.path
+        )
+        let definition = try reusableBasicScenario()
+        let connection = ScenarioVerifiedConnection(
+            receipt: .init(
+                schemaVersion: 1, integration: try #require(definition.integration),
+                targetBundleIdentifier: definition.target.bundleIdentifier,
+                projectIdentity: "Fixture.xcodeproj", targetIdentity: configuration.testTarget,
+                testBundleIdentifier: configuration.testBundleIdentifier,
+                harnessProtocol: ScenarioInvocationIdentity.reusableHarnessVersion,
+                runnerPackageVersion: "test", capabilities: [], inspectedAt: .now
+            ),
+            configuration: configuration,
+            appProduct: .init(bundleIdentifier: definition.target.bundleIdentifier,
+                              executableName: "Fixture", sha256: "checked-app"),
+            testHostProduct: .init(bundleIdentifier: configuration.testBundleIdentifier,
+                                   executableName: "FixtureUITests-Runner", sha256: "checked-host"),
+            testProduct: .init(bundleIdentifier: configuration.testBundleIdentifier,
+                               executableName: "FixtureUITests", sha256: "checked-test"),
+            appBundleURL: checked.appBundleURL, testHostURL: checked.testHostURL,
+            testBundleURL: checked.testBundleURL,
+            testRunURL: checked.sourceURL,
+            selectedTestProjectURL: URL(filePath: configuration.containerPath),
+            buildInputsDigest: "checked-inputs", productMetadataDigest: "checked-metadata"
+        )
+        #expect(connection.derivedDataURL.resolvingSymlinksInPath()
+                == derivedData.resolvingSymlinksInPath())
+        #expect(try XcodeTestExecutor.reusableRunProducts(
+            connection: connection, configuration: configuration
+        ) == checked)
+
+        try writeTestRun(appName: "Other")
+        #expect(throws: XcodeTestExecutorError.self) {
+            _ = try XcodeTestExecutor.reusableRunProducts(
+                connection: connection, configuration: configuration
+            )
+        }
+        try writeTestRun(appName: "Fixture", hostName: "OtherRunner")
+        #expect(throws: XcodeTestExecutorError.self) {
+            _ = try XcodeTestExecutor.reusableRunProducts(
+                connection: connection, configuration: configuration
+            )
+        }
     }
 
     @Test func v2DeclaredBuildSettingsCannotClaimVerifiedReadiness() async throws {
@@ -942,6 +1214,50 @@ struct ScenarioContractsTests {
         #expect(report.failures.contains { $0.contains("Siri") })
     }
 
+    @Test func requiredSiriLaneNeedsItsOwnRequiredOutcomeAssertion() throws {
+        var definition = try scenario()
+        definition.assertions = [ScenarioAssertion(
+            kind: .entityIdentifier,
+            observationKey: "selectedNoteID",
+            expectedValue: .string("packing-001"),
+            explanation: "The direct intent selected the note.",
+            applicableLanes: [.intentIntegration]
+        )]
+        definition = try definition.frozen()
+        let siriEvaluation = ScenarioResultEvaluator.evaluate(
+            definition: definition,
+            lane: .siri,
+            observations: [:],
+            executionStatus: .completed
+        )
+        #expect(siriEvaluation.0 == .needsReview)
+        #expect(ScenarioValidator.issues(in: definition).contains {
+            $0.path == "coverage.siri" && $0.severity == .error
+        })
+
+        let boundInvocation = invocation(for: definition)
+        let envelope = evidence(for: definition, invocation: boundInvocation)
+        var successfulRun = ScenarioRun(
+            id: boundInvocation.id,
+            scenarioID: definition.id,
+            scenarioVersion: definition.version,
+            scenarioDigest: definition.definitionDigest,
+            invocation: boundInvocation,
+            startedAt: .now,
+            completedAt: .now,
+            environment: envelope.environment,
+            executionStatus: .completed,
+            outcome: .passed,
+            laneResults: envelope.results,
+            linkedFeatureRunID: nil,
+            importedAt: .now
+        )
+        successfulRun.xctestExitCode = 0
+        let release = ScenarioReleaseCheckEvaluator.report(definition: definition, run: successfulRun)
+        #expect(release.outcome != .passed)
+        #expect(release.failures.contains { $0.contains("Siri outcome lane has no required observable") })
+    }
+
     @Test func comparisonRejectsUnstatedEnvironmentDrift() throws {
         let definition = try scenario()
         let invocation = invocation(for: definition)
@@ -959,6 +1275,215 @@ struct ScenarioContractsTests {
         #expect(ScenarioComparison.compare(
             baseline: run, candidate: changed, statedChangedDimensions: ["operatingSystem"]
         ).isDirectlyComparable)
+    }
+
+    @Test func stableContractSurvivesFreshFeatureRunAndAppBuild() throws {
+        let definition = try stableScenario()
+        var baseline = stableRun(definition: definition, build: "build-A", outcome: .failed)
+        baseline.linkedFeatureRunID = UUID()
+        var candidate = stableRun(definition: definition, build: "build-B", outcome: .passed)
+        candidate.linkedFeatureRunID = UUID()
+        #expect(baseline.id != candidate.id)
+        #expect(baseline.linkedFeatureRunID != candidate.linkedFeatureRunID)
+        #expect(baseline.scenarioDigest == candidate.scenarioDigest)
+        #expect(baseline.testContractDigest == candidate.testContractDigest)
+        let report = ScenarioComparison.compare(baseline: baseline, candidate: candidate)
+        #expect(report.mode == .compareAppChanges)
+        #expect(report.isDirectlyComparable)
+        #expect(report.summary.contains("Observed improvement"))
+        #expect(report.lanes.first { $0.lane == .appFeature }?.candidatePassed == 1)
+    }
+
+    @Test func stableComparisonNeedsCompletedMatchingCoordinates() throws {
+        let definition = try stableScenario()
+        let baseline = stableRun(definition: definition, build: "build-A", outcome: .failed)
+        let candidate = stableRun(definition: definition, build: "build-B", outcome: .passed)
+        #expect(ScenarioComparison.compare(baseline: baseline, candidate: candidate).isDirectlyComparable)
+
+        var timedOut = candidate
+        timedOut.executionStatus = .timedOut
+        #expect(!ScenarioComparison.compare(baseline: baseline, candidate: timedOut).isDirectlyComparable)
+        var cancelled = candidate
+        cancelled.laneResults[0].executionStatus = .cancelled
+        let cancelledReport = ScenarioComparison.compare(baseline: baseline, candidate: cancelled)
+        #expect(!cancelledReport.isDirectlyComparable)
+        #expect(!cancelledReport.summary.contains("Observed improvement"))
+
+        var wrongCase = candidate
+        wrongCase.laneResults[0].caseID = UUID()
+        #expect(!ScenarioComparison.compare(baseline: baseline, candidate: wrongCase).isDirectlyComparable)
+        var wrongAttempt = candidate
+        wrongAttempt.laneResults[0].attempt = 2
+        #expect(!ScenarioComparison.compare(baseline: baseline, candidate: wrongAttempt).isDirectlyComparable)
+        var wrongRoute = candidate
+        wrongRoute.laneResults[0].lane = .intentIntegration
+        #expect(!ScenarioComparison.compare(baseline: baseline, candidate: wrongRoute).isDirectlyComparable)
+        var duplicate = candidate
+        duplicate.laneResults.append(candidate.laneResults[0])
+        #expect(!ScenarioComparison.compare(baseline: baseline, candidate: duplicate).isDirectlyComparable)
+    }
+
+    @Test func stableComparisonIncludesSiriConfigurationSource() throws {
+        let definition = try stableScenario()
+        let baseline = stableRun(definition: definition, build: "build-A", outcome: .failed)
+        var candidate = stableRun(definition: definition, build: "build-B", outcome: .passed)
+        candidate.environment.siriConfigurationSource = .accessibleUI
+        let report = ScenarioComparison.compare(baseline: baseline, candidate: candidate)
+        #expect(!report.isDirectlyComparable)
+        #expect(report.dimensions.contains { $0.name == "siriConfigurationSource" && !$0.compatible })
+    }
+
+    @Test func stableAbsoluteReleaseDoesNotBorrowOldRequirementComparison() throws {
+        var definition = try stableScenario()
+        definition.version = 2
+        definition.assertions[0].applicableLanes = [.appFeature, .intentIntegration]
+        definition.directControl.outputFields = [.init(
+            name: "summary", type: .primitive(.string),
+            path: [.init(kind: .property, name: "summary")]
+        )]
+        definition.purpose = .releaseRequirement
+        definition.checkMode = .basic
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        definition.observationPlan = [.init(id: "summary", source: .intentResult)]
+        definition.integration = .init(id: "notes", version: "1", digest: String(repeating: "a", count: 64))
+        definition = try definition.frozen()
+        #expect(ScenarioValidator.issues(in: definition).filter { $0.severity == .error }.isEmpty)
+
+        var previous = definition
+        previous.version = 1
+        previous.assertions[0].expectedValue = .string("Old expectation")
+        previous = try previous.frozen()
+        let baseline = stableRun(definition: previous, build: "build-A", outcome: .failed)
+        var candidate = stableRun(definition: definition, build: "build-B", outcome: .passed)
+        var intent = candidate.laneResults[0]
+        intent.id = UUID()
+        intent.lane = .intentIntegration
+        candidate.laneResults.append(intent)
+        for index in candidate.laneResults.indices {
+            candidate.laneResults[index].observations = ["summary": .string("Expected summary")]
+            candidate.laneResults[index].observationSources = ["summary": candidate.laneResults[index].lane == .appFeature
+                ? .applicationInstrumentation : .appIntentsTesting]
+            candidate.laneResults[index].claims = [.executionCompleted, .returnedValueChecked]
+            candidate.laneResults[index].assertionResults = [
+                .init(assertionID: definition.assertions[0].id, passed: true,
+                      observedValue: .string("Expected summary"), message: "matched")
+            ]
+        }
+        candidate.integration = definition.integration
+        candidate.runnerPackageVersion = "1"
+        candidate.negotiatedCapabilities = ScenarioHarnessCapabilities.required(for: definition).sorted()
+        candidate.xctestExitCode = 0
+        let comparison = ScenarioComparison.compare(baseline: baseline, candidate: candidate)
+        #expect(!comparison.isDirectlyComparable)
+        #expect(comparison.summary.contains("Requirements changed"))
+        let release = ScenarioReleaseCheckEvaluator.report(definition: definition, run: candidate,
+                                                           comparison: comparison)
+        #expect(release.outcome == .passed)
+        #expect(release.summary.contains("Requirements changed"))
+    }
+
+    @Test func stableFeatureValidationUsesDeclarationInsteadOfPriorRunIdentity() throws {
+        var stable = try stableScenario()
+        let stablePaths = Set(ScenarioValidator.issues(in: stable).map(\.path))
+        #expect(!stablePaths.contains("schemaVersion"))
+        #expect(!stablePaths.contains("directControl.linkedFeatureRunID"))
+        #expect(!stablePaths.contains("directControl.linkedFeatureID"))
+        #expect(!stablePaths.contains("directControl.linkedFeatureSubjectDigest"))
+        #expect(!stablePaths.contains("featureBinding"))
+
+        stable.featureBinding = nil
+        stable = try stable.frozen()
+        let missingBindingPaths = Set(ScenarioValidator.issues(in: stable).map(\.path))
+        #expect(missingBindingPaths.contains("featureBinding"))
+
+        var reusable = try scenario()
+        reusable.schemaVersion = ScenarioDefinition.reusableSchemaVersion
+        reusable.coverage.appFeature = .required
+        reusable = try reusable.frozen()
+        let reusablePaths = Set(ScenarioValidator.issues(in: reusable).map(\.path))
+        #expect(reusablePaths.contains("directControl.linkedFeatureRunID"))
+    }
+
+    @Test func stableContractRejectsChangedRequirementsAndMeasurement() throws {
+        let definition = try stableScenario()
+        let baseline = stableRun(definition: definition, build: "build-A", outcome: .failed)
+        for edit in 0..<5 {
+            var changed = definition
+            switch edit {
+            case 0: changed.assertions[0].expectedValue = .string("Different answer")
+            case 1: changed.fixture.digest = "different fixture bytes"
+            case 2: changed.featureBinding?.inputMapping[0].value = .string("Different input")
+            case 3: changed.coverage.siri = .required
+            default: changed.assertions[0].explanation = "A different rubric"
+            }
+            changed.version += 1
+            changed = try changed.frozen()
+            var candidate = stableRun(definition: changed, build: "build-B", outcome: .passed)
+            candidate.scenarioID = baseline.scenarioID
+            candidate.statedChangedDimensions = ["testContractDigest", "scenarioDigest", "fixtureDigest"]
+            let report = ScenarioComparison.compare(baseline: baseline, candidate: candidate)
+            #expect(!report.isDirectlyComparable)
+            #expect(report.summary.contains("Requirements changed"))
+            #expect(!report.summary.contains("Observed improvement"))
+        }
+        var changedMeasurement = stableRun(definition: definition, build: "build-B", outcome: .passed)
+        changedMeasurement.measurementImplementation?.observerDigest = "observer-v2"
+        let measurementReport = ScenarioComparison.compare(baseline: baseline, candidate: changedMeasurement)
+        #expect(!measurementReport.isDirectlyComparable)
+        #expect(measurementReport.summary.contains("Measurement changed"))
+        changedMeasurement.measurementImplementation = nil
+        #expect(ScenarioComparison.compare(baseline: baseline, candidate: changedMeasurement)
+            .summary.contains("provenance is missing"))
+    }
+
+    @Test func stableContractSeparatesAuthoringFromRequirementsAndTypes() throws {
+        let original = try stableScenario()
+        #expect(original.testContractDigest == "9ea21cb2d91f408211690f9606f3af43e5e5d59245d6ce1c94655c469042804b")
+        var renamed = original
+        renamed.name = "A better display name"
+        renamed.target.projectPath = "/another/checkout/App.xcodeproj"
+        renamed.target.destinationIdentifier = "another-device"
+        renamed.version += 1
+        renamed = try renamed.frozen()
+        #expect(renamed.definitionDigest != original.definitionDigest)
+        #expect(renamed.testContractDigest == original.testContractDigest)
+
+        var variants: [ScenarioDefinition] = []
+        var missing = original
+        missing.directControl.parameters[0].presence = .missing
+        variants.append(missing)
+        var explicitNull = original
+        explicitNull.directControl.parameters[0].presence = .value(.null)
+        variants.append(explicitNull)
+        var spaced = original
+        spaced.goal.requestText += " "
+        variants.append(spaced)
+        var reordered = original
+        reordered.featureBinding?.inputMapping = [
+            .init(featureInputName: "first", value: .string("a")),
+            .init(featureInputName: "second", value: .string("b")),
+        ]
+        let forward = try reordered.calculatedTestContractDigest()
+        reordered.featureBinding?.inputMapping.reverse()
+        #expect(try reordered.calculatedTestContractDigest() != forward)
+        var integer = original
+        integer.featureBinding?.inputMapping[0].value = .integer(1)
+        var number = original
+        number.featureBinding?.inputMapping[0].value = .number(1.0)
+        #expect(try integer.calculatedTestContractDigest() != number.calculatedTestContractDigest())
+        let numberDigest = try number.calculatedTestContractDigest()
+        #expect(numberDigest == "8b3b96d3f2120706926071cbfbbddb9e1c67f6952402a7db574477dcbe630a0e")
+        var date = original
+        date.featureBinding?.inputMapping[0].value = .date(.init(
+            source: "2026-09-28T10:00:00.1234567Z", timeZoneIdentifier: "UTC",
+            resolvedInstant: Date(timeIntervalSince1970: 1_234_567.1234567)))
+        let firstDate = try date.calculatedTestContractDigest()
+        #expect(firstDate == "6b55577963867ee2ee2637f234c92f6162e88e0ddf8294b261d3a3c0db3c1c47")
+        date.featureBinding?.inputMapping[0].value = .date(.init(
+            source: "2026-09-28T10:00:00.1234567Z", timeZoneIdentifier: "UTC",
+            resolvedInstant: Date(timeIntervalSince1970: 1_234_567.1234568)))
+        #expect(try date.calculatedTestContractDigest() != firstDate)
+        #expect(try Set(variants.map { try $0.calculatedTestContractDigest() }).count == variants.count)
     }
 
     @Test func releaseRejectsUnstatedDriftAndAcceptsRunBoundIntentionalChange() throws {
@@ -1047,6 +1572,131 @@ struct ScenarioContractsTests {
         }
     }
 
+    @Test func interruptedNativeSaveCanCommitWithoutRerunningAction() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        var ledger = ScenarioImportLedger()
+        let run = try XCTestEvidenceImporter().importEvidence(
+            data: try encoder.encode(evidence(for: definition, invocation: invocation)),
+            definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            artifactRoot: try temporaryDirectory(), ledger: &ledger
+        )
+        let partial = root.appending(path: "Runs/\(run.scenarioID.uuidString)/\(run.id.uuidString)")
+        try FileManager.default.createDirectory(at: partial, withIntermediateDirectories: true)
+        try Data("incomplete".utf8).write(to: partial.appending(path: "partial-artifact"))
+
+        let saved = try await persistence.saveRun(run, artifactRoot: nil)
+        #expect(saved.id == run.id)
+        #expect(try await persistence.loadRuns(scenarioID: run.scenarioID).map(\.id) == [run.id])
+        let interrupted = root.appending(path: "InterruptedRunWrites")
+        let quarantine = try FileManager.default.contentsOfDirectory(at: interrupted,
+                                                                       includingPropertiesForKeys: nil)
+        #expect(quarantine.count == 1)
+        #expect(FileManager.default.fileExists(
+            atPath: quarantine[0].appending(path: "partial-artifact").path
+        ))
+        await #expect(throws: ScenarioPersistenceError.self) {
+            _ = try await persistence.saveRun(run, artifactRoot: nil)
+        }
+    }
+
+    @Test func sourceLabelDistinguishesCleanGitFromChangedInputs() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "Sample.xcodeproj", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let source = root.appending(path: "Feature.swift")
+        try Data("let value = 1\n".utf8).write(to: source)
+        func git(_ arguments: [String]) throws -> String {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", root.path] + arguments
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = Pipe()
+            try process.run()
+            let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        _ = try git(["init", "-q"])
+        _ = try git(["add", "Feature.swift"])
+        _ = try git(["-c", "user.name=Intent Test", "-c", "user.email=intent@example.invalid",
+                     "commit", "-q", "-m", "baseline"])
+        // The project directory itself is an untracked build input until committed.
+        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
+        _ = try git(["add", "Sample.xcodeproj/project.pbxproj"])
+        _ = try git(["-c", "user.name=Intent Test", "-c", "user.email=intent@example.invalid",
+                     "commit", "-q", "-m", "project"])
+        let head = try git(["rev-parse", "HEAD"])
+        let digest = String(repeating: "a", count: 64)
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [project, source],
+                                                 buildInputsDigest: digest) == "git:\(head)")
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [root, project, source],
+                                                 buildInputsDigest: digest) == "git:\(head)")
+        let otherRoot = try temporaryDirectory()
+        let otherProject = otherRoot.appending(path: "App.xcodeproj", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: otherProject, withIntermediateDirectories: true)
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [project, source, otherProject],
+                                                 buildInputsDigest: digest) == "inputs-sha256:\(digest)")
+        try Data("Ignored.swift\n".utf8).write(to: root.appending(path: ".gitignore"))
+        _ = try git(["add", ".gitignore"])
+        _ = try git(["-c", "user.name=Intent Test", "-c", "user.email=intent@example.invalid",
+                     "commit", "-q", "-m", "ignore generated source"])
+        let ignored = root.appending(path: "Ignored.swift")
+        try Data("let generated = true\n".utf8).write(to: ignored)
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [project, source, ignored],
+                                                 buildInputsDigest: digest) == "inputs-sha256:\(digest)")
+        try Data("let value = 2\n".utf8).write(to: source, options: .atomic)
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [project, source],
+                                                 buildInputsDigest: digest)
+                == "inputs-sha256:\(digest)")
+    }
+
+    @Test func workspaceFingerprintIncludesSiblingConfigurationFiles() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "App/App.xcodeproj", directoryHint: .isDirectory)
+        let workspace = root.appending(path: "Workspace/Check.xcworkspace", directoryHint: .isDirectory)
+        let contents = workspace.appending(path: "contents.xcworkspacedata")
+        let scheme = workspace.appending(path: "xcshareddata/xcschemes/Check.xcscheme")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: scheme.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
+        try Data("<Workspace version=\"1.0\"><FileRef location=\"group:../App/App.xcodeproj\"/></Workspace>".utf8)
+            .write(to: contents)
+        try Data("scheme".utf8).write(to: scheme)
+        let products = root.appending(path: "Products")
+        let paths = XCTestRunProductPaths(
+            sourceURL: products.appending(path: "Check.xctestrun"),
+            appBundleURL: products.appending(path: "App.app"),
+            testHostURL: products.appending(path: "Host.app"),
+            testBundleURL: products.appending(path: "Tests.xctest")
+        )
+        let configuration = XcodeTestConfiguration(
+            containerPath: workspace.path, isWorkspace: true, scheme: "Check",
+            testTarget: "Tests", testBundleIdentifier: "example.Tests",
+            destinationIdentifier: "device", generatedResourceDirectory: root.path,
+            xcodebuildPath: "/bin/echo"
+        )
+        let fingerprint = try XcodeTestExecutor.buildInputsFingerprint(
+            configuration: configuration, products: paths
+        )
+        #expect(fingerprint.sourceLocations.contains {
+            $0.resolvingSymlinksInPath().path == contents.resolvingSymlinksInPath().path
+        })
+        #expect(fingerprint.sourceLocations.contains {
+            $0.resolvingSymlinksInPath().path == scheme.resolvingSymlinksInPath().path
+        })
+        #expect(fingerprint.sourceLocations.contains {
+            $0.resolvingSymlinksInPath().path == project.appending(path: "project.pbxproj")
+                .resolvingSymlinksInPath().path
+        })
+    }
+
     @Test func latestFrozenVersionSupersedesOldProjectAssignment() throws {
         let oldProject = UUID()
         let newProject = UUID()
@@ -1117,6 +1767,25 @@ struct ScenarioContractsTests {
         )
         run.xctestExitCode = 0
         #expect(ScenarioReleaseCheckEvaluator.report(definition: definition, run: run).outcome == .passed)
+        var pendingJournal = journal(for: definition, invocation: boundInvocation, phase: .stopped)
+        #expect(!ScenarioReleaseCheckEvaluator.acceptedJournal(for: run, in: [pendingJournal]))
+        #expect(ScenarioReleaseCheckEvaluator.report(
+            definition: definition, run: run, journalAccepted: false
+        ).outcome == .incompleteOrIncompatibleEvidence)
+        pendingJournal.evidenceAccepted = true
+        #expect(ScenarioReleaseCheckEvaluator.acceptedJournal(for: run, in: [pendingJournal]))
+        #expect(ScenarioReleaseCheckEvaluator.report(
+            definition: definition, run: run, journalAccepted: true
+        ).outcome == .passed)
+        var legacyJSON = try #require(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(pendingJournal)
+        ) as? [String: Any])
+        legacyJSON.removeValue(forKey: "evidenceAccepted")
+        let legacyJournal = try JSONDecoder().decode(
+            ScenarioExecutionJournal.self,
+            from: JSONSerialization.data(withJSONObject: legacyJSON)
+        )
+        #expect(legacyJournal.evidenceAccepted == nil)
 
         let laneIndex = try #require(run.laneResults.firstIndex { $0.lane == .intentIntegration })
         let completeResults = run.laneResults[laneIndex].assertionResults
@@ -1232,6 +1901,43 @@ struct ScenarioContractsTests {
             )
         }
         #expect(await executor.reservation(for: destination) == .reserved(invocationID: invocation.id))
+    }
+
+    @Test func corruptJournalCannotDisappearFromRecoveryInventory() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        try await persistence.saveJournal(journal(
+            for: definition, invocation: invocation, phase: .running
+        ))
+        let path = root.appending(path: "Journals/\(invocation.id.uuidString).json")
+        try Data("{corrupt".utf8).write(to: path, options: .atomic)
+
+        await #expect(throws: ScenarioPersistenceError.self) {
+            _ = try await persistence.loadJournals()
+        }
+        let executor = XcodeTestExecutor(
+            workDirectory: root.appending(path: "Executor"), persistence: persistence
+        )
+        let next = self.invocation(for: definition)
+        await #expect(throws: ScenarioPersistenceError.self) {
+            try await executor.persistPreparingJournal(
+                journal(for: definition, invocation: next, phase: .preparing)
+            )
+        }
+        #expect(await executor.reservation(for: next.destinationIdentifier) == nil)
+
+        try await persistence.saveJournal(journal(
+            for: definition, invocation: invocation, phase: .running
+        ))
+        try FileManager.default.moveItem(
+            at: path,
+            to: root.appending(path: "Journals/\(UUID().uuidString).json")
+        )
+        await #expect(throws: ScenarioPersistenceError.self) {
+            _ = try await persistence.loadJournals()
+        }
     }
 
     @Test func recoveryRequiredJournalSurvivesRelaunchUntilExplicitlyCleared() async throws {
@@ -1473,6 +2179,45 @@ struct ScenarioContractsTests {
         ) == .failed)
     }
 
+    @Test func diagnosticClaimsFeaturePassOnlyFromCompletedPassingEvidence() {
+        let caseID = UUID()
+        let now = Date()
+        func lane(
+            _ kind: ScenarioLane,
+            _ status: ScenarioExecutionStatus,
+            _ outcome: ScenarioOutcome
+        ) -> ScenarioLaneResult {
+            .init(
+                caseID: caseID, attempt: 1, lane: kind,
+                executionStatus: status, outcome: outcome,
+                startedAt: now, completedAt: now
+            )
+        }
+
+        let failedIntent = lane(.intentIntegration, .completed, .failed)
+        let noFeatureSummary = "The direct intent failed. No completed passing feature control is available, so the evidence does not establish where the failure arose."
+        #expect(ScenarioDiagnosticClassifier.message(for: [failedIntent]) == noFeatureSummary)
+        #expect(ScenarioDiagnosticClassifier.message(for: [
+            lane(.appFeature, .timedOut, .notObserved), failedIntent
+        ]) == noFeatureSummary)
+        #expect(ScenarioDiagnosticClassifier.message(for: [
+            lane(.appFeature, .completed, .needsReview), failedIntent
+        ]) == noFeatureSummary)
+        #expect(ScenarioDiagnosticClassifier.message(for: [
+            lane(.appFeature, .timedOut, .passed), failedIntent
+        ]) == noFeatureSummary)
+        #expect(ScenarioDiagnosticClassifier.message(for: [
+            lane(.appFeature, .timedOut, .failed), failedIntent
+        ]) == noFeatureSummary)
+
+        #expect(ScenarioDiagnosticClassifier.message(for: [
+            lane(.appFeature, .completed, .passed), failedIntent
+        ]) == "The feature control passed, but the direct intent returned a wrong or incomplete observable result. An application integration or mapping failure is observed.")
+        #expect(ScenarioDiagnosticClassifier.message(for: [
+            lane(.appFeature, .completed, .failed), failedIntent
+        ]) == "The production feature and direct intent failed similarly. Investigate the application feature first; this evidence does not attribute the failure to Siri.")
+    }
+
     @Test func optionalFeatureFailureDoesNotFailRequiredIntentAndSiriLanes() throws {
         let definition = try scenario()
         let now = Date()
@@ -1617,6 +2362,55 @@ struct ScenarioContractsTests {
         run.xctestExitCode = 0
 
         #expect(ScenarioReleaseCheckEvaluator.report(definition: definition, run: run).outcome == .passed)
+    }
+
+    private func stableScenario() throws -> ScenarioDefinition {
+        var definition = try scenario()
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.coverage.appFeature = .required
+        definition.coverage.siri = .notApplicable
+        definition.directControl.linkedFeatureRunID = nil
+        definition.directControl.linkedFeatureSubjectDigest = ""
+        definition.featureBinding = .init(
+            featureID: "summarize-note", interfaceDigest: "interface-v1",
+            inputMapping: [.init(featureInputName: "noteText", value: .string("Source text"))],
+            outputProjections: [.init(name: "summary", type: .primitive(.string))]
+        )
+        definition.assertions = [.init(kind: .returnedField, observationKey: "summary",
+                                       expectedValue: .string("Expected summary"),
+                                       explanation: "The summary preserves the key point.",
+                                       applicableLanes: [.appFeature])]
+        return try definition.frozen()
+    }
+
+    private func stableRun(definition: ScenarioDefinition, build: String, outcome: ScenarioOutcome) -> ScenarioRun {
+        var invocation = invocation(for: definition)
+        invocation.appProduct?.sha256 = build
+        let now = Date()
+        let environment = ScenarioEnvironment(
+            xcodeVersion: "27", sdkVersion: "27", deviceModel: "iPhone",
+            operatingSystem: "iOS 27", operatingSystemBuild: "27A1",
+            languageCode: "en", regionCode: "GB", timeZoneIdentifier: "Europe/London",
+            siriConfiguration: "enabled", siriConfigurationSource: .applicationInstrumentation,
+            executedAt: now
+        )
+        var run = ScenarioRun(
+            id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
+            scenarioDigest: definition.definitionDigest, invocation: invocation,
+            startedAt: now, completedAt: now, environment: environment,
+            executionStatus: .completed, outcome: outcome,
+            laneResults: [.init(caseID: definition.id, attempt: 1, lane: .appFeature,
+                                executionStatus: .completed, outcome: outcome,
+                                startedAt: now, completedAt: now)],
+            linkedFeatureRunID: nil, importedAt: now
+        )
+        run.scenarioSchemaVersion = ScenarioDefinition.stableSchemaVersion
+        run.testContractDigest = definition.testContractDigest
+        run.measurementImplementation = .init(observerID: "notes-observer", observerDigest: "observer-v1",
+                                              evaluatorID: "assertions", evaluatorDigest: "evaluator-v1")
+        run.comparisonEnvironmentIdentity = .init(profileID: "iphone-en-GB", profileDigest: "environment-v1")
+        run.subjectImplementation = .init(sourceRevision: build, promptDigest: "prompt-v1", modelRevision: nil)
+        return run
     }
 
     private func scenario() throws -> ScenarioDefinition {

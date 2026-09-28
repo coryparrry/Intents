@@ -19,11 +19,26 @@
           "required": true
         }
       ]
+    },
+    {
+      "id": "SummarizeNoteIntent",
+      "parameters": [
+        {
+          "name": "note",
+          "type": { "entity": { "typeIdentifier": "NoteEntity" } },
+          "required": true
+        }
+      ]
     }
   ],
   "resultProjections": [
     {
       "id": "openedNoteID",
+      "type": { "primitive": { "_0": "string" } },
+      "path": [{ "kind": "property", "name": "value" }]
+    },
+    {
+      "id": "generatedSummary",
       "type": { "primitive": { "_0": "string" } },
       "path": [{ "kind": "property", "name": "value" }]
     }
@@ -34,7 +49,12 @@
     "resetNotes",
     "resetFixture"
   ],
-  "cleanupOperations": ["", "reset", "resetNotes", "resetFixture"],
+  "cleanupOperations": [
+    "",
+    "reset",
+    "resetNotes",
+    "resetFixture"
+  ],
   "observers": [
     {
       "id": "selectedNoteID",
@@ -79,12 +99,54 @@
     {
       "id": "visibleResponse",
       "source": "uiElement",
-      "selector": "intent-lab-last-event",
+      "selector": "intent-lab-visible-summary",
       "type": {
         "primitive": {
           "_0": "string"
         }
       }
+    },
+    {
+      "id": "visibleSummary",
+      "source": "uiElement",
+      "selector": "intent-lab-visible-summary",
+      "type": { "primitive": { "_0": "string" } }
+    },
+    {
+      "id": "summarySourceNoteID",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-source-note-id",
+      "type": { "primitive": { "_0": "string" } }
+    },
+    {
+      "id": "summarySourceContentDigest",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-source-digest",
+      "type": { "primitive": { "_0": "string" } }
+    },
+    {
+      "id": "summaryContext",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-context",
+      "type": { "primitive": { "_0": "string" } }
+    },
+    {
+      "id": "summaryCompletionID",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-completion-id",
+      "type": { "primitive": { "_0": "string" } }
+    },
+    {
+      "id": "summaryCaseID",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-case-id",
+      "type": { "primitive": { "_0": "string" } }
+    },
+    {
+      "id": "summaryAttemptID",
+      "source": "uiElement",
+      "selector": "intent-lab-summary-attempt-id",
+      "type": { "primitive": { "_0": "string" } }
     }
   ],
   "isolation": {

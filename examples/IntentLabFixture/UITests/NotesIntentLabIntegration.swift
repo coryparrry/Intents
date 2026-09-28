@@ -1,17 +1,29 @@
+import Foundation
 import IntentLabContracts
+#if INTENT_LAB_SIRI_ONLY
+import IntentLabCoreTesting
+typealias NotesTestingIntegration = IntentLabSiriIntegration
+#else
 import IntentLabTesting
+typealias NotesTestingIntegration = IntentLabIntegration
+#endif
 import XCTest
 
 @available(iOS 27.0, *)
 @MainActor
-struct NotesIntentLabIntegration: IntentLabIntegration {
+struct NotesIntentLabIntegration: NotesTestingIntegration {
     var supportedCapabilities: Set<String> {
+        #if INTENT_LAB_SIRI_ONLY
+        ["environment-payload", "preparation", "accessible-result", "siri",
+         "siri-completion", "invocation-correlation"]
+        #else
         ["environment-payload", "direct-intent-execution", "direct-intent-output",
          "preparation", "accessible-result", "siri", "siri-completion", "invocation-correlation"]
+        #endif
     }
     func prepare(bundleIdentifier: String, context: String, operationID: String) throws -> XCUIApplication {
         guard ["", "reset", "resetNotes", "resetFixture"].contains(operationID) else {
-            throw IntentLabIntegrationError.unsupportedPreparation(operationID)
+            throw NotesIntegrationError.unsupportedPreparation(operationID)
         }
         let application = XCUIApplication(bundleIdentifier: bundleIdentifier)
         application.launchArguments = ["-intent-lab-reset", "-intent-lab-context", context]
@@ -21,16 +33,19 @@ struct NotesIntentLabIntegration: IntentLabIntegration {
 
     func cleanup(bundleIdentifier: String, context: String, operationID: String) throws {
         guard ["", "reset", "resetNotes", "resetFixture"].contains(operationID) else {
-            throw IntentLabIntegrationError.unsupportedCleanup(operationID)
+            throw NotesIntegrationError.unsupportedCleanup(operationID)
         }
-        let application = try prepare(bundleIdentifier: bundleIdentifier, context: context, operationID: operationID)
+        let application = try prepare(
+            bundleIdentifier: bundleIdentifier,
+            context: context,
+            operationID: operationID
+        )
         defer { application.terminate() }
-        let selected = application.staticTexts["intent-lab-selected-note-id"]
-        let mutations = application.staticTexts["intent-lab-mutation-count"]
-        let event = application.staticTexts["intent-lab-last-event"]
-        guard selected.waitForExistence(timeout: 5), selected.label == "none",
-              mutations.label == "0", event.label == "none" else {
-            throw NotesCleanupError.resetNotObserved
+        let observations = try observe(application: application)
+        guard observations["selectedNoteID"] == .string("none"),
+              observations["noteStoreMutationCount"] == .integer(0),
+              observations["applicationEvent"] == .string("none") else {
+            throw NotesIntegrationError.resetNotObserved
         }
     }
 
@@ -45,7 +60,24 @@ struct NotesIntentLabIntegration: IntentLabIntegration {
         let event = application.staticTexts["intent-lab-last-event"]
         if event.exists {
             observations["applicationEvent"] = .string(event.label)
-            observations["visibleResponse"] = .string(event.label)
+        }
+        let summary = application.staticTexts["intent-lab-visible-summary"]
+        if summary.exists, !summary.label.isEmpty {
+            observations["visibleSummary"] = .string(summary.label)
+            observations["visibleResponse"] = .string(summary.label)
+        }
+        for (key, selector) in [
+            ("summarySourceNoteID", "intent-lab-summary-source-note-id"),
+            ("summarySourceContentDigest", "intent-lab-summary-source-digest"),
+            ("summaryContext", "intent-lab-summary-context"),
+            ("summaryCompletionID", "intent-lab-summary-completion-id"),
+            ("summaryCaseID", "intent-lab-summary-case-id"),
+            ("summaryAttemptID", "intent-lab-summary-attempt-id")
+        ] {
+            let element = application.staticTexts[selector]
+            if element.exists, !element.label.isEmpty {
+                observations[key] = .string(element.label)
+            }
         }
         return observations
     }
@@ -56,13 +88,38 @@ struct NotesIntentLabIntegration: IntentLabIntegration {
               selectedID != "none", !selectedID.isEmpty,
               case .string(let event) = observations["applicationEvent"],
               event != "none", !event.isEmpty else { return false }
+        if event == "OpenNoteIntent:\(selectedID)" { return true }
+        guard ["SummarizeNoteIntent", "AppFeature", "AppUI"].contains(where: { event == "\($0):\(selectedID)" }) else {
+            return false
+        }
+        guard observations["summaryContext"] == .string(context),
+              observations["summarySourceNoteID"] == .string(selectedID),
+              case .string(let summary) = observations["visibleSummary"],
+              !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              case .string(let digest) = observations["summarySourceContentDigest"],
+              digest.count == 64, digest.allSatisfy({ $0.isHexDigit }),
+              case .string(let completionID) = observations["summaryCompletionID"], UUID(uuidString: completionID) != nil else {
+            return false
+        }
         return true
     }
 
     func source(for observationKey: String) -> String { "accessibleUI" }
 }
 
-private enum NotesCleanupError: LocalizedError {
+private enum NotesIntegrationError: LocalizedError {
+    case unsupportedPreparation(String)
+    case unsupportedCleanup(String)
     case resetNotObserved
-    var errorDescription: String? { "The synthetic note fixture did not return to its empty baseline." }
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedPreparation(let operation):
+            "The Notes fixture does not provide preparation operation \(operation)."
+        case .unsupportedCleanup(let operation):
+            "The Notes fixture does not provide cleanup operation \(operation)."
+        case .resetNotObserved:
+            "The synthetic note fixture did not return to its empty baseline."
+        }
+    }
 }

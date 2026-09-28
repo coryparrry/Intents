@@ -93,6 +93,12 @@ struct AppleTestConnectionView: View {
 
                 }
 
+                if selectedProjectName != nil {
+                    IntentLabSetupInstallerView(coordinator: coordinator)
+                }
+
+                DeveloperConnectionBanner()
+
                 connectionField(
                     title: "Run on",
                     detail: selectedDeviceDetail
@@ -170,10 +176,28 @@ struct AppleTestConnectionView: View {
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
                 }
-                advancedRow("Scheme", help: "The Xcode build configuration that includes the app and tests you want to run. Keep the discovered choice unless you use a different scheme.") {
+                advancedRow("Scheme", help: "The Xcode scheme that includes the app and UI tests you want to run. If you change it, approve the build and run connection again.") {
                     TextField("App scheme", text: Binding(
                         get: { coordinator.configuration.scheme },
-                        set: { coordinator.configuration.scheme = $0; coordinator.invalidatePreflight() }
+                        set: { coordinator.selectScheme($0) }
+                    ))
+                }
+                advancedRow("Build configuration", help: "The Xcode configuration used to build the app and UI tests. Intent Lab selects the scheme's Test configuration when available. If you change it, approve the build and run connection again.") {
+                    TextField("Debug", text: Binding(
+                        get: { coordinator.configuration.configuration },
+                        set: { coordinator.selectBuildConfiguration($0) }
+                    ))
+                }
+                advancedRow("Development team", help: "Optional Apple team ID for this build and run. This overrides Xcode's team selection for the command without changing project settings. Approve the connection again after editing it.") {
+                    TextField("Apple team ID", text: Binding(
+                        get: { coordinator.configuration.developmentTeam ?? "" },
+                        set: { coordinator.selectDevelopmentTeam($0) }
+                    ))
+                }
+                advancedRow("Provisioning updates", help: "When enabled, Xcode may create or update Apple development certificates, app IDs, and provisioning profiles for this build. Use only with an account permitted to manage signing.") {
+                    Toggle("Allow Xcode to update provisioning", isOn: Binding(
+                        get: { coordinator.configuration.allowProvisioningUpdates == true },
+                        set: { coordinator.setAllowsProvisioningUpdates($0) }
                     ))
                 }
                 advancedRow("UI-test target", help: "The group of automated interface tests containing Intent Lab’s test support. This is a test target, not the app target.") {

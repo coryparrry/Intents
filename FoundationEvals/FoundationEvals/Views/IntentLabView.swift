@@ -2,7 +2,9 @@ import SwiftUI
 
 struct IntentLabView: View {
     @Bindable var coordinator: ScenarioCoordinator
+    @Bindable var store: EvaluationStore
     let projects: [EvaluationProject]
+    @Environment(DeveloperRunnerStore.self) private var runnerStore
     @State private var section: IntentLabSection = .setup
 
     var body: some View {
@@ -20,8 +22,10 @@ struct IntentLabView: View {
                         ScenarioEditorView(coordinator: coordinator, projects: projects).workspacePage()
                     }
                     .frame(minHeight: 0, maxHeight: .infinity)
+                case .collections:
+                    ScenarioCollectionView(coordinator: coordinator)
                 case .results:
-                    ScenarioReportView(coordinator: coordinator, onSetup: { section = .setup })
+                    ScenarioReportView(coordinator: coordinator, store: store, onSetup: { section = .setup })
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
@@ -54,7 +58,10 @@ struct IntentLabView: View {
                 }
             }
         }
-        .task { await coordinator.load() }
+        .task {
+            coordinator.bindRunnerStore(runnerStore)
+            await coordinator.load()
+        }
         .alert(
             "Intent Lab",
             isPresented: Binding(
@@ -72,6 +79,7 @@ struct IntentLabView: View {
 private enum IntentLabSection: String, CaseIterable, Identifiable {
     case setup = "Connect app"
     case scenario = "Create test"
+    case collections = "Collections"
     case results = "Results"
 
     var id: Self { self }

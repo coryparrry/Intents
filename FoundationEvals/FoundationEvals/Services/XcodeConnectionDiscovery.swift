@@ -52,6 +52,22 @@ private final class WorkspaceProjectReferenceParser: NSObject, XMLParserDelegate
     }
 }
 
+private final class SchemeTestActionConfigurationParser: NSObject, XMLParserDelegate {
+    private(set) var buildConfiguration: String?
+
+    func parser(
+        _ parser: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?,
+        attributes attributeDict: [String: String] = [:]
+    ) {
+        if elementName == "TestAction" {
+            buildConfiguration = attributeDict["buildConfiguration"]
+        }
+    }
+}
+
 struct IntentLabDeviceDestination: Codable, Equatable, Identifiable, Sendable {
     var id: String { identifier }
     var identifier: String
@@ -116,7 +132,11 @@ struct XcodeConnectionDiscoveryService: Sendable {
     var xcodebuildPath = "/usr/bin/xcodebuild"
     var xcdevicePath = "/usr/bin/xcrun"
 
-    func discoverProject(container: URL, configuration: String = "Debug") throws -> XcodeConnectionDiscovery {
+    func discoverProject(
+        container: URL,
+        configuration: String = "Debug",
+        signingArguments: [String] = []
+    ) throws -> XcodeConnectionDiscovery {
         guard FileManager.default.fileExists(atPath: container.path),
               ["xcodeproj", "xcworkspace"].contains(container.pathExtension) else {
             throw XcodeConnectionDiscoveryError.invalidContainer
@@ -136,7 +156,10 @@ struct XcodeConnectionDiscoveryService: Sendable {
             for scheme in listing.schemes {
                 let data = try run(
                     executable: xcodebuildPath,
-                    arguments: [selector, container.path, "-scheme", scheme, "-configuration", configuration, "-showBuildSettings", "-json"]
+                    arguments: Self.buildSettingsArguments(
+                        selector: selector, container: container, targetOrScheme: ["-scheme", scheme],
+                        configuration: configuration, signingArguments: signingArguments
+                    )
                 )
                 products.append(contentsOf: try Self.parseBuildSettings(data))
             }
@@ -150,7 +173,8 @@ struct XcodeConnectionDiscoveryService: Sendable {
                     projectListing.targets,
                     selector: "-project",
                     container: project,
-                    configuration: configuration
+                    configuration: configuration,
+                    signingArguments: signingArguments
                 ))
             }
         } else {
@@ -158,7 +182,8 @@ struct XcodeConnectionDiscoveryService: Sendable {
                 listing.targets,
                 selector: selector,
                 container: container,
-                configuration: configuration
+                configuration: configuration,
+                signingArguments: signingArguments
             ))
         }
         // Scheme settings may repeat products obtained from the owning project. Prefer
@@ -171,6 +196,69 @@ struct XcodeConnectionDiscoveryService: Sendable {
         let uiTests = uniqueProducts.filter(\.isUITestBundle).sorted { $0.targetName < $1.targetName }
         guard !applications.isEmpty else { throw XcodeConnectionDiscoveryError.noApplication }
         return .init(schemes: listing.schemes, applications: applications, uiTestBundles: uiTests)
+    }
+
+    /// Reads the configuration Xcode uses for the selected scheme's Test action.
+    /// A workspace can contain same-named project schemes; require an owner when
+    /// their configurations differ rather than choosing an arbitrary project.
+    static func testActionBuildConfiguration(
+        container: URL,
+        scheme: String,
+        preferredProjectPath: String? = nil,
+        fileManager: FileManager = .default
+    ) throws -> String? {
+        guard !scheme.isEmpty, !scheme.contains("/"), !scheme.contains("\\") else { return nil }
+        let container = container.standardizedFileURL
+        let relativePath = "xcshareddata/xcschemes/\(scheme).xcscheme"
+        var candidates: [URL] = []
+        if container.pathExtension == "xcworkspace" {
+            let workspaceScheme = container.appending(path: relativePath)
+            if fileManager.fileExists(atPath: workspaceScheme.path) {
+                candidates.append(workspaceScheme)
+            }
+            for project in try workspaceProjectURLs(workspace: container, fileManager: fileManager) {
+                let projectScheme = project.appending(path: relativePath)
+                if fileManager.fileExists(atPath: projectScheme.path) {
+                    candidates.append(projectScheme)
+                }
+            }
+        } else if container.pathExtension == "xcodeproj" {
+            let projectScheme = container.appending(path: relativePath)
+            if fileManager.fileExists(atPath: projectScheme.path) {
+                candidates.append(projectScheme)
+            }
+        }
+        guard !candidates.isEmpty else { return nil }
+        if let preferredProjectPath {
+            let owner = URL(filePath: preferredProjectPath).standardizedFileURL
+            let owned = candidates.filter {
+                $0.deletingLastPathComponent().deletingLastPathComponent()
+                    .deletingLastPathComponent().standardizedFileURL.path == owner.path
+            }
+            if !owned.isEmpty { candidates = owned }
+        }
+        let configurations = try candidates.map { schemeURL -> String? in
+            guard let parser = XMLParser(contentsOf: schemeURL) else {
+                throw XcodeConnectionDiscoveryError.invalidOutput("the selected scheme cannot be read")
+            }
+            let collector = SchemeTestActionConfigurationParser()
+            parser.delegate = collector
+            guard parser.parse() else {
+                throw XcodeConnectionDiscoveryError.invalidOutput(
+                    parser.parserError?.localizedDescription ?? "malformed scheme XML"
+                )
+            }
+            return collector.buildConfiguration?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let available = Set(configurations.compactMap { value in
+            value.flatMap { $0.isEmpty ? nil : $0 }
+        })
+        if available.count > 1 || configurations.contains(where: { $0 == nil || $0?.isEmpty == true }) && !available.isEmpty {
+            throw XcodeConnectionDiscoveryError.invalidOutput(
+                "multiple schemes named \(scheme) use different Test build configurations; choose the owning app project or enter a configuration manually"
+            )
+        }
+        return available.first
     }
 
     func discoverDevices() throws -> [IntentLabDeviceDestination] {
@@ -271,17 +359,33 @@ struct XcodeConnectionDiscoveryService: Sendable {
         _ targets: [String],
         selector: String,
         container: URL,
-        configuration: String
+        configuration: String,
+        signingArguments: [String]
     ) throws -> [XcodeDiscoveredProduct] {
         var products: [XcodeDiscoveredProduct] = []
         for target in targets {
             let data = try run(
                 executable: xcodebuildPath,
-                arguments: [selector, container.path, "-target", target, "-configuration", configuration, "-showBuildSettings", "-json"]
+                arguments: Self.buildSettingsArguments(
+                    selector: selector, container: container, targetOrScheme: ["-target", target],
+                    configuration: configuration, signingArguments: signingArguments
+                )
             )
             products.append(contentsOf: try Self.parseBuildSettings(data, project: container))
         }
         return products
+    }
+
+    static func buildSettingsArguments(
+        selector: String,
+        container: URL,
+        targetOrScheme: [String],
+        configuration: String,
+        signingArguments: [String]
+    ) -> [String] {
+        [selector, container.path] + targetOrScheme
+            + ["-configuration", configuration, "-showBuildSettings", "-json"]
+            + signingArguments
     }
 
     private func run(executable: String, arguments: [String]) throws -> Data {

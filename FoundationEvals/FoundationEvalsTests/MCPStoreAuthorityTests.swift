@@ -114,6 +114,59 @@ struct MCPStoreAuthorityTests {
     }
 
     @MainActor
+    @Test func orphanedSavedScenarioRunCannotVanishFromProjectGate() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let persistence = ScenarioPersistence(
+            rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
+        )
+        var definition = ScenarioDefinition.starter(projectID: store.selectedProjectID)
+        definition.target.destinationIdentifier = "physical-device-1"
+        definition = try definition.frozen()
+        let now = Date()
+        let invocation = ScenarioInvocationIdentity(
+            id: UUID(), nonce: UUID().uuidString, issuedAt: now,
+            testIdentity: .init(bundleIdentifier: "dev.example.Tests", className: "Tests", methodName: "testScenario"),
+            harnessVersion: ScenarioInvocationIdentity.currentHarnessVersion,
+            destinationIdentifier: "physical-device-1",
+            scenarioDigest: definition.definitionDigest,
+            resultBundleIdentity: UUID().uuidString,
+            appProduct: nil, testProduct: nil
+        )
+        let run = ScenarioRun(
+            id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
+            scenarioDigest: definition.definitionDigest, invocation: invocation,
+            startedAt: now, completedAt: now,
+            environment: .init(
+                xcodeVersion: "27", sdkVersion: "27", deviceModel: "iPhone",
+                operatingSystem: "iOS 27", languageCode: "en", regionCode: "GB",
+                timeZoneIdentifier: "Europe/London", executedAt: now
+            ),
+            executionStatus: .completed, outcome: .passed, laneResults: [],
+            linkedFeatureRunID: nil, importedAt: now
+        )
+        _ = try await persistence.saveRun(run, artifactRoot: nil)
+
+        let result = await MCPStoreAuthority.make(store: store).call(
+            .projectReleaseReport(.init(projectID: store.selectedProjectID))
+        )
+        #expect(!result.isError)
+        let output = try result.structuredContent.jsonText()
+        #expect(output.contains("saved Intent Lab run(s) have no matching definition"))
+        let payload = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        let report = payload?["report"] as? [String: Any]
+        #expect(report?["outcome"] as? Int == Int(EvaluationReleaseCheckExit.incompleteOrIncompatibleEvidence.rawValue))
+        try await persistence.saveDefinition(definition)
+        let restoredDefinitionReport = await MCPStoreAuthority.make(store: store).call(
+            .projectReleaseReport(.init(projectID: store.selectedProjectID))
+        )
+        #expect(!restoredDefinitionReport.isError)
+        let restoredOutput = try restoredDefinitionReport.structuredContent.jsonText()
+        #expect(restoredOutput.contains("execution journal has not accepted"))
+    }
+
+    @MainActor
     @Test func featureLinkRejectsCrossProjectAndPartiallyScoredRuns() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -210,6 +263,8 @@ struct MCPStoreAuthorityTests {
                 observations: [
                     "selectedNoteID": .string("packing-001"),
                     "accountEmail": .string("secret@example.com"),
+                    "feature.encodedValue": .string("ZW5jb2RlZC1wcml2YXRlLWV2aWRlbmNl"),
+                    "feature.metadata.note": .string("private-feature-metadata"),
                 ],
                 assertionResults: [.init(
                     assertionID: definition.assertions[0].id,
@@ -253,6 +308,8 @@ struct MCPStoreAuthorityTests {
         #expect(!text.contains("diagnostic-secret@example.com"))
         #expect(!text.contains("cause-secret@example.com"))
         #expect(!text.contains("private-screen.png"))
+        #expect(!text.contains("ZW5jb2RlZC1wcml2YXRlLWV2aWRlbmNl"))
+        #expect(!text.contains("private-feature-metadata"))
     }
 
     @MainActor

@@ -58,7 +58,7 @@ struct ContentView: View {
             case .overview:
                 WorkspaceOverviewView(store: store)
             case .intentLab:
-                IntentLabView(coordinator: scenarioCoordinator, projects: store.projects)
+                IntentLabView(coordinator: scenarioCoordinator, store: store, projects: store.projects)
             case .suite:
                 SuiteEditorView(store: store)
                     .disclosureGroupStyle(FullWidthDisclosureStyle())

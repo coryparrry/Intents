@@ -148,12 +148,9 @@ a passing scenario or release requirement without the host report gate.
   failed-outcome release policy; installer preview/apply/recovery/repair and
   compile of both automatic target paths; a clean outside-repository task
   consumer with only package/test integration and app-owned support in its diff.
-- Verified in the live Mac interface: Setup/manual fallback and Basic coverage
-  editing. The actual UI did not run or import a device scenario report.
-- Unverified: physical direct and Siri routes for either app, Mac Run control
-  with a signed test product, live Results/MCP report parity and report relaunch,
-  and remote resolution of the unpublished package snapshot. Simulator tests,
-  mock MCP tests, and source inspection do not substitute for those checks.
+- Live Mac interface and physical-device verification was completed later;
+  see “Physical and live-service completion” below. Simulator tests, mock MCP
+  tests, and source inspection were not used as substitutes for those checks.
 
 ## External validation status
 
@@ -174,3 +171,145 @@ check displays Basic/exploratory coverage accurately in the Evidence editor.
 Changing the selected intent reset the read-only acknowledgement in the live
 UI. The inspection did not run an intent or apply installer changes to a
 user's project.
+
+## Delivery verification on 2026-09-26
+
+- The reviewed integration was ported onto PR #52's current remote head and
+  committed as `2b02190da849585e41333110e20d383a0bcdd687` on
+  `codex/intent-lab-reusable-integration`. The original dirty checkout was
+  preserved. An independent review found that the Tasks example required
+  its scheme's `IntentLabTesting` Test configuration rather than `Debug`.
+  Scheme discovery, explicit overrides, and the Advanced UI were corrected.
+  The focused host contract suite passed 50/50 afterward
+  (`/private/tmp/intent-lab-port-host-test-after-config.log`). The focused
+  scheme/legacy-configuration regressions passed 2/2, and the Notes v2 and
+  Tasks unsigned generic Simulator test products built
+  (`/private/tmp/intent-lab-port-notes-build.log`,
+  `/private/tmp/intent-lab-port-tasks-build.log`). Xcode build settings for
+  Tasks `IntentLabTesting` showed its isolated `.integration-tests` app ID and
+  `INTENT_LAB_TESTING` compilation condition. The rebuilt Mac UI visibly
+  displayed the build-configuration field and reapproval guidance; the app
+  was closed after inspection.
+- Remote package availability is verified. With local Git URL rewrites and
+  system Git configuration disabled, HTTPS `ls-remote` returned that commit.
+  A fresh outside-repository Xcode consumer fetched it from GitHub and pinned
+  the exact SHA in both its project and `Package.resolved`.
+  `/private/tmp/IntentLabRemoteResolve.log` records the fetch and checkout;
+  the checkout's HEAD matches the commit. Its generic iOS Simulator
+  `build-for-testing` passed with signing disabled
+  (`/private/tmp/IntentLabRemoteConsumerBuild.log`). The first build attempt
+  was blocked by sandbox access to Swift/Clang caches; the approved
+  cache-access rerun passed. This proves remote resolution and compilation,
+  not device execution.
+- The Mac Results view showed an existing failed run and its release rejection
+  again after relaunch. The local MCP connector was stopped and not installed,
+  so live Results/MCP parity was not checked. Connecting it would install a
+  persistent Codex connector with access to saved evaluations; approval was
+  requested before that access change.
+- A paired physical iPhone is available. Existing signing assets do not form
+  a complete pair for the Notes v2 or Tasks app and UI-test runner: one team
+  has development certificates without the needed profiles, while Xcode's
+  selected team lacks a development certificate and runner profiles. A
+  proposed `-allowProvisioningUpdates` build was rejected by automatic
+  approval review before execution because it could change Apple account
+  signing assets. Explicit approval to create those assets was requested.
+  No physical direct/Siri run, signed Mac Run, or live device report is
+  claimed until that prerequisite is resolved and actually tested.
+
+## Follow-up validation on 2026-09-26
+
+- The user approved automatic development provisioning. With a per-command
+  `DEVELOPMENT_TEAM` override and `-allowProvisioningUpdates`, signed physical
+  `build-for-testing` completed for Notes v2 and Tasks, without editing project
+  signing settings (`/private/tmp/IntentLabSignedNotes3Z.log`,
+  `/private/tmp/IntentLabSignedTasks3Z.log`). This verifies signing/building,
+  not test execution.
+- The clean outside-repository task consumer fetched published commit
+  `2b02190da849585e41333110e20d383a0bcdd687` over HTTPS with local Git
+  URL rewrites disabled. Its project and `Package.resolved` pinned that SHA,
+  and generic Simulator `build-for-testing` passed
+  (`/private/tmp/IntentLabRemoteResolve.log`,
+  `/private/tmp/IntentLabRemoteConsumerBuild.log`).
+- The user approved connecting the local Intents MCP service. After backing up
+  Codex's configuration, the duplicate unmanaged loopback entry was replaced
+  by the app's managed connector. For existing failed run
+  `C35E76B5-C392-4317-BF7A-7A01D1B770D2`, the live `scenario-report` CLI
+  returned exit 30 and `incompleteOrIncompatibleEvidence` with five release
+  failures. Results showed the same outcome and failures before and after an
+  app relaunch. This establishes persisted report parity for that failed run;
+  it is not evidence of a new physical device result.
+- The host now accepts explicit per-run signing overrides for discovery,
+  connection checks, and Mac Run. Focused host contracts passed 52/52
+  (`/private/tmp/IntentLabSigningOverrideHostTests.log`). In the actual Mac UI,
+  the saved Notes v2 scenario selected the reviewed declaration and a paired
+  iPhone. Its approved support check signed and built successfully
+  (`/private/tmp/IntentLabPhysicalVerification/IntentLab/Executor/Connection-D4B6A69C-F6F4-472E-9F39-2037EC2FE123/xcodebuild.log`). Physical
+  `test-without-building` then waited at Xcode destination preflight with
+  `Unlock iPhone to Continue`; the device owner was asked to unlock it. The
+  support receipt and direct/Siri run remain pending at this checkpoint.
+- After the iPhone was unlocked, the Notes v2 physical connection check passed
+  1/1 and returned a compiled receipt with eight declared capabilities
+  (`/private/tmp/IntentLabPhysicalVerification/IntentLab/Executor/Connection-CB76DDFF-500A-433E-A079-6023E3447BE7/Connection.xcresult`).
+  The first direct Mac Run stopped before intent execution because a second
+  build in fresh DerivedData changed the signed product fingerprint. The host
+  now reuses the exact checked product and checks its paths, executable and
+  signing metadata, integration declaration, and project source inputs before
+  launch. Focused Mac contracts passed 54/54 after the fix
+  (`/private/tmp/IntentLabCheckedProductsHostTests.log`).
+- The updated host's second physical connection attempt signed and built, but
+  Xcode found the iPhone locked at launch and interrupted the UI test after
+  178.6 seconds (`/private/tmp/IntentLabPhysicalVerification/IntentLab/Executor/Connection-2BFEDC92-A46D-4EFB-A97B-90D5166BF27B/xcodebuild.log`).
+  The device owner was asked to unlock and keep it awake. Direct and Siri
+  outcomes from the updated host remain unverified pending a successful
+  connection check and scenario execution.
+- An independent review found that the checked UI-test runner host, external
+  source references, and Xcode's `xcuserdata` needed explicit handling. The
+  host identity/signing and path checks now include the runner app; the source
+  fingerprint includes direct external file/group references and valid
+  `Build`/`Products` source folders while skipping `xcuserdata`. Focused Mac
+  contracts passed 54/54 after these corrections
+  (`/private/tmp/IntentLabCheckedProductsHostTestsFinal.log`); `git diff
+  --check` passed. The physical direct/Siri rerun is still pending the phone.
+- PR #54 workflow run `36272620560` passed route, script, portable regression,
+  and app/selected-test jobs at commit `c06fcda`. An earlier autosave test
+  deadline failure did not recur; no speculative autosave change was made.
+
+## Physical and live-service completion on 2026-09-26
+
+- Notes v2 compiled connection check passed on the paired iPhone with a
+  version-2 receipt and eight capabilities
+  (`/private/tmp/IntentLabPhysicalVerification/IntentLab/Executor/Connection-377252B6-5186-4D87-AA07-4C1F06C7208C/Connection.xcresult`).
+  Basic direct run `99E9DFC2-F5E4-4A1C-99DB-CD4561AD373C` passed 1/1 but
+  remained exploratory and correctly failed the release gate because Siri and
+  state evidence were missing.
+- A mismatched UI-observation operation ID exposed an editor defect. New UI
+  observations now start without a compiled operation ID, and the UI hides
+  that inapplicable field. The focused macOS regression test passed 1/1
+  (`/private/tmp/IntentLabFinalObservationHostTests.log`). A Siri run with an
+  incomplete phrase, `3820784B-F0A2-47EE-89F2-E8B43FC488C3`, retained direct
+  1/1 and Siri 0/1 as Needs review; the live report exited 30 with
+  `incompleteOrIncompatibleEvidence`. It did not turn the successful XCTest
+  evidence capture into a passing release requirement. Before a retry, a
+  signed physical fixture-reset/query test passed 1/1
+  (`/private/tmp/IntentLabNotesRecovery.xcresult`,
+  `/private/tmp/IntentLabNotesRecovery.log`).
+- Using the app's exact App Shortcut phrase, “Open the packing note in Intent
+  Lab Fixture,” Notes Behaviour run `5EDD6A52-50DC-49D2-A247-BDFB5D7A3291`
+  passed direct 1/1 and Siri 1/1. Release-requirement rerun
+  `06D1EF0B-0106-4CBE-8FA3-CB4E4B577EBB` passed both lanes and its release
+  gate. The live local MCP `scenario-report` CLI exited 0 with `passed` and no
+  failures. After quitting and relaunching the Mac app, Results still showed
+  those outcomes and the live CLI returned the same passing report.
+- The independent Tasks example's first Mac connection check built but Xcode
+  stopped at `Unlock iPhone to Continue`
+  (`/private/tmp/IntentLabTasksPhysicalVerification/IntentLab/Executor/Connection-6E54E634-BF48-4690-9510-BE18D6D2AF64/xcodebuild.log`). After unlock, a
+  fresh physical connection check passed 1/1 and reported eight compiled
+  capabilities (`/private/tmp/IntentLabTasksPhysicalVerification/IntentLab/Executor/Connection-9184E25C-FD07-4B6E-9BDD-B287602C76D3/Connection.xcresult`).
+  Mac Run `594F1D58-BCB6-4547-AF99-AD1B78E2523A` passed its physical
+  XCTest 1/1, direct evidence 1/1, and release gate. Its entity-query evidence
+  read back task `task-001` as complete and unrelated task `task-002` as
+  incomplete (`/private/tmp/IntentLabTasksPhysicalVerification/IntentLab/Executor/594F1D58-BCB6-4547-AF99-AD1B78E2523A/xcodebuild.log`). The live MCP
+  `scenario-report` exited 0 and matched Results
+  (`/private/tmp/IntentLabTasksMCPReport.log`). After quitting and relaunching
+  the Mac app, Results retained the same passing release requirement and the
+  live report again exited 0. The app was closed after inspection.

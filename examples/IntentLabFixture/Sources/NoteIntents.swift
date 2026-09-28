@@ -59,11 +59,17 @@ struct SummarizeNoteIntent: AppIntent {
 
     @Parameter(title: "Note") var note: NoteEntity
 
+    init() {}
+
+    init(note: NoteEntity) {
+        self.note = note
+    }
+
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         guard let source = FixtureNotes.note(id: note.id) else { throw FixtureIntentError.missingNote }
-        FixtureState.select(noteID: note.id)
+        FixtureState.beginSummaryAttempt(noteID: source.id)
         let summary = try await SummaryService.summarize(source)
-        FixtureState.record(event: "SummarizeNoteIntent:\(note.id)")
+        try FixtureState.publishSummary(summary, for: source, route: "SummarizeNoteIntent")
         return .result(value: summary)
     }
 }
@@ -81,6 +87,12 @@ struct FixtureShortcuts: AppShortcutsProvider {
             phrases: ["Open a note in \(.applicationName)"],
             shortTitle: "Open note",
             systemImageName: "note.text"
+        )
+        AppShortcut(
+            intent: SummarizeNoteIntent(note: NoteEntity(id: "packing-001", title: "Packing note")),
+            phrases: ["Summarize the packing note in \(.applicationName)"],
+            shortTitle: "Summarize packing note",
+            systemImageName: "text.quote"
         )
         AppShortcut(
             intent: SummarizeNoteIntent(),

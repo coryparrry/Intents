@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -14,9 +15,34 @@ CLI = ROOT / "script" / "foundation-evals"
 
 @unittest.skipUnless(shutil.which("swift"), "Swift is required to run the CLI integration check")
 class IntentLabCLITests(unittest.TestCase):
+    def test_custom_endpoint_requires_explicit_credential(self):
+        environment = os.environ.copy()
+        environment.pop("FOUNDATION_EVALS_MCP_CREDENTIAL", None)
+        completed = subprocess.run(
+            [
+                "swift",
+                str(CLI),
+                "scenario-report",
+                "--run-id",
+                "b895560e-634b-4323-a9e6-6c9eb12c5de6",
+                "--endpoint",
+                "http://127.0.0.1:19001/mcp",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=120,
+            check=False,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("Set FOUNDATION_EVALS_MCP_CREDENTIAL for a custom endpoint.", completed.stderr)
+
     def test_failed_report_with_zero_xctest_capture_exits_nonzero(self):
         run_id = "b895560e-634b-4323-a9e6-6c9eb12c5de6"
+        credential = "A" * 43
         tool_calls = []
+        authorization_headers = []
         response_content = {
             "outcome": "read",
             "run": {
@@ -35,6 +61,7 @@ class IntentLabCLITests(unittest.TestCase):
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
+                authorization_headers.append(self.headers.get("Authorization"))
                 request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 if request["method"] == "initialize":
                     result = {}
@@ -73,6 +100,7 @@ class IntentLabCLITests(unittest.TestCase):
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
+                env={**os.environ, "FOUNDATION_EVALS_MCP_CREDENTIAL": credential},
                 timeout=120,
                 check=False,
             )
@@ -87,6 +115,7 @@ class IntentLabCLITests(unittest.TestCase):
         self.assertEqual(len(tool_calls), 1)
         self.assertEqual(tool_calls[0]["name"], "eval_get_scenario_report")
         self.assertEqual(tool_calls[0]["arguments"]["runID"].casefold(), run_id.casefold())
+        self.assertEqual(authorization_headers, [f"Bearer {credential}"] * 2)
 
 
 if __name__ == "__main__":
