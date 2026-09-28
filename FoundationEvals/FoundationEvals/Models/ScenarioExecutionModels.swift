@@ -27,6 +27,10 @@ struct ScenarioExecutionPlan: Codable, Equatable, Identifiable, Sendable {
     var createdAt: Date
     /// Hash of the checked source inputs at connection verification.
     var sourceInputsDigest: String? = nil
+    /// Externally pinnable source label frozen with the verified products.
+    /// git:<revision> is used only for a clean checkout; otherwise the
+    /// checked build-input digest is explicitly labelled as a fallback.
+    var sourceRevision: String? = nil
     /// The app process reports this executable digest during its trusted handshake.
     var runnerBuildID: String? = nil
     var runnerID: UUID? = nil
@@ -37,6 +41,7 @@ struct ScenarioExecutionPlan: Codable, Equatable, Identifiable, Sendable {
         appProductDigest: String,
         testProductDigest: String,
         sourceInputsDigest: String,
+        sourceRevision: String? = nil,
         runnerBuildID: String?,
         runnerID: UUID?,
         plannedCoordinates: [ScenarioPlannedCoordinate]? = nil,
@@ -78,7 +83,8 @@ struct ScenarioExecutionPlan: Codable, Equatable, Identifiable, Sendable {
             testProductDigest: testProductDigest,
             fixtureContractDigest: definition.fixture.digest, coordinates: coordinates,
             comparisonPolicy: comparisonPolicy, createdAt: createdAt,
-            sourceInputsDigest: sourceInputsDigest, runnerBuildID: runnerBuildID,
+            sourceInputsDigest: sourceInputsDigest, sourceRevision: sourceRevision,
+            runnerBuildID: runnerBuildID,
             runnerID: runnerID
         )
     }

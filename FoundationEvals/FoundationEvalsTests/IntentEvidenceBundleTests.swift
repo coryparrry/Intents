@@ -4,6 +4,51 @@ import Testing
 @testable import FoundationEvals
 
 struct IntentEvidenceBundleTests {
+    @Test func frozenPlanSourceMustMatchBundleSource() throws {
+        let fixture = try fixtureBundle()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try FileManager.default.removeItem(at: fixture.bundle)
+        var snapshot = fixture.snapshot
+        snapshot.cases[0].plan.sourceRevision = "git:\(String(repeating: "a", count: 40))"
+        try IntentEvidenceBundle.export(snapshot, to: fixture.bundle)
+        #expect(throws: IntentEvidenceBundleError.self) {
+            try IntentEvidenceChecker.check(
+                bundle: fixture.bundle, requirements: fixture.requirements,
+                expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64),
+                policy: IntentEvidenceChecker.policyID,
+                referenceTime: Date(timeIntervalSince1970: 100)
+            )
+        }
+    }
+
+    @Test func duplicateCaseIDsInChecksummedBundleReturnValidationError() throws {
+        let fixture = try fixtureBundle()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let requirementsURL = fixture.bundle.appending(path: "requirements/collection.json")
+        var requirements = try JSONDecoder().decode(
+            IntentEvidenceRequirements.self, from: Data(contentsOf: requirementsURL)
+        )
+        requirements.cases.append(requirements.cases[0])
+        let bytes = try encode(requirements)
+        try bytes.write(to: requirementsURL, options: .atomic)
+        let manifestURL = fixture.bundle.appending(path: "manifest.json")
+        var manifest = try JSONDecoder().decode(
+            IntentEvidenceBundleManifest.self, from: Data(contentsOf: manifestURL)
+        )
+        let index = try #require(manifest.files.firstIndex { $0.path == "requirements/collection.json" })
+        manifest.files[index].bytes = bytes.count
+        manifest.files[index].sha256 = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        try encode(manifest).write(to: manifestURL, options: .atomic)
+        #expect(throws: IntentEvidenceBundleError.self) {
+            try IntentEvidenceChecker.check(
+                bundle: fixture.bundle, requirements: fixture.requirements,
+                expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64),
+                policy: IntentEvidenceChecker.policyID,
+                referenceTime: Date(timeIntervalSince1970: 100)
+            )
+        }
+    }
+
     @Test func packagedCommandChecksTrustedSnapshotWhenConfigured() throws {
         guard let executable = ProcessInfo.processInfo.environment["INTENTS_EVIDENCE_CLI_BINARY"] else {
             return
