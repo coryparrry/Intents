@@ -266,15 +266,29 @@ actor ScenarioPersistence {
         let runDirectory = runsDirectory
             .appending(path: run.scenarioID.uuidString, directoryHint: .isDirectory)
             .appending(path: run.id.uuidString, directoryHint: .isDirectory)
-        guard !fileManager.fileExists(atPath: runDirectory.path) else {
-            throw ScenarioPersistenceError.immutableRunExists
+        if fileManager.fileExists(atPath: runDirectory.path) {
+            guard !fileManager.fileExists(atPath: runDirectory.appending(path: "run.json").path) else {
+                throw ScenarioPersistenceError.immutableRunExists
+            }
+            // Earlier versions wrote directly into the final directory. Keep
+            // an interrupted copy for diagnosis, then allow the pending native
+            // child to be saved without executing the app action again.
+            let interrupted = rootDirectory.appending(path: "InterruptedRunWrites", directoryHint: .isDirectory)
+            try fileManager.createDirectory(at: interrupted, withIntermediateDirectories: true)
+            try fileManager.moveItem(
+                at: runDirectory,
+                to: interrupted.appending(path: "\(run.id.uuidString)-\(UUID().uuidString)")
+            )
         }
-        try fileManager.createDirectory(at: runDirectory, withIntermediateDirectories: true)
+        let stagingRoot = rootDirectory.appending(path: ".RunStaging", directoryHint: .isDirectory)
+        try fileManager.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
+        let staging = stagingRoot.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
 
         do {
             var stored = run
             if let artifactRoot {
-                let artifactDirectory = runDirectory.appending(path: "Artifacts", directoryHint: .isDirectory)
+                let artifactDirectory = staging.appending(path: "Artifacts", directoryHint: .isDirectory)
                 try fileManager.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
                 for resultIndex in stored.laneResults.indices {
                     for artifactIndex in stored.laneResults[resultIndex].artifacts.indices {
@@ -292,12 +306,15 @@ actor ScenarioPersistence {
                 }
             }
             try Self.encoder.encode(stored).write(
-                to: runDirectory.appending(path: "run.json"),
+                to: staging.appending(path: "run.json"),
                 options: .atomic
             )
+            try fileManager.createDirectory(at: runDirectory.deletingLastPathComponent(),
+                                            withIntermediateDirectories: true)
+            try fileManager.moveItem(at: staging, to: runDirectory)
             return stored
         } catch {
-            try? fileManager.removeItem(at: runDirectory)
+            try? fileManager.removeItem(at: staging)
             throw error
         }
     }

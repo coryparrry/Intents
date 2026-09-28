@@ -108,6 +108,7 @@ struct ScenarioVerifiedConnection: Sendable {
     var testRunURL: URL
     var selectedTestProjectURL: URL
     var buildInputsDigest: String
+    var sourceRevision: String = ""
     var productMetadataDigest: String
 
     var derivedDataURL: URL {
@@ -630,6 +631,7 @@ actor XcodeTestExecutor {
             outputDirectory: attachments, invocationID: checkID
         )
         let receipt = try Self.connectionReceipt(in: attachments)
+        let buildInputsDigest = try Self.buildInputsDigest(configuration: configuration, products: paths)
         let verified = ScenarioVerifiedConnection(
             receipt: receipt, configuration: configuration,
             appProduct: products.app,
@@ -641,7 +643,10 @@ actor XcodeTestExecutor {
             testBundleURL: paths.testBundleURL,
             testRunURL: paths.sourceURL,
             selectedTestProjectURL: URL(filePath: owningProjectPath),
-            buildInputsDigest: try Self.buildInputsDigest(configuration: configuration, products: paths),
+            buildInputsDigest: buildInputsDigest,
+            sourceRevision: Self.sourceRevision(
+                projectURL: URL(filePath: owningProjectPath), buildInputsDigest: buildInputsDigest
+            ),
             productMetadataDigest: Self.productMetadataDigest(products: paths)
         )
         guard connectionMatches(verified, definition: definition, configuration: configuration) else {
@@ -853,6 +858,34 @@ actor XcodeTestExecutor {
             hasher.update(data: Data(stamp.utf8))
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// A Git label is only meaningful for a clean checkout. Keep the
+    /// independently checked build-input digest as the explicit fallback for
+    /// dirty or non-Git projects; never present it as a commit revision.
+    static func sourceRevision(projectURL: URL, buildInputsDigest: String) -> String {
+        let fallback = "inputs-sha256:\(buildInputsDigest)"
+        let directory = projectURL.deletingLastPathComponent().standardizedFileURL.path
+        func git(_ arguments: [String]) -> String? {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", directory] + arguments
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = Pipe()
+            guard (try? process.run()) != nil else { return nil }
+            let bytes = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            return String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let root = git(["rev-parse", "--show-toplevel"]), !root.isEmpty,
+              let status = git(["status", "--porcelain", "--untracked-files=all"]), status.isEmpty,
+              let revision = git(["rev-parse", "HEAD"]),
+              revision.range(of: "^[0-9a-f]{40,64}$", options: .regularExpression) != nil else {
+            return fallback
+        }
+        return "git:\(revision)"
     }
 
     private static func hashProjectSources(

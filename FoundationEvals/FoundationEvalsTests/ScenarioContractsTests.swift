@@ -1484,6 +1484,73 @@ struct ScenarioContractsTests {
         }
     }
 
+    @Test func interruptedNativeSaveCanCommitWithoutRerunningAction() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        var ledger = ScenarioImportLedger()
+        let run = try XCTestEvidenceImporter().importEvidence(
+            data: try encoder.encode(evidence(for: definition, invocation: invocation)),
+            definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            artifactRoot: try temporaryDirectory(), ledger: &ledger
+        )
+        let partial = root.appending(path: "Runs/\(run.scenarioID.uuidString)/\(run.id.uuidString)")
+        try FileManager.default.createDirectory(at: partial, withIntermediateDirectories: true)
+        try Data("incomplete".utf8).write(to: partial.appending(path: "partial-artifact"))
+
+        let saved = try await persistence.saveRun(run, artifactRoot: nil)
+        #expect(saved.id == run.id)
+        #expect(try await persistence.loadRuns(scenarioID: run.scenarioID).map(\.id) == [run.id])
+        let interrupted = root.appending(path: "InterruptedRunWrites")
+        let quarantine = try FileManager.default.contentsOfDirectory(at: interrupted,
+                                                                       includingPropertiesForKeys: nil)
+        #expect(quarantine.count == 1)
+        #expect(FileManager.default.fileExists(
+            atPath: quarantine[0].appending(path: "partial-artifact").path
+        ))
+        await #expect(throws: ScenarioPersistenceError.self) {
+            _ = try await persistence.saveRun(run, artifactRoot: nil)
+        }
+    }
+
+    @Test func sourceLabelDistinguishesCleanGitFromChangedInputs() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "Sample.xcodeproj", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let source = root.appending(path: "Feature.swift")
+        try Data("let value = 1\n".utf8).write(to: source)
+        func git(_ arguments: [String]) throws -> String {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", root.path] + arguments
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = Pipe()
+            try process.run()
+            let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        _ = try git(["init", "-q"])
+        _ = try git(["add", "Feature.swift"])
+        _ = try git(["-c", "user.name=Intent Test", "-c", "user.email=intent@example.invalid",
+                     "commit", "-q", "-m", "baseline"])
+        // The project directory itself is an untracked build input until committed.
+        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
+        _ = try git(["add", "Sample.xcodeproj/project.pbxproj"])
+        _ = try git(["-c", "user.name=Intent Test", "-c", "user.email=intent@example.invalid",
+                     "commit", "-q", "-m", "project"])
+        let head = try git(["rev-parse", "HEAD"])
+        let digest = String(repeating: "a", count: 64)
+        #expect(XcodeTestExecutor.sourceRevision(projectURL: project, buildInputsDigest: digest) == "git:\(head)")
+        try Data("let value = 2\n".utf8).write(to: source, options: .atomic)
+        #expect(XcodeTestExecutor.sourceRevision(projectURL: project, buildInputsDigest: digest)
+                == "inputs-sha256:\(digest)")
+    }
+
     @Test func latestFrozenVersionSupersedesOldProjectAssignment() throws {
         let oldProject = UUID()
         let newProject = UUID()

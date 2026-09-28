@@ -491,6 +491,11 @@ enum IntentEvidenceQualification {
         guard !expectedSource.isEmpty, imported.manifest.sourceRevision == expectedSource else {
             throw IntentEvidenceBundleError.invalid("Unexpected source revision.")
         }
+        guard imported.cases.allSatisfy({
+            $0.plan.sourceRevision == nil || $0.plan.sourceRevision == imported.manifest.sourceRevision
+        }) else {
+            throw IntentEvidenceBundleError.invalid("Frozen plan source differs from bundle provenance.")
+        }
         guard validSHA256(expectedAppDigest),
               imported.cases.allSatisfy({ $0.plan.appProductDigest == expectedAppDigest }) else {
             throw IntentEvidenceBundleError.invalid("App product digest differs from the externally expected build.")
@@ -501,11 +506,12 @@ enum IntentEvidenceQualification {
               imported.manifest.collectionID == trusted.collectionID else {
             throw IntentEvidenceBundleError.invalid("Trusted collection identity changed.")
         }
-        let expected = Dictionary(uniqueKeysWithValues: trusted.cases.map { ($0.definition.id, $0) })
-        let bundled = Dictionary(uniqueKeysWithValues: imported.requirements.cases.map { ($0.definition.id, $0) })
-        guard expected.count == trusted.cases.count, bundled.count == imported.requirements.cases.count else {
+        guard Set(trusted.cases.map { $0.definition.id }).count == trusted.cases.count,
+              Set(imported.requirements.cases.map { $0.definition.id }).count == imported.requirements.cases.count else {
             throw IntentEvidenceBundleError.invalid("Collection has duplicate case identities.")
         }
+        let expected = Dictionary(uniqueKeysWithValues: trusted.cases.map { ($0.definition.id, $0) })
+        let bundled = Dictionary(uniqueKeysWithValues: imported.requirements.cases.map { ($0.definition.id, $0) })
         for (caseID, requirement) in expected {
             guard requirement.definition.hasValidDigest,
                   let inBundle = bundled[caseID],

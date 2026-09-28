@@ -35,14 +35,14 @@ Keep the complete frozen definition produced by Intents, including its calculate
 
 Include semanticPolicy only when the check uses semantic assertions. Both digests are externally reviewed pins: the checker recomputes the raw output, reference, rubric and source binding, then checks the full retained assessment, its saved sample and criterion trace under those pinned scoring and judge policies. A selected status without its matching immutable assessment cannot pass. Missing or unscored selections cannot pass.
 
-Obtain the expected source revision and checked app executable SHA-256 from the reviewed checkout or trusted native execution job. The bundle's own source label and checksums establish consistency only; they are not hardware attestation or proof that the producer built that revision. CI should consume bundles from its trusted native job or an approved artifact source. The externally supplied app digest must match every frozen plan in the bundle.
+Obtain the expected source label and checked app executable SHA-256 from the reviewed checkout or trusted native execution job. A clean Git checkout is frozen as `git:<commit SHA>` when the connection build is verified. A dirty or non-Git checkout is frozen as `inputs-sha256:<checked build-input digest>`; it must be pinned from a trusted native job, and must never be presented as a Git commit. Existing v3 plans without the newer source label export with this explicit digest fallback. The bundle's own source label and checksums establish consistency only; they are not hardware attestation or proof that the producer built that revision. CI should consume bundles from its trusted native job or an approved artifact source. The externally supplied app digest must match every frozen plan in the bundle.
 
 ## Check and compare
 
     ./intents-evidence check \
       --bundle ./artifacts/summary-check.intentlabrun \
       --requirements ./.intents/summary-regressions.json \
-      --expected-source "$GIT_COMMIT" \
+      --expected-source "git:$GIT_COMMIT" \
       --expected-app-digest "$APP_EXECUTABLE_SHA256" \
       --policy intent-lab-report-v3 \
       --reference-time 2026-09-28T12:00:00Z \
@@ -52,8 +52,8 @@ Obtain the expected source revision and checked app executable SHA-256 from the 
       --baseline ./artifacts/baseline.intentlabrun \
       --candidate ./artifacts/candidate.intentlabrun \
       --requirements ./.intents/summary-regressions.json \
-      --baseline-source "$BASELINE_COMMIT" \
-      --candidate-source "$GIT_COMMIT" \
+      --baseline-source "git:$BASELINE_COMMIT" \
+      --candidate-source "git:$GIT_COMMIT" \
       --baseline-app-digest "$BASELINE_APP_SHA256" \
       --candidate-app-digest "$APP_EXECUTABLE_SHA256" \
       --policy intent-lab-report-v3 \

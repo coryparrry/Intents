@@ -931,6 +931,7 @@ final class ScenarioCoordinator {
                 appProductDigest: connection.appProduct.sha256,
                 testProductDigest: connection.testProduct.sha256,
                 sourceInputsDigest: connection.buildInputsDigest,
+                sourceRevision: connection.sourceRevision,
                 runnerBuildID: selected?.runner.identity.buildProvenance?.buildID,
                 runnerID: selected?.runner.id,
                 comparisonPolicy: .init(mode: .compareAppChanges, baselineRunID: previous.id)
@@ -1102,7 +1103,7 @@ final class ScenarioCoordinator {
                   $0.id == plan.definitionID && $0.version == plan.definitionVersion
                     && $0.definitionDigest == plan.definitionDigest
               }),
-              let source = plan.sourceInputsDigest, !source.isEmpty else {
+              let inputs = plan.sourceInputsDigest, !inputs.isEmpty else {
             throw ScenarioPersistenceError.invalidRun("Select a complete saved execution with checked source identity before exporting.")
         }
         var artifacts: [UUID: Data] = [:]
@@ -1115,7 +1116,7 @@ final class ScenarioCoordinator {
         let snapshot = IntentEvidenceBundleSnapshot(
             requirements: requirements,
             cases: [item],
-            sourceRevision: source, artifactBytes: artifacts
+            sourceRevision: plan.sourceRevision ?? "inputs-sha256:\(inputs)", artifactBytes: artifacts
         )
         try IntentEvidenceBundle.export(snapshot, to: destination)
     }
@@ -1174,10 +1175,10 @@ final class ScenarioCoordinator {
                   let plan = executionPlans.first(where: { $0.id == execution.planID }),
                   plan.definitionID == definition.id,
                   plan.appProductDigest == manifest.appProductDigest,
-                  let source = plan.sourceInputsDigest, !source.isEmpty else {
+                  let inputs = plan.sourceInputsDigest, !inputs.isEmpty else {
                 throw ScenarioPersistenceError.invalidRun("A batch child lacks its frozen plan or checked source identity.")
             }
-            sourceRevisions.insert(source)
+            sourceRevisions.insert(plan.sourceRevision ?? "inputs-sha256:\(inputs)")
             items.append(try await durableBundleCase(
                 definition: definition, plan: plan, record: execution, artifacts: &artifacts
             ))
@@ -1573,7 +1574,24 @@ final class ScenarioCoordinator {
                 return definition
             }
             let runConfiguration = configuration
-            guard let first = definitionsForCollection.first else {
+            let selectedIDs: Set<UUID>
+            if scope == .rerunFailed {
+                guard selectedCaseIDs == nil, let priorBatchID,
+                      let prior = batchManifests.first(where: { $0.id == priorBatchID }) else {
+                    throw ScenarioCollectionError.invalidSelection
+                }
+                let assessment = ScenarioCollectionService.assess(
+                    manifest: prior, collection: collection,
+                    result: batchResults.first { $0.manifestID == priorBatchID }, runs: runs
+                )
+                guard assessment.qualification != .incompatible else {
+                    throw ScenarioCollectionError.invalidManifest
+                }
+                selectedIDs = ScenarioCollectionService.failedCaseIDs(in: assessment)
+            } else {
+                selectedIDs = selectedCaseIDs ?? Set(collection.members.map(\.caseID))
+            }
+            guard let first = definitionsForCollection.first(where: { selectedIDs.contains($0.id) }) else {
                 throw ScenarioCollectionError.invalidSelection
             }
             let checked = try await executor.verifyConnection(
@@ -1581,7 +1599,8 @@ final class ScenarioCoordinator {
                 projectTrusted: projectTrusted
             )
             var inputDigests: [UUID: String] = [:]
-            for definition in definitionsForCollection where definition.coverage.appFeature != .notApplicable {
+            for definition in definitionsForCollection
+                where selectedIDs.contains(definition.id) && definition.coverage.appFeature != .notApplicable {
                 guard let binding = definition.featureBinding else {
                     throw ScenarioCollectionError.invalidDefinition(definition.id)
                 }
@@ -1645,6 +1664,7 @@ final class ScenarioCoordinator {
                         appProductDigest: connection.appProduct.sha256,
                         testProductDigest: connection.testProduct.sha256,
                         sourceInputsDigest: connection.buildInputsDigest,
+                        sourceRevision: connection.sourceRevision,
                         runnerBuildID: selected?.runner.identity.buildProvenance?.buildID,
                         runnerID: selected?.runner.id,
                         plannedCoordinates: manifest.coordinates.filter { $0.caseID == definition.id },
@@ -1721,6 +1741,7 @@ final class ScenarioCoordinator {
                 appProductDigest: connection.appProduct.sha256,
                 testProductDigest: connection.testProduct.sha256,
                 sourceInputsDigest: connection.buildInputsDigest,
+                sourceRevision: connection.sourceRevision,
                 runnerBuildID: selected?.runner.identity.buildProvenance?.buildID,
                 runnerID: selected?.runner.id
             )
@@ -1750,13 +1771,15 @@ final class ScenarioCoordinator {
               plan.profile.signingSelection == configuration.signingArguments.joined(separator: " "),
               plan.appProductDigest == connection.appProduct.sha256,
               plan.testProductDigest == connection.testProduct.sha256,
-              plan.sourceInputsDigest == connection.buildInputsDigest else {
+              plan.sourceInputsDigest == connection.buildInputsDigest,
+              (plan.sourceRevision == nil || plan.sourceRevision == connection.sourceRevision) else {
             throw ScenarioPersistenceError.invalidRun("The frozen plan, source, build, or execution profile changed. Create a new plan.")
         }
         let expected = try ScenarioExecutionPlan.make(
             definition: definition, profile: plan.profile,
             appProductDigest: plan.appProductDigest, testProductDigest: plan.testProductDigest,
             sourceInputsDigest: plan.sourceInputsDigest ?? "",
+            sourceRevision: plan.sourceRevision,
             runnerBuildID: plan.runnerBuildID, runnerID: plan.runnerID,
             plannedCoordinates: plan.coordinates, comparisonPolicy: plan.comparisonPolicy,
             id: plan.id, createdAt: plan.createdAt
