@@ -1189,6 +1189,193 @@ struct ScenarioContractsTests {
         ).isDirectlyComparable)
     }
 
+    @Test func stableContractSurvivesFreshFeatureRunAndAppBuild() throws {
+        let definition = try stableScenario()
+        var baseline = stableRun(definition: definition, build: "build-A", outcome: .failed)
+        baseline.linkedFeatureRunID = UUID()
+        var candidate = stableRun(definition: definition, build: "build-B", outcome: .passed)
+        candidate.linkedFeatureRunID = UUID()
+        #expect(baseline.id != candidate.id)
+        #expect(baseline.linkedFeatureRunID != candidate.linkedFeatureRunID)
+        #expect(baseline.scenarioDigest == candidate.scenarioDigest)
+        #expect(baseline.testContractDigest == candidate.testContractDigest)
+        let report = ScenarioComparison.compare(baseline: baseline, candidate: candidate)
+        #expect(report.mode == .compareAppChanges)
+        #expect(report.isDirectlyComparable)
+        #expect(report.summary.contains("Observed improvement"))
+        #expect(report.lanes.first { $0.lane == .appFeature }?.candidatePassed == 1)
+    }
+
+    @Test func stableComparisonNeedsCompletedMatchingCoordinates() throws {
+        let definition = try stableScenario()
+        let baseline = stableRun(definition: definition, build: "build-A", outcome: .failed)
+        let candidate = stableRun(definition: definition, build: "build-B", outcome: .passed)
+        #expect(ScenarioComparison.compare(baseline: baseline, candidate: candidate).isDirectlyComparable)
+
+        var timedOut = candidate
+        timedOut.executionStatus = .timedOut
+        #expect(!ScenarioComparison.compare(baseline: baseline, candidate: timedOut).isDirectlyComparable)
+        var cancelled = candidate
+        cancelled.laneResults[0].executionStatus = .cancelled
+        let cancelledReport = ScenarioComparison.compare(baseline: baseline, candidate: cancelled)
+        #expect(!cancelledReport.isDirectlyComparable)
+        #expect(!cancelledReport.summary.contains("Observed improvement"))
+
+        var wrongCase = candidate
+        wrongCase.laneResults[0].caseID = UUID()
+        #expect(!ScenarioComparison.compare(baseline: baseline, candidate: wrongCase).isDirectlyComparable)
+        var wrongAttempt = candidate
+        wrongAttempt.laneResults[0].attempt = 2
+        #expect(!ScenarioComparison.compare(baseline: baseline, candidate: wrongAttempt).isDirectlyComparable)
+        var wrongRoute = candidate
+        wrongRoute.laneResults[0].lane = .intentIntegration
+        #expect(!ScenarioComparison.compare(baseline: baseline, candidate: wrongRoute).isDirectlyComparable)
+        var duplicate = candidate
+        duplicate.laneResults.append(candidate.laneResults[0])
+        #expect(!ScenarioComparison.compare(baseline: baseline, candidate: duplicate).isDirectlyComparable)
+    }
+
+    @Test func stableComparisonIncludesSiriConfigurationSource() throws {
+        let definition = try stableScenario()
+        let baseline = stableRun(definition: definition, build: "build-A", outcome: .failed)
+        var candidate = stableRun(definition: definition, build: "build-B", outcome: .passed)
+        candidate.environment.siriConfigurationSource = .accessibleUI
+        let report = ScenarioComparison.compare(baseline: baseline, candidate: candidate)
+        #expect(!report.isDirectlyComparable)
+        #expect(report.dimensions.contains { $0.name == "siriConfigurationSource" && !$0.compatible })
+    }
+
+    @Test func stableAbsoluteReleaseDoesNotBorrowOldRequirementComparison() throws {
+        var definition = try stableScenario()
+        definition.version = 2
+        definition.assertions[0].applicableLanes = [.appFeature, .intentIntegration]
+        definition.directControl.outputFields = [.init(
+            name: "summary", type: .primitive(.string),
+            path: [.init(kind: .property, name: "summary")]
+        )]
+        definition.purpose = .releaseRequirement
+        definition.checkMode = .basic
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        definition.observationPlan = [.init(id: "summary", source: .intentResult)]
+        definition.integration = .init(id: "notes", version: "1", digest: String(repeating: "a", count: 64))
+        definition = try definition.frozen()
+        #expect(ScenarioValidator.issues(in: definition).filter { $0.severity == .error }.isEmpty)
+
+        var previous = definition
+        previous.version = 1
+        previous.assertions[0].expectedValue = .string("Old expectation")
+        previous = try previous.frozen()
+        let baseline = stableRun(definition: previous, build: "build-A", outcome: .failed)
+        var candidate = stableRun(definition: definition, build: "build-B", outcome: .passed)
+        var intent = candidate.laneResults[0]
+        intent.id = UUID()
+        intent.lane = .intentIntegration
+        candidate.laneResults.append(intent)
+        for index in candidate.laneResults.indices {
+            candidate.laneResults[index].observations = ["summary": .string("Expected summary")]
+            candidate.laneResults[index].observationSources = ["summary": candidate.laneResults[index].lane == .appFeature
+                ? .applicationInstrumentation : .appIntentsTesting]
+            candidate.laneResults[index].claims = [.executionCompleted, .returnedValueChecked]
+            candidate.laneResults[index].assertionResults = [
+                .init(assertionID: definition.assertions[0].id, passed: true,
+                      observedValue: .string("Expected summary"), message: "matched")
+            ]
+        }
+        candidate.integration = definition.integration
+        candidate.runnerPackageVersion = "1"
+        candidate.negotiatedCapabilities = ScenarioHarnessCapabilities.required(for: definition).sorted()
+        candidate.xctestExitCode = 0
+        let comparison = ScenarioComparison.compare(baseline: baseline, candidate: candidate)
+        #expect(!comparison.isDirectlyComparable)
+        #expect(comparison.summary.contains("Requirements changed"))
+        let release = ScenarioReleaseCheckEvaluator.report(definition: definition, run: candidate,
+                                                           comparison: comparison)
+        #expect(release.outcome == .passed)
+        #expect(release.summary.contains("Requirements changed"))
+    }
+
+    @Test func stableContractRejectsChangedRequirementsAndMeasurement() throws {
+        let definition = try stableScenario()
+        let baseline = stableRun(definition: definition, build: "build-A", outcome: .failed)
+        for edit in 0..<5 {
+            var changed = definition
+            switch edit {
+            case 0: changed.assertions[0].expectedValue = .string("Different answer")
+            case 1: changed.fixture.digest = "different fixture bytes"
+            case 2: changed.featureBinding?.inputMapping[0].value = .string("Different input")
+            case 3: changed.coverage.siri = .required
+            default: changed.assertions[0].explanation = "A different rubric"
+            }
+            changed.version += 1
+            changed = try changed.frozen()
+            var candidate = stableRun(definition: changed, build: "build-B", outcome: .passed)
+            candidate.scenarioID = baseline.scenarioID
+            candidate.statedChangedDimensions = ["testContractDigest", "scenarioDigest", "fixtureDigest"]
+            let report = ScenarioComparison.compare(baseline: baseline, candidate: candidate)
+            #expect(!report.isDirectlyComparable)
+            #expect(report.summary.contains("Requirements changed"))
+            #expect(!report.summary.contains("Observed improvement"))
+        }
+        var changedMeasurement = stableRun(definition: definition, build: "build-B", outcome: .passed)
+        changedMeasurement.measurementImplementation?.observerDigest = "observer-v2"
+        let measurementReport = ScenarioComparison.compare(baseline: baseline, candidate: changedMeasurement)
+        #expect(!measurementReport.isDirectlyComparable)
+        #expect(measurementReport.summary.contains("Measurement changed"))
+        changedMeasurement.measurementImplementation = nil
+        #expect(ScenarioComparison.compare(baseline: baseline, candidate: changedMeasurement)
+            .summary.contains("provenance is missing"))
+    }
+
+    @Test func stableContractSeparatesAuthoringFromRequirementsAndTypes() throws {
+        let original = try stableScenario()
+        #expect(original.testContractDigest == "9ea21cb2d91f408211690f9606f3af43e5e5d59245d6ce1c94655c469042804b")
+        var renamed = original
+        renamed.name = "A better display name"
+        renamed.target.projectPath = "/another/checkout/App.xcodeproj"
+        renamed.target.destinationIdentifier = "another-device"
+        renamed.version += 1
+        renamed = try renamed.frozen()
+        #expect(renamed.definitionDigest != original.definitionDigest)
+        #expect(renamed.testContractDigest == original.testContractDigest)
+
+        var variants: [ScenarioDefinition] = []
+        var missing = original
+        missing.directControl.parameters[0].presence = .missing
+        variants.append(missing)
+        var explicitNull = original
+        explicitNull.directControl.parameters[0].presence = .value(.null)
+        variants.append(explicitNull)
+        var spaced = original
+        spaced.goal.requestText += " "
+        variants.append(spaced)
+        var reordered = original
+        reordered.featureBinding?.inputMapping = [
+            .init(featureInputName: "first", value: .string("a")),
+            .init(featureInputName: "second", value: .string("b")),
+        ]
+        let forward = try reordered.calculatedTestContractDigest()
+        reordered.featureBinding?.inputMapping.reverse()
+        #expect(try reordered.calculatedTestContractDigest() != forward)
+        var integer = original
+        integer.featureBinding?.inputMapping[0].value = .integer(1)
+        var number = original
+        number.featureBinding?.inputMapping[0].value = .number(1.0)
+        #expect(try integer.calculatedTestContractDigest() != number.calculatedTestContractDigest())
+        let numberDigest = try number.calculatedTestContractDigest()
+        #expect(numberDigest == "8b3b96d3f2120706926071cbfbbddb9e1c67f6952402a7db574477dcbe630a0e")
+        var date = original
+        date.featureBinding?.inputMapping[0].value = .date(.init(
+            source: "2026-09-28T10:00:00.1234567Z", timeZoneIdentifier: "UTC",
+            resolvedInstant: Date(timeIntervalSince1970: 1_234_567.1234567)))
+        let firstDate = try date.calculatedTestContractDigest()
+        #expect(firstDate == "6b55577963867ee2ee2637f234c92f6162e88e0ddf8294b261d3a3c0db3c1c47")
+        date.featureBinding?.inputMapping[0].value = .date(.init(
+            source: "2026-09-28T10:00:00.1234567Z", timeZoneIdentifier: "UTC",
+            resolvedInstant: Date(timeIntervalSince1970: 1_234_567.1234568)))
+        #expect(try date.calculatedTestContractDigest() != firstDate)
+        #expect(try Set(variants.map { try $0.calculatedTestContractDigest() }).count == variants.count)
+    }
+
     @Test func releaseRejectsUnstatedDriftAndAcceptsRunBoundIntentionalChange() throws {
         let definition = try scenario()
         let invocation = invocation(for: definition)
@@ -1913,6 +2100,55 @@ struct ScenarioContractsTests {
         run.xctestExitCode = 0
 
         #expect(ScenarioReleaseCheckEvaluator.report(definition: definition, run: run).outcome == .passed)
+    }
+
+    private func stableScenario() throws -> ScenarioDefinition {
+        var definition = try scenario()
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.coverage.appFeature = .required
+        definition.coverage.siri = .notApplicable
+        definition.directControl.linkedFeatureRunID = nil
+        definition.directControl.linkedFeatureSubjectDigest = ""
+        definition.featureBinding = .init(
+            featureID: "summarize-note", interfaceDigest: "interface-v1",
+            inputMapping: [.init(featureInputName: "noteText", value: .string("Source text"))],
+            outputProjections: [.init(name: "summary", type: .primitive(.string))]
+        )
+        definition.assertions = [.init(kind: .returnedField, observationKey: "summary",
+                                       expectedValue: .string("Expected summary"),
+                                       explanation: "The summary preserves the key point.",
+                                       applicableLanes: [.appFeature])]
+        return try definition.frozen()
+    }
+
+    private func stableRun(definition: ScenarioDefinition, build: String, outcome: ScenarioOutcome) -> ScenarioRun {
+        var invocation = invocation(for: definition)
+        invocation.appProduct?.sha256 = build
+        let now = Date()
+        let environment = ScenarioEnvironment(
+            xcodeVersion: "27", sdkVersion: "27", deviceModel: "iPhone",
+            operatingSystem: "iOS 27", operatingSystemBuild: "27A1",
+            languageCode: "en", regionCode: "GB", timeZoneIdentifier: "Europe/London",
+            siriConfiguration: "enabled", siriConfigurationSource: .applicationInstrumentation,
+            executedAt: now
+        )
+        var run = ScenarioRun(
+            id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
+            scenarioDigest: definition.definitionDigest, invocation: invocation,
+            startedAt: now, completedAt: now, environment: environment,
+            executionStatus: .completed, outcome: outcome,
+            laneResults: [.init(caseID: definition.id, attempt: 1, lane: .appFeature,
+                                executionStatus: .completed, outcome: outcome,
+                                startedAt: now, completedAt: now)],
+            linkedFeatureRunID: nil, importedAt: now
+        )
+        run.scenarioSchemaVersion = ScenarioDefinition.stableSchemaVersion
+        run.testContractDigest = definition.testContractDigest
+        run.measurementImplementation = .init(observerID: "notes-observer", observerDigest: "observer-v1",
+                                              evaluatorID: "assertions", evaluatorDigest: "evaluator-v1")
+        run.comparisonEnvironmentIdentity = .init(profileID: "iphone-en-GB", profileDigest: "environment-v1")
+        run.subjectImplementation = .init(sourceRevision: build, promptDigest: "prompt-v1", modelRevision: nil)
+        return run
     }
 
     private func scenario() throws -> ScenarioDefinition {
