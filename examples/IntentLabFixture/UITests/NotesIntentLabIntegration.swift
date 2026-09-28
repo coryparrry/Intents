@@ -1,3 +1,4 @@
+import Foundation
 import IntentLabContracts
 import IntentLabTesting
 import XCTest
@@ -30,7 +31,24 @@ struct NotesIntentLabIntegration: IntentLabIntegration {
         let event = application.staticTexts["intent-lab-last-event"]
         if event.exists {
             observations["applicationEvent"] = .string(event.label)
-            observations["visibleResponse"] = .string(event.label)
+        }
+        let summary = application.staticTexts["intent-lab-visible-summary"]
+        if summary.exists, !summary.label.isEmpty {
+            observations["visibleSummary"] = .string(summary.label)
+            observations["visibleResponse"] = .string(summary.label)
+        }
+        for (key, selector) in [
+            ("summarySourceNoteID", "intent-lab-summary-source-note-id"),
+            ("summarySourceContentDigest", "intent-lab-summary-source-digest"),
+            ("summaryContext", "intent-lab-summary-context"),
+            ("summaryCompletionID", "intent-lab-summary-completion-id"),
+            ("summaryCaseID", "intent-lab-summary-case-id"),
+            ("summaryAttemptID", "intent-lab-summary-attempt-id")
+        ] {
+            let element = application.staticTexts[selector]
+            if element.exists, !element.label.isEmpty {
+                observations[key] = .string(element.label)
+            }
         }
         return observations
     }
@@ -41,6 +59,19 @@ struct NotesIntentLabIntegration: IntentLabIntegration {
               selectedID != "none", !selectedID.isEmpty,
               case .string(let event) = observations["applicationEvent"],
               event != "none", !event.isEmpty else { return false }
+        if event == "OpenNoteIntent:\(selectedID)" { return true }
+        guard ["SummarizeNoteIntent", "AppFeature", "AppUI"].contains(where: { event == "\($0):\(selectedID)" }) else {
+            return false
+        }
+        guard observations["summaryContext"] == .string(context),
+              observations["summarySourceNoteID"] == .string(selectedID),
+              case .string(let summary) = observations["visibleSummary"],
+              !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              case .string(let digest) = observations["summarySourceContentDigest"],
+              digest.count == 64, digest.allSatisfy({ $0.isHexDigit }),
+              case .string(let completionID) = observations["summaryCompletionID"], UUID(uuidString: completionID) != nil else {
+            return false
+        }
         return true
     }
 

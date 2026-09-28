@@ -73,4 +73,77 @@ final class IntentLabQueryObserverTests: XCTestCase {
             return ["status": .boolean(true)]
         }) { XCTAssertTrue($0 is IntentLabQueryObservationError) }
     }
+
+    func testSummaryDeclarationProjectsReturnedStringAndObservesAppOutput() throws {
+        let bundle = Bundle(for: IntentLabQueryObserverTests.self)
+        let url = try XCTUnwrap(bundle.url(forResource: "IntentLabIntegration", withExtension: "json"))
+        let declaration = try JSONDecoder.intentLab.decode(
+            IntentLabIntegrationDeclaration.self, from: Data(contentsOf: url)
+        )
+        try declaration.validate()
+        let action = try XCTUnwrap(declaration.actions.first { $0.id == "SummarizeNoteIntent" })
+        XCTAssertEqual(action.parameters.map(\.name), ["note"])
+        XCTAssertEqual(action.parameters.first?.type, .entity(typeIdentifier: "NoteEntity"))
+        XCTAssertEqual(declaration.resultProjections.first { $0.id == "generatedSummary" }?.path.first?.name, "value")
+        XCTAssertEqual(declaration.observers.first { $0.id == "visibleSummary" }?.selector, "intent-lab-visible-summary")
+        XCTAssertNotEqual(declaration.observers.first { $0.id == "applicationEvent" }?.selector,
+                          declaration.observers.first { $0.id == "visibleSummary" }?.selector)
+    }
+
+    func testSummaryCompletionRejectsActionLabelAndStaleOrWrongSource() {
+        let integration = NotesIntentLabIntegration()
+        let context = "siri-current-attempt"
+        let base: [String: IntentLabValue] = [
+            "invocationContext": .string(context),
+            "selectedNoteID": .string("packing-001"),
+            "applicationEvent": .string("SummarizeNoteIntent:packing-001"),
+            "summarySourceNoteID": .string("packing-001"),
+            "summarySourceContentDigest": .string(String(repeating: "a", count: 64)),
+            "summaryContext": .string(context),
+            "summaryCompletionID": .string(UUID().uuidString),
+            "visibleSummary": .string("The note lists a passport, blue charger, and rain jacket.")
+        ]
+        XCTAssertTrue(integration.completed(observations: base, context: context))
+        for key in ["visibleSummary", "summarySourceContentDigest", "summaryCompletionID"] {
+            var missing = base
+            missing.removeValue(forKey: key)
+            XCTAssertFalse(integration.completed(observations: missing, context: context), "Missing \(key) must fail")
+        }
+        var stale = base
+        stale["summaryContext"] = .string("siri-previous-attempt")
+        XCTAssertFalse(integration.completed(observations: stale, context: context))
+        var wrongSource = base
+        wrongSource["summarySourceNoteID"] = .string("packing-002")
+        XCTAssertFalse(integration.completed(observations: wrongSource, context: context))
+        var wrongEvent = base
+        wrongEvent["applicationEvent"] = .string("SummarizeNoteIntent:packing-002")
+        XCTAssertFalse(integration.completed(observations: wrongEvent, context: context))
+        var labelOnly = base
+        labelOnly["visibleSummary"] = .string(" ")
+        XCTAssertFalse(integration.completed(observations: labelOnly, context: context))
+    }
+
+    func testPreparedAppHasNoFabricatedSummary() throws {
+        let integration = NotesIntentLabIntegration()
+        let application = try integration.prepare(
+            bundleIdentifier: "com.coryparry.IntentLabFixture", context: "no-summary", operationID: "reset"
+        )
+        defer { application.terminate() }
+        let observations = try integration.observe(application: application)
+        XCTAssertNil(observations["visibleSummary"])
+        XCTAssertNil(observations["visibleResponse"])
+        XCTAssertEqual(observations["noteStoreMutationCount"], .integer(0))
+    }
+
+    func testPreparedRunnerAdvertisesCombinedSubjectFeature() throws {
+        let application = try NotesIntentLabIntegration().prepare(
+            bundleIdentifier: "com.coryparry.IntentLabFixture", context: "feature-discovery", operationID: "reset"
+        )
+        defer { application.terminate() }
+        application.tabBars.buttons["Runner"].tap()
+        let feature = application.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "intent-lab.summarize-note-subject · v1"))
+            .firstMatch
+        XCTAssertTrue(feature.waitForExistence(timeout: 10), "The combined subject feature must be discoverable")
+    }
 }

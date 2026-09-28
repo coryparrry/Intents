@@ -44,6 +44,28 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         XCTAssertFalse(qualifiesForRelease(scenario: scenario, lane: result))
     }
 
+    func testScopedUnchangedCheckRejectsMutationToExpectedConstant() throws {
+        let (baseScenario, invocation) = try makeBehaviourScenario(expectedTaskTwoComplete: true)
+        var scenario = baseScenario
+        scenario.executionScope = .init(lane: .intentIntegration, attempt: 1)
+        let evidence = try IntentLabScenarioRunner.run(
+            testCase: self,
+            integration: TaskIntegration(faultMode: "mutateUnrelatedTask"),
+            scenario: scenario,
+            invocation: invocation
+        )
+
+        let result = try XCTUnwrap(evidence.results.first { $0.lane == .intentIntegration })
+        let unchanged = try XCTUnwrap(scenario.assertions.first { $0.kind == .noMutation })
+        XCTAssertEqual(result.beforeObservations?["task-002.isComplete"], .boolean(false))
+        XCTAssertEqual(result.observations["task-002.isComplete"], .boolean(true))
+        XCTAssertEqual(result.outcome, .failed)
+        XCTAssertTrue(result.assertionResults.contains {
+            $0.assertionID == unchanged.id && !$0.passed
+                && $0.message.contains("changed from its observed baseline")
+        })
+    }
+
     func testCorrectPersistentMutationQualifiesForRelease() throws {
         let (scenario, invocation) = try makeBehaviourScenario()
         let evidence = try IntentLabScenarioRunner.run(
@@ -100,7 +122,8 @@ final class IntentLabRunnerFaultTests: XCTestCase {
 
     private func makeBehaviourScenario(
         checkMode: String = "behaviour",
-        expectedTaskOneComplete: Bool = true
+        expectedTaskOneComplete: Bool = true,
+        expectedTaskTwoComplete: Bool = false
     ) throws -> (IntentLabScenario, IntentLabInvocation) {
         let declarationURL = try XCTUnwrap(
             Bundle(for: TaskIntegration.self).url(forResource: "IntentLabIntegration", withExtension: "json")
@@ -125,7 +148,7 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         if checkMode == "behaviour" {
             assertions.append(contentsOf: [
                 ["id": UUID().uuidString, "kind": "stateTransition", "observationKey": "task-001.isComplete", "expectedValue": ["boolean": ["_0": expectedTaskOneComplete]], "required": true, "applicableLanes": ["intentIntegration"]],
-                ["id": UUID().uuidString, "kind": "noMutation", "observationKey": "task-002.isComplete", "expectedValue": ["boolean": ["_0": false]], "required": true, "applicableLanes": ["intentIntegration"]]
+                ["id": UUID().uuidString, "kind": "noMutation", "observationKey": "task-002.isComplete", "expectedValue": ["boolean": ["_0": expectedTaskTwoComplete]], "required": true, "applicableLanes": ["intentIntegration"]]
             ])
         }
         let requiredClaims = checkMode == "behaviour"

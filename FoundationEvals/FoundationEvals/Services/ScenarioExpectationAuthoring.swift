@@ -1,6 +1,27 @@
 import Foundation
 import CryptoKit
 
+enum ScenarioDeclaredExpectedValues {
+    static func initial(for type: ScenarioValueType) -> ScenarioValue? {
+        switch type {
+        case .primitive(.string): return .string("")
+        case .primitive(.boolean): return .boolean(false)
+        case .primitive(.integer): return .integer(0)
+        case .primitive(.number): return .number(0)
+        case .primitive(.date):
+            let instant = Date()
+            return .date(.init(source: ISO8601DateFormatter().string(from: instant),
+                               timeZoneIdentifier: TimeZone.current.identifier,
+                               resolvedInstant: instant))
+        case .enumeration(let typeIdentifier, let cases):
+            return cases.first.map { ScenarioValue.enumeration(.init(typeIdentifier: typeIdentifier, caseIdentifier: $0)) }
+        case .entity(let typeIdentifier):
+            return .entity(.init(typeIdentifier: typeIdentifier, identifier: ""))
+        case .array: return .array([])
+        }
+    }
+}
+
 /// The app-owned, compiled declaration is the editor's catalogue. Its fields
 /// mirror only the public Intent Lab wire contract needed for authoring.
 struct ScenarioIntegrationCatalog: Codable, Sendable {

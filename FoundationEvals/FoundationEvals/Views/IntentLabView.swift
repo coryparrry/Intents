@@ -2,7 +2,9 @@ import SwiftUI
 
 struct IntentLabView: View {
     @Bindable var coordinator: ScenarioCoordinator
+    @Bindable var store: EvaluationStore
     let projects: [EvaluationProject]
+    @Environment(DeveloperRunnerStore.self) private var runnerStore
     @State private var section: IntentLabSection = .setup
 
     var body: some View {
@@ -20,8 +22,10 @@ struct IntentLabView: View {
                         ScenarioEditorView(coordinator: coordinator, projects: projects).workspacePage()
                     }
                     .frame(minHeight: 0, maxHeight: .infinity)
+                case .collections:
+                    ScenarioCollectionView(coordinator: coordinator)
                 case .results:
-                    ScenarioReportView(coordinator: coordinator)
+                    ScenarioReportView(coordinator: coordinator, store: store)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
@@ -53,7 +57,10 @@ struct IntentLabView: View {
                 }
             }
         }
-        .task { await coordinator.load() }
+        .task {
+            coordinator.bindRunnerStore(runnerStore)
+            await coordinator.load()
+        }
         .alert(
             "Intent Lab",
             isPresented: Binding(
@@ -71,6 +78,7 @@ struct IntentLabView: View {
 private enum IntentLabSection: String, CaseIterable, Identifiable {
     case setup = "Setup"
     case scenario = "Scenario"
+    case collections = "Collections"
     case results = "Results"
 
     var id: Self { self }
@@ -86,7 +94,7 @@ private struct IntentLabHeader: View {
                 Text("Intent Lab")
                     .font(.system(size: 22, weight: .bold)).tracking(-0.2)
                     .accessibilityIdentifier("Intent Lab page title")
-                Text("Test App Intents and Siri requests on a connected iPhone, then inspect the evidence for each part.")
+                Text("Check an app feature, App Intent, or Siri request, then inspect each route and retest the same requirement after a fix.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

@@ -5,6 +5,8 @@ import Observation
 struct IntentLabSummaryOutput: Codable, Sendable {
     var noteID: String
     var summary: String
+    var sourceContentDigest: String
+    var completionID: String
 }
 
 @MainActor
@@ -38,22 +40,81 @@ final class IntentLabFixtureRunner {
         )
         await registry.register(descriptor) { (input: DeveloperTextFeatureInput, context) in
             try context.checkCancellation()
-            guard let note = FixtureNotes.all.first(where: {
-                input.prompt.localizedCaseInsensitiveContains($0.id)
-                    || input.prompt.localizedCaseInsensitiveContains($0.title)
-            }) else {
+            let note: FixtureNote
+            do {
+                note = try FixtureNotes.resolve(prompt: input.prompt)
+            } catch {
                 throw DeveloperExecutionFailure(
                     code: .invalidInput,
-                    message: "Name a synthetic note by stable ID or title."
+                    message: "Name exactly one synthetic note by stable ID or full title."
                 )
             }
+            FixtureState.beginSummaryAttempt(noteID: note.id)
             let summary = try await SummaryService.summarize(note)
             try context.checkCancellation()
-            return IntentLabSummaryOutput(noteID: note.id, summary: summary)
+            let receipt = try FixtureState.publishSummary(summary, for: note, route: "AppFeature")
+            return IntentLabSummaryOutput(
+                noteID: note.id,
+                summary: summary,
+                sourceContentDigest: receipt.sourceContentDigest,
+                completionID: receipt.completionID
+            )
         } response: { $0.summary } metadata: {
-            ["selectedNoteID": $0.noteID, "source": "production-summary-service"]
+            ["selectedNoteID": $0.noteID, "sourceContentDigest": $0.sourceContentDigest,
+             "completionID": $0.completionID, "source": "production-summary-service"]
         }
 
+        await registry.registerSubjectFeature(
+            id: "intent-lab.summarize-note-subject",
+            displayName: "Summarize synthetic note (combined run)",
+            version: "1",
+            outputTypeName: String(reflecting: IntentLabSummaryOutput.self),
+            inputSchema: DeveloperSubjectInputSchema(version: "1", fields: [
+                .init(name: "noteID", valueType: .string)
+            ]),
+            capabilityNames: ["foundation-models", "typed-output", "synthetic-fixture"]
+        ) { input, context in
+            try context.checkCancellation()
+            guard let value = input.businessInputs["noteID"],
+                  case .string(let noteID) = value,
+                  let note = FixtureNotes.note(id: noteID),
+                  input.fixtureReferences.count == 1,
+                  input.fixtureReferences[0].identifier == note.id,
+                  input.fixtureReferences[0].contractDigest == FixtureNotes.contentDigest(note) else {
+                throw DeveloperExecutionFailure(
+                    code: .invalidInput,
+                    message: "Select one synthetic note and its matching ID/title/body fixture digest."
+                )
+            }
+            FixtureState.beginSummaryAttempt(noteID: note.id)
+            let summary = try await SummaryService.summarize(note)
+            try context.checkCancellation()
+            let receipt = try FixtureState.publishSummary(
+                summary, for: note, route: "AppFeature",
+                subjectCaseID: input.caseID, subjectAttemptID: input.attemptID
+            )
+            let output = IntentLabSummaryOutput(
+                noteID: note.id,
+                summary: summary,
+                sourceContentDigest: receipt.sourceContentDigest,
+                completionID: receipt.completionID
+            )
+            return DeveloperFeatureOutput(
+                response: summary,
+                encodedValue: try JSONEncoder().encode(output),
+                encodedValueTypeName: String(reflecting: IntentLabSummaryOutput.self),
+                metadata: [
+                    "selectedNoteID": note.id,
+                    "sourceContentDigest": receipt.sourceContentDigest,
+                    "completionID": receipt.completionID,
+                    "subjectCaseID": input.caseID.uuidString,
+                    "subjectAttemptID": input.attemptID.uuidString,
+                    "source": "production-summary-service"
+                ]
+            )
+        }
+
+        #if INTENT_LAB_TEST_SUPPORT
         await registry.registerTextFeature(
             id: "intent-lab.summarize-note-broken",
             displayName: "Broken summary negative fixture",
@@ -66,6 +127,7 @@ final class IntentLabFixtureRunner {
                 metadata: ["defect": "wrong-source-note", "fixture": "negative-control"]
             )
         }
+        #endif
         isReady = true
     }
 

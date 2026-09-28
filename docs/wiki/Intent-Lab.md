@@ -1,8 +1,18 @@
-# Run App Intent checks with Intent Lab (Beta)
+# Test and retest an app feature with Intent Lab (Beta)
 
 [Home](Home.md) · [App feature runners](App-feature-runners.md) · [Data and troubleshooting](Data-and-troubleshooting.md)
 
-Intent Lab uses a signed Xcode UI-test target that belongs to your app. It runs one fixed test method and imports observations from your test support.
+Intent Lab connects to your app's developer runner and signed Xcode UI-test target. A saved developer check freezes the request, typed inputs, fixture and expected outcome. Each coordinated run records the selected App Feature, App Intent and Siri routes separately. After changing your app, use **Results → Run again with these requirements** to create fresh evidence against the same check, then read **Compared with retained baseline**. A changed expectation, input, fixture or measurement implementation needs a new requirement; it cannot establish that the original bug was fixed.
+
+## Current developer workflow
+
+1. In **Setup**, connect your Xcode project, scheme, application, UI-test target and destination. **Build and check support** loads the compiled action declaration and verifies installed runner support. If support is missing, review **Add or update test support**. The generated adapter deliberately throws until you implement real preparation and observations in your app. A blank official package revision requires a verified published pin; enter an explicit 40-character commit when connecting an unpublished development checkout.
+2. Connect the running app's developer runner for App Feature input. In **Scenario**, create a developer check. Select the declared **App action**, choose an advertised feature and fill in its typed inputs. Set the request, synthetic fixture and required routes. The editor offers only results and app-state observations published by the compiled declaration. Use **Add expected outcome** to make one complete check; it updates the observation, result projection, claim and assertion together. For AI text, choose **App Feature · captured response** and specify an exact reference or a rubric for later independent assessment.
+3. Save the check, then **Run scenario**. In **Results**, inspect each route and attempt, the captured feature response, independently observed app state, assertions and artifacts. A successful Xcode capture alone does not pass a required check. For a semantic check, open **Assess saved response**, choose an independent judge connection, review and approve its evidence transfer, then assess. You can select an earlier retained judgment or retry saving the selection without running the app again.
+4. Retain the initial run as a baseline, fix the app, and choose **Run again with these requirements**. Review the comparison and qualification. An incomplete route or an unpinned semantic policy cannot qualify as a verified fix. To share the result with automation, choose **Export evidence bundle…** and check it with the [offline evidence command](Intent-Evidence.md) using trusted requirements, source, app build and policy supplied separately.
+5. In **Collections**, create a persistent set from saved checks. **Collection membership and versions** adds or removes checks in a new version and shows the added, removed and changed cases. **Run full collection** captures the whole planned population. **Run selected cases** and **Rerun failed or missing cases** create explicitly partial batches; their green rows do not borrow older results for omitted cases. **Add a reviewed request variation** saves new wording as a separate case only after you approve its expected outcome. **Export selected batch…** retains its scope and denominator.
+
+The older advanced editor and saved v1/v2 evidence remain readable. The details below describe their lower-level setup and fields; the guided flow above is the ordinary path for new checks.
 
 The **App action** part runs an App Intent directly. The optional **Siri** part uses recognized text on a physical iPhone. It observes the app's result. **App evaluation** can link evidence from a separate saved feature run. Each part gives different evidence.
 
@@ -37,14 +47,14 @@ If the app has no test support, expand **Add or update test support**:
 1. Select the app target, UI-test target, and scheme.
 2. Enter the app bundle ID and the actual App Intent identifier.
 3. If the action cannot change data, declare **Read-only**.
-4. Select a package source. For a reusable dependency, enter an exact published commit.
+4. Select a package source. The official Intents Git URL uses the app's tested, pinned revision when the revision field is blank. Check that exact revision in the preview. Enter a different 40-character commit only when you need a specific published build.
 5. Select **Preview support changes**. Read each proposed file and manual step.
 6. If the changes match the project, select **Apply reviewed changes**.
 7. Select **Build and check support** after the changes.
 
-A local package checkout is for development. The integration can stop working if that checkout moves. For a generator-managed project, export the manual setup files. Then add them through that project's generator. The installer cannot correct signing.
+A local package checkout is for development. The integration can stop working if that checkout moves. For a generator-managed project, export the manual setup files and apply them in the owning generator source; do not edit its generated Xcode project. The installer cannot correct signing.
 
-The generated support handles basic, read-only, direct checks. Behavior or Siri checks require an observation and completion adapter in your app. A data-changing action also needs isolated data and app-side enforcement.
+The generated entry point handles basic, read-only, direct checks. Setup also generates `IntentLabAppAdapter.swift` as a starting point for behavior and Siri checks. Its preparation and observation methods throw until you implement app-owned operations, and it declares no capabilities; it cannot manufacture a passing business observation. Replace `IntentLabBasicIntegration()` in the entry point only after the adapter reads real app state and checks attempt completion. A data-changing action also needs isolated data and app-side enforcement. If an installed declaration advertises state or Siri support while the entry point still uses Basic, setup supplies manual steps instead of claiming the connection works.
 
 ## Create a test
 

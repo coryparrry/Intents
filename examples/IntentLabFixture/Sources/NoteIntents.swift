@@ -61,9 +61,9 @@ struct SummarizeNoteIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         guard let source = FixtureNotes.note(id: note.id) else { throw FixtureIntentError.missingNote }
-        FixtureState.select(noteID: note.id)
+        FixtureState.beginSummaryAttempt(noteID: source.id)
         let summary = try await SummaryService.summarize(source)
-        FixtureState.record(event: "SummarizeNoteIntent:\(note.id)")
+        try FixtureState.publishSummary(summary, for: source, route: "SummarizeNoteIntent")
         return .result(value: summary)
     }
 }
