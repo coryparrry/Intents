@@ -4,6 +4,39 @@ import Testing
 @testable import FoundationEvals
 
 struct IntentEvidenceBundleTests {
+    @Test func legacyPlanCannotClaimAnUnfrozenGitSource() throws {
+        let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
+                                       executedTestCount: 1, xctestExitCode: 0)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var snapshot = fixture.snapshot
+        snapshot.cases[0].plan.sourceRevision = nil
+        let inputs = try #require(snapshot.cases[0].plan.sourceInputsDigest)
+        snapshot.sourceRevision = "inputs-sha256:\(inputs)"
+        try FileManager.default.removeItem(at: fixture.bundle)
+        try IntentEvidenceBundle.export(snapshot, to: fixture.bundle)
+        let accepted = try IntentEvidenceChecker.check(
+            bundle: fixture.bundle, requirements: fixture.requirements,
+            expectedSource: snapshot.sourceRevision,
+            expectedAppDigest: String(repeating: "a", count: 64),
+            policy: IntentEvidenceChecker.policyID,
+            referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(accepted.exitCode == 0)
+
+        snapshot.sourceRevision = "git:\(String(repeating: "a", count: 40))"
+        try FileManager.default.removeItem(at: fixture.bundle)
+        try IntentEvidenceBundle.export(snapshot, to: fixture.bundle)
+        #expect(throws: IntentEvidenceBundleError.self) {
+            try IntentEvidenceChecker.check(
+                bundle: fixture.bundle, requirements: fixture.requirements,
+                expectedSource: snapshot.sourceRevision,
+                expectedAppDigest: String(repeating: "a", count: 64),
+                policy: IntentEvidenceChecker.policyID,
+                referenceTime: Date(timeIntervalSince1970: 100)
+            )
+        }
+    }
+
     @Test func frozenPlanSourceMustMatchBundleSource() throws {
         let fixture = try fixtureBundle()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -942,7 +975,7 @@ struct IntentEvidenceBundleTests {
             id: UUID(), caseID: definition.id, lane: .intentIntegration,
             repetition: 1, required: true
         )
-        let plan = ScenarioExecutionPlan(
+        var plan = ScenarioExecutionPlan(
             id: UUID(), definitionID: definition.id, definitionVersion: definition.version,
             definitionDigest: definition.definitionDigest,
             testContractDigest: try #require(definition.testContractDigest),
@@ -955,6 +988,7 @@ struct IntentEvidenceBundleTests {
             fixtureContractDigest: definition.fixture.digest,
             coordinates: [coordinate], comparisonPolicy: nil, createdAt: Date(timeIntervalSince1970: 1)
         )
+        plan.sourceRevision = "revision-a"
         let record = try ScenarioExecutionRecord.make(
             plan: plan,
             records: [.init(coordinate: coordinate, state: .notRun,
@@ -1033,6 +1067,7 @@ struct IntentEvidenceBundleTests {
             coordinates: [coordinate], comparisonPolicy: nil, createdAt: now
         )
         plan.sourceInputsDigest = String(repeating: "d", count: 64)
+        plan.sourceRevision = "revision-a"
         let invocation = ScenarioInvocationIdentity(
             id: UUID(), nonce: UUID().uuidString, issuedAt: now,
             testIdentity: .init(bundleIdentifier: "com.example.FixtureUITests",

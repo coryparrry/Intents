@@ -1545,9 +1545,24 @@ struct ScenarioContractsTests {
                      "commit", "-q", "-m", "project"])
         let head = try git(["rev-parse", "HEAD"])
         let digest = String(repeating: "a", count: 64)
-        #expect(XcodeTestExecutor.sourceRevision(projectURL: project, buildInputsDigest: digest) == "git:\(head)")
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [project, source],
+                                                 buildInputsDigest: digest) == "git:\(head)")
+        let otherRoot = try temporaryDirectory()
+        let otherProject = otherRoot.appending(path: "App.xcodeproj", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: otherProject, withIntermediateDirectories: true)
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [project, source, otherProject],
+                                                 buildInputsDigest: digest) == "inputs-sha256:\(digest)")
+        try Data("Ignored.swift\n".utf8).write(to: root.appending(path: ".gitignore"))
+        _ = try git(["add", ".gitignore"])
+        _ = try git(["-c", "user.name=Intent Test", "-c", "user.email=intent@example.invalid",
+                     "commit", "-q", "-m", "ignore generated source"])
+        let ignored = root.appending(path: "Ignored.swift")
+        try Data("let generated = true\n".utf8).write(to: ignored)
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [project, source, ignored],
+                                                 buildInputsDigest: digest) == "inputs-sha256:\(digest)")
         try Data("let value = 2\n".utf8).write(to: source, options: .atomic)
-        #expect(XcodeTestExecutor.sourceRevision(projectURL: project, buildInputsDigest: digest)
+        #expect(XcodeTestExecutor.sourceRevision(sourceLocations: [project, source],
+                                                 buildInputsDigest: digest)
                 == "inputs-sha256:\(digest)")
     }
 
