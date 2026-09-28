@@ -3,6 +3,51 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioV3HarnessBridgeTests {
+    @Test func reusableCapabilitiesFollowPlannedNativeRoutes() throws {
+        var siriOnly = try stableScenario()
+        siriOnly.coverage.intentIntegration = .notApplicable
+        siriOnly.coverage.siri = .required
+        siriOnly.checkMode = .behaviour
+        siriOnly.requiredClaims = [.executionCompleted, .applicationStateChecked]
+        siriOnly.assertions = [.init(
+            kind: .entityIdentifier, observationKey: "selectedNoteID",
+            expectedValue: .string("packing-001"),
+            explanation: "Siri selected the requested note.", applicableLanes: [.siri]
+        )]
+        siriOnly.observationPlan = [.init(
+            id: "selectedNoteID", source: .uiElement,
+            operationID: nil, selector: "selectedNoteID"
+        )]
+        siriOnly = try siriOnly.frozen()
+        try ScenarioValidator.validate(siriOnly)
+        #expect(ScenarioNativeExecutionScope(lane: .siri, attempt: 1).isValid(for: siriOnly))
+        let siriCapabilities = ScenarioHarnessCapabilities.required(for: siriOnly)
+        #expect(siriCapabilities == [
+            "environment-payload", "preparation", "accessible-result",
+            "siri", "siri-completion", "invocation-correlation"
+        ])
+
+        let directOnly = try stableScenario()
+        let directCapabilities = ScenarioHarnessCapabilities.required(for: directOnly)
+        #expect(directCapabilities.contains("direct-intent-execution"))
+        #expect(directCapabilities.contains("direct-intent-output"))
+        #expect(!directCapabilities.contains("siri"))
+
+        var mixed = directOnly
+        mixed.coverage.siri = .required
+        let mixedCapabilities = ScenarioHarnessCapabilities.required(for: mixed)
+        #expect(mixedCapabilities.contains("direct-intent-execution"))
+        #expect(mixedCapabilities.contains("direct-intent-output"))
+        #expect(mixedCapabilities.contains("siri"))
+
+        var legacy = siriOnly
+        legacy.schemaVersion = ScenarioDefinition.currentSchemaVersion
+        #expect(ScenarioHarnessCapabilities.required(for: legacy) == [
+            "environment-payload", "fixture-reset", "invocation-correlation",
+            "accessible-result", "direct-intent-output"
+        ])
+    }
+
     @Test func stableDefinitionUsesVersionTwoDeviceWireWithoutLocalRequirements() throws {
         let definition = try stableScenario()
         let scope = ScenarioNativeExecutionScope(lane: .intentIntegration, attempt: 1)
