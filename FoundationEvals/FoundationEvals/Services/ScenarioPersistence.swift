@@ -1,4 +1,17 @@
+import CryptoKit
 import Foundation
+
+struct ScenarioSelectedDefinition: Codable, Equatable, Sendable {
+    var id: UUID
+    var version: Int
+}
+
+private struct ScenarioAcceptanceReceipt: Codable {
+    var runID: UUID
+    var scenarioID: UUID
+    var invocationID: UUID
+    var runDigest: String
+}
 
 enum ScenarioPersistenceError: LocalizedError, Sendable {
     case conflictingDefinition
@@ -6,6 +19,8 @@ enum ScenarioPersistenceError: LocalizedError, Sendable {
     case missingArtifact(String)
     case invalidDefinition(String)
     case invalidRun(String)
+    case invalidJournal(String)
+    case acceptanceNotReady
 
     var errorDescription: String? {
         switch self {
@@ -19,6 +34,10 @@ enum ScenarioPersistenceError: LocalizedError, Sendable {
             "The frozen scenario definition \(name) is unreadable or has an invalid digest. Repair it before release checks can pass."
         case .invalidRun(let name):
             "The saved scenario run \(name) is unreadable or has inconsistent identity. Repair it before release checks can pass."
+        case .invalidJournal(let name):
+            "The execution journal \(name) is unreadable or has inconsistent identity. Repair it before another device test can run."
+        case .acceptanceNotReady:
+            "The run cannot be accepted until its execution journal is durably validated."
         }
     }
 }
@@ -82,6 +101,7 @@ actor ScenarioPersistence {
 
         do {
             var stored = run
+            stored.acceptanceStatus = .pending
             if let artifactRoot {
                 let artifactDirectory = runDirectory.appending(path: "Artifacts", directoryHint: .isDirectory)
                 try fileManager.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
@@ -111,6 +131,52 @@ actor ScenarioPersistence {
         }
     }
 
+    /// Publish acceptance only after the ledger and successful journal validation are durable.
+    /// The receipt binds the immutable run bytes to that exact invocation and journal.
+    func acceptRun(_ run: ScenarioRun, journal: ScenarioExecutionJournal) throws -> ScenarioRun {
+        let persistedJournal = try loadJournal(at: journalURL(journal.id))
+        let runURL = runFileURL(run)
+        let persisted = try loadRun(at: runURL)
+        // ISO-8601 storage rounds Date to whole seconds. Compare the same durable
+        // representation while still checking every invocation identity field.
+        let storedInvocation = try Self.decoder.decode(
+            ScenarioInvocationIdentity.self, from: Self.encoder.encode(run.invocation)
+        )
+        guard journal.phase == .stopped,
+              journal.id == run.invocation.id,
+              journal.scenarioID == run.scenarioID,
+              journal.scenarioVersion == run.scenarioVersion,
+              journal.invocation == run.invocation,
+              persisted.id == run.id,
+              persisted.scenarioVersion == run.scenarioVersion,
+              persisted.scenarioDigest == run.scenarioDigest,
+              persisted.invocation == storedInvocation,
+              persistedJournal.phase == .stopped,
+              persistedJournal.scenarioID == persisted.scenarioID,
+              persistedJournal.scenarioVersion == persisted.scenarioVersion,
+              persistedJournal.invocation == persisted.invocation else {
+            throw ScenarioPersistenceError.acceptanceNotReady
+        }
+        let receipt = ScenarioAcceptanceReceipt(
+            runID: run.id,
+            scenarioID: run.scenarioID,
+            invocationID: journal.id,
+            runDigest: Self.digest(try Data(contentsOf: runURL))
+        )
+        // Foundation rejects .atomic combined with .withoutOverwriting. Stage an
+        // atomic file in this directory, then create the final name with a hard
+        // link. The link fails if an immutable receipt already exists; a crash
+        // before the link leaves only an ignored temporary file.
+        let temporaryReceipt = receiptURL(run).deletingLastPathComponent()
+            .appending(path: ".acceptance-\(UUID().uuidString).tmp")
+        defer { try? fileManager.removeItem(at: temporaryReceipt) }
+        try Self.encoder.encode(receipt).write(to: temporaryReceipt, options: .atomic)
+        try fileManager.linkItem(at: temporaryReceipt, to: receiptURL(run))
+        var accepted = persisted
+        accepted.acceptanceStatus = .accepted
+        return accepted
+    }
+
     func loadRuns(scenarioID: UUID? = nil) throws -> [ScenarioRun] {
         guard fileManager.fileExists(atPath: runsDirectory.path) else { return [] }
         let directory = scenarioID.map { runsDirectory.appending(path: $0.uuidString) } ?? runsDirectory
@@ -125,7 +191,7 @@ actor ScenarioPersistence {
         scenarioID: UUID?,
         offset: Int,
         limit: Int
-    ) throws -> (runs: [ScenarioRun], hasMore: Bool) {
+    ) throws -> (runs: [ScenarioRun], hasMore: Bool, totalCount: Int) {
         let searchRoot = scenarioID.map {
             runsDirectory.appending(path: $0.uuidString, directoryHint: .isDirectory)
         } ?? runsDirectory
@@ -134,7 +200,7 @@ actor ScenarioPersistence {
                 at: searchRoot,
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
-              ) else { return ([], false) }
+              ) else { return ([], false, 0) }
         let files = enumerator.compactMap { $0 as? URL }
             .filter { $0.lastPathComponent == "run.json" }
             .sorted {
@@ -144,7 +210,7 @@ actor ScenarioPersistence {
             }
         let window = files.dropFirst(max(0, offset)).prefix(limit + 1)
         let decoded = try window.map(loadRun)
-        return (Array(decoded.prefix(limit)), decoded.count > limit || window.count > limit)
+        return (Array(decoded.prefix(limit)), decoded.count > limit || window.count > limit, files.count)
     }
 
     func loadLedger() throws -> ScenarioImportLedger {
@@ -176,7 +242,7 @@ actor ScenarioPersistence {
             includingPropertiesForKeys: [.isRegularFileKey]
         )
         .filter { $0.pathExtension == "json" }
-        .compactMap { try? Self.decoder.decode(ScenarioExecutionJournal.self, from: Data(contentsOf: $0)) }
+        .map(loadJournal)
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
@@ -192,6 +258,22 @@ actor ScenarioPersistence {
         let url = rootDirectory.appending(path: "execution-configuration.json")
         guard fileManager.fileExists(atPath: url.path) else { return nil }
         return try Self.decoder.decode(XcodeTestConfiguration.self, from: Data(contentsOf: url))
+    }
+
+    func saveSelectedDefinition(id: UUID, version: Int) throws {
+        guard try loadDefinitions().contains(where: { $0.id == id && $0.version == version }) else {
+            throw ScenarioPersistenceError.invalidDefinition("selected scenario \(id.uuidString) v\(version)")
+        }
+        try prepare()
+        try Self.encoder.encode(ScenarioSelectedDefinition(id: id, version: version)).write(
+            to: rootDirectory.appending(path: "selected-definition.json"), options: .atomic
+        )
+    }
+
+    func loadSelectedDefinition() throws -> ScenarioSelectedDefinition? {
+        let url = rootDirectory.appending(path: "selected-definition.json")
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        return try Self.decoder.decode(ScenarioSelectedDefinition.self, from: Data(contentsOf: url))
     }
 
     func redactedSharingCopy(of run: ScenarioRun) -> ScenarioRun {
@@ -250,10 +332,29 @@ actor ScenarioPersistence {
 
     private func loadRun(at url: URL) throws -> ScenarioRun {
         do {
-            let run = try Self.decoder.decode(ScenarioRun.self, from: Data(contentsOf: url))
+            let bytes = try Data(contentsOf: url)
+            var run = try Self.decoder.decode(ScenarioRun.self, from: bytes)
             guard url.deletingLastPathComponent().lastPathComponent == run.id.uuidString,
                   url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent == run.scenarioID.uuidString else {
                 throw ScenarioPersistenceError.invalidRun(run.id.uuidString)
+            }
+            // Never trust a status encoded in run.json. Only this receipt can accept a run.
+            run.acceptanceStatus = .pending
+            let receiptPath = receiptURL(run)
+            if fileManager.fileExists(atPath: receiptPath.path),
+               let receipt = try? Self.decoder.decode(
+                    ScenarioAcceptanceReceipt.self, from: Data(contentsOf: receiptPath)
+               ),
+               receipt.runID == run.id,
+               receipt.scenarioID == run.scenarioID,
+               receipt.invocationID == run.invocation.id,
+               receipt.runDigest == Self.digest(bytes),
+               let journal = try? loadJournal(at: journalURL(receipt.invocationID)),
+               journal.phase == .stopped,
+               journal.scenarioID == run.scenarioID,
+               journal.scenarioVersion == run.scenarioVersion,
+               journal.invocation == run.invocation {
+                run.acceptanceStatus = .accepted
             }
             return run
         } catch {
@@ -261,8 +362,35 @@ actor ScenarioPersistence {
         }
     }
 
+    private func runFileURL(_ run: ScenarioRun) -> URL {
+        runsDirectory.appending(path: run.scenarioID.uuidString)
+            .appending(path: run.id.uuidString).appending(path: "run.json")
+    }
+
+    private func receiptURL(_ run: ScenarioRun) -> URL {
+        runFileURL(run).deletingLastPathComponent().appending(path: "acceptance.json")
+    }
+
+    private static func digest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
     private func journalURL(_ id: UUID) -> URL {
         journalsDirectory.appending(path: "\(id.uuidString).json")
+    }
+
+    private func loadJournal(at url: URL) throws -> ScenarioExecutionJournal {
+        do {
+            let journal = try Self.decoder.decode(
+                ScenarioExecutionJournal.self, from: Data(contentsOf: url)
+            )
+            guard url.lastPathComponent == "\(journal.id.uuidString).json" else {
+                throw ScenarioPersistenceError.invalidJournal(url.lastPathComponent)
+            }
+            return journal
+        } catch {
+            throw ScenarioPersistenceError.invalidJournal(url.lastPathComponent)
+        }
     }
 
     private func recursiveJSONFiles(in directory: URL) throws -> [URL] {

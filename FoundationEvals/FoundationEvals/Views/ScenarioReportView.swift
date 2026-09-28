@@ -2,12 +2,13 @@ import SwiftUI
 
 struct ScenarioReportView: View {
     @Bindable var coordinator: ScenarioCoordinator
+    var onSetup: () -> Void = {}
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 DisclosureGroup("What do the results mean?") {
-                    IntentLabHelp("Passed: required checks matched. Failed: a required check did not match. Needs review: captured evidence needs a separate assessment. Not observed: the run did not capture enough evidence. Not applicable: this part was skipped. Each lane reports its own result; the overall result depends on required lanes.")
+                    IntentLabHelp("Passed: required checks matched. Failed: a required check did not match. Needs review: captured evidence needs a separate assessment. Not observed: the run did not capture enough evidence. Not applicable: this part was skipped. Each part reports its own result; the overall result depends on the parts marked Required.")
                         .padding(.top, 6)
                 }
                 if !coordinator.runs.isEmpty {
@@ -28,7 +29,7 @@ struct ScenarioReportView: View {
     private var runPicker: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Scenario report").font(.headline)
+                Text("Test results").font(.headline)
                 Text("Saved observations stay unchanged when you review a run")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -48,13 +49,13 @@ struct ScenarioReportView: View {
     private var runningState: some View {
         VStack(spacing: 14) {
             ProgressView().controlSize(.large)
-            Text("Running the signed device workflow")
+            Text("Running your test")
                 .font(.headline)
-            Text("Xcode is preparing and running this test on the iPhone. Keep it unlocked and respond to any permission prompts. Logs and captured results are saved with this attempt.")
+            Text("Xcode is preparing and running this test on the selected device. Keep it available and respond to any permission prompts. Logs and captured results are saved with this attempt.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 300)
-            Button("Cancel and quarantine device", role: .destructive) {
+            Button("Stop test", role: .destructive) {
                 Task { await coordinator.cancel() }
             }
         }
@@ -65,22 +66,21 @@ struct ScenarioReportView: View {
 
     private var emptyState: some View {
         HStack(alignment: .top, spacing: 16) {
-            Image(systemName: "waveform.badge.magnifyingglass")
-                .font(.system(size: 24, weight: .light))
+            WorkspaceIcon(symbol: "intent-lab", size: 32)
                 .foregroundStyle(.secondary)
                 .frame(width: 32)
             VStack(alignment: .leading, spacing: 8) {
-                Text("No scenario evidence")
+                Text("No results yet")
                     .font(.headline)
-                Text("Finish setup and run a saved scenario to see its results here.")
+                Text("Connect your app and run a test to see what passed and what needs attention.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Text("App feature shows linked evaluation evidence. Intent integration tests the action directly. Siri tests the request text on your iPhone.")
+                Text("App evaluation reuses a saved evaluation. App action tests the action directly. Siri tests the request text on your iPhone.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("Check setup") { Task { await coordinator.refreshPreflight() } }
+                Button("Connect app", action: onSetup)
                     .padding(.top, 4)
-                IntentLabHelp("Check setup looks for missing configuration before running. It does not run the action or prove Siri has permission.")
+
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -96,6 +96,11 @@ struct ScenarioReportView: View {
                     Text(frozenDefinition?.name ?? "Scenario v\(run.scenarioVersion)").font(.title3.weight(.semibold))
                     Text(run.startedAt.formatted(date: .abbreviated, time: .standard))
                         .font(.caption).foregroundStyle(.secondary)
+                    if let definition = frozenDefinition,
+                       definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                        Text("\(definition.purpose == .exploratory ? "Exploratory" : "Release requirement") · \(definition.checkMode == .basic ? "Basic" : "Behaviour")")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 ScenarioOutcomeBadge(outcome: run.outcome)
@@ -117,6 +122,14 @@ struct ScenarioReportView: View {
         }
     }
 
+    private func laneDisplayName(_ lane: ScenarioLane) -> String {
+        switch lane {
+        case .appFeature: "App evaluation"
+        case .intentIntegration: "App action"
+        case .siri: "Siri"
+        }
+    }
+
     private func laneSection(_ lane: ScenarioLane, run: ScenarioRun, definition: ScenarioDefinition?) -> some View {
         let results = run.laneResults.filter { $0.lane == lane }
         let passed = results.count { $0.outcome == .passed }
@@ -132,17 +145,17 @@ struct ScenarioReportView: View {
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(results) { result in
-                        attemptCard(result, run: run)
+                        attemptCard(result, run: run, definition: definition)
                     }
                 }
                 .padding(.top, 8)
             }
         } label: {
             HStack {
-                Label(lane.title, systemImage: laneSymbol(lane))
+                Label(laneDisplayName(lane), systemImage: laneSymbol(lane))
                     .font(.callout.weight(.semibold))
                 Spacer()
-                Text(results.isEmpty ? "Missing" : "\(passed) / \(results.count) passed")
+                Text(results.isEmpty ? (definition?.coverage[lane] == .notApplicable ? "Not included" : "Not observed") : "\(passed) / \(results.count) passed")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -150,7 +163,7 @@ struct ScenarioReportView: View {
         .workspaceSurface(radius: 10)
     }
 
-    private func attemptCard(_ result: ScenarioLaneResult, run: ScenarioRun) -> some View {
+    private func attemptCard(_ result: ScenarioLaneResult, run: ScenarioRun, definition: ScenarioDefinition?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Attempt \(result.attempt)").font(.caption.weight(.semibold))
@@ -161,6 +174,16 @@ struct ScenarioReportView: View {
             if let diagnostic = result.diagnostic {
                 Text(diagnostic).font(.caption)
             }
+            if result.lane == .intentIntegration,
+               result.outcome == .passed,
+               definition?.schemaVersion == ScenarioDefinition.reusableSchemaVersion,
+               definition?.checkMode == .basic {
+                Text(definition?.requiredClaims?.contains(.returnedValueChecked) == true
+                    ? "Returned values matched. Application state was not checked."
+                    : "Execution passed. Application state was not checked.")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
             if let proposed = result.proposedCause {
                 Label("Hypothesis: \(proposed)", systemImage: "lightbulb")
                     .font(.caption).foregroundStyle(.secondary)
@@ -170,6 +193,10 @@ struct ScenarioReportView: View {
                     ForEach(result.observations.keys.sorted(), id: \.self) { key in
                         LabeledContent(key, value: display(result.observations[key]))
                             .font(.caption)
+                        if let source = result.observationSources?[key] {
+                            Text("Source: \(source)")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }

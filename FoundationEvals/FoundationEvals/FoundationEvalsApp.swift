@@ -24,7 +24,8 @@ struct FoundationEvalsApp: App {
             serverControl: MCPServerControl(
                 start: { configuration in try await runtime.start(configuration) },
                 stop: { await runtime.stop() }
-            )
+            ),
+            credentialStore: Self.launchCredentialStore
         )
         runtime.settingsController = settings
         _telemetry = State(initialValue: telemetry)
@@ -44,6 +45,23 @@ struct FoundationEvalsApp: App {
         }
         #endif
         return .bundled
+    }
+
+    private static var launchCredentialStore: MCPCredentialStore {
+        #if DEBUG
+        let environment = ProcessInfo.processInfo.environment
+        if environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil
+            || acceptanceStorageDirectory != nil {
+            // Isolated verification must neither read nor modify the user's MCP credential.
+            return .init(
+                load: { nil },
+                save: { _ in throw CocoaError(.featureUnsupported) },
+                remove: { throw CocoaError(.featureUnsupported) }
+            )
+        }
+        #endif
+        return .keychain
     }
 
     private static var acceptanceStorageDirectory: URL? {
@@ -105,14 +123,14 @@ struct FoundationEvalsApp: App {
                     store.addCase()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
-                .disabled(store.isRunning || store.isProcessingFiles)
+                .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
 
                 Button("Add Reference Files…") {
                     store.selection = .suite
                     store.isImportingFiles = true
                 }
                 .keyboardShortcut("o", modifiers: [.command])
-                .disabled(store.isRunning || store.isProcessingFiles)
+                .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
 
                 Divider()
 

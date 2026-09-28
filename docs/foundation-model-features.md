@@ -1,12 +1,12 @@
 # Tools, profiles, and structured output
 
-The suite's **Features** page controls tools, profiles, output schemas, and performance options. Settings are saved with the suite and recorded with each run. Available behavior depends on the selected model's capabilities.
+The suite's **Setup** page has separate **Tools**, **Session profile**, **Structured output**, and **Performance** sections. Settings are saved with the suite and recorded with each run. Available behavior depends on the selected model's capabilities.
 
 ## Try a custom tool
 
-1. Open **Features → Tools → Add Sample**. This creates `lookupOrder` with a string `orderID` argument and a saved fixture response.
+1. Open **Setup → Tools → Add Sample**. This creates `lookupOrder` with a string `orderID` argument and a saved fixture response.
 2. Set a case prompt to `What is the status of order A-104?`. Choose **Contains text** scoring with expected text `shipped`.
-3. Open **Features → Profile**, enable **Use an evaluation profile**, and enable **Require the model to call a tool first**. Set **Instructions after tool completion** to `Use the returned order status in the final answer.`
+3. Open **Setup → Session profile**, enable **Use an evaluation profile**, and enable **Require the model to call a tool first**. Set **Instructions after tool completion** to `Use the returned order status in the final answer.`
 4. Run the suite and inspect the sample's feature trace for arguments, output, call outcome, duration, and profile transitions.
 
 A fixture returns the same saved response on every call. It is useful for testing whether the model selects the right tool and arguments, but it does not execute your application code.
@@ -39,13 +39,13 @@ To supply an entire model backend instead of a tool, see the [custom provider pr
 
 ## Require structured output
 
-Open **Features → Output** and use **Add Field** to define the response. For example, add a string field named `status` for the order tool. With no fields, the model returns ordinary text.
+Open **Setup → Structured output** and use **Add Field** to define the response. For example, add a string field named `status` for the order tool. With no fields, the model returns ordinary text.
 
 Fields support nested objects and arrays, optional values, choices, numeric and string constraints, reusable definitions, and image references. The app builds a generation schema and saves it with the run. Scoring applies to the final serialized JSON through text checks, field assertions, or an AI rubric; choose a metric that matches the structure you expect.
 
 ## Streaming and prewarming
 
-Under **Features → Performance**, **Stream the response** displays partial output and records time to first visible content. This measures the first nonempty response update, not an exact first-token timestamp. Final scoring uses the completed response; a cancelled or failed stream is not scored as a completed answer.
+Under **Setup → Performance**, **Stream the response** displays partial output and records time to first visible content. This measures the first nonempty response update, not an exact first-token timestamp. Final scoring uses the completed response; a cancelled or failed stream is not scored as a completed answer.
 
 **Prewarm the model before each sample** asks the framework to prepare the session. It is a hint, not a guarantee of lower latency. Compare repeated runs with and without prewarming before drawing conclusions.
 

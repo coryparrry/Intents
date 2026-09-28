@@ -533,7 +533,9 @@ enum MCPToolCatalog {
             case "eval_analyze_run":
                 return .analyzeRun(try arguments.decode(MCPAnalyzeRunArguments.self))
             case "eval_list_scenario_runs":
-                return .listScenarioRuns(try arguments.decode(MCPListScenarioRunsArguments.self))
+                let value = try arguments.decode(MCPListScenarioRunsArguments.self)
+                try validatePage(cursor: value.cursor, limit: value.limit)
+                return .listScenarioRuns(value)
             case "eval_get_scenario_report":
                 return .getScenarioReport(try arguments.decode(MCPGetScenarioReportArguments.self))
             case "eval_cancel_run":

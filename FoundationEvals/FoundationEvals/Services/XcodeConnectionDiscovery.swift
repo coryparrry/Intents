@@ -58,15 +58,23 @@ struct IntentLabDeviceDestination: Codable, Equatable, Identifiable, Sendable {
     var name: String
     var operatingSystemVersion: String?
     var available: Bool
+    var platform: IntentLabDestinationPlatform
+}
+
+enum IntentLabDestinationPlatform: String, Codable, Sendable {
+    case iOS = "com.apple.platform.iphoneos"
+    case macOS = "com.apple.platform.macosx"
 }
 
 struct XcodeDiscoveredProduct: Codable, Equatable, Identifiable, Sendable {
-    var id: String { targetName }
+    var id: String { "\(projectPath ?? "")#\(targetID ?? targetName)" }
     var targetName: String
     var bundleIdentifier: String
     var productType: String
     var isApplication: Bool
     var isUITestBundle: Bool
+    var projectPath: String? = nil
+    var targetID: String? = nil
     var harnessVersion: String? = nil
     var harnessCapabilities: [String] = []
     var signingConfigured: Bool = false
@@ -98,7 +106,7 @@ enum XcodeConnectionDiscoveryError: LocalizedError, Sendable {
         case .commandFailed(let detail): "Xcode project discovery failed: \(detail)"
         case .invalidOutput(let detail): "Xcode returned invalid discovery data: \(detail)"
         case .noSchemes: "The selected container has no shared schemes."
-        case .noApplication: "No iOS application target was found."
+        case .noApplication: "No application target was found."
         case .noUITestTarget: "No signed UI-test target was found. Add the Intent Lab harness to a UI-test target first."
         }
     }
@@ -153,11 +161,15 @@ struct XcodeConnectionDiscoveryService: Sendable {
                 configuration: configuration
             ))
         }
-        let uniqueProducts = Dictionary(grouping: products, by: \.targetName).compactMap(\.value.first)
+        // Scheme settings may repeat products obtained from the owning project. Prefer
+        // the project-scoped identity; never merge equal display names from two projects.
+        let identified = products.filter { $0.projectPath != nil }
+        let uniqueProducts = identified.isEmpty
+            ? Array(Dictionary(grouping: products, by: \.id).compactMap(\.value.first))
+            : Array(Dictionary(grouping: identified, by: \.id).compactMap(\.value.first))
         let applications = uniqueProducts.filter(\.isApplication).sorted { $0.targetName < $1.targetName }
         let uiTests = uniqueProducts.filter(\.isUITestBundle).sorted { $0.targetName < $1.targetName }
         guard !applications.isEmpty else { throw XcodeConnectionDiscoveryError.noApplication }
-        guard !uiTests.isEmpty else { throw XcodeConnectionDiscoveryError.noUITestTarget }
         return .init(schemes: listing.schemes, applications: applications, uiTestBundles: uiTests)
     }
 
@@ -177,10 +189,11 @@ struct XcodeConnectionDiscoveryService: Sendable {
         )
     }
 
-    static func parseBuildSettings(_ data: Data) throws -> [XcodeDiscoveredProduct] {
+    static func parseBuildSettings(_ data: Data, project: URL? = nil) throws -> [XcodeDiscoveredProduct] {
         guard let entries = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw XcodeConnectionDiscoveryError.invalidOutput("build settings are not an array")
         }
+        let targetIDs = project.flatMap { try? targetIdentifiers(in: $0) } ?? [:]
         return entries.compactMap { entry in
             guard let settings = entry["buildSettings"] as? [String: Any],
                   let target = entry["target"] as? String else { return nil }
@@ -197,6 +210,8 @@ struct XcodeConnectionDiscoveryService: Sendable {
                 productType: productType,
                 isApplication: isApp,
                 isUITestBundle: isUITest,
+                projectPath: project?.standardizedFileURL.path,
+                targetID: targetIDs[target],
                 harnessVersion: settings["INTENT_LAB_HARNESS_VERSION"] as? String,
                 harnessCapabilities: ((settings["INTENT_LAB_HARNESS_CAPABILITIES"] as? String) ?? "")
                     .split(whereSeparator: { $0 == " " || $0 == "," })
@@ -205,6 +220,18 @@ struct XcodeConnectionDiscoveryService: Sendable {
                     && !((settings["DEVELOPMENT_TEAM"] as? String) ?? "").isEmpty
             )
         }
+    }
+
+    private static func targetIdentifiers(in project: URL) throws -> [String: String] {
+        let data = try Data(contentsOf: project.appending(path: "project.pbxproj"))
+        guard let root = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let objects = root["objects"] as? [String: [String: Any]] else { return [:] }
+        let pairs: [(String, String)] = objects.compactMap { id, object in
+            guard object["isa"] as? String == "PBXNativeTarget",
+                  let name = object["name"] as? String else { return nil }
+            return (name, id)
+        }
+        return Dictionary(pairs, uniquingKeysWith: { first, _ in first })
     }
 
     static func workspaceProjectURLs(workspace: URL, fileManager: FileManager = .default) throws -> [URL] {
@@ -226,14 +253,16 @@ struct XcodeConnectionDiscoveryService: Sendable {
         }
         return devices.compactMap { device in
             guard (device["simulator"] as? Bool) == false,
-                  device["platform"] as? String == "com.apple.platform.iphoneos",
+                  let platformName = device["platform"] as? String,
+                  let platform = IntentLabDestinationPlatform(rawValue: platformName),
                   let identifier = device["identifier"] as? String,
                   let name = device["name"] as? String else { return nil }
             return .init(
                 identifier: identifier,
                 name: name,
                 operatingSystemVersion: device["operatingSystemVersion"] as? String,
-                available: (device["available"] as? Bool) == true && (device["ignored"] as? Bool) != true
+                available: (device["available"] as? Bool) == true && (device["ignored"] as? Bool) != true,
+                platform: platform
             )
         }.sorted { ($0.available ? 0 : 1, $0.name) < ($1.available ? 0 : 1, $1.name) }
     }
@@ -250,7 +279,7 @@ struct XcodeConnectionDiscoveryService: Sendable {
                 executable: xcodebuildPath,
                 arguments: [selector, container.path, "-target", target, "-configuration", configuration, "-showBuildSettings", "-json"]
             )
-            products.append(contentsOf: try Self.parseBuildSettings(data))
+            products.append(contentsOf: try Self.parseBuildSettings(data, project: container))
         }
         return products
     }

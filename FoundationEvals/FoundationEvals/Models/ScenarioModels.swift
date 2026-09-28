@@ -70,6 +70,13 @@ struct ScenarioFixture: Codable, Equatable, Sendable {
     var cleanupOperation: String
 }
 
+struct ScenarioIntegrationIdentity: Codable, Equatable, Sendable {
+    var id: String
+    var version: String
+    /// SHA-256 of the exact developer-owned declaration file bytes, not a package version.
+    var digest: String
+}
+
 enum ScenarioPrimitiveType: String, Codable, CaseIterable, Sendable {
     case string
     case boolean
@@ -130,6 +137,20 @@ struct ScenarioOutputField: Codable, Equatable, Sendable, Identifiable {
     var id: String { name }
     var name: String
     var type: ScenarioValueType
+    var displayName: String? = nil
+    var path: [ScenarioProjectionPathComponent]? = nil
+}
+
+enum ScenarioProjectionPathKind: String, Codable, Sendable {
+    case property
+    case index
+    case count
+}
+
+struct ScenarioProjectionPathComponent: Codable, Equatable, Sendable {
+    var kind: ScenarioProjectionPathKind
+    var name: String? = nil
+    var index: Int? = nil
 }
 
 struct ScenarioDirectControl: Codable, Equatable, Sendable {
@@ -201,6 +222,41 @@ enum ScenarioCaseSet: String, Codable, CaseIterable, Sendable {
     case holdout
 }
 
+enum ScenarioPurpose: String, Codable, CaseIterable, Sendable {
+    case exploratory
+    case releaseRequirement
+}
+
+enum ScenarioCheckMode: String, Codable, CaseIterable, Sendable {
+    case basic
+    case behaviour
+}
+
+enum ScenarioProofClaim: String, Codable, CaseIterable, Sendable {
+    case executionCompleted
+    case returnedValueChecked
+    case applicationStateChecked
+}
+
+enum ScenarioPlannedObservationSource: String, Codable, CaseIterable, Sendable {
+    case intentResult
+    case entityQuery
+    case valueQuery
+    case uiElement
+    case testOnlyIntent
+
+    var checksApplicationState: Bool { self != .intentResult }
+}
+
+struct ScenarioPlannedObservation: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var source: ScenarioPlannedObservationSource
+    /// A compiled, allowlisted operation in the consumer integration, when applicable.
+    var operationID: String?
+    /// A declared stable ID or UI selector, never an expression to evaluate.
+    var selector: String?
+}
+
 struct ScenarioAssertion: Codable, Equatable, Sendable, Identifiable {
     var id: UUID
     var kind: ScenarioAssertionKind
@@ -249,6 +305,7 @@ struct ScenarioSafety: Codable, Equatable, Sendable {
 
 struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
     static let currentSchemaVersion = 1
+    static let reusableSchemaVersion = 2
 
     var schemaVersion = currentSchemaVersion
     var id: UUID
@@ -264,6 +321,12 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
     var coverage: ScenarioCoverage
     var safety: ScenarioSafety
     var caseSet: ScenarioCaseSet? = .regression
+    /// v2 fields stay absent in v1 JSON so its canonical digest is unchanged.
+    var purpose: ScenarioPurpose? = nil
+    var checkMode: ScenarioCheckMode? = nil
+    var requiredClaims: [ScenarioProofClaim]? = nil
+    var observationPlan: [ScenarioPlannedObservation]? = nil
+    var integration: ScenarioIntegrationIdentity? = nil
 
     init(
         schemaVersion: Int = currentSchemaVersion,
@@ -279,7 +342,12 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
         assertions: [ScenarioAssertion],
         coverage: ScenarioCoverage = .init(),
         safety: ScenarioSafety,
-        caseSet: ScenarioCaseSet? = .regression
+        caseSet: ScenarioCaseSet? = .regression,
+        purpose: ScenarioPurpose? = nil,
+        checkMode: ScenarioCheckMode? = nil,
+        requiredClaims: [ScenarioProofClaim]? = nil,
+        observationPlan: [ScenarioPlannedObservation]? = nil,
+        integration: ScenarioIntegrationIdentity? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.id = id
@@ -295,6 +363,46 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
         self.coverage = coverage
         self.safety = safety
         self.caseSet = caseSet
+        self.purpose = purpose
+        self.checkMode = checkMode
+        self.requiredClaims = requiredClaims
+        self.observationPlan = observationPlan
+        self.integration = integration
+    }
+
+    /// Opt-in constructor for new integrations. The caller still supplies the
+    /// target, action, safety policy, and any observations before freezing.
+    static func reusable(
+        name: String,
+        target: ScenarioTarget,
+        goal: ScenarioUserGoal,
+        fixture: ScenarioFixture,
+        directControl: ScenarioDirectControl,
+        assertions: [ScenarioAssertion],
+        coverage: ScenarioCoverage,
+        safety: ScenarioSafety,
+        purpose: ScenarioPurpose,
+        checkMode: ScenarioCheckMode,
+        requiredClaims: [ScenarioProofClaim],
+        observationPlan: [ScenarioPlannedObservation],
+        integration: ScenarioIntegrationIdentity
+    ) -> Self {
+        .init(
+            schemaVersion: reusableSchemaVersion,
+            name: name,
+            target: target,
+            goal: goal,
+            fixture: fixture,
+            directControl: directControl,
+            assertions: assertions,
+            coverage: coverage,
+            safety: safety,
+            purpose: purpose,
+            checkMode: checkMode,
+            requiredClaims: requiredClaims,
+            observationPlan: observationPlan,
+            integration: integration
+        )
     }
 
     func calculatedDigest() throws -> String {
@@ -303,7 +411,26 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return SHA256.hash(data: try encoder.encode(copy)).map { String(format: "%02x", $0) }.joined()
+        var data = try encoder.encode(copy)
+        if schemaVersion == Self.reusableSchemaVersion {
+            // JSON object-key sorting does not order Set-backed lane arrays.
+            // Canonicalise only v2; historical v1 digests retain their original bytes.
+            guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw EncodingError.invalidValue(copy, .init(
+                    codingPath: [], debugDescription: "A scenario must encode as a JSON object."
+                ))
+            }
+            if var assertions = object["assertions"] as? [[String: Any]] {
+                for index in assertions.indices {
+                    if let lanes = assertions[index]["applicableLanes"] as? [String] {
+                        assertions[index]["applicableLanes"] = lanes.sorted()
+                    }
+                }
+                object["assertions"] = assertions
+            }
+            data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+        }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     func frozen() throws -> Self {
@@ -420,6 +547,7 @@ struct ScenarioLaneResult: Codable, Equatable, Identifiable, Sendable {
     var proposedCause: String?
     var artifacts: [ScenarioArtifactReference]
     var observationSources: [String: ScenarioObservationSource]? = nil
+    var claims: [ScenarioProofClaim]? = nil
 
     init(
         id: UUID = UUID(),
@@ -435,7 +563,8 @@ struct ScenarioLaneResult: Codable, Equatable, Identifiable, Sendable {
         diagnostic: String? = nil,
         proposedCause: String? = nil,
         artifacts: [ScenarioArtifactReference] = [],
-        observationSources: [String: ScenarioObservationSource]? = nil
+        observationSources: [String: ScenarioObservationSource]? = nil,
+        claims: [ScenarioProofClaim]? = nil
     ) {
         self.id = id
         self.caseID = caseID
@@ -451,6 +580,7 @@ struct ScenarioLaneResult: Codable, Equatable, Identifiable, Sendable {
         self.proposedCause = proposedCause
         self.artifacts = artifacts
         self.observationSources = observationSources
+        self.claims = claims
     }
 }
 
@@ -469,6 +599,7 @@ struct ScenarioTestIdentity: Codable, Equatable, Sendable {
 
 struct ScenarioInvocationIdentity: Codable, Equatable, Identifiable, Sendable {
     static let currentHarnessVersion = "intent-lab-v1"
+    static let reusableHarnessVersion = "intent-lab-v2"
 
     var id: UUID
     var nonce: String
@@ -480,10 +611,15 @@ struct ScenarioInvocationIdentity: Codable, Equatable, Identifiable, Sendable {
     var resultBundleIdentity: String
     var appProduct: ScenarioProductIdentity?
     var testProduct: ScenarioProductIdentity?
+    var integration: ScenarioIntegrationIdentity? = nil
+    var requiredCapabilities: [String]? = nil
 }
 
 enum ScenarioObservationSource: String, Codable, CaseIterable, Sendable {
     case appIntentsTesting
+    case entityQuery
+    case valueQuery
+    case testOnlyIntent
     case siriRecognizedText
     case applicationInstrumentation
     case accessibleUI
@@ -506,6 +642,7 @@ struct ScenarioEnvironment: Codable, Equatable, Sendable {
 
 struct ScenarioEvidenceEnvelope: Codable, Equatable, Sendable {
     static let currentSchemaVersion = 1
+    static let reusableSchemaVersion = 2
 
     var schemaVersion = currentSchemaVersion
     var invocation: ScenarioInvocationIdentity
@@ -515,6 +652,14 @@ struct ScenarioEvidenceEnvelope: Codable, Equatable, Sendable {
     var environment: ScenarioEnvironment
     var testCount: Int
     var results: [ScenarioLaneResult]
+    var integration: ScenarioIntegrationIdentity? = nil
+    var runnerPackageVersion: String? = nil
+    var negotiatedCapabilities: [String]? = nil
+}
+
+enum ScenarioRunAcceptanceStatus: String, Codable, Sendable {
+    case pending
+    case accepted
 }
 
 struct ScenarioRun: Codable, Equatable, Identifiable, Sendable {
@@ -538,6 +683,11 @@ struct ScenarioRun: Codable, Equatable, Identifiable, Sendable {
     /// Environment dimensions the developer explicitly expected to differ from
     /// the preceding run. This is run metadata, not part of the frozen scenario.
     var statedChangedDimensions: Set<String>? = nil
+    var integration: ScenarioIntegrationIdentity? = nil
+    var runnerPackageVersion: String? = nil
+    var negotiatedCapabilities: [String]? = nil
+    /// Derived from a durable receipt when loading; absent on archived version 1 runs.
+    var acceptanceStatus: ScenarioRunAcceptanceStatus? = nil
 }
 
 struct ScenarioResponseAssessment: Codable, Equatable, Identifiable, Sendable {

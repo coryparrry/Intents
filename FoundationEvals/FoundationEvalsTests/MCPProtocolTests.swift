@@ -3,6 +3,51 @@ import Testing
 @testable import FoundationEvals
 
 struct MCPProtocolTests {
+    @Test func credentialIsRequiredBeforeReadsOrMutationsReachAuthority() async throws {
+        let recorder = MCPAuthorizationRecorder()
+        let runID = UUID()
+        let uri = "foundation-evals://runs/\(runID.uuidString)"
+        let handler = MCPProtocolHandler(authority: MCPAuthority(
+            call: { call in
+                await recorder.recordCall(call)
+                return MCPToolPayload(structuredContent: .object(["outcome": .string("committed")]))
+            },
+            readResource: { _ in
+                await recorder.recordRead()
+                return .text(uri: uri, mimeType: "application/json", text: "{}")
+            }
+        ), credential: testMCPCredential)
+        let requests = [
+            try standardRequest(method: "resources/read", parameters: ["uri": .string(uri)]),
+            try standardRequest(method: "tools/call", parameters: [
+                "name": .string("eval_cancel_run"),
+                "arguments": .object(["runID": .string(runID.uuidString)])
+            ])
+        ]
+
+        for request in requests {
+            var missing = request
+            missing.headers.removeValue(forKey: "authorization")
+            var incorrect = request
+            incorrect.headers["authorization"] = "Bearer \(String(repeating: "B", count: 43))"
+            let missingResponse = await handler.handle(missing)
+            let incorrectResponse = await handler.handle(incorrect)
+            #expect(missingResponse.status == 401)
+            #expect(missingResponse.headers["WWW-Authenticate"] == "Bearer")
+            #expect(incorrectResponse.status == 401)
+            #expect(missingResponse.body == nil)
+            #expect(incorrectResponse.body == nil)
+        }
+        #expect(await recorder.callCount == 0)
+        #expect(await recorder.readCount == 0)
+
+        for request in requests {
+            #expect(await handler.handle(request).status == 200)
+        }
+        #expect(await recorder.callCount == 1)
+        #expect(await recorder.readCount == 1)
+    }
+
     @Test func initializeNegotiatesCodexStandardVersion() async throws {
         let response = await makeHandler().handle(try initializeRequest())
         let result = try #require(responseJSON(response)["result"])
@@ -137,6 +182,7 @@ struct MCPProtocolTests {
         )
         let handler = MCPProtocolHandler(
             authority: authority,
+            credential: testMCPCredential,
             maximumBodyBytes: 32
         )
 
@@ -184,6 +230,7 @@ struct MCPProtocolTests {
         )
         let handler = MCPProtocolHandler(
             authority: authority,
+            credential: testMCPCredential,
             maximumConcurrentRequests: 1
         )
         let request = try standardRequest(
@@ -244,7 +291,7 @@ struct MCPProtocolTests {
             },
             readResource: { _ in .failure(uri: "", code: "missing", message: "Missing") }
         )
-        let handler = MCPProtocolHandler(authority: authority)
+        let handler = MCPProtocolHandler(authority: authority, credential: testMCPCredential)
         let response = await handler.handle(
             try standardRequest(
                 method: "tools/call",
@@ -269,7 +316,7 @@ struct MCPProtocolTests {
             },
             readResource: { _ in .failure(uri: "", code: "missing", message: "Missing") }
         )
-        let handler = MCPProtocolHandler(authority: authority)
+        let handler = MCPProtocolHandler(authority: authority, credential: testMCPCredential)
         let response = await handler.handle(
             try standardRequest(
                 method: "tools/call",
@@ -298,7 +345,7 @@ struct MCPProtocolTests {
                 return .text(uri: uri, mimeType: "application/json", text: #"{"id":"run"}"#)
             }
         )
-        let handler = MCPProtocolHandler(authority: authority)
+        let handler = MCPProtocolHandler(authority: authority, credential: testMCPCredential)
         let response = await handler.handle(
             try standardRequest(
                 method: "resources/read",
@@ -338,6 +385,7 @@ struct MCPProtocolTests {
         let server = MCPServer(
             port: port,
             authority: authority,
+            credential: testMCPCredential,
             maximumConcurrentRequests: 1
         )
         try await server.start()
@@ -355,6 +403,7 @@ struct MCPProtocolTests {
                 ]
             )
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(testMCPCredential)", forHTTPHeaderField: "Authorization")
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = try #require((response as? HTTPURLResponse)?.statusCode)
             guard status == 200 else {
@@ -383,6 +432,7 @@ struct MCPProtocolTests {
                 )
                 request.setValue("2025-06-18", forHTTPHeaderField: "MCP-Protocol-Version")
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue("Bearer \(testMCPCredential)", forHTTPHeaderField: "Authorization")
                 return request
             }
 
@@ -400,7 +450,7 @@ struct MCPProtocolTests {
                 throw error
             }
 
-            let duplicate = MCPServer(port: port, authority: authority)
+            let duplicate = MCPServer(port: port, authority: authority, credential: testMCPCredential)
             do {
                 try await duplicate.start()
                 await duplicate.stop()
@@ -414,7 +464,7 @@ struct MCPProtocolTests {
             }
             await server.stop()
 
-            let rebound = MCPServer(port: port, authority: authority)
+            let rebound = MCPServer(port: port, authority: authority, credential: testMCPCredential)
             try await rebound.start()
             await rebound.stop()
         } catch {
@@ -428,7 +478,8 @@ struct MCPProtocolTests {
             authority: MCPAuthority(
                 call: { _ in MCPToolPayload(structuredContent: .object(["outcome": .string("committed")])) },
                 readResource: { _ in .failure(uri: "", code: "missing", message: "Missing") }
-            )
+            ),
+            credential: testMCPCredential
         )
     }
 
@@ -464,7 +515,8 @@ struct MCPProtocolTests {
     private var baseHeaders: [String: String] {
         [
             "Host": "127.0.0.1:17873",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Authorization": "Bearer \(testMCPCredential)"
         ]
     }
 
@@ -482,12 +534,22 @@ struct MCPProtocolTests {
     }
 }
 
+private let testMCPCredential = String(repeating: "A", count: 43)
+
 private actor MCPCallRecorder {
     private(set) var count = 0
 
     func record(_ call: MCPToolCall) {
         count += 1
     }
+}
+
+private actor MCPAuthorizationRecorder {
+    private(set) var callCount = 0
+    private(set) var readCount = 0
+
+    func recordCall(_ call: MCPToolCall) { callCount += 1 }
+    func recordRead() { readCount += 1 }
 }
 
 private actor MCPRequestGate {

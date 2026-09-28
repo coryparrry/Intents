@@ -10,6 +10,7 @@ extension MCPServer: MCPServerLifecycle {}
 struct MCPRuntimeServerConfiguration: Sendable {
     var port: Int
     var authority: MCPAuthority
+    var credential: String
     var onRequest: @Sendable (Date) async -> Void
     var onUnexpectedStop: @Sendable (MCPServerError) async -> Void
 }
@@ -30,6 +31,7 @@ final class FoundationEvalsMCPRuntime {
             MCPServer(
                 port: configuration.port,
                 authority: configuration.authority,
+                credential: configuration.credential,
                 onRequest: configuration.onRequest,
                 onUnexpectedStop: configuration.onUnexpectedStop
             )
@@ -46,6 +48,7 @@ final class FoundationEvalsMCPRuntime {
         let server = serverFactory(MCPRuntimeServerConfiguration(
             port: configuration.port,
             authority: MCPStoreAuthority.make(store: store),
+            credential: configuration.credential,
             onRequest: { [weak self] date in
                 await self?.settingsController?.recordConnection(at: date)
             },

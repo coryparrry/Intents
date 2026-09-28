@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "id": "intent-lab-notes-fixture",
+  "version": "2",
+  "targetBundleIdentifier": "com.coryparry.IntentLabFixture",
+  "projectIdentity": "IntentLabFixture.xcodeproj",
+  "targetIdentity": "IntentLabFixtureV2UITests",
+  "supportedHarnessProtocols": [
+    "intent-lab-v1",
+    "intent-lab-v2"
+  ],
+  "actions": [
+    {
+      "id": "OpenNoteIntent",
+      "parameters": [
+        {
+          "name": "note",
+          "type": { "entity": { "typeIdentifier": "NoteEntity" } },
+          "required": true
+        }
+      ]
+    }
+  ],
+  "resultProjections": [
+    {
+      "id": "openedNoteID",
+      "type": { "primitive": { "_0": "string" } },
+      "path": [{ "kind": "property", "name": "value" }]
+    }
+  ],
+  "preparationOperations": [
+    "",
+    "reset",
+    "resetNotes",
+    "resetFixture"
+  ],
+  "cleanupOperations": ["", "reset", "resetNotes", "resetFixture"],
+  "observers": [
+    {
+      "id": "selectedNoteID",
+      "source": "uiElement",
+      "selector": "intent-lab-selected-note-id",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "noteStoreMutationCount",
+      "source": "uiElement",
+      "selector": "intent-lab-mutation-count",
+      "type": {
+        "primitive": {
+          "_0": "integer"
+        }
+      }
+    },
+    {
+      "id": "invocationContext",
+      "source": "uiElement",
+      "selector": "intent-lab-observed-context",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "applicationEvent",
+      "source": "uiElement",
+      "selector": "intent-lab-last-event",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "visibleResponse",
+      "source": "uiElement",
+      "selector": "intent-lab-last-event",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    }
+  ],
+  "isolation": {
+    "kind": "synthetic",
+    "readinessOperationID": "reset"
+  },
+  "capabilities": [
+    "environment-payload",
+    "direct-intent-execution",
+    "direct-intent-output",
+    "preparation",
+    "accessible-result",
+    "siri",
+    "siri-completion",
+    "invocation-correlation"
+  ]
+}

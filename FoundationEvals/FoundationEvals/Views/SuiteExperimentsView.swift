@@ -7,7 +7,7 @@ struct SuiteExperimentsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
-                WorkspaceSymbolBadge(symbol: "flask", tint: .purple)
+                WorkspaceIcon(symbol: "flask")
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Instruction experiments").font(.headline)
                     Text("Compare a proposed instruction change against the same cases, model and scoring.")

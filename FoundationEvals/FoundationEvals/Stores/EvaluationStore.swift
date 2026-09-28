@@ -58,6 +58,8 @@ final class EvaluationStore {
     private let reassessmentService = EvaluationReassessmentService()
     private let supportDirectory: URL
     private let suiteLocalStateWriter: (Data, URL) throws -> Void
+    private let runWriter: (Data, URL) throws -> Void
+    private let pendingCompletedRunsWriter: (Data, URL) throws -> Void
     var overviewStorageDirectory: URL { supportDirectory }
     @ObservationIgnored private var pendingPromptEdits: [UUID: String] = [:]
     @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
@@ -68,6 +70,8 @@ final class EvaluationStore {
     private var activeRunEvidence: EvaluationSubjectEvidenceSnapshot?
     private var activeRunResults: [EvaluationSampleResult] = []
     private var unsavedRun: EvaluationRun?
+    private var pendingCompletedRuns: PendingCompletedRuns?
+    private var pendingCompletedRunsIsDurable = false
     private var latestRunHistorySequence: UInt64 = 0
     private var workspacePersistenceBlocker: String?
 
@@ -84,10 +88,17 @@ final class EvaluationStore {
     private var draftSuiteURL: URL { suiteDirectory.appending(path: "suite-draft.json") }
     private var suiteStateURL: URL { suiteDirectory.appending(path: "state.json") }
     private var judgeConnectionsURL: URL { supportDirectory.appending(path: "judge-connections.json") }
+    private var pendingCompletedRunsURL: URL { suiteDirectory.appending(path: "pending-completed-runs.json") }
 
     init(
         supportDirectory customSupportDirectory: URL? = nil,
         suiteLocalStateWriter: @escaping (Data, URL) throws -> Void = {
+            try $0.write(to: $1, options: .atomic)
+        },
+        runWriter: @escaping (Data, URL) throws -> Void = {
+            try $0.write(to: $1, options: .atomic)
+        },
+        pendingCompletedRunsWriter: @escaping (Data, URL) throws -> Void = {
             try $0.write(to: $1, options: .atomic)
         }
     ) {
@@ -96,6 +107,8 @@ final class EvaluationStore {
                 .appending(path: "FoundationEvals", directoryHint: .isDirectory)
         supportDirectory = base
         self.suiteLocalStateWriter = suiteLocalStateWriter
+        self.runWriter = runWriter
+        self.pendingCompletedRunsWriter = pendingCompletedRunsWriter
 
         var startupNotice: String?
         do {
@@ -216,6 +229,14 @@ final class EvaluationStore {
         activeRunEvidence = recovery.pending?.subjectEvidence
         activeRunResults = recovery.pending?.results ?? []
         unsavedRun = recovery.pending?.completedRun
+        pendingCompletedRuns = try? CanonicalJSON.decode(
+            PendingCompletedRuns.self, from: Data(contentsOf: pendingCompletedRunsURL)
+        )
+        pendingCompletedRunsIsDurable = pendingCompletedRuns != nil
+        if let pendingCompletedRuns {
+            let pendingIDs = Set(pendingCompletedRuns.runs.map(\.id))
+            runs.removeAll { pendingIDs.contains($0.id) }
+        }
         completedSamples = recovery.pending?.summary.completedSamples ?? 0
         totalSamples = recovery.pending?.summary.totalSamples ?? 0
         workspacePersistenceBlocker = catalogRecoveryAttempted && !catalogRecoveryCanPublish
@@ -563,6 +584,8 @@ final class EvaluationStore {
         let previousActiveRunEvidence = activeRunEvidence
         let previousActiveRunResults = activeRunResults
         let previousUnsavedRun = unsavedRun
+        let previousPendingCompletedRuns = pendingCompletedRuns
+        let previousPendingCompletedRunsIsDurable = pendingCompletedRunsIsDurable
         let previousCompletedSamples = completedSamples
         let previousTotalSamples = totalSamples
         let previousIsRunning = isRunning
@@ -596,6 +619,8 @@ final class EvaluationStore {
             activeRunEvidence = previousActiveRunEvidence
             activeRunResults = previousActiveRunResults
             unsavedRun = previousUnsavedRun
+            pendingCompletedRuns = previousPendingCompletedRuns
+            pendingCompletedRunsIsDurable = previousPendingCompletedRunsIsDurable
             completedSamples = previousCompletedSamples
             totalSamples = previousTotalSamples
             isRunning = previousIsRunning
@@ -702,6 +727,14 @@ final class EvaluationStore {
         activeRunResults = recovery.pending?.results ?? []
         unsavedRun = recovery.pending?.completedRun
         completedSamples = recovery.pending?.summary.completedSamples ?? 0
+        pendingCompletedRuns = try? CanonicalJSON.decode(
+            PendingCompletedRuns.self, from: Data(contentsOf: pendingCompletedRunsURL)
+        )
+        pendingCompletedRunsIsDurable = pendingCompletedRuns != nil
+        if let pendingCompletedRuns {
+            let pendingIDs = Set(pendingCompletedRuns.runs.map(\.id))
+            runs.removeAll { pendingIDs.contains($0.id) }
+        }
         totalSamples = recovery.pending?.summary.totalSamples ?? 0
         let repositoryNotice = repositoryConflict
             ? "The repository suite changed while this suite has an autosaved local draft. Both versions were preserved; review them before saving."
@@ -819,9 +852,12 @@ final class EvaluationStore {
               let id = draftSuite.judgeConfiguration.connectionID,
               let connection = judgeConnections.first(where: { $0.id == id }) else { return nil }
         let images = draftSuite.attachments.count { $0.kind == .image }
+        let sentImages = draftSuite.judgeConfiguration.includeReferenceAttachments ? images : 0
         return "Intents will send each case's instructions, effective input, candidate response, verified reference, bounded tool evidence"
-            + (images > 0 ? ", and \(images) image attachment\(images == 1 ? "" : "s")" : "")
-            + " to \(connection.name) at \(connection.baseURL). No application tools, other runs, secrets, or telemetry are sent."
+            + (sentImages > 0 ? ", and \(sentImages) reference image\(sentImages == 1 ? "" : "s")" : "")
+            + " to \(connection.name) at \(connection.baseURL)."
+            + (images > 0 && sentImages == 0 ? " Reference images remain local." : "")
+            + " No application tools, other runs, secrets, or telemetry are sent."
     }
 
     func approveExternalJudgeDisclosure() {
@@ -1219,33 +1255,26 @@ final class EvaluationStore {
                     }
                     outcome.candidate = runPreparedForHistory(outcome.candidate)
                     outcome.current = runPreparedForHistory(outcome.current)
-                    try persistRun(outcome.current)
-                    try persistRun(outcome.candidate)
-                    runs.removeAll { $0.id == outcome.current.id || $0.id == outcome.candidate.id }
-                    runs.insert(outcome.candidate, at: 0)
-                    runs.insert(outcome.current, at: 0)
-                    if let index = suiteLocalState.experiments.firstIndex(where: { $0.id == id }) {
-                        let previousRunIDs = suiteLocalState.experiments[index].runIDs
-                        suiteLocalState.experiments[index].runIDs = [outcome.current.id, outcome.candidate.id]
-                        do {
-                            try persistSuiteLocalState()
-                        } catch {
-                            suiteLocalState.experiments[index].runIDs = previousRunIDs
-                            throw error
-                        }
-                    }
+                    try saveCompletedRuns([outcome.current, outcome.candidate], experimentID: id)
                     createdRunIDs = []
-                    selection = .run(outcome.candidate.id)
                 } catch is CancellationError {
-                    cleanupIncompleteRuns(
-                        ids: createdRunIDs, projectID: ownerProjectID, suiteID: ownerSuiteID
-                    )
-                    notice = "The experiment was cancelled before either variant became evidence."
+                    if pendingCompletedRuns == nil {
+                        cleanupIncompleteRuns(
+                            ids: createdRunIDs, projectID: ownerProjectID, suiteID: ownerSuiteID
+                        )
+                        notice = "The experiment was cancelled before either variant became evidence."
+                    } else {
+                        notice = pendingRunSaveMessage
+                    }
                 } catch {
-                    cleanupIncompleteRuns(
-                        ids: createdRunIDs, projectID: ownerProjectID, suiteID: ownerSuiteID
-                    )
-                    notice = "The experiment could not complete: \(error.localizedDescription)"
+                    if pendingCompletedRuns == nil {
+                        cleanupIncompleteRuns(
+                            ids: createdRunIDs, projectID: ownerProjectID, suiteID: ownerSuiteID
+                        )
+                        notice = "The experiment could not complete: \(error.localizedDescription)"
+                    } else {
+                        notice = "The experiment finished, but its evidence could not be saved: \(error.localizedDescription). Restore storage access and retry saving."
+                    }
                 }
                 isRunning = false
                 runTask = nil
@@ -1431,6 +1460,7 @@ final class EvaluationStore {
         adapter: any EvaluationFeatureAdapter,
         progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }
     ) async throws -> EvaluationRun {
+        try retryUnsavedRun()
         if let existing = run(with: id) {
             guard existing.projectID == selectedProjectID,
                   existing.suiteID == selectedSuiteID,
@@ -1511,18 +1541,17 @@ final class EvaluationStore {
                 }
             }
             run = runPreparedForHistory(run)
-            try persistRun(run)
+            try saveCompletedRuns([run])
         } catch {
-            try? FileManager.default.removeItem(at: runEvidenceDirectory(
-                projectID: ownerProjectID,
-                suiteID: ownerSuiteID,
-                runID: id
-            ))
+            if pendingCompletedRuns == nil {
+                try? FileManager.default.removeItem(at: runEvidenceDirectory(
+                    projectID: ownerProjectID,
+                    suiteID: ownerSuiteID,
+                    runID: id
+                ))
+            }
             throw error
         }
-        runs.removeAll { $0.id == run.id }
-        runs.insert(run, at: 0)
-        selection = .run(run.id)
         return run
     }
 
@@ -1898,11 +1927,14 @@ final class EvaluationStore {
     }
 
     var hasUnsavedCompletedRun: Bool {
-        unsavedRun != nil || (activeRun != nil && !isRunning)
+        unsavedRun != nil || pendingCompletedRuns != nil || (activeRun != nil && !isRunning)
     }
 
     var pendingRunSaveMessage: String? {
         guard hasUnsavedCompletedRun else { return nil }
+        if pendingCompletedRuns != nil && !pendingCompletedRunsIsDurable {
+            return "The completed evidence has no saved retry record. Keep the app open, restore storage access, then retry saving."
+        }
         return "A finished run still needs to be saved to history. Restore storage access, then retry."
     }
 
@@ -2225,7 +2257,7 @@ final class EvaluationStore {
     }
 
     func importFiles(_ urls: [URL]) {
-        guard !isRunning, !isProcessingFiles else {
+        guard !isRunning, !isReassessing, !isProcessingFiles else {
             notice = "Wait for the current operation to finish before changing files."
             return
         }
@@ -2479,6 +2511,7 @@ final class EvaluationStore {
     func retryPendingRunSave() {
         do {
             try retryUnsavedRun()
+            if !hasUnsavedCompletedRun { notice = nil }
         } catch {
             notice = error.localizedDescription
         }
@@ -2486,6 +2519,7 @@ final class EvaluationStore {
 
     func run(with id: UUID) -> EvaluationRun? {
         if let unsavedRun, unsavedRun.id == id { return unsavedRun }
+        if let pending = pendingCompletedRuns?.runs.first(where: { $0.id == id }) { return pending }
         return runs.first { $0.id == id } ?? persistedRunLocation(id: id)?.run
     }
 
@@ -3390,6 +3424,7 @@ final class EvaluationStore {
     }
 
     private func commitSuite(_ candidate: EvaluationSuite) throws {
+        try requireNoReassessmentMutation()
         if let issue = validationIssue(for: candidate, includeModelReadiness: false) {
             throw EvaluationStoreError.invalidSuite(issue)
         }
@@ -3467,10 +3502,8 @@ final class EvaluationStore {
 
     private func persistRun(_ run: EvaluationRun) throws {
         do {
-            try CanonicalJSON.data(for: run).write(
-                to: runsDirectory.appending(path: "\(run.id.uuidString).json"),
-                options: .atomic
-            )
+            try runWriter(CanonicalJSON.data(for: run),
+                runsDirectory.appending(path: "\(run.id.uuidString).json"))
         } catch {
             throw EvaluationStoreError.persistence(error.localizedDescription)
         }
@@ -3555,10 +3588,87 @@ final class EvaluationStore {
     }
 
     private func retryUnsavedRun() throws {
-        guard let unsavedRun else { return }
-        finish(unsavedRun)
-        if self.unsavedRun != nil {
-            throw EvaluationStoreError.persistence("The completed run still needs to be saved.")
+        if let unsavedRun {
+            finish(unsavedRun)
+            if self.unsavedRun != nil {
+                throw EvaluationStoreError.persistence("The completed run still needs to be saved.")
+            }
+        }
+        try retryCompletedRuns()
+    }
+
+    private func persistPendingCompletedRuns() throws {
+        guard let pendingCompletedRuns else { return }
+        try pendingCompletedRunsWriter(
+            CanonicalJSON.data(for: pendingCompletedRuns), pendingCompletedRunsURL
+        )
+        pendingCompletedRunsIsDurable = true
+    }
+
+    func saveCompletedRuns(_ completed: [EvaluationRun], experimentID: UUID? = nil) throws {
+        guard pendingCompletedRuns == nil else {
+            throw EvaluationStoreError.persistence("A completed run still needs to be saved.")
+        }
+        pendingCompletedRuns = PendingCompletedRuns(runs: completed, experimentID: experimentID)
+        pendingCompletedRunsIsDurable = false
+        do {
+            try retryCompletedRuns()
+        } catch {
+            notice = pendingRunSaveMessage
+            throw error
+        }
+    }
+
+    private func retryCompletedRuns() throws {
+        guard let pendingCompletedRuns else { return }
+        // A failed run or state write may leave only part of an experiment on
+        // disk. Rewriting both records makes every retry safe and idempotent.
+        var markerFailure: Error?
+        if !pendingCompletedRunsIsDurable {
+            do { try persistPendingCompletedRuns() }
+            catch { markerFailure = error }
+        }
+        do {
+            for run in pendingCompletedRuns.runs { try persistRun(run) }
+            if let experimentID = pendingCompletedRuns.experimentID {
+                guard let index = suiteLocalState.experiments.firstIndex(where: { $0.id == experimentID }) else {
+                    throw EvaluationStoreError.resourceNotFound("Experiment")
+                }
+                let previousRunIDs = suiteLocalState.experiments[index].runIDs
+                suiteLocalState.experiments[index].runIDs = pendingCompletedRuns.runs.map(\.id)
+                do {
+                    try persistSuiteLocalState()
+                } catch {
+                    suiteLocalState.experiments[index].runIDs = previousRunIDs
+                    throw error
+                }
+            }
+        } catch {
+            if let markerFailure {
+                throw EvaluationStoreError.persistence(
+                    "\(error.localizedDescription) The retry record also could not be saved: "
+                    + "\(markerFailure.localizedDescription). Keep the app open and retry after restoring storage access."
+                )
+            }
+            throw error
+        }
+        for run in pendingCompletedRuns.runs.reversed() {
+            runs.removeAll { $0.id == run.id }
+            runs.insert(run, at: 0)
+        }
+        if let last = pendingCompletedRuns.runs.last { selection = .run(last.id) }
+        if FileManager.default.fileExists(atPath: pendingCompletedRunsURL.path) {
+            try FileManager.default.removeItem(at: pendingCompletedRunsURL)
+        }
+        self.pendingCompletedRuns = nil
+        pendingCompletedRunsIsDurable = false
+    }
+
+    private func requireNoReassessmentMutation() throws {
+        if isReassessing {
+            throw EvaluationStoreError.resourceConflict(
+                "Wait for the reassessment or judge check to finish before changing this suite."
+            )
         }
     }
 
@@ -3566,11 +3676,7 @@ final class EvaluationStore {
         try requireWorkspaceWritable()
         try retryUnsavedRun()
         if isRunning || activeRun != nil { throw EvaluationStoreError.runBusy }
-        if isReassessing {
-            throw EvaluationStoreError.resourceConflict(
-                "Wait for the reassessment or judge check to finish before switching or changing this suite."
-            )
-        }
+        try requireNoReassessmentMutation()
         if isProcessingFiles || isImportingFiles { throw EvaluationStoreError.fileOperationBusy }
     }
 
@@ -3686,6 +3792,7 @@ final class EvaluationStore {
     private func allowWorkspaceMutation() -> Bool {
         do {
             try requireWorkspaceWritable()
+            try requireNoReassessmentMutation()
             return true
         } catch {
             notice = error.localizedDescription
@@ -4166,6 +4273,11 @@ private struct ActiveRunRecord: Codable, Sendable {
     var results: [EvaluationSampleResult]?
     var completedRun: EvaluationRun? = nil
     var subjectEvidence: EvaluationSubjectEvidenceSnapshot? = nil
+}
+
+private struct PendingCompletedRuns: Codable, Sendable {
+    var runs: [EvaluationRun]
+    var experimentID: UUID?
 }
 
 private struct EvaluationPersistedRunLocation {

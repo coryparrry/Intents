@@ -2,7 +2,7 @@ import AppIntents
 
 struct NoteEntity: AppEntity, Identifiable {
     var id: String
-    var title: String
+    @Property(title: "Title") var title: String
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Synthetic note"
     static let defaultQuery = NoteEntityQuery()

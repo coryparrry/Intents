@@ -53,6 +53,34 @@ struct WorkspacePresentationTests {
         #expect(SuiteCheckState.evaluate(run: nil, currentRevision: "current", hasDraft: false) == .notRun)
     }
 
+    @Test func trendOmitsUnscoredRatesWithoutHidingScoredFailures() {
+        let unscored = fixture(status: .unscored)
+        let failed = fixture(status: .failed)
+        let trend = RunTrendSummary(runs: [unscored, failed])
+
+        #expect(trend.recentCount == 2)
+        #expect(trend.points.map(\.id) == [failed.id])
+        #expect(trend.points.map(\.rate) == [0])
+        #expect(trend.title == "Pass rate · 1 scored of last 2 runs")
+        #expect(trend.comparisonCaption == "No comparable scored run")
+        #expect(RunTrendSummary(runs: [unscored]).points.isEmpty)
+        #expect(RunTrendSummary(runs: [unscored]).comparisonCaption == "First saved run")
+    }
+
+    @Test func renderMixedScoredAndUnscoredTrendForInspection() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.runs = [fixture(status: .unscored), fixture(status: .failed)]
+        let renderer = ImageRenderer(content: SuiteResultsView(store: store).frame(width: 850, height: 560))
+        renderer.scale = 2
+        let image = try #require(renderer.cgImage)
+        let data = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+        let output = FileManager.default.temporaryDirectory.appending(path: "foundation-evals-mixed-run-trend.png")
+        try data.write(to: output)
+        print("Mixed run trend: \(output.path)")
+    }
+
     @Test func changedSuitesDoNotDisplayOldPassingChecksAsCurrent() {
         let run = fixture()
         #expect(SuiteCheckState.evaluate(run: run, currentRevision: "changed", hasDraft: false) == .changed)
