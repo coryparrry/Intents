@@ -5,7 +5,7 @@ Source specification: `Intents_Developer_Workflow_Remediation_Spec_v1.0.md` (202
 ## Starting point
 
 - Isolated implementation base: `6b74b7ce6f1532e7b031fdc719f17ac05c5ed811` (PR #55), descended from #54 `3cabae9`, #52 `7cc105d`, and #51 `ee9a07d`. PRs #51, #52, #54 and #55 were open on 2026-09-28; #47 was merged.
-- The primary checkout has unrelated uncommitted work and is not used for this implementation.
+- The primary checkout has unrelated uncommitted work and was left untouched. A disposable integration worktree captured its newer UI snapshot, then combined it with the remediation stack for current-UI verification.
 - Installed toolchain: Xcode 27.0 (`27A266a`); record exact test toolchains and source commits with results below.
 
 ## Implementation plan
@@ -30,7 +30,7 @@ Status key: **Automated pass** = the specified property passed a repeatable test
 | M2 | EX-03, EX-04 | Automated pass: 39-test affected native run includes frozen selection and both orders of competing execution admission. |
 | M2 | EX-05, EX-06, EX-07, EX-08, EX-09, EX-10, SR-02 | Partial: source and focused failure/contract regressions pass; exact external build, interrupted-app recovery and real Siri outcome have not all been observed live. |
 | M3 | UX-01 | Automated pass: atomic expectation authoring and edit regressions. |
-| M3 | UX-02, UX-03, UX-04, UX-05 | Partial: the exact `0b7a654` worktree build's older Setup/Scenario UI was inspected, but it is not the current checkout's interface. A focused macOS UI test from the newer, dirty primary checkout (`38dc7e2` plus uncommitted changes) executed and passed; its captured Connect app and Create test screens were inspected. Relaunch/revocation, narrow/VoiceOver and both-appearance checks remain. The primary UI changes are not part of this PR stack. |
+| M3 | UX-02, UX-03, UX-04, UX-05 | Partial: the disposable combined current-UI/remediation source `78970a0` passed two macOS UI tests; Connect app, Create test and the stable guided editor screenshots were inspected. The Siri-only installer now requires an app-owned typed UI observer and a CoreTesting revision. A connected external app authoring run, relaunch/revocation, narrow/VoiceOver and both-appearance checks remain. The primary checkout remains untouched. |
 | M4 | AI-01, AI-02, AI-03 | Partial: a fresh production SummaryService result was observed in the synthetic Notes app on the physical iPhone, with resolved source, content digest, completion ID and zero store mutations. The automated Siri summary requirement failed twice because Siri ran OpenNoteIntent. The coordinated App Feature/App Intent/Siri routes and unchanged-contract comparison remain unqualified. |
 | M4 | AI-04, AI-05 | Automated pass: immutable saved reassessment and unchanged-state baseline regressions. |
 | M4 | SR-01 | Partial: the signed XCTest-only Siri target ran a bound v2 OpenNote shortcut on the paired physical iPhone and captured a passing, correlated app outcome. A separate unchanged summary requirement produced a repeatable failed Siri outcome: OpenNoteIntent ran instead. Xcode 27.0's AppIntentsTesting bundle still cannot load against iOS 27.2 because of a missing AppIntentsServices symbol, so direct/query routes remain unqualified on this device. |
@@ -43,6 +43,10 @@ Status key: **Automated pass** = the specified property passed a repeatable test
 | M6 | AD-01 | Blocked: the iPhone and repository owner are present, but no independently unfamiliar developer has completed the uncoached FlipBook exercise; eligible FlipBook service access has not been verified. Use the prepared exercise and record all help/interventions. |
 
 ## Evidence and decisions
+
+The current `78970a0` integration snapshot combines the newer primary UI with PR #60 without changing the primary checkout. `xcodebuild test` ran the two focused macOS UI tests at that exact commit (`/tmp/intents-latest-ui-exact-78970a0.xcresult`): both passed. Its Connect app, Create test and guided editor screenshots were exported, and the guided editor screenshot was inspected. At the pre-cherry-pick integration state, 36 focused package tests passed, including required-input validation and Siri installer rejection when no app-owned observer is declared. Cherry-picked CI/source-label test commits changed no guided UI or installer production path.
+
+Siri-only automatic setup is intentionally a manual export until the developer supplies a typed `uiElement` observer with a stable selector and implements the app-owned adapter. The scaffold has empty capabilities and throws for preparation and observation. The existing verified package default belongs to `IntentLabTesting`; `IntentLabCoreTesting` requires a local checkout or an explicit published revision. This is an actionable setup boundary, not a qualified Siri business observation.
 
 | Date/source | Milestone or ID | Evidence, result, limitation |
 |---|---|---|
