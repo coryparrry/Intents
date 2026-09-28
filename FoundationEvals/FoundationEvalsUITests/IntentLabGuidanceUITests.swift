@@ -98,7 +98,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.sheets.buttons["Cancel"].firstMatch.click()
         XCTAssertEqual(name.value as? String, original)
         app.buttons["New test"].click()
-        app.buttons["Discard draft and continue"].click()
+        app.sheets.buttons["Discard draft and continue"].firstMatch.click()
         XCTAssertEqual(name.value as? String, "New intent check")
         XCTAssertTrue(app.buttons["New test"].isHittable, "A reusable test must not hide New test")
         app.buttons["New test"].click()
