@@ -2510,16 +2510,17 @@ final class EvaluationStore {
         liveResponse = nil
     }
 
-    func importFiles(_ urls: [URL]) {
+    @discardableResult
+    func importFiles(_ urls: [URL]) -> Task<Void, Never>? {
         guard !isRunning, !isReassessing, !isProcessingFiles else {
             notice = "Wait for the current operation to finish before changing files."
-            return
+            return nil
         }
         _ = saveSuite()
         isProcessingFiles = true
         let expectedRevision = suiteRevision
 
-        Task {
+        return Task {
             defer { isProcessingFiles = false }
             do {
                 let inputs = try await Task.detached(priority: .userInitiated) {
