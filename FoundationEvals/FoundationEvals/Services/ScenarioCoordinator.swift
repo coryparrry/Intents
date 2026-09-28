@@ -80,7 +80,8 @@ final class ScenarioCoordinator {
     private var activeFeatureRunID: UUID?
     @ObservationIgnored private var scopedProjectURL: URL?
 
-    init(supportDirectory: URL, evaluationStore: EvaluationStore) {
+    init(supportDirectory: URL, evaluationStore: EvaluationStore,
+         initialConnectionDiscovery: XcodeConnectionDiscovery? = nil) {
         let root = supportDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
         rootDirectory = root
         let persistence = ScenarioPersistence(rootDirectory: root)
@@ -88,6 +89,7 @@ final class ScenarioCoordinator {
         collectionStore = ScenarioCollectionStore(rootDirectory: root)
         assessmentStore = ScenarioAssessmentStore(directory: root.appending(path: "Assessments"))
         self.evaluationStore = evaluationStore
+        connectionDiscovery = initialConnectionDiscovery
         executor = XcodeTestExecutor(
             workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory),
             persistence: persistence
@@ -260,17 +262,41 @@ final class ScenarioCoordinator {
         if projectChanged {
             selectContainer(URL(filePath: target.projectPath))
         } else if targetChanged {
-            connectionDiscovery = nil
             clearSelectedProductConfiguration()
+            declarationCatalog = nil
         }
 
         draft = definition
-        selectedIntegration = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+        selectedIntegration = definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion
             ? definition.integration : nil
         parameterArrayDraftTexts = [:]
         invalidParameterDraftIndices = []
         selectedRunID = nil
         applyTargetToConfiguration(target)
+
+        if targetChanged && !projectChanged {
+            let applications = connectionDiscovery?.applications.filter {
+                $0.bundleIdentifier == target.bundleIdentifier
+            } ?? []
+            let testBundles = connectionDiscovery?.uiTestBundles.filter {
+                $0.targetName == target.testTarget
+            } ?? []
+            if let discovery = connectionDiscovery,
+               discovery.schemes.contains(target.scheme),
+               applications.count == 1, testBundles.count == 1,
+               let application = applications.first, let tests = testBundles.first {
+                configuration.selectedApplicationProductID = application.id
+                configuration.applicationSigningConfigured = application.signingConfigured
+                configuration.selectedTestProductID = tests.id
+                configuration.testBundleIdentifier = tests.bundleIdentifier
+                configuration.harnessVersion = tests.harnessVersion
+                configuration.harnessCapabilities = tests.harnessCapabilities
+                configuration.testSigningConfigured = tests.signingConfigured
+            } else {
+                projectTrusted = false
+                notice = "The saved test uses a different app or test target. Connect this project again to check its build."
+            }
+        }
 
         let selectedProductsMatch = connectionDiscovery.map { discovery in
             discovery.applications.contains {
@@ -284,6 +310,7 @@ final class ScenarioCoordinator {
         } ?? false
         if !selectedProductsMatch {
             clearSelectedProductConfiguration()
+            if !projectChanged && targetChanged { projectTrusted = false }
         }
         invalidatePreflight()
 

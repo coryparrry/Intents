@@ -93,10 +93,6 @@ struct AppleTestConnectionView: View {
 
                 }
 
-                if selectedProjectName != nil {
-                    IntentLabSetupInstallerView(coordinator: coordinator)
-                }
-
                 DeveloperConnectionBanner()
 
                 connectionField(

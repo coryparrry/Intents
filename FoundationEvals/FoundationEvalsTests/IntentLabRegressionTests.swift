@@ -640,6 +640,73 @@ struct IntentLabRegressionTests {
     }
 
     @MainActor
+    @Test func switchingSavedTargetsKeepsAUsableConnectionOrOffersReconnect() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        let coordinator = ScenarioCoordinator(
+            supportDirectory: root, evaluationStore: store
+        )
+        let project = "/tmp/Shared.xcodeproj"
+        coordinator.configuration.containerPath = project
+        coordinator.configuration.scheme = "First"
+        coordinator.configuration.testTarget = "FirstUITests"
+        coordinator.configuration.destinationIdentifier = "test-device"
+        let first = try await coordinator.freezeAndSave()
+        coordinator.draft.id = UUID()
+        coordinator.draft.name = "Second test"
+        coordinator.configuration.scheme = "Second"
+        coordinator.configuration.testTarget = "SecondUITests"
+        let second = try await coordinator.freezeAndSave()
+
+        let app = XcodeDiscoveredProduct(
+            targetName: "Fixture", bundleIdentifier: first.target.bundleIdentifier,
+            productType: "com.apple.product-type.application", isApplication: true,
+            isUITestBundle: false, projectPath: project, targetID: "APP", signingConfigured: true
+        )
+        let firstTests = XcodeDiscoveredProduct(
+            targetName: "FirstUITests", bundleIdentifier: "dev.example.FirstUITests",
+            productType: "com.apple.product-type.bundle.ui-testing", isApplication: false,
+            isUITestBundle: true, projectPath: project, targetID: "FIRST", signingConfigured: true
+        )
+        let secondTests = XcodeDiscoveredProduct(
+            targetName: "SecondUITests", bundleIdentifier: "dev.example.SecondUITests",
+            productType: "com.apple.product-type.bundle.ui-testing", isApplication: false,
+            isUITestBundle: true, projectPath: project, targetID: "SECOND", signingConfigured: true
+        )
+        let connected = ScenarioCoordinator(
+            supportDirectory: root, evaluationStore: store,
+            initialConnectionDiscovery: .init(
+                schemes: ["First", "Second"], applications: [app],
+                uiTestBundles: [firstTests, secondTests]
+            )
+        )
+        await connected.load()
+        connected.projectTrusted = true
+        await connected.selectSavedDefinition(id: first.id, version: first.version)
+        #expect(connected.projectTrusted)
+        #expect(connected.configuration.selectedApplicationProductID == app.id)
+        #expect(connected.configuration.selectedTestProductID == firstTests.id)
+        #expect(connected.draft.definitionDigest == first.definitionDigest)
+
+        let missing = ScenarioCoordinator(
+            supportDirectory: root, evaluationStore: store,
+            initialConnectionDiscovery: .init(
+                schemes: ["First", "Second"], applications: [app],
+                uiTestBundles: [firstTests]
+            )
+        )
+        await missing.load()
+        missing.projectTrusted = true
+        await missing.selectSavedDefinition(id: first.id, version: first.version)
+        #expect(missing.projectTrusted)
+        await missing.selectSavedDefinition(id: second.id, version: second.version)
+        #expect(!missing.projectTrusted)
+        #expect(missing.configuration.selectedTestProductID == nil)
+        #expect(missing.notice?.contains("Connect this project again") == true)
+    }
+
+    @MainActor
     @Test func deviceDiscoverySelectsOnlyOneAvailableDestinationWithoutSavedChoice() {
         let phone = IntentLabDeviceDestination(
             identifier: "phone-1", name: "iPhone", operatingSystemVersion: "27.0",
