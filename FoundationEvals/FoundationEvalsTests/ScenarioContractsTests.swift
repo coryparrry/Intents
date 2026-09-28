@@ -1333,7 +1333,7 @@ struct ScenarioContractsTests {
         #expect(report.dimensions.contains { $0.name == "siriConfigurationSource" && !$0.compatible })
     }
 
-    @Test func stableAbsoluteReleaseDoesNotBorrowOldRequirementComparison() throws {
+    @Test func stableAbsoluteReleaseDoesNotBorrowOldRequirementComparison() async throws {
         var definition = try stableScenario()
         definition.version = 2
         definition.assertions[0].applicableLanes = [.appFeature, .intentIntegration]
@@ -1376,9 +1376,15 @@ struct ScenarioContractsTests {
         let comparison = ScenarioComparison.compare(baseline: baseline, candidate: candidate)
         #expect(!comparison.isDirectlyComparable)
         #expect(comparison.summary.contains("Requirements changed"))
-        let release = ScenarioReleaseCheckEvaluator.report(definition: definition, run: candidate,
+        let persistence = ScenarioPersistence(rootDirectory: try temporaryDirectory())
+        var executionJournal = journal(for: definition, invocation: candidate.invocation, phase: .stopped)
+        executionJournal.evidenceAccepted = true
+        try await persistence.saveJournal(executionJournal)
+        let stored = try await persistence.saveRun(candidate, artifactRoot: nil)
+        let accepted = try await persistence.acceptRun(stored, journal: executionJournal)
+        let release = ScenarioReleaseCheckEvaluator.report(definition: definition, run: accepted,
                                                            comparison: comparison)
-        #expect(release.outcome == .passed)
+        #expect(release.outcome == .passed, "\(release.failures)")
         #expect(release.summary.contains("Requirements changed"))
     }
 
