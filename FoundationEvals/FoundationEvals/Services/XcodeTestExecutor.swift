@@ -37,6 +37,8 @@ struct XcodeTestConfiguration: Codable, Equatable, Sendable {
     var testTarget: String
     var testBundleIdentifier: String
     var destinationIdentifier: String
+    /// Refreshed from xcdevice for the selected identifier, never inferred from its text.
+    var destinationPlatform: IntentLabDestinationPlatform? = nil
     var generatedResourceDirectory: String
     var harnessVersion: String? = nil
     var harnessCapabilities: [String]? = nil
@@ -56,6 +58,9 @@ struct XcodeTestConfiguration: Codable, Equatable, Sendable {
     var allowProvisioningUpdates: Bool? = nil
 
     var signingArguments: [String] {
+        if destinationPlatform == .iOSSimulator {
+            return ["CODE_SIGN_IDENTITY=-", "CODE_SIGNING_ALLOWED=YES", "DEVELOPMENT_TEAM="]
+        }
         var arguments: [String] = []
         if allowProvisioningUpdates == true { arguments.append("-allowProvisioningUpdates") }
         if let team = developmentTeam?.trimmingCharacters(in: .whitespacesAndNewlines), !team.isEmpty {
@@ -664,12 +669,17 @@ actor XcodeTestExecutor {
                 ? "Build and run IntentLabScenarioTests/testIntentLabConnection to verify the \(expectedHarnessVersion) consumer and selected products."
                 : "Add INTENT_LAB_HARNESS_VERSION=\(expectedHarnessVersion) to the UI-test target, then include IntentLabScenarioTests/testIntentLabScenario."
         )
-        let destination = physicalDestination(
+        let destination = availableDestination(
             configuration.destinationIdentifier,
             requiresSiri: scope?.lane == .siri
                 || (scope == nil && definition.coverage.siri != .notApplicable)
         )
         let macConnectionVerified = isReusable && destination.platform == .macOS && connection != nil
+        check("simulatorSigning", "Simulator signing selection",
+              Self.signingDestinationMatchesSelection(
+                  configuration: configuration, destinationPlatform: destination.platform
+              ),
+              "Refresh destinations and select an available iOS Simulator before using ad hoc simulator signing.")
         check("signing", "Signing and test execution",
               Self.signingReady(
                   configuration: configuration,
@@ -678,7 +688,9 @@ actor XcodeTestExecutor {
               ),
               macConnectionVerified
                   ? "The selected Mac app and UI-test target completed the connection test."
-                  : "Select a development team for both targets, or complete the Mac connection test to verify local test execution.")
+                  : (destination.platform == .iOSSimulator
+                      ? "Build and check support on the selected simulator to verify its ad hoc signed test products."
+                      : "Select a development team for both targets, or complete the Mac connection test to verify local test execution."))
         if isReusable {
             for capability in ScenarioHarnessCapabilities.required(
                 for: definition, scope: scope, featureBackend: featureBackend
@@ -993,6 +1005,15 @@ actor XcodeTestExecutor {
               !configuration.scheme.isEmpty, !configuration.testTarget.isEmpty else {
             throw XcodeTestExecutorError.connectionCheck("Choose a buildable Xcode project, scheme, and UI-test target.")
         }
+        let destination = availableDestination(configuration.destinationIdentifier)
+        guard destination.ready else { throw XcodeTestExecutorError.deviceUnavailable(destination.detail) }
+        guard Self.signingDestinationMatchesSelection(
+            configuration: configuration, destinationPlatform: destination.platform
+        ) else {
+            throw XcodeTestExecutorError.deviceUnavailable(
+                "Refresh destinations and select an available iOS Simulator before using ad hoc simulator signing."
+            )
+        }
         let discovered = try XcodeConnectionDiscoveryService(
             xcodebuildPath: configuration.xcodebuildPath,
             xcdevicePath: configuration.xcresulttoolPath
@@ -1022,12 +1043,6 @@ actor XcodeTestExecutor {
                 )
             }
         }
-        let destination = physicalDestination(
-            configuration.destinationIdentifier,
-            requiresSiri: false
-        )
-        guard destination.ready else { throw XcodeTestExecutorError.deviceUnavailable(destination.detail) }
-
         connectionCheckInProgress = true
         connectionCancellationRequested = false
         connectionTestJournal = nil
@@ -1167,12 +1182,20 @@ actor XcodeTestExecutor {
             let appTeam = Self.signingTeamIdentifier(of: paths.appBundleURL)
             let hostTeam = Self.signingTeamIdentifier(of: paths.testHostURL)
             let testTeam = Self.signingTeamIdentifier(of: paths.testBundleURL)
-            guard Self.matchingSigningTeam(
-                appTeam: appTeam, hostTeam: hostTeam, testTeam: testTeam
+            let adHocSignaturesValid = configuration.destinationPlatform == .iOSSimulator
+                && [paths.appBundleURL, paths.testHostURL, paths.testBundleURL]
+                    .allSatisfy(Self.validAdHocSignature)
+            guard Self.signingAcceptedForReadiness(
+                configuration: configuration,
+                runtimePlatform: verified.runtimeProfile?.destinationPlatform,
+                appTeam: appTeam, hostTeam: hostTeam, testTeam: testTeam,
+                adHocSignaturesValid: adHocSignaturesValid
             ) else {
                 probe.failureState = .environmentBlocked
                 probe.globalFailure = true
-                probe.issue = "AppIntentsTesting requires the selected app, UI-test runner, and test bundle to have valid signatures from the same development team. Configure signing and check the connection again."
+                probe.issue = configuration.destinationPlatform == .iOSSimulator
+                    ? "The iOS Simulator app, UI-test runner, and test bundle must each have a valid ad hoc signature. Build and check the selected simulator again."
+                    : "AppIntentsTesting requires the selected app, UI-test runner, and test bundle to have valid signatures from the same development team. Configure signing and check the connection again."
                 probe.resultBundlePath = nil
                 probe.logPath = nil
                 var result = verified
@@ -1455,9 +1478,14 @@ actor XcodeTestExecutor {
     ) -> ScenarioRuntimeProfileIdentity? {
         guard let destination = try? XcodeConnectionDiscoveryService().discoverDevices()
                 .first(where: { $0.identifier == configuration.destinationIdentifier && $0.available }),
-              let destinationOSVersion = destination.operatingSystemVersion
-                ?? (destination.platform == .macOS
-                    ? ProcessInfo.processInfo.operatingSystemVersionString : nil),
+              let destinationOSVersion = Self.destinationOSVersion(
+                  for: destination,
+                  simulatorListing: destination.platform == .iOSSimulator
+                    && destination.operatingSystemVersion == nil
+                    ? commandData(configuration.xcresulttoolPath,
+                        ["simctl", "list", "devices", "--json"])
+                    : nil
+              ),
               !destinationOSVersion.isEmpty,
               let infoData = try? Data(contentsOf: appBundleURL.appending(path: "Info.plist")),
               let info = try? PropertyListSerialization.propertyList(
@@ -1467,7 +1495,9 @@ actor XcodeTestExecutor {
               let builtSDK = info["DTSDKBuild"] as? String, !builtSDK.isEmpty,
               let runningXcode = commandOutput(configuration.xcodebuildPath, ["-version"]),
               let sdk = commandOutput(configuration.xcresulttoolPath, [
-                  "--sdk", destination.platform == .iOS ? "iphoneos" : "macosx", "--show-sdk-build-version"
+                  "--sdk", destination.platform == .macOS ? "macosx"
+                    : (destination.platform == .iOSSimulator ? "iphonesimulator" : "iphoneos"),
+                  "--show-sdk-build-version"
               ]) else { return nil }
         return .init(
             destinationIdentifier: destination.identifier,
@@ -1491,6 +1521,48 @@ actor XcodeTestExecutor {
         guard process.terminationStatus == 0, data.count < 16_000 else { return nil }
         let value = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+
+    static func destinationOSVersion(
+        for destination: IntentLabDeviceDestination,
+        simulatorListing: Data?
+    ) -> String? {
+        if let version = destination.operatingSystemVersion, !version.isEmpty { return version }
+        switch destination.platform {
+        case .macOS: return ProcessInfo.processInfo.operatingSystemVersionString
+        case .iOS: return nil
+        case .iOSSimulator:
+            return simulatorOSVersion(identifier: destination.identifier, listing: simulatorListing)
+        }
+    }
+
+    static func simulatorOSVersion(identifier: String, listing: Data?) -> String? {
+        guard let listing,
+              let root = try? JSONSerialization.jsonObject(with: listing) as? [String: Any],
+              let devices = root["devices"] as? [String: [[String: Any]]] else { return nil }
+        for (runtime, entries) in devices {
+            guard entries.contains(where: {
+                $0["udid"] as? String == identifier && $0["state"] as? String == "Booted"
+            }), let marker = runtime.range(of: "iOS-", options: .backwards) else { continue }
+            let components = runtime[marker.upperBound...].split(separator: "-")
+            guard !components.isEmpty,
+                  components.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) else { continue }
+            return components.joined(separator: ".")
+        }
+        return nil
+    }
+
+    private static func commandData(_ executable: String, _ arguments: [String]) -> Data? {
+        let process = Process()
+        process.executableURL = URL(filePath: executable)
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return process.terminationStatus == 0 && data.count <= 1_000_000 ? data : nil
     }
 
     private static func signingTeamIdentifier(of bundle: URL) -> String? {
@@ -1518,6 +1590,42 @@ actor XcodeTestExecutor {
         let team = value.dropFirst("TeamIdentifier=".count)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return team.isEmpty || team == "not set" ? nil : team
+    }
+
+    private static func validAdHocSignature(of bundle: URL) -> Bool {
+        let verify = Process()
+        verify.executableURL = URL(filePath: "/usr/bin/codesign")
+        verify.arguments = ["--verify", "--strict", bundle.path]
+        verify.standardOutput = FileHandle.nullDevice
+        verify.standardError = FileHandle.nullDevice
+        do { try verify.run() } catch { return false }
+        verify.waitUntilExit()
+        guard verify.terminationStatus == 0 else { return false }
+
+        let inspect = Process()
+        inspect.executableURL = URL(filePath: "/usr/bin/codesign")
+        inspect.arguments = ["-dv", "--verbose=4", bundle.path]
+        inspect.standardOutput = FileHandle.nullDevice
+        let output = Pipe()
+        inspect.standardError = output
+        do { try inspect.run() } catch { return false }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        inspect.waitUntilExit()
+        guard inspect.terminationStatus == 0, data.count < 16_000 else { return false }
+        return String(decoding: data, as: UTF8.self).split(separator: "\n")
+            .contains("Signature=adhoc")
+    }
+
+    static func signingAcceptedForReadiness(
+        configuration: XcodeTestConfiguration,
+        runtimePlatform: IntentLabDestinationPlatform?,
+        appTeam: String?, hostTeam: String?, testTeam: String?,
+        adHocSignaturesValid: Bool
+    ) -> Bool {
+        if configuration.destinationPlatform == .iOSSimulator {
+            return runtimePlatform == .iOSSimulator && adHocSignaturesValid
+        }
+        return matchingSigningTeam(appTeam: appTeam, hostTeam: hostTeam, testTeam: testTeam)
     }
 
     static func matchingSigningTeam(
@@ -2290,13 +2398,13 @@ actor XcodeTestExecutor {
         }
     }
 
-    private func physicalDestination(
+    private func availableDestination(
         _ identifier: String,
         requiresSiri: Bool = false
     ) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?) {
         let requested = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requested.isEmpty else {
-            return (false, "Choose an available Mac or paired physical iPhone.", nil)
+            return (false, "Choose an available Mac, iOS Simulator, or paired physical iPhone.", nil)
         }
         let devices: [IntentLabDeviceDestination]
         do {
@@ -2321,9 +2429,12 @@ actor XcodeTestExecutor {
         guard !requiresSiri || device.platform == .iOS else {
             return (false, "Siri checks require an available physical iPhone; select one before checking the connection or running this test.", device.platform)
         }
-        let detail = device.platform == .macOS
-            ? "\(device.name) is available as the local Mac test destination."
-            : "\(device.name) is reported by Xcode as an available physical iPhone."
+        let detail: String
+        switch device.platform {
+        case .macOS: detail = "\(device.name) is available as the local Mac test destination."
+        case .iOSSimulator: detail = "\(device.name) is available as an iOS Simulator test destination."
+        case .iOS: detail = "\(device.name) is reported by Xcode as an available physical iPhone."
+        }
         return (true, detail, device.platform)
     }
 
@@ -2332,9 +2443,19 @@ actor XcodeTestExecutor {
         destinationPlatform: IntentLabDestinationPlatform?,
         reusableConnectionVerified: Bool
     ) -> Bool {
-        (configuration.applicationSigningConfigured == true
+        if configuration.destinationPlatform == .iOSSimulator {
+            return destinationPlatform == .iOSSimulator && reusableConnectionVerified
+        }
+        return (configuration.applicationSigningConfigured == true
             && configuration.testSigningConfigured == true)
             || (destinationPlatform == .macOS && reusableConnectionVerified)
+    }
+
+    static func signingDestinationMatchesSelection(
+        configuration: XcodeTestConfiguration,
+        destinationPlatform: IntentLabDestinationPlatform?
+    ) -> Bool {
+        configuration.destinationPlatform != .iOSSimulator || destinationPlatform == .iOSSimulator
     }
 
     static func xcodeArguments(

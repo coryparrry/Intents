@@ -447,7 +447,9 @@ public enum IntentLabScenarioEngine {
                             declaration: declaration,
                             deadlineSeconds: scenario.safety.deadlineSeconds
                         )
-                    }
+                    },
+                    receiptContext: scenario.actionRequirements == nil ? nil : context,
+                    receiptLane: .appFeature
                 )
                 let merged = mergeFeatureObservations(
                     featureObservations: captured.observations,
@@ -579,7 +581,9 @@ public enum IntentLabScenarioEngine {
                             declaration: declaration,
                             deadlineSeconds: scenario.safety.deadlineSeconds
                         )
-                    }
+                    },
+                    receiptContext: scenario.actionRequirements == nil ? nil : context,
+                    receiptLane: .intentIntegration
                 )
                 var observations = captured.observations
                 let stateObservations = captured.stateObservations
@@ -814,7 +818,11 @@ public enum IntentLabScenarioEngine {
 
     static func captureDirectObservations(
         execute: () throws -> [String: IntentLabValue],
-        observe: () throws -> [String: IntentLabValue]
+        observe: () throws -> [String: IntentLabValue],
+        receiptContext: String? = nil,
+        receiptLane: IntentLabLane? = nil,
+        receiptWaitSeconds: TimeInterval = 5,
+        receiptPollInterval: TimeInterval = 0.25
     ) throws -> (
         observations: [String: IntentLabValue],
         stateObservations: [String: IntentLabValue],
@@ -834,7 +842,18 @@ public enum IntentLabScenarioEngine {
         }
 
         do {
-            return (observations, try observe(), driverError, nil)
+            var state = try observe()
+            if let receiptContext, let receiptLane {
+                let deadline = Date().addingTimeInterval(max(0, receiptWaitSeconds))
+                while !hasAttributableTerminalAction(state, context: receiptContext, lane: receiptLane),
+                      Date() < deadline {
+                    if receiptPollInterval > 0 {
+                        Thread.sleep(forTimeInterval: receiptPollInterval)
+                    }
+                    state = try observe()
+                }
+            }
+            return (observations, state, driverError, nil)
         } catch {
             guard driverError != nil else { throw error }
             return (observations, [:], driverError, error)

@@ -1,5 +1,11 @@
 # Intents reliability implementation worklog
 
+## 29 September continuation (prior session)
+
+- PR #62 CI initially built successfully but one of 807 app tests failed when a save-retry acceptance test contended with the process-wide execution admission used by parallel tests. The test now injects a fresh admission and reports the coordinator notice on failure; the focused rerun and new CI are pending. The workflow check also required a release-note override in the PR body; that metadata was added and validated locally.
+- A signed iOS 27 simulator run of the Notes fixture changed the transport evidence: `CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES DEVELOPMENT_TEAM=` passed the local Feature call and both receipt-overflow regressions, 3/3. The Feature evidence at `/private/tmp/NotesLocalFeatureExecution.json` records successful `IntentLabInvokeFeatureIntent` test support followed by top-level production `summarizeNote`, and a Foundation Models response. A separate observer smoke test passed 1/1. Logs and result bundles are `/private/tmp/intents-fixture-feature.log`, `/private/tmp/intents-fixture-feature.xcresult`, `/private/tmp/intents-fixture-transport.log`, and `/private/tmp/intents-fixture-transport.xcresult`. This is simulator app execution, not the coordinated Intents developer flow or a physical-device result.
+- The current Intents connection screen exposes only Mac and paired iPhone destinations. Simulator discovery and truthful ad hoc signing are being added so the successful app route can be exercised through the coordinator. The prior Code 803 conclusion applies to the unsigned attempts; the new signed simulator result supersedes a blanket claim that local Feature cannot run here.
+
 ## Working source
 
 - Implementation branch: `codex/intents-reliability-fix`, based on reviewed `de4b91e8371093bce1b05e1b2516d1d152c93c6c`.
@@ -46,3 +52,17 @@
 - No valid local code-signing identity was available. Notes and Tasks local Feature transport attempts reached AppIntentsTesting Code 803 before app `perform()` or a receipt. The physical-device two-action Siri routing issue has not been retested or resolved here; the prior competing-shortcut observations remain in `Verification/DEVELOPER_WORKFLOW_REMEDIATION_LEDGER.md`. The Siri-only simulator readiness receipt says ready to attempt, not that Siri routed either business action correctly.
 - Final cross-milestone review found three additional gaps, all addressed in source: receipt overflow now stays failed closed until fixture reset; comparison requires accepted zero-exit native child evidence and avoids claiming full qualification from the comparison label; strict v3 Feature checks block the connected runner because it cannot supply a typed bound action receipt. The comparison/readiness focused host rerun passed **19/19** (`/private/tmp/intents-reliability-review-fixes.log`, `.xcresult`).
 - Overflow regressions were added for count and byte limits in both example apps. The Notes test target built, but both selected overflow cases failed before receipt assertions because the simulator could not launch `com.coryparry.IntentLabFixture.integration-tests` (`FBSApplicationLibrary returned nil`); `/private/tmp/intents-fixture-overflow.log` and `.xcresult`. No Tasks overflow simulator test was run after that setup failure. The final Tasks Debug `build-for-testing` passed (`/private/tmp/intents-reliability-tasks-debug-final.log`). The simulator was shut down.
+
+## 29 September finish request (in progress)
+
+- Continue only the isolated reliability branch and PR #62; preserve the dirty primary checkout.
+- Finish the uncommitted simulator signing/discovery, delayed receipt capture, recovery refresh, visible run menu, and CI test isolation changes.
+- Run focused host/package/script checks, independently review changed runtime and receipt paths, then inspect the actual UI and retained coordinated run evidence.
+- Commit and push the verified follow-up and update PR/evidence packet. Keep physical-device Siri and real-app full-flow claims distinct from simulator and app-level proof.
+
+- Finish checks: 137 host tests in four selected suites passed (`/private/tmp/intents-finish-host.log`, `.xcresult`); 38 route/runner/CLI Python tests passed (`/private/tmp/intents-finish-scripts.log`). Portable build passed, CoreTesting 25/25 and Contracts 27/27 passed (`/private/tmp/intents-finish-{core,contracts}.log`).
+- Independent runtime and receipt reviewers found no confirmed logic bug in the pending changes. Added zero-wait missing-receipt retention, duplicate preservation, and delayed failed-receipt capture regressions; these do not claim full caller classification coverage beyond the existing shared-contract tests.
+- The initial single-method HTTP selector matched zero tests; it is not validation evidence. Recheck the entire HTTP suite after the live flow. No unrelated production change was made.
+- Actual UI verified simulator selection, recovery clearance, and both run menu actions. A fresh build supersedes an older cached app executable encountered at launch; its recorded dylib digest remains unchanged during inspection.
+
+- Coordinated diagnostic CD3F9DF2 was rejected before any business dispatch because a worklog edit changed the source snapshot after the checked build. It retained an explicit 2-planned/0-executed partial result. Freeze source before the next recheck; do not treat this failed-closed attempt as workflow proof.

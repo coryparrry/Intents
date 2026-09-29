@@ -37,6 +37,7 @@ struct IntentLabRegressionTests {
         #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 480)
     }
 
+    @MainActor
     @Test func siriCoverageRequiresPhysicalIPhoneButDirectChecksAllowMac() {
         let mac = IntentLabDeviceDestination(
             identifier: "mac-1", name: "Mac", operatingSystemVersion: "27.0",
@@ -46,7 +47,11 @@ struct IntentLabRegressionTests {
             identifier: "phone-1", name: "iPhone", operatingSystemVersion: "27.0",
             available: true, platform: .iOS
         )
-        let devices = [mac, phone]
+        let simulator = IntentLabDeviceDestination(
+            identifier: "sim-1", name: "iPhone Simulator", operatingSystemVersion: "27.0",
+            available: true, platform: .iOSSimulator
+        )
+        let devices = [mac, phone, simulator]
 
         #expect(XcodeTestExecutor.destinationStatus(identifier: mac.identifier, devices: devices).ready)
         let rejected = XcodeTestExecutor.destinationStatus(
@@ -57,6 +62,91 @@ struct IntentLabRegressionTests {
         #expect(XcodeTestExecutor.destinationStatus(
             identifier: phone.identifier, devices: devices, requiresSiri: true
         ).ready)
+        #expect(XcodeTestExecutor.destinationStatus(
+            identifier: simulator.identifier, devices: devices
+        ).ready)
+        #expect(!XcodeTestExecutor.destinationStatus(
+            identifier: simulator.identifier, devices: devices, requiresSiri: true
+        ).ready)
+        #expect(ScenarioCoordinator.availablePlatform(for: simulator.identifier, in: devices) == .iOSSimulator)
+        #expect(ScenarioCoordinator.availablePlatform(for: phone.identifier, in: devices) == .iOS)
+        #expect(ScenarioCoordinator.availablePlatform(for: "stale-id", in: devices) == nil)
+    }
+
+    @Test func simulatorSigningRequiresSelectedSimulatorAndVerifiedAdHocProducts() {
+        var configuration = XcodeTestConfiguration(
+            containerPath: "/tmp/Fixture.xcodeproj", isWorkspace: false, scheme: "Fixture",
+            testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: "sim-1", generatedResourceDirectory: "/tmp"
+        )
+        configuration.destinationPlatform = .iOSSimulator
+        #expect(configuration.signingArguments == [
+            "CODE_SIGN_IDENTITY=-", "CODE_SIGNING_ALLOWED=YES", "DEVELOPMENT_TEAM="
+        ])
+        #expect(XcodeTestExecutor.signingDestinationMatchesSelection(
+            configuration: configuration, destinationPlatform: .iOSSimulator
+        ))
+        #expect(!XcodeTestExecutor.signingDestinationMatchesSelection(
+            configuration: configuration, destinationPlatform: .iOS
+        ))
+        #expect(!XcodeTestExecutor.signingDestinationMatchesSelection(
+            configuration: configuration, destinationPlatform: nil
+        ))
+        #expect(XcodeTestExecutor.signingReady(
+            configuration: configuration, destinationPlatform: .iOSSimulator,
+            reusableConnectionVerified: true
+        ))
+        #expect(!XcodeTestExecutor.signingReady(
+            configuration: configuration, destinationPlatform: .iOS,
+            reusableConnectionVerified: true
+        ))
+        #expect(XcodeTestExecutor.signingAcceptedForReadiness(
+            configuration: configuration, runtimePlatform: .iOSSimulator,
+            appTeam: nil, hostTeam: nil, testTeam: nil, adHocSignaturesValid: true
+        ))
+        #expect(!XcodeTestExecutor.signingAcceptedForReadiness(
+            configuration: configuration, runtimePlatform: .iOS,
+            appTeam: nil, hostTeam: nil, testTeam: nil, adHocSignaturesValid: true
+        ))
+        #expect(!XcodeTestExecutor.signingAcceptedForReadiness(
+            configuration: configuration, runtimePlatform: .iOSSimulator,
+            appTeam: nil, hostTeam: nil, testTeam: nil, adHocSignaturesValid: false
+        ))
+
+        configuration.destinationIdentifier = "phone-1"
+        configuration.destinationPlatform = .iOS
+        #expect(configuration.signingArguments.isEmpty)
+        #expect(!XcodeTestExecutor.signingAcceptedForReadiness(
+            configuration: configuration, runtimePlatform: .iOS,
+            appTeam: nil, hostTeam: nil, testTeam: nil, adHocSignaturesValid: true
+        ))
+    }
+
+    @Test func simulatorRuntimeProfileUsesOnlyTheBootedSelectedDevice() {
+        let listing = Data("""
+        {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[
+          {"udid":"sim-1","state":"Booted"},
+          {"udid":"sim-2","state":"Shutdown"}
+        ],"com.apple.CoreSimulator.SimRuntime.iOS-26-4":[
+          {"udid":"sim-3","state":"Booted"}
+        ]}}
+        """.utf8)
+        let selected = IntentLabDeviceDestination(
+            identifier: "sim-1", name: "Simulator", operatingSystemVersion: nil,
+            available: true, platform: .iOSSimulator
+        )
+        #expect(XcodeTestExecutor.destinationOSVersion(
+            for: selected, simulatorListing: listing
+        ) == "27.0")
+        var reported = selected
+        reported.operatingSystemVersion = "27.1"
+        #expect(XcodeTestExecutor.destinationOSVersion(
+            for: reported, simulatorListing: listing
+        ) == "27.1")
+        #expect(XcodeTestExecutor.simulatorOSVersion(identifier: "sim-1", listing: listing) == "27.0")
+        #expect(XcodeTestExecutor.simulatorOSVersion(identifier: "sim-2", listing: listing) == nil)
+        #expect(XcodeTestExecutor.simulatorOSVersion(identifier: "missing", listing: listing) == nil)
+        #expect(XcodeTestExecutor.simulatorOSVersion(identifier: "sim-1", listing: Data("{}".utf8)) == nil)
     }
 
     @Test func connectionFingerprintChangesWithSourceAndResourceEdits() throws {

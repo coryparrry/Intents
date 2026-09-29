@@ -79,6 +79,7 @@ struct IntentLabDeviceDestination: Codable, Equatable, Identifiable, Sendable {
 
 enum IntentLabDestinationPlatform: String, Codable, Sendable {
     case iOS = "com.apple.platform.iphoneos"
+    case iOSSimulator = "com.apple.platform.iphonesimulator"
     case macOS = "com.apple.platform.macosx"
 }
 
@@ -340,9 +341,10 @@ struct XcodeConnectionDiscoveryService: Sendable {
             throw XcodeConnectionDiscoveryError.invalidOutput("device list is not an array")
         }
         return devices.compactMap { device in
-            guard (device["simulator"] as? Bool) == false,
+            guard let isSimulator = device["simulator"] as? Bool,
                   let platformName = device["platform"] as? String,
                   let platform = IntentLabDestinationPlatform(rawValue: platformName),
+                  (platform == .iOSSimulator) == isSimulator,
                   let identifier = device["identifier"] as? String,
                   let name = device["name"] as? String else { return nil }
             return .init(

@@ -38,6 +38,86 @@ final class IntentLabRunnerLifecycleTests: XCTestCase {
         XCTAssertFalse(observationRead)
     }
 
+    func testCompletedActionWaitsForItsOwnPublishedReceipt() throws {
+        let context = "feature-current"
+        let start = Date(timeIntervalSince1970: 10)
+        let receipt = IntentLabActionReceipt(
+            executionID: UUID(), appSessionID: UUID(), attemptContext: context,
+            lane: .appFeature, attempt: 1, kind: .productionService,
+            operationID: "summarizeNote", resolvedParameters: ["prompt": .string("packing-001")],
+            terminalStatus: .succeeded, operationError: nil,
+            sequence: 1, startedAt: start, completedAt: start.addingTimeInterval(1),
+            observationTransport: "accessibleUI"
+        )
+        let raw = try serialized([receipt])
+        var reads = 0
+        let captured = try IntentLabScenarioEngine.captureDirectObservations(
+            execute: { ["feature.response": .string("Packing list")] },
+            observe: {
+                reads += 1
+                return ["intentlab.actionReceipts": .string(reads == 1 ? "[]" : raw)]
+            },
+            receiptContext: context, receiptLane: .appFeature,
+            receiptWaitSeconds: 0.5, receiptPollInterval: 0
+        )
+        XCTAssertEqual(reads, 2)
+        XCTAssertTrue(IntentLabScenarioEngine.hasAttributableTerminalAction(
+            captured.stateObservations, context: context, lane: .appFeature
+        ))
+    }
+
+    func testZeroWaitCaptureRetainsMissingReceiptArray() throws {
+        var reads = 0
+        let captured = try IntentLabScenarioEngine.captureDirectObservations(
+            execute: { ["feature.response": .string("Response without action proof")] },
+            observe: {
+                reads += 1
+                return ["intentlab.actionReceipts": .string("[]")]
+            },
+            receiptContext: "current", receiptLane: .appFeature,
+            receiptWaitSeconds: 0, receiptPollInterval: 0
+        )
+        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(captured.stateObservations["intentlab.actionReceipts"], .string("[]"))
+        XCTAssertFalse(IntentLabScenarioEngine.hasAttributableTerminalAction(
+            captured.stateObservations, context: "current", lane: .appFeature
+        ))
+    }
+
+    func testReceiptCapturePreservesDuplicateRecords() throws {
+        let raw = try serializedReceipt(status: .succeeded)
+        let receipt = try JSONDecoder.intentLab.decode([IntentLabActionReceipt].self, from: Data(raw.utf8))[0]
+        let duplicates = try serialized([receipt, receipt])
+        let captured = try IntentLabScenarioEngine.captureDirectObservations(
+            execute: { [:] },
+            observe: { ["intentlab.actionReceipts": .string(duplicates)] },
+            receiptContext: receipt.attemptContext, receiptLane: receipt.lane,
+            receiptWaitSeconds: 0, receiptPollInterval: 0
+        )
+        // Capture must never filter records to the expected operation or deduplicate them.
+        XCTAssertEqual(captured.stateObservations["intentlab.actionReceipts"], .string(duplicates))
+    }
+
+    func testDriverFailureWaitsForDelayedTerminalReceipt() throws {
+        let raw = try serializedReceipt(status: .failed)
+        let receipt = try JSONDecoder.intentLab.decode([IntentLabActionReceipt].self, from: Data(raw.utf8))[0]
+        var reads = 0
+        let captured = try IntentLabScenarioEngine.captureDirectObservations(
+            execute: { throw RunnerTestError.driverFailed },
+            observe: {
+                reads += 1
+                return ["intentlab.actionReceipts": .string(reads == 1 ? "[]" : raw)]
+            },
+            receiptContext: receipt.attemptContext, receiptLane: receipt.lane,
+            receiptWaitSeconds: 0.5, receiptPollInterval: 0
+        )
+        XCTAssertEqual(reads, 2)
+        XCTAssertNotNil(captured.driverError)
+        XCTAssertTrue(IntentLabScenarioEngine.hasAttributableTerminalAction(
+            captured.stateObservations, context: receipt.attemptContext, lane: receipt.lane
+        ))
+    }
+
     func testDriverFailureNeedsAnAttributableAppActionBeforeBusinessClassification() throws {
         let context = "intent-current"
         let missing = try IntentLabScenarioEngine.captureDirectObservations(

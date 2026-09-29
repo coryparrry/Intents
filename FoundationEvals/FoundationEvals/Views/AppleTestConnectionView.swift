@@ -67,7 +67,7 @@ struct AppleTestConnectionView: View {
     private var connectionCard: some View {
         IntentLabCard(
             "Connect an app",
-            subtitle: "Choose the app project and an available Mac or paired iPhone. Intent Lab discovers the Xcode details for you."
+            subtitle: "Choose the app project and an available Mac, paired iPhone, or iPhone simulator. Intent Lab discovers the Xcode details for you."
         ) {
             VStack(alignment: .leading, spacing: 20) {
                 connectionField(
@@ -123,7 +123,8 @@ struct AppleTestConnectionView: View {
                     }
                 }
 
-                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+                    || coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
                     connectionField(
                         title: "Check installed support",
                         detail: coordinator.verifiedIntegrationSummary
@@ -212,7 +213,7 @@ struct AppleTestConnectionView: View {
                         set: { coordinator.configuration.testBundleIdentifier = $0; coordinator.invalidatePreflight() }
                     ))
                 }
-                advancedRow("Destination identifier", help: "The unique ID of the Mac or paired iPhone used for this run. Choosing a device in Connect app fills this in.") {
+                advancedRow("Destination identifier", help: "The unique ID of the Mac, paired iPhone, or simulator used for this run. Choosing a destination in Connect app fills this in.") {
                     TextField("000081…", text: Binding(
                         get: { coordinator.configuration.destinationIdentifier },
                         set: { coordinator.configuration.destinationIdentifier = $0; coordinator.invalidatePreflight() }
@@ -425,12 +426,20 @@ struct AppleTestConnectionView: View {
     private var selectedDeviceName: String? { selectedDevice?.name }
 
     private var selectedDeviceDetail: String {
-        guard !coordinator.configuration.destinationIdentifier.isEmpty else { return "Select an available Mac or paired physical iPhone." }
+        guard !coordinator.configuration.destinationIdentifier.isEmpty else { return "Select an available Mac, paired iPhone, or iPhone simulator." }
         return selectedDeviceName ?? "The saved destination is not currently available."
     }
 
     private var commandPreview: String {
-        let kind = coordinator.configuration.isWorkspace ? "-workspace" : "-project"
-        return "xcodebuild \(kind) \"\(coordinator.configuration.containerPath)\" -scheme \"\(coordinator.configuration.scheme)\" -destination \"id=\(coordinator.configuration.destinationIdentifier)\" build-for-testing"
+        let configuration = coordinator.configuration
+        let arguments = [
+            configuration.isWorkspace ? "-workspace" : "-project", configuration.containerPath,
+            "-scheme", configuration.scheme,
+            "-configuration", configuration.configuration,
+            "-destination", "id=\(configuration.destinationIdentifier)"
+        ] + configuration.signingArguments + ["build-for-testing"]
+        return "xcodebuild " + arguments.map { argument in
+            "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        }.joined(separator: " ")
     }
 }

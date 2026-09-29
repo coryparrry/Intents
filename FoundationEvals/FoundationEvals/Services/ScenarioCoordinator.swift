@@ -81,6 +81,7 @@ final class ScenarioCoordinator {
     private let executor: XcodeTestExecutor
     private let rootDirectory: URL
     private let evaluationStore: EvaluationStore
+    private let executionAdmission: ScenarioExecutionAdmission
     @ObservationIgnored private weak var developerRunnerStore: DeveloperRunnerStore?
     private var ledger = ScenarioImportLedger()
     private var preflightRevision = 0
@@ -91,7 +92,8 @@ final class ScenarioCoordinator {
     @ObservationIgnored private var scopedProjectURL: URL?
 
     init(supportDirectory: URL, evaluationStore: EvaluationStore,
-         initialConnectionDiscovery: XcodeConnectionDiscovery? = nil) {
+         initialConnectionDiscovery: XcodeConnectionDiscovery? = nil,
+         executionAdmission: ScenarioExecutionAdmission = .shared) {
         let root = supportDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
         rootDirectory = root
         let persistence = ScenarioPersistence(rootDirectory: root)
@@ -99,6 +101,7 @@ final class ScenarioCoordinator {
         collectionStore = ScenarioCollectionStore(rootDirectory: root)
         assessmentStore = ScenarioAssessmentStore(directory: root.appending(path: "Assessments"))
         self.evaluationStore = evaluationStore
+        self.executionAdmission = executionAdmission
         connectionDiscovery = initialConnectionDiscovery
         executor = XcodeTestExecutor(
             workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory),
@@ -169,7 +172,7 @@ final class ScenarioCoordinator {
                 "Finish the active evaluation or developer runner action before starting an Intent Lab execution."
             )
         }
-        try ScenarioExecutionAdmission.shared.acquire(id)
+        try executionAdmission.acquire(id)
     }
 
     var currentValidationIssues: [ScenarioValidationIssue] {
@@ -390,9 +393,13 @@ final class ScenarioCoordinator {
                 savedDestinationIdentifier: configuration.destinationIdentifier
             ) {
                 await selectDevice(destinationIdentifier)
+            } else {
+                await selectDevice(configuration.destinationIdentifier)
             }
         } catch {
             discoveredDevices = []
+            configuration.destinationPlatform = nil
+            invalidatePreflight()
             if recoveryJournals.isEmpty {
                 notice = error.localizedDescription
             }
@@ -587,10 +594,20 @@ final class ScenarioCoordinator {
     }
 
     func selectDevice(_ identifier: String) async {
+        let platform = Self.availablePlatform(for: identifier, in: discoveredDevices)
+        guard configuration.destinationIdentifier != identifier
+                || configuration.destinationPlatform != platform else { return }
         configuration.destinationIdentifier = identifier
+        configuration.destinationPlatform = platform
         invalidatePreflight()
         try? await persistence.saveExecutionConfiguration(configuration)
         if projectTrusted { await refreshPreflight() }
+    }
+
+    static func availablePlatform(
+        for identifier: String, in devices: [IntentLabDeviceDestination]
+    ) -> IntentLabDestinationPlatform? {
+        devices.first { $0.identifier == identifier && $0.available }?.platform
     }
 
     func artifactURL(run: ScenarioRun, artifact: ScenarioArtifactReference) -> URL {
@@ -991,7 +1008,7 @@ final class ScenarioCoordinator {
         cancellationRequested = false
         finalEvidenceCommitStarted = false
         defer {
-            ScenarioExecutionAdmission.shared.release(ownerID)
+            executionAdmission.release(ownerID)
             isRunning = false
             executionStage = nil
             finalEvidenceCommitStarted = false
@@ -1023,7 +1040,7 @@ final class ScenarioCoordinator {
         cancellationRequested = false
         finalEvidenceCommitStarted = false
         defer {
-            ScenarioExecutionAdmission.shared.release(executionOwnerID)
+            executionAdmission.release(executionOwnerID)
             isRunning = false
             executionStage = nil
             finalEvidenceCommitStarted = false
@@ -1179,7 +1196,7 @@ final class ScenarioCoordinator {
         catch { notice = error.localizedDescription; return nil }
         isRunning = true
         defer {
-            ScenarioExecutionAdmission.shared.release(ownerID)
+            executionAdmission.release(ownerID)
             isRunning = false
         }
         do {
@@ -1258,7 +1275,7 @@ final class ScenarioCoordinator {
         cancellationRequested = false
         finalEvidenceCommitStarted = false
         defer {
-            ScenarioExecutionAdmission.shared.release(ownerID)
+            executionAdmission.release(ownerID)
             isRunning = false
             finalEvidenceCommitStarted = false
             executionTask = nil
@@ -1298,7 +1315,7 @@ final class ScenarioCoordinator {
         cancellationRequested = false
         finalEvidenceCommitStarted = false
         defer {
-            ScenarioExecutionAdmission.shared.release(ownerID)
+            executionAdmission.release(ownerID)
             isRunning = false
             finalEvidenceCommitStarted = false
             executionTask = nil
@@ -1364,7 +1381,7 @@ final class ScenarioCoordinator {
         catch { notice = error.localizedDescription; return nil }
         isRunning = true
         defer {
-            ScenarioExecutionAdmission.shared.release(ownerID)
+            executionAdmission.release(ownerID)
             isRunning = false
         }
         do {
@@ -1417,7 +1434,7 @@ final class ScenarioCoordinator {
         catch { notice = error.localizedDescription; return nil }
         isRunning = true
         defer {
-            ScenarioExecutionAdmission.shared.release(ownerID)
+            executionAdmission.release(ownerID)
             isRunning = false
         }
         do {
@@ -2005,7 +2022,7 @@ final class ScenarioCoordinator {
         cancellationRequested = false
         finalEvidenceCommitStarted = false
         defer {
-            ScenarioExecutionAdmission.shared.release(ownerID)
+            executionAdmission.release(ownerID)
             isRunning = false
             finalEvidenceCommitStarted = false
             executionTask = nil
@@ -2482,9 +2499,13 @@ final class ScenarioCoordinator {
             executionRecords.removeAll { $0.id == record.id }
             executionRecords.insert(record, at: 0)
             selectedExecutionID = record.id
+            recoveryJournals = (try? await executor.currentRecoveryJournals()) ?? recoveryJournals
+            journals = (try? await persistence.loadJournals()) ?? journals
             notice = "Execution recorded: \(record.passingCount)/\(record.plannedCount) attempts passed; \(record.aggregateOutcome.rawValue)."
             return record
         } catch {
+            recoveryJournals = (try? await executor.currentRecoveryJournals()) ?? recoveryJournals
+            journals = (try? await persistence.loadJournals()) ?? journals
             notice = "The execution could not be completed: \(error.localizedDescription)"
             return nil
         }
@@ -2942,6 +2963,9 @@ final class ScenarioCoordinator {
         configuration.scheme = target.scheme
         configuration.testTarget = target.testTarget
         configuration.destinationIdentifier = target.destinationIdentifier
+        configuration.destinationPlatform = Self.availablePlatform(
+            for: target.destinationIdentifier, in: discoveredDevices
+        )
     }
 
     private func testActionConfiguration(for discovery: XcodeConnectionDiscovery?) throws -> String {

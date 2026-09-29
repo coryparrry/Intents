@@ -500,11 +500,13 @@ struct ScenarioAcceptanceTests {
 
         let coordinator = ScenarioCoordinator(
             supportDirectory: support,
-            evaluationStore: EvaluationStore(supportDirectory: support)
+            evaluationStore: EvaluationStore(supportDirectory: support),
+            executionAdmission: ScenarioExecutionAdmission()
         )
         await coordinator.load()
         #expect(coordinator.pendingOrdinarySaves.map(\.invocationID) == [run.id])
-        let recovered = try #require(await coordinator.retryPendingOrdinarySave(invocationID: run.id))
+        let retryResult = await coordinator.retryPendingOrdinarySave(invocationID: run.id)
+        let recovered = try #require(retryResult, "Save retry failed: \(coordinator.notice ?? "unknown reason")")
         #expect(recovered.first?.acceptanceStatus == .accepted)
         #expect(coordinator.pendingOrdinarySaves.isEmpty)
         #expect(try await ScenarioPersistence(rootDirectory: root).loadRuns().first?.acceptanceStatus == .accepted)
@@ -529,10 +531,12 @@ struct ScenarioAcceptanceTests {
 
         let coordinator = ScenarioCoordinator(
             supportDirectory: support,
-            evaluationStore: EvaluationStore(supportDirectory: support)
+            evaluationStore: EvaluationStore(supportDirectory: support),
+            executionAdmission: ScenarioExecutionAdmission()
         )
         await coordinator.load()
-        let recovered = try #require(await coordinator.retryPendingOrdinarySave(invocationID: run.id))
+        let retryResult = await coordinator.retryPendingOrdinarySave(invocationID: run.id)
+        let recovered = try #require(retryResult, "Save retry failed: \(coordinator.notice ?? "unknown reason")")
         #expect(recovered.first?.acceptanceStatus == .pending)
         #expect(coordinator.recoveryJournals.isEmpty)
         let durable = try #require(await persistence.loadJournals().first { $0.id == run.id })

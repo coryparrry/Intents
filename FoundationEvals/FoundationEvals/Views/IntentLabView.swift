@@ -54,17 +54,21 @@ struct IntentLabView: View {
                         .help("Cancel the running scenario")
                 } else {
                     if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
-                        Button { section = .results; Task { await coordinator.checkThisFix(on: diagnosticLanes) } } label: {
-                            Label("Check this fix", systemImage: "play.circle")
+                        Menu {
+                            Button("Verify complete requirement", systemImage: "checkmark.seal") {
+                                section = .results
+                                Task { await coordinator.run() }
+                            }
+                            .disabled(!coordinator.hasLoaded)
+                            Button("Check this fix", systemImage: "play.circle") {
+                                section = .results
+                                Task { await coordinator.checkThisFix(on: diagnosticLanes) }
+                            }
+                            .disabled(diagnosticLanes.isEmpty || !coordinator.hasLoaded)
+                        } label: {
+                            Label("Run check", systemImage: "play.circle")
                         }
-                        .disabled(diagnosticLanes.isEmpty || !coordinator.hasLoaded)
-                        .help("Run selected routes as a partial diagnostic on the candidate app build")
-                        Button { section = .results; Task { await coordinator.run() } } label: {
-                            Label("Verify complete requirement", systemImage: "checkmark.seal")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!coordinator.hasLoaded)
-                        .help("Check every required route and attempt before qualification")
+                        .help("Choose a complete requirement check or a partial diagnostic")
                     } else {
                         Button { section = .results; Task { await coordinator.run() } } label: {
                             Label("Run test", systemImage: "play.fill")

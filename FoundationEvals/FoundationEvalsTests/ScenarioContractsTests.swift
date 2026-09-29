@@ -177,7 +177,7 @@ struct ScenarioContractsTests {
         #expect(!XcodeTestExecutor.selectedSchemeContainsTarget(configuration: configuration, product: wrong))
     }
 
-    @Test func quickConnectDiscoveryParsesProjectsProductsAndPhysicalIPhones() throws {
+    @Test func quickConnectDiscoveryParsesProjectsProductsAndDestinations() throws {
         let listing = Data("""
         {"project":{"name":"Fixture","targets":["Fixture","FixtureUITests"],"schemes":["Fixture"]}}
         """.utf8)
@@ -218,17 +218,21 @@ struct ScenarioContractsTests {
           {"identifier":"sim-1","name":"Simulator","platform":"com.apple.platform.iphonesimulator","simulator":true,"available":true}
         ]
         """.utf8)
-        let physical = try XcodeConnectionDiscoveryService.parseDevices(devices)
-        #expect(physical == [
+        let destinations = try XcodeConnectionDiscoveryService.parseDevices(devices)
+        #expect(destinations == [
             .init(identifier: "phone-1", name: "Cory's iPhone",
                   operatingSystemVersion: "27.0", available: true, platform: .iOS),
+            .init(identifier: "sim-1", name: "Simulator",
+                  operatingSystemVersion: nil, available: true, platform: .iOSSimulator),
             .init(identifier: "mac-1", name: "This Mac",
                   operatingSystemVersion: "27.0", available: true, platform: .macOS),
         ])
-        let macDestination = XcodeTestExecutor.destinationStatus(identifier: "mac-1", devices: physical)
+        let macDestination = XcodeTestExecutor.destinationStatus(identifier: "mac-1", devices: destinations)
         #expect(macDestination.ready && macDestination.platform == .macOS)
         #expect(macDestination.detail.contains("local Mac"))
-        #expect(!XcodeTestExecutor.destinationStatus(identifier: "sim-1", devices: physical).ready)
+        let simulator = XcodeTestExecutor.destinationStatus(identifier: "sim-1", devices: destinations)
+        #expect(simulator.ready && simulator.platform == .iOSSimulator)
+        #expect(simulator.detail.contains("Simulator"))
     }
 
     @Test func schemeTestActionConfigurationUsesSelectedOwnerAndDeclaredTestMode() throws {
