@@ -102,6 +102,91 @@ struct ScenarioV3HarnessBridgeTests {
         #expect(wire["target"] != nil)
     }
 
+    @Test func scopedChildrenKeepFrozenContractWithoutForeignFeatureObservation() throws {
+        var definition = try stableScenario()
+        definition.coverage.appFeature = .required
+        definition.coverage.siri = .required
+        definition.checkMode = .behaviour
+        definition.requiredClaims = [
+            .executionCompleted, .returnedValueChecked, .applicationStateChecked
+        ]
+        definition.featureBinding = .init(
+            featureID: "summarize-note", interfaceDigest: String(repeating: "a", count: 64),
+            inputMapping: [.init(featureInputName: "noteID", value: .string("packing-001"))],
+            outputProjections: [.init(
+                name: "summary", type: .primitive(.string),
+                path: [.init(kind: .property, name: "summary")]
+            )]
+        )
+        definition.observationPlan?.append(.init(
+            id: "selectedNoteState", source: .uiElement,
+            operationID: nil, selector: "selectedNoteState"
+        ))
+        definition.observationPlan?.append(.init(
+            id: "feature.response", source: .testOnlyIntent,
+            operationID: "SummarizeNoteService", selector: nil
+        ))
+        definition.assertions.append(.init(
+            kind: .entityIdentifier, observationKey: "selectedNoteState",
+            expectedValue: .string("packing-001"), explanation: "Selected note state is visible.",
+            applicableLanes: [.appFeature, .intentIntegration, .siri]
+        ))
+        definition.assertions.append(.init(
+            kind: .returnedField, observationKey: "feature.response",
+            expectedValue: .string("Packing summary"), explanation: "Feature response is captured.",
+            applicableLanes: [.appFeature]
+        ))
+        let intentParameters = Dictionary(
+            definition.directControl.parameters.compactMap { parameter -> (String, ScenarioValue)? in
+                guard case .value(let value) = parameter.presence else { return nil }
+                return (parameter.name, value)
+            }, uniquingKeysWith: { first, _ in first }
+        )
+        definition.actionPolicyVersion = 1
+        definition.actionRequirements = [
+            .init(lane: .appFeature, kind: .productionService,
+                  operationID: "SummarizeNoteService",
+                  resolvedParameters: ["noteID": .string("packing-001")]),
+            .init(lane: .intentIntegration, kind: .productionIntent,
+                  operationID: definition.directControl.intentIdentifier,
+                  resolvedParameters: intentParameters),
+            .init(lane: .siri, kind: .productionIntent,
+                  operationID: definition.directControl.intentIdentifier,
+                  resolvedParameters: intentParameters),
+        ]
+        definition = try definition.frozen()
+        try ScenarioValidator.validate(definition)
+
+        for lane in [ScenarioLane.intentIntegration, .siri, .appFeature] {
+            let data = try XCTestRunInvocationTransport.scenarioPayload(
+                for: definition,
+                scope: .init(lane: lane, attempt: 1),
+                featureBackend: .projectLocalTestControl
+            )
+            let wire = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let observations = try #require(wire["observationPlan"] as? [[String: Any]])
+            let assertionWire = try #require(wire["assertions"] as? [[String: Any]])
+            let requirementWire = try #require(wire["actionRequirements"] as? [[String: Any]])
+            let coverage = try #require(wire["coverage"] as? [String: Any])
+            #expect(wire["definitionDigest"] as? String == definition.definitionDigest)
+            #expect(assertionWire.count == definition.assertions.count)
+            #expect(Set(requirementWire.compactMap { $0["lane"] as? String })
+                == Set(["appFeature", "intentIntegration", "siri"]))
+            let featureAssertion = try #require(assertionWire.first {
+                $0["observationKey"] as? String == "feature.response"
+            })
+            #expect(Set(featureAssertion["applicableLanes"] as? [String] ?? []) == ["appFeature"])
+            #expect(coverage["appFeature"] as? String == "required")
+            #expect(coverage["intentIntegration"] as? String == "required")
+            #expect(coverage["siri"] as? String == "required")
+            let observationIDs = observations.compactMap { $0["id"] as? String }
+            #expect(observationIDs.contains("selectedNoteID"))
+            #expect(observationIDs.contains("selectedNoteState"))
+            #expect(observationIDs.contains("feature.response") == (lane == .appFeature))
+            #expect((wire["featureBinding"] is [String: Any]) == (lane == .appFeature))
+        }
+    }
+
     @Test func reusableCapabilitiesFollowPlannedNativeRoutes() throws {
         var siriOnly = try stableScenario()
         siriOnly.coverage.intentIntegration = .notApplicable

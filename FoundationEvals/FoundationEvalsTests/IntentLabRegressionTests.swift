@@ -4,6 +4,26 @@ import Darwin
 @testable import FoundationEvals
 
 struct IntentLabRegressionTests {
+    @Test func failedCapturesSkipVerboseDiagnosticsAndKeepSelectedResultBundle() throws {
+        let configuration = XcodeTestConfiguration(
+            containerPath: "/tmp/Fixture.xcodeproj", isWorkspace: false, scheme: "Fixture",
+            testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: "sim-1", generatedResourceDirectory: "/tmp"
+        )
+        for method in ["testIntentLabConnection", "testIntentLabReadiness", "testIntentLabScenario"] {
+            let arguments = XcodeTestExecutor.testExecutionArguments(
+                configuration: configuration, testRunURL: URL(filePath: "/tmp/selected.xctestrun"),
+                resultBundleURL: URL(filePath: "/tmp/retained.xcresult"),
+                testIdentifier: "IntentLabScenarioTests/\(method)"
+            )
+            #expect(arguments.contains("-collect-test-diagnostics"))
+            let index = try #require(arguments.firstIndex(of: "-collect-test-diagnostics"))
+            #expect(arguments[index + 1] == "never")
+            #expect(arguments.contains("/tmp/retained.xcresult"))
+            #expect(arguments.contains("-only-testing:FixtureUITests/IntentLabScenarioTests/\(method)"))
+        }
+    }
+
     @Test func testProcessDeadlineIncludesDirectLaneButOmitsNotApplicableSiri() {
         let definition = deadlineDefinition(
             directLane: true,

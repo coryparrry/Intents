@@ -294,6 +294,11 @@ enum FixtureState {
     }
 
     private static func invocationScope(for context: String) -> InvocationScope? {
+        if context.hasPrefix("feature-") {
+            let identifier = String(context.dropFirst("feature-".count))
+            guard UUID(uuidString: identifier) != nil else { return nil }
+            return InvocationScope(lane: .appFeature, attempt: 1)
+        }
         if context.hasPrefix("intent-") {
             let identifier = String(context.dropFirst("intent-".count))
             guard UUID(uuidString: identifier) != nil else { return nil }

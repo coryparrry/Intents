@@ -1077,12 +1077,11 @@ actor XcodeTestExecutor {
             fileManager: fileManager
         )
         let products = try verifyBuiltProducts(definition: definition, configuration: configuration, paths: paths)
-        let connectionArguments = [
-            "test-without-building", "-xctestrun", paths.sourceURL.path,
-            "-destination", "id=\(configuration.destinationIdentifier)",
-            "-resultBundlePath", resultBundle.path,
-            "-only-testing:\(configuration.testTarget)/IntentLabScenarioTests/testIntentLabConnection",
-        ] + configuration.signingArguments
+        let connectionArguments = Self.testExecutionArguments(
+            configuration: configuration, testRunURL: paths.sourceURL,
+            resultBundleURL: resultBundle,
+            testIdentifier: "IntentLabScenarioTests/testIntentLabConnection"
+        )
         let testExit = try await runJournaledConnectionTest(
             definition: definition, configuration: configuration,
             methodName: "testIntentLabConnection", derivedData: derivedData,
@@ -1209,12 +1208,11 @@ actor XcodeTestExecutor {
                 definition: definition, configuration: configuration,
                 methodName: "testIntentLabReadiness", derivedData: derivedData,
                 resultBundle: probeResultBundle,
-                arguments: [
-                    "test-without-building", "-xctestrun", paths.sourceURL.path,
-                    "-destination", "id=\(configuration.destinationIdentifier)",
-                    "-resultBundlePath", probeResultBundle.path,
-                    "-only-testing:\(configuration.testTarget)/IntentLabScenarioTests/testIntentLabReadiness",
-                ] + configuration.signingArguments,
+                arguments: Self.testExecutionArguments(
+                    configuration: configuration, testRunURL: paths.sourceURL,
+                    resultBundleURL: probeResultBundle,
+                    testIdentifier: "IntentLabScenarioTests/testIntentLabReadiness"
+                ),
                 logURL: probeLog, appendLog: false, deadline: .seconds(180)
             )
             let count = resultBundleTestCount(configuration: configuration, resultBundle: probeResultBundle)
@@ -2283,13 +2281,11 @@ actor XcodeTestExecutor {
             inFlightJournal = journal
             try await persistence.saveJournal(journal)
 
-            let testArguments = [
-                "test-without-building",
-                "-xctestrun", materializedTestRunURL.path,
-                "-destination", "id=\(configuration.destinationIdentifier)",
-                "-resultBundlePath", resultBundle.path,
-                "-only-testing:\(configuration.testTarget)/\(testIdentity.className)/\(testIdentity.methodName)",
-            ] + configuration.signingArguments
+            let testArguments = Self.testExecutionArguments(
+                configuration: configuration, testRunURL: materializedTestRunURL,
+                resultBundleURL: resultBundle,
+                testIdentifier: "\(testIdentity.className)/\(testIdentity.methodName)"
+            )
             journal.intendedArguments = testArguments
             journal.updatedAt = Date()
             inFlightJournal = journal
@@ -2413,6 +2409,22 @@ actor XcodeTestExecutor {
             return (false, "Xcode device discovery failed: \(error.localizedDescription)", nil)
         }
         return Self.destinationStatus(identifier: requested, devices: devices, requiresSiri: requiresSiri)
+    }
+
+    static func testExecutionArguments(
+        configuration: XcodeTestConfiguration, testRunURL: URL,
+        resultBundleURL: URL, testIdentifier: String
+    ) -> [String] {
+        // Keep failed captures bounded. Xcode's verbose sysdiagnose collection
+        // can stall finalization after XCTest has already reported its failure.
+        // The result bundle and execution log still retain the test evidence.
+        [
+            "test-without-building", "-xctestrun", testRunURL.path,
+            "-destination", "id=\(configuration.destinationIdentifier)",
+            "-resultBundlePath", resultBundleURL.path,
+            "-collect-test-diagnostics", "never",
+            "-only-testing:\(configuration.testTarget)/\(testIdentifier)",
+        ] + configuration.signingArguments
     }
 
     static func destinationStatus(

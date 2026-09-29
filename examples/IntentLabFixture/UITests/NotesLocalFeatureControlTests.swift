@@ -40,7 +40,7 @@ final class NotesLocalFeatureControlTests: XCTestCase {
         XCTAssertEqual(control.parameters.map(\.name), ["prompt"])
         XCTAssertTrue(control.outputProjections.isEmpty)
 
-        let context = "intent-\(UUID().uuidString)"
+        let context = "feature-\(UUID().uuidString)"
         let application = try NotesIntentLabIntegration().prepare(
             bundleIdentifier: declaration.targetBundleIdentifier,
             context: context,
@@ -89,6 +89,7 @@ final class NotesLocalFeatureControlTests: XCTestCase {
                 && $0.attemptContext == context
         }
         XCTAssertEqual(serviceReceipts.count, 1, "The test intent must enter the real production service exactly once.")
+        XCTAssertEqual(serviceReceipts.first?.lane, .appFeature)
         XCTAssertTrue(serviceReceipts.first?.isTopLevel == true)
         XCTAssertEqual(serviceReceipts.first?.resolvedParameters["prompt"], .string("packing-001"))
 
@@ -128,6 +129,35 @@ final class NotesLocalFeatureControlTests: XCTestCase {
         } else {
             XCTAssertNotNil(invocationError, "A failed service receipt must surface the App Intent error.")
         }
+    }
+
+    func testMalformedFeatureContextDoesNotCreateActionReceipts() async throws {
+        let declaration = try Self.loadDeclaration()
+        let control = try featureControl(in: declaration)
+        let context = "feature-invalid"
+        let application = try NotesIntentLabIntegration().prepare(
+            bundleIdentifier: declaration.targetBundleIdentifier,
+            context: context,
+            operationID: "resetFixture"
+        )
+        defer { application.terminate() }
+
+        do {
+            _ = try await invokeFeature(
+                prompt: "unknown-note", control: control,
+                bundleIdentifier: declaration.targetBundleIdentifier, context: context
+            )
+            XCTFail("An unknown note should fail inside the production feature service.")
+        } catch {
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Name exactly one synthetic note by stable ID or full title."
+            )
+        }
+
+        let snapshot = try await readFixtureSnapshot(bundleIdentifier: declaration.targetBundleIdentifier)
+        XCTAssertTrue(snapshot.actionReceipts.isEmpty,
+                      "A malformed feature context must not be stamped onto action receipts.")
     }
 
     func testReceiptCountOverflowFailsClosedAcrossReadersUntilFixtureReset() async throws {

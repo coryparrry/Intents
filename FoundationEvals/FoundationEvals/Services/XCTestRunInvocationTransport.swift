@@ -129,7 +129,11 @@ enum XCTestRunInvocationTransport {
             purpose = definition.purpose
             checkMode = definition.checkMode
             requiredClaims = definition.requiredClaims
-            observationPlan = definition.observationPlan
+            // The Feature response is produced by the local Feature driver. A
+            // Direct or Siri child has no Feature binding or transport for it.
+            observationPlan = scope?.lane == .appFeature
+                ? definition.observationPlan
+                : definition.observationPlan?.filter { $0.id != "feature.response" }
             integration = definition.integration
             executionScope = scope
             featureBinding = scope?.lane == .appFeature ? definition.featureBinding : nil

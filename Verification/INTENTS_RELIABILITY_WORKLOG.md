@@ -66,3 +66,12 @@
 - Actual UI verified simulator selection, recovery clearance, and both run menu actions. A fresh build supersedes an older cached app executable encountered at launch; its recorded dylib digest remains unchanged during inspection.
 
 - Coordinated diagnostic CD3F9DF2 was rejected before any business dispatch because a worklog edit changed the source snapshot after the checked build. It retained an explicit 2-planned/0-executed partial result. Freeze source before the next recheck; do not treat this failed-closed attempt as workflow proof.
+
+## Final coordinated-flow repair round
+
+- Frozen-source diagnostic AA8C52F2 exposed two real integration bugs: the Notes service succeeded but `feature-UUID` was not recognized by its action-receipt scope parser (run `97F8B63A`), and the Direct child carried the Feature-only `feature.response` observation with no Feature binding, causing startup `mismatchedIdentity` (run `7F1D73B5`). Both red attempts remain in `/private/tmp/intents-reliability-gui-20260929/IntentLab/`.
+- Corrected Notes context binding and the scoped native payload, preserving frozen requirement digest, coverage, assertions, and action requirements. The actual Feature test now uses the shared runner's Feature context and checks its lane; malformed Feature context cannot stamp receipts.
+- Xcode's failure diagnostics stalled after the Direct XCTest failure. All three native execution paths now use the installed Xcode's documented `-collect-test-diagnostics never` option, retaining their result bundles and execution logs. Only this run's orphan diagnostics process was stopped.
+- Ad hoc signed simulator regression: **3/3 passed** (actual production Feature, malformed context, harmless readiness/reset), `/private/tmp/intents-finish-context-fixture.log` and `.xcresult`.
+- Final repair host scope: **68 tests in four suites passed**, including the full HTTP suite, scoped bridge, native command, and readiness cases; `/private/tmp/intents-finish-scope-host.log` and `.xcresult`. The earlier zero-test HTTP selector is superseded.
+- Required CI checks at `e123384` all passed. Freeze the repair commit before the final coordinator diagnostic/full recheck; keep current source untouched while it runs.
