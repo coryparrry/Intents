@@ -168,6 +168,18 @@ struct ScenarioEditorView: View {
                     TextField("For example, the packing note opens", text: $coordinator.draft.goal.expectedBehavior, axis: .vertical)
                         .lineLimit(2...5)
                 }
+                if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                    labeledRow("Purpose", help: "Use a release requirement when this frozen test should decide qualification.") {
+                        Picker("Purpose", selection: Binding(
+                            get: { coordinator.draft.purpose ?? .exploratory },
+                            set: { coordinator.draft.purpose = $0; coordinator.draft.definitionDigest = "" }
+                        )) {
+                            Text("Explore an intent").tag(ScenarioPurpose.exploratory)
+                            Text("Release requirement").tag(ScenarioPurpose.releaseRequirement)
+                        }
+                        .labelsHidden()
+                    }
+                }
                 if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
                     labeledRow("App action", help: "The action’s code name from your app, for example OpenNoteIntent.") {
                         TextField("OpenNoteIntent", text: $coordinator.draft.directControl.intentIdentifier)
