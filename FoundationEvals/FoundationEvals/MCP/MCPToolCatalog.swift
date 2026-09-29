@@ -104,6 +104,7 @@ enum MCPToolCall: Sendable {
     case listRuns(MCPListRunsArguments)
     case listScenarioRuns(MCPListScenarioRunsArguments)
     case getScenarioReport(MCPGetScenarioReportArguments)
+    case getScenarioExecutionReport(MCPGetScenarioExecutionReportArguments)
     case analyzeRun(MCPAnalyzeRunArguments)
     case cancelRun(MCPCancelRunArguments)
     case deleteRun(MCPDeleteRunArguments)
@@ -304,6 +305,10 @@ struct MCPGetScenarioReportArguments: Codable, Sendable {
     var runID: UUID
 }
 
+struct MCPGetScenarioExecutionReportArguments: Codable, Sendable {
+    var executionID: UUID
+}
+
 struct MCPCancelRunArguments: Codable, Sendable {
     var runID: UUID
 }
@@ -447,6 +452,12 @@ enum MCPToolCatalog {
             ], required: ["runID"], readOnly: true
         ),
         tool(
+            "eval_get_scenario_execution_report", "Get saved Intent Lab execution report",
+            "Qualify an immutable stable execution using its frozen plan, requirement, retained assessment selection and frozen semantic policy. Uses the GUI and offline evidence qualifier without recovery, model calls or history changes.",
+            properties: ["executionID": uuid("Saved stable execution record UUID.")],
+            required: ["executionID"], readOnly: true
+        ),
+        tool(
             "eval_cancel_run", "Cancel evaluation run",
             "Request cooperative cancellation of the identified active run; poll eval_get_run for its terminal state.",
             properties: ["runID": uuid("Run UUID.")], required: ["runID"], idempotent: true
@@ -538,6 +549,8 @@ enum MCPToolCatalog {
                 return .listScenarioRuns(value)
             case "eval_get_scenario_report":
                 return .getScenarioReport(try arguments.decode(MCPGetScenarioReportArguments.self))
+            case "eval_get_scenario_execution_report":
+                return .getScenarioExecutionReport(try arguments.decode(MCPGetScenarioExecutionReportArguments.self))
             case "eval_cancel_run":
                 return .cancelRun(try arguments.decode(MCPCancelRunArguments.self))
             case "eval_delete_run":

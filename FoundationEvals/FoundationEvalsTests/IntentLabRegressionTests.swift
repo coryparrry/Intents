@@ -57,6 +57,45 @@ struct IntentLabRegressionTests {
         #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 480)
     }
 
+    @Test func scopedFeatureDeadlineIncludesItsConfiguredWaitsAndFixtureOverhead() {
+        let definition = deadlineDefinition(
+            directLane: true, siriLane: true, siriAttemptCount: 3, deadlineSeconds: 300
+        )
+        let scope = ScenarioNativeExecutionScope(lane: .appFeature, attempt: 1)
+
+        #expect(XcodeTestDeadlineBudget.seconds(for: definition, scope: scope) == 975)
+        #expect(XcodeTestDeadlineBudget.seconds(for: definition, scope: scope)
+                > definition.safety.deadlineSeconds)
+    }
+
+    @Test func scopedFeatureDeadlineUsesNondefaultBoundsEvenWithoutResetOperations() {
+        var definition = deadlineDefinition(
+            directLane: false, siriLane: false, siriAttemptCount: 3, deadlineSeconds: 1
+        )
+        definition.fixture.preparationOperation = ""
+        definition.fixture.cleanupOperation = ""
+        let scope = ScenarioNativeExecutionScope(lane: .appFeature, attempt: 1)
+        for wait in [1.0, 30.0, 900.0] {
+            definition.safety.deadlineSeconds = wait
+            #expect(XcodeTestDeadlineBudget.seconds(for: definition, scope: scope) == 75 + 3 * wait)
+        }
+    }
+
+    @Test func scopedDirectAndSiriDeadlinesKeepTheirOwnWaitsAndAttemptCounts() {
+        let definition = deadlineDefinition(
+            directLane: true, siriLane: true, siriAttemptCount: 3, deadlineSeconds: 300
+        )
+        #expect(XcodeTestDeadlineBudget.seconds(
+            for: definition, scope: .init(lane: .intentIntegration, attempt: 1)
+        ) == 975)
+        for attempt in 1...3 {
+            #expect(XcodeTestDeadlineBudget.seconds(
+                for: definition, scope: .init(lane: .siri, attempt: attempt)
+            ) == 435)
+        }
+        #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 2100)
+    }
+
     @MainActor
     @Test func siriCoverageRequiresPhysicalIPhoneButDirectChecksAllowMac() {
         let mac = IntentLabDeviceDestination(
@@ -179,13 +218,42 @@ struct IntentLabRegressionTests {
         for directory in [project, app, tests] {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
-        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
         let source = root.appending(path: "Sources/NoteIntent.swift")
         let resource = root.appending(path: "Resources/NoteTemplate.json")
         for file in [source, resource] {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data("original".utf8).write(to: file)
         }
+        let projectObjects: [String: [String: Any]] = [
+            "PROJECT": ["isa": "PBXProject", "mainGroup": "ROOT", "targets": ["APP_TARGET"]],
+            "ROOT": ["isa": "PBXGroup", "children": ["SOURCES_GROUP", "RESOURCES_GROUP"]],
+            "SOURCES_GROUP": [
+                "isa": "PBXGroup", "path": "Sources", "sourceTree": "<group>", "children": ["SOURCE"]
+            ],
+            "SOURCE": ["isa": "PBXFileReference", "path": "NoteIntent.swift", "sourceTree": "<group>"],
+            "RESOURCES_GROUP": [
+                "isa": "PBXGroup", "path": "Resources", "sourceTree": "<group>", "children": ["RESOURCE"]
+            ],
+            "RESOURCE": ["isa": "PBXFileReference", "path": "NoteTemplate.json", "sourceTree": "<group>"],
+            "SOURCE_BUILD_FILE": ["isa": "PBXBuildFile", "fileRef": "SOURCE"],
+            "RESOURCE_BUILD_FILE": ["isa": "PBXBuildFile", "fileRef": "RESOURCE"],
+            "SOURCES_PHASE": [
+                "isa": "PBXSourcesBuildPhase", "files": ["SOURCE_BUILD_FILE"],
+                "buildActionMask": 2_147_483_647, "runOnlyForDeploymentPostprocessing": 0,
+            ],
+            "RESOURCES_PHASE": [
+                "isa": "PBXResourcesBuildPhase", "files": ["RESOURCE_BUILD_FILE"],
+                "buildActionMask": 2_147_483_647, "runOnlyForDeploymentPostprocessing": 0,
+            ],
+            "APP_TARGET": [
+                "isa": "PBXNativeTarget", "name": "Fixture", "productName": "Fixture",
+                "productType": "com.apple.product-type.application",
+                "buildPhases": ["SOURCES_PHASE", "RESOURCES_PHASE"],
+            ],
+        ]
+        try PropertyListSerialization.data(
+            fromPropertyList: ["objects": projectObjects], format: .xml, options: 0
+        ).write(to: project.appending(path: "project.pbxproj"))
         let testRun = products.appending(path: "Fixture.xctestrun")
         try Data("run".utf8).write(to: testRun)
         let paths = XCTestRunProductPaths(

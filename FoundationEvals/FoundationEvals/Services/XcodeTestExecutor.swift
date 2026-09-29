@@ -425,20 +425,24 @@ enum XcodeTestDeadlineBudget {
         scope: ScenarioNativeExecutionScope? = nil
     ) -> Double {
         let scenarioWaitSeconds = definition.safety.deadlineSeconds
+        // Local feature controls run only in a scoped native invocation;
+        // unscoped feature execution belongs to the connected subject runner.
+        let includesFeatureLane = scope?.lane == .appFeature
         let includesDirectLane = scope?.lane == .intentIntegration
             || (scope == nil && definition.coverage.intentIntegration != .notApplicable)
         let siriAttemptCount = scope?.lane == .siri
             ? 1
             : (scope == nil && definition.coverage.siri != .notApplicable
                 ? (definition.coverage.siriAttemptCount ?? 3) : 0)
-        let fixtureCount = (includesDirectLane ? 1 : 0) + siriAttemptCount
-        // Baseline observation, direct intent execution, and post-intent
-        // observation each have their own bounded wait in the device runner.
+        let fixtureCount = (includesFeatureLane ? 1 : 0) + (includesDirectLane ? 1 : 0) + siriAttemptCount
+        // Both local feature and direct lanes bound baseline observation,
+        // operation execution, and post-operation observation independently.
+        let featureLaneSeconds = includesFeatureLane ? 3 * scenarioWaitSeconds : 0
         let directLaneSeconds = includesDirectLane ? 3 * scenarioWaitSeconds : 0
         let siriSeconds = Double(siriAttemptCount) * (siriActivationWaitSeconds + scenarioWaitSeconds)
         let fixtureSeconds = Double(fixtureCount) * fixtureStartupAndInspectionSeconds
 
-        return xcodeStartupAndFinalizationSeconds + fixtureSeconds + directLaneSeconds + siriSeconds
+        return xcodeStartupAndFinalizationSeconds + fixtureSeconds + featureLaneSeconds + directLaneSeconds + siriSeconds
     }
 }
 
@@ -977,6 +981,33 @@ actor XcodeTestExecutor {
     }
 
     /// A separate, read-only setup run. Its receipt never becomes scenario evidence.
+    /// Execution may keep the checked generation only while every cache
+    /// binding remains valid. Explicit support checks still force a new probe.
+    func connectionForExecution(
+        definition: ScenarioDefinition,
+        configuration: XcodeTestConfiguration,
+        projectTrusted: Bool
+    ) async throws -> ScenarioVerifiedConnection {
+        guard projectTrusted else {
+            throw XcodeTestExecutorError.connectionCheck("Approve this project before running its build scripts.")
+        }
+        guard active == nil, inFlightJournal == nil, awaitingValidationJournal == nil,
+              !connectionCheckInProgress else { throw XcodeTestExecutorError.activeExecution }
+        guard reservations[configuration.destinationIdentifier] == nil,
+              !clearingDestinations.contains(configuration.destinationIdentifier) else {
+            throw XcodeTestExecutorError.deviceUnavailable(
+                "This destination requires recovery before another connection check."
+            )
+        }
+        if ScenarioHarnessCapabilities.usesReusableProtocol(definition),
+           let connection = currentConnection(definition: definition, configuration: configuration) {
+            return connection
+        }
+        return try await verifyConnection(
+            definition: definition, configuration: configuration, projectTrusted: projectTrusted
+        )
+    }
+
     func verifyConnection(
         definition: ScenarioDefinition,
         configuration: XcodeTestConfiguration,
@@ -1173,7 +1204,12 @@ actor XcodeTestExecutor {
             productMetadataDigest: Self.productMetadataDigest(products: paths),
             runtimeProfile: Self.runtimeProfile(configuration: configuration, appBundleURL: paths.appBundleURL)
         )
-        guard connectionMatches(verified, definition: definition, configuration: configuration) else {
+        guard Self.validatedReusableConnection(
+            verified, definition: definition, configuration: configuration,
+            currentRuntimeProfile: Self.runtimeProfile(
+                configuration: configuration, appBundleURL: verified.appBundleURL
+            )
+        ) != nil else {
             throw XcodeTestExecutorError.connectionCheck(
                 "The compiled declaration, capabilities, or app/test identity did not match the selected integration."
             )
@@ -1260,18 +1296,24 @@ actor XcodeTestExecutor {
         definition: ScenarioDefinition,
         configuration: XcodeTestConfiguration
     ) -> ScenarioVerifiedConnection? {
-        guard let verifiedConnection,
-              connectionMatches(verifiedConnection, definition: definition, configuration: configuration) else {
-            return nil
-        }
-        return verifiedConnection
+        guard let verifiedConnection else { return nil }
+        return Self.validatedReusableConnection(
+            verifiedConnection, definition: definition, configuration: configuration,
+            currentRuntimeProfile: Self.runtimeProfile(
+                configuration: configuration, appBundleURL: verifiedConnection.appBundleURL
+            )
+        )
     }
 
-    private func connectionMatches(
+    /// Validate cached products against source files, generated products, and
+    /// the current runtime snapshot. Runtime discovery stays lazy so invalid
+    /// source or product bindings fail before invoking developer tools.
+    static func validatedReusableConnection(
         _ connection: ScenarioVerifiedConnection,
         definition: ScenarioDefinition,
-        configuration: XcodeTestConfiguration
-    ) -> Bool {
+        configuration: XcodeTestConfiguration,
+        currentRuntimeProfile: @autoclosure () -> ScenarioRuntimeProfileIdentity?
+    ) -> ScenarioVerifiedConnection? {
         let receipt = connection.receipt
         guard connection.configuration == configuration,
               receipt.schemaVersion == 1,
@@ -1325,13 +1367,11 @@ actor XcodeTestExecutor {
               ),
               inputs == connection.buildInputsDigest,
               let runtimeProfile = connection.runtimeProfile,
-              runtimeProfile == Self.runtimeProfile(
-                  configuration: configuration, appBundleURL: connection.appBundleURL
-              ),
+              runtimeProfile == currentRuntimeProfile(),
               let declaration = try? Data(contentsOf: connection.testBundleURL.appending(path: "IntentLabIntegration.json")),
               SHA256.hash(data: declaration).map({ String(format: "%02x", $0) }).joined()
-                == definition.integration?.digest else { return false }
-        return true
+                == definition.integration?.digest else { return nil }
+        return connection
     }
 
     static func receiptMatchesSelection(

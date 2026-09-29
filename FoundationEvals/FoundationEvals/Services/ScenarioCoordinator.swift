@@ -1282,7 +1282,7 @@ final class ScenarioCoordinator {
             activeFeatureRunID = nil
         }
         do {
-            let connection = try await executor.verifyConnection(
+            let connection = try await executor.connectionForExecution(
                 definition: definition, configuration: runConfiguration, projectTrusted: trusted
             )
             try verify(plan: plan, definition: definition, connection: connection,
@@ -1559,9 +1559,8 @@ final class ScenarioCoordinator {
     private func evidenceRequirement(
         definition: ScenarioDefinition
     ) async throws -> IntentEvidenceRequirements.CaseRequirement {
-        let policy = try await assessmentStore.frozenSemanticPolicy(definition: definition)
-        return .init(required: true, definition: definition,
-                     semanticPolicy: try policy?.requirementPolicy())
+        try await ScenarioSavedExecutionReportService(rootDirectory: rootDirectory)
+            .evidenceRequirement(definition: definition)
     }
 
     /// Exports the entire trusted collection membership with only the fresh
@@ -1631,56 +1630,9 @@ final class ScenarioCoordinator {
         definition: ScenarioDefinition, plan: ScenarioExecutionPlan,
         record: ScenarioExecutionRecord, artifacts: inout [UUID: Data]
     ) async throws -> IntentEvidenceBundleCase {
-        guard record.planID == plan.id,
-              let savedPlan = try await persistence.loadPlans().first(where: { $0.id == plan.id }),
-              try Self.matchesPersistedEncoding(savedPlan, plan),
-              let savedRecord = try await persistence.loadExecutionRecords().first(where: { $0.id == record.id }),
-              try Self.matchesPersistedEncoding(savedRecord, record) else {
-            throw ScenarioPersistenceError.invalidRun("Execution plan or terminal record is missing from durable history.")
-        }
-        let childIDs = Set(record.records.filter { $0.featureChild == nil }
-            .compactMap(\.evidenceRunID))
-        let nativeRuns = try await persistence.loadRuns(scenarioID: definition.id)
-            .filter { childIDs.contains($0.id) }
-        guard nativeRuns.count == childIDs.count else {
-            throw ScenarioPersistenceError.invalidRun("A native child run is missing from durable history.")
-        }
-        let allJournals = try await persistence.loadJournals()
-        let childJournals = allJournals.filter { childIDs.contains($0.id) }
-        guard childJournals.count == childIDs.count else {
-            throw ScenarioPersistenceError.invalidRun("A native child journal is missing from durable history.")
-        }
-        for run in nativeRuns {
-            for artifact in run.laneResults.flatMap(\.artifacts) {
-                artifacts[artifact.id] = try Data(contentsOf: artifactURL(run: run, artifact: artifact))
-            }
-        }
-        let selection = try await assessmentStore.latestSelectionRecord(executionRecord: savedRecord)
-        let retained: [ScenarioRetainedAssessmentArtifact]
-        if let selection {
-            retained = try await assessmentStore.retainedArtifacts(
-                for: selection, executionRecord: savedRecord,
-                runs: nativeRuns, definition: definition,
-                plan: savedPlan, journals: childJournals
-            )
-        } else if savedRecord.selectedAssessments != nil {
-            retained = try await assessmentStore.retainedArtifacts(
-                for: savedRecord, runs: nativeRuns, definition: definition,
-                plan: savedPlan, journals: childJournals
-            )
-        } else {
-            retained = []
-        }
-        return .init(definition: definition, plan: savedPlan, record: savedRecord,
-                     runs: nativeRuns, journals: childJournals,
-                     selectedAssessment: selection, retainedAssessments: retained)
-    }
-
-    private static func matchesPersistedEncoding<T: Encodable>(_ lhs: T, _ rhs: T) throws -> Bool {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(lhs) == encoder.encode(rhs)
+        try await ScenarioSavedExecutionReportService(rootDirectory: rootDirectory).bundleCase(
+            definition: definition, plan: plan, record: record, artifacts: &artifacts
+        )
     }
 
     func reloadSelectedAssessmentOverlay(expectedExecutionID: UUID? = nil) async {
@@ -2158,7 +2110,7 @@ final class ScenarioCoordinator {
                     guard let definition = definitionsForCollection.first(where: { $0.id == batchCase.id }) else {
                         throw ScenarioCollectionError.invalidSelection
                     }
-                    let connection = try await executor.verifyConnection(
+                    let connection = try await executor.connectionForExecution(
                         definition: definition, configuration: runConfiguration,
                         projectTrusted: projectTrusted
                     )
@@ -2247,7 +2199,7 @@ final class ScenarioCoordinator {
             let definition = try await freezeAndSave()
             guard !cancellationRequested else { throw XcodeTestExecutorError.cancelled }
             executionStage = "Checking app and test build"
-            let connection = try await executor.verifyConnection(
+            let connection = try await executor.connectionForExecution(
                 definition: definition, configuration: runConfiguration, projectTrusted: runTrusted
             )
             guard !cancellationRequested else { throw XcodeTestExecutorError.cancelled }

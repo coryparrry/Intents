@@ -1282,6 +1282,117 @@ struct ScenarioContractsTests {
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) != beforeResource)
     }
 
+    @Test func reusableExecutionKeepsCheckedGenerationAndRejectsChangedInputs() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appending(path: "Fixture.xcodeproj")
+        let source = root.appending(path: "Feature.swift")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let sourceBytes = Data("struct Feature {}".utf8)
+        try sourceBytes.write(to: source)
+        try projectData(objects: [
+            "ROOT": ["isa": "PBXGroup", "children": ["SOURCE"]],
+            "SOURCE": ["isa": "PBXFileReference", "path": "Feature.swift"],
+        ], mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
+        let productsRoot = root.appending(path: "DerivedData/Build/Products")
+        let products = XCTestRunProductPaths(
+            sourceURL: productsRoot.appending(path: "Fixture.xctestrun"),
+            appBundleURL: productsRoot.appending(path: "Fixture.app"),
+            testHostURL: productsRoot.appending(path: "FixtureUITests-Runner.app"),
+            testBundleURL: productsRoot.appending(path: "FixtureUITests-Runner.app/PlugIns/FixtureUITests.xctest")
+        )
+        var definition = try reusableBasicScenario()
+        let declaration = Data("{\"fixture\":\"checked\"}".utf8)
+        definition.integration?.digest = SHA256.hash(data: declaration).map { String(format: "%02x", $0) }.joined()
+        definition = try definition.frozen()
+        let testBundleIdentifier = "dev.example.FixtureUITests"
+        let executables = [
+            (products.appBundleURL, "Fixture", definition.target.bundleIdentifier),
+            (products.testHostURL, "FixtureUITests-Runner", "dev.example.FixtureUITests-Runner"),
+            (products.testBundleURL, "FixtureUITests", testBundleIdentifier),
+        ]
+        for (bundle, executable, identifier) in executables {
+            try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+            try PropertyListSerialization.data(fromPropertyList: [
+                "CFBundleExecutable": executable, "CFBundleIdentifier": identifier,
+            ], format: .xml, options: 0).write(to: bundle.appending(path: "Info.plist"))
+            try Data("checked-\(executable)".utf8).write(to: bundle.appending(path: executable))
+        }
+        try declaration.write(to: products.testBundleURL.appending(path: "IntentLabIntegration.json"))
+        let testRunBytes = try PropertyListSerialization.data(fromPropertyList: [
+            "FixtureUITests": ["BlueprintName": "FixtureUITests",
+                "UITargetAppPath": "__TESTROOT__/Fixture.app",
+                "TestHostPath": "__TESTROOT__/FixtureUITests-Runner.app",
+                "TestBundlePath": "__TESTHOST__/PlugIns/FixtureUITests.xctest"],
+        ], format: .xml, options: 0)
+        try testRunBytes.write(to: products.sourceURL)
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "Fixture", testTarget: "FixtureUITests",
+            testBundleIdentifier: testBundleIdentifier, destinationIdentifier: "device",
+            generatedResourceDirectory: root.path, xcodebuildPath: "/bin/echo",
+            selectedTestProductID: "\(project.path)#UITESTS"
+        )
+        let runtime = ScenarioRuntimeProfileIdentity(destinationIdentifier: "device", destinationPlatform: .iOS,
+            destinationOSVersion: "27.0", xcodeBuild: "checked-xcode", sdkBuild: "checked-sdk")
+        let connection = ScenarioVerifiedConnection(
+            receipt: .init(schemaVersion: 1, integration: try #require(definition.integration),
+                targetBundleIdentifier: definition.target.bundleIdentifier, projectIdentity: "Fixture.xcodeproj",
+                targetIdentity: configuration.testTarget, testBundleIdentifier: testBundleIdentifier,
+                harnessProtocol: ScenarioInvocationIdentity.reusableHarnessVersion, runnerPackageVersion: "test",
+                capabilities: ["environment-payload"], inspectedAt: .now),
+            configuration: configuration,
+            appProduct: try XcodeTestExecutor.productIdentity(bundle: products.appBundleURL,
+                fallbackBundleIdentifier: definition.target.bundleIdentifier),
+            testHostProduct: try XcodeTestExecutor.productIdentity(bundle: products.testHostURL,
+                fallbackBundleIdentifier: testBundleIdentifier),
+            testProduct: try XcodeTestExecutor.productIdentity(bundle: products.testBundleURL,
+                fallbackBundleIdentifier: testBundleIdentifier),
+            appBundleURL: products.appBundleURL, testHostURL: products.testHostURL,
+            testBundleURL: products.testBundleURL, testRunURL: products.sourceURL, selectedTestProjectURL: project,
+            buildInputsDigest: try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products),
+            buildGenerationDigest: try XcodeTestExecutor.buildGenerationDigest(configuration: configuration, products: products),
+            productMetadataDigest: XcodeTestExecutor.productMetadataDigest(products: products), runtimeProfile: runtime
+        )
+        func reused() -> ScenarioVerifiedConnection? {
+            XcodeTestExecutor.validatedReusableConnection(connection, definition: definition,
+                configuration: configuration, currentRuntimeProfile: runtime)
+        }
+        let sameGeneration = try #require(reused())
+        #expect(sameGeneration.testRunURL == connection.testRunURL)
+        #expect(sameGeneration.appProduct == connection.appProduct)
+        #expect(sameGeneration.buildGenerationDigest == connection.buildGenerationDigest)
+        try Data("struct Feature { let changed = true }".utf8).write(to: source)
+        #expect(reused() == nil)
+        try sourceBytes.write(to: source)
+        #expect(reused() != nil)
+        for (bundle, executable, _) in executables {
+            let file = bundle.appending(path: executable)
+            let bytes = try Data(contentsOf: file)
+            try Data("changed executable".utf8).write(to: file)
+            #expect(reused() == nil)
+            try bytes.write(to: file)
+            #expect(reused() != nil)
+        }
+        let signature = products.appBundleURL.appending(path: "_CodeSignature/CodeResources")
+        try FileManager.default.createDirectory(at: signature.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("changed signature metadata".utf8).write(to: signature)
+        #expect(reused() == nil)
+        try FileManager.default.removeItem(at: signature)
+        #expect(reused() != nil)
+        try Data("changed test invocation metadata".utf8).write(to: products.sourceURL)
+        #expect(reused() == nil)
+        try testRunBytes.write(to: products.sourceURL)
+        #expect(reused() != nil)
+        var changedConfiguration = configuration
+        changedConfiguration.scheme = "DifferentScheme"
+        #expect(XcodeTestExecutor.validatedReusableConnection(connection, definition: definition,
+            configuration: changedConfiguration, currentRuntimeProfile: runtime) == nil)
+        var changedRuntime = runtime
+        changedRuntime.destinationOSVersion = "different"
+        #expect(XcodeTestExecutor.validatedReusableConnection(connection, definition: definition,
+            configuration: configuration, currentRuntimeProfile: changedRuntime) == nil)
+    }
+
     @Test func reusableRunUsesCheckedProductsAndRejectsChangedTestRunPaths() throws {
         let root = try temporaryDirectory()
         let derivedData = root.appending(path: "Connection/DerivedData", directoryHint: .isDirectory)
