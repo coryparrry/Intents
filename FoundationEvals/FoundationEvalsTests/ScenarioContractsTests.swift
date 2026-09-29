@@ -38,7 +38,8 @@ struct ScenarioContractsTests {
             products: paths,
             testTarget: "FixtureUITests",
             definition: definition,
-            invocation: boundInvocation
+            invocation: boundInvocation,
+            buildEnvironment: ["XCODE_VERSION_ACTUAL": "2700", "SDK_VERSION": "26.0"]
         )
         let nextOutput = try XCTestRunInvocationTransport.materialize(
             products: paths,
@@ -58,6 +59,8 @@ struct ScenarioContractsTests {
         let target = try #require(stored["FixtureUITests"] as? [String: Any])
         let environment = try #require(target["EnvironmentVariables"] as? [String: String])
         #expect(environment["XCODE_OWNED"] == "preserved")
+        #expect(environment["XCODE_VERSION_ACTUAL"] == "2700")
+        #expect(environment["SDK_VERSION"] == "26.0")
         #expect(environment[XCTestRunInvocationTransport.scenarioEnvironmentKey] != nil)
         #expect(environment[XCTestRunInvocationTransport.invocationEnvironmentKey] != nil)
         #expect((target["TestingEnvironmentVariables"] as? [String: String])?["XCODE_SCHEME_NAME"] == "Fixture")
@@ -823,14 +826,22 @@ struct ScenarioContractsTests {
         let signature = app.appending(path: "_CodeSignature/CodeResources")
         let hostSignature = host.appending(path: "_CodeSignature/CodeResources")
         let resolved = project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved")
+        let sourceFile = root.appending(path: "Sources/App.swift")
         try FileManager.default.createDirectory(at: signature.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: hostSignature.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: resolved.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data("project-v1".utf8).write(to: pbxproj)
+        try FileManager.default.createDirectory(at: sourceFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try projectData(objects: [
+            "ROOT": ["isa": "PBXGroup", "children": ["SOURCES"]],
+            "SOURCES": ["isa": "PBXGroup", "path": "Sources", "sourceTree": "<group>", "children": ["APP_SOURCE"]],
+            "APP_SOURCE": ["isa": "PBXFileReference", "path": "App.swift", "sourceTree": "<group>"],
+        ],
+                        mainGroup: "ROOT").write(to: pbxproj)
         try Data("info-v1".utf8).write(to: appInfo)
         try Data("signature-v1".utf8).write(to: signature)
         try Data("runner-signature-v1".utf8).write(to: hostSignature)
         try Data("package-v1".utf8).write(to: resolved)
+        try Data("struct App {}".utf8).write(to: sourceFile)
         let source = products.appending(path: "Tasks.xctestrun")
         try Data("run-v1".utf8).write(to: source)
         let paths = XCTestRunProductPaths(
@@ -843,13 +854,16 @@ struct ScenarioContractsTests {
             xcodebuildPath: "/bin/echo"
         )
         let original = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        let originalGeneration = try XcodeTestExecutor.buildGenerationDigest(configuration: configuration, products: paths)
         let originalProducts = XcodeTestExecutor.productMetadataDigest(products: paths)
         try Data("signature-v2".utf8).write(to: signature)
         let signed = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
-        #expect(signed != original)
+        let signedGeneration = try XcodeTestExecutor.buildGenerationDigest(configuration: configuration, products: paths)
+        #expect(signed == original)
+        #expect(signedGeneration != originalGeneration)
         #expect(XcodeTestExecutor.productMetadataDigest(products: paths) != originalProducts)
         try Data("package-v2".utf8).write(to: resolved)
-        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != signed)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != original)
 
         let workspace = root.appending(path: "Tasks.xcworkspace", directoryHint: .isDirectory)
         let workspaceScheme = workspace.appending(path: "xcshareddata/xcschemes/Tasks.xcscheme")
@@ -865,9 +879,11 @@ struct ScenarioContractsTests {
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: workspaceConfiguration, products: paths) != workspaceDigest)
 
         let beforeHostSigning = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        let beforeHostGeneration = try XcodeTestExecutor.buildGenerationDigest(configuration: configuration, products: paths)
         let beforeHostMetadata = XcodeTestExecutor.productMetadataDigest(products: paths)
         try Data("runner-signature-v2".utf8).write(to: hostSignature)
-        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeHostSigning)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforeHostSigning)
+        #expect(try XcodeTestExecutor.buildGenerationDigest(configuration: configuration, products: paths) != beforeHostGeneration)
         #expect(XcodeTestExecutor.productMetadataDigest(products: paths) != beforeHostMetadata)
 
         let hostInfo = host.appending(path: "Info.plist")
@@ -886,9 +902,6 @@ struct ScenarioContractsTests {
             bundle: host, fallbackBundleIdentifier: configuration.testBundleIdentifier
         ) != checkedHost)
 
-        let sourceFile = root.appending(path: "Sources/App.swift")
-        try FileManager.default.createDirectory(at: sourceFile.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data("struct App {}".utf8).write(to: sourceFile)
         let sourceDigest = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
         try Data("struct App { let changed = true }".utf8).write(to: sourceFile)
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != sourceDigest)
@@ -904,16 +917,30 @@ struct ScenarioContractsTests {
         let root = try temporaryDirectory()
         let appRoot = root.appending(path: "App", directoryHint: .isDirectory)
         let project = appRoot.appending(path: "App.xcodeproj", directoryHint: .isDirectory)
-        let packageSource = root.appending(path: "LocalPackage/Sources/Package.swift")
+        let packageSource = root.appending(path: "LocalPackage/Sources/Core/Package.swift")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: packageSource.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let projectData = try PropertyListSerialization.data(
-            fromPropertyList: ["objects": [
-                "PACKAGE": ["isa": "XCLocalSwiftPackageReference", "relativePath": "../LocalPackage"],
-                "SHARED": ["isa": "PBXFileReference", "path": "../Shared/Intent.swift", "sourceTree": "<group>"],
-            ]], format: .xml, options: 0
-        )
-        try projectData.write(to: project.appending(path: "project.pbxproj"))
+        let appSource = appRoot.appending(path: "Sources/App.swift")
+        try FileManager.default.createDirectory(at: appSource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("struct App {}".utf8).write(to: appSource)
+        let resource = appRoot.appending(path: "Resources/Settings.json")
+        try FileManager.default.createDirectory(at: resource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{\"enabled\":true}".utf8).write(to: resource)
+        let initialProjectData = try projectData(objects: [
+            "PACKAGE": ["isa": "XCLocalSwiftPackageReference", "relativePath": "../LocalPackage"],
+            "ROOT": ["isa": "PBXGroup", "children": ["SOURCES", "RESOURCES", "SHARED"]],
+            "SOURCES": ["isa": "PBXGroup", "path": "Sources", "sourceTree": "<group>", "children": ["APP_SOURCE"]],
+            "APP_SOURCE": ["isa": "PBXFileReference", "path": "App.swift", "sourceTree": "<group>"],
+            "RESOURCES": ["isa": "PBXGroup", "path": "Resources", "sourceTree": "<group>", "children": ["SETTINGS"]],
+            "SETTINGS": ["isa": "PBXFileReference", "path": "Settings.json", "sourceTree": "<group>"],
+            "SHARED": ["isa": "PBXFileReference", "path": "../Shared/Intent.swift", "sourceTree": "<group>"],
+        ], mainGroup: "ROOT")
+        try initialProjectData.write(to: project.appending(path: "project.pbxproj"))
+        try Data("""
+        // swift-tools-version: 6.0
+        import PackageDescription
+        let package = Package(name: "LocalPackage", targets: [.target(name: "Core")])
+        """.utf8).write(to: root.appending(path: "LocalPackage/Package.swift"))
         try Data("public struct Package {}".utf8).write(to: packageSource)
         let sharedSource = root.appending(path: "Shared/Intent.swift")
         try FileManager.default.createDirectory(at: sharedSource.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -933,6 +960,14 @@ struct ScenarioContractsTests {
         let original = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
         try Data("public struct Package { public let changed = true }".utf8).write(to: packageSource)
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != original)
+        let packageExport = root.appending(path: "LocalPackage/Export/Generated.swift")
+        let packageVerification = root.appending(path: "LocalPackage/Verification/result.json")
+        let beforePackageOutputs = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        for output in [packageExport, packageVerification] {
+            try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("unrelated package output".utf8).write(to: output)
+        }
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforePackageOutputs)
         let beforeShared = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
         try Data("struct Intent { let changed = true }".utf8).write(to: sharedSource)
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeShared)
@@ -941,7 +976,7 @@ struct ScenarioContractsTests {
         try FileManager.default.createDirectory(at: supportSource.deletingLastPathComponent(), withIntermediateDirectories: true)
         let beforeSupportSource = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
         try Data("struct Helper {}".utf8).write(to: supportSource)
-        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeSupportSource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforeSupportSource)
 
         let generatedBuildFile = appRoot.appending(path: "build/XCBuildData/build.db")
         try FileManager.default.createDirectory(at: generatedBuildFile.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -952,13 +987,17 @@ struct ScenarioContractsTests {
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforeLocalBuildOutput)
 
         let localBuildSource = appRoot.appending(path: "build/Helper.swift")
-        let projectWithLocalBuildReference = try PropertyListSerialization.data(
-            fromPropertyList: ["objects": [
-                "PACKAGE": ["isa": "XCLocalSwiftPackageReference", "relativePath": "../LocalPackage"],
-                "SHARED": ["isa": "PBXFileReference", "path": "../Shared/Intent.swift", "sourceTree": "<group>"],
-                "LOCAL_BUILD_SOURCE": ["isa": "PBXFileReference", "path": "build/Helper.swift", "sourceTree": "<group>"],
-            ]], format: .xml, options: 0
-        )
+        let referencedObjects: [String: [String: Any]] = [
+            "PACKAGE": ["isa": "XCLocalSwiftPackageReference", "relativePath": "../LocalPackage"],
+            "ROOT": ["isa": "PBXGroup", "children": ["SOURCES", "RESOURCES", "SHARED", "LOCAL_BUILD_SOURCE"]],
+            "SOURCES": ["isa": "PBXGroup", "path": "Sources", "sourceTree": "<group>", "children": ["APP_SOURCE"]],
+            "APP_SOURCE": ["isa": "PBXFileReference", "path": "App.swift", "sourceTree": "<group>"],
+            "RESOURCES": ["isa": "PBXGroup", "path": "Resources", "sourceTree": "<group>", "children": ["SETTINGS"]],
+            "SETTINGS": ["isa": "PBXFileReference", "path": "Settings.json", "sourceTree": "<group>"],
+            "SHARED": ["isa": "PBXFileReference", "path": "../Shared/Intent.swift", "sourceTree": "<group>"],
+            "LOCAL_BUILD_SOURCE": ["isa": "PBXFileReference", "path": "build/Helper.swift", "sourceTree": "<group>"],
+        ]
+        let projectWithLocalBuildReference = try projectData(objects: referencedObjects, mainGroup: "ROOT")
         try projectWithLocalBuildReference.write(to: project.appending(path: "project.pbxproj"))
         try Data("struct LocalBuildHelper {}".utf8).write(to: localBuildSource)
         let referencedLocalBuildDigest = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
@@ -970,6 +1009,277 @@ struct ScenarioContractsTests {
         let beforeUserState = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
         try Data("editor state".utf8).write(to: xcodeUserState)
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforeUserState)
+    }
+
+    @Test func connectionFingerprintResolvesVirtualAndLocalizedGroups() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "App.xcodeproj")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let source = root.appending(path: "App.swift")
+        let localized = root.appending(path: "en.lproj/Localizable.strings")
+        try FileManager.default.createDirectory(at: localized.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("struct App {}".utf8).write(to: source)
+        try Data("\"title\" = \"First\";".utf8).write(to: localized)
+        try projectData(objects: [
+            "ROOT": ["isa": "PBXGroup", "children": ["VIRTUAL"]],
+            "VIRTUAL": ["isa": "PBXGroup", "name": "Logical Sources", "children": ["SOURCE", "VARIANT"]],
+            "SOURCE": ["isa": "PBXFileReference", "path": "App.swift"],
+            "VARIANT": ["isa": "PBXVariantGroup", "name": "Localizable.strings", "children": ["ENGLISH"]],
+            "ENGLISH": ["isa": "PBXFileReference", "name": "en", "path": "en.lproj/Localizable.strings"],
+        ], mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "App", testTarget: "AppUITests",
+            testBundleIdentifier: "dev.example.AppUITests", destinationIdentifier: "device",
+            generatedResourceDirectory: root.path, xcodebuildPath: "/bin/echo"
+        )
+        let products = XCTestRunProductPaths(sourceURL: root.appending(path: "App.xctestrun"),
+            appBundleURL: root.appending(path: "App.app"), testHostURL: root.appending(path: "Host.app"),
+            testBundleURL: root.appending(path: "Tests.xctest"))
+        let beforeSource = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products)
+        try Data("struct App { let changed = true }".utf8).write(to: source)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) != beforeSource)
+        let beforeLocalization = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products)
+        try Data("\"title\" = \"Second\";".utf8).write(to: localized)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) != beforeLocalization)
+    }
+
+    @Test func connectionFingerprintIncludesConsumedFolderResources() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "App.xcodeproj")
+        let resource = root.appending(path: "Resources/build/settings.json")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: resource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{\"enabled\":true}".utf8).write(to: resource)
+        try projectData(objects: [
+            "ROOT": ["isa": "PBXGroup", "children": ["FOLDER"]],
+            "FOLDER": ["isa": "PBXFileReference", "path": "Resources", "lastKnownFileType": "folder"],
+            "BUILD_FILE": ["isa": "PBXBuildFile", "fileRef": "FOLDER"],
+            "RESOURCES": ["isa": "PBXResourcesBuildPhase", "files": ["BUILD_FILE"]],
+        ], mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "App", testTarget: "AppUITests",
+            testBundleIdentifier: "dev.example.AppUITests", destinationIdentifier: "device",
+            generatedResourceDirectory: root.path, xcodebuildPath: "/bin/echo"
+        )
+        let products = XCTestRunProductPaths(sourceURL: root.appending(path: "App.xctestrun"),
+            appBundleURL: root.appending(path: "App.app"), testHostURL: root.appending(path: "Host.app"),
+            testBundleURL: root.appending(path: "Tests.xctest"))
+        let before = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products)
+        try Data("{\"enabled\":false}".utf8).write(to: resource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) != before)
+    }
+
+    @Test func connectionFingerprintIncludesBuildPhaseSourcesOutsideNavigator() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "App.xcodeproj")
+        let source = root.appending(path: "Shared.swift")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try Data("struct Shared {}".utf8).write(to: source)
+        var objects: [String: [String: Any]] = [
+            "ROOT": ["isa": "PBXGroup", "children": []],
+            "SOURCE": ["isa": "PBXFileReference", "path": "Shared.swift", "sourceTree": "SOURCE_ROOT"],
+            "BUILD_FILE": ["isa": "PBXBuildFile", "fileRef": "SOURCE"],
+            "SOURCES": ["isa": "PBXSourcesBuildPhase", "files": ["BUILD_FILE"]],
+        ]
+        try projectData(objects: objects, mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "App", testTarget: "AppUITests",
+            testBundleIdentifier: "dev.example.AppUITests", destinationIdentifier: "device",
+            generatedResourceDirectory: root.path, xcodebuildPath: "/bin/echo"
+        )
+        let products = XCTestRunProductPaths(sourceURL: root.appending(path: "App.xctestrun"),
+            appBundleURL: root.appending(path: "App.app"), testHostURL: root.appending(path: "Host.app"),
+            testBundleURL: root.appending(path: "Tests.xctest"))
+        let before = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products)
+        try Data("struct Shared { let changed = true }".utf8).write(to: source)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) != before)
+        objects["SOURCE"]?["sourceTree"] = "<group>"
+        try projectData(objects: objects, mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
+        #expect(throws: XcodeTestExecutorError.self) {
+            _ = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products)
+        }
+    }
+
+    @Test func localPackageMembershipUsesSelectedXcodeDeveloperDirectory() {
+        #expect(XcodeTestExecutor.localPackageDeveloperDirectory(
+            xcodebuildPath: "/Applications/Xcode-beta.app/Contents/Developer/usr/bin/xcodebuild"
+        ) == "/Applications/Xcode-beta.app/Contents/Developer")
+        #expect(XcodeTestExecutor.localPackageDeveloperDirectory(xcodebuildPath: "/usr/bin/xcodebuild") == nil)
+        #expect(XcodeTestExecutor.localPackageDeveloperDirectory(xcodebuildPath: "/bin/echo") == nil)
+    }
+
+    @Test func connectionFingerprintUsesEvaluatedCustomPackageMembership() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "App.xcodeproj")
+        let package = root.appending(path: "LocalPackage")
+        let source = package.appending(path: "Custom/Core.swift")
+        let excluded = package.appending(path: "Custom/Ignored/Excluded.swift")
+        let resource = package.appending(path: "Custom/Resources/build/settings.json")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        for file in [source, excluded, resource] {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("initial".utf8).write(to: file)
+        }
+        try Data("""
+        // swift-tools-version: 6.0
+        import PackageDescription
+        let targetPath = "Custom"
+        let package = Package(name: "CustomPackage", targets: [
+            .target(name: "Core", path: targetPath, exclude: ["Ignored"], resources: [.copy("Resources")])
+        ])
+        """.utf8).write(to: package.appending(path: "Package.swift"))
+        try projectData(objects: [
+            "ROOT": ["isa": "PBXGroup", "children": []],
+            "PACKAGE": ["isa": "XCLocalSwiftPackageReference", "relativePath": "LocalPackage"],
+        ], mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "App", testTarget: "AppUITests",
+            testBundleIdentifier: "dev.example.AppUITests", destinationIdentifier: "device",
+            generatedResourceDirectory: root.path, xcodebuildPath: "/bin/echo"
+        )
+        let products = XCTestRunProductPaths(sourceURL: root.appending(path: "App.xctestrun"),
+            appBundleURL: root.appending(path: "App.app"), testHostURL: root.appending(path: "Host.app"),
+            testBundleURL: root.appending(path: "Tests.xctest"))
+        let before = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products)
+        try Data("changed excluded source".utf8).write(to: excluded)
+        let exported = package.appending(path: "Export/Generated.swift")
+        try FileManager.default.createDirectory(at: exported.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("unrelated export".utf8).write(to: exported)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) == before)
+        try Data("public struct Core {}".utf8).write(to: source)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) != before)
+        let beforeResource = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products)
+        try Data("changed consumed resource".utf8).write(to: resource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) != beforeResource)
+        try Data("unsupported manifest syntax".utf8).write(to: package.appending(path: "Package.swift"))
+        #expect(throws: XcodeTestExecutorError.self) {
+            _ = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products)
+        }
+    }
+
+    @Test func connectionFingerprintIsStableAcrossDerivedDataLocations() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "App.xcodeproj", directoryHint: .isDirectory)
+        let source = root.appending(path: "Sources/App.swift")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("struct App {}".utf8).write(to: source)
+        try projectData(objects: [
+            "ROOT": ["isa": "PBXGroup", "children": ["SOURCES"]],
+            "SOURCES": ["isa": "PBXGroup", "path": "Sources", "sourceTree": "<group>", "children": ["APP"]],
+            "APP": ["isa": "PBXFileReference", "path": "App.swift", "sourceTree": "<group>"],
+        ], mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "App",
+            testTarget: "AppUITests", testBundleIdentifier: "dev.example.AppUITests",
+            destinationIdentifier: "device", generatedResourceDirectory: root.path,
+            xcodebuildPath: "/bin/echo"
+        )
+
+        func createProducts(at derivedData: URL) throws -> XCTestRunProductPaths {
+            let products = derivedData.appending(path: "Build/Products", directoryHint: .isDirectory)
+            let app = products.appending(path: "App.app", directoryHint: .isDirectory)
+            let host = products.appending(path: "AppUITests-Runner.app", directoryHint: .isDirectory)
+            let test = products.appending(path: "AppUITests.xctest", directoryHint: .isDirectory)
+            let info = try PropertyListSerialization.data(fromPropertyList: [
+                "DTXcode": "2700", "DTXcodeBuild": "18A123",
+                "DTSDKName": "iphonesimulator26.0", "DTSDKBuild": "23A123",
+                "DTPlatformName": "iphonesimulator",
+            ], format: .xml, options: 0)
+            for bundle in [app, host, test] {
+                try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+                try info.write(to: bundle.appending(path: "Info.plist"))
+            }
+            try FileManager.default.createDirectory(at: app.appending(path: "_CodeSignature"), withIntermediateDirectories: true)
+            try Data("same codesign metadata".utf8).write(to: app.appending(path: "_CodeSignature/CodeResources"))
+            let testRun = products.appending(path: "App.xctestrun")
+            try Data("same test-run bytes".utf8).write(to: testRun)
+            return .init(sourceURL: testRun, appBundleURL: app, testHostURL: host, testBundleURL: test)
+        }
+
+        let firstPaths = try createProducts(at: root.appending(path: "Connection-One/DerivedData"))
+        let secondPaths = try createProducts(at: root.appending(path: "Connection-Two/DerivedData"))
+        let firstDigest = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: firstPaths)
+        let secondDigest = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: secondPaths)
+        let firstGeneration = try XcodeTestExecutor.buildGenerationDigest(configuration: configuration, products: firstPaths)
+        let secondGeneration = try XcodeTestExecutor.buildGenerationDigest(configuration: configuration, products: secondPaths)
+        #expect(firstDigest == secondDigest)
+        #expect(firstGeneration != secondGeneration)
+
+        var alternateToolchain = configuration
+        alternateToolchain.xcodebuildPath = "/bin/cat"
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: alternateToolchain, products: firstPaths) == firstDigest)
+        #expect(try XcodeTestExecutor.buildGenerationDigest(configuration: alternateToolchain, products: firstPaths) != firstGeneration)
+
+        try Data("changed signing metadata".utf8)
+            .write(to: secondPaths.appBundleURL.appending(path: "_CodeSignature/CodeResources"))
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: secondPaths) == firstDigest)
+        #expect(try XcodeTestExecutor.buildGenerationDigest(configuration: configuration, products: secondPaths) != secondGeneration)
+
+        let changedSDKInfo = try PropertyListSerialization.data(fromPropertyList: [
+            "DTXcode": "2700", "DTXcodeBuild": "18A123",
+            "DTSDKName": "iphonesimulator26.1", "DTSDKBuild": "23A124",
+            "DTPlatformName": "iphonesimulator",
+        ], format: .xml, options: 0)
+        try changedSDKInfo.write(to: secondPaths.testBundleURL.appending(path: "Info.plist"))
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: secondPaths) == firstDigest)
+        #expect(try XcodeTestExecutor.buildGenerationDigest(configuration: configuration, products: secondPaths) != secondGeneration)
+    }
+
+    @Test func builtTestMetadataProvidesSelectedXcodeAndSDKVersions() throws {
+        let root = try temporaryDirectory()
+        let testBundle = root.appending(path: "Fixture.xctest", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: testBundle, withIntermediateDirectories: true)
+        try PropertyListSerialization.data(fromPropertyList: [
+            "DTXcode": "2700", "DTSDKName": "iphonesimulator26.0",
+            "DTPlatformName": "iphonesimulator",
+        ], format: .xml, options: 0).write(to: testBundle.appending(path: "Info.plist"))
+        #expect(XcodeTestExecutor.executionBuildEnvironment(
+            testBundleURL: testBundle, destinationPlatform: .iOSSimulator
+        ) == ["XCODE_VERSION_ACTUAL": "2700", "SDK_VERSION": "26.0"])
+        #expect(XcodeTestExecutor.executionBuildEnvironment(
+            testBundleURL: testBundle, destinationPlatform: .iOS
+        ) == nil)
+    }
+
+    @Test func connectionFingerprintIncludesSynchronizedGroupMembersOnly() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "App.xcodeproj", directoryHint: .isDirectory)
+        let synchronizedFile = root.appending(path: "Sources/Feature/Feature.swift")
+        let export = root.appending(path: "Export/Generated.swift")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: synchronizedFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: export.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("struct Feature {}".utf8).write(to: synchronizedFile)
+        try Data("let generated = 1".utf8).write(to: export)
+        try projectData(objects: [
+            "ROOT": ["isa": "PBXGroup", "children": ["GROUP"]],
+            "GROUP": ["isa": "PBXGroup", "path": "Sources", "children": ["SYNC"]],
+            "SYNC": ["isa": "PBXFileSystemSynchronizedRootGroup", "path": "Feature", "sourceTree": "<group>"],
+            "TARGET": ["isa": "PBXNativeTarget", "fileSystemSynchronizedGroups": ["SYNC"]],
+        ], mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "App",
+            testTarget: "AppUITests", testBundleIdentifier: "dev.example.AppUITests",
+            destinationIdentifier: "device", generatedResourceDirectory: root.path,
+            xcodebuildPath: "/bin/echo"
+        )
+        let products = XCTestRunProductPaths(
+            sourceURL: root.appending(path: "Products/App.xctestrun"),
+            appBundleURL: root.appending(path: "Products/App.app"),
+            testHostURL: root.appending(path: "Products/Host.app"),
+            testBundleURL: root.appending(path: "Products/Tests.xctest")
+        )
+        let before = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products)
+        try Data("let generated = 2".utf8).write(to: export)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) == before)
+        try Data("struct Feature { let changed = true }".utf8).write(to: synchronizedFile)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) != before)
+        let resource = root.appending(path: "Sources/Feature/Resources/build/settings.json")
+        let beforeResource = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products)
+        try FileManager.default.createDirectory(at: resource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{\"enabled\":true}".utf8).write(to: resource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) != beforeResource)
     }
 
     @Test func reusableRunUsesCheckedProductsAndRejectsChangedTestRunPaths() throws {
@@ -1023,7 +1333,8 @@ struct ScenarioContractsTests {
             testBundleURL: checked.testBundleURL,
             testRunURL: checked.sourceURL,
             selectedTestProjectURL: URL(filePath: configuration.containerPath),
-            buildInputsDigest: "checked-inputs", productMetadataDigest: "checked-metadata"
+            buildInputsDigest: "checked-inputs", buildGenerationDigest: "checked-generation",
+            productMetadataDigest: "checked-metadata"
         )
         #expect(connection.derivedDataURL.resolvingSymlinksInPath()
                 == derivedData.resolvingSymlinksInPath())
@@ -1775,7 +2086,8 @@ struct ScenarioContractsTests {
         _ = try git(["-c", "user.name=Intent Test", "-c", "user.email=intent@example.invalid",
                      "commit", "-q", "-m", "baseline"])
         // The project directory itself is an untracked build input until committed.
-        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
+        try projectData(objects: ["ROOT": ["isa": "PBXGroup", "children": []]],
+                        mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
         _ = try git(["add", "Sample.xcodeproj/project.pbxproj"])
         _ = try git(["-c", "user.name=Intent Test", "-c", "user.email=intent@example.invalid",
                      "commit", "-q", "-m", "project"])
@@ -1815,7 +2127,8 @@ struct ScenarioContractsTests {
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: scheme.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
+        try projectData(objects: ["ROOT": ["isa": "PBXGroup", "children": []]],
+                        mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
         try Data("<Workspace version=\"1.0\"><FileRef location=\"group:../App/App.xcodeproj\"/></Workspace>".utf8)
             .write(to: contents)
         try Data("scheme".utf8).write(to: scheme)
@@ -1855,7 +2168,9 @@ struct ScenarioContractsTests {
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: scheme.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
+        try projectData(objects: ["ROOT": ["isa": "PBXGroup", "children": []]],
+                        mainGroup: "ROOT")
+            .write(to: project.appending(path: "project.pbxproj"))
         try Data("<Workspace version=\"1.0\"><FileRef location=\"group:App.xcodeproj\"/></Workspace>".utf8)
             .write(to: workspace.appending(path: "contents.xcworkspacedata"))
         try Data("Check.xcworkspace/xcshareddata/xcschemes/\n".utf8)
@@ -1898,7 +2213,9 @@ struct ScenarioContractsTests {
                 testBundleURL: products.appending(path: "Tests.xctest")
             )
         )
-        #expect(fingerprint.sourceLocations.contains(scheme))
+        #expect(fingerprint.sourceLocations.contains {
+            $0.resolvingSymlinksInPath() == scheme.resolvingSymlinksInPath()
+        })
         #expect(XcodeTestExecutor.sourceRevision(sourceLocations: fingerprint.sourceLocations,
                                                  buildInputsDigest: fingerprint.digest)
                 == "inputs-sha256:\(fingerprint.digest)")
@@ -2867,6 +3184,16 @@ struct ScenarioContractsTests {
         let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func projectData(
+        objects: [String: [String: Any]], mainGroup: String
+    ) throws -> Data {
+        var completeObjects = objects
+        completeObjects["PROJECT"] = ["isa": "PBXProject", "mainGroup": mainGroup]
+        return try PropertyListSerialization.data(
+            fromPropertyList: ["objects": completeObjects], format: .xml, options: 0
+        )
     }
 
     private var encoder: JSONEncoder {

@@ -4,6 +4,31 @@ import Testing
 @testable import FoundationEvals
 
 struct IntentEvidenceBundleTests {
+    @Test func exploratoryCheckCannotQualifyInGUIOrOffline() throws {
+        let fixture = try nativeBundle(
+            observed: "packing-001", claimedOutcome: .passed,
+            executedTestCount: 1, xctestExitCode: 0, purpose: .exploratory
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let decision = IntentEvidenceQualification.qualify(
+            fixture.snapshot.cases[0], requirement: fixture.trusted.cases[0],
+            referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(decision.incompleteEvidence.contains {
+            $0 == "Exploratory checks do not qualify as release requirements."
+        })
+        let offline = try IntentEvidenceChecker.check(
+            bundle: fixture.bundle, requirements: fixture.requirements,
+            expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64),
+            policy: IntentEvidenceChecker.policyID,
+            referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(offline.exitCode == 20)
+        #expect(String(decoding: offline.json, as: UTF8.self).contains(
+            "Exploratory checks do not qualify as release requirements."
+        ))
+    }
+
     @Test func legacyPlanCannotClaimAnUnfrozenGitSource() throws {
         let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
                                        executedTestCount: 1, xctestExitCode: 0)
@@ -1424,7 +1449,8 @@ struct IntentEvidenceBundleTests {
     private func nativeBundle(
         observed: String, claimedOutcome: ScenarioOutcome,
         executedTestCount: Int, xctestExitCode: Int32, projectID: UUID? = nil,
-        actionFailureReason: ScenarioActionFailureReason? = nil
+        actionFailureReason: ScenarioActionFailureReason? = nil,
+        purpose: ScenarioPurpose = .releaseRequirement
     ) throws -> Fixture {
         let now = Date(timeIntervalSince1970: 100)
         let root = FileManager.default.temporaryDirectory.appending(path: "native-evidence-test-\(UUID().uuidString)")
@@ -1433,7 +1459,7 @@ struct IntentEvidenceBundleTests {
         definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
         definition.coverage.appFeature = .notApplicable
         definition.coverage.siri = .notApplicable
-        definition.purpose = .releaseRequirement
+        definition.purpose = purpose
         definition.checkMode = .basic
         definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
         definition.integration = .init(id: "notes", version: "1", digest: String(repeating: "e", count: 64))

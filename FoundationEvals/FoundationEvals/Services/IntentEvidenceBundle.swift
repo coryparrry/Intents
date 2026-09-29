@@ -52,6 +52,9 @@ struct IntentEvidenceRequirements: Codable, Equatable, Sendable {
     struct SemanticPolicy: Codable, Equatable, Sendable {
         var scoringContractDigest: String
         var judgePolicyDigest: String
+        /// Unix timestamp of an independently reviewed policy freeze. Nil
+        /// preserves existing consumer-reviewed policies without a time gate.
+        var frozenAt: TimeInterval? = nil
     }
 }
 
@@ -539,6 +542,7 @@ enum IntentEvidenceBundle {
                   guard let policy = item.semanticPolicy else { return true }
                   return isSHA256(policy.scoringContractDigest)
                       && isSHA256(policy.judgePolicyDigest)
+                      && (policy.frozenAt.map { $0.isFinite && $0 > 0 } ?? true)
               }) else {
             throw IntentEvidenceBundleError.invalid("Trusted requirements are invalid.")
         }

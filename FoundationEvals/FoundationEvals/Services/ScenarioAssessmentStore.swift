@@ -30,6 +30,42 @@ actor ScenarioAssessmentStore {
 
     init(directory: URL) { root = directory }
 
+    /// Freeze the reviewed judge choice before any request is sent. A later
+    /// result cannot choose its own policy, and a retry cannot replace the pin.
+    func freezeSemanticPolicy(
+        _ policy: ScenarioFrozenSemanticPolicy, definition: ScenarioDefinition
+    ) throws {
+        try policy.validate(definition: definition)
+        if let existing = try frozenSemanticPolicy(definition: definition) {
+            guard try existing.hasSameJudgingPolicy(as: policy) else {
+                throw ScenarioAssessmentStoreError.invalidBinding(
+                    "judge policy is already frozen; retain it or create a new requirement"
+                )
+            }
+            return
+        }
+        let url = semanticPolicyURL(definition: definition)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try CanonicalJSON.data(for: policy, prettyPrinted: false).write(to: url, options: .atomic)
+    }
+
+    func frozenSemanticPolicy(definition: ScenarioDefinition) throws -> ScenarioFrozenSemanticPolicy? {
+        let url = semanticPolicyURL(definition: definition)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let policy = try CanonicalJSON.decode(
+            ScenarioFrozenSemanticPolicy.self, from: Data(contentsOf: url)
+        )
+        try policy.validate(definition: definition)
+        return policy
+    }
+
+    private func semanticPolicyURL(definition: ScenarioDefinition) -> URL {
+        root.appending(path: "Requirements", directoryHint: .isDirectory)
+            .appending(path: "\(definition.id.uuidString.lowercased())-v\(definition.version).json")
+    }
+
     /// Reassess the supplied saved observation and append a new immutable
     /// assessment. The caller can retry `append` with the returned value after
     /// a save failure; neither path invokes the app feature or native route.

@@ -200,6 +200,7 @@ enum XCTestRunInvocationTransport {
         invocation: ScenarioInvocationIdentity,
         scope: ScenarioNativeExecutionScope? = nil,
         featureBackend: ScenarioFeatureBackend = .connectedRunner,
+        buildEnvironment: [String: String] = [:],
         fileManager: FileManager = .default
     ) throws -> URL {
         guard invocation.featureBackend == (scope?.lane == .appFeature
@@ -230,6 +231,11 @@ enum XCTestRunInvocationTransport {
         ) { target in
             var environment = target["EnvironmentVariables"] as? [String: Any] ?? [:]
             injected.forEach { environment[$0.key] = $0.value }
+            for key in ["XCODE_VERSION_ACTUAL", "SDK_VERSION"] {
+                if let value = buildEnvironment[key], !value.isEmpty {
+                    environment[key] = value
+                }
+            }
             target["EnvironmentVariables"] = environment
         }
 

@@ -188,6 +188,7 @@ struct ScenarioConnectionStageFailure: Sendable {
     var testHostProduct: ScenarioProductIdentity
     var testProduct: ScenarioProductIdentity
     var buildInputsDigest: String
+    var buildGenerationDigest: String
     var productMetadataDigest: String
     var runtimeProfile: ScenarioRuntimeProfileIdentity?
     var kind: ScenarioConnectionEnvironmentFailure
@@ -226,6 +227,7 @@ struct ScenarioVerifiedConnection: Sendable {
     var testRunURL: URL
     var selectedTestProjectURL: URL
     var buildInputsDigest: String
+    var buildGenerationDigest: String
     var sourceRevision: String = ""
     var productMetadataDigest: String
     var runtimeProfile: ScenarioRuntimeProfileIdentity? = nil
@@ -842,6 +844,9 @@ actor XcodeTestExecutor {
               failure.integration == definition.integration,
               failure.targetBundleIdentifier == definition.target.bundleIdentifier,
               failure.productMetadataDigest == Self.productMetadataDigest(products: failure.products),
+              (try? Self.buildGenerationDigest(
+                  configuration: configuration, products: failure.products
+              )) == failure.buildGenerationDigest,
               (try? Self.productIdentity(
                   bundle: failure.products.appBundleURL,
                   fallbackBundleIdentifier: definition.target.bundleIdentifier
@@ -1118,6 +1123,9 @@ actor XcodeTestExecutor {
                     products: paths, appProduct: products.app,
                     testHostProduct: testHostProduct, testProduct: products.test,
                     buildInputsDigest: inputDigest,
+                    buildGenerationDigest: try Self.buildGenerationDigest(
+                        configuration: configuration, products: paths
+                    ),
                     productMetadataDigest: Self.productMetadataDigest(products: paths),
                     runtimeProfile: Self.runtimeProfile(
                         configuration: configuration, appBundleURL: paths.appBundleURL
@@ -1156,6 +1164,9 @@ actor XcodeTestExecutor {
             testRunURL: paths.sourceURL,
             selectedTestProjectURL: URL(filePath: owningProjectPath),
             buildInputsDigest: fingerprint.digest,
+            buildGenerationDigest: try Self.buildGenerationDigest(
+                configuration: configuration, products: paths
+            ),
             sourceRevision: Self.sourceRevision(
                 sourceLocations: fingerprint.sourceLocations, buildInputsDigest: fingerprint.digest
             ),
@@ -1294,6 +1305,15 @@ actor XcodeTestExecutor {
                   testHostURL: connection.testHostURL,
                   testBundleURL: connection.testBundleURL
               )),
+              (try? Self.buildGenerationDigest(
+                  configuration: configuration,
+                  products: .init(
+                      sourceURL: connection.testRunURL,
+                      appBundleURL: connection.appBundleURL,
+                      testHostURL: connection.testHostURL,
+                      testBundleURL: connection.testBundleURL
+                  )
+              )) == connection.buildGenerationDigest,
               let inputs = try? Self.buildInputsDigest(
                   configuration: configuration,
                   products: .init(
@@ -1468,6 +1488,49 @@ actor XcodeTestExecutor {
               let operationID = control["operationID"] as? String,
               !operationID.isEmpty else { return nil }
         return operationID
+    }
+
+    /// Derive Xcode build-setting values from the built test bundle's generated
+    /// metadata, then forward them to the XCTest process. Inheriting the host's
+    /// environment would describe the app running the UI, not the selected SDK.
+    static func executionBuildEnvironment(
+        testBundleURL: URL,
+        destinationPlatform: IntentLabDestinationPlatform?
+    ) -> [String: String]? {
+        let infoURL = testBundleURL.appending(path: "Info.plist")
+        guard let data = try? Data(contentsOf: infoURL),
+              let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let sdkName = info["DTSDKName"] as? String,
+              let sdkRange = sdkName.range(of: #"\d+(?:\.\d+)*$"#, options: .regularExpression),
+              let platformName = info["DTPlatformName"] as? String else { return nil }
+        let xcodeVersion = (info["DTXcode"] as? String)
+            ?? (info["DTXcode"] as? NSNumber)?.stringValue
+        guard let xcodeVersion, !xcodeVersion.isEmpty,
+              xcodeVersion.lowercased() != "unknown" else { return nil }
+        let sdkPlatform: String
+        if sdkName.hasPrefix("iphonesimulator") {
+            sdkPlatform = "iphonesimulator"
+        } else if sdkName.hasPrefix("iphoneos") {
+            sdkPlatform = "iphoneos"
+        } else if sdkName.hasPrefix("macosx") {
+            sdkPlatform = "macosx"
+        } else {
+            return nil
+        }
+        guard platformName == sdkPlatform else { return nil }
+        if let destinationPlatform {
+            let expectedPlatform: String
+            switch destinationPlatform {
+            case .iOS: expectedPlatform = "iphoneos"
+            case .iOSSimulator: expectedPlatform = "iphonesimulator"
+            case .macOS: expectedPlatform = "macosx"
+            }
+            guard sdkPlatform == expectedPlatform else { return nil }
+        }
+        return [
+            "XCODE_VERSION_ACTUAL": xcodeVersion,
+            "SDK_VERSION": String(sdkName[sdkRange]),
+        ]
     }
 
     private static func runtimeProfile(
@@ -1677,60 +1740,107 @@ actor XcodeTestExecutor {
         fileManager: FileManager = .default
     ) throws -> (digest: String, sourceLocations: Set<URL>) {
         let container = URL(filePath: configuration.containerPath)
-        var files = [
-            products.sourceURL,
-            products.appBundleURL.appending(path: "Info.plist"),
-            products.appBundleURL.appending(path: "_CodeSignature/CodeResources"),
-            products.appBundleURL.appending(path: "embedded.mobileprovision"),
-            products.testHostURL.appending(path: "Info.plist"),
-            products.testHostURL.appending(path: "_CodeSignature/CodeResources"),
-            products.testHostURL.appending(path: "embedded.mobileprovision"),
-            products.testBundleURL.appending(path: "Info.plist"),
-            products.testBundleURL.appending(path: "_CodeSignature/CodeResources"),
-            products.testBundleURL.appending(path: "embedded.mobileprovision"),
+        var files: [String: URL] = [:]
+        let projects: [URL]
+        if configuration.isWorkspace {
+            guard let discovered = try? XcodeConnectionDiscoveryService.workspaceProjectURLs(workspace: container),
+                  !discovered.isEmpty else {
+                throw XcodeTestExecutorError.resourceMismatch(
+                    "The selected workspace has no resolvable project sources to fingerprint."
+                )
+            }
+            projects = discovered
+        } else {
+            projects = [container]
+        }
+        let workspaceFiles = [
+            ("workspace/contents.xcworkspacedata", container.appending(path: "contents.xcworkspacedata")),
+            ("workspace/xcshareddata/swiftpm/Package.resolved", container.appending(path: "xcshareddata/swiftpm/Package.resolved")),
+            ("workspace/Package.resolved", container.deletingLastPathComponent().appending(path: "Package.resolved")),
         ]
-        var checkedSourceFiles = [
-            container.appending(path: "contents.xcworkspacedata"),
-            container.appending(path: "xcshareddata/swiftpm/Package.resolved"),
-            container.deletingLastPathComponent().appending(path: "Package.resolved"),
-        ]
-        let projects = configuration.isWorkspace
-            ? (try? XcodeConnectionDiscoveryService.workspaceProjectURLs(workspace: container)) ?? []
-            : [container]
+        for (key, file) in workspaceFiles { files[key] = file }
+        let containerBase = container.deletingLastPathComponent().standardizedFileURL
         for project in projects {
-            checkedSourceFiles.append(project.appending(path: "project.pbxproj"))
-            checkedSourceFiles.append(project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"))
+            let projectLabel = Self.relativePath(of: project, from: containerBase)
+            let prefix = "project/\(projectLabel)"
+            files["\(prefix)/project.pbxproj"] = project.appending(path: "project.pbxproj")
+            files["\(prefix)/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"] =
+                project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved")
         }
         for schemeContainer in (configuration.isWorkspace ? [container] + projects : projects) {
             let schemes = schemeContainer.appending(path: "xcshareddata/xcschemes", directoryHint: .isDirectory)
             if let entries = try? fileManager.contentsOfDirectory(at: schemes, includingPropertiesForKeys: nil) {
-                checkedSourceFiles.append(contentsOf: entries.filter { $0.pathExtension == "xcscheme" })
+                let base = schemeContainer == container ? "workspace" : "project/\(Self.relativePath(of: schemeContainer, from: containerBase))"
+                for entry in entries where entry.pathExtension == "xcscheme" {
+                    files["\(base)/xcshareddata/xcschemes/\(entry.lastPathComponent)"] = entry
+                }
             }
         }
-        files.append(contentsOf: checkedSourceFiles)
         var hasher = SHA256()
-        for file in Set(files).sorted(by: { $0.path < $1.path }) {
-            hasher.update(data: Data(file.standardizedFileURL.path.utf8))
+        for (key, file) in files.sorted(by: { $0.key < $1.key }) {
+            hasher.update(data: Data(key.utf8))
             if let data = try? Data(contentsOf: file, options: [.mappedIfSafe]) {
                 hasher.update(data: data)
             } else {
                 hasher.update(data: Data("<missing>".utf8))
             }
         }
-        let projectSources = try hashProjectSources(projects: projects, into: &hasher,
+        let projectSources = try hashProjectSources(projects: projects, container: container,
+                                                    xcodebuildPath: configuration.xcodebuildPath, into: &hasher,
                                                     fileManager: fileManager)
+        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        let existingConfiguration = files.compactMap { key, value -> URL? in
+            guard key.hasPrefix("workspace/") || key.hasPrefix("project/"),
+                  fileManager.fileExists(atPath: value.path) else { return nil }
+            return value
+        }
+        let sourceLocations = projectSources.union([container]).union(existingConfiguration)
+        return (digest, sourceLocations)
+    }
+
+    /// Generated products and the selected compiler are checked independently
+    /// from source identity. Their locations intentionally bind this cache to
+    /// one DerivedData generation while source digests remain portable.
+    static func buildGenerationDigest(
+        configuration: XcodeTestConfiguration,
+        products: XCTestRunProductPaths,
+        fileManager: FileManager = .default
+    ) throws -> String {
+        var hasher = SHA256()
+        let productPaths: [(String, URL)] = [
+            ("test-run", products.sourceURL),
+            ("app", products.appBundleURL),
+            ("test-host", products.testHostURL),
+            ("test-bundle", products.testBundleURL),
+        ]
+        for (label, url) in productPaths {
+            hasher.update(data: Data(label.utf8))
+            hasher.update(data: Data(url.standardizedFileURL.path.utf8))
+        }
+        hasher.update(data: Data(productMetadataDigest(products: products).utf8))
+        if let data = try? Data(contentsOf: products.sourceURL, options: [.mappedIfSafe]) {
+            hasher.update(data: data)
+        } else {
+            hasher.update(data: Data("<missing-test-run>".utf8))
+        }
         let toolPath = URL(filePath: configuration.xcodebuildPath).resolvingSymlinksInPath().path
         hasher.update(data: Data(toolPath.utf8))
         if let attributes = try? fileManager.attributesOfItem(atPath: toolPath) {
             let stamp = "\(attributes[.modificationDate] ?? "unknown"):\(attributes[.size] ?? "unknown")"
             hasher.update(data: Data(stamp.utf8))
+        } else {
+            hasher.update(data: Data("<missing-xcodebuild>".utf8))
         }
-        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
-        // A workspace with no discoverable project cannot claim a Git source.
-        let existingConfiguration = checkedSourceFiles.filter { fileManager.fileExists(atPath: $0.path) }
-        let sourceLocations = projects.isEmpty ? Set<URL>()
-            : projectSources.union([container]).union(existingConfiguration)
-        return (digest, sourceLocations)
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func relativePath(of url: URL, from base: URL) -> String {
+        let source = url.standardizedFileURL.pathComponents
+        let root = base.standardizedFileURL.pathComponents
+        let sharedCount = zip(source, root).prefix { pair in pair.0 == pair.1 }.count
+        let parts = Array(repeating: "..", count: root.count - sharedCount)
+            + Array(source.dropFirst(sharedCount))
+        return parts.isEmpty ? "." : parts.joined(separator: "/")
     }
 
     /// A Git label is only meaningful for a clean checkout. Keep the
@@ -1787,81 +1897,345 @@ actor XcodeTestExecutor {
         return "git:\(revision)"
     }
 
-    private static func hashProjectSources(
-        projects: [URL], into hasher: inout SHA256, fileManager: FileManager
+    /// Ask SwiftPM for evaluated membership: manifest syntax and target layout
+    /// are executable Swift and cannot be reliably inferred from folder names.
+    static func localPackageDeveloperDirectory(xcodebuildPath: String) -> String? {
+        let executable = URL(filePath: xcodebuildPath).resolvingSymlinksInPath()
+        let bin = executable.deletingLastPathComponent()
+        let usr = bin.deletingLastPathComponent()
+        let developer = usr.deletingLastPathComponent()
+        guard executable.lastPathComponent == "xcodebuild", bin.lastPathComponent == "bin",
+              usr.lastPathComponent == "usr", developer.lastPathComponent == "Developer" else { return nil }
+        return developer.path
+    }
+
+    private static func localPackageBuildInputs(
+        at root: URL, xcodebuildPath: String, fileManager: FileManager
     ) throws -> Set<URL> {
-        let generatedDirectories: Set<String> = [
-            ".git", ".build", ".swiftpm", "build", "deriveddata",
-            "node_modules", "xcuserdata"
-        ]
-        let sourceExtensions: Set<String> = [
-            "swift", "m", "mm", "h", "hpp", "c", "cc", "cpp", "metal", "plist", "json",
-            "xcconfig", "entitlements", "modulemap", "intentdefinition", "storyboard", "xib",
-            "strings", "stringsdict", "xml", "yml", "yaml", "rb", "sh", "py", "js", "ts", "tsx", "jsx"
-        ]
-        var roots = projects.map { $0.deletingLastPathComponent() }
-        var referencedFiles: [URL] = []
+        let scratch = fileManager.temporaryDirectory.appending(path: "intent-lab-package-\(UUID().uuidString)")
+        try fileManager.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: scratch) }
+        var inputs = Set<URL>()
+        var visited = Set<String>()
+
+        func metadata(_ command: [String], package: URL) throws -> [String: Any] {
+            let output = scratch.appending(path: "metadata.json")
+            try Data().write(to: output)
+            let handle = try FileHandle(forWritingTo: output)
+            defer { try? handle.close() }
+            let process = Process()
+            process.executableURL = URL(filePath: "/usr/bin/xcrun")
+            process.arguments = ["swift", "package", "--disable-automatic-resolution", "--package-path", package.path,
+                                 "--scratch-path", scratch.appending(path: "build").path,
+                                 "--cache-path", scratch.appending(path: "cache").path,
+                                 "--config-path", scratch.appending(path: "config").path,
+                                 "--security-path", scratch.appending(path: "security").path] + command
+            var environment = ProcessInfo.processInfo.environment
+            environment["CLANG_MODULE_CACHE_PATH"] = scratch.appending(path: "module-cache").path
+            if let developer = localPackageDeveloperDirectory(xcodebuildPath: xcodebuildPath) {
+                environment["DEVELOPER_DIR"] = developer
+            }
+            process.environment = environment
+            process.standardOutput = handle
+            process.standardError = FileHandle.nullDevice
+            let finished = DispatchSemaphore(value: 0)
+            process.terminationHandler = { _ in finished.signal() }
+            try process.run()
+            guard finished.wait(timeout: .now() + 30) == .success else {
+                process.terminate()
+                throw XcodeTestExecutorError.resourceMismatch(
+                    "SwiftPM could not resolve local package build inputs within the connection-check deadline."
+                )
+            }
+            let size = (try fileManager.attributesOfItem(atPath: output.path)[.size] as? NSNumber)?.intValue ?? 0
+            guard process.terminationStatus == 0, size <= 8 * 1_024 * 1_024,
+                  let value = try JSONSerialization.jsonObject(with: Data(contentsOf: output)) as? [String: Any] else {
+                throw XcodeTestExecutorError.resourceMismatch(
+                    "SwiftPM could not resolve local package build inputs. Check the package and selected developer tools."
+                )
+            }
+            return value
+        }
+
+        func visit(_ package: URL) throws {
+            let package = URL(filePath: package.standardizedFileURL.resolvingSymlinksInPath().path,
+                              directoryHint: .isDirectory)
+            guard visited.insert(package.path).inserted else { return }
+            let description = try metadata(["describe", "--type", "json"], package: package)
+            let manifest = try metadata(["dump-package"], package: package)
+            guard let targets = description["targets"] as? [[String: Any]],
+                  let declarations = manifest["targets"] as? [[String: Any]],
+                  let dependencies = description["dependencies"] as? [[String: Any]] else {
+                throw XcodeTestExecutorError.resourceMismatch("SwiftPM returned unsupported local package membership metadata.")
+            }
+            for entry in try fileManager.contentsOfDirectory(at: package, includingPropertiesForKeys: nil) {
+                let name = entry.lastPathComponent
+                if name == "Package.swift" || name == "Package.resolved"
+                    || (name.hasPrefix("Package@swift-") && entry.pathExtension == "swift") {
+                    inputs.insert(entry)
+                }
+            }
+            for target in targets {
+                guard let name = target["name"] as? String,
+                      let declaration = declarations.first(where: { $0["name"] as? String == name }) else {
+                    throw XcodeTestExecutorError.resourceMismatch("SwiftPM returned incomplete target membership metadata.")
+                }
+                if declaration["type"] as? String == "binary" {
+                    // Remote artifacts are pinned by the checksum in Package.swift;
+                    // local artifacts must include their actual packaged bytes.
+                    if let path = declaration["path"] as? String {
+                        inputs.insert(URL(filePath: path, relativeTo: package).standardizedFileURL)
+                    }
+                    continue
+                }
+                guard let path = target["path"] as? String,
+                      let sources = target["sources"] as? [String] else {
+                    throw XcodeTestExecutorError.resourceMismatch("SwiftPM returned unsupported target source membership.")
+                }
+                let targetRoot = URL(filePath: path, directoryHint: .isDirectory,
+                                     relativeTo: package).standardizedFileURL
+                for source in sources {
+                    inputs.insert(URL(filePath: source, relativeTo: targetRoot).standardizedFileURL)
+                }
+                for resource in target["resources"] as? [[String: Any]] ?? [] {
+                    guard let path = resource["path"] as? String else {
+                        throw XcodeTestExecutorError.resourceMismatch("SwiftPM returned an unresolved package resource.")
+                    }
+                    inputs.insert(URL(filePath: path, relativeTo: targetRoot).standardizedFileURL)
+                }
+                // SwiftPM's source list omits Clang headers and module maps.
+                // Honor its evaluated excludes while including those build inputs.
+                if target["module_type"] as? String == "ClangTarget"
+                    || target["module_type"] as? String == "SystemLibraryTarget" {
+                    let excluded = (declaration["exclude"] as? [String] ?? []).map {
+                        URL(filePath: $0, relativeTo: targetRoot).standardizedFileURL.path
+                    }
+                    var enumerationError: Error?
+                    guard let enumerator = fileManager.enumerator(at: targetRoot,
+                        includingPropertiesForKeys: [.isDirectoryKey], errorHandler: { _, error in
+                            enumerationError = error
+                            return false
+                        }) else {
+                        throw XcodeTestExecutorError.resourceMismatch("Local package headers could not be inspected.")
+                    }
+                    for case let file as URL in enumerator {
+                        let path = file.standardizedFileURL.path
+                        if excluded.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) {
+                            enumerator.skipDescendants()
+                            continue
+                        }
+                        if ["h", "hh", "hpp", "hxx", "inc", "modulemap"].contains(file.pathExtension.lowercased()) {
+                            inputs.insert(file)
+                        }
+                    }
+                    if let enumerationError { throw enumerationError }
+                }
+            }
+            for dependency in dependencies where dependency["type"] as? String == "fileSystem" {
+                guard let path = dependency["path"] as? String else {
+                    throw XcodeTestExecutorError.resourceMismatch("SwiftPM returned an unresolved local package dependency.")
+                }
+                try visit(URL(filePath: path, relativeTo: package).standardizedFileURL)
+            }
+        }
+        try visit(root)
+        return inputs
+    }
+
+    private static func hashProjectSources(
+        projects: [URL], container: URL, xcodebuildPath: String, into hasher: inout SHA256,
+        fileManager: FileManager
+    ) throws -> Set<URL> {
+        let ignoredSourceTrees: Set<String> = ["SDKROOT", "BUILT_PRODUCTS_DIR", "DEVELOPER_DIR"]
+        var files: [String: URL] = [:]
+        var sourceLocations = Set(projects)
         for project in projects {
             let projectFile = project.appending(path: "project.pbxproj")
             guard let data = try? Data(contentsOf: projectFile),
                   let plist = try? PropertyListSerialization.propertyList(from: data, format: nil)
                     as? [String: Any],
-                  let objects = plist["objects"] as? [String: [String: Any]] else { continue }
-            for object in objects.values where object["isa"] as? String == "XCLocalSwiftPackageReference" {
-                guard let relativePath = object["relativePath"] as? String,
-                      !relativePath.isEmpty else { continue }
-                roots.append(URL(filePath: relativePath, relativeTo: project.deletingLastPathComponent()))
+                  let objects = plist["objects"] as? [String: [String: Any]],
+                  let projectObject = objects.values.first(where: { $0["isa"] as? String == "PBXProject" }),
+                  let mainGroupID = projectObject["mainGroup"] as? String,
+                  objects[mainGroupID] != nil else {
+                throw XcodeTestExecutorError.resourceMismatch(
+                    "The selected project has unsupported or unreadable source membership metadata."
+                )
             }
-            for object in objects.values {
-                guard let path = object["path"] as? String,
-                      let kind = object["isa"] as? String,
-                      kind == "PBXFileReference" || kind == "PBXGroup" || kind == "PBXVariantGroup" else {
-                    continue
-                }
-                let explicitlyReferencedLocalBuildSource = kind == "PBXFileReference"
-                    && path.lowercased().hasPrefix("build/")
-                    && sourceExtensions.contains(URL(filePath: path).pathExtension.lowercased())
-                guard path.hasPrefix("../") || path.hasPrefix("/")
-                    || explicitlyReferencedLocalBuildSource else { continue }
-                let reference = URL(filePath: path, relativeTo: project.deletingLastPathComponent())
-                    .standardizedFileURL
-                var isDirectory: ObjCBool = false
-                guard fileManager.fileExists(atPath: reference.path, isDirectory: &isDirectory) else { continue }
-                if isDirectory.boolValue { roots.append(reference) }
-                else { referencedFiles.append(reference) }
-            }
-        }
-        var visitedDirectories: Set<String> = []
-        var sourceFiles = Set(referencedFiles)
-        while let directory = roots.popLast() {
-            let resolved = directory.standardizedFileURL.resolvingSymlinksInPath()
-            guard visitedDirectories.insert(resolved.path).inserted else { continue }
-            for entry in try fileManager.contentsOfDirectory(
-                at: resolved, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey]
-            ) {
-                let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
-                if values.isDirectory == true {
-                    if !generatedDirectories.contains(entry.lastPathComponent.lowercased()),
-                       entry.pathExtension != "xcresult" {
-                        roots.append(entry)
+            let projectRoot = project.deletingLastPathComponent().standardizedFileURL
+            let projectLabel = Self.relativePath(of: project, from: container.deletingLastPathComponent())
+            let prefix = "source/\(projectLabel)"
+            var visitedGroups: Set<String> = []
+            var visitedDirectories: Set<String> = []
+            var buildPhaseFileReferences: Set<String> = []
+            for phase in objects.values where (phase["isa"] as? String)?.hasSuffix("BuildPhase") == true {
+                for buildFileID in phase["files"] as? [String] ?? [] {
+                    guard let buildFile = objects[buildFileID] else { continue }
+                    if let reference = buildFile["fileRef"] as? String {
+                        buildPhaseFileReferences.insert(reference)
                     }
-                } else if values.isRegularFile == true {
-                    sourceFiles.insert(entry.standardizedFileURL)
-                    guard sourceFiles.count <= 100_000 else {
+                }
+            }
+
+            func resolvedPath(
+                _ object: [String: Any], inheritedBase: URL, isGroup: Bool
+            ) throws -> URL? {
+                let sourceTree = object["sourceTree"] as? String ?? "<group>"
+                if ignoredSourceTrees.contains(sourceTree) { return nil }
+                // Groups with no path are logical navigator containers. Their
+                // display names (including localized variant names) do not add
+                // a filesystem component to their children's paths.
+                let path = (object["path"] as? String)
+                    ?? (isGroup ? nil : object["name"] as? String)
+                let base: URL
+                switch sourceTree {
+                case "<group>": base = inheritedBase
+                case "SOURCE_ROOT": base = projectRoot
+                case "<absolute>":
+                    guard let path else { return nil }
+                    return URL(filePath: path, directoryHint: isGroup ? .isDirectory : .inferFromPath).standardizedFileURL
+                default:
+                    if isGroup || path != nil {
+                        throw XcodeTestExecutorError.resourceMismatch(
+                            "The selected project uses an unsupported source tree for a local source."
+                        )
+                    }
+                    return nil
+                }
+                guard let path, !path.isEmpty else { return base }
+                let result = URL(filePath: path, directoryHint: isGroup ? .isDirectory : .inferFromPath,
+                                 relativeTo: base).standardizedFileURL
+                return result
+            }
+
+            func addFile(_ file: URL, labelPrefix: String, includeDirectory: Bool = true) throws {
+                guard fileManager.fileExists(atPath: file.path) else {
+                    throw XcodeTestExecutorError.resourceMismatch(
+                        "A referenced project source could not be found."
+                    )
+                }
+                var isDirectory: ObjCBool = false
+                guard fileManager.fileExists(atPath: file.path, isDirectory: &isDirectory) else {
+                    throw XcodeTestExecutorError.resourceMismatch(
+                        "A referenced project source could not be inspected."
+                    )
+                }
+                if isDirectory.boolValue {
+                    // A directory shown in the navigator is not necessarily a
+                    // build input. Folder references are resources only when a
+                    // build phase actually consumes them.
+                    guard includeDirectory else { return }
+                    try collectDirectory(file, labelPrefix: labelPrefix)
+                } else {
+                    files["\(labelPrefix)/\(Self.relativePath(of: file, from: projectRoot))"] = file
+                    sourceLocations.insert(file.resolvingSymlinksInPath())
+                    guard files.count <= 100_000 else {
                         throw XcodeTestExecutorError.resourceMismatch(
                             "The selected project has too many source and resource files to fingerprint."
                         )
                     }
                 }
             }
+
+            func collectDirectory(_ directory: URL, labelPrefix: String) throws {
+                let resolvedDirectory = directory.standardizedFileURL.resolvingSymlinksInPath()
+                guard visitedDirectories.insert(resolvedDirectory.path).inserted else { return }
+                sourceLocations.insert(resolvedDirectory)
+                let entries = try fileManager.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey]
+                )
+                for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                    var isDirectory: ObjCBool = false
+                    guard fileManager.fileExists(atPath: entry.path, isDirectory: &isDirectory) else { continue }
+                    if isDirectory.boolValue {
+                        // This directory is already an explicit build input.
+                        // Names such as build or DerivedData can be legitimate
+                        // nested resources and must not hide consumed content.
+                        try collectDirectory(entry, labelPrefix: labelPrefix)
+                    } else {
+                        files["\(labelPrefix)/\(Self.relativePath(of: entry, from: projectRoot))"] = entry
+                        sourceLocations.insert(entry.resolvingSymlinksInPath())
+                        guard files.count <= 100_000 else {
+                            throw XcodeTestExecutorError.resourceMismatch(
+                                "The selected project has too many source and resource files to fingerprint."
+                            )
+                        }
+                    }
+                }
+            }
+
+            func visitGroup(_ id: String, inheritedBase: URL) throws {
+                guard visitedGroups.insert(id).inserted else { return }
+                guard let object = objects[id], let kind = object["isa"] as? String else {
+                    throw XcodeTestExecutorError.resourceMismatch(
+                        "The selected project has incomplete source membership metadata."
+                    )
+                }
+                let groupKinds: Set<String> = ["PBXGroup", "PBXVariantGroup"]
+                guard groupKinds.contains(kind) else {
+                    if kind == "PBXFileReference" {
+                        guard let path = try resolvedPath(object, inheritedBase: inheritedBase, isGroup: false) else { return }
+                        try addFile(
+                            path, labelPrefix: prefix,
+                            includeDirectory: buildPhaseFileReferences.contains(id)
+                        )
+                        return
+                    }
+                    if kind == "PBXFileSystemSynchronizedRootGroup" {
+                        guard let path = try resolvedPath(object, inheritedBase: inheritedBase, isGroup: true) else { return }
+                        try addFile(path, labelPrefix: prefix)
+                        return
+                    }
+                    throw XcodeTestExecutorError.resourceMismatch(
+                        "The selected project has unsupported source membership metadata."
+                    )
+                }
+                guard let groupURL = try resolvedPath(object, inheritedBase: inheritedBase, isGroup: true) else { return }
+                let children = object["children"] as? [String] ?? []
+                for child in children { try visitGroup(child, inheritedBase: groupURL) }
+            }
+
+            try visitGroup(mainGroupID, inheritedBase: projectRoot)
+
+            // Xcode 16 synchronized groups are often attached directly to targets
+            // rather than to the navigator's main group.
+            let synchronizedGroupIDs = Set(objects.values
+                .filter { $0["isa"] as? String == "PBXNativeTarget" }
+                .flatMap { $0["fileSystemSynchronizedGroups"] as? [String] ?? [] })
+            for id in synchronizedGroupIDs where !visitedGroups.contains(id) {
+                try visitGroup(id, inheritedBase: projectRoot)
+            }
+
+            // Build phases may consume references that are not displayed in
+            // the navigator. Resolve root/absolute references directly; an
+            // orphaned group-relative reference has no trustworthy base.
+            for id in buildPhaseFileReferences where !visitedGroups.contains(id) {
+                guard let object = objects[id] else {
+                    throw XcodeTestExecutorError.resourceMismatch("A build phase references missing source membership metadata.")
+                }
+                let tree = object["sourceTree"] as? String ?? "<group>"
+                guard tree == "SOURCE_ROOT" || tree == "<absolute>" || ignoredSourceTrees.contains(tree) else {
+                    throw XcodeTestExecutorError.resourceMismatch("A build phase source has no resolvable owning group.")
+                }
+                try visitGroup(id, inheritedBase: projectRoot)
+            }
+
+            for object in objects.values where object["isa"] as? String == "XCLocalSwiftPackageReference" {
+                guard let relativePath = object["relativePath"] as? String,
+                      !relativePath.isEmpty else {
+                    throw XcodeTestExecutorError.resourceMismatch(
+                        "The selected project has a local package reference with no resolvable path."
+                    )
+                }
+                let packageRoot = URL(filePath: relativePath, relativeTo: projectRoot).standardizedFileURL
+                for input in try Self.localPackageBuildInputs(at: packageRoot, xcodebuildPath: xcodebuildPath, fileManager: fileManager) {
+                    try addFile(input, labelPrefix: "\(prefix)/local-package")
+                }
+            }
         }
         var remainingContentBytes: Int64 = 256 * 1_024 * 1_024
-        for file in sourceFiles.sorted(by: {
-            let firstIsSource = sourceExtensions.contains($0.pathExtension.lowercased())
-            let secondIsSource = sourceExtensions.contains($1.pathExtension.lowercased())
-            return firstIsSource == secondIsSource ? $0.path < $1.path : firstIsSource
-        }) {
-            hasher.update(data: Data(file.path.utf8))
+        for (key, file) in files.sorted(by: { $0.key < $1.key }) {
+            hasher.update(data: Data(key.utf8))
             let attributes = try fileManager.attributesOfItem(atPath: file.path)
             let size = attributes[.size] as? NSNumber ?? 0
             if size.int64Value <= 64 * 1_024 * 1_024,
@@ -1873,8 +2247,7 @@ actor XcodeTestExecutor {
                 hasher.update(data: Data("\(size):\(attributes[.modificationDate] ?? "unknown")".utf8))
             }
         }
-        return Set(projects + visitedDirectories.map { URL(filePath: $0) }
-            + sourceFiles.map { $0.resolvingSymlinksInPath() })
+        return sourceLocations
     }
 
     static func productMetadataDigest(products: XCTestRunProductPaths) -> String {
@@ -2265,6 +2638,16 @@ actor XcodeTestExecutor {
             var boundInvocation = invocation
             boundInvocation.appProduct = products.app
             boundInvocation.testProduct = products.test
+            let buildEnvironment = Self.executionBuildEnvironment(
+                testBundleURL: productPaths.testBundleURL,
+                destinationPlatform: configuration.destinationPlatform
+            )
+            if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+               buildEnvironment == nil {
+                throw XcodeTestExecutorError.resourceMismatch(
+                    "The built test product does not identify its selected Xcode and destination SDK. Rebuild the connection with a supported Xcode project."
+                )
+            }
             let materializedTestRunURL = try XCTestRunInvocationTransport.materialize(
                 products: productPaths,
                 testTarget: configuration.testTarget,
@@ -2272,6 +2655,7 @@ actor XcodeTestExecutor {
                 invocation: boundInvocation,
                 scope: scope,
                 featureBackend: featureBackend,
+                buildEnvironment: buildEnvironment ?? [:],
                 fileManager: fileManager
             )
             invocationTestRunURL = materializedTestRunURL

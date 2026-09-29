@@ -652,10 +652,20 @@ private struct ScenarioSavedAssessmentControls: View {
     @State private var connectionID: UUID?
     @State private var approvedDigest: String?
     @State private var history = ScenarioAssessmentHistory()
+    @State private var frozenPolicy: ScenarioFrozenSemanticPolicy?
     @State private var isWorking = false
 
     private var connection: EvaluationJudgeConnection? {
         store.judgeConnections.first { $0.id == connectionID }
+    }
+
+    private var requiresSemanticPolicy: Bool {
+        guard let plan = coordinator.selectedExecutionPlan,
+              let definition = coordinator.definitions.first(where: {
+                  $0.id == plan.definitionID && $0.version == plan.definitionVersion
+                      && $0.definitionDigest == plan.definitionDigest
+              }) else { return false }
+        return definition.assertions.contains { $0.id == assertionID && $0.required }
     }
 
     var body: some View {
@@ -686,21 +696,34 @@ private struct ScenarioSavedAssessmentControls: View {
                         openSettings()
                     }
                 }
+                if frozenPolicy != nil {
+                    Label("Judge policy frozen for this requirement", systemImage: "lock")
+                        .font(.caption)
+                } else if requiresSemanticPolicy {
+                    Text("Freeze the judge policy before assessment to use its result in qualification.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Freeze judge policy", systemImage: "lock") {
+                        guard let connection else { return }
+                        isWorking = true
+                        Task {
+                            _ = await coordinator.freezeSelectedSemanticPolicy(
+                                coordinateID: coordinateID, assertionID: assertionID,
+                                judgeConfiguration: judgeConfiguration(for: connection)
+                            )
+                            await refresh()
+                            await onSelectionChanged()
+                            isWorking = false
+                        }
+                    }
+                    .disabled(isWorking || connection == nil || approvedDigest != connection?.disclosureDigest)
+                }
                 Button("Assess saved response", systemImage: "checkmark.bubble") {
                     guard let connection else { return }
                     isWorking = true
                     Task {
-                        var configuration = EvaluationJudgeConfiguration()
-                        configuration.mode = .connection
-                        configuration.connectionID = connection.id
-                        configuration.includeReferenceAttachments = true
-                        configuration.externalEvidenceApprovedAt = Date()
-                        configuration.approvedConnectionID = connection.id
-                        configuration.approvedIncludeReferenceAttachments = true
-                        configuration.approvedConnectionDigest = connection.disclosureDigest
                         _ = await coordinator.reassessSelectedCoordinate(
                             coordinateID: coordinateID, assertionID: assertionID,
-                            judgeConfiguration: configuration
+                            judgeConfiguration: judgeConfiguration(for: connection)
                         )
                         await refresh()
                         await onSelectionChanged()
@@ -743,9 +766,26 @@ private struct ScenarioSavedAssessmentControls: View {
         .task(id: executionID) { await refresh() }
     }
 
+    private func judgeConfiguration(for connection: EvaluationJudgeConnection) -> EvaluationJudgeConfiguration {
+        var configuration = EvaluationJudgeConfiguration()
+        configuration.mode = .connection
+        configuration.connectionID = connection.id
+        configuration.includeReferenceAttachments = true
+        configuration.externalEvidenceApprovedAt = Date()
+        configuration.approvedConnectionID = connection.id
+        configuration.approvedIncludeReferenceAttachments = true
+        configuration.approvedConnectionDigest = connection.disclosureDigest
+        return configuration
+    }
+
     private func refresh() async {
         guard coordinator.selectedExecutionID == executionID else { return }
-        do { history = try await coordinator.assessmentHistory(coordinateID: coordinateID) }
-        catch { coordinator.notice = error.localizedDescription }
+        do {
+            history = try await coordinator.assessmentHistory(coordinateID: coordinateID)
+            frozenPolicy = try await coordinator.frozenSemanticPolicyForSelectedCoordinate(
+                coordinateID: coordinateID, assertionID: assertionID
+            )
+            if connectionID == nil { connectionID = frozenPolicy?.judgePolicy.connectionID }
+        } catch { coordinator.notice = error.localizedDescription }
     }
 }

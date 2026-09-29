@@ -40,6 +40,9 @@ struct ScenarioIndependentAssessment: Codable, Identifiable, Sendable {
     var scoringContract: EvaluationScoringContract
     var assessment: EvaluationAssessment
     var availabilityIssue: String?
+    /// Captured before judging, with fractional seconds preserved in portable
+    /// JSON so a new frozen policy cannot admit a prior verdict.
+    var assessmentStartedAt: TimeInterval? = nil
 
     var sample: EvaluationSampleAssessment? {
         assessment.samples.count == 1 ? assessment.samples.first : nil
@@ -183,6 +186,7 @@ enum ScenarioIndependentAssessmentService {
         resolvedJudge: EvaluationResolvedJudgeConnection?,
         service: EvaluationReassessmentService = EvaluationReassessmentService()
     ) async throws -> ScenarioIndependentAssessment {
+        let assessmentStartedAt = Date().timeIntervalSince1970
         guard request.assertion.kind == .semanticRubric,
               request.assertion.applies(to: request.laneResult.lane) else {
             throw ScenarioAssessmentError.invalidAssertion
@@ -332,7 +336,8 @@ enum ScenarioIndependentAssessmentService {
             sourceBindingDigest: sourceBindingDigest,
             scoringContract: contract,
             assessment: assessment,
-            availabilityIssue: effectiveAvailabilityIssue
+            availabilityIssue: effectiveAvailabilityIssue,
+            assessmentStartedAt: assessmentStartedAt
         )
     }
 

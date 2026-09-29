@@ -310,7 +310,8 @@ struct ScenarioRetainedAssessmentArtifact: Codable, Equatable, Identifiable, Sen
         definition: ScenarioDefinition,
         laneResult: ScenarioLaneResult,
         expectedScoringContractDigest: String,
-        expectedJudgePolicyDigest: String
+        expectedJudgePolicyDigest: String,
+        frozenPolicyAt: TimeInterval? = nil
     ) -> Bool {
         guard hasValidDigest,
               projection.hasTrustedRequirementBinding(
@@ -354,6 +355,12 @@ struct ScenarioRetainedAssessmentArtifact: Codable, Equatable, Identifiable, Sen
               scoringDigest == expectedScoringContractDigest,
               let policyDigest = Self.digest(saved.judgePolicy),
               policyDigest == expectedJudgePolicyDigest else { return false }
+
+        if let frozenPolicyAt {
+            guard frozenPolicyAt.isFinite, frozenPolicyAt > 0,
+                  let assessedAt = saved.assessmentStartedAt, assessedAt.isFinite,
+                  assessedAt >= frozenPolicyAt else { return false }
+        }
 
         let criteria = saved.rubric.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -490,6 +497,7 @@ struct ScenarioRetainedAssessmentArtifact: Codable, Equatable, Identifiable, Sen
         var judgePolicy: JudgePolicy
         var assessment: Assessment
         var availabilityIssue: String?
+        var assessmentStartedAt: TimeInterval?
     }
 
     private struct ScoringContract: Codable, Equatable {

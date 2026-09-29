@@ -195,6 +195,10 @@ enum IntentEvidenceQualification {
         var failed: [String] = []
         let plan = item.plan
         let record = item.record
+        if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion,
+           definition.purpose != .releaseRequirement {
+            incomplete.append("Exploratory checks do not qualify as release requirements.")
+        }
         if plan.definitionID != definition.id || plan.definitionVersion != item.definition.version
             || plan.definitionDigest != item.definition.definitionDigest
             || plan.testContractDigest != item.definition.testContractDigest
@@ -456,7 +460,8 @@ enum IntentEvidenceQualification {
                       retained[0].hasTrustedBinding(
                           definition: definition, laneResult: laneResult,
                           expectedScoringContractDigest: policy.scoringContractDigest,
-                          expectedJudgePolicyDigest: policy.judgePolicyDigest
+                          expectedJudgePolicyDigest: policy.judgePolicyDigest,
+                          frozenPolicyAt: policy.frozenAt
                       ) else {
                     semanticIncomplete = true
                     incomplete.append("Coordinate \(coordinate.id) has no verified retained semantic assessment.")

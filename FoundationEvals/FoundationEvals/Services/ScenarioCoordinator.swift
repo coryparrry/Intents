@@ -1529,7 +1529,7 @@ final class ScenarioCoordinator {
                                                record: record, artifacts: &artifacts)
         let requirements = IntentEvidenceRequirements(
             collectionID: "single:\(definition.id.uuidString)",
-            cases: [.init(required: true, definition: definition)]
+            cases: [try await evidenceRequirement(definition: definition)]
         )
         let snapshot = IntentEvidenceBundleSnapshot(
             requirements: requirements,
@@ -1551,9 +1551,17 @@ final class ScenarioCoordinator {
             definition: definition, plan: plan, record: record, artifacts: &artifacts
         )
         return IntentEvidenceQualification.qualify(
-            item, requirement: .init(required: true, definition: definition),
+            item, requirement: try await evidenceRequirement(definition: definition),
             referenceTime: Date()
         )
+    }
+
+    private func evidenceRequirement(
+        definition: ScenarioDefinition
+    ) async throws -> IntentEvidenceRequirements.CaseRequirement {
+        let policy = try await assessmentStore.frozenSemanticPolicy(definition: definition)
+        return .init(required: true, definition: definition,
+                     semanticPolicy: try policy?.requirementPolicy())
     }
 
     /// Exports the entire trusted collection membership with only the fresh
@@ -1604,9 +1612,12 @@ final class ScenarioCoordinator {
         guard sourceRevisions.count == 1, let source = sourceRevisions.first else {
             throw ScenarioPersistenceError.invalidRun("Batch children came from different checked source inputs.")
         }
+        var caseRequirements: [IntentEvidenceRequirements.CaseRequirement] = []
+        for definition in trusted {
+            caseRequirements.append(try await evidenceRequirement(definition: definition))
+        }
         let requirements = IntentEvidenceRequirements(
-            collectionID: collection.id.uuidString,
-            cases: trusted.map { .init(required: true, definition: $0) }
+            collectionID: collection.id.uuidString, cases: caseRequirements
         )
         try IntentEvidenceBundle.export(
             .init(requirements: requirements, cases: items, sourceRevision: source,
@@ -1673,12 +1684,12 @@ final class ScenarioCoordinator {
     }
 
     func reloadSelectedAssessmentOverlay(expectedExecutionID: UUID? = nil) async {
-        guard let record = selectedExecutionRecord,
-              expectedExecutionID == nil || expectedExecutionID == record.id else {
+        guard let record = selectedExecutionRecord else {
             selectedAssessmentOverlay = nil
             assessmentSelectionHistory = []
             return
         }
+        guard expectedExecutionID == nil || expectedExecutionID == record.id else { return }
         do {
             let latest = try await assessmentStore.latestSelectionRecord(executionRecord: record)
             let history = try await assessmentStore.selectionRecords(executionRecord: record)
@@ -1728,6 +1739,38 @@ final class ScenarioCoordinator {
         )
     }
 
+    func frozenSemanticPolicyForSelectedCoordinate(
+        coordinateID: UUID, assertionID: UUID
+    ) async throws -> ScenarioFrozenSemanticPolicy? {
+        let context = try selectedAssessmentContext(coordinateID: coordinateID,
+                                                    assertionID: assertionID)
+        return try await assessmentStore.frozenSemanticPolicy(definition: context.definition)
+    }
+
+    @discardableResult
+    func freezeSelectedSemanticPolicy(
+        coordinateID: UUID, assertionID: UUID,
+        judgeConfiguration: EvaluationJudgeConfiguration
+    ) async -> Bool {
+        do {
+            let context = try selectedAssessmentContext(coordinateID: coordinateID,
+                                                        assertionID: assertionID)
+            guard let judge = try resolvedAssessmentJudge(configuration: judgeConfiguration) else {
+                throw ScenarioPersistenceError.invalidRun("Choose an approved independent judge connection.")
+            }
+            let policy = try ScenarioFrozenSemanticPolicy.make(
+                definition: context.definition, assertionID: assertionID,
+                configuration: judgeConfiguration, resolvedJudge: judge
+            )
+            try await assessmentStore.freezeSemanticPolicy(policy, definition: context.definition)
+            notice = "Judge and scoring policy frozen for this requirement. The response has not been assessed."
+            return true
+        } catch {
+            notice = "Judge policy needs review: \(error.localizedDescription)"
+            return false
+        }
+    }
+
     /// A judge reads only saved raw output and host-held requirements. The
     /// selected suite and app execution remain untouched.
     @discardableResult
@@ -1739,6 +1782,12 @@ final class ScenarioCoordinator {
             let context = try selectedAssessmentContext(coordinateID: coordinateID,
                                                         assertionID: assertionID)
             let judge = try resolvedAssessmentJudge(configuration: judgeConfiguration)
+            if let frozen = try await assessmentStore.frozenSemanticPolicy(definition: context.definition) {
+                try frozen.validateAssessmentJudge(
+                    definition: context.definition, assertionID: assertionID,
+                    configuration: judgeConfiguration, resolvedJudge: judge
+                )
+            }
             let assessment: ScenarioIndependentAssessment
             if context.coordinate.coordinate.lane == .appFeature {
                 assessment = try await assessmentStore.reassessSavedFeatureOutput(
