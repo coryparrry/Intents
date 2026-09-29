@@ -201,6 +201,36 @@
           "_0": "string"
         }
       }
+    },
+    {
+      "id": "intentlab.fixtureDigests",
+      "source": "uiElement",
+      "selector": "intent-lab-fixture-digests",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "intentlab.fixtureDigest",
+      "source": "uiElement",
+      "selector": "intent-lab-fixture-digest",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
+    },
+    {
+      "id": "intentlab.actionReceipts",
+      "source": "uiElement",
+      "selector": "intentlab.actionReceipts",
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
     }
   ],
   "isolation": {
@@ -213,7 +243,8 @@
     "accessible-result",
     "siri",
     "siri-completion",
-    "invocation-correlation"
+    "invocation-correlation",
+    "action-receipt-v1"
   ],
   "queryOperations": []
 }

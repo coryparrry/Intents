@@ -29,7 +29,8 @@ enum SiriProbe {
         safety: IntentLabSafety,
         testCase: XCTestCase,
         integration: any IntentLabSiriIntegration,
-        declaration: IntentLabIntegrationDeclaration?
+        declaration: IntentLabIntegrationDeclaration?,
+        permitsChooserAssistance: Bool = false
     ) throws -> [String: IntentLabValue] {
         guard !request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw SiriProbeError.missingRequest
@@ -39,7 +40,10 @@ enum SiriProbe {
         XCUIDevice.shared.press(.home)
         #endif
         application.activate()
-        let selection = SiriChoiceHandler(request: request, application: application, expectedContext: expectedContext, integration: integration, declaration: declaration)
+        let selection = SiriChoiceHandler(request: request, application: application,
+                                         expectedContext: expectedContext, integration: integration,
+                                         declaration: declaration,
+                                         permitsChooserAssistance: permitsChooserAssistance)
         // activate() pumps the run loop while waiting for Siri. Handle its chooser
         // during that wait, rather than after the activation call has timed out.
         let choiceTimer = Timer(timeInterval: 0.5, repeats: true) { _ in
@@ -120,9 +124,10 @@ enum SiriProbe {
     ) -> Bool {
         guard osMajor == 27, description == "Timed out waiting for Siri to activate",
               !expectedContext.isEmpty,
-              let observations,
-              observations["invocationContext"] == .string(expectedContext) else { return false }
-        return integration.completed(observations: observations, context: expectedContext)
+              let observations else { return false }
+        return correlatedCompletion(
+            observations: observations, expectedContext: expectedContext, integration: integration
+        ) != nil
     }
 
     static func matchingChoice(request: String, choices: [String]) -> String? {
@@ -171,8 +176,23 @@ enum SiriProbe {
         expectedContext: String,
         integration: any IntentLabSiriIntegration
     ) -> [String: IntentLabValue]? {
-        observations["invocationContext"] == .string(expectedContext)
-            && integration.completed(observations: observations, context: expectedContext) ? observations : nil
+        let completedFromUI = observations["invocationContext"] == .string(expectedContext)
+            && integration.completed(observations: observations, context: expectedContext)
+        return completedFromUI || observedCompletedAction(
+            observations: observations, expectedContext: expectedContext
+        ) ? observations : nil
+    }
+
+    static func observedCompletedAction(
+        observations: [String: IntentLabValue], expectedContext: String
+    ) -> Bool {
+        guard case .string(let json) = observations["intentlab.actionReceipts"],
+              let bytes = json.data(using: .utf8), bytes.count <= 65_536,
+              let receipts = try? JSONDecoder.intentLab.decode([IntentLabActionReceipt].self, from: bytes)
+        else { return false }
+        return receipts.contains {
+            $0.attemptContext == expectedContext && $0.lane == .siri && $0.isTopLevel
+        }
     }
 }
 
@@ -198,6 +218,7 @@ private final class SiriChoiceHandler {
     private let applicationName: String
     private let integration: any IntentLabSiriIntegration
     private let declaration: IntentLabIntegrationDeclaration?
+    private let permitsChooserAssistance: Bool
     var timer: Timer?
 
     func stop() {
@@ -205,12 +226,15 @@ private final class SiriChoiceHandler {
         timer = nil
     }
 
-    init(request: String, application: XCUIApplication, expectedContext: String, integration: any IntentLabSiriIntegration, declaration: IntentLabIntegrationDeclaration?) {
+    init(request: String, application: XCUIApplication, expectedContext: String,
+         integration: any IntentLabSiriIntegration, declaration: IntentLabIntegrationDeclaration?,
+         permitsChooserAssistance: Bool) {
         self.expectedContext = expectedContext
         self.request = request
         self.application = application
         self.integration = integration
         self.declaration = declaration
+        self.permitsChooserAssistance = permitsChooserAssistance
         applicationName = application.label
     }
 
@@ -234,6 +258,7 @@ private final class SiriChoiceHandler {
 
     func selectIfNeeded() {
         #if os(iOS)
+        guard permitsChooserAssistance else { return }
         guard completionObservations == nil, !isSelecting else { return }
         isSelecting = true
         defer { isSelecting = false }

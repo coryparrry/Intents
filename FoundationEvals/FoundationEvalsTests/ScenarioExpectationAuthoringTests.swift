@@ -112,6 +112,45 @@ struct ScenarioExpectationAuthoringTests {
         let check = try #require(authored.assertions.first)
         #expect(check.applicableLanes == [.appFeature])
         #expect(check.observationKey == "feature.response")
+        #expect(authored.observationPlan == [
+            .init(id: "feature.response", source: .testOnlyIntent,
+                  operationID: nil, selector: nil)
+        ])
+        #expect(authored.requiredClaims?.contains(.returnedValueChecked) == true)
+        #expect(!ScenarioValidator.issues(in: authored).contains {
+            $0.path == "assertions[0].kind" || $0.path == "assertions[0].observationKey"
+        })
+        var staleOperation = authored
+        staleOperation.actionPolicyVersion = 1
+        staleOperation.actionRequirements = [.init(
+            lane: .appFeature, kind: .productionService,
+            operationID: "summarize", resolvedParameters: [:]
+        )]
+        #expect(ScenarioValidator.issues(in: staleOperation).contains {
+            $0.path == "observationPlan[0].operationID"
+        })
+        staleOperation.observationPlan?[0].operationID = "summarize"
+        #expect(!ScenarioValidator.issues(in: staleOperation).contains {
+            $0.path == "observationPlan[0].operationID"
+        })
+        let instant = Date()
+        var nativeResult = ScenarioLaneResult(
+            caseID: authored.id, attempt: 1, lane: .appFeature,
+            executionStatus: .completed, outcome: .passed,
+            startedAt: instant, completedAt: instant,
+            observations: ["feature.response": .string("Expected summary")],
+            assertionResults: [.init(assertionID: check.id, passed: true,
+                                     observedValue: .string("Expected summary"), message: "Matched")],
+            observationSources: ["feature.response": .testOnlyIntent],
+            claims: [.returnedValueChecked]
+        )
+        #expect(ScenarioResultEvaluator.verifiedClaim(
+            .returnedValueChecked, definition: authored, result: nativeResult
+        ))
+        nativeResult.observationSources?["feature.response"] = .manuallySupplied
+        #expect(!ScenarioResultEvaluator.verifiedClaim(
+            .returnedValueChecked, definition: authored, result: nativeResult
+        ))
         let failed = ScenarioResultEvaluator.evaluate(
             definition: authored, lane: .appFeature,
             observations: ["feature.response": .string("Actual summary")],
@@ -132,6 +171,45 @@ struct ScenarioExpectationAuthoringTests {
                 expected: .string("Another answer"), semantic: false, rubric: "", to: authored
             )
         }
+        let semantic = try ScenarioExpectationAuthoring.addingFeatureResponseCheck(
+            expected: .string("Expected summary"), semantic: true,
+            rubric: "The response covers the requested note.", to: definition
+        )
+        #expect(semantic.observationPlan?.first?.source == .testOnlyIntent)
+        #expect(!ScenarioValidator.issues(in: semantic).contains {
+            $0.path == "assertions[0].kind" || $0.path == "assertions[0].observationKey"
+        })
+    }
+
+    @Test func localFeatureObservationsRequireEveryDeclaredTypedTestOnlyProjection() {
+        let binding = ScenarioFeatureBinding(
+            featureID: "summarize-note", interfaceDigest: String(repeating: "a", count: 64),
+            inputMapping: [], outputProjections: [
+                .init(name: "summary", type: .primitive(.string)),
+                .init(name: "wordCount", type: .primitive(.integer))
+            ]
+        )
+        let instant = Date()
+        var lane = ScenarioLaneResult(
+            caseID: UUID(), attempt: 1, lane: .appFeature,
+            executionStatus: .completed, outcome: .passed,
+            startedAt: instant, completedAt: instant,
+            observations: ["feature.response": .string("Summary"),
+                           "summary": .string("Summary"), "wordCount": .integer(1)],
+            observationSources: ["feature.response": .testOnlyIntent,
+                                 "summary": .testOnlyIntent, "wordCount": .testOnlyIntent]
+        )
+        #expect(ScenarioValidator.validLocalFeatureObservations(lane, binding: binding))
+        lane.observations.removeValue(forKey: "wordCount")
+        #expect(!ScenarioValidator.validLocalFeatureObservations(lane, binding: binding))
+        lane.observations["wordCount"] = .string("one")
+        #expect(!ScenarioValidator.validLocalFeatureObservations(lane, binding: binding))
+        lane.observations["wordCount"] = .integer(1)
+        lane.observationSources?["summary"] = .applicationInstrumentation
+        #expect(!ScenarioValidator.validLocalFeatureObservations(lane, binding: binding))
+        lane.observationSources?["summary"] = .testOnlyIntent
+        lane.observationSources?["feature.response"] = .applicationInstrumentation
+        #expect(!ScenarioValidator.validLocalFeatureObservations(lane, binding: binding))
     }
 
     private func sampleCatalog() -> ScenarioIntegrationCatalog {

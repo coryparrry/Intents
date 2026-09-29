@@ -75,6 +75,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.radioButtons["Results"].click()
         XCTAssertTrue(app.staticTexts["No results yet"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.disclosureTriangles["What do the results mean?"].isHittable)
+        capture(window, name: "Results")
         app.buttons["Connect app"].click()
         XCTAssertTrue(app.buttons["Choose Project…"].isHittable, "Empty results link returns to setup")
         assertChromeFits(app, window: window)
@@ -123,7 +124,10 @@ final class IntentLabGuidanceUITests: XCTestCase {
         }
 
         XCTAssertTrue(app.popUpButtons["Declared app action"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.popUpButtons["Feature control backend"].exists)
         XCTAssertTrue(app.popUpButtons["Declared app feature"].exists)
+        XCTAssertTrue(app.buttons["Verify complete requirement"].exists)
+        XCTAssertFalse(app.buttons["Check this fix"].isEnabled)
         XCTAssertFalse(app.textFields["OpenNoteIntent"].exists, "Stable checks select the compiled action")
         XCTAssertTrue(app.staticTexts["Rebuild and check support to choose an observable result."].exists)
         XCTAssertFalse(app.textFields["Optional feature run UUID"].exists)
@@ -160,7 +164,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.sheets.buttons["Cancel"].firstMatch.click()
         XCTAssertTrue(app.buttons["Connect app…"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["Project connected"].exists)
-        XCTAssertFalse(app.buttons["Run test"].isEnabled)
+        XCTAssertTrue(app.buttons["Verify complete requirement"].exists)
     }
 
     @MainActor

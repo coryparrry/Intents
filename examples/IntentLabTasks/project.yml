@@ -18,6 +18,9 @@ targets:
     platform: iOS
     sources:
       - Sources
+    dependencies:
+      - package: FoundationEvals
+        product: IntentLabContracts
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.IntentLabTasks
@@ -27,10 +30,12 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
       configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) INTENT_LAB_TEST_SUPPORT"
         IntentLabTesting:
           PRODUCT_BUNDLE_IDENTIFIER: com.example.IntentLabTasks.integration-tests
           INFOPLIST_KEY_CFBundleDisplayName: Intent Lab Tasks Test
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) INTENT_LAB_TESTING"
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) INTENT_LAB_TESTING INTENT_LAB_TEST_SUPPORT"
   IntentLabTasksUITests:
     type: bundle.ui-testing
     platform: iOS

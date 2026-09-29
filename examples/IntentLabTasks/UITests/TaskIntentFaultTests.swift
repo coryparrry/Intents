@@ -1,10 +1,168 @@
 import AppIntentsTesting
 import IntentLabContracts
+import IntentLabTesting
 import XCTest
 
 @available(iOS 27.0, *)
 @MainActor
 final class TaskIntentFaultTests: XCTestCase {
+    func testLocalFeatureControlUsesProductionTaskServiceAndRecordsServiceReceipt() async throws {
+        let integration = TaskIntegration()
+        let context = "feature-\(UUID().uuidString)"
+        let application = try integration.prepare(
+            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+            context: context,
+            operationID: TaskIntegration.preparationOperation
+        )
+        defer { application.terminate() }
+
+        let declarationURL = try XCTUnwrap(
+            Bundle(for: TaskIntegration.self).url(forResource: "IntentLabIntegration", withExtension: "json")
+        )
+        let declaration = try JSONDecoder.intentLab.decode(
+            IntentLabIntegrationDeclaration.self,
+            from: Data(contentsOf: declarationURL)
+        )
+        try declaration.validate()
+        XCTAssertTrue(declaration.capabilities.contains("local-feature-controls"))
+        XCTAssertTrue(declaration.capabilities.contains("test-only-intent"))
+        let digest = "caeb9a954c99c4e035ec5d94bd8892622bb0676d24541dfedecae3d42096937d"
+        let control = try declaration.localFeatureControl(
+            featureID: "com.example.intent-lab-tasks",
+            interfaceDigest: digest,
+            operationID: "complete-task"
+        )
+        XCTAssertEqual(control.testIntentIdentifier, "IntentLabInvokeFeatureIntent")
+        XCTAssertEqual(control.parameters.map(\.name), ["taskID"])
+        XCTAssertEqual(control.parameters.first?.type, .primitive(.string))
+        XCTAssertEqual(control.parameters.first?.required, true)
+        XCTAssertTrue(control.outputProjections.isEmpty)
+        XCTAssertEqual(
+            try IntentLabIntegrationDeclaration.FeatureControl.calculateInterfaceDigest(
+                featureID: control.featureID,
+                operationID: control.operationID,
+                testIntentIdentifier: control.testIntentIdentifier,
+                parameters: control.parameters,
+                outputProjections: control.outputProjections
+            ),
+            digest
+        )
+        let input = [
+            IntentLabParameter(
+                name: "taskID",
+                type: .primitive(.string),
+                isOptional: false,
+                presence: .value(.string("task-001"))
+            )
+        ]
+
+        let result = try await IntentLabTestIntentTransport.invoke(
+            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+            control: control,
+            parameters: input,
+            context: context
+        )
+
+        XCTAssertEqual(result.observations["feature.response"], .string("Completed Buy milk."))
+        let observations = try integration.observeTasks()
+        XCTAssertEqual(observations["task-001.isComplete"], .boolean(true))
+        XCTAssertEqual(observations["task-002.isComplete"], .boolean(false))
+        guard case .string(let rawReceipts) = observations["intentlab.actionReceipts"],
+              let receiptData = rawReceipts.data(using: .utf8) else {
+            return XCTFail("The task query should expose the app-owned action receipts.")
+        }
+        let receipts = try JSONDecoder.intentLab.decode([IntentLabActionReceipt].self, from: receiptData)
+        let receipt = try XCTUnwrap(receipts.first {
+            $0.attemptContext == context && $0.operationID == "complete-task"
+        })
+        XCTAssertEqual(receipt.lane, .appFeature)
+        XCTAssertEqual(receipt.kind, .productionService)
+        XCTAssertEqual(receipt.resolvedParameters["taskID"], .string("task-001"))
+        XCTAssertEqual(receipt.attempt, 1)
+        XCTAssertEqual(receipt.terminalStatus, .succeeded)
+        XCTAssertTrue(receipt.isTopLevel)
+        let wrapperReceipt = try XCTUnwrap(receipts.first {
+            $0.attemptContext == context && $0.operationID == "IntentLabInvokeFeatureIntent"
+        })
+        XCTAssertEqual(wrapperReceipt.kind, .testSupport)
+        XCTAssertEqual(wrapperReceipt.lane, .appFeature)
+        XCTAssertEqual(wrapperReceipt.terminalStatus, .succeeded)
+        XCTAssertFalse(wrapperReceipt.isTopLevel)
+        XCTAssertLessThan(wrapperReceipt.sequence, receipt.sequence)
+    }
+
+    func testReceiptCountOverflowFailsClosedUntilTaskFixtureReset() async throws {
+        let integration = TaskIntegration()
+        let context = "receipt-count-\(UUID().uuidString)"
+        let application = try integration.prepare(
+            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+            context: context,
+            operationID: TaskIntegration.preparationOperation
+        )
+        defer { application.terminate() }
+        let control = try taskFeatureControl()
+
+        for index in 0..<8 {
+            do {
+                _ = try await invokeTaskFeature(
+                    taskID: "missing-\(index)", control: control, context: context
+                )
+                XCTFail("A missing task should fail after recording its paired receipts.")
+            } catch {
+                // Each rejected action records a service receipt and a wrapper receipt.
+            }
+        }
+
+        let fullReceipts = try actionReceipts(from: integration.observeTasks())
+        XCTAssertEqual(fullReceipts.count, 16)
+        XCTAssertTrue(fullReceipts.allSatisfy { $0.terminalStatus == .failed })
+
+        // This successful top-level action would survive count truncation and
+        // could falsely qualify after the earlier failed calls were evicted.
+        _ = try await invokeTaskFeature(taskID: "task-001", control: control, context: context)
+        XCTAssertTrue(try actionReceipts(from: integration.observeTasks()).isEmpty)
+
+        let resetContext = "receipt-reset-\(UUID().uuidString)"
+        let resetApplication = try integration.prepare(
+            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+            context: resetContext,
+            operationID: TaskIntegration.preparationOperation
+        )
+        defer { resetApplication.terminate() }
+
+        _ = try await invokeTaskFeature(taskID: "task-001", control: control, context: resetContext)
+        let resetReceipts = try actionReceipts(from: integration.observeTasks())
+        XCTAssertEqual(resetReceipts.count, 2)
+        XCTAssertTrue(resetReceipts.contains {
+            $0.operationID == "complete-task" && $0.isTopLevel && $0.terminalStatus == .succeeded
+        })
+    }
+
+    func testReceiptByteOverflowFailsClosedBeforeLaterTopLevelAction() async throws {
+        let integration = TaskIntegration()
+        let context = "receipt-bytes-\(UUID().uuidString)"
+        let application = try integration.prepare(
+            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+            context: context,
+            operationID: TaskIntegration.preparationOperation
+        )
+        defer { application.terminate() }
+        let control = try taskFeatureControl()
+
+        do {
+            _ = try await invokeTaskFeature(
+                taskID: String(repeating: "x", count: 70_000), control: control, context: context
+            )
+            XCTFail("An unknown oversized task ID should fail after recording its bounded receipt.")
+        } catch {
+            // The input fits the transport limit but its receipt exceeds the
+            // app's independent byte limit.
+        }
+
+        _ = try await invokeTaskFeature(taskID: "task-001", control: control, context: context)
+        XCTAssertTrue(try actionReceipts(from: integration.observeTasks()).isEmpty)
+    }
+
     func testSuccessfulReturnCannotProvePersistenceWhenStoreSaveIsSuppressed() async throws {
         let integration = TaskIntegration(faultMode: "suppressPersistence")
         let context = "suppressed-\(UUID().uuidString)"
@@ -190,6 +348,51 @@ final class TaskIntentFaultTests: XCTestCase {
         return try result.value
     }
 
+    private func taskFeatureControl() throws -> IntentLabIntegrationDeclaration.FeatureControl {
+        let declarationURL = try XCTUnwrap(
+            Bundle(for: TaskIntegration.self).url(forResource: "IntentLabIntegration", withExtension: "json")
+        )
+        let declaration = try JSONDecoder.intentLab.decode(
+            IntentLabIntegrationDeclaration.self,
+            from: Data(contentsOf: declarationURL)
+        )
+        try declaration.validate()
+        return try declaration.localFeatureControl(
+            featureID: "com.example.intent-lab-tasks",
+            interfaceDigest: "caeb9a954c99c4e035ec5d94bd8892622bb0676d24541dfedecae3d42096937d",
+            operationID: "complete-task"
+        )
+    }
+
+    private func invokeTaskFeature(
+        taskID: String,
+        control: IntentLabIntegrationDeclaration.FeatureControl,
+        context: String
+    ) async throws -> IntentLabTestIntentResult {
+        try await IntentLabTestIntentTransport.invoke(
+            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+            control: control,
+            parameters: [
+                IntentLabParameter(
+                    name: "taskID",
+                    type: .primitive(.string),
+                    isOptional: false,
+                    presence: .value(.string(taskID))
+                )
+            ],
+            context: context
+        )
+    }
+
+    private func actionReceipts(
+        from observations: [String: IntentLabValue]
+    ) throws -> [IntentLabActionReceipt] {
+        guard case .string(let json)? = observations["intentlab.actionReceipts"] else {
+            throw TaskIntegrationObservationError.missingActionReceipts
+        }
+        return try JSONDecoder.intentLab.decode([IntentLabActionReceipt].self, from: Data(json.utf8))
+    }
+
     private func readStatusesAfterReopen(_ application: XCUIApplication) throws -> [String: String] {
         application.terminate()
         let reopened = XCUIApplication(bundleIdentifier: TaskIntegration.testingBundleIdentifier)
@@ -206,4 +409,9 @@ final class TaskIntentFaultTests: XCTestCase {
         return statuses
     }
 
+}
+
+private enum TaskIntegrationObservationError: LocalizedError {
+    case missingActionReceipts
+    var errorDescription: String? { "The task entity query did not expose its bounded action receipts." }
 }

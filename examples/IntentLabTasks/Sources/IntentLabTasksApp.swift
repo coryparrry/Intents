@@ -6,7 +6,11 @@ struct IntentLabTasksApp: App {
     private let repository = TaskRepository.shared
 
     init() {
-        #if INTENT_LAB_TESTING
+        #if DEBUG && INTENT_LAB_TEST_SUPPORT
+        IntentLabFeatureTestSupportRegistry.install(TaskFeatureTestSupport.shared)
+        #endif
+
+        #if DEBUG && INTENT_LAB_TEST_SUPPORT
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-intent-lab-reset") {
             let faultOptionIndex = arguments.firstIndex(of: "-intent-lab-fault").map { $0 + 1 }
@@ -14,7 +18,7 @@ struct IntentLabTasksApp: App {
             let contextOptionIndex = arguments.firstIndex(of: "-intent-lab-context").map { $0 + 1 }
             let context = contextOptionIndex.flatMap { arguments.indices.contains($0) ? arguments[$0] : nil } ?? ""
             do {
-                try repository.prepareIntegrationDataset(faultValue: faultMode, context: context)
+                try TaskFeatureTestSupport.prepareForLaunch(faultValue: faultMode, context: context)
             } catch {
                 fatalError("Unable to prepare the isolated task dataset: \(error.localizedDescription)")
             }

@@ -3,6 +3,7 @@ import SwiftUI
 struct ScenarioEditorView: View {
     @Bindable var coordinator: ScenarioCoordinator
     let projects: [EvaluationProject]
+    @Binding var diagnosticLanes: Set<ScenarioLane>
     @Environment(DeveloperRunnerStore.self) private var runnerStore
     @State private var pendingTest: ScenarioDefinition?
     @State private var confirmingDraftReplacement = false
@@ -52,6 +53,9 @@ struct ScenarioEditorView: View {
             }
             evidenceSection
             if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                diagnosticRouteSection
+            }
+            if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
                 ScenarioGuidedExpectationView(coordinator: coordinator)
             }
             validationSummary
@@ -71,6 +75,57 @@ struct ScenarioEditorView: View {
         }
         .onChange(of: coordinator.draft.safety.mutationPolicy) { _, policy in
             if policy == .syntheticMutation { coordinator.draft.coverage.siriAttemptCount = 1 }
+        }
+        .onChange(of: coordinator.draft.directControl.parameters) { _, _ in
+            if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                coordinator.synchronizeDeclaredActionRequirements()
+            }
+        }
+    }
+
+    private var diagnosticRouteSection: some View {
+        IntentLabCard(
+            "Check this fix",
+            subtitle: "Choose the affected routes for a new partial diagnostic run. The complete requirement stays unchanged."
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(ScenarioLane.allCases.filter {
+                    coordinator.draft.coverage[$0] != .notApplicable
+                }) { lane in
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Toggle(lane.title, isOn: Binding(
+                            get: { diagnosticLanes.contains(lane) },
+                            set: { selected in
+                                if selected { diagnosticLanes.insert(lane) }
+                                else { diagnosticLanes.remove(lane) }
+                            }
+                        ))
+                        .toggleStyle(.checkbox)
+                        .accessibilityIdentifier("Diagnostic route \(lane.rawValue)")
+                        Spacer(minLength: 8)
+                        Text(readinessLabel(for: lane))
+                            .font(.caption)
+                            .foregroundStyle(coordinator.routeReadiness[lane]?.state == .ready
+                                ? Color.green : Color.secondary)
+                    }
+                    if let detail = coordinator.routeReadiness[lane]?.detail,
+                       coordinator.routeReadiness[lane]?.state != .ready {
+                        Text(detail).font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                Text("A partial diagnostic cannot qualify the complete requirement, even if every selected attempt passes.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func readinessLabel(for lane: ScenarioLane) -> String {
+        switch coordinator.routeReadiness[lane]?.state {
+        case .ready: "Ready"
+        case .setupRequired: "Setup required"
+        case .environmentBlocked: "Environment blocked"
+        case .notYetVerified, nil: "Not yet verified"
         }
     }
 

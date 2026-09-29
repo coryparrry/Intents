@@ -70,6 +70,14 @@ struct ScenarioReportView: View {
                 && $0.definitionDigest == plan.definitionDigest
         }
         return VStack(alignment: .leading, spacing: 16) {
+            if plan.purpose == .partialDiagnostic {
+                Label("Partial diagnostic run · selected routes only", systemImage: "scope")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("Partial diagnostic run")
+                Text("This result cannot qualify the complete requirement. Run Verify complete requirement to check every required route and attempt.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(definition?.name ?? "Developer check").font(.title3.weight(.semibold))
@@ -108,9 +116,12 @@ struct ScenarioReportView: View {
                     .workspaceSurface(radius: 10)
                 }
             }
-            if !record.isComplete {
-                Text("Incomplete coordinates remain visible and cannot qualify as a full passing run.")
+            if record.records.contains(where: { $0.coordinate.required && $0.state != .completed }) {
+                Text("Required attempts are incomplete and cannot qualify the full requirement.")
                     .font(.caption).foregroundStyle(.orange)
+            } else if record.records.contains(where: { !$0.coordinate.required && $0.state != .completed }) {
+                Text("An optional route was not run; required coverage is assessed separately.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             if let decision = currentQualification {
                 DisclosureGroup("Release qualification") {
@@ -140,7 +151,7 @@ struct ScenarioReportView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(comparison.summary).font(.callout)
                         Text(comparison.isDirectlyComparable
-                             ? "Same frozen requirements and qualified evidence"
+                             ? "Same frozen requirements and accepted child evidence"
                              : "This result cannot establish whether the fix helped")
                             .font(.caption.weight(.medium))
                         ForEach(comparison.qualificationIssues ?? [], id: \.self) { issue in
@@ -188,6 +199,7 @@ struct ScenarioReportView: View {
                 if let failure = feature.errorMessage { Text(failure).font(.caption).foregroundStyle(.orange) }
             }
             if let result = item?.laneResult {
+                actionEvidence(result, definition: definition)
                 ForEach(result.observations.keys.sorted(), id: \.self) { key in
                     LabeledContent(key, value: display(result.observations[key])).font(.caption)
                     if let before = result.beforeObservations?[key] {
@@ -254,10 +266,12 @@ struct ScenarioReportView: View {
               let baselineRecord = coordinator.executionRecords.first(where: { $0.id == policy.baselineRunID }) else {
             return nil
         }
-        let baselineChildIDs = Set(baselineRecord.records.filter { $0.coordinate.lane != .appFeature }
-            .compactMap { $0.evidenceRunID })
-        let candidateChildIDs = Set(record.records.filter { $0.coordinate.lane != .appFeature }
-            .compactMap { $0.evidenceRunID })
+        let baselineChildIDs = ScenarioExecutionComparison.nativeChildRunIDs(
+            plan: baselinePlan, record: baselineRecord
+        )
+        let candidateChildIDs = ScenarioExecutionComparison.nativeChildRunIDs(
+            plan: plan, record: record
+        )
         let baselineDefinition = coordinator.definitions.first {
             $0.id == baselinePlan.definitionID && $0.version == baselinePlan.definitionVersion
                 && $0.definitionDigest == baselinePlan.definitionDigest
@@ -453,6 +467,7 @@ struct ScenarioReportView: View {
             if let diagnostic = result.diagnostic {
                 Text(diagnostic).font(.caption)
             }
+            actionEvidence(result, definition: definition)
             if result.lane == .intentIntegration,
                result.outcome == .passed,
                definition?.schemaVersion == ScenarioDefinition.reusableSchemaVersion,
@@ -497,6 +512,50 @@ struct ScenarioReportView: View {
         }
         .padding(10)
         .workspaceInset(radius: 8)
+    }
+
+    @ViewBuilder private func actionEvidence(
+        _ result: ScenarioLaneResult, definition: ScenarioDefinition?
+    ) -> some View {
+        if let requirement = definition?.actionRequirements?.first(where: { $0.lane == result.lane }) {
+            VStack(alignment: .leading, spacing: 4) {
+                LabeledContent("Expected action", value: requirement.operationID)
+                let actual = (result.actionReceipts ?? []).filter(\.isTopLevel)
+                LabeledContent("Observed action", value: actual.isEmpty
+                               ? "No attributable execution" : actual.map(\.operationID).joined(separator: ", "))
+                if !actual.isEmpty {
+                    ForEach(actual.indices, id: \.self) { index in
+                        let receipt = actual[index]
+                        if !receipt.resolvedParameters.isEmpty {
+                            Text("Resolved inputs: " + receipt.resolvedParameters.keys.sorted().map {
+                                "\($0) = \(display(receipt.resolvedParameters[$0]))"
+                            }.joined(separator: ", "))
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if let reason = result.actionFailureReason {
+                    Label(actionReason(reason), systemImage: "exclamationmark.circle")
+                        .foregroundStyle(result.outcome == .failed ? .red : .orange)
+                }
+                LabeledContent("Fixture cleanup", value: result.cleanupVerified == true
+                               ? "Verified" : result.cleanupVerified == false ? "Needs recovery" : "Not recorded")
+            }
+            .font(.caption)
+        }
+    }
+
+    private func actionReason(_ reason: ScenarioActionFailureReason) -> String {
+        switch reason {
+        case .wrongAction: "A different action ran."
+        case .wrongParameter: "The action used a different input or entity."
+        case .wrongOutcome: "The action ran, but required app state was wrong."
+        case .unexpectedExecution: "More actions ran than the requirement permits."
+        case .operationError: "The action ended with an error."
+        case .missingActionEvidence: "The app did not record an action."
+        case .staleActionEvidence: "The recorded action belongs to another attempt."
+        case .invalidActionEvidence: "The recorded action could not be verified."
+        }
     }
 
     private func environmentSection(_ run: ScenarioRun) -> some View {

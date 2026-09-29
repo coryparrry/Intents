@@ -138,7 +138,7 @@ struct IntentEvidenceBundleTests {
         #expect(result.exitCode == 20)
     }
 
-    @Test func completedNativeAssertionPassAndFailureGetDistinctExits() throws {
+    @Test func nonzeroNativeAssertionFailureRemainsIncompleteButVisible() throws {
         let passed = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
                                       executedTestCount: 1, xctestExitCode: 0)
         defer { try? FileManager.default.removeItem(at: passed.root) }
@@ -150,17 +150,55 @@ struct IntentEvidenceBundleTests {
         #expect(passResult.exitCode == 0)
 
         let failed = try nativeBundle(observed: "wrong-note", claimedOutcome: .failed,
-                                      executedTestCount: 1, xctestExitCode: 1)
+                                      executedTestCount: 1, xctestExitCode: 1,
+                                      actionFailureReason: .wrongOutcome)
         defer { try? FileManager.default.removeItem(at: failed.root) }
         let failResult = try IntentEvidenceChecker.check(
             bundle: failed.bundle, requirements: failed.requirements,
             expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64), policy: IntentEvidenceChecker.policyID,
             referenceTime: Date(timeIntervalSince1970: 100)
         )
-        #expect(failResult.exitCode == 10)
+        #expect(failResult.exitCode == 20)
         let object = try #require(JSONSerialization.jsonObject(with: failResult.json) as? [String: Any])
         #expect((object["requiredFailures"] as? [String])?.isEmpty == false)
-        #expect((object["incompleteEvidence"] as? [String])?.isEmpty == true)
+        #expect((object["incompleteEvidence"] as? [String])?.isEmpty == false)
+    }
+
+    @Test func mixedBusinessAndXCTestFailureRemainsIncompleteAndVisible() throws {
+        for reason in [ScenarioActionFailureReason.wrongAction, .wrongOutcome] {
+            let fixture = try nativeBundle(
+                observed: "wrong-note", claimedOutcome: .failed,
+                executedTestCount: 1, xctestExitCode: 1,
+                actionFailureReason: reason
+            )
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let result = try IntentEvidenceChecker.check(
+                bundle: fixture.bundle, requirements: fixture.requirements,
+                expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64),
+                policy: IntentEvidenceChecker.policyID,
+                referenceTime: Date(timeIntervalSince1970: 100)
+            )
+            #expect(result.exitCode == 20)
+            let object = try #require(JSONSerialization.jsonObject(with: result.json) as? [String: Any])
+            #expect((object["incompleteEvidence"] as? [String])?.isEmpty == false)
+            #expect((object["requiredFailures"] as? [String])?.isEmpty == false)
+        }
+
+        let unknown = try nativeBundle(
+            observed: "wrong-note", claimedOutcome: .failed,
+            executedTestCount: 1, xctestExitCode: 1
+        )
+        defer { try? FileManager.default.removeItem(at: unknown.root) }
+        let result = try IntentEvidenceChecker.check(
+            bundle: unknown.bundle, requirements: unknown.requirements,
+            expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64),
+            policy: IntentEvidenceChecker.policyID,
+            referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(result.exitCode == 20)
+        let object = try #require(JSONSerialization.jsonObject(with: result.json) as? [String: Any])
+        #expect((object["incompleteEvidence"] as? [String])?.isEmpty == false)
+        #expect((object["requiredFailures"] as? [String])?.isEmpty == false)
     }
 
     @Test func zeroNativeTestsAndSpoofedPassNeverQualify() throws {
@@ -604,9 +642,31 @@ struct IntentEvidenceBundleTests {
         let failedOptional = IntentEvidenceQualification.qualify(
             item, requirement: requirement, referenceTime: Date(timeIntervalSince1970: 100)
         )
-        #expect(failedOptional.incompleteEvidence.isEmpty)
+        #expect(!failedOptional.incompleteEvidence.isEmpty)
         #expect(failedOptional.requiredFailures.isEmpty)
-        #expect(failedOptional.report?.outcome == .passed)
+        #expect(failedOptional.incompleteEvidence.contains {
+            $0.contains("nonzero XCTest process exit")
+        })
+        #expect(failedOptional.report?.outcome == .incompleteOrIncompatibleEvidence)
+
+        var recoveryItem = item
+        recoveryItem.runs = [item.runs[0]]
+        recoveryItem.journals = [item.journals[0]]
+        var pendingOptional = ScenarioExecutionCoordinateRecord.unstarted(optionalCoordinate)
+        pendingOptional.state = .recoveryRequired
+        let requiredTerminal = try #require(item.record.records.first {
+            $0.coordinate.required
+        })
+        recoveryItem.record = try ScenarioExecutionRecord.make(
+            plan: item.plan, records: [requiredTerminal, pendingOptional],
+            completedAt: Date(timeIntervalSince1970: 100)
+        )
+        let unresolvedRecovery = IntentEvidenceQualification.qualify(
+            recoveryItem, requirement: requirement, referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(unresolvedRecovery.incompleteEvidence.contains {
+            $0.contains("remains in recovery")
+        })
     }
 
     @Test func fullBatchFailedOptionalMemberMatchesCollectionVerdict() throws {
@@ -677,10 +737,228 @@ struct IntentEvidenceBundleTests {
             policy: IntentEvidenceChecker.policyID,
             referenceTime: Date(timeIntervalSince1970: 101)
         )
-        #expect(checked.exitCode == 10)
+        #expect(checked.exitCode == 20)
         #expect(String(decoding: checked.json, as: UTF8.self).contains(
-            "Full collection batch has failed planned attempts"
+            "nonzero XCTest process exit"
         ))
+    }
+
+    @Test func importedLocalFeatureBatchUsesItsAcceptedJournal() throws {
+        let projectID = UUID()
+        let fixture = try nativeBundle(
+            observed: "packing-001", claimedOutcome: .passed,
+            executedTestCount: 1, xctestExitCode: 0, projectID: projectID
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let native = fixture.snapshot.cases[0]
+
+        var definition = ScenarioDefinition.starter(projectID: projectID)
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.name = "Local Feature summary"
+        definition.coverage = .init(
+            appFeature: .required, intentIntegration: .notApplicable,
+            siri: .notApplicable, siriAttemptCount: 1
+        )
+        definition.fixture.digest = String(repeating: "c", count: 64)
+        definition.integration = .init(
+            id: "notes", version: "1", digest: String(repeating: "e", count: 64)
+        )
+        definition.featureBinding = .init(
+            featureID: "summarize", interfaceDigest: String(repeating: "7", count: 64),
+            inputMapping: [], outputProjections: []
+        )
+        definition.actionPolicyVersion = 1
+        definition.actionRequirements = [.init(
+            lane: .appFeature, kind: .productionService,
+            operationID: "SummarizeService", resolvedParameters: [:]
+        )]
+        definition.assertions = [.init(
+            kind: .returnedField, observationKey: "feature.response",
+            expectedValue: .string("A summary"), explanation: "Return the requested summary.",
+            applicableLanes: [.appFeature]
+        )]
+        definition.observationPlan = [.init(
+            id: "feature.response", source: .testOnlyIntent,
+            operationID: nil, selector: nil
+        )]
+        definition.purpose = .releaseRequirement
+        definition.checkMode = .basic
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        definition = try definition.frozen()
+
+        let now = Date(timeIntervalSince1970: 90)
+        let appHash = native.plan.appProductDigest
+        let testHash = native.plan.testProductDigest
+        let collection = try ScenarioCollection(
+            projectID: projectID, name: "Local Feature release checks",
+            members: [try .init(definition: native.definition), try .init(definition: definition)]
+        )
+        let featureInput = try ScenarioFeatureSubjectDigest.digest(
+            binding: try #require(definition.featureBinding), fixture: definition.fixture
+        )
+        let featureMember = try #require(collection.members.first { $0.caseID == definition.id })
+        let featureCoordinate = ScenarioPlannedCoordinate(
+            id: UUID(), caseID: definition.id, lane: .appFeature,
+            repetition: 1, required: true
+        )
+        let profile = ScenarioExecutionProfile(
+            id: UUID(), projectPath: "fixture", scheme: "Fixture",
+            testTarget: "FixtureUITests", destinationIdentifier: "simulator",
+            signingSelection: nil, trustedConnectionID: nil, buildConfiguration: nil,
+            featureBackend: .projectLocalTestControl
+        )
+        let featurePlan = try ScenarioExecutionPlan.make(
+            definition: definition, profile: profile,
+            appProductDigest: appHash, testProductDigest: testHash,
+            sourceInputsDigest: String(repeating: "d", count: 64),
+            sourceRevision: "revision-a", runnerBuildID: nil, runnerID: nil,
+            plannedCoordinates: [featureCoordinate], purpose: .fullRequirement,
+            createdAt: now
+        )
+        var manifest = ScenarioCollectionBatchManifest(
+            id: UUID(), collectionID: collection.id, collectionVersion: collection.version,
+            membershipDigest: collection.membershipDigest, appProductDigest: appHash,
+            scope: .full, priorBatchID: nil,
+            cases: [
+                .init(member: collection.members[0], executionPlanID: native.plan.id,
+                      fixtureContractDigest: native.definition.fixture.digest,
+                      targetBundleIdentifier: native.definition.target.bundleIdentifier,
+                      featureID: nil, expectedSubjectInputDigest: nil),
+                .init(member: featureMember, executionPlanID: featurePlan.id,
+                      fixtureContractDigest: definition.fixture.digest,
+                      targetBundleIdentifier: definition.target.bundleIdentifier,
+                      featureID: definition.featureBinding?.featureID,
+                      expectedSubjectInputDigest: featureInput)
+            ],
+            coordinates: native.plan.coordinates + [featureCoordinate],
+            createdAt: now, manifestDigest: "",
+            featureBackend: .projectLocalTestControl
+        )
+        manifest.manifestDigest = try manifest.calculatedDigest()
+
+        let startedAt = now.addingTimeInterval(11)
+        let completedAt = startedAt.addingTimeInterval(1)
+        let capabilities = ScenarioHarnessCapabilities.required(
+            for: definition, scope: .init(lane: .appFeature, attempt: 1),
+            featureBackend: .projectLocalTestControl
+        ).sorted()
+        let invocation = ScenarioInvocationIdentity(
+            id: UUID(), nonce: UUID().uuidString, issuedAt: startedAt,
+            testIdentity: .init(bundleIdentifier: "com.example.FixtureUITests",
+                                className: "IntentLabFixtureUITests", methodName: "testLocalFeature"),
+            harnessVersion: ScenarioInvocationIdentity.reusableHarnessVersion,
+            destinationIdentifier: "simulator", scenarioDigest: definition.definitionDigest,
+            resultBundleIdentity: UUID().uuidString,
+            appProduct: .init(bundleIdentifier: definition.target.bundleIdentifier,
+                              executableName: "Fixture", sha256: appHash),
+            testProduct: .init(bundleIdentifier: "com.example.FixtureUITests",
+                               executableName: "FixtureUITests", sha256: testHash),
+            integration: definition.integration, requiredCapabilities: capabilities,
+            featureBackend: .projectLocalTestControl
+        )
+        let action = try #require(definition.actionRequirements?.first)
+        let receipt = ScenarioActionReceipt(
+            executionID: UUID(), appSessionID: UUID(),
+            attemptContext: "feature-\(invocation.id.uuidString)",
+            lane: .appFeature, attempt: 1, kind: action.kind,
+            operationID: action.operationID, resolvedParameters: action.resolvedParameters,
+            terminalStatus: .succeeded, operationError: nil, sequence: 1,
+            startedAt: startedAt, completedAt: completedAt,
+            observationTransport: .testOnlyIntent
+        )
+        let observations: [String: ScenarioValue] = [
+            "feature.response": .string("A summary"),
+            "intentlab.actionReceipts": .string(
+                String(decoding: try encode([receipt]), as: UTF8.self)
+            )
+        ]
+        let evaluated = ScenarioResultEvaluator.evaluate(
+            definition: definition, lane: .appFeature, observations: observations,
+            executionStatus: .completed, actionReceipts: [receipt],
+            invocation: invocation, attempt: 1
+        )
+        let lane = ScenarioLaneResult(
+            caseID: definition.id, attempt: 1, lane: .appFeature,
+            executionStatus: .completed, outcome: evaluated.0,
+            startedAt: startedAt, completedAt: completedAt,
+            observations: observations, assertionResults: evaluated.1,
+            observationSources: ["feature.response": .testOnlyIntent,
+                                 "intentlab.actionReceipts": .testOnlyIntent],
+            actionReceipts: [receipt], cleanupVerified: true
+        )
+        var run = ScenarioRun(
+            id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
+            scenarioDigest: definition.definitionDigest, invocation: invocation,
+            startedAt: startedAt, completedAt: completedAt,
+            environment: .init(
+                xcodeVersion: "27", sdkVersion: "27", deviceModel: "iPhone",
+                operatingSystem: "iOS 27", operatingSystemBuild: "27A1",
+                languageCode: "en", regionCode: "GB", timeZoneIdentifier: "UTC",
+                siriConfiguration: nil, siriConfigurationSource: nil, executedAt: startedAt
+            ),
+            executionStatus: .completed, outcome: evaluated.0,
+            laneResults: [lane], linkedFeatureRunID: nil, importedAt: completedAt
+        )
+        run.xctestExitCode = 0
+        run.fixture = definition.fixture
+        run.integration = definition.integration
+        run.runnerPackageVersion = "fixture-package-1"
+        run.negotiatedCapabilities = capabilities
+        run.acceptanceStatus = .accepted
+        run.scenarioSchemaVersion = ScenarioDefinition.stableSchemaVersion
+        run.testContractDigest = definition.testContractDigest
+        run.measurementImplementation = .init(
+            observerID: "observer", observerDigest: testHash,
+            evaluatorID: "evaluator", evaluatorDigest: testHash
+        )
+        run.comparisonEnvironmentIdentity = .init(
+            profileID: "simulator-en", profileDigest: String(repeating: "f", count: 64)
+        )
+        run.executedTestCount = 1
+        let journal = ScenarioExecutionJournal(
+            phase: .stopped, invocation: invocation,
+            scenarioID: definition.id, scenarioVersion: definition.version,
+            resultBundlePath: "result.xcresult", derivedDataPath: "DerivedData",
+            buildLogPath: "build.log", intendedExecutable: "xcodebuild",
+            intendedArguments: [], processIdentifier: nil, processStartedAt: startedAt,
+            updatedAt: completedAt, recoveryReason: nil, evidenceAccepted: true,
+            scope: .init(lane: .appFeature, attempt: 1)
+        )
+        var terminal = ScenarioExecutionCoordinateRecord(
+            coordinate: featureCoordinate, state: .completed,
+            evidenceRunID: run.id, evidenceLaneResultID: lane.id, detail: nil
+        )
+        terminal.laneResult = lane
+        let featureRecord = try ScenarioExecutionRecord.make(
+            plan: featurePlan, records: [terminal], completedAt: completedAt
+        )
+        let trusted = IntentEvidenceRequirements(
+            collectionID: collection.id.uuidString,
+            cases: [.init(required: true, definition: native.definition),
+                    .init(required: false, definition: definition)]
+        )
+        var snapshot = IntentEvidenceBundleSnapshot(
+            requirements: trusted,
+            cases: [native, .init(definition: definition, plan: featurePlan,
+                                  record: featureRecord, runs: [run], journals: [journal])],
+            sourceRevision: "revision-a"
+        )
+        snapshot.collection = collection
+        snapshot.batchManifest = manifest
+        snapshot.batchResult = .init(
+            id: manifest.id, manifestID: manifest.id,
+            executions: [native.record, featureRecord], recordedAt: completedAt
+        )
+        try FileManager.default.removeItem(at: fixture.bundle)
+        try IntentEvidenceBundle.export(snapshot, to: fixture.bundle)
+        try encode(trusted).write(to: fixture.requirements, options: .atomic)
+        let checked = try IntentEvidenceChecker.check(
+            bundle: fixture.bundle, requirements: fixture.requirements,
+            expectedSource: "revision-a", expectedAppDigest: appHash,
+            policy: IntentEvidenceChecker.policyID,
+            referenceTime: Date(timeIntervalSince1970: 120)
+        )
+        #expect(checked.exitCode == 0)
     }
 
     @Test func partialBaselineCannotQualifyFullCollectionComparison() throws {
@@ -906,6 +1184,137 @@ struct IntentEvidenceBundleTests {
         }
     }
 
+    @Test func acceptedWrongActionRemainsVisibleWhileCleanupIsUnresolved() throws {
+        let fixture = try nativeBundle(
+            observed: "packing-001", claimedOutcome: .failed,
+            executedTestCount: 1, xctestExitCode: 0
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var item = fixture.snapshot.cases[0]
+        var definition = item.definition
+        definition.actionPolicyVersion = 1
+        definition.actionRequirements = [.init(
+            lane: .intentIntegration, kind: .productionIntent,
+            operationID: "OpenNoteIntent", resolvedParameters: [:]
+        )]
+        definition = try definition.frozen()
+        item.definition = definition
+        item.plan.definitionDigest = definition.definitionDigest
+        item.plan.testContractDigest = try #require(definition.testContractDigest)
+        var run = item.runs[0]
+        run.scenarioDigest = definition.definitionDigest
+        run.testContractDigest = definition.testContractDigest
+        run.invocation.scenarioDigest = definition.definitionDigest
+        run.negotiatedCapabilities = ScenarioHarnessCapabilities.required(for: definition).sorted()
+        let now = Date(timeIntervalSince1970: 100)
+        let receipt = ScenarioActionReceipt(
+            executionID: UUID(), appSessionID: UUID(),
+            attemptContext: "intent-\(run.invocation.id.uuidString)",
+            lane: .intentIntegration, attempt: 1, kind: .productionIntent,
+            operationID: "SummarizeNoteIntent", resolvedParameters: [:],
+            terminalStatus: .succeeded, operationError: nil, sequence: 1,
+            startedAt: now, completedAt: now,
+            observationTransport: .accessibleUI
+        )
+        var lane = run.laneResults[0]
+        lane.actionReceipts = [receipt]
+        lane.actionFailureReason = .wrongAction
+        lane.cleanupVerified = false
+        lane.observations["intentlab.actionReceipts"] = .string(
+            String(decoding: try encode([receipt]), as: UTF8.self)
+        )
+        lane.observationSources?["intentlab.actionReceipts"] = .accessibleUI
+        run.laneResults = [lane]
+        item.runs = [run]
+        item.journals[0].invocation = run.invocation
+        item.journals[0].phase = .recoveryRequired
+        var terminal = item.record.records[0]
+        terminal.laneResult = lane
+        item.record = try ScenarioExecutionRecord.make(
+            plan: item.plan, records: [terminal], completedAt: now
+        )
+        let decision = IntentEvidenceQualification.qualify(
+            item, requirement: .init(required: true, definition: definition),
+            referenceTime: now
+        )
+        #expect(decision.incompleteEvidence.contains { $0.contains("cleanup or device readiness") })
+        #expect(decision.requiredFailures.contains { $0.contains("wrongAction") })
+        #expect(decision.report?.outcome == .incompleteOrIncompatibleEvidence)
+    }
+
+    @Test func fullyPassingDiagnosticPlanAndHistoricalGreenRowCannotQualify() throws {
+        let fixture = try nativeBundle(
+            observed: "packing-001", claimedOutcome: .passed,
+            executedTestCount: 1, xctestExitCode: 0
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var item = fixture.snapshot.cases[0]
+        item.plan.purpose = .partialDiagnostic
+
+        // This passing historical result is outside the saved diagnostic
+        // population. Qualification must not use it to fill omitted routes.
+        var oldRun = try #require(item.runs.first)
+        oldRun.invocation.id = UUID()
+        oldRun.id = oldRun.invocation.id
+        var oldLane = try #require(oldRun.laneResults.first)
+        oldLane.id = UUID()
+        oldLane.lane = .siri
+        oldLane.attempt = 1
+        oldRun.laneResults = [oldLane]
+        oldRun.outcome = .passed
+        var oldJournal = try #require(item.journals.first)
+        oldJournal.invocation = oldRun.invocation
+        oldJournal.scope = .init(lane: .siri, attempt: 1)
+        item.runs.append(oldRun)
+        item.journals.append(oldJournal)
+
+        let decision = IntentEvidenceQualification.qualify(
+            item, requirement: .init(required: true, definition: item.definition),
+            referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(decision.report?.outcome == .incompleteOrIncompatibleEvidence)
+        #expect(decision.incompleteEvidence.contains {
+            $0.contains("Partial diagnostic execution")
+        })
+        #expect(decision.incompleteEvidence.contains {
+            $0.contains("unreferenced evidence")
+        })
+
+        var diagnosticSnapshot = fixture.snapshot
+        diagnosticSnapshot.cases[0] = item
+        try FileManager.default.removeItem(at: fixture.bundle)
+        try IntentEvidenceBundle.export(diagnosticSnapshot, to: fixture.bundle)
+        let offline = try IntentEvidenceChecker.check(
+            bundle: fixture.bundle, requirements: fixture.requirements,
+            expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64),
+            policy: IntentEvidenceChecker.policyID,
+            referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(offline.exitCode == 20)
+        #expect(String(decoding: offline.json, as: UTF8.self).contains("Partial diagnostic execution"))
+
+        let completePopulationDiagnostic = fixture.snapshot.cases[0]
+        var diagnosticPlan = completePopulationDiagnostic.plan
+        diagnosticPlan.purpose = .partialDiagnostic
+        let policy = ScenarioComparisonPolicy(
+            mode: .compareAppChanges, baselineRunID: diagnosticPlan.id
+        )
+        var candidatePlan = diagnosticPlan
+        candidatePlan.comparisonPolicy = policy
+        let comparison = ScenarioExecutionComparison.compare(
+            baseline: .init(plan: diagnosticPlan, record: completePopulationDiagnostic.record,
+                            runs: completePopulationDiagnostic.runs,
+                            definition: completePopulationDiagnostic.definition),
+            candidate: .init(plan: candidatePlan, record: completePopulationDiagnostic.record,
+                             runs: completePopulationDiagnostic.runs,
+                             definition: completePopulationDiagnostic.definition),
+            policy: policy
+        )
+        #expect(comparison.qualificationIssues?.contains {
+            $0.contains("Partial diagnostic executions")
+        } == true)
+    }
+
     @Test func tamperingExtraFilesAndSymlinksAreRejected() throws {
         let fixture = try fixtureBundle()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -1014,12 +1423,13 @@ struct IntentEvidenceBundleTests {
 
     private func nativeBundle(
         observed: String, claimedOutcome: ScenarioOutcome,
-        executedTestCount: Int, xctestExitCode: Int32
+        executedTestCount: Int, xctestExitCode: Int32, projectID: UUID? = nil,
+        actionFailureReason: ScenarioActionFailureReason? = nil
     ) throws -> Fixture {
         let now = Date(timeIntervalSince1970: 100)
         let root = FileManager.default.temporaryDirectory.appending(path: "native-evidence-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        var definition = ScenarioDefinition.starter()
+        var definition = ScenarioDefinition.starter(projectID: projectID)
         definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
         definition.coverage.appFeature = .notApplicable
         definition.coverage.siri = .notApplicable
@@ -1046,7 +1456,8 @@ struct IntentEvidenceBundleTests {
             assertionResults: [.init(assertionID: assertion.id, passed: claimedOutcome == .passed,
                                      observedValue: .string(observed), message: "Producer result")],
             observationSources: ["selectedNoteID": .appIntentsTesting],
-            claims: [.executionCompleted, .returnedValueChecked]
+            claims: [.executionCompleted, .returnedValueChecked],
+            actionFailureReason: actionFailureReason
         )
         let appHash = String(repeating: "a", count: 64)
         let testHash = String(repeating: "b", count: 64)
@@ -1120,7 +1531,7 @@ struct IntentEvidenceBundleTests {
             derivedDataPath: "DerivedData", buildLogPath: "build.log",
             intendedExecutable: "xcodebuild", intendedArguments: [],
             processIdentifier: nil, processStartedAt: now, updatedAt: now,
-            recoveryReason: nil, evidenceAccepted: true
+            recoveryReason: nil, evidenceAccepted: xctestExitCode == 0
         )
         let trusted = IntentEvidenceRequirements(
             collectionID: "native-regressions",

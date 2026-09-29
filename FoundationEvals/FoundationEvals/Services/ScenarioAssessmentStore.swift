@@ -1,4 +1,12 @@
+import CryptoKit
 import Foundation
+
+/// The saved native child and its accepted journal for one frozen local Feature coordinate.
+struct ScenarioFeatureAssessmentEvidence: Sendable {
+    var plan: ScenarioExecutionPlan
+    var run: ScenarioRun
+    var journal: ScenarioExecutionJournal
+}
 
 enum ScenarioAssessmentStoreError: LocalizedError {
     case invalidBinding(String)
@@ -47,16 +55,35 @@ actor ScenarioAssessmentStore {
         executionRecord: ScenarioExecutionRecord,
         definition: ScenarioDefinition,
         judgeConfiguration: EvaluationJudgeConfiguration,
-        resolvedJudge: EvaluationResolvedJudgeConnection?
+        resolvedJudge: EvaluationResolvedJudgeConnection?,
+        nativeEvidence: ScenarioFeatureAssessmentEvidence? = nil
     ) async throws -> ScenarioIndependentAssessment {
         guard let coordinate = executionRecord.records.first(where: { $0.id == coordinateID }),
               coordinate.coordinate.lane == .appFeature,
-              let child = coordinate.featureChild,
               let lane = coordinate.laneResult,
               let assertion = definition.assertions.first(where: { $0.id == assertionID }),
               assertion.kind == .semanticRubric,
               assertion.applies(to: .appFeature) else {
             throw ScenarioAssessmentStoreError.invalidBinding("feature coordinate or semantic requirement")
+        }
+        let runID: UUID
+        if let child = coordinate.featureChild {
+            guard nativeEvidence == nil, child.hasValidDigest,
+                  child.runID == coordinate.evidenceRunID,
+                  case .string(let response)? = lane.observations["feature.response"],
+                  child.response == response else {
+                throw ScenarioAssessmentStoreError.invalidBinding("sealed feature child")
+            }
+            runID = child.runID
+        } else {
+            guard let nativeEvidence else {
+                throw ScenarioAssessmentStoreError.invalidBinding("accepted local Feature child")
+            }
+            try Self.validateLocalFeatureEvidence(
+                coordinate, executionRecord: executionRecord,
+                definition: definition, evidence: nativeEvidence
+            )
+            runID = nativeEvidence.run.id
         }
         let reference: String
         switch assertion.expectedValue {
@@ -65,7 +92,7 @@ actor ScenarioAssessmentStore {
         default: throw ScenarioAssessmentStoreError.invalidBinding("feature verified reference")
         }
         let request = ScenarioAssessmentRequest(
-            scenarioRunID: child.runID, laneResult: lane, assertion: assertion,
+            scenarioRunID: runID, laneResult: lane, assertion: assertion,
             effectiveInput: definition.goal.requestText,
             verifiedReference: reference,
             judgeConfiguration: judgeConfiguration
@@ -73,7 +100,8 @@ actor ScenarioAssessmentStore {
         let assessment = try await ScenarioIndependentAssessmentService.assess(
             request, resolvedJudge: resolvedJudge
         )
-        try appendFeature(assessment, for: executionRecord, definition: definition)
+        try appendFeature(assessment, for: executionRecord, definition: definition,
+                          nativeEvidence: nativeEvidence)
         return assessment
     }
 
@@ -81,14 +109,17 @@ actor ScenarioAssessmentStore {
         _ assessment: ScenarioIndependentAssessment,
         for executionRecord: ScenarioExecutionRecord,
         definition: ScenarioDefinition,
-        select: Bool = true
+        select: Bool = true,
+        nativeEvidence: ScenarioFeatureAssessmentEvidence? = nil
     ) throws {
-        try Self.validateFeature(assessment, executionRecord: executionRecord, definition: definition)
+        try Self.validateFeature(assessment, executionRecord: executionRecord,
+                                 definition: definition, nativeEvidence: nativeEvidence)
         try saveImmutableAssessment(assessment)
         if select {
             try selectFeature(assessment.id, for: assessment.laneResultID,
                               assertionID: assessment.assertionID,
-                              executionRecord: executionRecord, definition: definition)
+                              executionRecord: executionRecord, definition: definition,
+                              nativeEvidence: nativeEvidence)
         }
     }
 
@@ -150,10 +181,12 @@ actor ScenarioAssessmentStore {
         for laneResultID: UUID,
         assertionID: UUID,
         executionRecord: ScenarioExecutionRecord,
-        definition: ScenarioDefinition
+        definition: ScenarioDefinition,
+        nativeEvidence: ScenarioFeatureAssessmentEvidence? = nil
     ) throws {
         var history = try featureHistory(
-            for: executionRecord, laneResultID: laneResultID, definition: definition
+            for: executionRecord, laneResultID: laneResultID, definition: definition,
+            nativeEvidence: nativeEvidence
         )
         try history.select(assessmentID, for: laneResultID, assertionID: assertionID)
         guard let runID = executionRecord.records.first(where: {
@@ -179,7 +212,8 @@ actor ScenarioAssessmentStore {
     func featureHistory(
         for executionRecord: ScenarioExecutionRecord,
         laneResultID: UUID,
-        definition: ScenarioDefinition
+        definition: ScenarioDefinition,
+        nativeEvidence: ScenarioFeatureAssessmentEvidence? = nil
     ) throws -> ScenarioAssessmentHistory {
         guard let runID = executionRecord.records.first(where: {
             $0.evidenceLaneResultID == laneResultID && $0.coordinate.lane == .appFeature
@@ -187,7 +221,8 @@ actor ScenarioAssessmentStore {
             throw ScenarioAssessmentStoreError.invalidBinding("feature run")
         }
         return try loadHistory(runID: runID, laneResultID: laneResultID) { record in
-            try Self.validateFeature(record, executionRecord: executionRecord, definition: definition)
+            try Self.validateFeature(record, executionRecord: executionRecord,
+                                     definition: definition, nativeEvidence: nativeEvidence)
         }
     }
 
@@ -247,6 +282,8 @@ actor ScenarioAssessmentStore {
         executionRecord: ScenarioExecutionRecord,
         runs: [ScenarioRun],
         definition: ScenarioDefinition,
+        plan: ScenarioExecutionPlan? = nil,
+        journals: [ScenarioExecutionJournal] = [],
         previousSelectionID: UUID? = nil
     ) throws -> ScenarioAssessmentSelectionRecord {
         var projections: [ScenarioSelectedAssessmentProjection] = []
@@ -256,7 +293,10 @@ actor ScenarioAssessmentStore {
             let history: ScenarioAssessmentHistory
             if coordinate.coordinate.lane == .appFeature {
                 history = try featureHistory(
-                    for: executionRecord, laneResultID: laneResultID, definition: definition
+                    for: executionRecord, laneResultID: laneResultID, definition: definition,
+                    nativeEvidence: try Self.nativeEvidence(
+                        for: coordinate, plan: plan, runs: runs, journals: journals
+                    )
                 )
             } else {
                 guard let run = runs.first(where: { $0.id == runID }) else {
@@ -340,25 +380,30 @@ actor ScenarioAssessmentStore {
         for selection: ScenarioAssessmentSelectionRecord,
         executionRecord: ScenarioExecutionRecord,
         runs: [ScenarioRun],
-        definition: ScenarioDefinition
+        definition: ScenarioDefinition,
+        plan: ScenarioExecutionPlan? = nil,
+        journals: [ScenarioExecutionJournal] = []
     ) throws -> [ScenarioRetainedAssessmentArtifact] {
         guard selection.isBound(to: executionRecord) else {
             throw ScenarioAssessmentStoreError.invalidBinding("selected execution record")
         }
         return try retainedArtifacts(
             projections: selection.assessments, executionRecord: executionRecord,
-            runs: runs, definition: definition
+            runs: runs, definition: definition, plan: plan, journals: journals
         )
     }
 
     func retainedArtifacts(
         for executionRecord: ScenarioExecutionRecord,
         runs: [ScenarioRun],
-        definition: ScenarioDefinition
+        definition: ScenarioDefinition,
+        plan: ScenarioExecutionPlan? = nil,
+        journals: [ScenarioExecutionJournal] = []
     ) throws -> [ScenarioRetainedAssessmentArtifact] {
         try retainedArtifacts(
             projections: executionRecord.selectedAssessments ?? [],
-            executionRecord: executionRecord, runs: runs, definition: definition
+            executionRecord: executionRecord, runs: runs, definition: definition,
+            plan: plan, journals: journals
         )
     }
 
@@ -366,7 +411,9 @@ actor ScenarioAssessmentStore {
         projections: [ScenarioSelectedAssessmentProjection],
         executionRecord: ScenarioExecutionRecord,
         runs: [ScenarioRun],
-        definition: ScenarioDefinition
+        definition: ScenarioDefinition,
+        plan: ScenarioExecutionPlan?,
+        journals: [ScenarioExecutionJournal]
     ) throws -> [ScenarioRetainedAssessmentArtifact] {
         guard ScenarioExecutionRecord.selectedAssessmentsAreBound(
             projections, to: executionRecord.records
@@ -378,7 +425,13 @@ actor ScenarioAssessmentStore {
             if projection.lane == .appFeature {
                 history = try featureHistory(
                     for: executionRecord, laneResultID: projection.laneResultID,
-                    definition: definition
+                    definition: definition,
+                    nativeEvidence: try Self.nativeEvidence(
+                        for: executionRecord.records.first(where: {
+                            $0.evidenceLaneResultID == projection.laneResultID
+                                && $0.coordinate.lane == .appFeature
+                        }), plan: plan, runs: runs, journals: journals
+                    )
                 )
             } else {
                 guard let run = runs.first(where: { $0.id == projection.scenarioRunID }) else {
@@ -433,6 +486,92 @@ actor ScenarioAssessmentStore {
             .appending(path: laneResultID.uuidString.lowercased(), directoryHint: .isDirectory)
     }
 
+    private static func nativeEvidence(
+        for coordinate: ScenarioExecutionCoordinateRecord?,
+        plan: ScenarioExecutionPlan?,
+        runs: [ScenarioRun],
+        journals: [ScenarioExecutionJournal]
+    ) throws -> ScenarioFeatureAssessmentEvidence? {
+        guard let coordinate else {
+            throw ScenarioAssessmentStoreError.invalidBinding("feature coordinate")
+        }
+        if coordinate.featureChild != nil {
+            guard plan?.profile.featureBackend != .projectLocalTestControl else {
+                throw ScenarioAssessmentStoreError.invalidBinding("connected Feature child in local backend")
+            }
+            return nil
+        }
+        guard let plan, let runID = coordinate.evidenceRunID,
+              runs.filter({ $0.id == runID }).count == 1,
+              journals.filter({ $0.id == runID }).count == 1,
+              let run = runs.first(where: { $0.id == runID }),
+              let journal = journals.first(where: { $0.id == runID }) else {
+            throw ScenarioAssessmentStoreError.invalidBinding("saved local Feature run and journal")
+        }
+        return .init(plan: plan, run: run, journal: journal)
+    }
+
+    private static func validateLocalFeatureEvidence(
+        _ coordinate: ScenarioExecutionCoordinateRecord,
+        executionRecord: ScenarioExecutionRecord,
+        definition: ScenarioDefinition,
+        evidence: ScenarioFeatureAssessmentEvidence
+    ) throws {
+        let plan = evidence.plan
+        let run = evidence.run
+        let journal = evidence.journal
+        guard coordinate.featureChild == nil,
+              coordinate.coordinate.lane == .appFeature,
+              coordinate.coordinate.caseID == definition.id,
+              coordinate.coordinate.repetition == 1,
+              coordinate.state == .completed,
+              plan.profile.featureBackend == .projectLocalTestControl,
+              plan.id == executionRecord.planID,
+              plan.definitionID == definition.id,
+              plan.definitionVersion == definition.version,
+              plan.definitionDigest == definition.definitionDigest,
+              plan.testContractDigest == definition.testContractDigest,
+              plan.coordinates.contains(coordinate.coordinate),
+              plan.runnerID == nil, plan.runnerBuildID == nil,
+              run.id == coordinate.evidenceRunID,
+              run.id == run.invocation.id,
+              run.acceptanceStatus == .accepted,
+              run.scenarioID == definition.id,
+              run.scenarioVersion == definition.version,
+              run.scenarioDigest == definition.definitionDigest,
+              run.testContractDigest == plan.testContractDigest,
+              run.invocation.scenarioDigest == plan.definitionDigest,
+              run.invocation.featureBackend == .projectLocalTestControl,
+              run.invocation.appProduct?.sha256 == plan.appProductDigest,
+              run.invocation.testProduct?.sha256 == plan.testProductDigest,
+              run.fixture?.digest == plan.fixtureContractDigest,
+              run.laneResults.count == 1,
+              let lane = run.laneResults.first,
+              lane == coordinate.laneResult,
+              lane.id == coordinate.evidenceLaneResultID,
+              lane.caseID == definition.id,
+              lane.lane == .appFeature,
+              lane.attempt == 1,
+              let binding = definition.featureBinding,
+              ScenarioValidator.validLocalFeatureObservations(lane, binding: binding),
+              journal.invocation == run.invocation,
+              journal.scope == ScenarioNativeExecutionScope(lane: .appFeature, attempt: 1),
+              ScenarioReleaseCheckEvaluator.evidenceAcceptedJournal(for: run, in: [journal]),
+              coordinate.evidenceDigest == (try? nativeRunDigest(run)) else {
+            throw ScenarioAssessmentStoreError.invalidBinding("accepted local Feature run, invocation, journal, or checked build")
+        }
+    }
+
+    private static func nativeRunDigest(_ run: ScenarioRun) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        var immutableRun = run
+        immutableRun.acceptanceStatus = .pending
+        return SHA256.hash(data: try encoder.encode(immutableRun))
+            .map { String(format: "%02x", $0) }.joined()
+    }
+
     private static func validate(
         _ record: ScenarioIndependentAssessment,
         run: ScenarioRun,
@@ -457,7 +596,8 @@ actor ScenarioAssessmentStore {
     private static func validateFeature(
         _ record: ScenarioIndependentAssessment,
         executionRecord: ScenarioExecutionRecord,
-        definition: ScenarioDefinition
+        definition: ScenarioDefinition,
+        nativeEvidence: ScenarioFeatureAssessmentEvidence?
     ) throws {
         func reject(_ detail: String) -> ScenarioAssessmentStoreError { .invalidBinding(detail) }
         guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
@@ -467,16 +607,25 @@ actor ScenarioAssessmentStore {
                       && $0.evidenceRunID == record.scenarioRunID
                       && $0.coordinate.lane == .appFeature
               }),
-              let child = coordinate.featureChild,
-              child.hasValidDigest,
               coordinate.coordinate.caseID == definition.id,
-              child.runID == record.scenarioRunID,
-              case .string(let featureResponse)? = coordinate.laneResult?.observations["feature.response"],
-              child.response == featureResponse,
-              child.caseID == record.caseID,
-              child.attempt == record.attempt,
               let lane = coordinate.laneResult else {
-            throw reject("sealed feature child or captured response")
+            throw reject("feature coordinate or captured response")
+        }
+        if let child = coordinate.featureChild {
+            guard nativeEvidence == nil, child.hasValidDigest,
+                  child.runID == record.scenarioRunID,
+                  case .string(let response)? = lane.observations["feature.response"],
+                  child.response == response,
+                  child.caseID == record.caseID,
+                  child.attempt == record.attempt else {
+                throw reject("sealed feature child or captured response")
+            }
+        } else {
+            guard let nativeEvidence, nativeEvidence.run.id == record.scenarioRunID else {
+                throw reject("saved local Feature child")
+            }
+            try validateLocalFeatureEvidence(coordinate, executionRecord: executionRecord,
+                                             definition: definition, evidence: nativeEvidence)
         }
         try validateCommon(record, lane: lane, definition: definition)
     }

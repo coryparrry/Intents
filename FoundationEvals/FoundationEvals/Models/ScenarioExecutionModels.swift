@@ -10,6 +10,11 @@ struct ScenarioPlannedCoordinate: Codable, Equatable, Identifiable, Sendable {
     var required: Bool
 }
 
+enum ScenarioExecutionPlanPurpose: String, Codable, Sendable {
+    case fullRequirement
+    case partialDiagnostic
+}
+
 /// Saved before dispatch. It freezes the exact population and checked product
 /// the coordinator intended to run; later UI edits affect a different plan.
 struct ScenarioExecutionPlan: Codable, Equatable, Identifiable, Sendable {
@@ -19,6 +24,7 @@ struct ScenarioExecutionPlan: Codable, Equatable, Identifiable, Sendable {
     var definitionDigest: String
     var testContractDigest: String
     var profile: ScenarioExecutionProfile
+    var purpose: ScenarioExecutionPlanPurpose = .fullRequirement
     var appProductDigest: String
     var testProductDigest: String
     var fixtureContractDigest: String
@@ -35,6 +41,19 @@ struct ScenarioExecutionPlan: Codable, Equatable, Identifiable, Sendable {
     var runnerBuildID: String? = nil
     var runnerID: UUID? = nil
 
+    /// Coordinates that must be ready and completed for requirement coverage.
+    /// Optional coordinates remain frozen evidence but do not block required work.
+    var requiredCoordinates: [ScenarioPlannedCoordinate] {
+        coordinates.filter(\.required)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, definitionID, definitionVersion, definitionDigest, testContractDigest
+        case profile, purpose, appProductDigest, testProductDigest, fixtureContractDigest
+        case coordinates, comparisonPolicy, createdAt, sourceInputsDigest, sourceRevision
+        case runnerBuildID, runnerID
+    }
+
     static func make(
         definition: ScenarioDefinition,
         profile: ScenarioExecutionProfile,
@@ -45,6 +64,7 @@ struct ScenarioExecutionPlan: Codable, Equatable, Identifiable, Sendable {
         runnerBuildID: String?,
         runnerID: UUID?,
         plannedCoordinates: [ScenarioPlannedCoordinate]? = nil,
+        purpose: ScenarioExecutionPlanPurpose = .fullRequirement,
         comparisonPolicy: ScenarioComparisonPolicy? = nil,
         id: UUID = UUID(),
         createdAt: Date = Date()
@@ -73,13 +93,37 @@ struct ScenarioExecutionPlan: Codable, Equatable, Identifiable, Sendable {
             return (1...count).map { "\(definition.id):\(lane.rawValue):\($0):\(definition.coverage[lane] == .required)" }
         }
         let actual = coordinates.map { "\($0.caseID):\($0.lane.rawValue):\($0.repetition):\($0.required)" }
-        guard actual.sorted() == expected.sorted(), Set(coordinates.map(\.id)).count == coordinates.count else {
+        let hasUniqueIDs = Set(coordinates.map(\.id)).count == coordinates.count
+        let hasUniqueCoordinates = Set(actual).count == actual.count
+        let populationIsValid: Bool
+        switch purpose {
+        case .fullRequirement:
+            populationIsValid = actual.sorted() == expected.sorted()
+        case .partialDiagnostic:
+            let expectedCoordinates = Set(expected)
+            populationIsValid = plannedCoordinates != nil && !actual.isEmpty
+                && actual.allSatisfy(expectedCoordinates.contains)
+                && hasUniqueCoordinates
+        }
+        guard populationIsValid, hasUniqueIDs else {
             throw ScenarioPersistenceError.invalidRun("planned coordinates")
+        }
+        if profile.featureBackend == .projectLocalTestControl,
+           (runnerBuildID != nil || runnerID != nil) {
+            throw ScenarioPersistenceError.invalidRun("local Feature control cannot claim a connected runner")
+        }
+        if profile.featureBackend == .projectLocalTestControl,
+           definition.coverage.appFeature != .notApplicable,
+           (definition.featureBinding == nil
+               || definition.actionRequirements?.contains(where: {
+                   $0.lane == .appFeature && $0.kind == .productionService
+               }) != true) {
+            throw ScenarioPersistenceError.invalidRun("local Feature control has no frozen binding and service action")
         }
         return .init(
             id: id, definitionID: definition.id, definitionVersion: definition.version,
             definitionDigest: definition.definitionDigest, testContractDigest: contract,
-            profile: profile, appProductDigest: appProductDigest,
+            profile: profile, purpose: purpose, appProductDigest: appProductDigest,
             testProductDigest: testProductDigest,
             fixtureContractDigest: definition.fixture.digest, coordinates: coordinates,
             comparisonPolicy: comparisonPolicy, createdAt: createdAt,
@@ -87,6 +131,30 @@ struct ScenarioExecutionPlan: Codable, Equatable, Identifiable, Sendable {
             runnerBuildID: runnerBuildID,
             runnerID: runnerID
         )
+    }
+}
+
+extension ScenarioExecutionPlan {
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        definitionID = try values.decode(UUID.self, forKey: .definitionID)
+        definitionVersion = try values.decode(Int.self, forKey: .definitionVersion)
+        definitionDigest = try values.decode(String.self, forKey: .definitionDigest)
+        testContractDigest = try values.decode(String.self, forKey: .testContractDigest)
+        profile = try values.decode(ScenarioExecutionProfile.self, forKey: .profile)
+        purpose = try values.decodeIfPresent(ScenarioExecutionPlanPurpose.self, forKey: .purpose)
+            ?? .fullRequirement
+        appProductDigest = try values.decode(String.self, forKey: .appProductDigest)
+        testProductDigest = try values.decode(String.self, forKey: .testProductDigest)
+        fixtureContractDigest = try values.decode(String.self, forKey: .fixtureContractDigest)
+        coordinates = try values.decode([ScenarioPlannedCoordinate].self, forKey: .coordinates)
+        comparisonPolicy = try values.decodeIfPresent(ScenarioComparisonPolicy.self, forKey: .comparisonPolicy)
+        createdAt = try values.decode(Date.self, forKey: .createdAt)
+        sourceInputsDigest = try values.decodeIfPresent(String.self, forKey: .sourceInputsDigest)
+        sourceRevision = try values.decodeIfPresent(String.self, forKey: .sourceRevision)
+        runnerBuildID = try values.decodeIfPresent(String.self, forKey: .runnerBuildID)
+        runnerID = try values.decodeIfPresent(UUID.self, forKey: .runnerID)
     }
 }
 
@@ -550,11 +618,16 @@ struct ScenarioExecutionRecord: Codable, Equatable, Identifiable, Sendable {
                       ))
                       && (item.featureChild == nil || (
                           item.coordinate.lane == .appFeature
+                          && plan.profile.featureBackend == .connectedRunner
                           && item.featureChild?.runID == item.evidenceRunID
                           && item.featureChild?.caseID == item.coordinate.caseID
                           && item.featureChild?.attempt == item.coordinate.repetition
                           && item.featureChild?.hasValidDigest == true
                       ))
+                      && (item.coordinate.lane != .appFeature
+                          || item.state != .completed
+                          || (plan.profile.featureBackend == .connectedRunner
+                              ? item.featureChild != nil : item.featureChild == nil))
               }),
               selectedAssessmentsAreBound(selectedAssessments, to: records) else {
             throw ScenarioPersistenceError.invalidRun("coordinate population or selected assessment")
@@ -776,6 +849,35 @@ enum ScenarioFixtureReceipt: Equatable, Sendable {
     init(observed: String?, expected: String) {
         guard let observed, !observed.isEmpty else { self = .missing; return }
         self = observed == expected ? .matched : .wrongSource
+    }
+
+    init(observations: [String: ScenarioValue], expected: String) {
+        let sourceValues = ["intentlab.fixtureDigest", "summarySourceContentDigest"]
+            .compactMap { observations[$0] }
+        var sourceDigests: [String] = []
+        for value in sourceValues {
+            guard case .string(let digest) = value, !digest.isEmpty else {
+                self = .missing
+                return
+            }
+            sourceDigests.append(digest)
+        }
+        if let catalog = observations["intentlab.fixtureDigests"] {
+            guard case .string(let json) = catalog, json.utf8.count <= 8_192,
+                  let digests = try? JSONDecoder().decode([String].self, from: Data(json.utf8)),
+                  digests.count <= 32,
+                  digests.allSatisfy({ $0.count == 64 && $0.allSatisfy(\.isHexDigit) }) else {
+                self = .missing
+                return
+            }
+            guard digests.contains(expected) else { self = .wrongSource; return }
+            // The catalog proves preparation. A selected source, when present,
+            // still has to be the source that the contract planned.
+            self = sourceDigests.allSatisfy({ $0 == expected }) ? .matched : .wrongSource
+            return
+        }
+        guard !sourceDigests.isEmpty else { self = .missing; return }
+        self = sourceDigests.allSatisfy({ $0 == expected }) ? .matched : .wrongSource
     }
 
     func outcome(after assessed: ScenarioOutcome) -> ScenarioOutcome {

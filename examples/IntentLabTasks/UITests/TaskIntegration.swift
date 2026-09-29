@@ -17,7 +17,9 @@ final class TaskIntegration: IntentLabIntegration {
         "entity-query",
         "siri",
         "siri-completion",
-        "invocation-correlation"
+        "invocation-correlation",
+        "local-feature-controls",
+        "test-only-intent"
     ]
 
     private let faultMode: String
@@ -116,7 +118,7 @@ final class TaskIntegration: IntentLabIntegration {
         let queryObservations: Set<String> = [
             "task-001.id", "task-001.title", "task-001.isComplete",
             "task-002.id", "task-002.title", "task-002.isComplete",
-            "invocationContext", "actionReceiptID"
+            "invocationContext", "actionReceiptID", "intentlab.actionReceipts"
         ]
         return queryObservations.contains(observationKey) ? "entityQuery" : "accessibleUI"
     }

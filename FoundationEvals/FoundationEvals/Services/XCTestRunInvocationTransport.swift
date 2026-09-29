@@ -95,6 +95,9 @@ enum XCTestRunInvocationTransport {
         var observationPlan: [ScenarioPlannedObservation]?
         var integration: ScenarioIntegrationIdentity?
         var executionScope: ScenarioNativeExecutionScope?
+        var featureBinding: ScenarioFeatureBinding?
+        var actionRequirements: [ScenarioActionRequirement]?
+        var actionPolicyVersion: Int?
 
         init(_ definition: ScenarioDefinition, scope: ScenarioNativeExecutionScope?) {
             // The installed consumer supports wire schema 2. The invocation
@@ -129,14 +132,18 @@ enum XCTestRunInvocationTransport {
             observationPlan = definition.observationPlan
             integration = definition.integration
             executionScope = scope
+            featureBinding = scope?.lane == .appFeature ? definition.featureBinding : nil
+            actionRequirements = definition.actionRequirements
+            actionPolicyVersion = definition.actionPolicyVersion
         }
     }
 
     static func scenarioPayload(
         for definition: ScenarioDefinition,
-        scope: ScenarioNativeExecutionScope? = nil
+        scope: ScenarioNativeExecutionScope? = nil,
+        featureBackend: ScenarioFeatureBackend = .connectedRunner
     ) throws -> Data {
-        if let scope, !scope.isValid(for: definition) {
+        if let scope, !scope.isValid(for: definition, featureBackend: featureBackend) {
             throw XCTestRunInvocationTransportError.invalidExecutionScope
         }
         let encoder = JSONEncoder()
@@ -188,15 +195,22 @@ enum XCTestRunInvocationTransport {
         definition: ScenarioDefinition,
         invocation: ScenarioInvocationIdentity,
         scope: ScenarioNativeExecutionScope? = nil,
+        featureBackend: ScenarioFeatureBackend = .connectedRunner,
         fileManager: FileManager = .default
     ) throws -> URL {
+        guard invocation.featureBackend == (scope?.lane == .appFeature
+            ? featureBackend : nil) else {
+            throw XCTestRunInvocationTransportError.invalidExecutionScope
+        }
         guard var root = try propertyList(at: products.sourceURL) else {
             throw XCTestRunInvocationTransportError.unsupportedLayout
         }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let scenarioData = try scenarioPayload(for: definition, scope: scope)
+        let scenarioData = try scenarioPayload(
+            for: definition, scope: scope, featureBackend: featureBackend
+        )
         let invocationData = try encoder.encode(invocation)
         let payloadBytes = scenarioData.count + invocationData.count
         guard payloadBytes <= maximumPayloadBytes else {

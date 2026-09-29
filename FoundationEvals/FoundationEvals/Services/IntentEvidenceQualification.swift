@@ -53,8 +53,16 @@ enum IntentEvidenceQualification {
             }
             results.append(qualify(item, requirement: requirement, referenceTime: referenceTime))
         }
-        let incomplete = results.filter(\.required).flatMap { result in
+        var incomplete = results.filter(\.required).flatMap { result in
             result.incompleteEvidence.map { "\(result.caseID): \($0)" }
+        }
+        let optionalRunHasNonzeroExit = imported.cases.contains { item in
+            !trusted.cases.contains(where: {
+                $0.required && $0.definition.id == item.definition.id
+            }) && item.runs.contains { ($0.xctestExitCode ?? 0) != 0 }
+        }
+        if optionalRunHasNonzeroExit {
+            incomplete.append("Optional native evidence has a nonzero XCTest process exit without bound failure attribution; the batch remains incomplete.")
         }
         var failures = results.filter(\.required).flatMap { result in
             result.requiredFailures.map { "\(result.caseID): \($0)" }
@@ -68,7 +76,8 @@ enum IntentEvidenceQualification {
            let result = imported.batchResult {
             let assessment = ScenarioCollectionService.assess(
                 manifest: batch, collection: collection, result: result,
-                runs: imported.cases.flatMap(\.runs)
+                runs: imported.cases.flatMap(\.runs),
+                journals: imported.cases.flatMap(\.journals)
             )
             if batch.scope != .full {
                 batchIssues.append("Partial batch scope cannot qualify the full collection; unselected cases are not run.")
@@ -164,6 +173,15 @@ enum IntentEvidenceQualification {
             ]
             report.summary = (report.qualificationIssues ?? []).joined(separator: " ")
         }
+        let diagnosticIssues = [
+            (baseline.plan.purpose == .partialDiagnostic, "Baseline is a partial diagnostic execution."),
+            (candidate.plan.purpose == .partialDiagnostic, "Candidate is a partial diagnostic execution.")
+        ].compactMap { item in item.0 ? item.1 : nil }
+        if !diagnosticIssues.isEmpty {
+            report.isDirectlyComparable = false
+            report.qualificationIssues = (report.qualificationIssues ?? []) + diagnosticIssues
+            report.summary = (report.qualificationIssues ?? []).joined(separator: " ")
+        }
         return report
     }
 
@@ -191,6 +209,7 @@ enum IntentEvidenceQualification {
             sourceRevision: plan.sourceRevision,
             runnerBuildID: plan.runnerBuildID, runnerID: plan.runnerID,
             plannedCoordinates: plan.coordinates,
+            purpose: plan.purpose,
             comparisonPolicy: plan.comparisonPolicy,
             id: plan.id, createdAt: plan.createdAt
         )
@@ -214,6 +233,9 @@ enum IntentEvidenceQualification {
             || !validSHA256(plan.appProductDigest)
             || !validSHA256(plan.testProductDigest) {
             incomplete.append("The frozen plan lacks exact source, fixture, requirement or product digests.")
+        }
+        if plan.purpose == .partialDiagnostic {
+            incomplete.append("Partial diagnostic execution does not cover the full requirement population and cannot qualify as complete.")
         }
         let plannedIDs = Set(plan.coordinates.map(\.id))
         let terminalIDs = Set(record.records.map(\.id))
@@ -242,6 +264,9 @@ enum IntentEvidenceQualification {
                 continue
             }
             if !coordinate.required && terminal.state != .completed {
+                if terminal.state == .recoveryRequired {
+                    incomplete.append("Optional coordinate \(coordinate.id) remains in recovery and cannot be safely ignored.")
+                }
                 continue
             }
             guard terminal.state == .completed,
@@ -257,7 +282,9 @@ enum IntentEvidenceQualification {
             }
             observed.append(laneResult)
             var wrongFeatureSource = false
-            if coordinate.lane == .appFeature {
+            var nativeInvocation: ScenarioInvocationIdentity?
+            if coordinate.lane == .appFeature
+                && plan.profile.featureBackend == .connectedRunner {
                 guard let child = terminal.featureChild,
                       child.hasValidDigest,
                       child.runID == runID,
@@ -320,11 +347,24 @@ enum IntentEvidenceQualification {
                 }
                 wrongFeatureSource = fixtureReceipt == .wrongSource
             } else {
+                let localFeature = coordinate.lane == .appFeature
+                    && plan.profile.featureBackend == .projectLocalTestControl
+                if localFeature && (terminal.featureChild != nil
+                    || plan.runnerID != nil || plan.runnerBuildID != nil
+                    || definition.featureBinding.map({
+                        !ScenarioValidator.validLocalFeatureObservations(
+                            laneResult, binding: $0
+                        )
+                    }) != false) {
+                    incomplete.append("Local Feature coordinate \(coordinate.id) lacks native test-control provenance.")
+                    continue
+                }
                 guard let runs = byRun[runID], runs.count == 1 else {
                     incomplete.append("Native coordinate \(coordinate.id) has no unique saved child run.")
                     continue
                 }
                 let run = runs[0]
+                nativeInvocation = run.invocation
                 referencedRuns.insert(runID)
                 guard run.laneResults.count == 1,
                       run.laneResults[0] == laneResult,
@@ -335,6 +375,8 @@ enum IntentEvidenceQualification {
                       run.invocation.scenarioDigest == item.definition.definitionDigest,
                       run.invocation.appProduct?.sha256 == plan.appProductDigest,
                       run.invocation.testProduct?.sha256 == plan.testProductDigest,
+                      (!localFeature || run.invocation.featureBackend == .projectLocalTestControl),
+                      (coordinate.lane == .appFeature || run.invocation.featureBackend == nil),
                       run.executedTestCount == 1,
                       run.executionStatus == .completed,
                       run.xctestExitCode != nil,
@@ -343,12 +385,24 @@ enum IntentEvidenceQualification {
                       run.integration == item.definition.integration,
                       run.invocation.integration == item.definition.integration,
                       run.runnerPackageVersion?.isEmpty == false,
-                      ScenarioHarnessCapabilities.required(for: item.definition)
+                      ScenarioHarnessCapabilities.required(
+                          for: item.definition,
+                          scope: .init(lane: coordinate.lane, attempt: coordinate.repetition),
+                          featureBackend: plan.profile.featureBackend
+                      )
                           .isSubset(of: Set(run.negotiatedCapabilities ?? [])),
                       byJournal[run.id]?.count == 1,
-                      ScenarioReleaseCheckEvaluator.acceptedJournal(for: run, in: item.journals) else {
+                      ScenarioExecutionRecoveryPolicy.hasBoundJournal(run: run, journals: item.journals) else {
                     incomplete.append("Native coordinate \(coordinate.id) lacks bound invocation, fixture or journal evidence.")
                     continue
+                }
+                let evidenceAccepted = ScenarioReleaseCheckEvaluator.evidenceAcceptedJournal(
+                    for: run, in: item.journals
+                )
+                if !evidenceAccepted {
+                    incomplete.append("Native coordinate \(coordinate.id) has retained terminal evidence that was not accepted for qualification.")
+                } else if !ScenarioReleaseCheckEvaluator.acceptedJournal(for: run, in: item.journals) {
+                    incomplete.append("Native coordinate \(coordinate.id) has accepted evidence but fixture cleanup or device readiness remains unresolved.")
                 }
                 if run.measurementImplementation?.hasCompleteProvenance != true
                     || run.comparisonEnvironmentIdentity?.hasCompleteProvenance != true
@@ -357,8 +411,8 @@ enum IntentEvidenceQualification {
                     || !validSHA256(run.comparisonEnvironmentIdentity?.profileDigest) {
                     incomplete.append("Native coordinate \(coordinate.id) lacks qualified measurement or environment provenance.")
                 }
-                if run.xctestExitCode != 0 && laneResult.outcome != .failed {
-                    incomplete.append("Native coordinate \(coordinate.id) has a failing XCTest process without a completed failed assertion.")
+                if run.xctestExitCode != 0 {
+                    incomplete.append("Native coordinate \(coordinate.id) has a nonzero XCTest process exit without bound failure attribution; the run is incomplete.")
                 }
             }
             // Optional executed routes still require exact child and journal
@@ -368,7 +422,10 @@ enum IntentEvidenceQualification {
                 definition: definition, lane: coordinate.lane,
                 observations: laneResult.observations,
                 executionStatus: laneResult.executionStatus,
-                beforeObservations: laneResult.beforeObservations
+                beforeObservations: laneResult.beforeObservations,
+                actionReceipts: laneResult.actionReceipts,
+                invocation: nativeInvocation,
+                attempt: laneResult.attempt
             )
             let semantic = definition.assertions.filter {
                 $0.required && $0.kind == .semanticRubric && $0.applies(to: coordinate.lane)
@@ -417,8 +474,26 @@ enum IntentEvidenceQualification {
                         && $0.kind != .semanticRubric
                 } && !result.passed
             }
+            let action = ScenarioResultEvaluator.actionVerdict(
+                definition: definition, lane: coordinate.lane,
+                attempt: laneResult.attempt, invocation: nativeInvocation,
+                receipts: laneResult.actionReceipts
+            )
+            if definition.actionRequirements != nil,
+               laneResult.actionReceipts != nil,
+               !ScenarioResultEvaluator.actionObservationIsConsistent(laneResult) {
+                incomplete.append("Coordinate \(coordinate.id) has action receipts that differ from the raw observed app record.")
+            }
+            if definition.actionRequirements != nil && laneResult.cleanupVerified != true {
+                incomplete.append("Coordinate \(coordinate.id) has no verified fixture cleanup/readiness result.")
+            }
+            if action.0 == .failed {
+                failed.append("Coordinate \(coordinate.id) failed action verification: \(action.1?.rawValue ?? "wrongAction").")
+            } else if action.0 == .notObserved {
+                incomplete.append("Coordinate \(coordinate.id) lacks attributable action evidence: \(action.1?.rawValue ?? "missingActionEvidence").")
+            }
             if deterministicFailed {
-                failed.append("Coordinate \(coordinate.id) failed its observed requirement.")
+                failed.append("Coordinate \(coordinate.id) failed its observed requirement: wrongOutcome.")
             }
             var assessedLane = laneResult
             if laneResult.executionStatus != .completed || recomputed.0 == .notObserved
@@ -426,7 +501,7 @@ enum IntentEvidenceQualification {
                 || (semantic.isEmpty && laneResult.outcome == .needsReview) {
                 incomplete.append("Coordinate \(coordinate.id) has incomplete independently evaluated evidence.")
                 assessedLane.outcome = .needsReview
-            } else if deterministicFailed || semanticFailed || wrongFeatureSource || laneResult.outcome == .failed {
+            } else if deterministicFailed || action.0 == .failed || semanticFailed || wrongFeatureSource || laneResult.outcome == .failed {
                 if !deterministicFailed {
                     failed.append(wrongFeatureSource
                         ? "Coordinate \(coordinate.id) used different source content than the trusted fixture."

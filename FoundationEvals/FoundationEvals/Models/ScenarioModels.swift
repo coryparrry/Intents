@@ -116,6 +116,18 @@ struct ScenarioEnvironmentIdentity: Codable, Equatable, Sendable {
 
 /// Local execution resolution. A changed checkout or destination is recorded
 /// here and in each execution, never in the stable v3 test contract.
+enum ScenarioFeatureBackend: String, Codable, CaseIterable, Sendable {
+    case connectedRunner
+    case projectLocalTestControl
+
+    var provenanceLabel: String {
+        switch self {
+        case .connectedRunner: "Feature control · connected runner"
+        case .projectLocalTestControl: "Feature control · test-only intent transport"
+        }
+    }
+}
+
 struct ScenarioExecutionProfile: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var projectPath: String
@@ -125,6 +137,43 @@ struct ScenarioExecutionProfile: Codable, Equatable, Identifiable, Sendable {
     var signingSelection: String?
     var trustedConnectionID: UUID?
     var buildConfiguration: String?
+    /// Frozen route choice. Plans written before this field existed used the
+    /// connected developer runner, so absence decodes to that backend.
+    var featureBackend: ScenarioFeatureBackend = .connectedRunner
+
+    private enum CodingKeys: String, CodingKey {
+        case id, projectPath, scheme, testTarget, destinationIdentifier
+        case signingSelection, trustedConnectionID, buildConfiguration, featureBackend
+    }
+
+    init(id: UUID, projectPath: String, scheme: String, testTarget: String,
+         destinationIdentifier: String, signingSelection: String? = nil,
+         trustedConnectionID: UUID? = nil, buildConfiguration: String? = nil,
+         featureBackend: ScenarioFeatureBackend = .connectedRunner) {
+        self.id = id
+        self.projectPath = projectPath
+        self.scheme = scheme
+        self.testTarget = testTarget
+        self.destinationIdentifier = destinationIdentifier
+        self.signingSelection = signingSelection
+        self.trustedConnectionID = trustedConnectionID
+        self.buildConfiguration = buildConfiguration
+        self.featureBackend = featureBackend
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        projectPath = try container.decode(String.self, forKey: .projectPath)
+        scheme = try container.decode(String.self, forKey: .scheme)
+        testTarget = try container.decode(String.self, forKey: .testTarget)
+        destinationIdentifier = try container.decode(String.self, forKey: .destinationIdentifier)
+        signingSelection = try container.decodeIfPresent(String.self, forKey: .signingSelection)
+        trustedConnectionID = try container.decodeIfPresent(UUID.self, forKey: .trustedConnectionID)
+        buildConfiguration = try container.decodeIfPresent(String.self, forKey: .buildConfiguration)
+        featureBackend = try container.decodeIfPresent(ScenarioFeatureBackend.self, forKey: .featureBackend)
+            ?? .connectedRunner
+    }
 }
 
 struct ScenarioSubjectImplementation: Codable, Equatable, Sendable {
@@ -263,6 +312,47 @@ struct ScenarioDirectControl: Codable, Equatable, Sendable {
     }
 }
 
+enum ScenarioActionKind: String, Codable, Sendable {
+    case productionIntent, productionService, testSupport
+}
+
+enum ScenarioActionTerminalStatus: String, Codable, Sendable {
+    case succeeded, failed
+}
+
+/// Frozen independently of outcome assertions. New strict checks require the
+/// app to report what actually entered execution for each selected route.
+struct ScenarioActionRequirement: Codable, Equatable, Sendable {
+    var lane: ScenarioLane
+    var kind: ScenarioActionKind
+    var operationID: String
+    var resolvedParameters: [String: ScenarioValue]
+    var allowedExecutionCount: Int = 1
+}
+
+struct ScenarioActionReceipt: Codable, Equatable, Sendable {
+    var executionID: UUID
+    var appSessionID: UUID
+    var attemptContext: String
+    var lane: ScenarioLane
+    var attempt: Int
+    var kind: ScenarioActionKind
+    var operationID: String
+    var resolvedParameters: [String: ScenarioValue]
+    var terminalStatus: ScenarioActionTerminalStatus
+    var operationError: String?
+    var sequence: Int
+    var startedAt: Date
+    var completedAt: Date
+    var observationTransport: ScenarioObservationSource
+    var isTopLevel: Bool = true
+}
+
+enum ScenarioActionFailureReason: String, Codable, Sendable {
+    case missingActionEvidence, staleActionEvidence, wrongAction, wrongParameter, wrongOutcome,
+         unexpectedExecution, operationError, invalidActionEvidence
+}
+
 enum ScenarioAssertionKind: String, Codable, CaseIterable, Sendable {
     case entityIdentifier
     case returnedField
@@ -386,6 +476,9 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
     /// v3 only. Unlike definitionDigest, this excludes authoring and execution identity.
     var testContractDigest: String? = nil
     var featureBinding: ScenarioFeatureBinding? = nil
+    /// Nil preserves the historical policy; non-nil opts into strict action proof.
+    var actionRequirements: [ScenarioActionRequirement]? = nil
+    var actionPolicyVersion: Int? = nil
 
     init(
         schemaVersion: Int = currentSchemaVersion,
@@ -603,6 +696,8 @@ private struct ScenarioV3Contract: Encodable {
     var requiredClaims: [ScenarioProofClaim]?
     var observationPlan: [ScenarioPlannedObservation]?
     var integration: ScenarioIntegrationIdentity?
+    var actionRequirements: [ScenarioActionRequirement]?
+    var actionPolicyVersion: Int?
 
     init(definition: ScenarioDefinition) {
         target = .init(bundleIdentifier: definition.target.bundleIdentifier, route: definition.target.route)
@@ -620,6 +715,8 @@ private struct ScenarioV3Contract: Encodable {
         requiredClaims = definition.requiredClaims
         observationPlan = definition.observationPlan
         integration = definition.integration
+        actionRequirements = definition.actionRequirements?.sorted { $0.lane.rawValue < $1.lane.rawValue }
+        actionPolicyVersion = definition.actionPolicyVersion
     }
 }
 
@@ -751,6 +848,10 @@ struct ScenarioLaneResult: Codable, Equatable, Identifiable, Sendable {
     var claims: [ScenarioProofClaim]? = nil
     /// Independently captured state before the selected native action.
     var beforeObservations: [String: ScenarioValue]? = nil
+    var actionReceipts: [ScenarioActionReceipt]? = nil
+    var actionFailureReason: ScenarioActionFailureReason? = nil
+    /// UI-test evidence that the app fixture's cleanup postcondition was checked.
+    var cleanupVerified: Bool? = nil
 
     init(
         id: UUID = UUID(),
@@ -768,7 +869,10 @@ struct ScenarioLaneResult: Codable, Equatable, Identifiable, Sendable {
         artifacts: [ScenarioArtifactReference] = [],
         observationSources: [String: ScenarioObservationSource]? = nil,
         claims: [ScenarioProofClaim]? = nil,
-        beforeObservations: [String: ScenarioValue]? = nil
+        beforeObservations: [String: ScenarioValue]? = nil,
+        actionReceipts: [ScenarioActionReceipt]? = nil,
+        actionFailureReason: ScenarioActionFailureReason? = nil,
+        cleanupVerified: Bool? = nil
     ) {
         self.id = id
         self.caseID = caseID
@@ -786,6 +890,9 @@ struct ScenarioLaneResult: Codable, Equatable, Identifiable, Sendable {
         self.observationSources = observationSources
         self.claims = claims
         self.beforeObservations = beforeObservations
+        self.actionReceipts = actionReceipts
+        self.actionFailureReason = actionFailureReason
+        self.cleanupVerified = cleanupVerified
     }
 }
 
@@ -818,6 +925,9 @@ struct ScenarioInvocationIdentity: Codable, Equatable, Identifiable, Sendable {
     var testProduct: ScenarioProductIdentity?
     var integration: ScenarioIntegrationIdentity? = nil
     var requiredCapabilities: [String]? = nil
+    /// Present for a scoped native Feature control; the frozen execution plan
+    /// remains the authority for which backend was selected.
+    var featureBackend: ScenarioFeatureBackend? = nil
 }
 
 enum ScenarioObservationSource: String, Codable, CaseIterable, Sendable {

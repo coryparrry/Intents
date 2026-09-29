@@ -1,38 +1,31 @@
 import IntentLabContracts
-@testable import IntentLabTesting
+import IntentLabTesting
 import Foundation
 import XCTest
 
 @available(macOS 27.0, iOS 27.0, *)
 @MainActor
 final class IntentLabQueryObserverTests: XCTestCase {
-    func testQueryWaitCompletesOnMainActor() throws {
-        let observed = try IntentLabQueryObserver.runBounded(deadlineSeconds: 2) {
-            ["status": .boolean(true)]
-        }
-        XCTAssertEqual(observed["status"], .boolean(true))
-    }
-
     func testGenericEntityQueryReadsFixtureNote() throws {
         let application = try NotesIntentLabIntegration().prepare(
-            bundleIdentifier: "com.coryparry.IntentLabFixture", context: "query-positive", operationID: "reset"
+            bundleIdentifier: "com.coryparry.IntentLabFixture.integration-tests", context: "query-positive", operationID: "reset"
         )
         defer { application.terminate() }
         let declaration = try makeQueryDeclaration(identifier: "packing-001")
         let observations = try IntentLabQueryObserver.observe(
-            bundleIdentifier: "com.coryparry.IntentLabFixture", declaration: declaration, deadlineSeconds: 10
+            bundleIdentifier: "com.coryparry.IntentLabFixture.integration-tests", declaration: declaration, deadlineSeconds: 10
         )
         XCTAssertEqual(observations["queriedNoteTitle"], .string("Packing note"))
     }
 
     func testGenericEntityQueryRejectsMissingFixtureNote() throws {
         let application = try NotesIntentLabIntegration().prepare(
-            bundleIdentifier: "com.coryparry.IntentLabFixture", context: "query-negative", operationID: "reset"
+            bundleIdentifier: "com.coryparry.IntentLabFixture.integration-tests", context: "query-negative", operationID: "reset"
         )
         defer { application.terminate() }
         let declaration = try makeQueryDeclaration(identifier: "absent-note")
         XCTAssertThrowsError(try IntentLabQueryObserver.observe(
-            bundleIdentifier: "com.coryparry.IntentLabFixture", declaration: declaration, deadlineSeconds: 10
+            bundleIdentifier: "com.coryparry.IntentLabFixture.integration-tests", declaration: declaration, deadlineSeconds: 10
         )) { XCTAssertTrue($0 is IntentLabQueryObservationError) }
     }
 
@@ -53,25 +46,6 @@ final class IntentLabQueryObserverTests: XCTestCase {
         )
         try declaration.validate()
         return declaration
-    }
-
-    func testEntityQueryRejectsMissingAndDuplicateRecords() throws {
-        XCTAssertNoThrow(try IntentLabQueryObserver.validateEntityIdentifiers(
-            expected: ["task-001", "task-002"], actual: ["task-002", "task-001"]
-        ))
-        XCTAssertThrowsError(try IntentLabQueryObserver.validateEntityIdentifiers(
-            expected: ["task-001", "task-002"], actual: ["task-001"]
-        )) { XCTAssertTrue($0 is IntentLabQueryObservationError) }
-        XCTAssertThrowsError(try IntentLabQueryObserver.validateEntityIdentifiers(
-            expected: ["task-001", "task-002"], actual: ["task-001", "task-001"]
-        )) { XCTAssertTrue($0 is IntentLabQueryObservationError) }
-    }
-
-    func testQueryDeadlineCancelsPendingObservation() {
-        XCTAssertThrowsError(try IntentLabQueryObserver.runBounded(deadlineSeconds: 0.02) {
-            try await Task.sleep(for: .seconds(2))
-            return ["status": .boolean(true)]
-        }) { XCTAssertTrue($0 is IntentLabQueryObservationError) }
     }
 
     func testSummaryDeclarationProjectsReturnedStringAndObservesAppOutput() throws {
@@ -126,7 +100,7 @@ final class IntentLabQueryObserverTests: XCTestCase {
     func testPreparedAppHasNoFabricatedSummary() throws {
         let integration = NotesIntentLabIntegration()
         let application = try integration.prepare(
-            bundleIdentifier: "com.coryparry.IntentLabFixture", context: "no-summary", operationID: "reset"
+            bundleIdentifier: "com.coryparry.IntentLabFixture.integration-tests", context: "no-summary", operationID: "reset"
         )
         defer { application.terminate() }
         let observations = try integration.observe(application: application)
@@ -137,7 +111,7 @@ final class IntentLabQueryObserverTests: XCTestCase {
 
     func testPreparedRunnerAdvertisesCombinedSubjectFeature() throws {
         let application = try NotesIntentLabIntegration().prepare(
-            bundleIdentifier: "com.coryparry.IntentLabFixture", context: "feature-discovery", operationID: "reset"
+            bundleIdentifier: "com.coryparry.IntentLabFixture.integration-tests", context: "feature-discovery", operationID: "reset"
         )
         defer { application.terminate() }
         application.tabBars.buttons["Runner"].tap()

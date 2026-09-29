@@ -1,4 +1,5 @@
 import AppIntents
+import IntentLabContracts
 
 struct NoteEntity: AppEntity, Identifiable {
     var id: String
@@ -46,10 +47,17 @@ struct OpenNoteIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        guard FixtureNotes.note(id: note.id) != nil else { throw FixtureIntentError.missingNote }
-        FixtureState.select(noteID: note.id)
-        FixtureState.record(event: "OpenNoteIntent:\(note.id)")
-        return .result(value: note.id)
+        let action = FixtureState.beginProductionIntent(operationID: "OpenNoteIntent", noteID: note.id)
+        do {
+            guard FixtureNotes.note(id: note.id) != nil else { throw FixtureIntentError.missingNote }
+            FixtureState.select(noteID: note.id)
+            FixtureState.record(event: "OpenNoteIntent:\(note.id)")
+            FixtureState.finishProductionIntent(action)
+            return .result(value: note.id)
+        } catch {
+            FixtureState.finishProductionIntent(action, error: error)
+            throw error
+        }
     }
 }
 
@@ -66,11 +74,20 @@ struct SummarizeNoteIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        guard let source = FixtureNotes.note(id: note.id) else { throw FixtureIntentError.missingNote }
-        FixtureState.beginSummaryAttempt(noteID: source.id)
-        let summary = try await SummaryService.summarize(source)
-        try FixtureState.publishSummary(summary, for: source, route: "SummarizeNoteIntent")
-        return .result(value: summary)
+        let action = FixtureState.beginProductionIntent(operationID: "SummarizeNoteIntent", noteID: note.id)
+        do {
+            guard let source = FixtureNotes.note(id: note.id) else { throw FixtureIntentError.missingNote }
+            FixtureState.beginSummaryAttempt(noteID: source.id)
+            let summary = try await FixtureActionContext.$parentKind.withValue(IntentLabActionKind.productionIntent.rawValue) {
+                try await SummaryService.summarize(source)
+            }
+            try FixtureState.publishSummary(summary, for: source, route: "SummarizeNoteIntent")
+            FixtureState.finishProductionIntent(action)
+            return .result(value: summary)
+        } catch {
+            FixtureState.finishProductionIntent(action, error: error)
+            throw error
+        }
     }
 }
 

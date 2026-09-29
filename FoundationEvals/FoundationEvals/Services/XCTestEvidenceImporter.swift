@@ -115,7 +115,10 @@ struct XCTestEvidenceImporter: Sendable {
     ) throws -> ScenarioRun {
         try ScenarioValidator.validate(definition)
         guard journal.scope == scope,
-              scope == nil || (scope?.isValid(for: definition) == true && supplementaryResults.isEmpty) else {
+              scope == nil || (scope?.isValid(
+                  for: definition,
+                  featureBackend: journal.invocation.featureBackend ?? .connectedRunner
+              ) == true && supplementaryResults.isEmpty) else {
             throw ScenarioEvidenceImportError.identityMismatch("the native route scope differs from its journal")
         }
         let envelope = try decodeEnvelope(from: data)
@@ -125,7 +128,10 @@ struct XCTestEvidenceImporter: Sendable {
             throw ScenarioEvidenceImportError.schemaMismatch
         }
         if ScenarioHarnessCapabilities.usesReusableProtocol(definition) {
-            let required = ScenarioHarnessCapabilities.required(for: definition)
+            let required = ScenarioHarnessCapabilities.required(
+                for: definition, scope: scope,
+                featureBackend: journal.invocation.featureBackend ?? .connectedRunner
+            )
             guard let integration = definition.integration,
                   envelope.integration == integration,
                   envelope.invocation.integration == integration,
@@ -150,6 +156,13 @@ struct XCTestEvidenceImporter: Sendable {
         guard journal.phase == .running || journal.phase == .cancelling || journal.phase == .stopped else {
             throw ScenarioEvidenceImportError.journalNotActive
         }
+        if scope?.lane == .appFeature {
+            guard journal.invocation.featureBackend == .projectLocalTestControl else {
+                throw ScenarioEvidenceImportError.identityMismatch("the local Feature backend was not frozen in the native invocation")
+            }
+        } else if journal.invocation.featureBackend != nil {
+            throw ScenarioEvidenceImportError.identityMismatch("a non-Feature route claimed a Feature backend")
+        }
         try validateIdentity(envelope, definition: definition, journal: journal)
         if let measurementImplementation {
             guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
@@ -167,8 +180,68 @@ struct XCTestEvidenceImporter: Sendable {
             throw ScenarioEvidenceImportError.replayedInvocation
         }
         guard envelope.testCount == 1 else { throw ScenarioEvidenceImportError.invalidTestCount }
-        let results = supplementaryResults + envelope.results
-        try validateResults(results, definition: definition, scope: scope)
+        var results = supplementaryResults + envelope.results
+        if definition.actionRequirements != nil {
+            for index in results.indices where results[index].actionReceipts == nil {
+                guard let rawValue = results[index].observations["intentlab.actionReceipts"] else { continue }
+                guard case .string(let rawJSON) = rawValue else {
+                    throw ScenarioEvidenceImportError.invalidResult("the raw app action record is not text")
+                }
+                guard rawJSON.utf8.count <= 65_536,
+                      let transport = results[index].observationSources?["intentlab.actionReceipts"],
+                      transport == .accessibleUI || transport == .testOnlyIntent else {
+                    throw ScenarioEvidenceImportError.invalidResult("the raw app action record has no bounded observation provenance")
+                }
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                guard let receipts = try? decoder.decode(
+                    [ScenarioActionReceipt].self, from: Data(rawJSON.utf8)
+                ), receipts.count <= 16 else {
+                    throw ScenarioEvidenceImportError.invalidResult("the raw app action record is malformed or exceeds the limit")
+                }
+                results[index].actionReceipts = receipts
+                let verdict = ScenarioResultEvaluator.actionVerdict(
+                    definition: definition, lane: results[index].lane,
+                    attempt: results[index].attempt, invocation: journal.invocation,
+                    receipts: receipts
+                )
+                if verdict.0 == .failed, results[index].executionStatus == .completed {
+                    results[index].outcome = .failed
+                    results[index].actionFailureReason = verdict.1
+                    results[index].diagnostic = verdict.1?.rawValue
+                }
+            }
+            for index in results.indices where results[index].executionStatus == .completed {
+                let result = results[index]
+                let action = ScenarioResultEvaluator.actionVerdict(
+                    definition: definition, lane: result.lane, attempt: result.attempt,
+                    invocation: journal.invocation, receipts: result.actionReceipts
+                )
+                guard action.0 == .passed else { continue }
+                let evaluated = ScenarioResultEvaluator.evaluate(
+                    definition: definition, lane: result.lane,
+                    observations: result.observations, executionStatus: result.executionStatus,
+                    beforeObservations: result.beforeObservations,
+                    actionReceipts: result.actionReceipts, invocation: journal.invocation,
+                    attempt: result.attempt
+                )
+                let wrongOutcome = evaluated.1.contains { check in
+                    !check.passed && definition.assertions.contains {
+                        $0.id == check.assertionID && $0.required
+                            && $0.kind != .semanticRubric && $0.applies(to: result.lane)
+                    }
+                }
+                if wrongOutcome {
+                    results[index].outcome = .failed
+                    let reason = ScenarioResultEvaluator.failureReason(
+                        action: action, deterministicFailure: true
+                    )
+                    results[index].actionFailureReason = reason
+                    results[index].diagnostic = reason?.rawValue
+                }
+            }
+        }
+        try validateResults(results, definition: definition, scope: scope, invocation: journal.invocation)
         try validateArtifacts(results.flatMap(\.artifacts), root: artifactRoot, ledger: ledger)
 
         // A coordinate import is evidence for one route attempt. Only the
@@ -247,7 +320,8 @@ struct XCTestEvidenceImporter: Sendable {
         let expectedHarnessVersion = ScenarioHarnessCapabilities.usesReusableProtocol(definition)
             ? ScenarioInvocationIdentity.reusableHarnessVersion : ScenarioInvocationIdentity.currentHarnessVersion
         guard envelope.invocation.testIdentity == journal.invocation.testIdentity,
-              envelope.invocation.harnessVersion == expectedHarnessVersion else {
+              envelope.invocation.harnessVersion == expectedHarnessVersion,
+              envelope.invocation.featureBackend == journal.invocation.featureBackend else {
             throw ScenarioEvidenceImportError.identityMismatch("test entry point or harness version differs")
         }
         let expectedDestination = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
@@ -276,7 +350,8 @@ struct XCTestEvidenceImporter: Sendable {
     private func validateResults(
         _ results: [ScenarioLaneResult],
         definition: ScenarioDefinition,
-        scope: ScenarioNativeExecutionScope?
+        scope: ScenarioNativeExecutionScope?,
+        invocation: ScenarioInvocationIdentity
     ) throws {
         guard !results.isEmpty, results.count <= limits.maximumLaneResults else {
             throw ScenarioEvidenceImportError.invalidResult("the result count is empty or exceeds the limit")
@@ -309,6 +384,22 @@ struct XCTestEvidenceImporter: Sendable {
             guard result.completedAt >= result.startedAt else {
                 throw ScenarioEvidenceImportError.invalidResult("a result completes before it starts")
             }
+            if scope?.lane == .appFeature {
+                guard let binding = definition.featureBinding,
+                      ScenarioValidator.validLocalFeatureObservations(result, binding: binding) else {
+                    throw ScenarioEvidenceImportError.invalidResult(
+                        "local Feature output lacks the declared typed test-intent provenance"
+                    )
+                }
+            }
+            if definition.actionRequirements != nil, let receipts = result.actionReceipts {
+                guard receipts.count <= 16,
+                      ScenarioResultEvaluator.actionObservationIsConsistent(result) else {
+                    throw ScenarioEvidenceImportError.invalidResult(
+                        "action receipts differ from bounded app observations or transport provenance"
+                    )
+                }
+            }
             if result.outcome == .passed {
                 guard result.executionStatus == .completed else {
                     throw ScenarioEvidenceImportError.invalidResult("a non-completed execution is marked passed")
@@ -327,7 +418,10 @@ struct XCTestEvidenceImporter: Sendable {
                 observations: result.observations,
                 executionStatus: result.executionStatus,
                 beforeObservations: definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
-                    ? result.beforeObservations : nil
+                    ? result.beforeObservations : nil,
+                actionReceipts: result.actionReceipts,
+                invocation: invocation,
+                attempt: result.attempt
             )
             if result.outcome == .passed, evaluated.0 != .passed {
                 throw ScenarioEvidenceImportError.invalidResult("a claimed pass conflicts with the captured observations")
@@ -378,6 +472,7 @@ struct XCTestEvidenceImporter: Sendable {
             }
         }
     }
+
 
     private func validateArtifacts(
         _ artifacts: [ScenarioArtifactReference],

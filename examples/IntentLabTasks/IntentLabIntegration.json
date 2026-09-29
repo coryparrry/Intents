@@ -18,6 +18,34 @@
       ]
     }
   ],
+  "localFeatureControls": [
+    {
+      "featureID": "com.example.intent-lab-tasks",
+      "interfaceDigest": "caeb9a954c99c4e035ec5d94bd8892622bb0676d24541dfedecae3d42096937d",
+      "operationID": "complete-task",
+      "testIntentIdentifier": "IntentLabInvokeFeatureIntent",
+      "parameters": [
+        {
+          "name": "taskID",
+          "type": { "primitive": { "_0": "string" } },
+          "required": true
+        }
+      ],
+      "outputProjections": []
+    }
+  ],
+  "readinessControl": {
+    "operationID": "intentLabReadiness",
+    "testIntentIdentifier": "IntentLabReadinessIntent",
+    "response": {
+      "id": "readiness.ready",
+      "type": { "primitive": { "_0": "boolean" } },
+      "path": [
+        { "kind": "property", "name": "value" },
+        { "kind": "property", "name": "ready" }
+      ]
+    }
+  },
   "resultProjections": [
     {
       "id": "completionResponse",
@@ -43,7 +71,8 @@
     { "id": "task-002.title", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-002.title" },
     { "id": "task-002.isComplete", "source": "entityQuery", "type": { "primitive": { "_0": "boolean" } }, "operationID": "tasks-by-stable-id", "selector": "task-002.isComplete" },
     { "id": "invocationContext", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.invocationContext" },
-    { "id": "actionReceiptID", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.actionReceiptID" }
+    { "id": "actionReceiptID", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.actionReceiptID" },
+    { "id": "intentlab.actionReceipts", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.actionReceipts" }
   ],
   "isolation": { "kind": "synthetic", "readinessOperationID": "prepare-task-fixture" },
   "capabilities": [
@@ -54,6 +83,8 @@
     "entity-query",
     "siri",
     "siri-completion",
-    "invocation-correlation"
+    "invocation-correlation",
+    "local-feature-controls",
+    "test-only-intent"
   ]
 }

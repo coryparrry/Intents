@@ -231,7 +231,7 @@ struct ScenarioContractsTests {
         #expect(!XcodeTestExecutor.destinationStatus(identifier: "sim-1", devices: physical).ready)
     }
 
-    @Test func schemeTestActionConfigurationUsesSelectedOwnerAndPreservesDebug() throws {
+    @Test func schemeTestActionConfigurationUsesSelectedOwnerAndDeclaredTestMode() throws {
         let repository = URL(filePath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
         let tasks = repository.appending(path: "examples/IntentLabTasks/IntentLabTasks.xcodeproj")
@@ -241,7 +241,7 @@ struct ScenarioContractsTests {
         ) == "IntentLabTesting")
         #expect(try XcodeConnectionDiscoveryService.testActionBuildConfiguration(
             container: notes, scheme: "IntentLabFixtureV2"
-        ) == "Debug")
+        ) == "IntentLabTesting")
 
         let root = try temporaryDirectory()
         let workspace = root.appending(path: "Combined.xcworkspace", directoryHint: .isDirectory)
@@ -436,6 +436,7 @@ struct ScenarioContractsTests {
             journal: journal(for: definition, invocation: invocation, phase: .stopped),
             artifactRoot: temporaryDirectory(), ledger: &ledger
         )
+        run.xctestExitCode = 0
         #expect(run.outcome == .passed)
         #expect(run.laneResults[0].observations.isEmpty)
         #expect(run.integration == definition.integration)
@@ -932,11 +933,33 @@ struct ScenarioContractsTests {
         try Data("struct Intent { let changed = true }".utf8).write(to: sharedSource)
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeShared)
 
-        let buildNamedSource = appRoot.appending(path: "Build/Helper.swift")
-        try FileManager.default.createDirectory(at: buildNamedSource.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let beforeBuildNamedSource = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
-        try Data("struct Helper {}".utf8).write(to: buildNamedSource)
-        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeBuildNamedSource)
+        let supportSource = appRoot.appending(path: "Support/Helper.swift")
+        try FileManager.default.createDirectory(at: supportSource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let beforeSupportSource = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("struct Helper {}".utf8).write(to: supportSource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != beforeSupportSource)
+
+        let generatedBuildFile = appRoot.appending(path: "build/XCBuildData/build.db")
+        try FileManager.default.createDirectory(at: generatedBuildFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let beforeLocalBuildOutput = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("generated-v1".utf8).write(to: generatedBuildFile)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforeLocalBuildOutput)
+        try Data("generated-v2".utf8).write(to: generatedBuildFile)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) == beforeLocalBuildOutput)
+
+        let localBuildSource = appRoot.appending(path: "build/Helper.swift")
+        let projectWithLocalBuildReference = try PropertyListSerialization.data(
+            fromPropertyList: ["objects": [
+                "PACKAGE": ["isa": "XCLocalSwiftPackageReference", "relativePath": "../LocalPackage"],
+                "SHARED": ["isa": "PBXFileReference", "path": "../Shared/Intent.swift", "sourceTree": "<group>"],
+                "LOCAL_BUILD_SOURCE": ["isa": "PBXFileReference", "path": "build/Helper.swift", "sourceTree": "<group>"],
+            ]], format: .xml, options: 0
+        )
+        try projectWithLocalBuildReference.write(to: project.appending(path: "project.pbxproj"))
+        try Data("struct LocalBuildHelper {}".utf8).write(to: localBuildSource)
+        let referencedLocalBuildDigest = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("struct LocalBuildHelper { let changed = true }".utf8).write(to: localBuildSource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != referencedLocalBuildDigest)
 
         let xcodeUserState = project.appending(path: "xcuserdata/user.xcuserdatad/state.xcuserstate")
         try FileManager.default.createDirectory(at: xcodeUserState.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -1381,6 +1404,10 @@ struct ScenarioContractsTests {
         executionJournal.evidenceAccepted = true
         try await persistence.saveJournal(executionJournal)
         let stored = try await persistence.saveRun(candidate, artifactRoot: nil)
+        var importLedger = ScenarioImportLedger()
+        importLedger.importedInvocationIDs.insert(stored.invocation.id)
+        importLedger.importedNonces.insert(stored.invocation.nonce)
+        try await persistence.saveLedger(importLedger)
         let accepted = try await persistence.acceptRun(stored, journal: executionJournal)
         let release = ScenarioReleaseCheckEvaluator.report(definition: definition, run: accepted,
                                                            comparison: comparison)
@@ -1614,6 +1641,110 @@ struct ScenarioContractsTests {
         await #expect(throws: ScenarioPersistenceError.self) {
             _ = try await persistence.saveRun(run, artifactRoot: nil)
         }
+    }
+
+    @Test func stoppedScopedJournalWithRejectedEvidenceCannotPublishAcceptance() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        var evidenceJournal = journal(for: definition, invocation: invocation, phase: .stopped)
+        var ledger = ScenarioImportLedger()
+        let run = try XCTestEvidenceImporter().importEvidence(
+            data: try encoder.encode(evidence(for: definition, invocation: invocation)),
+            definition: definition, journal: evidenceJournal,
+            artifactRoot: try temporaryDirectory(), ledger: &ledger
+        )
+        let stored = try await persistence.saveRun(run, artifactRoot: nil)
+        try await persistence.saveLedger(ledger)
+        evidenceJournal.invocation = stored.invocation
+        evidenceJournal.scope = .init(lane: .intentIntegration, attempt: 1)
+        evidenceJournal.evidenceAccepted = false
+        try await persistence.saveJournal(evidenceJournal)
+        await #expect(throws: ScenarioPersistenceError.self) {
+            _ = try await persistence.acceptRun(stored, journal: evidenceJournal)
+        }
+        #expect(try await ScenarioPersistence(rootDirectory: root).loadRuns().first?.acceptanceStatus == .pending)
+    }
+
+    @Test func acceptedScopedJournalPublishesIdempotentReceiptAfterRelaunch() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        var evidenceJournal = journal(for: definition, invocation: invocation, phase: .stopped)
+        var ledger = ScenarioImportLedger()
+        let run = try XCTestEvidenceImporter().importEvidence(
+            data: try encoder.encode(evidence(for: definition, invocation: invocation)),
+            definition: definition, journal: evidenceJournal,
+            artifactRoot: try temporaryDirectory(), ledger: &ledger
+        )
+        let stored = try await persistence.saveRun(run, artifactRoot: nil)
+        try await persistence.saveLedger(ledger)
+        evidenceJournal.scope = .init(lane: .intentIntegration, attempt: 1)
+        evidenceJournal.evidenceAccepted = true
+        try await persistence.saveJournal(evidenceJournal)
+
+        let accepted = try await persistence.acceptRun(stored, journal: evidenceJournal)
+        #expect(accepted.acceptanceStatus == .accepted)
+        let relaunched = ScenarioPersistence(rootDirectory: root)
+        #expect(try await relaunched.loadRuns().first?.acceptanceStatus == .accepted)
+        let again = try await relaunched.acceptRun(stored, journal: evidenceJournal)
+        #expect(again.acceptanceStatus == .accepted)
+        let receipt = root.appending(path: "Runs/\(run.scenarioID.uuidString)/\(run.id.uuidString)/acceptance.json")
+        #expect(FileManager.default.fileExists(atPath: receipt.path))
+        let conflicting = Data("{\"runID\":\"conflicting\"}".utf8)
+        try conflicting.write(to: receipt, options: .atomic)
+        await #expect(throws: ScenarioPersistenceError.self) {
+            _ = try await relaunched.acceptRun(stored, journal: evidenceJournal)
+        }
+        #expect(try Data(contentsOf: receipt) == conflicting)
+    }
+
+    @Test func scopedAcceptanceRequiresDurableLedgerMembership() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        var evidenceJournal = journal(for: definition, invocation: invocation, phase: .stopped)
+        var importedLedger = ScenarioImportLedger()
+        let run = try XCTestEvidenceImporter().importEvidence(
+            data: try encoder.encode(evidence(for: definition, invocation: invocation)),
+            definition: definition, journal: evidenceJournal,
+            artifactRoot: try temporaryDirectory(), ledger: &importedLedger
+        )
+        let stored = try await persistence.saveRun(run, artifactRoot: nil)
+        try await persistence.saveLedger(.init())
+        evidenceJournal.evidenceAccepted = true
+        try await persistence.saveJournal(evidenceJournal)
+
+        await #expect(throws: ScenarioPersistenceError.self) {
+            _ = try await persistence.acceptRun(stored, journal: evidenceJournal)
+        }
+        #expect(try await ScenarioPersistence(rootDirectory: root).loadRuns().first?.acceptanceStatus == .pending)
+    }
+
+    @Test func evidenceAcceptanceAndDeviceReadinessRemainIndependent() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let executor = XcodeTestExecutor(workDirectory: root.appending(path: "Executor"), persistence: persistence)
+        let definition = try scenario()
+        let waiting = journal(for: definition, invocation: invocation(for: definition), phase: .running)
+        try await executor.finishEvidenceValidation(
+            journal: waiting, accepted: true, deviceReady: false
+        )
+        let waitingJournal = try #require(await persistence.loadJournals().first { $0.id == waiting.id })
+        #expect(waitingJournal.evidenceAccepted == true)
+        #expect(waitingJournal.phase == .recoveryRequired)
+        #expect(try await executor.currentRecoveryJournals().contains { $0.id == waiting.id })
+
+        let rejected = journal(for: definition, invocation: invocation(for: definition), phase: .running)
+        try await executor.finishEvidenceValidation(
+            journal: rejected, accepted: false, deviceReady: true
+        )
+        let rejectedJournal = try #require(await persistence.loadJournals().first { $0.id == rejected.id })
+        #expect(rejectedJournal.evidenceAccepted == false)
+        #expect(rejectedJournal.phase == .stopped)
     }
 
     @Test func sourceLabelDistinguishesCleanGitFromChangedInputs() throws {
@@ -1910,6 +2041,7 @@ struct ScenarioContractsTests {
             journal: journal(for: definition, invocation: invocation, phase: .stopped),
             artifactRoot: temporaryDirectory(), ledger: &ledger
         )
+        run.xctestExitCode = 0
         let final = ScenarioEvidenceAttachment(
             url: URL(filePath: "/tmp/final.json"), name: "IntentLabEvidence-\(invocation.id.uuidString).json"
         )
@@ -1935,6 +2067,7 @@ struct ScenarioContractsTests {
         #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
             attachments: [checkpoint], runs: [run], xctestExitCode: 0
         ))
+        run.xctestExitCode = 1
         #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
             attachments: [final], runs: [run], xctestExitCode: 1
         ))
@@ -2182,6 +2315,121 @@ struct ScenarioContractsTests {
             "requiredValue": .string("approved"),
             "optionalValue": .string("wrong"),
         ]) == .passed)
+    }
+
+    @Test func wrongActionCannotPassWhenFinalStateMatches() throws {
+        var definition = try scenario()
+        definition.directControl.intentIdentifier = "SummarizeNoteIntent"
+        definition.actionPolicyVersion = 1
+        definition.actionRequirements = [.init(
+            lane: .siri, kind: .productionIntent, operationID: "SummarizeNoteIntent",
+            resolvedParameters: ["noteID": .string("packing-001")]
+        )]
+        definition.assertions = [ScenarioAssertion(
+            kind: .stateTransition, observationKey: "selectedNoteID",
+            expectedValue: .string("packing-001"),
+            explanation: "The intended note is selected.",
+            required: true, applicableLanes: [.siri]
+        )]
+        let invocation = invocation(for: definition)
+        let now = Date()
+        let wrong = ScenarioActionReceipt(
+            executionID: UUID(), appSessionID: UUID(),
+            attemptContext: "siri-\(invocation.id.uuidString)-1",
+            lane: .siri, attempt: 1, kind: .productionIntent,
+            operationID: "OpenNoteIntent",
+            resolvedParameters: ["noteID": .string("packing-001")],
+            terminalStatus: .succeeded, operationError: nil,
+            sequence: 1, startedAt: now, completedAt: now,
+            observationTransport: .accessibleUI
+        )
+        let evaluated = ScenarioResultEvaluator.evaluate(
+            definition: definition, lane: .siri,
+            observations: ["selectedNoteID": .string("packing-001")],
+            executionStatus: .completed,
+            actionReceipts: [wrong], invocation: invocation
+        )
+        #expect(evaluated.0 == .failed)
+        #expect(ScenarioResultEvaluator.actionVerdict(
+            definition: definition, lane: .siri, attempt: 1,
+            invocation: invocation, receipts: [wrong]
+        ).1 == .wrongAction)
+        #expect(ScenarioResultEvaluator.actionVerdict(
+            definition: definition, lane: .siri, attempt: 1,
+            invocation: invocation, receipts: nil
+        ).1 == .missingActionEvidence)
+        var stale = wrong
+        stale.operationID = "SummarizeNoteIntent"
+        stale.attemptContext = "siri-prior-attempt-1"
+        #expect(ScenarioResultEvaluator.actionVerdict(
+            definition: definition, lane: .siri, attempt: 1,
+            invocation: invocation, receipts: [stale]
+        ).1 == .staleActionEvidence)
+        var wrongParameter = wrong
+        wrongParameter.operationID = "SummarizeNoteIntent"
+        wrongParameter.resolvedParameters = ["noteID": .string("packing-002")]
+        #expect(ScenarioResultEvaluator.actionVerdict(
+            definition: definition, lane: .siri, attempt: 1,
+            invocation: invocation, receipts: [wrongParameter]
+        ).1 == .wrongParameter)
+        var correct = wrong
+        correct.operationID = "SummarizeNoteIntent"
+        #expect(ScenarioResultEvaluator.actionVerdict(
+            definition: definition, lane: .siri, attempt: 1,
+            invocation: invocation, receipts: [correct]
+        ).0 == .passed)
+        var inconsistent = correct
+        inconsistent.operationError = "A real operation error"
+        #expect(ScenarioResultEvaluator.actionVerdict(
+            definition: definition, lane: .siri, attempt: 1,
+            invocation: invocation, receipts: [inconsistent]
+        ).1 == .invalidActionEvidence)
+        var missingError = correct
+        missingError.terminalStatus = .failed
+        #expect(ScenarioResultEvaluator.actionVerdict(
+            definition: definition, lane: .siri, attempt: 1,
+            invocation: invocation, receipts: [missingError]
+        ).1 == .invalidActionEvidence)
+        var extra = wrong
+        extra.executionID = UUID()
+        extra.sequence = 2
+        #expect(ScenarioResultEvaluator.actionVerdict(
+            definition: definition, lane: .siri, attempt: 1,
+            invocation: invocation, receipts: [correct, extra]
+        ).1 == .unexpectedExecution)
+        var replay = correct
+        replay.sequence = 2
+        #expect(ScenarioResultEvaluator.actionVerdict(
+            definition: definition, lane: .siri, attempt: 1,
+            invocation: invocation, receipts: [correct, replay]
+        ).1 == .invalidActionEvidence)
+    }
+
+    @Test func preparedFixtureIdentitySurvivesTerminalFailureBeforeSelection() throws {
+        let expected = String(repeating: "a", count: 64)
+        let another = String(repeating: "b", count: 64)
+        let data = try JSONEncoder().encode([another, expected])
+        let prepared: [String: ScenarioValue] = [
+            "intentlab.fixtureDigests": .string(String(decoding: data, as: UTF8.self))
+        ]
+        #expect(ScenarioFixtureReceipt(observations: prepared, expected: expected) == .matched)
+        var wrongSelected = prepared
+        wrongSelected["intentlab.fixtureDigest"] = .string(another)
+        #expect(ScenarioFixtureReceipt(observations: wrongSelected, expected: expected) == .wrongSource)
+        var wrongReadback = prepared
+        wrongReadback["intentlab.fixtureDigest"] = .string(expected)
+        wrongReadback["summarySourceContentDigest"] = .string(another)
+        #expect(ScenarioFixtureReceipt(observations: wrongReadback, expected: expected) == .wrongSource)
+        var malformedSource = prepared
+        malformedSource["summarySourceContentDigest"] = .integer(1)
+        #expect(ScenarioFixtureReceipt(observations: malformedSource, expected: expected) == .missing)
+        #expect(ScenarioFixtureReceipt(observations: prepared, expected: String(repeating: "c", count: 64)) == .wrongSource)
+        #expect(ScenarioFixtureReceipt(
+            observations: ["intentlab.fixtureDigests": .string("not JSON")], expected: expected
+        ) == .missing)
+        #expect(ScenarioFixtureReceipt(
+            observations: ["summarySourceContentDigest": .string(expected)], expected: expected
+        ) == .matched)
     }
 
     @Test func semanticAssertionProducesNeedsReviewBeforeHostAssessment() throws {

@@ -82,6 +82,13 @@ public struct IntentLabParameter: Codable {
     public var type: IntentLabValueType
     public var isOptional: Bool
     public var presence: IntentLabPresence
+
+    public init(name: String, type: IntentLabValueType, isOptional: Bool, presence: IntentLabPresence) {
+        self.name = name
+        self.type = type
+        self.isOptional = isOptional
+        self.presence = presence
+    }
 }
 
 public struct IntentLabProjectionPathComponent: Codable, Equatable {
@@ -89,12 +96,30 @@ public struct IntentLabProjectionPathComponent: Codable, Equatable {
     public var kind: Kind
     public var name: String?
     public var index: Int?
+
+    public init(kind: Kind, name: String? = nil, index: Int? = nil) {
+        self.kind = kind
+        self.name = name
+        self.index = index
+    }
 }
 public struct IntentLabOutputField: Codable {
     public var name: String
     public var type: IntentLabValueType
     public var displayName: String?
     public var path: [IntentLabProjectionPathComponent]?
+
+    public init(
+        name: String,
+        type: IntentLabValueType,
+        displayName: String? = nil,
+        path: [IntentLabProjectionPathComponent]? = nil
+    ) {
+        self.name = name
+        self.type = type
+        self.displayName = displayName
+        self.path = path
+    }
 }
 public enum IntentLabPurpose: String, Codable { case exploratory, releaseRequirement }
 public enum IntentLabCheckMode: String, Codable { case basic, behaviour }
@@ -174,6 +199,101 @@ public struct IntentLabExecutionScope: Codable {
     }
 }
 
+/// The frozen logical feature contract for a project-local native feature run.
+/// The consumer's compiled integration declaration resolves this identity to a
+/// test-only App Intent; scenario values never name executable code directly.
+public struct IntentLabFeatureBinding: Codable {
+    public var featureID: String
+    public var interfaceDigest: String
+    public var inputMapping: [InputMapping]
+    public var outputProjections: [IntentLabOutputField]
+
+    public struct InputMapping: Codable {
+        public var featureInputName: String
+        public var value: IntentLabValue
+
+        public init(featureInputName: String, value: IntentLabValue) {
+            self.featureInputName = featureInputName
+            self.value = value
+        }
+    }
+
+    public init(
+        featureID: String,
+        interfaceDigest: String,
+        inputMapping: [InputMapping],
+        outputProjections: [IntentLabOutputField]
+    ) {
+        self.featureID = featureID
+        self.interfaceDigest = interfaceDigest
+        self.inputMapping = inputMapping
+        self.outputProjections = outputProjections
+    }
+}
+
+public enum IntentLabActionKind: String, Codable { case productionIntent, productionService, testSupport }
+public enum IntentLabActionTerminalStatus: String, Codable { case succeeded, failed }
+public enum IntentLabActionFailureReason: String, Codable {
+    case missingActionEvidence, staleActionEvidence, wrongAction, wrongParameter, wrongOutcome,
+         unexpectedExecution, operationError, invalidActionEvidence
+}
+
+public struct IntentLabActionRequirement: Codable {
+    public var lane: IntentLabLane
+    public var kind: IntentLabActionKind
+    public var operationID: String
+    public var resolvedParameters: [String: IntentLabValue]
+    public var allowedExecutionCount: Int
+    public init(lane: IntentLabLane, kind: IntentLabActionKind, operationID: String,
+                resolvedParameters: [String: IntentLabValue], allowedExecutionCount: Int = 1) {
+        self.lane = lane
+        self.kind = kind
+        self.operationID = operationID
+        self.resolvedParameters = resolvedParameters
+        self.allowedExecutionCount = allowedExecutionCount
+    }
+}
+
+public struct IntentLabActionReceipt: Codable {
+    public var executionID: UUID
+    public var appSessionID: UUID
+    public var attemptContext: String
+    public var lane: IntentLabLane
+    public var attempt: Int
+    public var kind: IntentLabActionKind
+    public var operationID: String
+    public var resolvedParameters: [String: IntentLabValue]
+    public var terminalStatus: IntentLabActionTerminalStatus
+    public var operationError: String?
+    public var sequence: Int
+    public var startedAt: Date
+    public var completedAt: Date
+    public var observationTransport: String
+    public var isTopLevel: Bool
+    public init(executionID: UUID, appSessionID: UUID, attemptContext: String,
+                lane: IntentLabLane, attempt: Int, kind: IntentLabActionKind,
+                operationID: String, resolvedParameters: [String: IntentLabValue],
+                terminalStatus: IntentLabActionTerminalStatus, operationError: String?,
+                sequence: Int, startedAt: Date, completedAt: Date,
+                observationTransport: String, isTopLevel: Bool = true) {
+        self.executionID = executionID
+        self.appSessionID = appSessionID
+        self.attemptContext = attemptContext
+        self.lane = lane
+        self.attempt = attempt
+        self.kind = kind
+        self.operationID = operationID
+        self.resolvedParameters = resolvedParameters
+        self.terminalStatus = terminalStatus
+        self.operationError = operationError
+        self.sequence = sequence
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+        self.observationTransport = observationTransport
+        self.isTopLevel = isTopLevel
+    }
+}
+
 public struct IntentLabScenario: Codable {
     public var schemaVersion: Int? = 1
     public var id: UUID
@@ -192,6 +312,9 @@ public struct IntentLabScenario: Codable {
     public var observationPlan: [IntentLabPlannedObservation]?
     public var integration: IntentLabIntegrationIdentity?
     public var executionScope: IntentLabExecutionScope?
+    public var featureBinding: IntentLabFeatureBinding?
+    public var actionRequirements: [IntentLabActionRequirement]?
+    public var actionPolicyVersion: Int?
 
     public func validateContract(harnessVersion: String) throws {
         switch schemaVersion ?? 1 {
@@ -223,7 +346,15 @@ public struct IntentLabScenario: Codable {
             if let executionScope {
                 switch executionScope.lane {
                 case .appFeature:
-                    throw IntentLabPayloadError.unsupportedSchema
+                    guard executionScope.attempt == 1,
+                          coverage.appFeature != .notApplicable,
+                          featureBinding != nil,
+                          let actionRequirements,
+                          actionRequirements.filter({ $0.lane == .appFeature }).count == 1,
+                          actionRequirements.first(where: { $0.lane == .appFeature })?.kind
+                            == .productionService else {
+                        throw IntentLabPayloadError.unsupportedSchema
+                    }
                 case .intentIntegration:
                     guard executionScope.attempt == 1,
                           coverage.intentIntegration != .notApplicable else {
@@ -237,6 +368,38 @@ public struct IntentLabScenario: Codable {
                         throw IntentLabPayloadError.unsupportedSchema
                     }
                 }
+            }
+            if let featureBinding {
+                guard !featureBinding.featureID.isEmpty,
+                      featureBinding.interfaceDigest.range(
+                        of: "^[0-9a-f]{64}$", options: .regularExpression
+                      ) != nil,
+                      Set(featureBinding.inputMapping.map(\.featureInputName)).count
+                        == featureBinding.inputMapping.count,
+                      featureBinding.inputMapping.allSatisfy({ !$0.featureInputName.isEmpty }),
+                      Set(featureBinding.outputProjections.map(\.name)).count
+                        == featureBinding.outputProjections.count,
+                      featureBinding.outputProjections.allSatisfy({
+                          !$0.name.isEmpty && $0.name != "feature.response"
+                              && $0.name != "intentlab.actionReceipts"
+                      }) else {
+                    throw IntentLabPayloadError.unsupportedSchema
+                }
+            } else if executionScope?.lane == .appFeature {
+                throw IntentLabPayloadError.unsupportedSchema
+            }
+            if let actionRequirements {
+                guard actionPolicyVersion == 1, !actionRequirements.isEmpty,
+                      Set(actionRequirements.map(\.lane.rawValue)).count == actionRequirements.count,
+                      actionRequirements.allSatisfy({ requirement in
+                          requirement.allowedExecutionCount == 1 && !requirement.operationID.isEmpty
+                              && requirement.operationID.count <= 128
+                              && (requirement.lane == .appFeature
+                                  ? requirement.kind == .productionService
+                                  : requirement.kind == .productionIntent)
+                      }) else { throw IntentLabPayloadError.unsupportedSchema }
+            } else if actionPolicyVersion != nil {
+                throw IntentLabPayloadError.unsupportedSchema
             }
         default:
             throw IntentLabPayloadError.unsupportedSchema
@@ -316,6 +479,7 @@ public struct IntentLabInvocation: Codable {
     public var testProduct: IntentLabProductIdentity?
     public var integration: IntentLabIntegrationIdentity?
     public var requiredCapabilities: [String]?
+    public var featureBackend: String?
 }
 
 public struct IntentLabAssertionResult: Codable {
@@ -371,7 +535,10 @@ public struct IntentLabLaneResult: Codable {
     public var artifacts: [IntentLabArtifactReference]
     public var observationSources: [String: String]? = nil
     public var claims: [IntentLabProofClaim]? = nil
-    public init(caseID: UUID, attempt: Int, lane: IntentLabLane, executionStatus: IntentLabExecutionStatus, outcome: IntentLabOutcome, startedAt: Date, completedAt: Date, observations: [String: IntentLabValue], assertionResults: [IntentLabAssertionResult], diagnostic: String?, proposedCause: String?, artifacts: [IntentLabArtifactReference], observationSources: [String: String]? = nil, claims: [IntentLabProofClaim]? = nil, beforeObservations: [String: IntentLabValue]? = nil) {
+    public var actionReceipts: [IntentLabActionReceipt]? = nil
+    public var actionFailureReason: IntentLabActionFailureReason? = nil
+    public var cleanupVerified: Bool? = nil
+    public init(caseID: UUID, attempt: Int, lane: IntentLabLane, executionStatus: IntentLabExecutionStatus, outcome: IntentLabOutcome, startedAt: Date, completedAt: Date, observations: [String: IntentLabValue], assertionResults: [IntentLabAssertionResult], diagnostic: String?, proposedCause: String?, artifacts: [IntentLabArtifactReference], observationSources: [String: String]? = nil, claims: [IntentLabProofClaim]? = nil, beforeObservations: [String: IntentLabValue]? = nil, actionReceipts: [IntentLabActionReceipt]? = nil, actionFailureReason: IntentLabActionFailureReason? = nil, cleanupVerified: Bool? = nil) {
         self.caseID = caseID
         self.attempt = attempt
         self.lane = lane
@@ -387,6 +554,9 @@ public struct IntentLabLaneResult: Codable {
         self.artifacts = artifacts
         self.observationSources = observationSources
         self.claims = claims
+        self.actionReceipts = actionReceipts
+        self.actionFailureReason = actionFailureReason
+        self.cleanupVerified = cleanupVerified
     }
 }
 

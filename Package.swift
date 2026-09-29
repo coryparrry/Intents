@@ -45,6 +45,8 @@ let portableTestSources = [
     "ScenarioCollectionTests.swift",
     "ScenarioNoMutationTests.swift",
     "ScenarioExecutionComparisonTests.swift",
+    "ScenarioV3HarnessBridgeTests.swift",
+    "ScenarioActionParityTests.swift",
     "IntentEvidenceBundleTests.swift",
     "IntentLabProjectInstallerTests.swift",
 ]
@@ -148,7 +150,7 @@ let package = Package(
         ),
         .testTarget(
             name: "FoundationEvalsPortableTests",
-            dependencies: ["FoundationEvals", "FoundationEvalsUIComponents"],
+            dependencies: ["FoundationEvals", "FoundationEvalsUIComponents", "IntentLabContracts"],
             path: "FoundationEvals/FoundationEvalsTests",
             exclude: [
                 "Fixtures",
@@ -199,6 +201,11 @@ let package = Package(
             name: "IntentLabCoreTestingTests",
             dependencies: ["IntentLabCoreTesting", "IntentLabContracts"],
             path: "Tests/IntentLabCoreTestingTests"
+        ),
+        .testTarget(
+            name: "IntentLabTestingTests",
+            dependencies: ["IntentLabTesting", "IntentLabContracts"],
+            path: "Tests/IntentLabTestingTests"
         ),
     ]
 )

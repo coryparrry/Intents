@@ -47,6 +47,13 @@ final class ScenarioCoordinator {
     var invalidParameterDraftIndices: Set<Int> = []
     var selectedRunID: UUID?
     var configuration: XcodeTestConfiguration
+    /// Explicit route choice for new stable plans. The plan freezes its value;
+    /// selecting or rerunning older evidence reads that plan, not this control.
+    var featureBackend: ScenarioFeatureBackend = .projectLocalTestControl {
+        didSet {
+            if oldValue != featureBackend { invalidatePreflight() }
+        }
+    }
     var projectTrusted = false
     private(set) var selectedIntegration: ScenarioIntegrationIdentity?
     private(set) var declarationCatalog: ScenarioIntegrationCatalog?
@@ -57,11 +64,14 @@ final class ScenarioCoordinator {
     private(set) var verifiedIntegrationSummary: String?
     var statedChangedDimensions: Set<String> = []
     private(set) var preflight: ScenarioPreflightReport?
+    private(set) var routeReadiness: [ScenarioLane: ScenarioRouteReadiness] = [:]
     private(set) var isRunning = false
+    private(set) var executionStage: String?
     private(set) var isGeneratingSuggestions = false
     private(set) var suggestions: [ScenarioRequestSuggestion] = []
     private(set) var recoveryJournals: [ScenarioExecutionJournal] = []
     private(set) var journals: [ScenarioExecutionJournal] = []
+    private(set) var pendingOrdinarySaves: [ScenarioPendingOrdinarySave] = []
     private(set) var hasLoaded = false
     var notice: String?
 
@@ -134,7 +144,8 @@ final class ScenarioCoordinator {
               }) else { return nil }
         return ScenarioCollectionService.assess(
             manifest: manifest, collection: collection,
-            result: batchResults.first { $0.manifestID == manifest.id }, runs: runs
+            result: batchResults.first { $0.manifestID == manifest.id },
+            runs: runs, journals: journals
         )
     }
 
@@ -187,6 +198,7 @@ final class ScenarioCoordinator {
             definitions = try await persistence.loadDefinitions()
             runs = try await persistence.loadRuns()
             ledger = try await persistence.loadLedger()
+            pendingOrdinarySaves = try await persistence.loadPendingOrdinarySaves()
             recoveryJournals = try await executor.reconcileInterruptedJournals()
             journals = try await persistence.loadJournals()
             _ = try await persistence.recoverIncompleteExecutionRecords()
@@ -228,7 +240,9 @@ final class ScenarioCoordinator {
                 configuration = savedConfiguration
             }
             selectedRunID = runs.first?.id
-            if !recoveryJournals.isEmpty {
+            if !pendingOrdinarySaves.isEmpty {
+                notice = "A completed device run has evidence waiting for a save-only retry."
+            } else if !recoveryJournals.isEmpty {
                 notice = "A previous device test ended without proven cleanup. Its destination is quarantined until termination and fixture readiness are confirmed."
             }
             hasLoaded = true
@@ -568,6 +582,7 @@ final class ScenarioCoordinator {
             verifiedIntegrationSummary = nil
             notice = "Integration check failed: \(error.localizedDescription)"
             invalidatePreflight()
+            await refreshPreflight()
         }
     }
 
@@ -752,6 +767,43 @@ final class ScenarioCoordinator {
         }
         do {
             draft = try ScenarioExpectationAuthoring.selectingAction(id, in: draft, catalog: declarationCatalog)
+            if draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                draft = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(
+                    draft, catalog: declarationCatalog
+                )
+            }
+            invalidatePreflight()
+        } catch { notice = error.localizedDescription }
+    }
+
+    /// Call after a typed parameter edit. This is an authoring operation; saved
+    /// plans and reruns continue to use their previously frozen requirements.
+    func synchronizeDeclaredActionRequirements() {
+        guard draft.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+              let declarationCatalog else { return }
+        do {
+            draft = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(
+                draft, catalog: declarationCatalog
+            )
+            invalidatePreflight()
+        } catch { notice = error.localizedDescription }
+    }
+
+    func selectLocalFeatureControl(
+        featureID: String,
+        operationID: String,
+        inputMapping: [ScenarioFeatureInputMapping]
+    ) {
+        guard let declarationCatalog else {
+            notice = "Rebuild and check support to load the app's local Feature controls."
+            return
+        }
+        do {
+            draft = try ScenarioExpectationAuthoring.selectingLocalFeatureControl(
+                featureID: featureID, operationID: operationID,
+                inputMapping: inputMapping, in: draft, catalog: declarationCatalog
+            )
+            featureBackend = .projectLocalTestControl
             invalidatePreflight()
         } catch { notice = error.localizedDescription }
     }
@@ -870,6 +922,7 @@ final class ScenarioCoordinator {
     func invalidatePreflight() {
         preflightRevision += 1
         preflight = nil
+        routeReadiness = [:]
         verifiedIntegrationSummary = nil
     }
 
@@ -885,18 +938,71 @@ final class ScenarioCoordinator {
         let revision = preflightRevision
         let checkedConfiguration = configuration
         let checkedProjectTrusted = projectTrusted
+        let checkedFeatureBackend = featureBackend
         let report = await executor.preflight(
             definition: frozen,
             configuration: checkedConfiguration,
             projectTrusted: checkedProjectTrusted,
-            linkedFeatureEvidenceAvailable: linkedFeatureRun(for: frozen) != nil
+            linkedFeatureEvidenceAvailable: checkedFeatureBackend == .projectLocalTestControl
+                || linkedFeatureRun(for: frozen) != nil,
+            featureBackend: checkedFeatureBackend
         )
+        var routes = await executor.routeReadiness(
+            definition: frozen, configuration: checkedConfiguration,
+            projectTrusted: checkedProjectTrusted, featureBackend: checkedFeatureBackend
+        )
+        if checkedFeatureBackend == .connectedRunner {
+            let connection = await executor.currentConnection(
+                definition: frozen, configuration: checkedConfiguration
+            )
+            Self.applyConnectedFeatureReadiness(
+                to: &routes, definition: frozen, appDigest: connection?.appProduct.sha256,
+                runnerCheck: { _ = try selectedSubjectRunner(for: frozen, appDigest: $0) }
+            )
+        }
         guard revision == preflightRevision,
               configuration == checkedConfiguration,
               projectTrusted == checkedProjectTrusted,
+              featureBackend == checkedFeatureBackend,
               draft == frozen,
               invalidParameterDraftIndices.isEmpty else { return }
         preflight = report
+        routeReadiness = routes
+    }
+
+    /// Runs selected routes as a new, explicitly partial diagnostic. It keeps
+    /// the frozen requirement unchanged and cannot qualify complete coverage.
+    func checkThisFix(on selectedLanes: Set<ScenarioLane>) async {
+        guard hasLoaded, !isRunning else {
+            notice = "Load Intent Lab and finish the current run before checking a fix."
+            return
+        }
+        guard draft.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+              !selectedLanes.isEmpty,
+              selectedLanes.allSatisfy({ draft.coverage[$0] != .notApplicable }) else {
+            notice = "Select at least one requested route for this diagnostic check."
+            return
+        }
+        let ownerID = UUID()
+        do { try acquireExecutionOwner(ownerID) }
+        catch { notice = error.localizedDescription; return }
+        isRunning = true
+        executionStage = "Checking environment"
+        cancellationRequested = false
+        finalEvidenceCommitStarted = false
+        defer {
+            ScenarioExecutionAdmission.shared.release(ownerID)
+            isRunning = false
+            executionStage = nil
+            finalEvidenceCommitStarted = false
+            executionTask = nil
+        }
+        await runStableExecution(
+            ownerID: ownerID, runConfiguration: configuration,
+            runTrusted: projectTrusted, backend: featureBackend,
+            purpose: .partialDiagnostic, selectedLanes: selectedLanes
+        )
+        await refreshPreflight()
     }
 
     func run() async {
@@ -913,23 +1019,27 @@ final class ScenarioCoordinator {
             return
         }
         isRunning = true
+        executionStage = "Checking environment"
         cancellationRequested = false
         finalEvidenceCommitStarted = false
         defer {
             ScenarioExecutionAdmission.shared.release(executionOwnerID)
             isRunning = false
+            executionStage = nil
             finalEvidenceCommitStarted = false
             executionTask = nil
         }
         var pendingJournal: ScenarioExecutionJournal?
+        var pendingOrdinaryStaged = false
         let runConfiguration = configuration
         let runTrusted = projectTrusted
+        let runFeatureBackend = featureBackend
         let changedDimensions = statedChangedDimensions
         let linkedRun = linkedFeatureRun(for: draft)
         if draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
             await runStableExecution(
                 ownerID: executionOwnerID, runConfiguration: runConfiguration,
-                runTrusted: runTrusted
+                runTrusted: runTrusted, backend: runFeatureBackend
             )
             await refreshPreflight()
             return
@@ -953,6 +1063,7 @@ final class ScenarioCoordinator {
                 throw ScenarioEvidenceImportError.invalidTestCount
             }
             var imported: [ScenarioRun] = []
+            var stagedLedger = ledger
             let featureResult = linkedRun.map {
                 ScenarioFeatureEvidence.laneResult(from: $0, definition: definition)
             }
@@ -962,12 +1073,15 @@ final class ScenarioCoordinator {
                     definition: definition,
                     journal: result.journal,
                     artifactRoot: result.attachmentDirectory,
-                    ledger: &ledger,
+                    ledger: &stagedLedger,
                     supplementaryResults: featureResult.map { [$0] } ?? [],
                     statedChangedDimensions: changedDimensions
                 )
                 run.xctestExitCode = result.processExitCode
-                if result.processExitCode != 0 {
+                if result.processExitCode != 0,
+                   !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(
+                    run, attachment: attachment
+                   ) {
                     run.executionStatus = .invalidEvidence
                     run.outcome = .needsReview
                 }
@@ -987,36 +1101,49 @@ final class ScenarioCoordinator {
                 imported.append(run)
             }
             imported = Self.evidenceForCommit(imported, cancelled: cancellationRequested)
-            // Cancellation is resolved before immutable evidence is committed.
-            finalEvidenceCommitStarted = true
-            for index in imported.indices {
-                imported[index] = try await persistence.saveRun(
-                    imported[index], artifactRoot: result.attachmentDirectory
-                )
-            }
-            try await persistence.saveLedger(ledger)
             let accepted = !cancellationRequested
                 && ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
                 attachments: result.evidenceAttachments,
                 runs: imported,
                 xctestExitCode: result.processExitCode
             )
-                && Self.canReleaseDevice(
-                    processExitCode: result.processExitCode,
-                    attachments: result.evidenceAttachments,
-                    importedRuns: imported
-                )
+            let deviceReady = !cancellationRequested && Self.canReleaseDevice(
+                processExitCode: result.processExitCode,
+                attachments: result.evidenceAttachments,
+                importedRuns: imported,
+                requiresCleanupProof: definition.actionRequirements != nil
+            )
+            // Stage the captured run before any history write. A later save-only
+            // retry uses these bytes and never starts another device action.
+            finalEvidenceCommitStarted = true
+            let pending = ScenarioPendingOrdinarySave(
+                invocationID: result.journal.id, runs: imported,
+                artifactRootPath: result.attachmentDirectory.path,
+                ledger: stagedLedger, evidenceValidationPassed: accepted,
+                deviceReadinessProven: deviceReady
+            )
+            try await persistence.savePendingOrdinarySave(pending)
+            pendingOrdinaryStaged = true
+            pendingOrdinarySaves.append(pending)
+            imported = try await persistence.commitPendingOrdinarySave(pending)
+            ledger = try await persistence.loadLedger()
             try await executor.finishEvidenceValidation(
                 journal: result.journal,
-                accepted: accepted
+                accepted: accepted, deviceReady: deviceReady
             )
             if accepted {
+                guard let validated = try await persistence.loadJournals()
+                    .first(where: { $0.id == result.journal.id }) else {
+                    throw ScenarioPersistenceError.acceptanceNotReady
+                }
                 for index in imported.indices {
                     imported[index] = try await persistence.acceptRun(
-                        imported[index], journal: result.journal
+                        imported[index], journal: validated
                     )
                 }
             }
+            try await persistence.clearPendingOrdinarySave(invocationID: pending.invocationID)
+            pendingOrdinarySaves.removeAll { $0.invocationID == pending.invocationID }
             pendingJournal = nil
             recoveryJournals = try await executor.currentRecoveryJournals()
             journals = try await persistence.loadJournals()
@@ -1029,7 +1156,7 @@ final class ScenarioCoordinator {
                     : "The UI test failed (exit \(result.processExitCode)); its available evidence was retained as \($0.outcome.rawValue)."
             }
         } catch {
-            if let pendingJournal {
+            if let pendingJournal, !pendingOrdinaryStaged {
                 try? await executor.finishEvidenceValidation(journal: pendingJournal, accepted: false)
             }
             recoveryJournals = (try? await executor.currentRecoveryJournals()) ?? recoveryJournals
@@ -1037,6 +1164,77 @@ final class ScenarioCoordinator {
             notice = error.localizedDescription
         }
         await refreshPreflight()
+    }
+
+    /// Completes a staged ordinary import from captured evidence. XCTest is not
+    /// called here, so a save fault cannot execute a mutating action twice.
+    @discardableResult
+    func retryPendingOrdinarySave(invocationID: UUID) async -> [ScenarioRun]? {
+        guard hasLoaded, !isRunning else {
+            notice = "Wait for the current device execution before retrying its evidence save."
+            return nil
+        }
+        let ownerID = UUID()
+        do { try acquireExecutionOwner(ownerID) }
+        catch { notice = error.localizedDescription; return nil }
+        isRunning = true
+        defer {
+            ScenarioExecutionAdmission.shared.release(ownerID)
+            isRunning = false
+        }
+        do {
+            guard let pending = try await persistence.loadPendingOrdinarySave(invocationID: invocationID) else {
+                throw ScenarioPersistenceError.invalidRun("No ordinary evidence save is pending.")
+            }
+            var saved = try await persistence.commitPendingOrdinarySave(pending)
+            ledger = try await persistence.loadLedger()
+            guard let journal = try await persistence.loadJournals().first(where: { $0.id == invocationID }) else {
+                throw ScenarioPersistenceError.acceptanceNotReady
+            }
+            if pending.evidenceValidationPassed {
+                if journal.evidenceAccepted != true {
+                    let interruptedBeforeValidation = journal.phase == .running
+                        || (journal.phase == .recoveryRequired
+                            && journal.recoveryReason == "The desktop stopped before device-side termination and fixture readiness were established.")
+                    guard interruptedBeforeValidation else {
+                        throw ScenarioPersistenceError.acceptanceNotReady
+                    }
+                    try await executor.finishEvidenceValidation(
+                        journal: journal, accepted: true,
+                        deviceReady: pending.deviceReadinessProven
+                    )
+                }
+                guard let validated = try await persistence.loadJournals()
+                    .first(where: { $0.id == invocationID }) else {
+                    throw ScenarioPersistenceError.acceptanceNotReady
+                }
+                for index in saved.indices {
+                    saved[index] = try await persistence.acceptRun(saved[index], journal: validated)
+                }
+            } else {
+                let interruptedBeforeValidation = journal.phase == .running
+                    || (journal.phase == .recoveryRequired
+                        && journal.recoveryReason == "The desktop stopped before device-side termination and fixture readiness were established.")
+                if interruptedBeforeValidation {
+                    try await executor.finishEvidenceValidation(
+                        journal: journal, accepted: false,
+                        deviceReady: pending.deviceReadinessProven
+                    )
+                }
+            }
+            try await persistence.clearPendingOrdinarySave(invocationID: invocationID)
+            pendingOrdinarySaves.removeAll { $0.invocationID == invocationID }
+            runs.removeAll { $0.id == invocationID }
+            runs.insert(contentsOf: saved, at: 0)
+            selectedRunID = saved.first?.id
+            recoveryJournals = try await executor.currentRecoveryJournals()
+            journals = try await persistence.loadJournals()
+            notice = "Captured device evidence was saved without rerunning the app."
+            return saved
+        } catch {
+            notice = error.localizedDescription
+            return nil
+        }
     }
 
     /// Runs an already frozen batch case through the same admission and executor.
@@ -1112,15 +1310,19 @@ final class ScenarioCoordinator {
                 definition: definition, configuration: runConfiguration,
                 projectTrusted: projectTrusted
             )
-            let selected = try selectedSubjectRunner(for: definition,
-                                                     appDigest: connection.appProduct.sha256)
+            let backend = previous.profile.featureBackend
+            try validateFeatureBackend(backend, definition: definition, connection: connection)
+            let selected = backend == .connectedRunner
+                ? try selectedSubjectRunner(for: definition, appDigest: connection.appProduct.sha256)
+                : nil
             let profile = ScenarioExecutionProfile(
                 id: UUID(), projectPath: runConfiguration.containerPath,
                 scheme: runConfiguration.scheme, testTarget: runConfiguration.testTarget,
                 destinationIdentifier: runConfiguration.destinationIdentifier,
                 signingSelection: runConfiguration.signingArguments.joined(separator: " "),
                 trustedConnectionID: nil,
-                buildConfiguration: runConfiguration.configuration
+                buildConfiguration: runConfiguration.configuration,
+                featureBackend: backend
             )
             let plan = try ScenarioExecutionPlan.make(
                 definition: definition, profile: profile,
@@ -1147,6 +1349,7 @@ final class ScenarioCoordinator {
     func retryPendingFeatureSave(planID: UUID) async -> ScenarioExecutionRecord? {
         guard hasLoaded, !isRunning,
               let plan = executionPlans.first(where: { $0.id == planID }),
+              plan.profile.featureBackend == .connectedRunner,
               !executionRecords.contains(where: { $0.planID == planID }),
               let definition = definitions.first(where: {
                   $0.id == plan.definitionID && $0.version == plan.definitionVersion
@@ -1232,56 +1435,58 @@ final class ScenarioCoordinator {
                   let lane = pending.run.laneResults.first,
                   lane.caseID == progress.records[index].coordinate.caseID,
                   lane.lane == progress.records[index].coordinate.lane,
-                  lane.attempt == progress.records[index].coordinate.repetition else {
+                  lane.attempt == progress.records[index].coordinate.repetition,
+                  pending.run.invocation.featureBackend == (lane.lane == .appFeature
+                      ? .projectLocalTestControl : nil),
+                  lane.lane != .appFeature
+                    || plan.profile.featureBackend == .projectLocalTestControl else {
                 throw ScenarioPersistenceError.invalidRun("The pending native child does not match its frozen coordinate.")
             }
-            let existing = try await persistence.loadRuns(scenarioID: pending.run.scenarioID)
-                .first(where: { $0.id == pending.run.id })
-            let saved: ScenarioRun
-            if let existing {
-                saved = existing
-            } else {
-                saved = try await persistence.saveRun(
-                    pending.run, artifactRoot: URL(filePath: pending.artifactRootPath)
-                )
-            }
-            guard saved.id == pending.run.id,
-                  saved.scenarioID == pending.run.scenarioID,
-                  saved.scenarioVersion == pending.run.scenarioVersion,
-                  saved.scenarioDigest == pending.run.scenarioDigest,
-                  saved.invocation == pending.run.invocation,
-                  saved.laneResults.count == 1,
-                  saved.laneResults[0].id == lane.id,
-                  saved.laneResults[0].observations == lane.observations,
-                  saved.laneResults[0].assertionResults == lane.assertionResults else {
-                throw ScenarioPersistenceError.invalidRun("Saved native evidence differs from its staged child.")
-            }
+            let saved = try await persistence.commitPendingNativeSave(pending)
             var merged = try await persistence.loadLedger()
             merged.importedInvocationIDs.formUnion(pending.ledger.importedInvocationIDs)
             merged.importedNonces.formUnion(pending.ledger.importedNonces)
             merged.importedArtifactIDs.formUnion(pending.ledger.importedArtifactIDs)
             try await persistence.saveLedger(merged)
             ledger = merged
-            if let journal = try await persistence.loadJournals().first(where: { $0.id == saved.id }) {
-                try await executor.finishEvidenceValidation(journal: journal, accepted: false)
+            guard let journal = try await persistence.loadJournals().first(where: { $0.id == saved.id }) else {
+                throw ScenarioPersistenceError.acceptanceNotReady
             }
-            try await persistence.clearPendingNativeSave(planID: planID, coordinateID: coordinateID)
+            if journal.evidenceAccepted != true {
+                let interruptedBeforeValidation = journal.phase == .running
+                    || (journal.phase == .recoveryRequired
+                        && journal.recoveryReason == "The desktop stopped before device-side termination and fixture readiness were established.")
+                guard pending.evidenceValidationPassed == true,
+                      interruptedBeforeValidation else {
+                    throw ScenarioPersistenceError.acceptanceNotReady
+                }
+                try await executor.finishEvidenceValidation(
+                    journal: journal, accepted: true,
+                    deviceReady: pending.deviceReadinessProven == true
+                )
+            }
+            guard let validated = try await persistence.loadJournals()
+                .first(where: { $0.id == saved.id }) else {
+                throw ScenarioPersistenceError.acceptanceNotReady
+            }
+            let acceptedRun = try await persistence.acceptRun(saved, journal: validated)
             progress.records[index] = .init(
                 coordinate: progress.records[index].coordinate,
-                state: saved.laneResults[0].executionStatus == .completed
+                state: acceptedRun.laneResults[0].executionStatus == .completed
                     ? .completed : .failedToExecute,
-                evidenceRunID: saved.id,
-                evidenceLaneResultID: saved.laneResults[0].id,
-                detail: saved.laneResults[0].diagnostic,
-                laneResult: saved.laneResults[0],
-                evidenceDigest: try Self.evidenceDigest(saved)
+                evidenceRunID: acceptedRun.id,
+                evidenceLaneResultID: acceptedRun.laneResults[0].id,
+                detail: acceptedRun.laneResults[0].diagnostic,
+                laneResult: acceptedRun.laneResults[0],
+                evidenceDigest: try Self.evidenceDigest(acceptedRun)
             )
             try await checkpoint(plan: plan, records: progress.records)
             let record = try ScenarioExecutionRecord.make(plan: plan, records: progress.records)
             try await persistence.saveExecutionRecord(record)
+            try await persistence.clearPendingNativeSave(planID: planID, coordinateID: coordinateID)
             executionRecords.insert(record, at: 0)
             selectedExecutionID = record.id
-            runs.insert(saved, at: 0)
+            runs.insert(acceptedRun, at: 0)
             recoveryJournals = try await executor.currentRecoveryJournals()
             notice = "Saved the native evidence without rerunning the app. Confirm device readiness before another route."
             return record
@@ -1405,7 +1610,7 @@ final class ScenarioCoordinator {
               try Self.matchesPersistedEncoding(savedRecord, record) else {
             throw ScenarioPersistenceError.invalidRun("Execution plan or terminal record is missing from durable history.")
         }
-        let childIDs = Set(record.records.filter { $0.coordinate.lane != .appFeature }
+        let childIDs = Set(record.records.filter { $0.featureChild == nil }
             .compactMap(\.evidenceRunID))
         let nativeRuns = try await persistence.loadRuns(scenarioID: definition.id)
             .filter { childIDs.contains($0.id) }
@@ -1427,11 +1632,13 @@ final class ScenarioCoordinator {
         if let selection {
             retained = try await assessmentStore.retainedArtifacts(
                 for: selection, executionRecord: savedRecord,
-                runs: nativeRuns, definition: definition
+                runs: nativeRuns, definition: definition,
+                plan: savedPlan, journals: childJournals
             )
         } else if savedRecord.selectedAssessments != nil {
             retained = try await assessmentStore.retainedArtifacts(
-                for: savedRecord, runs: nativeRuns, definition: definition
+                for: savedRecord, runs: nativeRuns, definition: definition,
+                plan: savedPlan, journals: childJournals
             )
         } else {
             retained = []
@@ -1489,7 +1696,10 @@ final class ScenarioCoordinator {
         }
         if coordinate.coordinate.lane == .appFeature {
             return try await assessmentStore.featureHistory(
-                for: record, laneResultID: laneResultID, definition: definition
+                for: record, laneResultID: laneResultID, definition: definition,
+                nativeEvidence: try featureAssessmentEvidence(
+                    for: coordinate, record: record, plan: plan
+                )
             )
         }
         guard let runID = coordinate.evidenceRunID,
@@ -1518,7 +1728,10 @@ final class ScenarioCoordinator {
                     coordinateID: coordinateID, assertionID: assertionID,
                     executionRecord: context.record, definition: context.definition,
                     judgeConfiguration: judgeConfiguration,
-                    resolvedJudge: judge
+                    resolvedJudge: judge,
+                    nativeEvidence: try featureAssessmentEvidence(
+                        for: context.coordinate, record: context.record
+                    )
                 )
             } else {
                 guard let runID = context.coordinate.evidenceRunID,
@@ -1567,7 +1780,10 @@ final class ScenarioCoordinator {
             if context.coordinate.coordinate.lane == .appFeature {
                 try await assessmentStore.selectFeature(
                     assessmentID, for: laneResultID, assertionID: assertionID,
-                    executionRecord: context.record, definition: context.definition
+                    executionRecord: context.record, definition: context.definition,
+                    nativeEvidence: try featureAssessmentEvidence(
+                        for: context.coordinate, record: context.record
+                    )
                 )
             } else {
                 guard let runID = context.coordinate.evidenceRunID,
@@ -1637,11 +1853,45 @@ final class ScenarioCoordinator {
     private func sealSelectedAssessments(
         record: ScenarioExecutionRecord, definition: ScenarioDefinition
     ) async throws -> ScenarioAssessmentSelectionRecord {
+        guard let plan = executionPlans.first(where: { $0.id == record.planID }) else {
+            throw ScenarioPersistenceError.invalidRun("The frozen execution plan is unavailable.")
+        }
         let previous = try await assessmentStore.latestSelectionRecord(executionRecord: record)
         return try await assessmentStore.sealSelection(
             executionRecord: record, runs: runs, definition: definition,
+            plan: plan, journals: journals,
             previousSelectionID: previous?.id
         )
+    }
+
+    private func featureAssessmentEvidence(
+        for coordinate: ScenarioExecutionCoordinateRecord,
+        record: ScenarioExecutionRecord,
+        plan suppliedPlan: ScenarioExecutionPlan? = nil
+    ) throws -> ScenarioFeatureAssessmentEvidence? {
+        guard coordinate.coordinate.lane == .appFeature else {
+            throw ScenarioPersistenceError.invalidRun("Choose an App Feature coordinate.")
+        }
+        guard let plan = suppliedPlan ?? executionPlans.first(where: { $0.id == record.planID }),
+              plan.id == record.planID else {
+            throw ScenarioPersistenceError.invalidRun("The frozen Feature execution plan is unavailable.")
+        }
+        if coordinate.featureChild != nil {
+            guard plan.profile.featureBackend == .connectedRunner else {
+                throw ScenarioPersistenceError.invalidRun("The Feature child uses the wrong frozen backend.")
+            }
+            return nil
+        }
+        guard plan.profile.featureBackend == .projectLocalTestControl,
+              plan.id == record.planID,
+              let runID = coordinate.evidenceRunID,
+              runs.filter({ $0.id == runID }).count == 1,
+              journals.filter({ $0.id == runID }).count == 1,
+              let run = runs.first(where: { $0.id == runID }),
+              let journal = journals.first(where: { $0.id == runID }) else {
+            throw ScenarioPersistenceError.invalidRun("The accepted local Feature run and journal are unavailable.")
+        }
+        return .init(plan: plan, run: run, journal: journal)
     }
 
     @discardableResult
@@ -1770,15 +2020,18 @@ final class ScenarioCoordinator {
                 return definition
             }
             let runConfiguration = configuration
+            var selectedFeatureBackend = featureBackend
             let selectedIDs: Set<UUID>
             if scope == .rerunFailed {
                 guard selectedCaseIDs == nil, let priorBatchID,
                       let prior = batchManifests.first(where: { $0.id == priorBatchID }) else {
                     throw ScenarioCollectionError.invalidSelection
                 }
+                selectedFeatureBackend = prior.selectedFeatureBackend
                 let assessment = ScenarioCollectionService.assess(
                     manifest: prior, collection: collection,
-                    result: batchResults.first { $0.manifestID == priorBatchID }, runs: runs
+                    result: batchResults.first { $0.manifestID == priorBatchID },
+                    runs: runs, journals: journals
                 )
                 guard assessment.qualification != .incompatible else {
                     throw ScenarioCollectionError.invalidManifest
@@ -1815,7 +2068,8 @@ final class ScenarioCoordinator {
                     collection: collection, definitions: definitionsForCollection,
                     priorManifest: prior,
                     priorResult: batchResults.first { $0.manifestID == priorBatchID },
-                    priorRuns: runs, appProductDigest: checked.appProduct.sha256,
+                    priorRuns: runs, priorJournals: journals,
+                    appProductDigest: checked.appProduct.sha256,
                     subjectInputDigests: inputDigests
                 )
             } else {
@@ -1823,6 +2077,7 @@ final class ScenarioCoordinator {
                     collection: collection, definitions: definitionsForCollection,
                     scope: scope, appProductDigest: checked.appProduct.sha256,
                     subjectInputDigests: inputDigests,
+                    featureBackend: selectedFeatureBackend,
                     selectedCaseIDs: selectedCaseIDs, priorBatchID: priorBatchID
                 )
             }
@@ -1844,16 +2099,19 @@ final class ScenarioCoordinator {
                     guard connection.appProduct.sha256 == manifest.appProductDigest else {
                         throw ScenarioCollectionError.invalidManifest
                     }
-                    let selected = try selectedSubjectRunner(
-                        for: definition, appDigest: connection.appProduct.sha256
-                    )
+                    let backend = selectedFeatureBackend
+                    try validateFeatureBackend(backend, definition: definition, connection: connection)
+                    let selected = backend == .connectedRunner
+                        ? try selectedSubjectRunner(for: definition, appDigest: connection.appProduct.sha256)
+                        : nil
                     let profile = ScenarioExecutionProfile(
                         id: UUID(), projectPath: runConfiguration.containerPath,
                         scheme: runConfiguration.scheme, testTarget: runConfiguration.testTarget,
                         destinationIdentifier: runConfiguration.destinationIdentifier,
                         signingSelection: runConfiguration.signingArguments.joined(separator: " "),
                         trustedConnectionID: nil,
-                        buildConfiguration: runConfiguration.configuration
+                        buildConfiguration: runConfiguration.configuration,
+                        featureBackend: backend
                     )
                     let plan = try ScenarioExecutionPlan.make(
                         definition: definition, profile: profile,
@@ -1916,22 +2174,69 @@ final class ScenarioCoordinator {
     }
 
     private func runStableExecution(ownerID: UUID, runConfiguration: XcodeTestConfiguration,
-                                    runTrusted: Bool) async {
+                                    runTrusted: Bool, backend: ScenarioFeatureBackend,
+                                    purpose: ScenarioExecutionPlanPurpose = .fullRequirement,
+                                    selectedLanes: Set<ScenarioLane>? = nil) async {
         do {
             let definition = try await freezeAndSave()
             guard !cancellationRequested else { throw XcodeTestExecutorError.cancelled }
+            executionStage = "Checking app and test build"
             let connection = try await executor.verifyConnection(
                 definition: definition, configuration: runConfiguration, projectTrusted: runTrusted
             )
-            let selected = try selectedSubjectRunner(for: definition, appDigest: connection.appProduct.sha256)
+            guard !cancellationRequested else { throw XcodeTestExecutorError.cancelled }
+            let requestedLanes = selectedLanes ?? Set(ScenarioLane.allCases.filter {
+                definition.coverage[$0] != .notApplicable
+            })
+            var readiness = await executor.routeReadiness(
+                definition: definition, configuration: runConfiguration,
+                projectTrusted: runTrusted, featureBackend: backend
+            )
+            if backend == .connectedRunner {
+                Self.applyConnectedFeatureReadiness(
+                    to: &readiness, definition: definition, appDigest: connection.appProduct.sha256,
+                    runnerCheck: { _ = try selectedSubjectRunner(for: definition, appDigest: $0) }
+                )
+            }
+            routeReadiness = readiness
+            guard !cancellationRequested else { throw XcodeTestExecutorError.cancelled }
+            let dependencyLanes = purpose == .fullRequirement
+                ? Set(requestedLanes.filter { definition.coverage[$0] == .required })
+                : requestedLanes
+            let blocked = dependencyLanes.filter { readiness[$0]?.state != .ready }
+            guard blocked.isEmpty else {
+                let reasons = blocked.sorted { $0.rawValue < $1.rawValue }.map { lane in
+                    "\(lane.rawValue): \(readiness[lane]?.detail ?? "Readiness has not been checked.")"
+                }
+                throw ScenarioPersistenceError.invalidRun(
+                    "The selected routes are not ready. \(reasons.joined(separator: " "))"
+                )
+            }
+            if requestedLanes.contains(.appFeature) {
+                try validateFeatureBackend(backend, definition: definition, connection: connection)
+            }
+            let selected = backend == .connectedRunner && requestedLanes.contains(.appFeature)
+                ? try selectedSubjectRunner(for: definition, appDigest: connection.appProduct.sha256)
+                : nil
             let profile = ScenarioExecutionProfile(
                 id: UUID(), projectPath: runConfiguration.containerPath,
                 scheme: runConfiguration.scheme, testTarget: runConfiguration.testTarget,
                 destinationIdentifier: runConfiguration.destinationIdentifier,
                 signingSelection: runConfiguration.signingArguments.joined(separator: " "),
                 trustedConnectionID: nil,
-                buildConfiguration: runConfiguration.configuration
+                buildConfiguration: runConfiguration.configuration,
+                featureBackend: backend
             )
+            let coordinates: [ScenarioPlannedCoordinate]? = purpose == .partialDiagnostic
+                ? ScenarioLane.allCases.filter { requestedLanes.contains($0) }.flatMap { lane in
+                    let count = lane == .siri ? max(1, definition.coverage.siriAttemptCount ?? 3) : 1
+                    return (1...count).map { attempt in
+                        ScenarioPlannedCoordinate(
+                            id: UUID(), caseID: definition.id, lane: lane,
+                            repetition: attempt, required: definition.coverage[lane] == .required
+                        )
+                    }
+                } : nil
             let plan = try ScenarioExecutionPlan.make(
                 definition: definition, profile: profile,
                 appProductDigest: connection.appProduct.sha256,
@@ -1939,8 +2244,11 @@ final class ScenarioCoordinator {
                 sourceInputsDigest: connection.buildInputsDigest,
                 sourceRevision: connection.sourceRevision,
                 runnerBuildID: selected?.runner.identity.buildProvenance?.buildID,
-                runnerID: selected?.runner.id
+                runnerID: selected?.runner.id,
+                plannedCoordinates: coordinates, purpose: purpose
             )
+            executionStage = purpose == .partialDiagnostic
+                ? "Running partial diagnostic" : "Verifying complete requirement"
             _ = await executeStable(plan: plan, definition: definition,
                                     configuration: runConfiguration, trusted: runTrusted,
                                     connection: connection, ownerID: ownerID)
@@ -1977,10 +2285,57 @@ final class ScenarioCoordinator {
             sourceInputsDigest: plan.sourceInputsDigest ?? "",
             sourceRevision: plan.sourceRevision,
             runnerBuildID: plan.runnerBuildID, runnerID: plan.runnerID,
-            plannedCoordinates: plan.coordinates, comparisonPolicy: plan.comparisonPolicy,
+            plannedCoordinates: plan.coordinates, purpose: plan.purpose,
+            comparisonPolicy: plan.comparisonPolicy,
             id: plan.id, createdAt: plan.createdAt
         )
         guard expected == plan else { throw ScenarioPersistenceError.invalidRun("execution plan") }
+    }
+
+    static func applyConnectedFeatureReadiness(
+        to routes: inout [ScenarioLane: ScenarioRouteReadiness],
+        definition: ScenarioDefinition,
+        appDigest: String?,
+        runnerCheck: (String) throws -> Void
+    ) {
+        guard definition.coverage.appFeature != .notApplicable,
+              var route = routes[.appFeature] else { return }
+        route.backendName = ScenarioFeatureBackend.connectedRunner.rawValue
+        let independentChecks = route.checks.filter {
+            $0.id != "nativeScope" && $0.id != "featureLane"
+                && $0.id != "localFeatureControl" && !$0.id.hasPrefix("capability.")
+        }
+        if let blocker = independentChecks.first(where: { $0.state != .ready }) {
+            route.state = ["trust", "container", "scheme", "testTarget", "definition"].contains(blocker.id)
+                ? .setupRequired : .environmentBlocked
+            route.detail = blocker.detail
+        } else if let actionBlocker = connectedFeatureActionBlocker(definition) {
+            route.state = .setupRequired
+            route.detail = actionBlocker
+        } else if let appDigest {
+            do {
+                try runnerCheck(appDigest)
+                route.state = .ready
+                route.detail = "A connected runner matches the checked app build and frozen Feature interface."
+            } catch {
+                route.state = .setupRequired
+                route.detail = error.localizedDescription
+            }
+        } else {
+            route.state = .notYetVerified
+            route.detail = "Build and check the selected app and test products before matching a connected Feature runner."
+        }
+        route.checks = independentChecks
+        routes[.appFeature] = route
+    }
+
+    /// A connected runner returns a feature sample but no invocation-bound,
+    /// typed action receipt. Explicit action requirements therefore cannot be
+    /// verified through this backend, even when the runner and build match.
+    static func connectedFeatureActionBlocker(_ definition: ScenarioDefinition) -> String? {
+        guard definition.coverage.appFeature != .notApplicable,
+              definition.actionRequirements != nil else { return nil }
+        return "This check requires a typed App Feature action receipt. The connected runner does not provide one. Select a declared project-local Feature control and check support."
     }
 
     private func selectedSubjectRunner(
@@ -2017,6 +2372,32 @@ final class ScenarioCoordinator {
         return (runner, feature)
     }
 
+    private func validateFeatureBackend(
+        _ backend: ScenarioFeatureBackend,
+        definition: ScenarioDefinition,
+        connection: ScenarioVerifiedConnection
+    ) throws {
+        if backend == .connectedRunner {
+            if let blocker = Self.connectedFeatureActionBlocker(definition) {
+                throw ScenarioPersistenceError.invalidRun(blocker)
+            }
+            return
+        }
+        guard definition.coverage.appFeature != .notApplicable,
+              backend == .projectLocalTestControl else { return }
+        guard connection.receipt.capabilities.contains("local-feature-controls"),
+              connection.receipt.capabilities.contains("test-only-intent"),
+              let declaration = try? Data(contentsOf: connection.testBundleURL.appending(path: "IntentLabIntegration.json")),
+              let catalog = try? ScenarioIntegrationCatalog.decodeVerified(
+                  declaration, identity: connection.receipt.integration
+              ),
+              catalog.localFeatureControl(for: definition) != nil else {
+            throw ScenarioPersistenceError.invalidRun(
+                "This checked app build has no matching project-local Feature control or test-only intent transport. Add the declared control and check support, or explicitly choose the connected runner backend."
+            )
+        }
+    }
+
     private func executeStable(
         plan: ScenarioExecutionPlan, definition: ScenarioDefinition,
         configuration runConfiguration: XcodeTestConfiguration, trusted: Bool,
@@ -2035,16 +2416,30 @@ final class ScenarioCoordinator {
             executionPlans.insert(plan, at: 0)
             selectedExecutionID = plan.id
             try await checkpoint(plan: plan, records: records)
-            for coordinate in plan.coordinates {
+            // Complete required coverage before attempting optional routes.
+            let dispatchCoordinates = plan.coordinates.filter(\.required)
+                + plan.coordinates.filter { !$0.required }
+            for coordinate in dispatchCoordinates {
                 guard !cancellationRequested else { break }
+                executionStage = "Running \(coordinate.lane.rawValue) attempt \(coordinate.repetition) of \(plan.coordinates.count)"
                 guard let index = records.firstIndex(where: { $0.id == coordinate.id }) else { continue }
+                if plan.purpose == .fullRequirement, !coordinate.required,
+                   routeReadiness[coordinate.lane]?.state != .ready {
+                    records[index].state = .blocked
+                    records[index].detail = routeReadiness[coordinate.lane]?.detail
+                        ?? "Optional route readiness has not been verified."
+                    try await checkpoint(plan: plan, records: records)
+                    continue
+                }
                 records[index].state = .recoveryRequired
                 records[index].detail = "Execution started; evidence has not been committed."
-                let featureRunID = coordinate.lane == .appFeature ? UUID() : nil
+                let featureRunID = coordinate.lane == .appFeature
+                    && plan.profile.featureBackend == .connectedRunner ? UUID() : nil
                 if let featureRunID { records[index].evidenceRunID = featureRunID }
                 try await checkpoint(plan: plan, records: records)
                 do {
-                    if coordinate.lane == .appFeature {
+                    if coordinate.lane == .appFeature
+                        && plan.profile.featureBackend == .connectedRunner {
                         records[index] = try await runFeatureChild(
                             coordinate: coordinate, plan: plan, definition: definition,
                             ownerID: ownerID, runID: featureRunID!
@@ -2055,9 +2450,17 @@ final class ScenarioCoordinator {
                             configuration: runConfiguration, trusted: trusted
                         )
                     }
+                    executionStage = "Saving captured evidence"
                     try await checkpoint(plan: plan, records: records)
+                    if coordinate.lane != .appFeature
+                        || plan.profile.featureBackend == .projectLocalTestControl {
+                        try await persistence.clearPendingNativeSave(
+                            planID: plan.id, coordinateID: coordinate.id
+                        )
+                    }
                     if records[index].state == .failedToExecute { break }
                 } catch {
+                    executionStage = "Recovery required"
                     records[index].state = cancellationRequested ? .cancelled : .recoveryRequired
                     records[index].detail = error.localizedDescription
                     try? await checkpoint(plan: plan, records: records)
@@ -2073,6 +2476,7 @@ final class ScenarioCoordinator {
                 }
             }
             let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
+            executionStage = "Finalizing results"
             finalEvidenceCommitStarted = true
             try await persistence.saveExecutionRecord(record)
             executionRecords.removeAll { $0.id == record.id }
@@ -2096,6 +2500,10 @@ final class ScenarioCoordinator {
         definition: ScenarioDefinition, ownerID: UUID, runID: UUID,
         resumeRun: EvaluationRun? = nil
     ) async throws -> ScenarioExecutionCoordinateRecord {
+        if resumeRun == nil,
+           let blocker = Self.connectedFeatureActionBlocker(definition) {
+            throw ScenarioPersistenceError.invalidRun(blocker)
+        }
         guard let projectID = definition.projectID,
               let binding = definition.featureBinding else {
             throw ScenarioPersistenceError.invalidRun("The planned feature project or binding is unavailable.")
@@ -2250,7 +2658,7 @@ final class ScenarioCoordinator {
     ) async throws -> ScenarioExecutionCoordinateRecord {
         let scope = ScenarioNativeExecutionScope(lane: coordinate.lane,
                                                  attempt: coordinate.repetition)
-        guard scope.isValid(for: definition) else {
+        guard scope.isValid(for: definition, featureBackend: plan.profile.featureBackend) else {
             throw ScenarioPersistenceError.invalidRun("The planned native route is unsupported.")
         }
         let task = Task {
@@ -2258,7 +2666,8 @@ final class ScenarioCoordinator {
             return try await executor.execute(
                 definition: definition, configuration: runConfiguration,
                 projectTrusted: trusted, linkedFeatureEvidenceAvailable: true,
-                scope: scope
+                scope: scope,
+                featureBackend: plan.profile.featureBackend
             )
         }
         executionTask = task
@@ -2292,9 +2701,15 @@ final class ScenarioCoordinator {
               let lane = run.laneResults.first,
               lane.caseID == coordinate.caseID,
               lane.lane == coordinate.lane,
-              lane.attempt == coordinate.repetition else {
+              lane.attempt == coordinate.repetition,
+              run.invocation.appProduct?.sha256 == plan.appProductDigest,
+              run.invocation.testProduct?.sha256 == plan.testProductDigest,
+              run.invocation.featureBackend == (coordinate.lane == .appFeature
+                  ? .projectLocalTestControl : nil) else {
             try? await executor.finishEvidenceValidation(journal: result.journal, accepted: false)
-            throw ScenarioPersistenceError.invalidRun("The imported lane did not match its planned attempt.")
+            throw ScenarioPersistenceError.invalidRun(
+                "The imported lane, backend, or app/test build did not match its frozen plan."
+            )
         }
         run.xctestExitCode = result.processExitCode
         run.comparisonEnvironmentIdentity = try ScenarioExecutionEnvironmentIdentity.derive(
@@ -2302,7 +2717,10 @@ final class ScenarioCoordinator {
             destinationIdentifier: plan.profile.destinationIdentifier,
             lane: coordinate.lane
         )
-        if result.processExitCode != 0 {
+        if result.processExitCode != 0
+            && !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(
+                run, attachment: attachment
+            ) {
             run.executionStatus = .invalidEvidence
             run.outcome = .needsReview
             run.laneResults[0].executionStatus = .invalidEvidence
@@ -2311,13 +2729,18 @@ final class ScenarioCoordinator {
                 run.laneResults[0].diagnostic = ScenarioDiagnosticClassifier.checkpointDiagnostic(for: failure)
             }
         }
-        let observedFixture = run.laneResults[0].observations["intentlab.fixtureDigest"]
-            ?? run.laneResults[0].observations["summarySourceContentDigest"]
+        if [.blockedByEnvironment, .timedOut, .crashed, .failedToBuild].contains(
+            run.laneResults[0].executionStatus
+        ) {
+            await executor.invalidateRuntimeReadiness(
+                lane: coordinate.lane,
+                reason: run.laneResults[0].diagnostic
+                    ?? "The route driver failed after its readiness probe. Check the environment before another attempt."
+            )
+        }
         let receipt = ScenarioFixtureReceipt(
-            observed: observedFixture.flatMap { value in
-                guard case .string(let text) = value else { return nil }
-                return text
-            }, expected: plan.fixtureContractDigest
+            observations: run.laneResults[0].observations,
+            expected: plan.fixtureContractDigest
         )
         if receipt == .missing {
             run.executionStatus = .invalidEvidence
@@ -2331,13 +2754,27 @@ final class ScenarioCoordinator {
             run.laneResults[0].outcome = .failed
             run.laneResults[0].diagnostic = "The app used different source content than the planned fixture."
         }
+        let evidenceValidationPassed = !cancellationRequested
+            && ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+                attachments: [attachment], runs: [run], xctestExitCode: result.processExitCode
+            )
+        let deviceReadinessProven = !cancellationRequested && Self.canReleaseDevice(
+            processExitCode: result.processExitCode,
+            attachments: [attachment], importedRuns: [run],
+            requiresCleanupProof: definition.actionRequirements != nil
+        )
         do {
             try await persistence.savePendingNativeSave(.init(
                 planID: plan.id, coordinateID: coordinate.id, run: run,
-                artifactRootPath: result.attachmentDirectory.path, ledger: stagedLedger
+                artifactRootPath: result.attachmentDirectory.path, ledger: stagedLedger,
+                evidenceValidationPassed: evidenceValidationPassed,
+                deviceReadinessProven: deviceReadinessProven
             ))
         } catch {
-            try? await executor.finishEvidenceValidation(journal: result.journal, accepted: false)
+            try? await executor.finishEvidenceValidation(
+                journal: result.journal, accepted: false,
+                deviceReady: deviceReadinessProven
+            )
             throw error
         }
         // The raw route result and its artifacts are committed before the
@@ -2348,25 +2785,33 @@ final class ScenarioCoordinator {
             try await persistence.saveLedger(stagedLedger)
             ledger = stagedLedger
         } catch {
-            try? await executor.finishEvidenceValidation(journal: result.journal, accepted: false)
+            // Preserve the staged child and unvalidated journal for save-only retry.
             throw error
         }
-        let accepted = !cancellationRequested && Self.canReleaseDevice(
-            processExitCode: result.processExitCode,
-            attachments: [attachment], importedRuns: [saved]
+        try await executor.finishEvidenceValidation(
+            journal: result.journal, accepted: evidenceValidationPassed,
+            deviceReady: deviceReadinessProven
         )
-        try await executor.finishEvidenceValidation(journal: result.journal, accepted: accepted)
-        try await persistence.clearPendingNativeSave(planID: plan.id, coordinateID: coordinate.id)
+        let finalized: ScenarioRun
+        if evidenceValidationPassed {
+            guard let validated = try await persistence.loadJournals()
+                .first(where: { $0.id == saved.id }) else {
+                throw ScenarioPersistenceError.acceptanceNotReady
+            }
+            finalized = try await persistence.acceptRun(saved, journal: validated)
+        } else {
+            finalized = saved
+        }
         recoveryJournals = try await executor.currentRecoveryJournals()
         journals = try await persistence.loadJournals()
-        runs.insert(saved, at: 0)
-        let child = saved.laneResults[0]
+        runs.insert(finalized, at: 0)
+        let child = finalized.laneResults[0]
         return .init(
             coordinate: coordinate,
             state: child.executionStatus == .completed ? .completed : .failedToExecute,
-            evidenceRunID: saved.id, evidenceLaneResultID: child.id,
+            evidenceRunID: finalized.id, evidenceLaneResultID: child.id,
             detail: child.diagnostic, laneResult: child,
-            evidenceDigest: try Self.evidenceDigest(saved)
+            evidenceDigest: try Self.evidenceDigest(finalized)
         )
     }
 
@@ -2374,7 +2819,9 @@ final class ScenarioCoordinator {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
-        return SHA256.hash(data: try encoder.encode(run))
+        var immutableRun = run
+        immutableRun.acceptanceStatus = .pending
+        return SHA256.hash(data: try encoder.encode(immutableRun))
             .map { String(format: "%02x", $0) }.joined()
     }
 
@@ -2386,14 +2833,22 @@ final class ScenarioCoordinator {
         if isRunning { cancellationRequested = true }
         if let activeFeatureRunID { developerRunnerStore?.cancelRun(activeFeatureRunID) }
         executionTask?.cancel()
-        if let journal = await executor.cancelActiveExecution() {
+        let connectionCancellation = await executor.cancelConnectionCheck()
+        let connectionRecoveryJournal: ScenarioExecutionJournal?
+        switch connectionCancellation {
+        case .recoveryRequired(let journal): connectionRecoveryJournal = journal
+        case .notRunning, .beforeDeviceTest: connectionRecoveryJournal = nil
+        }
+        if let journal = await executor.cancelActiveExecution() ?? connectionRecoveryJournal {
             recoveryJournals.removeAll { $0.id == journal.id }
             recoveryJournals.append(journal)
             journals.removeAll { $0.id == journal.id }
             journals.append(journal)
             notice = "Cancellation requested. The device is quarantined until test termination and fixture readiness are proven."
         } else {
-            notice = "Cancellation requested before the device test started."
+            notice = connectionCancellation == .beforeDeviceTest
+                ? "Cancellation requested. Stopping the connection check before a device test starts."
+                : "Cancellation requested before the device test started."
         }
         await refreshPreflight()
     }
@@ -2401,17 +2856,14 @@ final class ScenarioCoordinator {
     static func canReleaseDevice(
         processExitCode: Int32,
         attachments: [ScenarioEvidenceAttachment],
-        importedRuns: [ScenarioRun]
+        importedRuns: [ScenarioRun],
+        requiresCleanupProof: Bool = false
     ) -> Bool {
-        processExitCode == 0 &&
-        !attachments.isEmpty && attachments.allSatisfy { !$0.isCheckpoint } &&
-        !importedRuns.isEmpty && importedRuns.allSatisfy { run in
-            run.executionStatus == .completed &&
-            run.laneResults.allSatisfy { lane in
-                lane.executionStatus == .completed &&
-                (lane.lane != .siri || (lane.outcome != .notObserved && lane.outcome != .needsReview))
-            }
-        }
+        ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+            attachments: attachments, runs: importedRuns, xctestExitCode: processExitCode
+        ) && (!requiresCleanupProof || importedRuns.allSatisfy { run in
+            run.laneResults.allSatisfy { $0.cleanupVerified == true }
+        })
     }
 
     static func evidenceForCommit(_ runs: [ScenarioRun], cancelled: Bool) -> [ScenarioRun] {

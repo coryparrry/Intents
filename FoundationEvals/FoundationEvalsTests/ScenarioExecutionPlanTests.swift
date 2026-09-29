@@ -3,6 +3,33 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioExecutionPlanTests {
+    @Test func legacyProfileDecodesConnectedBackendAndLocalPlanRejectsRunnerIdentity() throws {
+        let legacy = #"{"id":"00000000-0000-0000-0000-000000000001","projectPath":"/App.xcodeproj","scheme":"App","testTarget":"AppTests","destinationIdentifier":"device"}"#
+        let decoded = try JSONDecoder().decode(ScenarioExecutionProfile.self, from: Data(legacy.utf8))
+        #expect(decoded.featureBackend == .connectedRunner)
+
+        var definition = ScenarioDefinition.starter(projectID: UUID())
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.coverage.appFeature = .notApplicable
+        definition = try definition.frozen()
+        var local = decoded
+        local.featureBackend = .projectLocalTestControl
+        let plan = try ScenarioExecutionPlan.make(
+            definition: definition, profile: local,
+            appProductDigest: "app", testProductDigest: "tests",
+            sourceInputsDigest: "source", runnerBuildID: nil, runnerID: nil
+        )
+        #expect(plan.profile.featureBackend == .projectLocalTestControl)
+        #expect(plan.runnerID == nil)
+        #expect(throws: ScenarioPersistenceError.self) {
+            _ = try ScenarioExecutionPlan.make(
+                definition: definition, profile: local,
+                appProductDigest: "app", testProductDigest: "tests",
+                sourceInputsDigest: "source", runnerBuildID: "app", runnerID: UUID()
+            )
+        }
+    }
+
     @Test func staleGlobalRunnerSelectionUsesOnlyMatchingAppRunner() {
         let matching = UUID()
         let otherApp = UUID()
@@ -41,6 +68,88 @@ struct ScenarioExecutionPlanTests {
         #expect(!terminal.isComplete)
         #expect(terminal.records.count == 5)
         #expect(terminal.evidenceDigest.count == 64)
+    }
+
+    @Test func partialDiagnosticPlanFreezesSubsetAndLegacyPlanDefaultsToFull() throws {
+        var definition = ScenarioDefinition.starter(projectID: UUID())
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.coverage = .init(appFeature: .notApplicable, intentIntegration: .required,
+                                    siri: .required, siriAttemptCount: 3)
+        definition = try definition.frozen()
+        let profile = ScenarioExecutionProfile(
+            id: UUID(), projectPath: "/example/App.xcodeproj", scheme: "App",
+            testTarget: "AppTests", destinationIdentifier: "device",
+            signingSelection: nil, trustedConnectionID: nil, buildConfiguration: "Debug"
+        )
+        let full = try ScenarioExecutionPlan.make(
+            definition: definition, profile: profile, appProductDigest: "app",
+            testProductDigest: "tests", sourceInputsDigest: "source",
+            runnerBuildID: nil, runnerID: nil
+        )
+        #expect(full.purpose == .fullRequirement)
+
+        let selected = try #require(full.coordinates.first {
+            $0.lane == .siri && $0.repetition == 2
+        })
+        #expect(throws: ScenarioPersistenceError.self) {
+            _ = try ScenarioExecutionPlan.make(
+                definition: definition, profile: profile, appProductDigest: "app",
+                testProductDigest: "tests", sourceInputsDigest: "source",
+                runnerBuildID: nil, runnerID: nil,
+                plannedCoordinates: [selected]
+            )
+        }
+        let diagnostic = try ScenarioExecutionPlan.make(
+            definition: definition, profile: profile, appProductDigest: "app",
+            testProductDigest: "tests", sourceInputsDigest: "source",
+            runnerBuildID: nil, runnerID: nil,
+            plannedCoordinates: [selected], purpose: .partialDiagnostic
+        )
+        #expect(diagnostic.purpose == .partialDiagnostic)
+        #expect(diagnostic.coordinates == [selected])
+        let record = try ScenarioExecutionRecord.make(
+            plan: diagnostic, records: [.unstarted(selected)]
+        )
+        #expect(record.plannedCount == 1)
+
+        var oldPlanJSON = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(full)) as? [String: Any]
+        )
+        oldPlanJSON.removeValue(forKey: "purpose")
+        let oldPlan = try JSONDecoder().decode(
+            ScenarioExecutionPlan.self,
+            from: JSONSerialization.data(withJSONObject: oldPlanJSON)
+        )
+        #expect(oldPlan == full)
+    }
+
+    @Test func singleCoordinateDiagnosticMayEqualFullPopulation() throws {
+        var definition = ScenarioDefinition.starter(projectID: UUID())
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.coverage = .init(appFeature: .notApplicable, intentIntegration: .required,
+                                    siri: .notApplicable, siriAttemptCount: nil)
+        definition = try definition.frozen()
+        let profile = ScenarioExecutionProfile(
+            id: UUID(), projectPath: "/example/App.xcodeproj", scheme: "App",
+            testTarget: "AppTests", destinationIdentifier: "device",
+            signingSelection: nil, trustedConnectionID: nil, buildConfiguration: "Debug"
+        )
+        let full = try ScenarioExecutionPlan.make(
+            definition: definition, profile: profile, appProductDigest: "app",
+            testProductDigest: "tests", sourceInputsDigest: "source",
+            runnerBuildID: nil, runnerID: nil
+        )
+        #expect(full.coordinates.count == 1)
+
+        let diagnostic = try ScenarioExecutionPlan.make(
+            definition: definition, profile: profile, appProductDigest: "app",
+            testProductDigest: "tests", sourceInputsDigest: "source",
+            runnerBuildID: nil, runnerID: nil,
+            plannedCoordinates: full.coordinates, purpose: .partialDiagnostic
+        )
+        #expect(diagnostic.purpose == .partialDiagnostic)
+        #expect(diagnostic.coordinates == full.coordinates)
+        #expect(diagnostic.requiredCoordinates == full.requiredCoordinates)
     }
 
     @Test func recoveryKeepsUnfinishedCoordinateSeparateFromOlderEvidence() async throws {
@@ -176,6 +285,101 @@ struct ScenarioExecutionPlanTests {
         #expect(terminal.isEmpty)
     }
 
+    @Test func localFeatureNativeStageRemainsSaveOnlyAfterRelaunch() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "ScenarioLocalFeatureSaveRecovery-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        var definition = ScenarioDefinition.starter(projectID: UUID())
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.coverage = .init(appFeature: .required, intentIntegration: .notApplicable,
+                                    siri: .notApplicable, siriAttemptCount: nil)
+        definition.featureBinding = .init(
+            featureID: "summarize-note", interfaceDigest: String(repeating: "a", count: 64),
+            inputMapping: [], outputProjections: []
+        )
+        definition.actionRequirements = [.init(
+            lane: .appFeature, kind: .productionService,
+            operationID: "SummarizeNoteService", resolvedParameters: [:]
+        )]
+        definition.actionPolicyVersion = 1
+        definition = try definition.frozen()
+        let profile = ScenarioExecutionProfile(
+            id: UUID(), projectPath: "/example/App.xcodeproj", scheme: "App",
+            testTarget: "AppTests", destinationIdentifier: "device",
+            featureBackend: .projectLocalTestControl
+        )
+        let plan = try ScenarioExecutionPlan.make(
+            definition: definition, profile: profile, appProductDigest: "app",
+            testProductDigest: "tests", sourceInputsDigest: "source",
+            runnerBuildID: nil, runnerID: nil
+        )
+        try await persistence.savePlan(plan)
+        let coordinate = try #require(plan.coordinates.first)
+        var recovery = ScenarioExecutionCoordinateRecord.unstarted(coordinate)
+        recovery.state = .recoveryRequired
+        try await persistence.saveProgress(.init(
+            planID: plan.id, records: [recovery], updatedAt: .now
+        ))
+        let now = Date()
+        var invocation = ScenarioInvocationIdentity(
+            id: UUID(), nonce: "nonce", issuedAt: now,
+            testIdentity: .init(bundleIdentifier: "test.bundle", className: "Tests", methodName: "test"),
+            harnessVersion: ScenarioInvocationIdentity.reusableHarnessVersion,
+            destinationIdentifier: "device", scenarioDigest: definition.definitionDigest,
+            resultBundleIdentity: "result",
+            appProduct: .init(bundleIdentifier: definition.target.bundleIdentifier,
+                              executableName: "App", sha256: "app"),
+            testProduct: .init(bundleIdentifier: "test.bundle", executableName: "Tests", sha256: "tests")
+        )
+        invocation.featureBackend = .projectLocalTestControl
+        let environment = ScenarioEnvironment(
+            xcodeVersion: "27", sdkVersion: "27", deviceModel: "iPhone",
+            operatingSystem: "iOS 27", operatingSystemBuild: "27A1", languageCode: "en",
+            regionCode: "GB", timeZoneIdentifier: "Europe/London",
+            siriConfiguration: nil, siriConfigurationSource: nil, executedAt: now
+        )
+        let lane = ScenarioLaneResult(
+            caseID: definition.id, attempt: 1, lane: .appFeature,
+            executionStatus: .completed, outcome: .passed,
+            startedAt: now, completedAt: now,
+            observations: ["feature.response": .string("Packed")]
+        )
+        let run = ScenarioRun(
+            id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
+            scenarioDigest: definition.definitionDigest, invocation: invocation,
+            startedAt: now, completedAt: now, environment: environment,
+            executionStatus: .completed, outcome: .passed,
+            laneResults: [lane], linkedFeatureRunID: nil, importedAt: now
+        )
+        var completed = recovery
+        completed.state = .completed
+        completed.evidenceRunID = run.id
+        completed.evidenceLaneResultID = lane.id
+        completed.laneResult = lane
+        let localRecord = try ScenarioExecutionRecord.make(plan: plan, records: [completed])
+        #expect(localRecord.isComplete)
+        var wrongBackendPlan = plan
+        wrongBackendPlan.profile.featureBackend = .connectedRunner
+        #expect(throws: ScenarioPersistenceError.self) {
+            _ = try ScenarioExecutionRecord.make(plan: wrongBackendPlan, records: [completed])
+        }
+        try await persistence.savePendingNativeSave(.init(
+            planID: plan.id, coordinateID: coordinate.id, run: run,
+            artifactRootPath: root.path, ledger: .init()
+        ))
+        let relaunched = ScenarioPersistence(rootDirectory: root)
+        let recovered = try await relaunched.recoverIncompleteExecutionRecords()
+        #expect(recovered.isEmpty)
+        let pending = try await relaunched.loadPendingNativeSave(
+            planID: plan.id, coordinateID: coordinate.id
+        )
+        #expect(pending?.run.id == run.id)
+        #expect(pending?.run.invocation.featureBackend == .projectLocalTestControl)
+        let terminal = try await relaunched.loadExecutionRecords()
+        #expect(terminal.isEmpty)
+    }
+
     @Test func optionalUnobservedRouteDoesNotEraseRequiredPass() throws {
         var definition = ScenarioDefinition.starter(projectID: UUID())
         definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
@@ -192,6 +396,8 @@ struct ScenarioExecutionPlanTests {
             testProductDigest: "tests", sourceInputsDigest: "source",
             runnerBuildID: nil, runnerID: nil
         )
+        #expect(plan.requiredCoordinates.count == 1)
+        #expect(plan.requiredCoordinates.allSatisfy { $0.required })
         var records = plan.coordinates.map(ScenarioExecutionCoordinateRecord.unstarted)
         let required = try #require(records.firstIndex(where: { $0.coordinate.required }))
         let now = Date()

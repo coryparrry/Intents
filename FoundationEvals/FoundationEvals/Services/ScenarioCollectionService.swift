@@ -83,6 +83,7 @@ enum ScenarioCollectionService {
         scope: ScenarioCollectionScope,
         appProductDigest: String,
         subjectInputDigests: [UUID: String] = [:],
+        featureBackend: ScenarioFeatureBackend = .connectedRunner,
         selectedCaseIDs: Set<UUID>? = nil,
         priorBatchID: UUID? = nil,
         id: UUID = UUID(),
@@ -158,7 +159,7 @@ enum ScenarioCollectionService {
             membershipDigest: collection.membershipDigest,
             appProductDigest: appProductDigest, scope: scope,
             priorBatchID: priorBatchID, cases: cases, coordinates: coordinates,
-            createdAt: createdAt, manifestDigest: ""
+            createdAt: createdAt, manifestDigest: "", featureBackend: featureBackend
         )
         manifest.manifestDigest = try manifest.calculatedDigest()
         return manifest
@@ -170,13 +171,14 @@ enum ScenarioCollectionService {
         priorManifest: ScenarioCollectionBatchManifest,
         priorResult: ScenarioCollectionBatchResult?,
         priorRuns: [ScenarioRun],
+        priorJournals: [ScenarioExecutionJournal] = [],
         appProductDigest: String,
         subjectInputDigests: [UUID: String] = [:],
         id: UUID = UUID(),
         createdAt: Date = Date()
     ) throws -> ScenarioCollectionBatchManifest {
         let prior = assess(manifest: priorManifest, collection: collection,
-                           result: priorResult, runs: priorRuns)
+                           result: priorResult, runs: priorRuns, journals: priorJournals)
         guard prior.qualification != .incompatible,
               priorManifest.collectionID == collection.id,
               priorManifest.collectionVersion == collection.version else {
@@ -187,6 +189,7 @@ enum ScenarioCollectionService {
         return try freezeManifest(
             collection: collection, definitions: definitions, scope: .rerunFailed,
             appProductDigest: appProductDigest, subjectInputDigests: subjectInputDigests,
+            featureBackend: priorManifest.selectedFeatureBackend,
             selectedCaseIDs: failed,
             priorBatchID: priorManifest.id, id: id, createdAt: createdAt
         )
@@ -199,7 +202,8 @@ enum ScenarioCollectionService {
         manifest: ScenarioCollectionBatchManifest,
         collection: ScenarioCollection,
         result: ScenarioCollectionBatchResult?,
-        runs: [ScenarioRun]
+        runs: [ScenarioRun],
+        journals: [ScenarioExecutionJournal] = []
     ) -> ScenarioCollectionBatchAssessment {
         guard (try? validate(manifest: manifest, collection: collection)) != nil,
               result == nil || (result?.id == manifest.id && result?.manifestID == manifest.id) else {
@@ -241,6 +245,50 @@ enum ScenarioCollectionService {
                              reason: row.detail ?? "Attempt did not complete.")
             }
             if coordinate.lane == .appFeature {
+                if manifest.selectedFeatureBackend == .projectLocalTestControl {
+                    guard row.featureChild == nil,
+                          let runID = row.evidenceRunID,
+                          let run = runByID[runID],
+                          runs.count(where: { $0.id == runID }) == 1,
+                          let lane = row.laneResult,
+                          let snapshot = caseByID[coordinate.caseID],
+                          run.acceptanceStatus == .accepted,
+                          run.id == run.invocation.id,
+                          run.scenarioID == coordinate.caseID,
+                          run.scenarioVersion == snapshot.member.version,
+                          run.scenarioDigest == snapshot.member.definitionDigest,
+                          run.testContractDigest == snapshot.member.testContractDigest,
+                          run.startedAt >= manifest.createdAt,
+                          run.invocation.scenarioDigest == snapshot.member.definitionDigest,
+                          run.invocation.appProduct?.sha256 == manifest.appProductDigest,
+                          run.invocation.featureBackend == .projectLocalTestControl,
+                          run.fixture?.digest == snapshot.fixtureContractDigest,
+                          run.laneResults == [lane],
+                          lane.id == row.evidenceLaneResultID,
+                          lane.caseID == coordinate.caseID,
+                          lane.lane == .appFeature,
+                          lane.attempt == coordinate.repetition,
+                          case .string? = lane.observations["feature.response"],
+                          lane.observationSources?["feature.response"] == .testOnlyIntent,
+                          run.executedTestCount == 1,
+                          journals.count(where: { $0.id == runID }) == 1,
+                          let journal = journals.first(where: { $0.id == runID }),
+                          journal.invocation == run.invocation,
+                          journal.scope == ScenarioNativeExecutionScope(
+                              lane: .appFeature, attempt: coordinate.repetition
+                          ),
+                          ScenarioReleaseCheckEvaluator.acceptedJournal(for: run, in: [journal]),
+                          usedLaneResults.insert(lane.id).inserted else {
+                        return .init(coordinate: coordinate, terminalState: .blocked, outcome: nil,
+                                     reason: "Local Feature evidence lacks its accepted native run, journal or checked build.")
+                    }
+                    let passed = run.executionStatus == .completed
+                        && run.xctestExitCode == 0
+                        && lane.executionStatus == .completed && lane.outcome == .passed
+                    return .init(coordinate: coordinate, terminalState: .completed,
+                                 outcome: passed ? .passed : lane.outcome,
+                                 reason: passed ? nil : (lane.diagnostic ?? "The feature requirement did not pass."))
+                }
                 guard let child = row.featureChild,
                       let lane = row.laneResult,
                       let snapshot = caseByID[coordinate.caseID],

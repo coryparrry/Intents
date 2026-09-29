@@ -83,6 +83,119 @@ struct ScenarioPreflightReport: Codable, Equatable, Sendable {
     var isReady: Bool { checks.allSatisfy { $0.state == .ready } }
 }
 
+enum ScenarioRouteReadinessState: String, Codable, Sendable {
+    case ready
+    case setupRequired
+    case environmentBlocked
+    case notYetVerified
+}
+
+struct ScenarioRouteReadiness: Codable, Equatable, Sendable {
+    var lane: ScenarioLane
+    var state: ScenarioRouteReadinessState
+    var detail: String
+    var checks: [ScenarioPreflightCheck]
+    var inspectedAt: Date?
+    /// Retained xcresult evidence from the selected test product, when a probe ran.
+    var resultBundlePath: String?
+    var logPath: String?
+    var backendName: String? = nil
+    var supportOperationID: String? = nil
+    var binding: ScenarioRouteReadinessBinding? = nil
+}
+
+struct ScenarioRuntimeProfileIdentity: Codable, Equatable, Sendable {
+    var destinationIdentifier: String
+    var destinationPlatform: IntentLabDestinationPlatform
+    var destinationOSVersion: String
+    var xcodeBuild: String
+    var sdkBuild: String
+}
+
+struct ScenarioRouteReadinessBinding: Codable, Equatable, Sendable {
+    var appProduct: ScenarioProductIdentity
+    var testHostProduct: ScenarioProductIdentity
+    var testProduct: ScenarioProductIdentity
+    var runtimeProfile: ScenarioRuntimeProfileIdentity
+    var integrationDigest: String
+    var buildInputsDigest: String
+    var sourceRevision: String
+    var productMetadataDigest: String
+}
+
+struct ScenarioReadinessProbeRoute: Decodable, Sendable {
+    var status: ScenarioRouteReadinessState
+    var operationID: String?
+    var supportType: String?
+    var context: String?
+    var observations: [String: ScenarioValue]?
+    var detail: String?
+}
+
+struct ScenarioReadinessProbeReceipt: Decodable, Sendable {
+    struct Integration: Decodable, Sendable {
+        var id: String
+        var version: String
+        var digest: String
+    }
+
+    var schemaVersion: Int
+    var testName: String
+    var testIdentifier: String
+    var testMethodStarted: Bool
+    var createdAt: Date
+    var targetBundleIdentifier: String?
+    var testBundleIdentifier: String
+    var integration: Integration?
+    var routes: [String: ScenarioReadinessProbeRoute]
+}
+
+struct ScenarioReadinessProbeEvidence: Sendable {
+    var receipt: ScenarioReadinessProbeReceipt?
+    var resultBundlePath: String?
+    var logPath: String?
+    var issue: String?
+    var expectedReadinessOperationID: String?
+    var failureState: ScenarioRouteReadinessState? = nil
+    var globalFailure: Bool = false
+}
+
+enum ScenarioConnectionEnvironmentFailure: Equatable, Sendable {
+    case frameworkLoad
+    case security
+
+    var detail: String {
+        switch self {
+        case .frameworkLoad:
+            "The selected UI-test bundle could not load AppIntentsTesting on this Xcode and runtime profile. Use a compatible toolchain/runtime or select the independent Core Siri test target."
+        case .security:
+            "AppIntentsTesting rejected this app/test pairing (Code 803). Sign the app and UI-test bundle with the same development team, then check the connection again."
+        }
+    }
+}
+
+struct ScenarioConnectionStageFailure: Sendable {
+    var configuration: XcodeTestConfiguration
+    var integration: ScenarioIntegrationIdentity
+    var targetBundleIdentifier: String
+    var products: XCTestRunProductPaths
+    var appProduct: ScenarioProductIdentity
+    var testHostProduct: ScenarioProductIdentity
+    var testProduct: ScenarioProductIdentity
+    var buildInputsDigest: String
+    var productMetadataDigest: String
+    var runtimeProfile: ScenarioRuntimeProfileIdentity?
+    var kind: ScenarioConnectionEnvironmentFailure
+    var resultBundlePath: String?
+    var logPath: String
+}
+
+enum ScenarioConnectionCancellation: Equatable, Sendable {
+    case notRunning
+    case beforeDeviceTest
+    case recoveryRequired(ScenarioExecutionJournal)
+}
+
 struct ScenarioConnectionReceipt: Codable, Equatable, Sendable {
     var schemaVersion: Int
     var integration: ScenarioIntegrationIdentity
@@ -110,6 +223,8 @@ struct ScenarioVerifiedConnection: Sendable {
     var buildInputsDigest: String
     var sourceRevision: String = ""
     var productMetadataDigest: String
+    var runtimeProfile: ScenarioRuntimeProfileIdentity? = nil
+    var readinessProbe: ScenarioReadinessProbeEvidence? = nil
 
     var derivedDataURL: URL {
         testRunURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -129,6 +244,7 @@ enum ScenarioHarnessCapabilities {
         }
         let includesDirectLane = definition.coverage.intentIntegration != .notApplicable
         var capabilities: Set<String> = ["environment-payload"]
+        if definition.actionRequirements != nil { capabilities.insert("action-receipt-v1") }
         if includesDirectLane {
             capabilities.insert("direct-intent-execution")
             if !definition.directControl.outputFields.isEmpty { capabilities.insert("direct-intent-output") }
@@ -146,6 +262,55 @@ enum ScenarioHarnessCapabilities {
             switch observation.source {
             case .intentResult:
                 if includesDirectLane { capabilities.insert("direct-intent-output") }
+            case .entityQuery: capabilities.insert("entity-query")
+            case .valueQuery: capabilities.insert("value-query")
+            case .uiElement: capabilities.insert("accessible-result")
+            case .testOnlyIntent: capabilities.insert("test-only-intent")
+            }
+        }
+        return capabilities
+    }
+
+    static func required(
+        for definition: ScenarioDefinition,
+        scope: ScenarioNativeExecutionScope?,
+        featureBackend: ScenarioFeatureBackend
+    ) -> Set<String> {
+        guard let scope else {
+            var capabilities = required(for: definition)
+            if featureBackend == .projectLocalTestControl
+                && definition.coverage.appFeature != .notApplicable {
+                capabilities.formUnion(["local-feature-controls", "test-only-intent"])
+            }
+            return capabilities
+        }
+        var capabilities: Set<String> = ["environment-payload"]
+        if definition.actionRequirements != nil { capabilities.insert("action-receipt-v1") }
+        switch scope.lane {
+        case .appFeature:
+            if featureBackend == .projectLocalTestControl {
+                capabilities.formUnion(["local-feature-controls", "test-only-intent"])
+            }
+        case .intentIntegration:
+            capabilities.insert("direct-intent-execution")
+            if !definition.directControl.outputFields.isEmpty {
+                capabilities.insert("direct-intent-output")
+            }
+        case .siri:
+            capabilities.formUnion(["siri", "siri-completion", "invocation-correlation"])
+        }
+        let noOpOperations: Set<String> = ["", "none", "noop", "readOnly"]
+        if definition.safety.mutationPolicy == .syntheticMutation
+            || !noOpOperations.contains(definition.fixture.preparationOperation)
+            || !noOpOperations.contains(definition.fixture.cleanupOperation) {
+            capabilities.insert("preparation")
+        }
+        for observation in definition.observationPlan ?? [] where definition.assertions.contains(where: {
+            $0.observationKey == observation.id && $0.applies(to: scope.lane)
+        }) {
+            switch observation.source {
+            case .intentResult:
+                if scope.lane == .intentIntegration { capabilities.insert("direct-intent-output") }
             case .entityQuery: capabilities.insert("entity-query")
             case .valueQuery: capabilities.insert("value-query")
             case .uiElement: capabilities.insert("accessible-result")
@@ -172,16 +337,25 @@ struct ScenarioExecutorResult: Sendable {
     var measurementImplementation: ScenarioMeasurementImplementation? = nil
 }
 
-/// One native lane attempt per XCTest invocation. The App feature lane is run
-/// by the shared feature coordinator, not by the UI-test consumer.
+/// One native lane attempt per XCTest invocation. App Feature is eligible only
+/// when the frozen plan explicitly selected the project-local test control.
 struct ScenarioNativeExecutionScope: Codable, Equatable, Sendable {
     var lane: ScenarioLane
     var attempt: Int
 
-    func isValid(for definition: ScenarioDefinition) -> Bool {
+    func isValid(
+        for definition: ScenarioDefinition,
+        featureBackend: ScenarioFeatureBackend = .connectedRunner
+    ) -> Bool {
         guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion else { return false }
         switch lane {
-        case .appFeature: return false
+        case .appFeature:
+            return featureBackend == .projectLocalTestControl
+                && attempt == 1 && definition.coverage.appFeature != .notApplicable
+                && definition.featureBinding != nil
+                && definition.actionRequirements?.contains(where: {
+                    $0.lane == .appFeature && $0.kind == .productionService
+                }) == true
         case .intentIntegration:
             return attempt == 1 && definition.coverage.intentIntegration != .notApplicable
         case .siri:
@@ -279,7 +453,12 @@ actor XcodeTestExecutor {
     private var clearingDestinations: Set<String> = []
     private var cancelledInvocationIDs: Set<UUID> = []
     private var connectionCheckInProgress = false
+    private var connectionProcess: Process?
+    private var connectionCancellationRequested = false
+    private var connectionTestJournal: ScenarioExecutionJournal?
+    private var connectionDeviceTestLaunched = false
     private var verifiedConnection: ScenarioVerifiedConnection?
+    private var connectionStageFailure: ScenarioConnectionStageFailure?
 
     init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default) {
         self.workDirectory = workDirectory
@@ -310,21 +489,28 @@ actor XcodeTestExecutor {
         try await persistence.loadJournals().filter { $0.phase == .recoveryRequired }
     }
 
-    func finishEvidenceValidation(journal: ScenarioExecutionJournal, accepted: Bool) async throws {
+    func finishEvidenceValidation(
+        journal: ScenarioExecutionJournal,
+        accepted: Bool,
+        deviceReady: Bool? = nil
+    ) async throws {
         var finished = journal
         let destination = journal.invocation.destinationIdentifier
         var canAccept = accepted && !cancelledInvocationIDs.contains(journal.id)
-        finished.phase = canAccept ? .stopped : .recoveryRequired
-        finished.recoveryReason = canAccept ? nil : ScenarioExecutionRecoveryPolicy.reason(for: .invalidEvidence)
+        var canRelease = (deviceReady ?? accepted) && !cancelledInvocationIDs.contains(journal.id)
+        finished.phase = canRelease ? .stopped : .recoveryRequired
+        finished.recoveryReason = canRelease ? nil
+            : "Device execution or fixture readiness has not been proven after evidence capture."
         finished.evidenceAccepted = canAccept
         finished.updatedAt = Date()
-        if !canAccept {
+        if !canRelease {
             reservations[destination] = .quarantined(reason: finished.recoveryReason!)
         }
         try await persistence.saveJournal(finished)
         // Cancellation can arrive while the journal write is suspended.
-        if canAccept && cancelledInvocationIDs.contains(journal.id) {
+        if cancelledInvocationIDs.contains(journal.id) {
             canAccept = false
+            canRelease = false
             finished.phase = .recoveryRequired
             finished.recoveryReason = ScenarioExecutionRecoveryPolicy.reason(for: .cancellation)
             finished.evidenceAccepted = false
@@ -332,7 +518,7 @@ actor XcodeTestExecutor {
             reservations[destination] = .quarantined(reason: finished.recoveryReason!)
             try await persistence.saveJournal(finished)
         }
-        if canAccept { reservations[destination] = nil }
+        if canRelease { reservations[destination] = nil }
         if awaitingValidationJournal?.id == journal.id { awaitingValidationJournal = nil }
         cancelledInvocationIDs.remove(journal.id)
     }
@@ -350,7 +536,11 @@ actor XcodeTestExecutor {
     }
 
     func hasActiveExecution() -> Bool {
-        active != nil || inFlightJournal != nil
+        active != nil || inFlightJournal != nil || connectionTestJournal != nil
+    }
+
+    func connectionDeviceTestIsRunning() -> Bool {
+        connectionDeviceTestLaunched && connectionProcess?.isRunning == true
     }
 
     func persistPreparingJournal(_ journal: ScenarioExecutionJournal) async throws {
@@ -378,7 +568,8 @@ actor XcodeTestExecutor {
                 "Prove that the prior test session stopped and the fixture is ready before clearing this device quarantine."
             )
         }
-        guard active == nil, inFlightJournal == nil, awaitingValidationJournal == nil else {
+        guard active == nil, inFlightJournal == nil, awaitingValidationJournal == nil,
+              !connectionCheckInProgress else {
             throw XcodeTestExecutorError.deviceUnavailable(
                 "Wait for the cancelled host process to stop before clearing this device quarantine."
             )
@@ -425,7 +616,10 @@ actor XcodeTestExecutor {
         configuration: XcodeTestConfiguration,
         projectTrusted: Bool,
         linkedFeatureEvidenceAvailable: Bool = false,
-        scope: ScenarioNativeExecutionScope? = nil
+        scope: ScenarioNativeExecutionScope? = nil,
+        featureBackend: ScenarioFeatureBackend = .connectedRunner,
+        checkedConnection: ScenarioVerifiedConnection? = nil,
+        connectionAlreadyChecked: Bool = false
     ) -> ScenarioPreflightReport {
         var checks: [ScenarioPreflightCheck] = []
         func check(_ id: String, _ title: String, _ ready: Bool, _ detail: String) {
@@ -458,7 +652,10 @@ actor XcodeTestExecutor {
         let expectedHarnessVersion = isReusable
             ? ScenarioInvocationIdentity.reusableHarnessVersion
             : ScenarioInvocationIdentity.currentHarnessVersion
-        let connection = isReusable ? currentConnection(definition: definition, configuration: configuration) : nil
+        let connection = isReusable
+            ? (connectionAlreadyChecked ? checkedConnection
+                : currentConnection(definition: definition, configuration: configuration))
+            : nil
         check(
             "harness",
             "Intent Lab harness",
@@ -469,7 +666,8 @@ actor XcodeTestExecutor {
         )
         let destination = physicalDestination(
             configuration.destinationIdentifier,
-            requiresSiri: definition.coverage.siri != .notApplicable
+            requiresSiri: scope?.lane == .siri
+                || (scope == nil && definition.coverage.siri != .notApplicable)
         )
         let macConnectionVerified = isReusable && destination.platform == .macOS && connection != nil
         check("signing", "Signing and test execution",
@@ -482,7 +680,9 @@ actor XcodeTestExecutor {
                   ? "The selected Mac app and UI-test target completed the connection test."
                   : "Select a development team for both targets, or complete the Mac connection test to verify local test execution.")
         if isReusable {
-            for capability in ScenarioHarnessCapabilities.required(for: definition).sorted() {
+            for capability in ScenarioHarnessCapabilities.required(
+                for: definition, scope: scope, featureBackend: featureBackend
+            ).sorted() {
                 check("capability.\(capability)", capability,
                       connection?.receipt.capabilities.contains(capability) == true,
                       "The compiled integration receipt must confirm \(capability) for this observation plan.")
@@ -507,8 +707,9 @@ actor XcodeTestExecutor {
               definitionReady ? "The scenario digest and deterministic values are valid."
                   : definitionIssues.filter { $0.severity == .error }.map(\.message).joined(separator: " "))
         if let scope {
-            check("nativeScope", "Native route and attempt", scope.isValid(for: definition),
-                  "Select one supported Intent or Siri attempt from a version 3 check.")
+            check("nativeScope", "Native route and attempt",
+                  scope.isValid(for: definition, featureBackend: featureBackend),
+                  "Select one supported route and attempt from a version 3 check. Local Feature control requires its explicit frozen backend.")
         }
         check(
             "featureLane",
@@ -518,6 +719,17 @@ actor XcodeTestExecutor {
                 ? "Link a saved production feature run before executing this required lane."
                 : "The device harness will preserve the declared Intent and Siri lane requirements."
         )
+        if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+           definition.coverage.appFeature != .notApplicable,
+           featureBackend == .projectLocalTestControl {
+            let capabilities = Set(connection?.receipt.capabilities ?? [])
+            check(
+                "localFeatureControl", "Project-local Feature control",
+                capabilities.contains("local-feature-controls")
+                    && capabilities.contains("test-only-intent"),
+                "This checked app build must declare local-feature-controls and test-only-intent. The Feature route uses test-only intent transport and cannot run through a different backend without a new plan."
+            )
+        }
 
         if connectionCheckInProgress {
             check("connectionCheck", "Connection check", false, "An integration connection check is in progress.")
@@ -535,6 +747,216 @@ actor XcodeTestExecutor {
             check("reservation", "Device reservation", true, "The selected device is available to the executor.")
         }
         return .init(checks: checks)
+    }
+
+    func routeReadiness(
+        definition: ScenarioDefinition,
+        configuration: XcodeTestConfiguration,
+        projectTrusted: Bool,
+        featureBackend: ScenarioFeatureBackend = .connectedRunner
+    ) -> [ScenarioLane: ScenarioRouteReadiness] {
+        var result: [ScenarioLane: ScenarioRouteReadiness] = [:]
+        let connection = ScenarioHarnessCapabilities.usesReusableProtocol(definition)
+            ? currentConnection(definition: definition, configuration: configuration) : nil
+        let connectionFailure = currentConnectionStageFailure(
+            definition: definition, configuration: configuration
+        )
+        for lane in ScenarioLane.allCases {
+            let scope = ScenarioNativeExecutionScope(lane: lane, attempt: 1)
+            let report = preflight(
+                definition: definition, configuration: configuration,
+                projectTrusted: projectTrusted, scope: scope, featureBackend: featureBackend,
+                checkedConnection: connection, connectionAlreadyChecked: true
+            )
+            let probe = connection?.readinessProbe
+            var route = Self.readiness(
+                lane: lane, report: report, probe: probe,
+                included: definition.coverage[lane] != .notApplicable
+            )
+            if let connection, let profile = connection.runtimeProfile {
+                route.binding = .init(
+                    appProduct: connection.appProduct,
+                    testHostProduct: connection.testHostProduct,
+                    testProduct: connection.testProduct,
+                    runtimeProfile: profile,
+                    integrationDigest: connection.receipt.integration.digest,
+                    buildInputsDigest: connection.buildInputsDigest,
+                    sourceRevision: connection.sourceRevision,
+                    productMetadataDigest: connection.productMetadataDigest
+                )
+            }
+            route.backendName = probe?.receipt?.routes[lane.rawValue]?.supportType
+            route.supportOperationID = probe?.receipt?.routes[lane.rawValue]?.operationID
+            if let connectionFailure,
+               definition.coverage[lane] != .notApplicable {
+                Self.applyConnectionEnvironmentFailure(
+                    kind: connectionFailure.kind,
+                    resultBundlePath: connectionFailure.resultBundlePath,
+                    logPath: connectionFailure.logPath,
+                    featureBackend: featureBackend,
+                    to: &route
+                )
+            }
+            result[lane] = route
+        }
+        return result
+    }
+
+    static func applyConnectionEnvironmentFailure(
+        kind: ScenarioConnectionEnvironmentFailure,
+        resultBundlePath: String?,
+        logPath: String,
+        featureBackend: ScenarioFeatureBackend,
+        to route: inout ScenarioRouteReadiness
+    ) {
+        guard route.lane == .intentIntegration
+            || (route.lane == .appFeature && featureBackend == .projectLocalTestControl) else {
+            return
+        }
+        route.state = .environmentBlocked
+        route.detail = kind.detail
+        route.inspectedAt = nil
+        route.resultBundlePath = resultBundlePath
+        route.logPath = logPath
+        route.backendName = "AppIntentsTesting"
+    }
+
+    private func currentConnectionStageFailure(
+        definition: ScenarioDefinition,
+        configuration: XcodeTestConfiguration
+    ) -> ScenarioConnectionStageFailure? {
+        guard let failure = connectionStageFailure,
+              failure.configuration == configuration,
+              failure.integration == definition.integration,
+              failure.targetBundleIdentifier == definition.target.bundleIdentifier,
+              failure.productMetadataDigest == Self.productMetadataDigest(products: failure.products),
+              (try? Self.productIdentity(
+                  bundle: failure.products.appBundleURL,
+                  fallbackBundleIdentifier: definition.target.bundleIdentifier
+              )) == failure.appProduct,
+              (try? Self.productIdentity(
+                  bundle: failure.products.testHostURL,
+                  fallbackBundleIdentifier: configuration.testBundleIdentifier
+              )) == failure.testHostProduct,
+              (try? Self.productIdentity(
+                  bundle: failure.products.testBundleURL,
+                  fallbackBundleIdentifier: configuration.testBundleIdentifier
+              )) == failure.testProduct,
+              (try? Self.buildInputsDigest(
+                  configuration: configuration, products: failure.products
+              )) == failure.buildInputsDigest else { return nil }
+        if let profile = failure.runtimeProfile,
+           Self.runtimeProfile(
+               configuration: configuration, appBundleURL: failure.products.appBundleURL
+           ) != profile { return nil }
+        return failure
+    }
+
+    func invalidateRuntimeReadiness(lane: ScenarioLane?, reason: String) {
+        guard var connection = verifiedConnection, let probe = connection.readinessProbe else { return }
+        connection.readinessProbe = Self.invalidatedProbe(probe, lane: lane, reason: reason)
+        verifiedConnection = connection
+    }
+
+    static func invalidatedProbe(
+        _ original: ScenarioReadinessProbeEvidence,
+        lane: ScenarioLane?,
+        reason: String
+    ) -> ScenarioReadinessProbeEvidence {
+        var probe = original
+        if let lane, var receipt = probe.receipt, var route = receipt.routes[lane.rawValue] {
+            route.status = .environmentBlocked
+            route.detail = reason
+            receipt.routes[lane.rawValue] = route
+            probe.receipt = receipt
+        } else {
+            probe.receipt = nil
+            probe.globalFailure = true
+        }
+        probe.issue = reason
+        probe.failureState = .environmentBlocked
+        return probe
+    }
+
+    static func readiness(
+        lane: ScenarioLane,
+        report: ScenarioPreflightReport,
+        probe: ScenarioReadinessProbeEvidence?,
+        included: Bool = true
+    ) -> ScenarioRouteReadiness {
+        if !included {
+            return .init(lane: lane, state: .notYetVerified,
+                         detail: "This route is not included in the current requirement.",
+                         checks: report.checks, inspectedAt: nil,
+                         resultBundlePath: probe?.resultBundlePath, logPath: probe?.logPath)
+        }
+        let blockers = report.checks.filter { $0.state != .ready }
+        let setupIDs: Set<String> = [
+            "trust", "container", "scheme", "testTarget", "testProductIdentity",
+            "appProductIdentity", "testBundleIdentifier", "nativeScope", "definition",
+            "featureLane"
+        ]
+        let setup = blockers.filter {
+            setupIDs.contains($0.id)
+                || (probe != nil && ($0.id.hasPrefix("capability.") || $0.id == "localFeatureControl"))
+        }
+        let environment = blockers.filter {
+            ["toolchain", "destination", "reservation", "connectionCheck"].contains($0.id)
+                || ($0.id == "signing" && probe != nil)
+        }
+        let state: ScenarioRouteReadinessState
+        let detail: String
+        let inspectedAt: Date?
+        if !setup.isEmpty {
+            state = .setupRequired
+            detail = setup.map(\.detail).joined(separator: " ")
+            inspectedAt = nil
+        } else if !environment.isEmpty {
+            state = .environmentBlocked
+            detail = environment.map(\.detail).joined(separator: " ")
+            inspectedAt = nil
+        } else if !blockers.isEmpty {
+            state = .notYetVerified
+            detail = blockers.map(\.detail).joined(separator: " ")
+            inspectedAt = nil
+        } else if probe?.globalFailure == true {
+            state = probe?.failureState ?? .environmentBlocked
+            detail = probe?.issue ?? "The runtime readiness probe did not complete cleanly."
+            inspectedAt = nil
+        } else if let route = probe?.receipt?.routes[lane.rawValue] {
+            let directDependency = probe?.receipt?.routes[ScenarioLane.intentIntegration.rawValue]
+            let inheritedFeatureBlock = lane == .appFeature
+                && (directDependency?.status == .environmentBlocked
+                    || directDependency?.status == .setupRequired)
+            let effectiveStatus = inheritedFeatureBlock
+                ? (directDependency?.status ?? .notYetVerified) : route.status
+            let effectiveDetail = inheritedFeatureBlock ? directDependency?.detail : route.detail
+            let runtimeProofValid = effectiveStatus != .ready || (
+                route.context?.isEmpty == false
+                    && route.supportType?.isEmpty == false
+                    && (lane != .siri || route.observations?["intentlab.readiness.appState"] != nil)
+            )
+            let transportProofValid = ![ScenarioLane.intentIntegration, .appFeature].contains(lane)
+                || effectiveStatus != .ready || (
+                probe?.expectedReadinessOperationID?.isEmpty == false
+                    && route.operationID == probe?.expectedReadinessOperationID
+                    && route.observations?["readiness.ready"] == .boolean(true)
+                    && (lane != .appFeature || directDependency?.status == .ready)
+            )
+            state = runtimeProofValid && transportProofValid ? effectiveStatus : .notYetVerified
+            detail = runtimeProofValid && transportProofValid ? (effectiveDetail ?? (effectiveStatus == .ready
+                ? "The selected test product exercised this route's readiness support."
+                : "The runtime probe did not verify this route."))
+                : "The runtime readiness receipt did not prove a fresh support operation and typed observation for this route."
+            inspectedAt = probe?.receipt?.createdAt
+        } else {
+            state = probe?.failureState ?? .notYetVerified
+            detail = probe?.issue ?? "Run the connection check to exercise this route on the selected products and destination."
+            inspectedAt = nil
+        }
+        return .init(lane: lane, state: state, detail: detail, checks: report.checks,
+                     inspectedAt: inspectedAt, resultBundlePath: probe?.resultBundlePath,
+                     logPath: probe?.logPath)
     }
 
     /// A separate, read-only setup run. Its receipt never becomes scenario evidence.
@@ -558,7 +980,14 @@ actor XcodeTestExecutor {
         guard projectTrusted else {
             throw XcodeTestExecutorError.connectionCheck("Approve this project before running its build scripts.")
         }
-        guard active == nil, !connectionCheckInProgress else { throw XcodeTestExecutorError.activeExecution }
+        guard active == nil, inFlightJournal == nil, awaitingValidationJournal == nil,
+              !connectionCheckInProgress else { throw XcodeTestExecutorError.activeExecution }
+        guard reservations[configuration.destinationIdentifier] == nil,
+              !clearingDestinations.contains(configuration.destinationIdentifier) else {
+            throw XcodeTestExecutorError.deviceUnavailable(
+                "This destination requires recovery before another connection check."
+            )
+        }
         guard fileManager.fileExists(atPath: configuration.containerPath),
               fileManager.isExecutableFile(atPath: configuration.xcodebuildPath),
               !configuration.scheme.isEmpty, !configuration.testTarget.isEmpty else {
@@ -595,13 +1024,21 @@ actor XcodeTestExecutor {
         }
         let destination = physicalDestination(
             configuration.destinationIdentifier,
-            requiresSiri: definition.coverage.siri != .notApplicable
+            requiresSiri: false
         )
         guard destination.ready else { throw XcodeTestExecutorError.deviceUnavailable(destination.detail) }
 
         connectionCheckInProgress = true
+        connectionCancellationRequested = false
+        connectionTestJournal = nil
+        connectionDeviceTestLaunched = false
         verifiedConnection = nil
-        defer { connectionCheckInProgress = false }
+        connectionStageFailure = nil
+        defer {
+            connectionCheckInProgress = false
+            connectionProcess = nil
+            connectionCancellationRequested = false
+        }
         let checkID = UUID()
         let directory = workDirectory.appending(path: "Connection-\(checkID.uuidString)", directoryHint: .isDirectory)
         let derivedData = directory.appending(path: "DerivedData", directoryHint: .isDirectory)
@@ -625,21 +1062,65 @@ actor XcodeTestExecutor {
             fileManager: fileManager
         )
         let products = try verifyBuiltProducts(definition: definition, configuration: configuration, paths: paths)
-        let testExit = try await runConnectionCommand(
-            configuration: configuration,
-            arguments: [
-                "test-without-building", "-xctestrun", paths.sourceURL.path,
-                "-destination", "id=\(configuration.destinationIdentifier)",
-                "-resultBundlePath", resultBundle.path,
-                "-only-testing:\(configuration.testTarget)/IntentLabScenarioTests/testIntentLabConnection",
-            ] + configuration.signingArguments,
-            logURL: log,
-            appendLog: true,
-            deadline: .seconds(180)
+        let connectionArguments = [
+            "test-without-building", "-xctestrun", paths.sourceURL.path,
+            "-destination", "id=\(configuration.destinationIdentifier)",
+            "-resultBundlePath", resultBundle.path,
+            "-only-testing:\(configuration.testTarget)/IntentLabScenarioTests/testIntentLabConnection",
+        ] + configuration.signingArguments
+        let testExit = try await runJournaledConnectionTest(
+            definition: definition, configuration: configuration,
+            methodName: "testIntentLabConnection", derivedData: derivedData,
+            resultBundle: resultBundle,
+            arguments: connectionArguments,
+            logURL: log, appendLog: true, deadline: .seconds(180)
         )
-        guard testExit == 0, resultBundleTestCount(configuration: configuration, resultBundle: resultBundle) == 1 else {
+        let connectionTestCount = resultBundleTestCount(
+            configuration: configuration, resultBundle: resultBundle
+        )
+        guard testExit == 0, connectionTestCount == 1 else {
+            let logTail = tail(of: log)
+            let kind = Self.connectionEnvironmentFailure(
+                testExit: testExit, testCount: connectionTestCount,
+                failureMessages: resultBundleFailureMessages(
+                    configuration: configuration, resultBundle: resultBundle
+                ),
+                logTail: logTail,
+                selectedDirectFramework: Self.declarationRequiresAppIntentsTesting(
+                    in: paths.testBundleURL
+                )
+            )
+            if let kind,
+               let inputDigest = try? Self.buildInputsDigest(
+                   configuration: configuration, products: paths
+               ),
+               let testHostProduct = try? Self.productIdentity(
+                   bundle: paths.testHostURL,
+                   fallbackBundleIdentifier: configuration.testBundleIdentifier
+               ), let integration = definition.integration {
+                connectionStageFailure = .init(
+                    configuration: configuration, integration: integration,
+                    targetBundleIdentifier: definition.target.bundleIdentifier,
+                    products: paths, appProduct: products.app,
+                    testHostProduct: testHostProduct, testProduct: products.test,
+                    buildInputsDigest: inputDigest,
+                    productMetadataDigest: Self.productMetadataDigest(products: paths),
+                    runtimeProfile: Self.runtimeProfile(
+                        configuration: configuration, appBundleURL: paths.appBundleURL
+                    ),
+                    kind: kind,
+                    resultBundlePath: fileManager.fileExists(atPath: resultBundle.path)
+                        ? resultBundle.path : nil,
+                    logPath: log.path
+                )
+            }
             throw XcodeTestExecutorError.connectionCheck(
-                "The fixed connection test did not complete once (exit \(testExit)). \(tail(of: log))"
+                "\(kind?.detail ?? "The fixed connection test did not complete once") "
+                    + "(exit \(testExit), tests \(connectionTestCount.map { String($0) } ?? "unknown")). "
+                    + (fileManager.fileExists(atPath: resultBundle.path)
+                        ? "Result bundle: \(resultBundle.path). "
+                        : "No result bundle was produced. ")
+                    + logTail
             )
         }
         let attachments = directory.appending(path: "Attachments", directoryHint: .isDirectory)
@@ -664,18 +1145,86 @@ actor XcodeTestExecutor {
             sourceRevision: Self.sourceRevision(
                 sourceLocations: fingerprint.sourceLocations, buildInputsDigest: fingerprint.digest
             ),
-            productMetadataDigest: Self.productMetadataDigest(products: paths)
+            productMetadataDigest: Self.productMetadataDigest(products: paths),
+            runtimeProfile: Self.runtimeProfile(configuration: configuration, appBundleURL: paths.appBundleURL)
         )
         guard connectionMatches(verified, definition: definition, configuration: configuration) else {
             throw XcodeTestExecutorError.connectionCheck(
                 "The compiled declaration, capabilities, or app/test identity did not match the selected integration."
             )
         }
-        verifiedConnection = verified
-        return verified
+        let probeResultBundle = directory.appending(path: "Readiness.xcresult", directoryHint: .isDirectory)
+        let probeLog = directory.appending(path: "readiness-xcodebuild.log")
+        var probe = ScenarioReadinessProbeEvidence(
+            receipt: nil, resultBundlePath: probeResultBundle.path,
+            logPath: probeLog.path, issue: nil,
+            expectedReadinessOperationID: Self.readinessOperationID(in: paths.testBundleURL),
+            failureState: nil
+        )
+        let requiresAppIntentsTesting = receipt.capabilities.contains("direct-intent-execution")
+            || receipt.capabilities.contains("local-feature-controls")
+        if requiresAppIntentsTesting {
+            let appTeam = Self.signingTeamIdentifier(of: paths.appBundleURL)
+            let hostTeam = Self.signingTeamIdentifier(of: paths.testHostURL)
+            let testTeam = Self.signingTeamIdentifier(of: paths.testBundleURL)
+            guard Self.matchingSigningTeam(
+                appTeam: appTeam, hostTeam: hostTeam, testTeam: testTeam
+            ) else {
+                probe.failureState = .environmentBlocked
+                probe.globalFailure = true
+                probe.issue = "AppIntentsTesting requires the selected app, UI-test runner, and test bundle to have valid signatures from the same development team. Configure signing and check the connection again."
+                probe.resultBundlePath = nil
+                probe.logPath = nil
+                var result = verified
+                result.readinessProbe = probe
+                verifiedConnection = result
+                return result
+            }
+        }
+        do {
+            let probeExit = try await runJournaledConnectionTest(
+                definition: definition, configuration: configuration,
+                methodName: "testIntentLabReadiness", derivedData: derivedData,
+                resultBundle: probeResultBundle,
+                arguments: [
+                    "test-without-building", "-xctestrun", paths.sourceURL.path,
+                    "-destination", "id=\(configuration.destinationIdentifier)",
+                    "-resultBundlePath", probeResultBundle.path,
+                    "-only-testing:\(configuration.testTarget)/IntentLabScenarioTests/testIntentLabReadiness",
+                ] + configuration.signingArguments,
+                logURL: probeLog, appendLog: false, deadline: .seconds(180)
+            )
+            let count = resultBundleTestCount(configuration: configuration, resultBundle: probeResultBundle)
+            guard Self.probeTestCountIsValid(count) else {
+                throw XcodeTestExecutorError.connectionCheck(
+                    "The readiness test did not execute exactly once (reported \(count.map { String($0) } ?? "unknown") tests)."
+                )
+            }
+            let probeAttachments = directory.appending(path: "ReadinessAttachments", directoryHint: .isDirectory)
+            _ = try exportAttachments(
+                configuration: configuration, resultBundle: probeResultBundle,
+                outputDirectory: probeAttachments, invocationID: checkID
+            )
+            probe.receipt = try Self.readinessProbeReceipt(in: probeAttachments, connection: receipt)
+            if probeExit != 0 {
+                probe.issue = "The readiness test reported a failure (exit \(probeExit)); inspect the retained result bundle and log."
+                probe.failureState = .environmentBlocked
+                probe.globalFailure = true
+            }
+        } catch {
+            if connectionCancellationRequested { throw XcodeTestExecutorError.cancelled }
+            let count = resultBundleTestCount(configuration: configuration, resultBundle: probeResultBundle)
+            probe.failureState = count == 0 ? .setupRequired : .environmentBlocked
+            probe.globalFailure = true
+            probe.issue = "The runtime readiness probe did not verify this route: \(error.localizedDescription) \(tail(of: probeLog))"
+        }
+        var result = verified
+        result.readinessProbe = probe
+        verifiedConnection = result
+        return result
     }
 
-    private func currentConnection(
+    func currentConnection(
         definition: ScenarioDefinition,
         configuration: XcodeTestConfiguration
     ) -> ScenarioVerifiedConnection? {
@@ -703,7 +1252,7 @@ actor XcodeTestExecutor {
               receipt.harnessProtocol == ScenarioInvocationIdentity.reusableHarnessVersion,
               !receipt.runnerPackageVersion.isEmpty,
               Set(receipt.capabilities).count == receipt.capabilities.count,
-              ScenarioHarnessCapabilities.required(for: definition).isSubset(of: Set(receipt.capabilities)),
+              receipt.capabilities.contains("environment-payload"),
               let app = try? Self.productIdentity(
                   bundle: connection.appBundleURL,
                   fallbackBundleIdentifier: definition.target.bundleIdentifier
@@ -734,6 +1283,10 @@ actor XcodeTestExecutor {
                   )
               ),
               inputs == connection.buildInputsDigest,
+              let runtimeProfile = connection.runtimeProfile,
+              runtimeProfile == Self.runtimeProfile(
+                  configuration: configuration, appBundleURL: connection.appBundleURL
+              ),
               let declaration = try? Data(contentsOf: connection.testBundleURL.appending(path: "IntentLabIntegration.json")),
               SHA256.hash(data: declaration).map({ String(format: "%02x", $0) }).joined()
                 == definition.integration?.digest else { return false }
@@ -794,6 +1347,185 @@ actor XcodeTestExecutor {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(ScenarioConnectionReceipt.self, from: bytes)
+    }
+
+    static func readinessProbeReceipt(
+        in directory: URL,
+        connection: ScenarioConnectionReceipt
+    ) throws -> ScenarioReadinessProbeReceipt {
+        let manifestURL = directory.appending(path: "manifest.json")
+        let data = try Data(contentsOf: manifestURL)
+        guard let entries = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw XcodeTestExecutorError.connectionCheck("The readiness attachment manifest is invalid.")
+        }
+        let attachments = entries
+            .filter { $0["testIdentifier"] as? String == "IntentLabScenarioTests/testIntentLabReadiness()" }
+            .flatMap { $0["attachments"] as? [[String: Any]] ?? [] }
+            .filter { ($0["suggestedHumanReadableName"] as? String)?.hasPrefix("IntentLabReadinessReceipt-") == true }
+        guard attachments.count == 1,
+              let filename = attachments[0]["exportedFileName"] as? String,
+              filename == URL(filePath: filename).lastPathComponent,
+              filename.hasSuffix(".json") else {
+            throw XcodeTestExecutorError.connectionCheck("Exactly one final readiness receipt is required.")
+        }
+        let root = directory.standardizedFileURL.resolvingSymlinksInPath()
+        let url = root.appending(path: filename).resolvingSymlinksInPath()
+        guard url.deletingLastPathComponent() == root,
+              let bytes = try? Data(contentsOf: url), bytes.count <= 64_000 else {
+            throw XcodeTestExecutorError.connectionCheck(
+                "The readiness receipt is missing, oversized, or outside the export directory."
+            )
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let receipt = try decoder.decode(ScenarioReadinessProbeReceipt.self, from: bytes)
+        guard receipt.schemaVersion == 1,
+              receipt.testName == "testIntentLabReadiness",
+              receipt.testMethodStarted,
+              receipt.testIdentifier.hasSuffix("IntentLabScenarioTests/testIntentLabReadiness")
+                || receipt.testIdentifier.hasSuffix("IntentLabScenarioTests/testIntentLabReadiness()"),
+              receipt.targetBundleIdentifier == connection.targetBundleIdentifier,
+              receipt.testBundleIdentifier == connection.testBundleIdentifier,
+              receipt.integration?.id == connection.integration.id,
+              receipt.integration?.version == connection.integration.version,
+              receipt.integration?.digest == connection.integration.digest,
+              receipt.createdAt >= connection.inspectedAt.addingTimeInterval(-5),
+              receipt.createdAt <= connection.inspectedAt.addingTimeInterval(600),
+              receipt.routes.count <= ScenarioLane.allCases.count,
+              receipt.routes.keys.allSatisfy({ ScenarioLane(rawValue: $0) != nil }) else {
+            throw XcodeTestExecutorError.connectionCheck(
+                "The runtime readiness receipt does not match the selected integration or test method."
+            )
+        }
+        return receipt
+    }
+
+    static func probeTestCountIsValid(_ count: Int?) -> Bool { count == 1 }
+
+    static func connectionEnvironmentFailure(
+        testExit: Int32,
+        testCount: Int?,
+        failureMessages: [String],
+        logTail: String,
+        selectedDirectFramework: Bool
+    ) -> ScenarioConnectionEnvironmentFailure? {
+        guard testExit != 0 || testCount != 1 else { return nil }
+        let evidence = (failureMessages.joined(separator: "\n") + "\n" + logTail).lowercased()
+        let frameworkNamed = evidence.contains("appintentstesting")
+            || (selectedDirectFramework && evidence.contains("appintentsservices"))
+        let loadFailure = [
+            "symbol not found", "library not loaded", "framework not found",
+            "failed to load", "couldn't be loaded", "could not be loaded", "dlopen("
+        ].contains { evidence.contains($0) }
+        if frameworkNamed && loadFailure { return .frameworkLoad }
+
+        let securityDomain = evidence.contains("appintentsservicessecurityerrordomain")
+        let customerBuild = evidence.contains("customer build")
+        let code803 = evidence.contains("code=803") || evidence.contains("code 803")
+        if (selectedDirectFramework || frameworkNamed || securityDomain)
+            && (securityDomain || customerBuild || selectedDirectFramework)
+            && code803 {
+            return .security
+        }
+        return nil
+    }
+
+    private static func declarationRequiresAppIntentsTesting(in testBundleURL: URL) -> Bool {
+        let url = testBundleURL.appending(path: "IntentLabIntegration.json")
+        guard let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let capabilities = object["capabilities"] as? [String] else { return false }
+        return capabilities.contains("direct-intent-execution")
+            || capabilities.contains("local-feature-controls")
+    }
+
+    private static func readinessOperationID(in testBundleURL: URL) -> String? {
+        let url = testBundleURL.appending(path: "IntentLabIntegration.json")
+        guard let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let control = object["readinessControl"] as? [String: Any],
+              let operationID = control["operationID"] as? String,
+              !operationID.isEmpty else { return nil }
+        return operationID
+    }
+
+    private static func runtimeProfile(
+        configuration: XcodeTestConfiguration,
+        appBundleURL: URL
+    ) -> ScenarioRuntimeProfileIdentity? {
+        guard let destination = try? XcodeConnectionDiscoveryService().discoverDevices()
+                .first(where: { $0.identifier == configuration.destinationIdentifier && $0.available }),
+              let destinationOSVersion = destination.operatingSystemVersion
+                ?? (destination.platform == .macOS
+                    ? ProcessInfo.processInfo.operatingSystemVersionString : nil),
+              !destinationOSVersion.isEmpty,
+              let infoData = try? Data(contentsOf: appBundleURL.appending(path: "Info.plist")),
+              let info = try? PropertyListSerialization.propertyList(
+                  from: infoData, format: nil
+              ) as? [String: Any],
+              let builtXcode = info["DTXcodeBuild"] as? String, !builtXcode.isEmpty,
+              let builtSDK = info["DTSDKBuild"] as? String, !builtSDK.isEmpty,
+              let runningXcode = commandOutput(configuration.xcodebuildPath, ["-version"]),
+              let sdk = commandOutput(configuration.xcresulttoolPath, [
+                  "--sdk", destination.platform == .iOS ? "iphoneos" : "macosx", "--show-sdk-build-version"
+              ]) else { return nil }
+        return .init(
+            destinationIdentifier: destination.identifier,
+            destinationPlatform: destination.platform,
+            destinationOSVersion: destinationOSVersion,
+            xcodeBuild: "\(runningXcode) / built \(builtXcode)",
+            sdkBuild: "\(sdk) / built \(builtSDK)"
+        )
+    }
+
+    private static func commandOutput(_ executable: String, _ arguments: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(filePath: executable)
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0, data.count < 16_000 else { return nil }
+        let value = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private static func signingTeamIdentifier(of bundle: URL) -> String? {
+        let verify = Process()
+        verify.executableURL = URL(filePath: "/usr/bin/codesign")
+        verify.arguments = ["--verify", "--strict", bundle.path]
+        verify.standardOutput = FileHandle.nullDevice
+        verify.standardError = FileHandle.nullDevice
+        do { try verify.run() } catch { return nil }
+        verify.waitUntilExit()
+        guard verify.terminationStatus == 0 else { return nil }
+
+        let inspect = Process()
+        inspect.executableURL = URL(filePath: "/usr/bin/codesign")
+        inspect.arguments = ["-dv", "--verbose=4", bundle.path]
+        let output = Pipe()
+        inspect.standardOutput = FileHandle.nullDevice
+        inspect.standardError = output
+        do { try inspect.run() } catch { return nil }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        inspect.waitUntilExit()
+        guard inspect.terminationStatus == 0, data.count < 16_000 else { return nil }
+        let lines = String(decoding: data, as: UTF8.self).split(separator: "\n")
+        guard let value = lines.first(where: { $0.hasPrefix("TeamIdentifier=") }) else { return nil }
+        let team = value.dropFirst("TeamIdentifier=".count)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return team.isEmpty || team == "not set" ? nil : team
+    }
+
+    static func matchingSigningTeam(
+        appTeam: String?, hostTeam: String?, testTeam: String?
+    ) -> Bool {
+        guard let appTeam, let hostTeam, let testTeam,
+              !appTeam.isEmpty, appTeam == hostTeam, appTeam == testTeam else { return false }
+        return true
     }
 
     static func selectedSchemeContainsTarget(
@@ -953,8 +1685,13 @@ actor XcodeTestExecutor {
         projects: [URL], into hasher: inout SHA256, fileManager: FileManager
     ) throws -> Set<URL> {
         let generatedDirectories: Set<String> = [
-            ".git", ".build", ".swiftpm", "DerivedData",
+            ".git", ".build", ".swiftpm", "build", "deriveddata",
             "node_modules", "xcuserdata"
+        ]
+        let sourceExtensions: Set<String> = [
+            "swift", "m", "mm", "h", "hpp", "c", "cc", "cpp", "metal", "plist", "json",
+            "xcconfig", "entitlements", "modulemap", "intentdefinition", "storyboard", "xib",
+            "strings", "stringsdict", "xml", "yml", "yaml", "rb", "sh", "py", "js", "ts", "tsx", "jsx"
         ]
         var roots = projects.map { $0.deletingLastPathComponent() }
         var referencedFiles: [URL] = []
@@ -971,11 +1708,15 @@ actor XcodeTestExecutor {
             }
             for object in objects.values {
                 guard let path = object["path"] as? String,
-                      path.hasPrefix("../") || path.hasPrefix("/"),
                       let kind = object["isa"] as? String,
                       kind == "PBXFileReference" || kind == "PBXGroup" || kind == "PBXVariantGroup" else {
                     continue
                 }
+                let explicitlyReferencedLocalBuildSource = kind == "PBXFileReference"
+                    && path.lowercased().hasPrefix("build/")
+                    && sourceExtensions.contains(URL(filePath: path).pathExtension.lowercased())
+                guard path.hasPrefix("../") || path.hasPrefix("/")
+                    || explicitlyReferencedLocalBuildSource else { continue }
                 let reference = URL(filePath: path, relativeTo: project.deletingLastPathComponent())
                     .standardizedFileURL
                 var isDirectory: ObjCBool = false
@@ -994,7 +1735,7 @@ actor XcodeTestExecutor {
             ) {
                 let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
                 if values.isDirectory == true {
-                    if !generatedDirectories.contains(entry.lastPathComponent),
+                    if !generatedDirectories.contains(entry.lastPathComponent.lowercased()),
                        entry.pathExtension != "xcresult" {
                         roots.append(entry)
                     }
@@ -1008,11 +1749,6 @@ actor XcodeTestExecutor {
                 }
             }
         }
-        let sourceExtensions: Set<String> = [
-            "swift", "m", "mm", "h", "hpp", "c", "cc", "cpp", "metal", "plist", "json",
-            "xcconfig", "entitlements", "modulemap", "intentdefinition", "storyboard", "xib",
-            "strings", "stringsdict", "xml", "yml", "yaml", "rb", "sh", "py", "js", "ts", "tsx", "jsx"
-        ]
         var remainingContentBytes: Int64 = 256 * 1_024 * 1_024
         for file in sourceFiles.sorted(by: {
             let firstIsSource = sourceExtensions.contains($0.pathExtension.lowercased())
@@ -1073,6 +1809,93 @@ actor XcodeTestExecutor {
         return paths
     }
 
+    func runJournaledConnectionTest(
+        definition: ScenarioDefinition,
+        configuration: XcodeTestConfiguration,
+        methodName: String,
+        derivedData: URL,
+        resultBundle: URL,
+        arguments: [String],
+        logURL: URL,
+        appendLog: Bool,
+        deadline: Duration
+    ) async throws -> Int32 {
+        guard !connectionCancellationRequested else { throw XcodeTestExecutorError.cancelled }
+        guard connectionTestJournal == nil,
+              reservations[configuration.destinationIdentifier] == nil else {
+            throw XcodeTestExecutorError.activeExecution
+        }
+        let id = UUID()
+        var invocation = ScenarioInvocationIdentity(
+            id: id, nonce: randomNonce(), issuedAt: Date(),
+            testIdentity: .init(
+                bundleIdentifier: configuration.testBundleIdentifier,
+                className: "IntentLabScenarioTests", methodName: methodName
+            ),
+            harnessVersion: ScenarioInvocationIdentity.reusableHarnessVersion,
+            destinationIdentifier: configuration.destinationIdentifier,
+            scenarioDigest: definition.definitionDigest,
+            resultBundleIdentity: resultBundle.lastPathComponent,
+            appProduct: nil, testProduct: nil
+        )
+        invocation.integration = definition.integration
+        var journal = ScenarioExecutionJournal(
+            phase: .preparing, invocation: invocation,
+            scenarioID: definition.id, scenarioVersion: definition.version,
+            resultBundlePath: resultBundle.path, derivedDataPath: derivedData.path,
+            buildLogPath: logURL.path, intendedExecutable: configuration.xcodebuildPath,
+            intendedArguments: arguments, processIdentifier: nil,
+            processStartedAt: nil, updatedAt: Date(), recoveryReason: nil
+        )
+        let destination = configuration.destinationIdentifier
+        let reservation = ScenarioDeviceReservation.reserved(invocationID: id)
+        connectionTestJournal = journal
+        connectionDeviceTestLaunched = false
+        reservations[destination] = reservation
+        do {
+            try await persistence.saveJournal(journal)
+        } catch {
+            connectionTestJournal = nil
+            if reservations[destination] == reservation { reservations[destination] = nil }
+            throw error
+        }
+        do {
+            let code = try await runConnectionCommand(
+                configuration: configuration, arguments: arguments, logURL: logURL,
+                appendLog: appendLog, deadline: deadline
+            )
+            if connectionCancellationRequested { throw XcodeTestExecutorError.cancelled }
+            journal = connectionTestJournal ?? journal
+            journal.phase = .stopped
+            journal.updatedAt = Date()
+            try await persistence.saveJournal(journal)
+            if connectionCancellationRequested { throw XcodeTestExecutorError.cancelled }
+            connectionTestJournal = nil
+            connectionDeviceTestLaunched = false
+            if reservations[destination] == reservation { reservations[destination] = nil }
+            return code
+        } catch {
+            journal = connectionTestJournal ?? journal
+            let requiresRecovery = connectionDeviceTestLaunched
+            journal.phase = requiresRecovery ? .recoveryRequired : .stopped
+            journal.recoveryReason = requiresRecovery
+                ? "The \(methodName) device test was interrupted; prove test termination and fixture readiness before using this destination."
+                : nil
+            journal.updatedAt = Date()
+            if requiresRecovery {
+                reservations[destination] = .quarantined(reason: journal.recoveryReason!)
+            } else if reservations[destination] == reservation {
+                reservations[destination] = nil
+            }
+            connectionTestJournal = nil
+            connectionDeviceTestLaunched = false
+            // The preparing journal was durable before launch; reconciliation
+            // still quarantines the device if this final write fails.
+            try? await persistence.saveJournal(journal)
+            throw error
+        }
+    }
+
     private func runConnectionCommand(
         configuration: XcodeTestConfiguration,
         arguments: [String],
@@ -1080,6 +1903,7 @@ actor XcodeTestExecutor {
         appendLog: Bool,
         deadline: Duration
     ) async throws -> Int32 {
+        guard !connectionCancellationRequested else { throw XcodeTestExecutorError.cancelled }
         if !fileManager.fileExists(atPath: logURL.path) {
             fileManager.createFile(atPath: logURL.path, contents: nil)
         }
@@ -1098,6 +1922,18 @@ actor XcodeTestExecutor {
             continuation.finish()
         }
         try process.run()
+        connectionProcess = process
+        if var journal = connectionTestJournal {
+            connectionDeviceTestLaunched = true
+            journal.phase = .running
+            journal.processIdentifier = process.processIdentifier
+            journal.processStartedAt = Date()
+            journal.updatedAt = Date()
+            connectionTestJournal = journal
+        }
+        defer {
+            if connectionProcess === process { connectionProcess = nil }
+        }
         let timeout = Task { @concurrent in
             do {
                 try await Task.sleep(for: deadline)
@@ -1107,6 +1943,7 @@ actor XcodeTestExecutor {
         }
         let outcome = await stream.first { _ in true }
         timeout.cancel()
+        if connectionCancellationRequested { throw XcodeTestExecutorError.cancelled }
         guard case .some(.exited(let code)) = outcome else {
             process.interrupt()
             try? await Task.sleep(for: .seconds(2))
@@ -1117,12 +1954,36 @@ actor XcodeTestExecutor {
         return code
     }
 
+    /// Cancels setup; a launched device test remains quarantined until manual recovery.
+    func cancelConnectionCheck() async -> ScenarioConnectionCancellation {
+        guard connectionCheckInProgress || connectionTestJournal != nil else { return .notRunning }
+        connectionCancellationRequested = true
+        if let connectionProcess, connectionProcess.isRunning {
+            connectionProcess.terminate()
+        }
+        guard connectionDeviceTestLaunched, var journal = connectionTestJournal else {
+            return .beforeDeviceTest
+        }
+        journal.phase = .recoveryRequired
+        journal.recoveryReason = "The \(journal.invocation.testIdentity.methodName) device test was cancelled; prove test termination and fixture readiness before using this destination."
+        journal.updatedAt = Date()
+        connectionTestJournal = journal
+        reservations[journal.invocation.destinationIdentifier] = .quarantined(
+            reason: journal.recoveryReason!
+        )
+        // The preparing journal is already durable. If this write fails, launch
+        // recovery will still find and quarantine that unfinished journal.
+        try? await persistence.saveJournal(journal)
+        return .recoveryRequired(journal)
+    }
+
     func execute(
         definition: ScenarioDefinition,
         configuration: XcodeTestConfiguration,
         projectTrusted: Bool,
         linkedFeatureEvidenceAvailable: Bool = false,
-        scope: ScenarioNativeExecutionScope? = nil
+        scope: ScenarioNativeExecutionScope? = nil,
+        featureBackend: ScenarioFeatureBackend = .connectedRunner
     ) async throws -> ScenarioExecutorResult {
         try Task.checkCancellation()
         guard active == nil, inFlightJournal == nil, awaitingValidationJournal == nil,
@@ -1134,10 +1995,27 @@ actor XcodeTestExecutor {
             configuration: configuration,
             projectTrusted: projectTrusted,
             linkedFeatureEvidenceAvailable: linkedFeatureEvidenceAvailable,
-            scope: scope
+            scope: scope,
+            featureBackend: featureBackend
         )
         guard report.isReady else { throw XcodeTestExecutorError.preflight(report.checks) }
         let usesReusableProtocol = ScenarioHarnessCapabilities.usesReusableProtocol(definition)
+        if usesReusableProtocol && definition.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+            let routes = routeReadiness(
+                definition: definition, configuration: configuration,
+                projectTrusted: projectTrusted, featureBackend: featureBackend
+            )
+            let required: [ScenarioLane] = scope.map { [$0.lane] } ?? ScenarioLane.allCases.filter {
+                definition.coverage[$0] == .required
+                    && ($0 != .appFeature || featureBackend == .projectLocalTestControl)
+            }
+            let blocked = required.compactMap { lane -> ScenarioPreflightCheck? in
+                guard let route = routes[lane], route.state != .ready else { return nil }
+                return .init(id: "readiness.\(lane.rawValue)", title: "\(lane.title) runtime readiness",
+                             state: .blocked, detail: route.detail)
+            }
+            guard blocked.isEmpty else { throw XcodeTestExecutorError.preflight(blocked) }
+        }
         let selectedConnection = usesReusableProtocol
             ? currentConnection(definition: definition, configuration: configuration) : nil
         guard !usesReusableProtocol || selectedConnection != nil else {
@@ -1176,7 +2054,12 @@ actor XcodeTestExecutor {
         )
         if ScenarioHarnessCapabilities.usesReusableProtocol(definition) {
             invocation.integration = definition.integration
-            invocation.requiredCapabilities = ScenarioHarnessCapabilities.required(for: definition).sorted()
+            invocation.requiredCapabilities = ScenarioHarnessCapabilities.required(
+                for: definition, scope: scope, featureBackend: featureBackend
+            ).sorted()
+        }
+        if scope?.lane == .appFeature {
+            invocation.featureBackend = featureBackend
         }
         let commonArguments = Self.xcodeArguments(
             configuration: configuration,
@@ -1282,6 +2165,7 @@ actor XcodeTestExecutor {
                 definition: definition,
                 invocation: boundInvocation,
                 scope: scope,
+                featureBackend: featureBackend,
                 fileManager: fileManager
             )
             invocationTestRunURL = materializedTestRunURL
@@ -1314,6 +2198,12 @@ actor XcodeTestExecutor {
                 appendLog: true,
                 deadline: testDeadline
             )
+            if testExit != 0 {
+                invalidateRuntimeReadiness(
+                    lane: scope?.lane,
+                    reason: "The selected route's driver reported a failed test execution. Check its retained result bundle before retrying."
+                )
+            }
             guard !cancelledInvocationIDs.contains(invocationID) else {
                 throw XcodeTestExecutorError.cancelled
             }
@@ -1345,6 +2235,12 @@ actor XcodeTestExecutor {
                 measurementImplementation: measurement
             )
         } catch {
+            if deviceTestLaunched {
+                invalidateRuntimeReadiness(
+                    lane: scope?.lane,
+                    reason: "The selected route's driver did not complete cleanly: \(error.localizedDescription)"
+                )
+            }
             active = nil
             let failure = cancelledInvocationIDs.contains(invocationID)
                 ? ScenarioRecoveryFailure.cancellation : recoveryFailure(for: error)

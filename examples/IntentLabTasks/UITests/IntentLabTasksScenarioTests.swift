@@ -11,4 +11,8 @@ final class IntentLabScenarioTests: XCTestCase {
     func testIntentLabConnection() throws {
         try IntentLabScenarioRunner.checkConnection(testCase: self, integration: TaskIntegration())
     }
+
+    func testIntentLabReadiness() throws {
+        try IntentLabScenarioRunner.testIntentLabReadiness(testCase: self, integration: TaskIntegration())
+    }
 }

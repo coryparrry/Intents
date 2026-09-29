@@ -328,6 +328,97 @@ struct ScenarioCollectionTests {
         ).passedCount == 0)
     }
 
+    @Test func localFeatureBatchUsesAcceptedNativeEvidenceAndFreezesRerunBackend() throws {
+        let projectID = UUID()
+        var definition = try caseDefinition(projectID: projectID, name: "Local Feature")
+        definition.coverage = .init(appFeature: .required, intentIntegration: .notApplicable,
+                                    siri: .notApplicable, siriAttemptCount: 1)
+        definition.featureBinding = .init(featureID: "summarize",
+                                           interfaceDigest: String(repeating: "a", count: 64),
+                                           inputMapping: [], outputProjections: [])
+        definition = try definition.frozen()
+        let collection = try ScenarioCollection(
+            projectID: projectID, name: "Local Feature checks",
+            members: [ScenarioCollectionService.member(definition)]
+        )
+        let instant = Date(timeIntervalSince1970: 1_800_000_000)
+        let manifest = try ScenarioCollectionService.freezeManifest(
+            collection: collection, definitions: [definition], scope: .full,
+            appProductDigest: "app-build", subjectInputDigests: [definition.id: "input"],
+            featureBackend: .projectLocalTestControl, createdAt: instant
+        )
+        #expect(manifest.selectedFeatureBackend == .projectLocalTestControl)
+        var legacy = manifest
+        legacy.featureBackend = nil
+        legacy.manifestDigest = try legacy.calculatedDigest()
+        let decodedLegacy = try JSONDecoder().decode(
+            ScenarioCollectionBatchManifest.self, from: JSONEncoder().encode(legacy)
+        )
+        #expect(decodedLegacy.featureBackend == nil)
+        #expect(decodedLegacy.selectedFeatureBackend == .connectedRunner)
+        #expect(decodedLegacy.hasValidDigest)
+        let coordinate = try #require(manifest.coordinates.first)
+        var run = run(for: definition, coordinate: coordinate,
+                      startedAt: instant.addingTimeInterval(1), outcome: .passed)
+        run.id = run.invocation.id
+        run.invocation.featureBackend = .projectLocalTestControl
+        run.fixture = definition.fixture
+        run.acceptanceStatus = .accepted
+        run.executedTestCount = 1
+        run.xctestExitCode = 0
+        run.laneResults[0].observations["feature.response"] = .string("A summary")
+        run.laneResults[0].observationSources = ["feature.response": .testOnlyIntent]
+        let lane = run.laneResults[0]
+        let row = ScenarioExecutionCoordinateRecord(
+            coordinate: coordinate, state: .completed,
+            evidenceRunID: run.id, evidenceLaneResultID: lane.id,
+            detail: nil, laneResult: lane
+        )
+        let result = ScenarioCollectionBatchResult(
+            id: manifest.id, manifestID: manifest.id,
+            executions: [try execution(manifest: manifest, caseID: definition.id, records: [row])],
+            recordedAt: instant.addingTimeInterval(2)
+        )
+        var journal = ScenarioExecutionJournal(
+            phase: .stopped, invocation: run.invocation,
+            scenarioID: definition.id, scenarioVersion: definition.version,
+            resultBundlePath: "result", derivedDataPath: "derived", buildLogPath: "build",
+            intendedExecutable: "xcodebuild", intendedArguments: [],
+            processIdentifier: nil, processStartedAt: nil,
+            updatedAt: instant.addingTimeInterval(2), recoveryReason: nil,
+            evidenceAccepted: true, scope: .init(lane: .appFeature, attempt: 1)
+        )
+        #expect(ScenarioCollectionService.assess(
+            manifest: manifest, collection: collection, result: result,
+            runs: [run], journals: [journal]
+        ).qualification == .passedFull)
+        #expect(ScenarioCollectionService.assess(
+            manifest: manifest, collection: collection, result: result,
+            runs: [run]
+        ).passedCount == 0)
+        journal.evidenceAccepted = false
+        #expect(ScenarioCollectionService.assess(
+            manifest: manifest, collection: collection, result: result,
+            runs: [run], journals: [journal]
+        ).passedCount == 0)
+        var connected = manifest
+        connected.featureBackend = .connectedRunner
+        connected.manifestDigest = try connected.calculatedDigest()
+        #expect(ScenarioCollectionService.assess(
+            manifest: connected, collection: collection, result: result,
+            runs: [run], journals: []
+        ).passedCount == 0)
+
+        let rerun = try ScenarioCollectionService.freezeFailedRerun(
+            collection: collection, definitions: [definition],
+            priorManifest: manifest, priorResult: nil, priorRuns: [],
+            appProductDigest: "app-build", subjectInputDigests: [definition.id: "input"],
+            createdAt: instant.addingTimeInterval(3)
+        )
+        #expect(rerun.selectedFeatureBackend == .projectLocalTestControl)
+        #expect(rerun.scope == .rerunFailed)
+    }
+
     private func caseDefinition(projectID: UUID, name: String) throws -> ScenarioDefinition {
         var definition = ScenarioDefinition.starter(projectID: projectID)
         definition.id = UUID()
@@ -382,7 +473,8 @@ struct ScenarioCollectionTests {
             testContractDigest: snapshot.member.testContractDigest,
             profile: .init(id: UUID(), projectPath: "fixture", scheme: "Fixture",
                            testTarget: "FixtureTests", destinationIdentifier: "test",
-                           signingSelection: nil),
+                           signingSelection: nil,
+                           featureBackend: manifest.selectedFeatureBackend),
             appProductDigest: manifest.appProductDigest, testProductDigest: "test-build",
             fixtureContractDigest: snapshot.fixtureContractDigest,
             coordinates: manifest.coordinates.filter { $0.caseID == caseID },

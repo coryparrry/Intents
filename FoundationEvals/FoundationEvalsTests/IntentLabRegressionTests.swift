@@ -905,6 +905,7 @@ struct IntentLabRegressionTests {
         var complete = run
         complete.executionStatus = .completed
         complete.outcome = .passed
+        complete.xctestExitCode = 0
         complete.laneResults[0].executionStatus = .completed
         complete.laneResults[0].outcome = .passed
         #expect(ScenarioCoordinator.canReleaseDevice(

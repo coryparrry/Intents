@@ -13,6 +13,14 @@ enum ScenarioRunnerSelection {
 /// definition. This comparison verifies record and child bindings, not file
 /// bytes outside the supplied snapshot.
 enum ScenarioExecutionComparison {
+    static func nativeChildRunIDs(plan: ScenarioExecutionPlan,
+                                  record: ScenarioExecutionRecord) -> Set<UUID> {
+        Set(record.records.filter {
+            $0.coordinate.lane != .appFeature
+                || plan.profile.featureBackend == .projectLocalTestControl
+        }.compactMap(\.evidenceRunID))
+    }
+
     struct Snapshot: Sendable {
         var plan: ScenarioExecutionPlan
         var record: ScenarioExecutionRecord
@@ -31,6 +39,9 @@ enum ScenarioExecutionComparison {
         var issues = validate(baseline, label: "Baseline") + validate(candidate, label: "Candidate")
         let old = baseline.plan
         let new = candidate.plan
+        if old.purpose == .partialDiagnostic || new.purpose == .partialDiagnostic {
+            issues.append("Partial diagnostic executions cannot be qualified as directly comparable full populations.")
+        }
         if policy.baselineRunID != old.id {
             issues.append("The selected baseline does not match the frozen execution plan.")
         }
@@ -54,6 +65,9 @@ enum ScenarioExecutionComparison {
         if !validDigest(old.appProductDigest) || !validDigest(new.appProductDigest) {
             issues.append("Exact app-build provenance is missing.")
         }
+        if old.profile.featureBackend != new.profile.featureBackend {
+            issues.append("The App Feature backend changed between executions.")
+        }
         let oldPopulation = population(baseline)
         let newPopulation = population(candidate)
         if oldPopulation == nil || newPopulation == nil || Set(oldPopulation!.keys) != Set(newPopulation!.keys) {
@@ -76,7 +90,9 @@ enum ScenarioExecutionComparison {
         if let oldPopulation, let newPopulation {
             for key in Set(oldPopulation.keys).intersection(newPopulation.keys).sorted() {
                 guard let lhs = oldPopulation[key], let rhs = newPopulation[key] else { continue }
-                if lhs.coordinate.lane == .appFeature {
+                if lhs.coordinate.lane == .appFeature
+                    && old.profile.featureBackend == .connectedRunner
+                    && new.profile.featureBackend == .connectedRunner {
                     compareFeature(lhs, rhs, mode: policy.mode, key: key, issues: &issues)
                 } else {
                     compareNative(lhs, rhs, baseline: baseline, candidate: candidate,
@@ -84,8 +100,12 @@ enum ScenarioExecutionComparison {
                 }
             }
         }
-        let nativeBefore = baseline.record.records.filter { $0.coordinate.lane != .appFeature }
-        let nativeAfter = candidate.record.records.filter { $0.coordinate.lane != .appFeature }
+        let nativeBefore = baseline.record.records.filter {
+            $0.coordinate.lane != .appFeature || old.profile.featureBackend == .projectLocalTestControl
+        }
+        let nativeAfter = candidate.record.records.filter {
+            $0.coordinate.lane != .appFeature || new.profile.featureBackend == .projectLocalTestControl
+        }
         if nativeBefore.isEmpty != nativeAfter.isEmpty {
             issues.append("Native route evidence is missing from one execution.")
         } else if nativeBefore.isEmpty {
@@ -126,6 +146,8 @@ enum ScenarioExecutionComparison {
         let dimensions = [
             dimension("testContractDigest", old.testContractDigest, new.testContractDigest),
             dimension("fixtureContractDigest", old.fixtureContractDigest, new.fixtureContractDigest),
+            dimension("featureBackend", old.profile.featureBackend.rawValue,
+                      new.profile.featureBackend.rawValue),
             dimension("appBuild", old.appProductDigest, new.appProductDigest,
                       compatible: policy.mode == .compareAppChanges || old.appProductDigest == new.appProductDigest),
             dimension("sourceInputsDigest", old.sourceInputsDigest ?? "unknown", new.sourceInputsDigest ?? "unknown",
@@ -220,10 +242,12 @@ enum ScenarioExecutionComparison {
             || Set(featureChildren.map(\.sampleID)).count != featureChildren.count {
             issues.append("\(label) feature evidence is reused across coordinates.")
         }
-        let referencedNativeIDs = record.records.filter { $0.coordinate.lane != .appFeature }
-            .compactMap(\.evidenceRunID)
-        if Set(referencedNativeIDs).count != referencedNativeIDs.count
-            || Set(referencedNativeIDs) != Set(snapshot.runs.map(\.id))
+        let referencedNativeIDs = nativeChildRunIDs(plan: plan, record: record)
+        if referencedNativeIDs.count != record.records.filter({
+            $0.coordinate.lane != .appFeature
+                || plan.profile.featureBackend == .projectLocalTestControl
+        }).compactMap(\.evidenceRunID).count
+            || referencedNativeIDs != Set(snapshot.runs.map(\.id))
             || snapshot.runs.count != referencedNativeIDs.count {
             issues.append("\(label) native child-run population is missing, repeated, or unrelated.")
         }
@@ -243,7 +267,8 @@ enum ScenarioExecutionComparison {
                 && lane.assertionResults.isEmpty && selectedAssessments(for: lane, in: snapshot).isEmpty {
                 issues.append("\(label) passed \(key(item.coordinate)) without assessed requirements.")
             }
-            if item.coordinate.lane == .appFeature {
+            if item.coordinate.lane == .appFeature
+                && plan.profile.featureBackend == .connectedRunner {
                 guard let child = item.featureChild, child.hasValidDigest,
                       child.hasVerifiedBuildBinding,
                       child.checkedAppProductDigest == plan.appProductDigest,
@@ -265,7 +290,10 @@ enum ScenarioExecutionComparison {
                     issues.append("\(label) App Feature child does not match the trusted app and feature declaration at \(key(item.coordinate)).")
                 }
             } else {
-                guard let run = snapshot.runs.first(where: { $0.id == item.evidenceRunID }),
+                guard item.featureChild == nil,
+                      (item.coordinate.lane != .appFeature
+                          || plan.profile.featureBackend == .projectLocalTestControl),
+                      let run = snapshot.runs.first(where: { $0.id == item.evidenceRunID }),
                       run.id == run.invocation.id,
                       run.scenarioSchemaVersion == ScenarioDefinition.stableSchemaVersion,
                       run.scenarioID == plan.definitionID,
@@ -275,19 +303,18 @@ enum ScenarioExecutionComparison {
                       run.invocation.scenarioDigest == plan.definitionDigest,
                       run.invocation.appProduct?.sha256 == plan.appProductDigest,
                       run.invocation.testProduct?.sha256 == plan.testProductDigest,
+                      run.invocation.featureBackend == (item.coordinate.lane == .appFeature
+                          ? .projectLocalTestControl : nil),
                       run.fixture?.digest == plan.fixtureContractDigest,
                       run.executedTestCount == 1,
-                      run.xctestExitCode != nil,
-                      (run.xctestExitCode == 0 || (
-                          lane.outcome == .failed
-                          && lane.assertionResults.contains(where: { !$0.passed })
-                      )),
+                      run.xctestExitCode == 0,
+                      run.acceptanceStatus == .accepted,
                       run.executionStatus == .completed,
                       validMeasurement(run.measurementImplementation),
                       validEnvironment(run.comparisonEnvironmentIdentity),
                       run.laneResults.count == 1,
                       run.laneResults[0] == lane else {
-                    issues.append("\(label) native child evidence lacks bound invocation, build, fixture, or measurement at \(key(item.coordinate)).")
+                    issues.append("\(label) native child evidence lacks an accepted zero-exit result, bound invocation, build, fixture, or measurement at \(key(item.coordinate)).")
                     continue
                 }
                 if let definition = snapshot.definition,
@@ -503,7 +530,8 @@ enum ScenarioExecutionComparison {
 
     private static func profileFacts(_ profile: ScenarioExecutionProfile) -> [String] {
         [profile.destinationIdentifier, profile.signingSelection ?? "",
-         profile.buildConfiguration ?? "", profile.scheme, profile.testTarget]
+         profile.buildConfiguration ?? "", profile.scheme, profile.testTarget,
+         profile.featureBackend.rawValue]
     }
 
     private static func environmentFacts(_ environment: ScenarioEnvironment) -> [String] {

@@ -23,6 +23,20 @@ struct ScenarioGuidedActionFeatureView: View {
             .sorted { $0.displayName < $1.displayName }
     }
 
+    private var localControls: [ScenarioIntegrationCatalog.FeatureControl] {
+        (coordinator.declarationCatalog?.localFeatureControls ?? [])
+            .sorted { "\($0.featureID):\($0.operationID)" < "\($1.featureID):\($1.operationID)" }
+    }
+
+    private var selectedLocalControl: ScenarioIntegrationCatalog.FeatureControl? {
+        guard let binding = coordinator.draft.featureBinding else { return nil }
+        let operation = coordinator.draft.actionRequirements?.first { $0.lane == .appFeature }?.operationID
+        return localControls.first {
+            $0.featureID == binding.featureID && $0.interfaceDigest == binding.interfaceDigest
+                && $0.operationID == operation
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Picker("App action", selection: Binding(
@@ -36,11 +50,66 @@ struct ScenarioGuidedActionFeatureView: View {
             }
             .accessibilityIdentifier("Declared app action")
             .disabled(coordinator.declarationCatalog == nil)
+            if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+               !coordinator.draft.directControl.intentIdentifier.isEmpty {
+                Text("The selected production action and its typed inputs are verified on every requested route.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if coordinator.declarationCatalog == nil {
                 Label("Rebuild and check support to load the app's actions.", systemImage: "wrench.and.screwdriver")
                     .foregroundStyle(.orange)
             }
 
+            Picker("Feature control", selection: Binding(
+                get: { coordinator.featureBackend },
+                set: { coordinator.featureBackend = $0; coordinator.invalidatePreflight() }
+            )) {
+                Text("Project-local test control").tag(ScenarioFeatureBackend.projectLocalTestControl)
+                Text("Connected app runner").tag(ScenarioFeatureBackend.connectedRunner)
+            }
+            .accessibilityIdentifier("Feature control backend")
+            if coordinator.featureBackend == .projectLocalTestControl {
+                Picker("App feature", selection: Binding(
+                    get: { selectedLocalControl.map { "\($0.featureID):\($0.operationID)" } ?? "" },
+                    set: { key in
+                        guard let control = localControls.first(where: {
+                            "\($0.featureID):\($0.operationID)" == key
+                        }) else { return }
+                        coordinator.selectLocalFeatureControl(
+                            featureID: control.featureID, operationID: control.operationID,
+                            inputMapping: control.parameters.map {
+                                .init(featureInputName: $0.name,
+                                      value: ScenarioDeclaredExpectedValues.initial(for: $0.type) ?? .null)
+                            }
+                        )
+                    }
+                )) {
+                    Text("Choose a local Feature control").tag("")
+                    ForEach(localControls.indices, id: \.self) { index in
+                        let control = localControls[index]
+                        Text(control.featureID).tag("\(control.featureID):\(control.operationID)")
+                    }
+                }
+                .accessibilityIdentifier("Declared app feature")
+                if localControls.isEmpty {
+                    Text("Add a project-local Feature control to the app's test support, then rebuild and check support.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                if let selectedLocalControl {
+                    Text(ScenarioFeatureBackend.projectLocalTestControl.provenanceLabel)
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(selectedLocalControl.parameters, id: \.name) { parameter in
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(parameter.name).frame(width: 150, alignment: .leading)
+                            ScenarioDeclaredExpectedValueEditor(
+                                type: parameter.type,
+                                value: localInput(parameter, control: selectedLocalControl)
+                            )
+                        }
+                        .accessibilityIdentifier("Feature input \(parameter.name)")
+                    }
+                }
+            } else {
             if connectedRunners.count > 1 {
                 Picker("Connected app build", selection: Binding(
                     get: { runnerStore.selectedRunnerID },
@@ -76,6 +145,7 @@ struct ScenarioGuidedActionFeatureView: View {
                     featureInput(field)
                 }
             }
+            }
         }
         .padding(12)
         .workspaceInset(radius: 10)
@@ -102,6 +172,29 @@ struct ScenarioGuidedActionFeatureView: View {
         }
         coordinator.draft.coverage.appFeature = .required
         coordinator.invalidatePreflight()
+    }
+
+    private func localInput(
+        _ parameter: ScenarioIntegrationCatalog.Action.Parameter,
+        control: ScenarioIntegrationCatalog.FeatureControl
+    ) -> Binding<ScenarioValue?> {
+        Binding(get: {
+            coordinator.draft.featureBinding?.inputMapping.first {
+                $0.featureInputName == parameter.name
+            }?.value
+        }, set: { value in
+            guard let value else { return }
+            var inputs = coordinator.draft.featureBinding?.inputMapping ?? []
+            if let index = inputs.firstIndex(where: { $0.featureInputName == parameter.name }) {
+                inputs[index].value = value
+            } else {
+                inputs.append(.init(featureInputName: parameter.name, value: value))
+            }
+            coordinator.selectLocalFeatureControl(
+                featureID: control.featureID, operationID: control.operationID,
+                inputMapping: inputs
+            )
+        })
     }
 
     @ViewBuilder private func featureInput(_ field: DeveloperSubjectInputField) -> some View {

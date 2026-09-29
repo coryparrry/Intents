@@ -8,6 +8,9 @@ struct TaskEntity: AppEntity, Identifiable {
     @Property(title: "Last updated") var updatedAt: Date
     @Property(title: "Invocation context") var invocationContext: String
     @Property(title: "Action receipt") var actionReceiptID: String
+#if DEBUG
+    @Property(title: "Action receipts") var actionReceipts: String
+#endif
     @Property(title: "Integration context") var integrationContext: String
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Task"
@@ -20,13 +23,18 @@ struct TaskEntity: AppEntity, Identifiable {
         )
     }
 
-    init(snapshot: TaskSnapshot, integrationContext: String = "") {
+    init(snapshot: TaskSnapshot, integrationContext: String = "", actionReceipts: String = "[]") {
         id = snapshot.id
         title = snapshot.title
         isComplete = snapshot.isComplete
         updatedAt = snapshot.updatedAt
         invocationContext = snapshot.invocationContext
         actionReceiptID = snapshot.actionReceiptID
+#if DEBUG
+        self.actionReceipts = actionReceipts
+#else
+        _ = actionReceipts
+#endif
         self.integrationContext = integrationContext
     }
 
@@ -37,6 +45,9 @@ struct TaskEntity: AppEntity, Identifiable {
         self.updatedAt = updatedAt
         invocationContext = ""
         actionReceiptID = ""
+#if DEBUG
+        actionReceipts = "[]"
+#endif
         integrationContext = ""
     }
 }
@@ -44,24 +55,39 @@ struct TaskEntity: AppEntity, Identifiable {
 struct TaskEntityQuery: EntityStringQuery {
     func entities(for identifiers: [String]) async throws -> [TaskEntity] {
         let integrationContext = await TaskRepository.shared.integrationContextForEntity
+#if DEBUG
+        let actionReceipts = await TaskActionReceipts.json
+#else
+        let actionReceipts = "[]"
+#endif
         return try await TaskRepository.shared.persistedTasks(identifiers: identifiers).map {
-            TaskEntity(snapshot: $0, integrationContext: integrationContext)
+            TaskEntity(snapshot: $0, integrationContext: integrationContext, actionReceipts: actionReceipts)
         }
     }
 
     func entities(matching string: String) async throws -> [TaskEntity] {
         let matchingIDs = try await TaskRepository.shared.tasks(matching: string).map(\.id)
         let integrationContext = await TaskRepository.shared.integrationContextForEntity
+#if DEBUG
+        let actionReceipts = await TaskActionReceipts.json
+#else
+        let actionReceipts = "[]"
+#endif
         return try await TaskRepository.shared.persistedTasks(identifiers: matchingIDs).map {
-            TaskEntity(snapshot: $0, integrationContext: integrationContext)
+            TaskEntity(snapshot: $0, integrationContext: integrationContext, actionReceipts: actionReceipts)
         }
     }
 
     func suggestedEntities() async throws -> [TaskEntity] {
         let allIDs = try await TaskRepository.shared.tasks().map(\.id)
         let integrationContext = await TaskRepository.shared.integrationContextForEntity
+#if DEBUG
+        let actionReceipts = await TaskActionReceipts.json
+#else
+        let actionReceipts = "[]"
+#endif
         return try await TaskRepository.shared.persistedTasks(identifiers: allIDs).map {
-            TaskEntity(snapshot: $0, integrationContext: integrationContext)
+            TaskEntity(snapshot: $0, integrationContext: integrationContext, actionReceipts: actionReceipts)
         }
     }
 }
@@ -80,9 +106,13 @@ struct CompleteTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        let receipt = try await TaskRepository.shared.complete(
+        let receipt = try await TaskCompletionService.shared.completeFromInvocation(
             taskID: task.id,
-            expectedIntegrationContext: task.integrationContext
+            expectedIntegrationContext: task.integrationContext,
+            context: task.integrationContext,
+            lane: .intentIntegration,
+            kind: .productionIntent,
+            operationID: "CompleteTaskIntent"
         )
         return .result(value: receipt.response)
     }
@@ -103,9 +133,13 @@ struct AttemptContextTaskMutationTestIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        let receipt = try await TaskRepository.shared.complete(
+        let receipt = try await TaskCompletionService.shared.completeFromInvocation(
             taskID: "task-001",
-            expectedIntegrationContext: expectedIntegrationContext
+            expectedIntegrationContext: expectedIntegrationContext,
+            context: expectedIntegrationContext,
+            lane: .intentIntegration,
+            kind: .testSupport,
+            operationID: "AttemptContextTaskMutationTestIntent"
         )
         return .result(value: receipt.response)
     }

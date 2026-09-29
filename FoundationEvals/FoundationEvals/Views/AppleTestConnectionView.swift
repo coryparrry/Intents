@@ -303,10 +303,14 @@ struct AppleTestConnectionView: View {
 
     @ViewBuilder private var connectionStatus: some View {
         if let report = coordinator.preflight {
+            let anyRouteReady = coordinator.routeReadiness.values.contains { $0.state == .ready }
             VStack(alignment: .leading, spacing: 8) {
                 Label(
-                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "selected destination")" : "Finish setup before running",
-                    systemImage: report.isReady ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
+                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "selected destination")"
+                        : (anyRouteReady ? "Some routes are ready on \(selectedDeviceName ?? "selected destination")"
+                            : "Finish setup before running"),
+                    systemImage: report.isReady || anyRouteReady
+                        ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
                 )
                 .foregroundStyle(report.isReady ? .green : .orange)
                 .font(.callout.weight(.semibold))
@@ -320,10 +324,49 @@ struct AppleTestConnectionView: View {
                     }
 
                 }
+                ForEach(ScenarioLane.allCases.filter {
+                    coordinator.draft.coverage[$0] != .notApplicable
+                }) { lane in
+                    if let readiness = coordinator.routeReadiness[lane] {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(lane.title).font(.caption.weight(.semibold))
+                                .frame(width: 130, alignment: .leading)
+                            Text(readiness.backendName ?? defaultBackendName(for: lane))
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text(routeStatus(readiness.state)).font(.caption)
+                                .foregroundStyle(readiness.state == .ready ? Color.green : Color.orange)
+                            Spacer(minLength: 8)
+                        }
+                        Text(readiness.detail)
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if let operation = readiness.supportOperationID {
+                            Text("Readiness support: \(operation)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background((report.isReady ? Color.green : Color.orange).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func routeStatus(_ state: ScenarioRouteReadinessState) -> String {
+        switch state {
+        case .ready: "Ready on selected app and device"
+        case .setupRequired: "Setup required"
+        case .environmentBlocked: "Environment blocked"
+        case .notYetVerified: "Not yet verified"
+        }
+    }
+
+    private func defaultBackendName(for lane: ScenarioLane) -> String {
+        switch lane {
+        case .appFeature: coordinator.featureBackend.provenanceLabel
+        case .intentIntegration: "AppIntentsTesting"
+        case .siri: "CoreTesting Siri driver"
         }
     }
 

@@ -173,6 +173,168 @@ struct IntentLabProjectInstaller: Sendable {
         }
         """
 
+    /// App-target counterpart for project-local feature checks. It links only the
+    /// portable contracts product; the test runner remains in the UI-test target.
+    static let appFeatureTestSupportScaffold = """
+        #if DEBUG && INTENT_LAB_TEST_SUPPORT
+        import AppIntents
+        import Foundation
+        import IntentLabContracts
+
+        /// Register only explicit production service operations here. Each operation
+        /// must call the app's production service and record a productionService receipt
+        /// at that service entry point. Never synthesize a receipt in the wrapper.
+        protocol IntentLabFeatureTestSupport: Sendable {
+            var supportedOperationIDs: Set<String> { get }
+            func prepare(operationID: String, context: String) async throws
+            func invokeFeature(operationID: String, businessInput: String, context: String) async throws -> String
+            func snapshot(operationID: String, context: String) async throws -> String
+            func cleanup(operationID: String, context: String) async throws
+        }
+
+        /// Install the app-owned adapter during app startup before the test intent runs.
+        enum IntentLabFeatureTestSupportRegistry {
+            private static let store = IntentLabFeatureTestSupportStore()
+
+            static var current: (any IntentLabFeatureTestSupport)? { store.current }
+
+            static func install(_ support: any IntentLabFeatureTestSupport) {
+                store.install(support)
+            }
+        }
+
+        private final class IntentLabFeatureTestSupportStore: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value: (any IntentLabFeatureTestSupport)?
+
+            var current: (any IntentLabFeatureTestSupport)? {
+                lock.lock()
+                defer { lock.unlock() }
+                return value
+            }
+
+            func install(_ support: any IntentLabFeatureTestSupport) {
+                lock.lock()
+                defer { lock.unlock() }
+                value = support
+            }
+        }
+
+        @available(iOS 27.0, macOS 27.0, *)
+        struct IntentLabInvokeFeatureIntent: AppIntent {
+            static let title: LocalizedStringResource = "Invoke Intent Lab feature"
+            static let isDiscoverable = false
+            static let openAppWhenRun = true
+
+            @Parameter(title: "Operation") var operationID: String
+            @Parameter(title: "Business input") var businessInput: String
+            @Parameter(title: "Intent Lab context") var context: String
+
+            func perform() async throws -> some IntentResult & ReturnsValue<IntentLabFeatureTestResult> {
+                guard let support = IntentLabFeatureTestSupportRegistry.current else {
+                    throw IntentLabFeatureTestSupportError.notRegistered
+                }
+                guard support.supportedOperationIDs.contains(operationID) else {
+                    throw IntentLabFeatureTestSupportError.unsupportedOperation(operationID)
+                }
+                let response = try await support.invokeFeature(
+                    operationID: operationID,
+                    businessInput: businessInput,
+                    context: context
+                )
+                return .result(value: IntentLabFeatureTestResult(response: response))
+            }
+        }
+
+        @available(iOS 27.0, macOS 27.0, *)
+        struct IntentLabFeatureTestResult: AppEntity, Identifiable {
+            var id: String { response }
+            @Property(title: "Response") var response: String
+
+            static let typeDisplayRepresentation: TypeDisplayRepresentation = "Intent Lab feature response"
+            static let defaultQuery = IntentLabFeatureTestResultQuery()
+            var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\\(response)") }
+
+            init(response: String) { self.response = response }
+        }
+
+        @available(iOS 27.0, macOS 27.0, *)
+        struct IntentLabFeatureTestResultQuery: EntityQuery {
+            func entities(for identifiers: [String]) async throws -> [IntentLabFeatureTestResult] { [] }
+        }
+
+        private enum IntentLabFeatureTestSupportError: LocalizedError {
+            case notRegistered
+            case unsupportedOperation(String)
+
+            var errorDescription: String? {
+                switch self {
+                case .notRegistered: "Register the app-owned Intent Lab feature support before invoking the test intent."
+                case .unsupportedOperation(let operationID): "The app does not support local feature operation \\(operationID)."
+                }
+            }
+        }
+        #endif
+        """
+
+    /// Harmless readiness intent. It is isolated from feature operations and
+    /// returns a typed result plus a caller context echo for freshness checking.
+    static let appReadinessTestSupportScaffold = """
+        #if DEBUG && INTENT_LAB_TEST_SUPPORT
+        import AppIntents
+        import Foundation
+
+        @available(iOS 27.0, macOS 27.0, *)
+        struct IntentLabReadinessIntent: AppIntent {
+            static let title: LocalizedStringResource = "Check Intent Lab app readiness"
+            static let isDiscoverable = false
+            static let openAppWhenRun = true
+
+            @Parameter(title: "Intent Lab context") var context: String
+
+            func perform() async throws -> some IntentResult & ReturnsValue<IntentLabReadinessTestResult> {
+                guard !context.isEmpty else {
+                    throw IntentLabReadinessTestSupportError.invalidContext
+                }
+                return .result(value: IntentLabReadinessTestResult(ready: true, context: context))
+            }
+        }
+
+        /// A successful response proves this Debug-only support intent is present
+        /// in the selected app build. It does not claim that any Feature ran.
+        @available(iOS 27.0, macOS 27.0, *)
+        struct IntentLabReadinessTestResult: AppEntity, Identifiable {
+            var id: String { context }
+            @Property(title: "Ready") var ready: Bool
+            @Property(title: "Context") var context: String
+
+            static let typeDisplayRepresentation: TypeDisplayRepresentation = "Intent Lab app readiness"
+            static let defaultQuery = IntentLabReadinessTestResultQuery()
+            var displayRepresentation: DisplayRepresentation {
+                DisplayRepresentation(title: ready ? "Ready" : "Not ready")
+            }
+
+            init(ready: Bool, context: String) {
+                self.ready = ready
+                self.context = context
+            }
+        }
+
+        @available(iOS 27.0, macOS 27.0, *)
+        struct IntentLabReadinessTestResultQuery: EntityQuery {
+            func entities(for identifiers: [String]) async throws -> [IntentLabReadinessTestResult] { [] }
+        }
+
+        private enum IntentLabReadinessTestSupportError: LocalizedError {
+            case invalidContext
+
+            var errorDescription: String? {
+                "The Intent Lab readiness check requires a non-empty context."
+            }
+        }
+        #endif
+        """
+
     /// Siri-only adapter scaffold. CoreTesting stays independent of AppIntentsTesting.
     static let siriAppAdapterScaffold = """
         import Foundation
@@ -404,6 +566,24 @@ struct IntentLabProjectInstaller: Sendable {
               Set(declaredCapabilities).count == declaredCapabilities.count else {
             return manual(project, request: request, "The integration declaration needs schema v1 identity, intent-lab-v2 support, action and observation lists, isolation, and unique capabilities before setup can advertise build support.")
         }
+        let hasLocalFeatureControls = (declaration["localFeatureControls"] as? [[String: Any]])?.isEmpty == false
+        let hasReadinessKey = declaration["readinessControl"] != nil
+        let readinessControl = declaration["readinessControl"] as? [String: Any]
+        guard !hasReadinessKey || readinessControl.map(Self.validReadinessControl) == true else {
+            return manual(project, request: request,
+                          "Declare readinessControl with the fixed harmless IntentLabReadinessIntent and typed readiness.ready Boolean response.")
+        }
+        let hasReadinessControl = readinessControl != nil
+        let requiresTestOnlyIntent = hasLocalFeatureControls || hasReadinessControl
+        guard hasLocalFeatureControls == declaredCapabilities.contains("local-feature-controls"),
+              requiresTestOnlyIntent == declaredCapabilities.contains("test-only-intent") else {
+            return manual(project, request: request,
+                          "Declare local feature controls with local-feature-controls, and declare test-only-intent when local Feature or readiness support is present.")
+        }
+        if requiresTestOnlyIntent && request.packageProduct != "IntentLabTesting" {
+            return manual(project, request: request,
+                          "Project-local Feature and readiness controls require the IntentLabTesting product. CoreTesting remains Siri-only.")
+        }
         if request.packageProduct == "IntentLabCoreTesting" {
             let sourceImports = request.consumerSource
                 .split(whereSeparator: \.isNewline)
@@ -494,7 +674,13 @@ struct IntentLabProjectInstaller: Sendable {
         let sourceURL = integrationDir.appending(path: "IntentLabScenarioTests.swift")
         let declarationURL = integrationDir.appending(path: "IntentLabIntegration.json")
         let adapterURL = integrationDir.appending(path: "IntentLabAppAdapter.swift")
-        try ensureSafe([pbxURL, schemeURL, sourceURL, declarationURL, adapterURL],
+        let featureSupportURL = projectRoot.appending(path: "IntentLabIntegration/\(appName)/IntentLabFeatureTestSupport.swift")
+        let readinessSupportURL = projectRoot.appending(path: "IntentLabIntegration/\(appName)/IntentLabReadinessTestSupport.swift")
+        let hasAppTestSupport = hasLocalFeatureControls || hasReadinessControl
+        let safeURLs = [pbxURL, schemeURL, sourceURL, declarationURL, adapterURL]
+            + (hasLocalFeatureControls ? [featureSupportURL] : [])
+            + (hasReadinessControl ? [readinessSupportURL] : [])
+        try ensureSafe(safeURLs,
                        roots: [projectRoot] + (workspace.map { [$0] } ?? []))
         if !created {
             if let existingReference = compiledScenarioReference(in: objects, targetID: targetID,
@@ -520,6 +706,28 @@ struct IntentLabProjectInstaller: Sendable {
                 return manual(project, request: request, error.localizedDescription)
             }
         }
+        if hasLocalFeatureControls {
+            do {
+                if let current = try readableContents(at: featureSupportURL),
+                   current != Data(Self.appFeatureTestSupportScaffold.utf8) {
+                    return manual(project, request: request,
+                                  "The app-owned IntentLabFeatureTestSupport.swift differs from the proposed scaffold. Review it manually; setup will not overwrite it.")
+                }
+            } catch let error as IntentLabProjectInstallerError {
+                return manual(project, request: request, error.localizedDescription)
+            }
+        }
+        if hasReadinessControl {
+            do {
+                if let current = try readableContents(at: readinessSupportURL),
+                   current != Data(Self.appReadinessTestSupportScaffold.utf8) {
+                    return manual(project, request: request,
+                                  "The app-owned IntentLabReadinessTestSupport.swift differs from the proposed scaffold. Review it manually; setup will not overwrite it.")
+                }
+            } catch let error as IntentLabProjectInstallerError {
+                return manual(project, request: request, error.localizedDescription)
+            }
+        }
         let nextScheme: Data
         do {
             if created {
@@ -539,6 +747,21 @@ struct IntentLabProjectInstaller: Sendable {
                 try addPackage(to: &document, project: project, targetID: targetID,
                                product: product, packageURL: request.packageURL,
                                revision: request.packageRevision)
+            }
+            if hasLocalFeatureControls {
+                try addPackage(to: &document, project: project,
+                               targetID: request.applicationTargetID,
+                               product: "IntentLabContracts", packageURL: request.packageURL,
+                               revision: request.packageRevision)
+            }
+            if hasAppTestSupport {
+                try setFeatureTestSupportHint(in: &document, targetID: request.applicationTargetID)
+                try attachAppTestSupportSources(
+                    to: &document, project: project, targetID: request.applicationTargetID,
+                    appName: appName, mainGroup: mainGroup,
+                    fileNames: (hasLocalFeatureControls ? ["IntentLabFeatureTestSupport.swift"] : [])
+                        + (hasReadinessControl ? ["IntentLabReadinessTestSupport.swift"] : [])
+                )
             }
             try setHarnessHints(in: &document, targetID: targetID,
                                 declaredCapabilities: declaredCapabilities)
@@ -564,9 +787,17 @@ struct IntentLabProjectInstaller: Sendable {
         ]
         let adapterData = Data(Self.adapterScaffold(for: request.packageProduct).utf8)
         let adapterExists = try readableContents(at: adapterURL) != nil
+        let appFeatureSupport = hasLocalFeatureControls ? [
+            (featureSupportURL, "Add the Debug-only app-owned local feature test support scaffold",
+             Data(Self.appFeatureTestSupportScaffold.utf8))
+        ] : []
+        let appReadinessSupport = hasReadinessControl ? [
+            (readinessSupportURL, "Add the Debug-only harmless app readiness test intent scaffold",
+             Data(Self.appReadinessTestSupportScaffold.utf8))
+        ] : []
         let allCandidates = candidates + (adapterExists ? [] : [
             (adapterURL, "Scaffold an app-owned adapter that fails until implemented", adapterData)
-        ])
+        ]) + appFeatureSupport + appReadinessSupport
         let changes: [IntentLabInstallationChange]
         do {
             changes = try allCandidates.compactMap { url, summary, proposed -> IntentLabInstallationChange? in
@@ -763,11 +994,23 @@ struct IntentLabProjectInstaller: Sendable {
         let workspaceScheme = workspace?.appending(path: "xcshareddata/xcschemes/\(request.scheme).xcscheme")
         let scheme = workspaceScheme.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
             ?? projectScheme
+        let declaration = (try? JSONSerialization.jsonObject(with: request.declarationData)) as? [String: Any]
+        let hasLocalFeatureControls = (declaration?["localFeatureControls"] as? [[String: Any]])?.isEmpty == false
+        let hasReadinessControl = declaration?["readinessControl"] is [String: Any]
+        let appName = inspection.applications.first?.name ?? "App"
         let files = [project.appending(path: "project.pbxproj"),
                      scheme,
                      integrationDir.appending(path: "IntentLabScenarioTests.swift"),
                      integrationDir.appending(path: "IntentLabIntegration.json"),
                      integrationDir.appending(path: "IntentLabAppAdapter.swift")]
+            + (hasLocalFeatureControls ? [
+                project.deletingLastPathComponent()
+                    .appending(path: "IntentLabIntegration/\(appName)/IntentLabFeatureTestSupport.swift")
+            ] : [])
+            + (hasReadinessControl ? [
+                project.deletingLastPathComponent()
+                    .appending(path: "IntentLabIntegration/\(appName)/IntentLabReadinessTestSupport.swift")
+            ] : [])
         try ensureSafe(files, roots: [project.deletingLastPathComponent()] + (workspace.map { [$0] } ?? []))
         return .init(automated: false, filesToReview: files, steps: [
             "Remove only Intent Lab test-source and declaration references from \(targetName), preserving edited adapters.",
@@ -780,17 +1023,41 @@ struct IntentLabProjectInstaller: Sendable {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    private static func validReadinessControl(_ control: [String: Any]) -> Bool {
+        guard control["operationID"] as? String == "intentLabReadiness",
+              control["testIntentIdentifier"] as? String == "IntentLabReadinessIntent",
+              let response = control["response"] as? [String: Any],
+              response["id"] as? String == "readiness.ready",
+              let type = response["type"] as? [String: Any],
+              let boolean = type["primitive"] as? [String: Any],
+              boolean["_0"] as? String == "boolean",
+              let path = response["path"] as? [[String: Any]], path.count == 2 else {
+            return false
+        }
+        return path[0]["kind"] as? String == "property"
+            && path[0]["name"] as? String == "value"
+            && path[0]["index"] == nil
+            && path[1]["kind"] as? String == "property"
+            && path[1]["name"] as? String == "ready"
+            && path[1]["index"] == nil
+    }
+
     private func manual(_ project: URL, request: IntentLabInstallationRequest,
                         _ instruction: String) -> IntentLabInstallationPlan {
         let package = packageDescription(request)
+        let declaration = (try? JSONSerialization.jsonObject(with: request.declarationData)) as? [String: Any]
+        let hasLocalFeatureControls = (declaration?["localFeatureControls"] as? [[String: Any]])?.isEmpty == false
+        let hasReadinessControl = declaration?["readinessControl"] is [String: Any]
         let instructions = """
         # Intent Lab manual integration
 
         1. Review the supplied IntentLabScenarioTests.swift, IntentLabIntegration.json, and IntentLabAppAdapter.swift before adding them to a suitable signed UI-test target.
-        2. Add the \(request.packageProduct) and IntentLabContracts package products to the UI-test target only. Package source: \(request.packageURL.isFileURL ? "choose a local package checkout" : package).
+        2. Add \(request.packageProduct) and IntentLabContracts to the UI-test target. For local feature controls, add only IntentLabContracts to the app target. Package source: \(request.packageURL.isFileURL ? "choose a local package checkout" : package).
         3. Add the UI-test target to a shared test scheme, preserve custom test plans and signing, and set INTENT_LAB_HARNESS_VERSION to intent-lab-v2. Set INTENT_LAB_HARNESS_CAPABILITIES to the capabilities declared in IntentLabIntegration.json.
-        4. The adapter deliberately throws for preparation and observation and reports no supported capabilities. Implement real app-owned operations and change the XCTest entry point to use it before claiming app-state or Siri completion. Never fill observations from expected answers.
-        5. Build and run the separate integration receipt check before running scenarios. Static setup alone does not prove the compiled integration is ready.
+        4. For local feature controls, add IntentLabFeatureTestSupport.swift to the app target and compile it only in Debug with INTENT_LAB_TEST_SUPPORT. Each operation must call the production service and record its productionService receipt there.
+        5. For declared readiness support, add IntentLabReadinessTestSupport.swift to the app target and compile it only in Debug with INTENT_LAB_TEST_SUPPORT. This harmless intent checks that app-target test support was built; it never runs a Feature.
+        6. The XCTest adapter deliberately throws for preparation and observation and reports no supported capabilities. Implement real app-owned operations and change the entry point before claiming app-state or Siri completion. Never fill observations from expected answers.
+        7. Build and run the separate integration receipt check before running scenarios. Static setup alone does not prove the compiled integration is ready.
 
         Automatic setup stopped because: \(instruction)
         """
@@ -807,7 +1074,15 @@ struct IntentLabProjectInstaller: Sendable {
             IntentLabManualIntegrationFile(filename: "IntentLabManualSetup.md",
                                            purpose: "Project and scheme setup instructions",
                                            data: Data(instructions.utf8)),
-        ]
+        ] + (hasLocalFeatureControls ? [
+            IntentLabManualIntegrationFile(filename: "IntentLabFeatureTestSupport.swift",
+                                           purpose: "Debug-only app test-intent and production-service registry scaffold",
+                                           data: Data(Self.appFeatureTestSupportScaffold.utf8))
+        ] : []) + (hasReadinessControl ? [
+            IntentLabManualIntegrationFile(filename: "IntentLabReadinessTestSupport.swift",
+                                           purpose: "Debug-only harmless app readiness intent scaffold",
+                                           data: Data(Self.appReadinessTestSupportScaffold.utf8))
+        ] : [])
         return .init(projectURL: project, workspaceURL: request.workspaceURL,
                      targetName: "", changes: [], manualSteps: [instruction],
                      supported: false, packageSourceDescription: package,
@@ -1014,6 +1289,86 @@ struct IntentLabProjectInstaller: Sendable {
                 .union(declaredCapabilities).sorted()
             try doc.setKey("INTENT_LAB_HARNESS_CAPABILITIES", value: quoted(merged.joined(separator: " ")),
                            in: freshSettings)
+        }
+    }
+
+    private func setFeatureTestSupportHint(in doc: inout OpenStepProjectDocument,
+                                           targetID: String) throws {
+        guard let listID = try doc.scalar(object: targetID, key: "buildConfigurationList"),
+              let configIDs = try doc.object(listID).dictionary?["buildConfigurations"]?.array?.compactMap(\.scalar),
+              !configIDs.isEmpty else {
+            throw IntentLabProjectInstallerError.unsupported("The application target has no build configurations for local feature test support.")
+        }
+        let debugIDs = try configIDs.filter { configID in
+            let name = try doc.scalar(object: configID, key: "name") ?? ""
+            return name.localizedCaseInsensitiveContains("debug")
+        }
+        guard !debugIDs.isEmpty else {
+            throw IntentLabProjectInstallerError.unsupported("The application target has no Debug build configuration for local feature test support.")
+        }
+        for configID in debugIDs {
+            guard let settings = try doc.object(configID).dictionary?["buildSettings"] else {
+                throw IntentLabProjectInstallerError.unsupported("An application Debug configuration has no build settings.")
+            }
+            let current = settings.dictionary?["SWIFT_ACTIVE_COMPILATION_CONDITIONS"]?.scalar ?? "$(inherited) DEBUG"
+            let conditions = Set(current.split(whereSeparator: \.isWhitespace).map(String.init))
+            guard conditions.contains("DEBUG") || conditions.contains("$(inherited)") else {
+                throw IntentLabProjectInstallerError.unsupported("The application Debug configuration does not define DEBUG; local feature test support cannot be excluded from release builds safely.")
+            }
+            let next = conditions.union(["INTENT_LAB_TEST_SUPPORT"]).sorted().joined(separator: " ")
+            try doc.setKey("SWIFT_ACTIVE_COMPILATION_CONDITIONS", value: quoted(next), in: settings)
+        }
+    }
+
+    private func attachAppTestSupportSources(
+        to doc: inout OpenStepProjectDocument,
+        project: URL,
+        targetID: String,
+        appName: String,
+        mainGroup: String,
+        fileNames: [String]
+    ) throws {
+        guard !fileNames.isEmpty else { return }
+        let relativePath = "IntentLabIntegration/\(appName)"
+        let groupID = id("feature-test-support-group-\(appName)", project)
+        let target = try doc.object(targetID)
+        let isSynchronized = target.dictionary?["fileSystemSynchronizedGroups"] != nil
+        if isSynchronized {
+            if try !doc.containsObject(groupID) {
+                try doc.addObject(id: groupID, value: "{isa = PBXFileSystemSynchronizedRootGroup; path = \(quoted(relativePath)); sourceTree = \"<group>\"; }")
+            }
+            try doc.append(groupID, toObject: targetID, key: "fileSystemSynchronizedGroups")
+            try doc.append(groupID, toObject: mainGroup, key: "children")
+            return
+        }
+
+        if try !doc.containsObject(groupID) {
+            try doc.addObject(id: groupID, value: "{isa = PBXGroup; children = (); path = \(quoted(relativePath)); sourceTree = \"<group>\"; }")
+        }
+        try doc.append(groupID, toObject: mainGroup, key: "children")
+        guard let phases = try doc.object(targetID).dictionary?["buildPhases"]?.array else {
+            throw IntentLabProjectInstallerError.unsupported("The application target has no build phases.")
+        }
+        guard let sourcePhaseID = try phases.compactMap(\.scalar).first(where: {
+            try doc.scalar(object: $0, key: "isa") == "PBXSourcesBuildPhase"
+        }) else {
+            throw IntentLabProjectInstallerError.unsupported("The application target has no Swift source phase.")
+        }
+        for fileName in Set(fileNames).sorted() {
+            let fileID = fileName == "IntentLabFeatureTestSupport.swift"
+                ? id("feature-test-support-file-\(appName)", project)
+                : id("app-test-support-file-\(appName)-\(fileName)", project)
+            let buildID = fileName == "IntentLabFeatureTestSupport.swift"
+                ? id("feature-test-support-build-\(appName)", project)
+                : id("app-test-support-build-\(appName)-\(fileName)", project)
+            if try !doc.containsObject(fileID) {
+                try doc.addObject(id: fileID, value: "{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = \(quoted(fileName)); sourceTree = \"<group>\"; }")
+            }
+            if try !doc.containsObject(buildID) {
+                try doc.addObject(id: buildID, value: "{isa = PBXBuildFile; fileRef = \(fileID); }")
+            }
+            try doc.append(fileID, toObject: groupID, key: "children")
+            try doc.append(buildID, toObject: sourcePhaseID, key: "files")
         }
     }
 

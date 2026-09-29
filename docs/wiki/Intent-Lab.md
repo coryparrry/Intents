@@ -2,14 +2,14 @@
 
 [Home](Home.md) · [App feature runners](App-feature-runners.md) · [Data and troubleshooting](Data-and-troubleshooting.md)
 
-Intent Lab connects to your app's developer runner and signed Xcode UI-test target. A saved developer check freezes the request, typed inputs, fixture and expected outcome. Each coordinated run records the selected App Feature, App Intent and Siri routes separately. After changing your app, use **Results → Run again with these requirements** to create fresh evidence against the same check, then read **Compared with retained baseline**. A changed expectation, input, fixture or measurement implementation needs a new requirement; it cannot establish that the original bug was fixed.
+Intent Lab connects to a signed Xcode UI-test target and app-owned test support. A project-local test control is the default App Feature path; a separately connected developer runner remains an explicit alternative. A saved developer check freezes the request, typed inputs, fixture, expected action and outcome. Each coordinated run labels App Feature, direct App Intent and Siri separately. After changing your app, run **Check this fix** on selected routes, then **Verify complete requirement** for all required routes and attempts. A changed expectation, input, fixture, backend or measurement implementation needs a new requirement; it cannot establish that the original bug was fixed.
 
 ## Current developer workflow
 
-1. In **Setup**, connect your Xcode project, scheme, application, UI-test target and destination. **Build and check support** loads the compiled action declaration and verifies installed runner support. If support is missing, review **Add or update test support**. The generated adapter deliberately throws until you implement real preparation and observations in your app. A blank official package revision requires a verified published pin; enter an explicit 40-character commit when connecting an unpublished development checkout.
-2. Connect the running app's developer runner for App Feature input. In **Scenario**, create a developer check. Select the declared **App action**, choose an advertised feature and fill in its typed inputs. Set the request, synthetic fixture and required routes. The editor offers only results and app-state observations published by the compiled declaration. Use **Add expected outcome** to make one complete check; it updates the observation, result projection, claim and assertion together. For AI text, choose **App Feature · captured response** and specify an exact reference or a rubric for later independent assessment.
-3. Save the check, then **Run scenario**. In **Results**, inspect each route and attempt, the captured feature response, independently observed app state, assertions and artifacts. A successful Xcode capture alone does not pass a required check. For a semantic check, open **Assess saved response**, choose an independent judge connection, review and approve its evidence transfer, then assess. You can select an earlier retained judgment or retry saving the selection without running the app again.
-4. Retain the initial run as a baseline, fix the app, and choose **Run again with these requirements**. Review the comparison and qualification. An incomplete route or an unpinned semantic policy cannot qualify as a verified fix. To share the result with automation, choose **Export evidence bundle…** and check it with the [offline evidence command](Intent-Evidence.md) using trusted requirements, source, app build and policy supplied separately.
+1. In **Connect app**, connect your Xcode project, scheme, application, UI-test target and destination. **Build and check support** builds the selected products, runs the harmless connection/readiness methods, and reports each route separately. If support is missing, review **Add or update test support**. The generated adapter deliberately throws until you implement real preparation and observations in your app. A blank official package revision requires a verified published pin; enter an explicit 40-character commit when connecting an unpublished development checkout.
+2. In **Create test**, select the declared production action and, for App Feature, its project-local test control and typed inputs. The app-owned implementation prepares synthetic data, invokes the real service, and reads state back independently. Record the expected action identity and resolved parameters alongside state assertions. A connected runner is available only when you explicitly select that backend and its checked app/feature identity matches. For AI text, choose **App Feature · captured response** and specify an exact reference or a rubric for later independent assessment.
+3. Save the check. Select routes under **Check this fix**, then run a partial diagnostic to inspect a change even if another route is blocked. This result cannot qualify the full requirement. Choose **Verify complete requirement** to run every required route and attempt; optional unavailable routes stay visible as blocked. In **Results**, inspect action receipts, state read-back, cleanup, assertions and artifacts. A successful Xcode capture alone does not pass a required check. For a semantic check, assess the saved response independently; selecting an earlier retained judgment or retrying its save does not rerun the app.
+4. Retain the initial full run as a baseline, fix the app, and run the same frozen requirement against the corrected build. Review the comparison and qualification. A partial run, incomplete route, or unpinned semantic policy cannot qualify as a verified fix. To share the result with automation, choose **Export evidence bundle…** and check it with the [offline evidence command](Intent-Evidence.md) using trusted requirements, source, app build and policy supplied separately.
 5. In **Collections**, create a persistent set from saved checks. **Collection membership and versions** adds or removes checks in a new version and shows the added, removed and changed cases. **Run full collection** captures the whole planned population. **Run selected cases** and **Rerun failed or missing cases** create explicitly partial batches; their green rows do not borrow older results for omitted cases. **Add a reviewed request variation** saves new wording as a separate case only after you approve its expected outcome. **Export selected batch…** retains its scope and denominator.
 
 The older advanced editor and saved v1/v2 evidence remain readable. The details below describe their lower-level setup and fields; the guided flow above is the ordinary path for new checks.
@@ -20,12 +20,12 @@ The **App action** part runs an App Intent directly. The optional **Siri** part 
 
 You need Xcode 27 or later. Your app project needs a shared scheme and a signed UI-test target.
 
-1. Add the `IntentLabTesting` package product to the UI-test target.
-2. Add the method `IntentLabScenarioTests/testIntentLabScenario` to that target.
-3. Add test support that prepares known data, runs the action, observes its result, and connects observations to the run.
+1. Add `IntentLabCoreTesting` to a Siri-only UI-test target. Add `IntentLabTesting` only to targets that use the direct App Intent or project-local Feature transport.
+2. Add `IntentLabScenarioTests/testIntentLabScenario`, `testIntentLabConnection`, and the harmless `testIntentLabReadiness` to the relevant target.
+3. Add app-owned test support that prepares known data, captures the actual production action at entry, reads persisted state independently, cleans up, and exposes a bounded typed action receipt. A project-local Feature control must call the app's production service; the test-only intent and support hooks belong only in development builds.
 4. Use the [integration README](https://github.com/coryparrry/Intents/blob/main/Integration/AppIntentsTesting/README.md) and [fixture app](https://github.com/coryparrry/Intents/tree/main/examples/IntentLabFixture) as developer examples.
 
-For Siri evidence, use a paired physical iPhone with a signed build. Enable Siri and set the scenario language on the device. Make the app's shortcut available to Siri. A simulator or unsigned generic-device build only checks compilation. Intent Lab uses recognized text, not microphone audio.
+For Siri evidence, use a paired physical iPhone with a signed build. Enable Siri and set the scenario language on the device. Make the app's shortcut available to Siri. A simulator can check Core test readiness, but it cannot prove that the production Siri request routed to the intended action. An unsigned generic-device build checks compilation only. Intent Lab uses recognized text, not microphone audio.
 
 Start with a **read-only** action. If an action changes data, your app must prepare isolated synthetic data and enforce permitted operations. It must also observe the new state and clean up. A fixture ID or allowed-action name in Intents does not implement these safeguards.
 
@@ -38,7 +38,7 @@ Start with a **read-only** action. If an action changes data, your app must prep
 5. Read the setup and preflight messages. A physical iPhone is necessary for Siri.
 6. If the app already has test support, select **Build and check support** under **Check installed support**.
 
-**Build and check support** builds the app and reads the integration receipt. It does not run the app action. The destination list can also include a Mac for supported direct checks.
+**Build and check support** builds the app, runs harmless connection/readiness methods, and reads their receipts. It does not run the business action or prove that Siri routed a request correctly. Direct and local Feature readiness require the selected app, UI-test runner, and test bundle to be signed by the same development team. The destination list can also include a Mac for supported direct checks. A Core Siri-only target may remain usable when AppIntentsTesting cannot load in another target.
 
 ### Add missing test support
 
@@ -120,7 +120,7 @@ If you intend a comparison difference, enter it in this section. **Regression** 
 
 1. Read the connection messages and **Before you run** list.
 2. Resolve each error until the header says **Ready to run**.
-3. Select **Run test**. Keep the device available and respond to its prompts.
+3. Select **Check this fix** for the chosen diagnostic routes, or **Verify complete requirement** for all required routes and attempts. Keep the device available and respond to its prompts.
 4. Open **Results** and select the saved run.
 5. Read the overall result and each part's attempts, assertions, observations, diagnostics, artifacts, environment, and release requirement.
 
