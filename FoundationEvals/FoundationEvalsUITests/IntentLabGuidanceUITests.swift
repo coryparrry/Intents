@@ -126,8 +126,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         XCTAssertTrue(app.popUpButtons["Declared app action"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.popUpButtons["Feature control backend"].exists)
         XCTAssertTrue(app.popUpButtons["Declared app feature"].exists)
-        XCTAssertTrue(app.buttons["Verify complete requirement"].exists)
-        XCTAssertFalse(app.buttons["Check this fix"].isEnabled)
+        assertRunCheckMenuOffersCompleteCheckWithoutDiagnostic(app)
         XCTAssertFalse(app.textFields["OpenNoteIntent"].exists, "Stable checks select the compiled action")
         XCTAssertTrue(app.staticTexts["Rebuild and check support to choose an observable result."].exists)
         XCTAssertFalse(app.textFields["Optional feature run UUID"].exists)
@@ -164,7 +163,34 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.sheets.buttons["Cancel"].firstMatch.click()
         XCTAssertTrue(app.buttons["Connect app…"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["Project connected"].exists)
-        XCTAssertTrue(app.buttons["Verify complete requirement"].exists)
+        assertRunCheckMenuOffersCompleteCheckWithoutDiagnostic(app)
+    }
+
+    @MainActor
+    private func assertRunCheckMenuOffersCompleteCheckWithoutDiagnostic(
+        _ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let runCheck = app.descendants(matching: .any)["Run check"].firstMatch
+        guard runCheck.waitForExistence(timeout: 5) else {
+            XCTFail("The Run check menu must remain available", file: file, line: line)
+            return
+        }
+        XCTAssertTrue(runCheck.isHittable, file: file, line: line)
+        runCheck.click()
+        defer { app.typeKey(.escape, modifierFlags: []) }
+
+        let completeCheck = app.menuItems["Verify complete requirement"]
+        guard completeCheck.waitForExistence(timeout: 3) else {
+            XCTFail("Run check must offer a complete requirement check", file: file, line: line)
+            return
+        }
+        XCTAssertTrue(completeCheck.isEnabled, file: file, line: line)
+        let diagnostic = app.menuItems["Check this fix"]
+        guard diagnostic.exists else {
+            XCTFail("Run check must offer the partial diagnostic", file: file, line: line)
+            return
+        }
+        XCTAssertFalse(diagnostic.isEnabled, "A diagnostic requires selected lanes", file: file, line: line)
     }
 
     @MainActor
