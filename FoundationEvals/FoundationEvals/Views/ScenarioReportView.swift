@@ -206,11 +206,7 @@ struct ScenarioReportView: View {
                         Text("Before: \(display(before))").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
-                ForEach(result.assertionResults) { assertion in
-                    Label(assertion.message, systemImage: assertion.passed ? "checkmark.circle" : "xmark.circle")
-                        .font(.caption)
-                        .foregroundStyle(assertion.passed ? .green : .red)
-                }
+                assertionRows(result.assertionResults)
                 if let child = item?.evidenceRunID.flatMap({ id in coordinator.runs.first { $0.id == id } }) {
                     ForEach(result.artifacts) { artifact in
                         Link(destination: coordinator.artifactURL(run: child, artifact: artifact)) {
@@ -235,6 +231,14 @@ struct ScenarioReportView: View {
         }
         .padding(10)
         .workspaceInset(radius: 8)
+    }
+
+    private func assertionRows(_ results: [ScenarioAssertionResult]) -> some View {
+        ForEach(results) { assertion in
+            Label(assertion.message, systemImage: assertion.passed ? "checkmark.circle" : "xmark.circle")
+                .font(.caption)
+                .foregroundStyle(assertion.passed ? .green : .red)
+        }
     }
 
     private func reloadAssessmentDecision() async {
@@ -494,11 +498,7 @@ struct ScenarioReportView: View {
                     }
                 }
             }
-            ForEach(result.assertionResults) { assertion in
-                Label(assertion.message, systemImage: assertion.passed ? "checkmark.circle" : "xmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(assertion.passed ? .green : .red)
-            }
+            assertionRows(result.assertionResults)
             if !result.artifacts.isEmpty {
                 HStack(spacing: 10) {
                     ForEach(result.artifacts) { artifact in

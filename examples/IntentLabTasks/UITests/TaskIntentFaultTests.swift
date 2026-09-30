@@ -340,6 +340,114 @@ final class TaskIntentFaultTests: XCTestCase {
         XCTAssertEqual(status["task-002"], "Incomplete")
     }
 
+    func testDirectProbePreservesParameterOrderMissingValuesAndLegacyResponseAlias() async throws {
+        let integration = TaskIntegration()
+        let context = "probe-v1-\(UUID().uuidString)"
+        let application = try integration.prepare(
+            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+            context: context,
+            operationID: TaskIntegration.preparationOperation
+        )
+        defer { application.terminate() }
+        var scenario = try probeScenario(context: context, schemaVersion: 1)
+        // The final supplied value wins; a later missing value does not clear it.
+        scenario.directControl.parameters.insert(.init(
+            name: "expectedIntegrationContext", type: .primitive(.string),
+            isOptional: false, presence: .value(.string("stale-context"))
+        ), at: 0)
+        scenario.directControl.parameters.append(.init(
+            name: "expectedIntegrationContext", type: .primitive(.string),
+            isOptional: true, presence: .missing
+        ))
+
+        let observations = try await IntentProbe.run(scenario)
+        XCTAssertEqual(observations, [
+            "response": .string("Completed Buy milk."),
+            "visibleResponse": .string("Completed Buy milk."),
+        ])
+        XCTAssertEqual(try readStatusesAfterReopen(application)["task-001"], "Complete")
+    }
+
+    func testDirectProbeRunsBeforeDuplicateProjectionValidation() async throws {
+        let integration = TaskIntegration()
+        let context = "probe-v2-\(UUID().uuidString)"
+        let application = try integration.prepare(
+            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+            context: context,
+            operationID: TaskIntegration.preparationOperation
+        )
+        defer { application.terminate() }
+        var scenario = try probeScenario(context: context, schemaVersion: 2)
+        scenario.directControl.outputFields.append(scenario.directControl.outputFields[0])
+
+        do {
+            _ = try await IntentProbe.run(scenario)
+            XCTFail("Duplicate output names must fail after the intent invocation.")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "The value for response does not match its declared type.")
+        }
+        XCTAssertEqual(try readStatusesAfterReopen(application)["task-001"], "Complete")
+    }
+
+    func testReadinessTransportInvokesFrameworkIntentAndReturnsTypedReadyValue() async throws {
+        let integration = TaskIntegration()
+        let context = "probe-readiness-\(UUID().uuidString)"
+        let application = try integration.prepare(
+            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+            context: context,
+            operationID: TaskIntegration.preparationOperation
+        )
+        defer { application.terminate() }
+        let declarationURL = try XCTUnwrap(
+            Bundle(for: TaskIntegration.self).url(forResource: "IntentLabIntegration", withExtension: "json")
+        )
+        let declaration = try JSONDecoder.intentLab.decode(
+            IntentLabIntegrationDeclaration.self, from: Data(contentsOf: declarationURL)
+        )
+        let result = try await IntentLabReadinessTestIntentTransport.invoke(
+            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+            declaration: declaration,
+            context: context
+        )
+        XCTAssertEqual(result.observations, ["readiness.ready": .boolean(true)])
+        let statuses = try readStatusesAfterReopen(application)
+        XCTAssertEqual(statuses["task-001"], "Incomplete")
+        XCTAssertEqual(statuses["task-002"], "Incomplete")
+    }
+
+    private func probeScenario(context: String, schemaVersion: Int) throws -> IntentLabScenario {
+        let parameters = [IntentLabParameter(
+            name: "expectedIntegrationContext", type: .primitive(.string),
+            isOptional: false, presence: .value(.string(context))
+        )]
+        let outputs = [IntentLabOutputField(
+            name: "response", type: .primitive(.string),
+            path: schemaVersion == 2 ? [.init(kind: .property, name: "value")] : nil
+        )]
+        let json: [String: Any] = [
+            "schemaVersion": schemaVersion,
+            "id": UUID().uuidString,
+            "version": 1,
+            "definitionDigest": String(repeating: "a", count: 64),
+            "target": ["bundleIdentifier": TaskIntegration.testingBundleIdentifier],
+            "goal": ["requestText": "Complete Buy milk", "languageCode": "en"],
+            "fixture": ["id": "task-fixture", "version": "1", "digest": String(repeating: "b", count: 64),
+                        "preparationOperation": TaskIntegration.preparationOperation,
+                        "cleanupOperation": TaskIntegration.cleanupOperation],
+            "directControl": [
+                "intentIdentifier": "AttemptContextTaskMutationTestIntent",
+                "parameters": try JSONSerialization.jsonObject(with: JSONEncoder.intentLab.encode(parameters)),
+                "outputFields": try JSONSerialization.jsonObject(with: JSONEncoder.intentLab.encode(outputs)),
+            ],
+            "assertions": [],
+            "coverage": ["appFeature": "notApplicable", "intentIntegration": "required", "siri": "notApplicable"],
+            "safety": ["deadlineSeconds": 30],
+        ]
+        return try JSONDecoder.intentLab.decode(
+            IntentLabScenario.self, from: JSONSerialization.data(withJSONObject: json)
+        )
+    }
+
     private func awaitContextMutation(bundleIdentifier: String, context: String) async throws -> String {
         let definitions = IntentDefinitions(bundleIdentifier: bundleIdentifier)
         var intent = definitions.intents["AttemptContextTaskMutationTestIntent"].makeIntent()

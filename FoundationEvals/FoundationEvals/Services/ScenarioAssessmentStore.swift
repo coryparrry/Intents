@@ -593,19 +593,9 @@ actor ScenarioAssessmentStore {
               journal.invocation == run.invocation,
               journal.scope == ScenarioNativeExecutionScope(lane: .appFeature, attempt: 1),
               ScenarioReleaseCheckEvaluator.evidenceAcceptedJournal(for: run, in: [journal]),
-              coordinate.evidenceDigest == (try? nativeRunDigest(run)) else {
+              coordinate.evidenceDigest == (try? ScenarioNativeRunEvidence.digest(run)) else {
             throw ScenarioAssessmentStoreError.invalidBinding("accepted local Feature run, invocation, journal, or checked build")
         }
-    }
-
-    private static func nativeRunDigest(_ run: ScenarioRun) throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .iso8601
-        var immutableRun = run
-        immutableRun.acceptanceStatus = .pending
-        return SHA256.hash(data: try encoder.encode(immutableRun))
-            .map { String(format: "%02x", $0) }.joined()
     }
 
     private static func validate(

@@ -115,7 +115,6 @@ enum XcodeConnectionDiscoveryError: LocalizedError, Sendable {
     case invalidOutput(String)
     case noSchemes
     case noApplication
-    case noUITestTarget
 
     var errorDescription: String? {
         switch self {
@@ -124,7 +123,6 @@ enum XcodeConnectionDiscoveryError: LocalizedError, Sendable {
         case .invalidOutput(let detail): "Xcode returned invalid discovery data: \(detail)"
         case .noSchemes: "The selected container has no shared schemes."
         case .noApplication: "No application target was found."
-        case .noUITestTarget: "No signed UI-test target was found. Add the Intent Lab harness to a UI-test target first."
         }
     }
 }

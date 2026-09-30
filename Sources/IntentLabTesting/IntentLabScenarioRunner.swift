@@ -54,27 +54,17 @@ public enum IntentLabScenarioRunner {
         context: String,
         deadlineSeconds: TimeInterval
     ) throws -> [String: IntentLabValue] {
-        let completed = XCTestExpectation(description: "Local feature test intent completed")
-        var result: Result<IntentLabTestIntentResult, Error>?
-        let task = Task { @MainActor in
-            do {
-                result = .success(try await IntentLabTestIntentTransport.invoke(
-                    bundleIdentifier: bundleIdentifier,
-                    control: control,
-                    parameters: parameters,
-                    context: context
-                ))
-            } catch {
-                result = .failure(error)
-            }
-            completed.fulfill()
+        try boundedObservations(
+            description: "Local feature test intent completed",
+            deadlineSeconds: deadlineSeconds
+        ) {
+            try await IntentLabTestIntentTransport.invoke(
+                bundleIdentifier: bundleIdentifier,
+                control: control,
+                parameters: parameters,
+                context: context
+            ).observations
         }
-        defer { task.cancel() }
-        guard XCTWaiter.wait(for: [completed], timeout: deadlineSeconds) == .completed,
-              let result else {
-            throw IntentLabDirectIntentTimeout()
-        }
-        return try result.get().observations
     }
 
     private static func readinessObservations(
@@ -83,40 +73,48 @@ public enum IntentLabScenarioRunner {
         context: String,
         deadlineSeconds: TimeInterval
     ) throws -> [String: IntentLabValue] {
-        let completed = XCTestExpectation(description: "IntentLab readiness intent completed")
-        var result: Result<IntentLabReadinessTestIntentResult, Error>?
-        let task = Task { @MainActor in
-            do {
-                result = .success(try await IntentLabReadinessTestIntentTransport.invoke(
-                    bundleIdentifier: bundleIdentifier,
-                    declaration: declaration,
-                    context: context
-                ))
-            } catch {
-                result = .failure(error)
-            }
-            completed.fulfill()
+        try boundedObservations(
+            description: "IntentLab readiness intent completed",
+            deadlineSeconds: deadlineSeconds
+        ) {
+            try await IntentLabReadinessTestIntentTransport.invoke(
+                bundleIdentifier: bundleIdentifier,
+                declaration: declaration,
+                context: context
+            ).observations
         }
-        defer { task.cancel() }
-        guard XCTWaiter.wait(for: [completed], timeout: deadlineSeconds) == .completed,
-              let result else {
-            throw IntentLabDirectIntentTimeout()
-        }
-        return try result.get().observations
     }
 
     // Siri remains on XCTest's synchronous invocation stack while direct intents
     // run in a bounded task. A timed-out action fences all later attempts.
     private static func directObservations(for scenario: IntentLabScenario) throws -> [String: IntentLabValue] {
-        let completed = XCTestExpectation(description: "Direct intent completed")
+        try boundedObservations(
+            description: "Direct intent completed",
+            deadlineSeconds: scenario.safety.deadlineSeconds
+        ) {
+            try await IntentProbe.run(scenario)
+        }
+    }
+
+    // Internal so focused tests can exercise the wait/cancel boundary without
+    // launching an application or substituting a different intent transport.
+    static func boundedObservations(
+        description: String,
+        deadlineSeconds: TimeInterval,
+        wait: ([XCTestExpectation], TimeInterval) -> XCTWaiter.Result = {
+            XCTWaiter.wait(for: $0, timeout: $1)
+        },
+        operation: @escaping @MainActor () async throws -> [String: IntentLabValue]
+    ) throws -> [String: IntentLabValue] {
+        let completed = XCTestExpectation(description: description)
         var result: Result<[String: IntentLabValue], Error>?
         let task = Task { @MainActor in
-            do { result = .success(try await IntentProbe.run(scenario)) }
+            do { result = .success(try await operation()) }
             catch { result = .failure(error) }
             completed.fulfill()
         }
         defer { task.cancel() }
-        guard XCTWaiter.wait(for: [completed], timeout: scenario.safety.deadlineSeconds) == .completed,
+        guard wait([completed], deadlineSeconds) == .completed,
               let result else {
             throw IntentLabDirectIntentTimeout()
         }

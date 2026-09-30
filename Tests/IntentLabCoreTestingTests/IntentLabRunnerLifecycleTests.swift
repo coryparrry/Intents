@@ -307,7 +307,9 @@ final class IntentLabRunnerLifecycleTests: XCTestCase {
     }
 
     func testLocalFeatureInputMappingUsesDeclaredNamesAndTypes() throws {
-        let parameter = try decodeFeatureParameter(name: "prompt", required: true)
+        let parameter = IntentLabIntegrationDeclaration.Parameter(
+            name: "prompt", type: .primitive(.string), required: true
+        )
         let mapping = [IntentLabFeatureBinding.InputMapping(
             featureInputName: "prompt", value: .string("Summarize the note")
         )]
@@ -500,31 +502,6 @@ final class IntentLabRunnerLifecycleTests: XCTestCase {
         XCTAssertEqual(lane.actionReceipts?.first?.kind, .productionService)
         XCTAssertEqual(lane.actionReceipts?.first?.observationTransport, "accessibleUI")
         XCTAssertTrue(lane.claims?.contains(.returnedValueChecked) == true)
-    }
-
-    private func decodeFeatureParameter(
-        name: String,
-        required: Bool
-    ) throws -> IntentLabIntegrationDeclaration.Parameter {
-        let data = try JSONEncoder.intentLab.encode(EnvelopeShape(parameters: [
-            .init(name: name, type: .primitive(.string), required: required)
-        ]))
-        return try XCTUnwrap(
-            JSONDecoder.intentLab.decode(Envelope.self, from: data).parameters.first
-        )
-    }
-
-    private struct EnvelopeShape: Codable {
-        var parameters: [ParameterShape]
-        struct ParameterShape: Codable {
-            var name: String
-            var type: IntentLabValueType
-            var required: Bool
-        }
-    }
-
-    private struct Envelope: Codable {
-        var parameters: [IntentLabIntegrationDeclaration.Parameter]
     }
 
     private func localFeatureScenario(

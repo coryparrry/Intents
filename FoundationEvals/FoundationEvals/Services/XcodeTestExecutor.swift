@@ -416,7 +416,6 @@ enum XcodeTestExecutorError: LocalizedError, Sendable {
     case buildFailed(Int32, String)
     case productMissing(String)
     case resourceMismatch(String)
-    case testFailed(Int32, String)
     case evidenceMissing
     case cancelled
     case timedOut
@@ -432,7 +431,6 @@ enum XcodeTestExecutorError: LocalizedError, Sendable {
         case .buildFailed(let code, let log): "The UI-test bundle failed to build (exit \(code)). \(log)"
         case .productMissing(let message): "The built product could not be verified: \(message)"
         case .resourceMismatch(let message): "The generated test resources are invalid: \(message)"
-        case .testFailed(let code, let log): "The UI test failed (exit \(code)). Partial evidence was retained. \(log)"
         case .evidenceMissing: "The result bundle contains no IntentLabEvidence JSON attachment."
         case .cancelled: "The scenario execution was cancelled. Its final device-side outcome is not assumed."
         case .timedOut: "The scenario execution exceeded its deadline. Late evidence remains bound to this timed-out invocation."
@@ -1145,7 +1143,7 @@ actor XcodeTestExecutor {
             deadline: .seconds(900)
         )
         guard buildExit == 0 else {
-            throw XcodeTestExecutorError.connectionCheck("UI-test build failed (exit \(buildExit)). \(tail(of: log))")
+            throw XcodeTestExecutorError.connectionCheck("UI-test build failed (exit \(buildExit)). \(Self.tail(of: log))")
         }
         let paths = try XCTestRunInvocationTransport.resolveProducts(
             derivedData: derivedData, testTarget: configuration.testTarget,
@@ -1170,7 +1168,7 @@ actor XcodeTestExecutor {
             configuration: configuration, resultBundle: resultBundle
         )
         guard testExit == 0, connectionTestCount == 1 else {
-            let logTail = tail(of: log)
+            let logTail = Self.tail(of: log)
             let kind = Self.connectionEnvironmentFailure(
                 testExit: testExit, testCount: connectionTestCount,
                 failureMessages: resultBundleFailureMessages(
@@ -1271,7 +1269,7 @@ actor XcodeTestExecutor {
             let testTeam = Self.signingTeamIdentifier(of: paths.testBundleURL)
             let adHocSignaturesValid = configuration.destinationPlatform == .iOSSimulator
                 && [paths.appBundleURL, paths.testHostURL, paths.testBundleURL]
-                    .allSatisfy(Self.validAdHocSignature)
+                    .allSatisfy { Self.validAdHocSignature(of: $0) }
             guard Self.signingAcceptedForReadiness(
                 configuration: configuration,
                 runtimePlatform: verified.runtimeProfile?.destinationPlatform,
@@ -1325,7 +1323,7 @@ actor XcodeTestExecutor {
             let count = resultBundleTestCount(configuration: configuration, resultBundle: probeResultBundle)
             probe.failureState = count == 0 ? .setupRequired : .environmentBlocked
             probe.globalFailure = true
-            probe.issue = "The runtime readiness probe did not verify this route: \(error.localizedDescription) \(tail(of: probeLog))"
+            probe.issue = "The runtime readiness probe did not verify this route: \(error.localizedDescription) \(Self.tail(of: probeLog))"
         }
         var result = verified
         result.readinessProbe = probe
@@ -1673,7 +1671,10 @@ actor XcodeTestExecutor {
         )
     }
 
-    private static func commandOutput(_ executable: String, _ arguments: [String]) -> String? {
+    /// The projections below intentionally keep different output-size and empty-output policies.
+    private static func captureStandardOutput(
+        _ executable: String, _ arguments: [String]
+    ) -> (status: Int32, data: Data)? {
         let process = Process()
         process.executableURL = URL(filePath: executable)
         process.arguments = arguments
@@ -1683,8 +1684,14 @@ actor XcodeTestExecutor {
         do { try process.run() } catch { return nil }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        guard process.terminationStatus == 0, data.count < 16_000 else { return nil }
-        let value = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (process.terminationStatus, data)
+    }
+
+    static func commandOutput(_ executable: String, _ arguments: [String]) -> String? {
+        guard let output = captureStandardOutput(executable, arguments),
+              output.status == 0, output.data.count < 16_000 else { return nil }
+        let value = String(decoding: output.data, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
 
@@ -1717,22 +1724,16 @@ actor XcodeTestExecutor {
         return nil
     }
 
-    private static func commandData(_ executable: String, _ arguments: [String]) -> Data? {
-        let process = Process()
-        process.executableURL = URL(filePath: executable)
-        process.arguments = arguments
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return process.terminationStatus == 0 && data.count <= 1_000_000 ? data : nil
+    static func commandData(_ executable: String, _ arguments: [String]) -> Data? {
+        guard let output = captureStandardOutput(executable, arguments),
+              output.status == 0, output.data.count <= 1_000_000 else { return nil }
+        return output.data
     }
 
-    private static func signingTeamIdentifier(of bundle: URL) -> String? {
+    /// Each projection performs its own strict verification before inspecting the same bundle.
+    private static func strictSigningLines(of bundle: URL, codesignPath: String) -> [Substring]? {
         let verify = Process()
-        verify.executableURL = URL(filePath: "/usr/bin/codesign")
+        verify.executableURL = URL(filePath: codesignPath)
         verify.arguments = ["--verify", "--strict", bundle.path]
         verify.standardOutput = FileHandle.nullDevice
         verify.standardError = FileHandle.nullDevice
@@ -1741,7 +1742,7 @@ actor XcodeTestExecutor {
         guard verify.terminationStatus == 0 else { return nil }
 
         let inspect = Process()
-        inspect.executableURL = URL(filePath: "/usr/bin/codesign")
+        inspect.executableURL = URL(filePath: codesignPath)
         inspect.arguments = ["-dv", "--verbose=4", bundle.path]
         let output = Pipe()
         inspect.standardOutput = FileHandle.nullDevice
@@ -1750,35 +1751,23 @@ actor XcodeTestExecutor {
         let data = output.fileHandleForReading.readDataToEndOfFile()
         inspect.waitUntilExit()
         guard inspect.terminationStatus == 0, data.count < 16_000 else { return nil }
-        let lines = String(decoding: data, as: UTF8.self).split(separator: "\n")
-        guard let value = lines.first(where: { $0.hasPrefix("TeamIdentifier=") }) else { return nil }
+        return String(decoding: data, as: UTF8.self).split(separator: "\n")
+    }
+
+    static func signingTeamIdentifier(
+        of bundle: URL, codesignPath: String = "/usr/bin/codesign"
+    ) -> String? {
+        guard let lines = strictSigningLines(of: bundle, codesignPath: codesignPath),
+              let value = lines.first(where: { $0.hasPrefix("TeamIdentifier=") }) else { return nil }
         let team = value.dropFirst("TeamIdentifier=".count)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return team.isEmpty || team == "not set" ? nil : team
     }
 
-    private static func validAdHocSignature(of bundle: URL) -> Bool {
-        let verify = Process()
-        verify.executableURL = URL(filePath: "/usr/bin/codesign")
-        verify.arguments = ["--verify", "--strict", bundle.path]
-        verify.standardOutput = FileHandle.nullDevice
-        verify.standardError = FileHandle.nullDevice
-        do { try verify.run() } catch { return false }
-        verify.waitUntilExit()
-        guard verify.terminationStatus == 0 else { return false }
-
-        let inspect = Process()
-        inspect.executableURL = URL(filePath: "/usr/bin/codesign")
-        inspect.arguments = ["-dv", "--verbose=4", bundle.path]
-        inspect.standardOutput = FileHandle.nullDevice
-        let output = Pipe()
-        inspect.standardError = output
-        do { try inspect.run() } catch { return false }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        inspect.waitUntilExit()
-        guard inspect.terminationStatus == 0, data.count < 16_000 else { return false }
-        return String(decoding: data, as: UTF8.self).split(separator: "\n")
-            .contains("Signature=adhoc")
+    static func validAdHocSignature(
+        of bundle: URL, codesignPath: String = "/usr/bin/codesign"
+    ) -> Bool {
+        strictSigningLines(of: bundle, codesignPath: codesignPath)?.contains("Signature=adhoc") == true
     }
 
     static func signingAcceptedForReadiness(
@@ -2714,7 +2703,7 @@ actor XcodeTestExecutor {
                     journal.updatedAt = Date()
                     try await persistence.saveJournal(journal)
                     reservations[configuration.destinationIdentifier] = nil
-                    throw XcodeTestExecutorError.buildFailed(buildExit, tail(of: buildLog))
+                    throw XcodeTestExecutorError.buildFailed(buildExit, Self.tail(of: buildLog))
                 }
                 productPaths = try XCTestRunInvocationTransport.resolveProducts(
                     derivedData: derivedData,
@@ -3303,10 +3292,21 @@ actor XcodeTestExecutor {
         return nil
     }
 
-    private func tail(of url: URL, maximumBytes: Int = 8_000) -> String {
-        guard let data = try? Data(contentsOf: url) else { return "See the retained build log." }
-        return String(decoding: data.suffix(maximumBytes), as: UTF8.self)
-            .split(separator: "\n").suffix(20).joined(separator: "\n")
+    /// Callers supply regular logs after their writer has stopped.
+    static func tail(of url: URL, maximumBytes: Int = 8_000) -> String {
+        precondition(maximumBytes >= 0)
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            let length = try handle.seekToEnd()
+            let suffixLength = min(length, UInt64(maximumBytes))
+            try handle.seek(toOffset: length - suffixLength)
+            let data = try handle.read(upToCount: Int(suffixLength)) ?? Data()
+            return String(decoding: data, as: UTF8.self)
+                .split(separator: "\n").suffix(20).joined(separator: "\n")
+        } catch {
+            return "See the retained build log."
+        }
     }
 
     private func randomNonce() -> String {
