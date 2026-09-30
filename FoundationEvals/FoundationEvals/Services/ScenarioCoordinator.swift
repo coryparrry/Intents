@@ -1323,7 +1323,7 @@ final class ScenarioCoordinator {
         }
         do {
             let runConfiguration = configuration
-            let connection = try await executor.verifyConnection(
+            let connection = try await executor.connectionForExecution(
                 definition: definition, configuration: runConfiguration,
                 projectTrusted: projectTrusted
             )

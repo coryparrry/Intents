@@ -1361,6 +1361,17 @@ struct ScenarioContractsTests {
         #expect(sameGeneration.testRunURL == connection.testRunURL)
         #expect(sameGeneration.appProduct == connection.appProduct)
         #expect(sameGeneration.buildGenerationDigest == connection.buildGenerationDigest)
+        var requirementsOnlyEdit = definition
+        requirementsOnlyEdit.version += 1
+        requirementsOnlyEdit.safety.deadlineSeconds = 90
+        requirementsOnlyEdit = try requirementsOnlyEdit.frozen()
+        let sameCheckedProducts = try #require(XcodeTestExecutor.validatedReusableConnection(
+            connection, definition: requirementsOnlyEdit, configuration: configuration,
+            currentRuntimeProfile: runtime
+        ))
+        #expect(sameCheckedProducts.testRunURL == connection.testRunURL)
+        #expect(sameCheckedProducts.buildGenerationDigest == connection.buildGenerationDigest)
+        #expect(sameCheckedProducts.buildInputsDigest == connection.buildInputsDigest)
         try Data("struct Feature { let changed = true }".utf8).write(to: source)
         #expect(reused() == nil)
         try sourceBytes.write(to: source)
@@ -1382,6 +1393,11 @@ struct ScenarioContractsTests {
         try Data("changed test invocation metadata".utf8).write(to: products.sourceURL)
         #expect(reused() == nil)
         try testRunBytes.write(to: products.sourceURL)
+        #expect(reused() != nil)
+        let declarationFile = products.testBundleURL.appending(path: "IntentLabIntegration.json")
+        try Data("changed compiled declaration".utf8).write(to: declarationFile)
+        #expect(reused() == nil)
+        try declaration.write(to: declarationFile)
         #expect(reused() != nil)
         var changedConfiguration = configuration
         changedConfiguration.scheme = "DifferentScheme"
