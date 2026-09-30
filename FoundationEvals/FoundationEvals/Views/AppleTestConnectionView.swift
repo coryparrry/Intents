@@ -48,17 +48,17 @@ struct AppleTestConnectionView: View {
         }
         .fileDialogMessage("Choose the app's Xcode project or workspace.")
         .fileDialogConfirmationLabel("Choose Project")
-        .confirmationDialog(
+        .workspaceAlert(
             "Connect this app?",
-            isPresented: $showingConnectionApproval
-        ) {
-            Button("Connect app") {
-                Task { await coordinator.approveBuildAndDiscover() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("We’ll ask Xcode to find your app and test settings. Connecting also allows Xcode to run this project’s build scripts and resolve dependencies when needed. Approval lasts until you quit Intents.")
-        }
+            message: "We’ll ask Xcode to find your app and test settings. Connecting also allows Xcode to run this project’s build scripts and resolve dependencies when needed. Approval lasts until you quit Intents.",
+            isPresented: $showingConnectionApproval,
+            buttons: [
+                WorkspaceAlertButton("Cancel", isCancel: true),
+                WorkspaceAlertButton("Connect app") {
+                    Task { await coordinator.approveBuildAndDiscover() }
+                }
+            ]
+        )
         .onChange(of: coordinator.configuration.destinationIdentifier) { _, identifier in
             Task { await coordinator.selectDevice(identifier) }
         }

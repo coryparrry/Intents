@@ -87,17 +87,15 @@ struct IntentLabView: View {
         .onChange(of: coordinator.draft.coverage) { _, coverage in
             diagnosticLanes = diagnosticLanes.filter { coverage[$0] != .notApplicable }
         }
-        .alert(
+        .workspaceAlert(
             "Intent Lab",
+            message: coordinator.notice ?? "",
             isPresented: Binding(
                 get: { coordinator.notice != nil },
                 set: { if !$0 { coordinator.notice = nil } }
-            )
-        ) {
-            Button("OK") { coordinator.notice = nil }
-        } message: {
-            Text(coordinator.notice ?? "")
-        }
+            ),
+            buttons: [WorkspaceAlertButton("OK")]
+        )
     }
 }
 

@@ -169,10 +169,64 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.buttons["OKButton"].click()
         let connect = app.sheets.buttons["Connect app"].firstMatch
         XCTAssertTrue(connect.waitForExistence(timeout: 5), "Choosing the file should offer connection immediately")
+        XCTAssertTrue(app.sheets.staticTexts.containing(NSPredicate(
+            format: "label BEGINSWITH %@", "Connect this app?"
+        )).firstMatch.exists)
+        XCTAssertTrue(app.sheets.staticTexts.containing(NSPredicate(
+            format: "label CONTAINS %@", "Approval lasts until you quit Intents."
+        )).firstMatch.exists)
+        XCTAssertTrue(connect.isHittable)
+        XCTAssertTrue(app.sheets.buttons["Cancel"].firstMatch.isHittable)
         app.sheets.buttons["Cancel"].firstMatch.click()
-        XCTAssertTrue(app.buttons["Connect app…"].waitForExistence(timeout: 3))
+        let reopen = app.buttons["Connect app…"]
+        XCTAssertTrue(reopen.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Project connected"].exists)
+        reopen.click()
+        XCTAssertTrue(app.sheets.buttons["Connect app"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.sheets.staticTexts.containing(NSPredicate(
+            format: "label BEGINSWITH %@", "Connect this app?"
+        )).firstMatch.exists)
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(reopen.waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["Project connected"].exists)
         assertRunCheckMenuOffersCompleteCheckWithoutDiagnostic(app)
+    }
+
+    @MainActor
+    func testInvalidProjectNoticeHasContentAndDismissesWithReturn() throws {
+        continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "intent-project-notice")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let invalidProject = storage.appendingPathComponent("Not a project.txt")
+        try Data("Not an Xcode project".utf8).write(to: invalidProject)
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launch()
+        defer { app.terminate() }
+        app.activate()
+        app.typeKey("2", modifierFlags: .command)
+        let chooseProject = app.buttons["Choose Project…"]
+        XCTAssertTrue(chooseProject.waitForExistence(timeout: 5))
+        chooseProject.click()
+        XCTAssertTrue(app.sheets["open-panel"].waitForExistence(timeout: 3))
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let path = app.textFields["PathTextField"]
+        XCTAssertTrue(path.waitForExistence(timeout: 3))
+        path.click()
+        path.typeKey("a", modifierFlags: .command)
+        path.typeText(invalidProject.path)
+        app.typeKey(.return, modifierFlags: [])
+        app.buttons["OKButton"].click()
+        let ok = app.sheets.buttons["OK"].firstMatch
+        XCTAssertTrue(ok.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.sheets.staticTexts.containing(NSPredicate(
+            format: "label BEGINSWITH %@ AND label CONTAINS %@", "Intent Lab",
+            "Choose an existing .xcodeproj or .xcworkspace."
+        )).firstMatch.exists)
+        XCTAssertTrue(ok.isHittable)
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(chooseProject.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.sheets.buttons["OK"].firstMatch.exists)
     }
 
     @MainActor
