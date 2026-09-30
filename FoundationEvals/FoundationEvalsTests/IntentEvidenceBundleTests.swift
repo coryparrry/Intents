@@ -4,6 +4,86 @@ import Testing
 @testable import FoundationEvals
 
 struct IntentEvidenceBundleTests {
+    @Test func siriOnlyTypedOpenQualifiesWithBoundNativeEvidence() throws {
+        let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
+                                       executedTestCount: 1, xctestExitCode: 0, siriOnly: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let item = fixture.snapshot.cases[0]
+        #expect(ScenarioValidator.issues(in: item.definition).filter { $0.severity == .error }.isEmpty)
+        #expect(ScenarioResultEvaluator.overall(definition: item.definition,
+                                              laneResults: item.runs[0].laneResults) == .passed)
+        let decision = IntentEvidenceQualification.qualify(item, requirement: fixture.trusted.cases[0],
+                                                          referenceTime: Date(timeIntervalSince1970: 100))
+        #expect(decision.incompleteEvidence.isEmpty)
+        #expect(decision.requiredFailures.isEmpty)
+        #expect(decision.report?.outcome == .passed)
+        let offline = try IntentEvidenceChecker.check(bundle: fixture.bundle, requirements: fixture.requirements,
+            expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64),
+            policy: IntentEvidenceChecker.policyID, referenceTime: Date(timeIntervalSince1970: 100))
+        #expect(offline.exitCode == 0)
+    }
+
+    @Test func siriOnlyCompletionCannotOverrideNativeActionOrCleanupFailures() throws {
+        let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
+                                       executedTestCount: 1, xctestExitCode: 0, siriOnly: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        for defect in ["missing", "stale", "wrongAction", "wrongParameter", "failedAction",
+                       "rawMismatch", "cleanup", "noncompleted", "missingClaim"] {
+            var item = fixture.snapshot.cases[0]
+            var lane = item.runs[0].laneResults[0]
+            switch defect {
+            case "missing": lane.actionReceipts = nil
+            case "stale": lane.actionReceipts?[0].attemptContext = "siri-\(UUID().uuidString)-1"
+            case "wrongAction": lane.actionReceipts?[0].operationID = "SummarizeNoteIntent"
+            case "wrongParameter": lane.actionReceipts?[0].resolvedParameters = [:]
+            case "failedAction":
+                lane.actionReceipts?[0].terminalStatus = .failed
+                lane.actionReceipts?[0].operationError = "Could not open the note"
+            case "rawMismatch": lane.observations["intentlab.actionReceipts"] = .string("[]")
+            case "cleanup": lane.cleanupVerified = false
+            case "noncompleted": lane.executionStatus = .timedOut
+            case "missingClaim": lane.claims = [.applicationStateChecked]
+            default: Issue.record("Unknown defect")
+            }
+            if defect != "rawMismatch", let receipts = lane.actionReceipts {
+                lane.observations["intentlab.actionReceipts"] = .string(String(decoding: try encode(receipts), as: UTF8.self))
+            }
+            item.runs[0].laneResults = [lane]
+            var terminal = item.record.records[0]
+            terminal.laneResult = lane
+            item.record = try ScenarioExecutionRecord.make(plan: item.plan, records: [terminal],
+                                                          completedAt: item.record.completedAt)
+            let decision = IntentEvidenceQualification.qualify(item, requirement: fixture.trusted.cases[0],
+                                                              referenceTime: Date(timeIntervalSince1970: 100))
+            #expect(decision.report?.outcome != .passed, "\(defect) must not qualify")
+            #expect(!decision.incompleteEvidence.isEmpty || !decision.requiredFailures.isEmpty,
+                    "\(defect) must remain visible")
+        }
+    }
+
+    @Test func siriCompletionPreservesDirectReturnProofAndLegacyBoundaries() throws {
+        let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
+                                       executedTestCount: 1, xctestExitCode: 0, siriOnly: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let lane = fixture.snapshot.cases[0].runs[0].laneResults[0]
+        var definition = fixture.snapshot.cases[0].definition
+        definition.requiredClaims?.append(.returnedValueChecked)
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .notObserved)
+        definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
+        definition.schemaVersion = ScenarioDefinition.reusableSchemaVersion
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .notObserved)
+        #expect(!ScenarioResultEvaluator.verifiedClaim(.executionCompleted, definition: definition, result: lane))
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        var feature = lane
+        feature.lane = .appFeature
+        #expect(!ScenarioResultEvaluator.verifiedClaim(.executionCompleted, definition: definition, result: feature))
+        definition.coverage.intentIntegration = .required
+        var direct = lane
+        direct.lane = .intentIntegration
+        direct.claims = [.applicationStateChecked]
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane, direct]) != .passed)
+    }
+
     @Test func exploratoryCheckCannotQualifyInGUIOrOffline() throws {
         let fixture = try nativeBundle(
             observed: "packing-001", claimedOutcome: .passed,
@@ -1450,7 +1530,8 @@ struct IntentEvidenceBundleTests {
         observed: String, claimedOutcome: ScenarioOutcome,
         executedTestCount: Int, xctestExitCode: Int32, projectID: UUID? = nil,
         actionFailureReason: ScenarioActionFailureReason? = nil,
-        purpose: ScenarioPurpose = .releaseRequirement
+        purpose: ScenarioPurpose = .releaseRequirement,
+        siriOnly: Bool = false
     ) throws -> Fixture {
         let now = Date(timeIntervalSince1970: 100)
         let root = FileManager.default.temporaryDirectory.appending(path: "native-evidence-test-\(UUID().uuidString)")
@@ -1472,23 +1553,40 @@ struct IntentEvidenceBundleTests {
             expectedValue: .string("packing-001"), explanation: "Open the requested note.",
             applicableLanes: [.intentIntegration]
         )]
+        if siriOnly {
+            definition.coverage.intentIntegration = .notApplicable
+            definition.coverage.siri = .required
+            definition.coverage.siriAttemptCount = 1
+            definition.checkMode = .behaviour
+            definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
+            definition.assertions[0].kind = .entityIdentifier
+            definition.assertions[0].applicableLanes = [.siri]
+            definition.observationPlan = [.init(id: "selectedNoteID", source: .uiElement,
+                                                selector: "selected-note")]
+            definition.actionPolicyVersion = 1
+            definition.actionRequirements = [.init(lane: .siri, kind: .productionIntent,
+                operationID: "OpenNoteIntent", resolvedParameters: [
+                    "note": .entity(.init(typeIdentifier: "NoteEntity", identifier: "packing-001"))
+                ])]
+        }
         definition = try definition.frozen()
         let assertion = definition.assertions[0]
-        let lane = ScenarioLaneResult(
-            caseID: definition.id, attempt: 1, lane: .intentIntegration,
+        let route: ScenarioLane = siriOnly ? .siri : .intentIntegration
+        var lane = ScenarioLaneResult(
+            caseID: definition.id, attempt: 1, lane: route,
             executionStatus: .completed, outcome: claimedOutcome,
             startedAt: now, completedAt: now,
             observations: ["selectedNoteID": .string(observed)],
             assertionResults: [.init(assertionID: assertion.id, passed: claimedOutcome == .passed,
                                      observedValue: .string(observed), message: "Producer result")],
-            observationSources: ["selectedNoteID": .appIntentsTesting],
-            claims: [.executionCompleted, .returnedValueChecked],
+            observationSources: ["selectedNoteID": siriOnly ? .accessibleUI : .appIntentsTesting],
+            claims: [.executionCompleted, siriOnly ? .applicationStateChecked : .returnedValueChecked],
             actionFailureReason: actionFailureReason
         )
         let appHash = String(repeating: "a", count: 64)
         let testHash = String(repeating: "b", count: 64)
         let coordinate = ScenarioPlannedCoordinate(
-            id: UUID(), caseID: definition.id, lane: .intentIntegration,
+            id: UUID(), caseID: definition.id, lane: route,
             repetition: 1, required: true
         )
         var plan = ScenarioExecutionPlan(
@@ -1519,6 +1617,19 @@ struct IntentEvidenceBundleTests {
                                executableName: "FixtureUITests", sha256: testHash),
             integration: definition.integration, requiredCapabilities: []
         )
+        if siriOnly {
+            let action = try #require(definition.actionRequirements?.first)
+            let receipt = ScenarioActionReceipt(executionID: UUID(), appSessionID: UUID(),
+                attemptContext: "siri-\(invocation.id.uuidString)-1", lane: .siri, attempt: 1,
+                kind: .productionIntent, operationID: action.operationID,
+                resolvedParameters: action.resolvedParameters, terminalStatus: .succeeded,
+                operationError: nil, sequence: 1, startedAt: now, completedAt: now,
+                observationTransport: .accessibleUI)
+            lane.actionReceipts = [receipt]
+            lane.cleanupVerified = true
+            lane.observations["intentlab.actionReceipts"] = .string(String(decoding: try encode([receipt]), as: UTF8.self))
+            lane.observationSources?["intentlab.actionReceipts"] = .accessibleUI
+        }
         var run = ScenarioRun(
             id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
             scenarioDigest: definition.definitionDigest, invocation: invocation,

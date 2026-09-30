@@ -13,7 +13,7 @@ struct ScenarioSavedExecutionReportTests {
         var selection: ScenarioAssessmentSelectionRecord
     }
 
-    private func savedFixture(root: URL, semanticOnlyFeature: Bool = false,
+    private func savedFixture(root: URL, semanticOnlyFeature: Bool = false, siriOnlySummary: Bool = false,
                               response: String = "A summary", directState: String = "packing-001") async throws -> Fixture {
         var definition = ScenarioDefinition.starter()
         definition.target.destinationIdentifier = "simulator"
@@ -25,6 +25,7 @@ struct ScenarioSavedExecutionReportTests {
         definition.featureBinding = .init(featureID: "summarize", interfaceDigest: String(repeating: "7", count: 64),
                                           inputMapping: [], outputProjections: [])
         definition.actionPolicyVersion = 1
+        if siriOnlySummary { definition.directControl.intentIdentifier = "SummarizeNoteIntent" }
         let enteredParameters = Dictionary(uniqueKeysWithValues: definition.directControl.parameters.compactMap {
             parameter -> (String, ScenarioValue)? in
             guard case .value(let value) = parameter.presence else { return nil }
@@ -58,6 +59,28 @@ struct ScenarioSavedExecutionReportTests {
             definition.checkMode = .behaviour
             definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
         }
+        if siriOnlySummary {
+            definition.coverage = .init(appFeature: .notApplicable, intentIntegration: .notApplicable,
+                                        siri: .required, siriAttemptCount: 1)
+            definition.featureBinding = nil
+            definition.goal.requestText = "Summarize the packing note in Intent Lab Fixture"
+            definition.checkMode = .behaviour
+            definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
+            definition.actionRequirements = [.init(lane: .siri, kind: .productionIntent,
+                operationID: "SummarizeNoteIntent", resolvedParameters: enteredParameters)]
+            definition.assertions.removeAll { $0.kind != .semanticRubric }
+            definition.assertions[0].observationKey = "summaryText"
+            definition.assertions[0].applicableLanes = [.siri]
+            definition.assertions.append(.init(kind: .entityIdentifier, observationKey: "selectedNoteID",
+                expectedValue: .string("packing-001"), explanation: "Use the requested note.", applicableLanes: [.siri]))
+            definition.assertions.append(.init(kind: .noMutation, observationKey: "mutationCount",
+                expectedValue: .integer(0), explanation: "Preserve the note store.", applicableLanes: [.siri]))
+            definition.observationPlan = [
+                .init(id: "summaryText", source: .uiElement, selector: "summary"),
+                .init(id: "selectedNoteID", source: .uiElement, selector: "selected-note"),
+                .init(id: "mutationCount", source: .uiElement, selector: "mutation-count")
+            ]
+        }
         definition = try definition.frozen()
         let persistence = ScenarioPersistence(rootDirectory: root)
         try await persistence.saveDefinition(definition)
@@ -85,31 +108,45 @@ struct ScenarioSavedExecutionReportTests {
             sourceInputsDigest: String(repeating: "d", count: 64), sourceRevision: "fixture-revision",
             runnerBuildID: nil, runnerID: nil, createdAt: now)
         try await persistence.savePlan(plan)
-        let coordinate = try #require(plan.coordinates.first { $0.lane == .appFeature })
+        let route: ScenarioLane = siriOnlySummary ? .siri : .appFeature
+        let responseKey = siriOnlySummary ? "summaryText" : "feature.response"
+        let transport: ScenarioObservationSource = siriOnlySummary ? .accessibleUI : .testOnlyIntent
+        let coordinate = try #require(plan.coordinates.first { $0.lane == route })
         let capabilities = ScenarioHarnessCapabilities.required(for: definition,
-            scope: .init(lane: .appFeature, attempt: 1), featureBackend: .projectLocalTestControl).sorted()
+            scope: .init(lane: route, attempt: 1), featureBackend: .projectLocalTestControl).sorted()
         let invocation = ScenarioInvocationIdentity(id: UUID(), nonce: UUID().uuidString, issuedAt: now,
             testIdentity: .init(bundleIdentifier: "fixture.tests", className: "Fixture", methodName: "testFeature"),
             harnessVersion: ScenarioInvocationIdentity.reusableHarnessVersion, destinationIdentifier: "simulator",
             scenarioDigest: definition.definitionDigest, resultBundleIdentity: UUID().uuidString,
             appProduct: .init(bundleIdentifier: definition.target.bundleIdentifier, executableName: "Fixture", sha256: plan.appProductDigest),
             testProduct: .init(bundleIdentifier: "fixture.tests", executableName: "FixtureTests", sha256: plan.testProductDigest),
-            integration: definition.integration, requiredCapabilities: capabilities, featureBackend: .projectLocalTestControl)
+            integration: definition.integration, requiredCapabilities: capabilities,
+            featureBackend: siriOnlySummary ? nil : .projectLocalTestControl)
         let action = try #require(definition.actionRequirements?.first)
         let receipt = ScenarioActionReceipt(executionID: UUID(), appSessionID: UUID(),
-            attemptContext: "feature-\(invocation.id.uuidString)", lane: .appFeature, attempt: 1,
+            attemptContext: siriOnlySummary ? "siri-\(invocation.id.uuidString)-1" : "feature-\(invocation.id.uuidString)",
+            lane: route, attempt: 1,
             kind: action.kind, operationID: action.operationID, resolvedParameters: action.resolvedParameters,
             terminalStatus: .succeeded, operationError: nil, sequence: 1, startedAt: now, completedAt: now,
-            observationTransport: .testOnlyIntent)
-        let observations: [String: ScenarioValue] = ["feature.response": .string(response),
+            observationTransport: transport)
+        var observations: [String: ScenarioValue] = [responseKey: .string(response),
             "intentlab.actionReceipts": .string(String(decoding: try CanonicalJSON.data(for: [receipt], prettyPrinted: false), as: UTF8.self))]
-        let evaluated = ScenarioResultEvaluator.evaluate(definition: definition, lane: .appFeature,
-            observations: observations, executionStatus: .completed, actionReceipts: [receipt], invocation: invocation, attempt: 1)
-        let lane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: .appFeature,
+        let before: [String: ScenarioValue]? = siriOnlySummary ? ["mutationCount": .integer(0)] : nil
+        if siriOnlySummary {
+            observations["selectedNoteID"] = .string(directState)
+            observations["mutationCount"] = .integer(0)
+        }
+        let evaluated = ScenarioResultEvaluator.evaluate(definition: definition, lane: route,
+            observations: observations, executionStatus: .completed, beforeObservations: before,
+            actionReceipts: [receipt], invocation: invocation, attempt: 1)
+        var sources = Dictionary(uniqueKeysWithValues: observations.keys.map { ($0, transport) })
+        sources["intentlab.actionReceipts"] = transport
+        let lane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: route,
             executionStatus: .completed, outcome: semanticOnlyFeature ? .notObserved : evaluated.0, startedAt: now, completedAt: now,
             observations: observations, assertionResults: evaluated.1,
-            observationSources: ["feature.response": .testOnlyIntent, "intentlab.actionReceipts": .testOnlyIntent],
-            claims: [.executionCompleted], actionReceipts: [receipt], cleanupVerified: true)
+            observationSources: sources,
+            claims: siriOnlySummary ? [.executionCompleted, .applicationStateChecked] : [.executionCompleted],
+            beforeObservations: before, actionReceipts: [receipt], cleanupVerified: true)
         var run = ScenarioRun(id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
             scenarioDigest: definition.definitionDigest, invocation: invocation, startedAt: now, completedAt: now,
             environment: .init(xcodeVersion: "27", sdkVersion: "27", deviceModel: "fixture", operatingSystem: "fixture",
@@ -129,7 +166,7 @@ struct ScenarioSavedExecutionReportTests {
             scenarioVersion: definition.version, resultBundlePath: "fixture.xcresult", derivedDataPath: "fixture",
             buildLogPath: "fixture.log", intendedExecutable: "xcodebuild", intendedArguments: [],
             processIdentifier: nil, processStartedAt: now, updatedAt: now, recoveryReason: nil,
-            evidenceAccepted: true, scope: .init(lane: .appFeature, attempt: 1))
+            evidenceAccepted: true, scope: .init(lane: route, attempt: 1))
         run = try await persistence.saveRun(run, artifactRoot: nil)
         try await persistence.saveJournal(journal)
         try await persistence.saveLedger(.init(importedInvocationIDs: [run.id], importedNonces: [invocation.nonce]))
@@ -137,64 +174,91 @@ struct ScenarioSavedExecutionReportTests {
         let terminal = ScenarioExecutionCoordinateRecord(coordinate: coordinate, state: .completed,
             evidenceRunID: run.id, evidenceLaneResultID: lane.id, detail: nil, laneResult: lane,
             evidenceDigest: try nativeRunDigest(run))
-        var directInvocation = invocation
-        directInvocation.id = UUID()
-        directInvocation.nonce = UUID().uuidString
-        directInvocation.resultBundleIdentity = UUID().uuidString
-        directInvocation.featureBackend = nil
-        directInvocation.requiredCapabilities = ScenarioHarnessCapabilities.required(
-            for: definition, scope: .init(lane: .intentIntegration, attempt: 1),
-            featureBackend: .projectLocalTestControl).sorted()
-        var directReceipt = receipt
-        directReceipt.executionID = UUID()
-        directReceipt.attemptContext = "intent-\(directInvocation.id.uuidString)"
-        directReceipt.lane = .intentIntegration
-        directReceipt.kind = .productionIntent
-        directReceipt.operationID = "OpenNoteIntent"
-        directReceipt.resolvedParameters = enteredParameters
-        let directObservations: [String: ScenarioValue] = ["selectedNoteID": .string(directState),
-            "intentlab.actionReceipts": .string(String(decoding: try CanonicalJSON.data(for: [directReceipt], prettyPrinted: false), as: UTF8.self))]
-        let directEvaluated = ScenarioResultEvaluator.evaluate(definition: definition, lane: .intentIntegration,
-            observations: directObservations, executionStatus: .completed, actionReceipts: [directReceipt],
-            invocation: directInvocation, attempt: 1)
-        let directLane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: .intentIntegration,
-            executionStatus: .completed, outcome: directEvaluated.0, startedAt: now, completedAt: now,
-            observations: directObservations, assertionResults: directEvaluated.1,
-            observationSources: ["selectedNoteID": semanticOnlyFeature ? .accessibleUI : .appIntentsTesting,
-                                 "intentlab.actionReceipts": .testOnlyIntent],
-            claims: [.executionCompleted, semanticOnlyFeature ? .applicationStateChecked : .returnedValueChecked],
-            actionReceipts: [directReceipt], cleanupVerified: true)
-        var directRun = run
-        directRun.id = directInvocation.id
-        directRun.invocation = directInvocation
-        directRun.laneResults = [directLane]
-        directRun.outcome = directEvaluated.0
-        directRun.negotiatedCapabilities = directInvocation.requiredCapabilities
-        directRun = try await persistence.saveRun(directRun, artifactRoot: nil)
-        var directJournal = journal
-        directJournal.invocation = directInvocation
-        directJournal.scope = .init(lane: .intentIntegration, attempt: 1)
-        try await persistence.saveJournal(directJournal)
-        try await persistence.saveLedger(.init(importedInvocationIDs: [run.id, directRun.id],
-                                              importedNonces: [invocation.nonce, directInvocation.nonce]))
-        directRun = try await persistence.acceptRun(directRun, journal: directJournal)
-        let directCoordinate = try #require(plan.coordinates.first { $0.lane == .intentIntegration })
-        let directTerminal = ScenarioExecutionCoordinateRecord(coordinate: directCoordinate, state: .completed,
-            evidenceRunID: directRun.id, evidenceLaneResultID: directLane.id, detail: nil, laneResult: directLane,
-            evidenceDigest: try nativeRunDigest(directRun))
-        let record = try ScenarioExecutionRecord.make(plan: plan, records: [terminal, directTerminal], completedAt: now)
+        var terminals = [terminal]
+        var savedRuns = [run]
+        var savedJournals = [journal]
+        if !siriOnlySummary {
+            var directInvocation = invocation
+            directInvocation.id = UUID()
+            directInvocation.nonce = UUID().uuidString
+            directInvocation.resultBundleIdentity = UUID().uuidString
+            directInvocation.featureBackend = nil
+            directInvocation.requiredCapabilities = ScenarioHarnessCapabilities.required(
+                for: definition, scope: .init(lane: .intentIntegration, attempt: 1),
+                featureBackend: .projectLocalTestControl).sorted()
+            var directReceipt = receipt
+            directReceipt.executionID = UUID()
+            directReceipt.attemptContext = "intent-\(directInvocation.id.uuidString)"
+            directReceipt.lane = .intentIntegration
+            directReceipt.kind = .productionIntent
+            directReceipt.operationID = "OpenNoteIntent"
+            directReceipt.resolvedParameters = enteredParameters
+            let directObservations: [String: ScenarioValue] = ["selectedNoteID": .string(directState),
+                "intentlab.actionReceipts": .string(String(decoding: try CanonicalJSON.data(for: [directReceipt], prettyPrinted: false), as: UTF8.self))]
+            let directEvaluated = ScenarioResultEvaluator.evaluate(definition: definition, lane: .intentIntegration,
+                observations: directObservations, executionStatus: .completed, actionReceipts: [directReceipt],
+                invocation: directInvocation, attempt: 1)
+            let directLane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: .intentIntegration,
+                executionStatus: .completed, outcome: directEvaluated.0, startedAt: now, completedAt: now,
+                observations: directObservations, assertionResults: directEvaluated.1,
+                observationSources: ["selectedNoteID": semanticOnlyFeature ? .accessibleUI : .appIntentsTesting,
+                                     "intentlab.actionReceipts": .testOnlyIntent],
+                claims: [.executionCompleted, semanticOnlyFeature ? .applicationStateChecked : .returnedValueChecked],
+                actionReceipts: [directReceipt], cleanupVerified: true)
+            var directRun = run
+            directRun.id = directInvocation.id
+            directRun.invocation = directInvocation
+            directRun.laneResults = [directLane]
+            directRun.outcome = directEvaluated.0
+            directRun.negotiatedCapabilities = directInvocation.requiredCapabilities
+            directRun = try await persistence.saveRun(directRun, artifactRoot: nil)
+            var directJournal = journal
+            directJournal.invocation = directInvocation
+            directJournal.scope = .init(lane: .intentIntegration, attempt: 1)
+            try await persistence.saveJournal(directJournal)
+            try await persistence.saveLedger(.init(importedInvocationIDs: [run.id, directRun.id],
+                                                  importedNonces: [invocation.nonce, directInvocation.nonce]))
+            directRun = try await persistence.acceptRun(directRun, journal: directJournal)
+            let directCoordinate = try #require(plan.coordinates.first { $0.lane == .intentIntegration })
+            let directTerminal = ScenarioExecutionCoordinateRecord(coordinate: directCoordinate, state: .completed,
+                evidenceRunID: directRun.id, evidenceLaneResultID: directLane.id, detail: nil, laneResult: directLane,
+                evidenceDigest: try nativeRunDigest(directRun))
+            terminals.append(directTerminal)
+            savedRuns.append(directRun)
+            savedJournals.append(directJournal)
+        }
+        let record = try ScenarioExecutionRecord.make(plan: plan, records: terminals, completedAt: now)
         try await persistence.saveExecutionRecord(record)
         // The exact-text criterion is evaluated locally. No model or endpoint is invoked.
         let assessment = try await ScenarioIndependentAssessmentService.assess(
             .init(scenarioRunID: run.id, laneResult: lane, assertion: semantic, effectiveInput: definition.goal.requestText,
                   verifiedReference: "A summary", judgeConfiguration: configuration), resolvedJudge: nil)
         #expect(assessment.sample?.status == (response == "A summary" ? .passed : .failed))
-        try await assessments.appendFeature(assessment, for: record, definition: definition,
-            nativeEvidence: .init(plan: plan, run: run, journal: journal))
-        let selection = try await assessments.sealSelection(executionRecord: record, runs: [run, directRun],
-            definition: definition, plan: plan, journals: [journal, directJournal])
+        if siriOnlySummary {
+            try await assessments.append(assessment, for: run, definition: definition)
+        } else {
+            try await assessments.appendFeature(assessment, for: record, definition: definition,
+                nativeEvidence: .init(plan: plan, run: run, journal: journal))
+        }
+        let selection = try await assessments.sealSelection(executionRecord: record, runs: savedRuns,
+            definition: definition, plan: plan, journals: savedJournals)
         return .init(definition: definition, plan: plan, record: record, run: run, journal: journal,
                      policy: policy, selection: selection)
+    }
+
+    @Test func siriOnlyTypedSummaryQualifiesWithFrozenLocalAssessmentWithoutNativeOrModelRerun() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try await savedFixture(root: root, siriOnlySummary: true)
+        #expect(fixture.run.laneResults[0].outcome == .needsReview)
+        #expect(fixture.run.laneResults[0].lane == .siri)
+        let before = try fileSnapshot(root)
+        let service = ScenarioSavedExecutionReportService(rootDirectory: root)
+        let qualification = try await service.qualification(executionID: fixture.record.id)
+        #expect(qualification.incompleteEvidence.isEmpty)
+        #expect(qualification.requiredFailures.isEmpty)
+        #expect(qualification.report?.outcome == .passed)
+        #expect(try fileSnapshot(root) == before)
     }
 
     @MainActor

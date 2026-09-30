@@ -694,13 +694,16 @@ enum ScenarioResultEvaluator {
         if !requiredResults.allSatisfy({ $0.outcome == .passed }) { return .notObserved }
         if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion {
             let direct = requiredResults.filter { $0.lane == .intentIntegration }
+            let productionIntent = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+                ? requiredResults.filter { $0.lane == .intentIntegration || $0.lane == .siri }
+                : direct
             let claims = definition.requiredClaims ?? []
             if claims.contains(.executionCompleted),
-               (direct.isEmpty || !direct.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
+               (productionIntent.isEmpty || !productionIntent.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.returnedValueChecked),
-               !direct.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) }) {
+               (direct.isEmpty || !direct.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.applicationStateChecked),
@@ -722,7 +725,26 @@ enum ScenarioResultEvaluator {
     ) -> Bool {
         guard result.executionStatus == .completed, result.outcome == .passed,
               result.claims?.contains(claim) == true else { return false }
-        if claim == .executionCompleted { return result.lane == .intentIntegration }
+        if claim == .executionCompleted {
+            if result.lane == .intentIntegration { return true }
+            // Invocation freshness is checked by import/qualification against the
+            // native journal. Siri completion also needs the observed typed action.
+            guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+                  result.lane == .siri, definition.actionPolicyVersion == 1,
+                  result.cleanupVerified == true, result.actionFailureReason == nil,
+                  let requirement = definition.actionRequirements?.first(where: { $0.lane == .siri }),
+                  requirement.kind == .productionIntent,
+                  let receipts = result.actionReceipts,
+                  actionObservationIsConsistent(result) else { return false }
+            let topLevel = receipts.filter(\.isTopLevel)
+            return !topLevel.isEmpty && topLevel.count == requirement.allowedExecutionCount
+                && receipts.allSatisfy({ $0.lane == .siri && $0.attempt == result.attempt })
+                && topLevel.allSatisfy({
+                    $0.kind == .productionIntent && $0.operationID == requirement.operationID
+                        && $0.resolvedParameters == requirement.resolvedParameters
+                        && $0.terminalStatus == .succeeded && $0.operationError == nil
+                })
+        }
         let plan = definition.observationPlan ?? []
         return definition.assertions.contains { assertion in
             guard assertion.required, assertion.applies(to: result.lane),
