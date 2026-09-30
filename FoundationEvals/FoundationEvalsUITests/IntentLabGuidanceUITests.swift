@@ -146,6 +146,15 @@ final class IntentLabGuidanceUITests: XCTestCase {
         defer { app.terminate() }
         app.activate()
         app.typeKey("2", modifierFlags: .command)
+        // A fresh workspace opens the legacy sample. Create the stable check
+        // whose run choices must survive cancelling project approval.
+        app.radioButtons["Create test"].click()
+        app.buttons["New test"].click()
+        let discardDraft = app.sheets.buttons["Discard draft and continue"].firstMatch
+        XCTAssertTrue(discardDraft.waitForExistence(timeout: 3))
+        discardDraft.click()
+        XCTAssertTrue(app.descendants(matching: .any)["Run check"].firstMatch.waitForExistence(timeout: 5))
+        app.radioButtons["Connect app"].click()
         XCTAssertTrue(app.buttons["Choose Project…"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Check project…"].exists)
         app.buttons["Choose Project…"].click()
