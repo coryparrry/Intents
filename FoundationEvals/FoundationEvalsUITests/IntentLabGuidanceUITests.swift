@@ -169,12 +169,8 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.buttons["OKButton"].click()
         let connect = app.sheets.buttons["Connect app"].firstMatch
         XCTAssertTrue(connect.waitForExistence(timeout: 5), "Choosing the file should offer connection immediately")
-        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(
-            format: "label BEGINSWITH %@", "Connect this app?"
-        )).firstMatch.exists)
-        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(
-            format: "label CONTAINS %@", "Approval lasts until you quit Intents."
-        )).firstMatch.exists)
+        assertSheetContainsText(app, title: "Connect this app?",
+                                message: "Approval lasts until you quit Intents.")
         XCTAssertTrue(connect.isHittable)
         XCTAssertTrue(app.sheets.buttons["Cancel"].firstMatch.isHittable)
         app.sheets.buttons["Cancel"].firstMatch.click()
@@ -183,9 +179,8 @@ final class IntentLabGuidanceUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Project connected"].exists)
         reopen.click()
         XCTAssertTrue(app.sheets.buttons["Connect app"].firstMatch.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(
-            format: "label BEGINSWITH %@", "Connect this app?"
-        )).firstMatch.exists)
+        assertSheetContainsText(app, title: "Connect this app?",
+                                message: "Approval lasts until you quit Intents.")
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(reopen.waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["Project connected"].exists)
@@ -219,16 +214,32 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.buttons["OKButton"].click()
         let ok = app.sheets.buttons["OK"].firstMatch
         XCTAssertTrue(ok.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(
-            format: "label BEGINSWITH %@", "Intent Lab"
-        )).firstMatch.exists)
-        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(
-            format: "label CONTAINS %@", "Choose an existing .xcodeproj or .xcworkspace."
-        )).firstMatch.exists)
+        assertSheetContainsText(app, title: "Intent Lab",
+                                message: "Choose an existing .xcodeproj or .xcworkspace.")
         XCTAssertTrue(ok.isHittable)
         app.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(chooseProject.waitForExistence(timeout: 3))
         XCTAssertFalse(app.sheets.buttons["OK"].firstMatch.exists)
+    }
+
+    @MainActor
+    private func assertSheetContainsText(
+        _ app: XCUIApplication, title: String, message: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        // macOS accessibility may expose SwiftUI text on a containing element's
+        // string value rather than a separate static-text label.
+        let content = NSPredicate { _, _ in
+            let texts = app.sheets.descendants(matching: .any).allElementsBoundByIndex.flatMap { element in
+                [element.label, element.value as? String].compactMap { $0 }
+            }
+            return texts.contains { $0.hasPrefix(title) }
+                && texts.contains { $0.contains(message) }
+        }
+        let ready = XCTNSPredicateExpectation(predicate: content, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
+                       "Expected sheet title and message.\n" + app.debugDescription,
+                       file: file, line: line)
     }
 
     @MainActor
