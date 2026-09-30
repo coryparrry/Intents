@@ -71,18 +71,19 @@ private struct WorkspaceAlertPresenter: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         var presentation: WorkspaceAlertPresenter?
-        private var alert: NSAlert?
+        private var panel: NSPanel?
+        private var hostingView: NSHostingView<WorkspaceAlertContent>?
         private weak var owner: NSWindow?
         private var scheduled = false
         private var sheetObserver: (any NSObjectProtocol)?
 
         func schedulePresentation(from view: NSView) {
-            guard !scheduled, alert == nil, presentation?.isPresented == true else { return }
+            guard !scheduled, panel == nil, presentation?.isPresented == true else { return }
             scheduled = true
             DispatchQueue.main.async { [weak self, weak view] in
                 guard let self else { return }
                 self.scheduled = false
-                guard self.alert == nil, let presentation = self.presentation,
+                guard self.panel == nil, let presentation = self.presentation,
                       presentation.isPresented, let window = view?.window else { return }
                 guard window.attachedSheet == nil else {
                     self.waitForSheetDismissal(on: window, from: view)
@@ -107,30 +108,47 @@ private struct WorkspaceAlertPresenter: NSViewRepresentable {
         }
 
         func updateVisibleContent() {
-            guard let alert, let presentation else { return }
-            alert.messageText = presentation.title
-            alert.informativeText = presentation.message
-            alert.layout()
-            alert.window.contentView?.needsDisplay = true
-            alert.window.displayIfNeeded()
+            guard let panel, let hostingView, let presentation else { return }
+            hostingView.rootView = content(for: presentation, panel: panel)
+            layout(panel, hostingView: hostingView)
+        }
+
+        private func content(for presentation: WorkspaceAlertPresenter, panel: NSPanel) -> WorkspaceAlertContent {
+            WorkspaceAlertContent(title: presentation.title, message: presentation.message,
+                                  buttons: presentation.buttons) { [weak self, weak panel] index in
+                guard let self, let panel, self.panel === panel else { return }
+                self.owner?.endSheet(panel, returnCode: .init(
+                    rawValue: NSApplication.ModalResponse.alertFirstButtonReturn.rawValue + index
+                ))
+            }
+        }
+
+        private func layout(_ panel: NSPanel, hostingView: NSHostingView<WorkspaceAlertContent>) {
+            hostingView.layoutSubtreeIfNeeded()
+            panel.setContentSize(hostingView.fittingSize)
+            hostingView.needsDisplay = true
+            panel.displayIfNeeded()
         }
 
         private func present(_ presentation: WorkspaceAlertPresenter, on window: NSWindow) {
-            let alert = NSAlert()
-            alert.messageText = presentation.title
-            alert.informativeText = presentation.message
-            alert.alertStyle = .informational
-            for button in presentation.buttons {
-                let control = alert.addButton(withTitle: button.title)
-                control.keyEquivalent = button.isCancel ? "\u{1b}" : "\r"
-            }
-            alert.layout()
-            alert.window.contentView?.layoutSubtreeIfNeeded()
-            self.alert = alert
+            let panel = NSPanel(contentRect: .zero, styleMask: [.titled, .fullSizeContentView],
+                                backing: .buffered, defer: false)
+            panel.titleVisibility = .hidden
+            panel.titlebarAppearsTransparent = true
+            panel.isOpaque = true
+            panel.backgroundColor = .windowBackgroundColor
+            panel.isReleasedWhenClosed = false
+            let hostingView = NSHostingView(rootView: content(for: presentation, panel: panel))
+            hostingView.sizingOptions = .intrinsicContentSize
+            panel.contentView = hostingView
+            self.panel = panel
+            self.hostingView = hostingView
             owner = window
-            alert.beginSheetModal(for: window) { [weak self] response in
-                guard let self, self.alert === alert else { return }
-                self.alert = nil
+            layout(panel, hostingView: hostingView)
+            window.beginSheet(panel) { [weak self] response in
+                guard let self, self.panel === panel else { return }
+                self.panel = nil
+                self.hostingView = nil
                 self.owner = nil
                 let current = self.presentation ?? presentation
                 current.isPresented = false
@@ -139,19 +157,18 @@ private struct WorkspaceAlertPresenter: NSViewRepresentable {
                     current.buttons[index].action()
                 }
             }
-            // Draw the first frame without waiting for an unrelated screenshot or expose event.
-            DispatchQueue.main.async { [weak self, weak alert] in
-                guard let self, let alert, self.alert === alert else { return }
-                alert.window.contentView?.needsDisplay = true
-                alert.window.displayIfNeeded()
+            DispatchQueue.main.async { [weak self, weak panel] in
+                guard let self, let panel, self.panel === panel, let hostingView = self.hostingView else { return }
+                self.layout(panel, hostingView: hostingView)
             }
         }
 
         func dismiss() {
             removeSheetObserver()
-            guard let alert else { return }
-            self.alert = nil
-            if let owner { owner.endSheet(alert.window, returnCode: .abort) }
+            guard let panel else { return }
+            self.panel = nil
+            hostingView = nil
+            if let owner { owner.endSheet(panel, returnCode: .abort) }
             owner = nil
         }
 
@@ -159,5 +176,34 @@ private struct WorkspaceAlertPresenter: NSViewRepresentable {
             if let sheetObserver { NotificationCenter.default.removeObserver(sheetObserver) }
             sheetObserver = nil
         }
+    }
+}
+
+private struct WorkspaceAlertContent: View {
+    let title: String
+    let message: String
+    let buttons: [WorkspaceAlertButton]
+    let selectButton: (Int) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title).font(.headline)
+            Text(message).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                ForEach(buttons.indices, id: \.self) { index in
+                    if buttons[index].isCancel {
+                        Button(buttons[index].title, role: .cancel) { selectButton(index) }
+                            .keyboardShortcut(.cancelAction)
+                    } else {
+                        Button(buttons[index].title) { selectButton(index) }
+                            .keyboardShortcut(.defaultAction)
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 440)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }

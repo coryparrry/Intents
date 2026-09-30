@@ -169,10 +169,10 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.buttons["OKButton"].click()
         let connect = app.sheets.buttons["Connect app"].firstMatch
         XCTAssertTrue(connect.waitForExistence(timeout: 5), "Choosing the file should offer connection immediately")
-        XCTAssertTrue(app.sheets.staticTexts.containing(NSPredicate(
+        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(
             format: "label BEGINSWITH %@", "Connect this app?"
         )).firstMatch.exists)
-        XCTAssertTrue(app.sheets.staticTexts.containing(NSPredicate(
+        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(
             format: "label CONTAINS %@", "Approval lasts until you quit Intents."
         )).firstMatch.exists)
         XCTAssertTrue(connect.isHittable)
@@ -183,7 +183,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Project connected"].exists)
         reopen.click()
         XCTAssertTrue(app.sheets.buttons["Connect app"].firstMatch.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.sheets.staticTexts.containing(NSPredicate(
+        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(
             format: "label BEGINSWITH %@", "Connect this app?"
         )).firstMatch.exists)
         app.typeKey(.escape, modifierFlags: [])
@@ -219,9 +219,11 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.buttons["OKButton"].click()
         let ok = app.sheets.buttons["OK"].firstMatch
         XCTAssertTrue(ok.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.sheets.staticTexts.containing(NSPredicate(
-            format: "label BEGINSWITH %@ AND label CONTAINS %@", "Intent Lab",
-            "Choose an existing .xcodeproj or .xcworkspace."
+        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Intent Lab"
+        )).firstMatch.exists)
+        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Choose an existing .xcodeproj or .xcworkspace."
         )).firstMatch.exists)
         XCTAssertTrue(ok.isHittable)
         app.typeKey(.return, modifierFlags: [])
