@@ -64,6 +64,7 @@ final class EvaluationStore {
     var overviewStorageDirectory: URL { supportDirectory }
     @ObservationIgnored private var pendingPromptEdits: [UUID: String] = [:]
     @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
+    @ObservationIgnored private var draftSaveGeneration: UInt64 = 0
     @ObservationIgnored private let onDeviceContextSizes = ModelContextSizeCache()
     private(set) var isDraftSavePending = false
     private var runTask: Task<Void, Never>?
@@ -2674,11 +2675,21 @@ final class EvaluationStore {
 
     func scheduleSuiteSave() {
         draftSaveTask?.cancel()
+        draftSaveGeneration &+= 1
         if !isDraftSavePending { isDraftSavePending = true }
         draftSaveTask = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(350)) }
             catch { return }
             self?.saveSuite()
+        }
+    }
+
+    func waitForScheduledSuiteSave(onTaskCaptured: (@MainActor () -> Void)? = nil) async {
+        while let task = draftSaveTask {
+            let generation = draftSaveGeneration
+            onTaskCaptured?()
+            await task.value
+            guard generation != draftSaveGeneration else { return }
         }
     }
 
