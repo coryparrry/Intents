@@ -5,7 +5,7 @@ import Darwin
 /// Published package commit verified by a clean external SwiftPM consumer.
 enum IntentLabPackageRevisionManifest {
     static let packageURL = URL(string: "https://github.com/coryparrry/Intents.git")!
-    static let verifiedRevision: String? = "725a815d4bf56474b681e87621901f632a9def9c"
+    static let verifiedRevision: String? = "32ee15ecb982a850c89168e4053e513936e554fe"
     static let product = "IntentLabTesting"
 }
 
