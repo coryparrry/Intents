@@ -168,6 +168,103 @@ final class IntentLabRunnerLifecycleTests: XCTestCase {
         ))
     }
 
+    func testUnassistedSiriPollingObservesCompletionWithoutSelectingChooser() throws {
+        let observations: [String: IntentLabValue] = [
+            "intentlab.actionReceipts": .string(try serializedReceipt(status: .succeeded))
+        ]
+        var completionObservations: [String: IntentLabValue]?
+        var observationReads = 0
+        var chooserSelections = 0
+
+        for _ in 0..<2 {
+            SiriProbe.pollDuringActivation(
+                permitsChooserAssistance: false,
+                observeCompletion: {
+                    observationReads += 1
+                    // An earlier timer tick may see no terminal receipt yet.
+                    let current = observationReads == 1 ? [:] : observations
+                    completionObservations = SiriProbe.correlatedCompletion(
+                        observations: current,
+                        expectedContext: "siri-current",
+                        integration: InertIntegration()
+                    )
+                },
+                selectChooser: { chooserSelections += 1 }
+            )
+        }
+
+        XCTAssertEqual(observationReads, 2)
+        XCTAssertEqual(chooserSelections, 0)
+        XCTAssertEqual(completionObservations, observations)
+        XCTAssertTrue(SiriProbe.recoverableActivationTimeout(
+            description: "Timed out waiting for Siri to activate",
+            osMajor: 27,
+            observations: completionObservations,
+            expectedContext: "siri-current",
+            integration: InertIntegration()
+        ))
+        XCTAssertFalse(SiriProbe.recoverableActivationTimeout(
+            description: "Timed out waiting for the app to activate",
+            osMajor: 27,
+            observations: completionObservations,
+            expectedContext: "siri-current",
+            integration: InertIntegration()
+        ))
+        XCTAssertFalse(SiriProbe.recoverableActivationTimeout(
+            description: "Timed out waiting for Siri to activate",
+            osMajor: 28,
+            observations: completionObservations,
+            expectedContext: "siri-current",
+            integration: InertIntegration()
+        ))
+    }
+
+    func testUnassistedSiriPollingRejectsMissingOrUncorrelatedCompletion() throws {
+        var stale = receipt(status: .succeeded)
+        stale.attemptContext = "siri-previous"
+        var wrongLane = receipt(status: .succeeded)
+        wrongLane.lane = .intentIntegration
+        var nested = receipt(status: .succeeded)
+        nested.isTopLevel = false
+        let invalidObservations: [[String: IntentLabValue]] = [
+            [:],
+            ["intentlab.actionReceipts": .string("[]")],
+            ["intentlab.actionReceipts": .string("malformed")],
+            ["intentlab.actionReceipts": .string(try serialized([stale]))],
+            ["intentlab.actionReceipts": .string(try serialized([wrongLane]))],
+            ["intentlab.actionReceipts": .string(try serialized([nested]))]
+        ]
+
+        for observations in invalidObservations {
+            var completionObservations: [String: IntentLabValue]?
+            var observationReads = 0
+            var chooserSelections = 0
+            SiriProbe.pollDuringActivation(
+                permitsChooserAssistance: false,
+                observeCompletion: {
+                    observationReads += 1
+                    completionObservations = SiriProbe.correlatedCompletion(
+                        observations: observations,
+                        expectedContext: "siri-current",
+                        integration: InertIntegration()
+                    )
+                },
+                selectChooser: { chooserSelections += 1 }
+            )
+
+            XCTAssertEqual(observationReads, 1)
+            XCTAssertEqual(chooserSelections, 0)
+            XCTAssertNil(completionObservations)
+            XCTAssertFalse(SiriProbe.recoverableActivationTimeout(
+                description: "Timed out waiting for Siri to activate",
+                osMajor: 27,
+                observations: completionObservations,
+                expectedContext: "siri-current",
+                integration: InertIntegration()
+            ))
+        }
+    }
+
     func testCleanupFailureRetainsActionEvidenceAndMarksReadinessFalse() {
         let receipt = receipt(status: .failed)
         let lane = IntentLabLaneResult(

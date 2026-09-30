@@ -130,6 +130,19 @@ enum SiriProbe {
         ) != nil
     }
 
+    static func pollDuringActivation(
+        permitsChooserAssistance: Bool,
+        observeCompletion: () -> Void,
+        selectChooser: () -> Void
+    ) {
+        // Passive runs still need current-attempt evidence while activate() waits.
+        guard permitsChooserAssistance else {
+            observeCompletion()
+            return
+        }
+        selectChooser()
+    }
+
     static func matchingChoice(request: String, choices: [String]) -> String? {
         let words = { (text: String) in
             text.lowercased().split { !$0.isLetter && !$0.isNumber }.joined(separator: " ")
@@ -257,11 +270,22 @@ private final class SiriChoiceHandler {
     }
 
     func selectIfNeeded() {
-        #if os(iOS)
-        guard permitsChooserAssistance else { return }
         guard completionObservations == nil, !isSelecting else { return }
         isSelecting = true
         defer { isSelecting = false }
+        #if os(iOS)
+        SiriProbe.pollDuringActivation(
+            permitsChooserAssistance: permitsChooserAssistance,
+            observeCompletion: { self.observeCompletion() },
+            selectChooser: { self.selectChooserIfNeeded() }
+        )
+        #else
+        observeCompletion()
+        #endif
+    }
+
+    #if os(iOS)
+    private func selectChooserIfNeeded() {
         if selectedLabel != nil {
             observeCompletion()
             return
@@ -292,10 +316,8 @@ private final class SiriChoiceHandler {
             dx: choice.bounds.midX,
             dy: 1 - choice.bounds.midY
         )).tap()
-        #else
-        observeCompletion()
-        #endif
     }
+    #endif
 }
 
 enum SiriProbeError: LocalizedError {
