@@ -1566,13 +1566,34 @@ struct EvaluationDevelopmentWorkflowTests {
                 adapter: ClosureFeatureAdapter(displayName: "Saved response") { _ in "READY" }
             )
         }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-        while fixture.completionRequestCount < 1, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
+        let requestWasObserved = await withTaskGroup(of: Bool?.self) { group in
+            group.addTask {
+                await fixture.waitForCompletionRequests(1, timeout: .seconds(20))
+            }
+            group.addTask {
+                _ = await task.result
+                return nil
+            }
+            let first = await group.next() ?? .some(false)
+            if first != nil { task.cancel() }
+            group.cancelAll()
+            return first
         }
-        try #require(fixture.completionRequestCount == 1, "Judge fixture did not receive the initial assessment request.")
+        guard requestWasObserved == true else {
+            let taskResult = await task.result
+            let outcome: String
+            switch taskResult {
+            case .success(let run):
+                outcome = "feature operation ended (cancelled: \(run.cancelled), assessment: \(run.selectedAssessment?.id.uuidString ?? "none"))"
+            case .failure(let error):
+                outcome = "feature operation failed: \(error.localizedDescription)"
+            }
+            #expect(requestWasObserved == true,
+                    "Judge fixture did not receive the initial assessment request; \(outcome).")
+            return
+        }
+        #expect(fixture.completionRequestCount == 1)
 
-        task.cancel()
         let run = try await task.value
 
         let result = try #require(run.effectiveResults.first)

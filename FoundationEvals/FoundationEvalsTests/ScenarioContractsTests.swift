@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Testing
 @testable import FoundationEvals
@@ -236,6 +237,29 @@ struct ScenarioContractsTests {
         let simulator = XcodeTestExecutor.destinationStatus(identifier: "sim-1", devices: destinations)
         #expect(simulator.ready && simulator.platform == .iOSSimulator)
         #expect(simulator.detail.contains("Simulator"))
+    }
+
+    @Test func siriDestinationRequiresKnownMinimumOSWithoutBlockingOtherRoutes() {
+        func status(_ version: String?, requiresSiri: Bool = true,
+                    platform: IntentLabDestinationPlatform = .iOS) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?) {
+            XcodeTestExecutor.destinationStatus(identifier: "phone", devices: [
+                .init(identifier: "phone", name: "Test destination", operatingSystemVersion: version,
+                      available: true, platform: platform),
+            ], requiresSiri: requiresSiri)
+        }
+        for version: String? in [nil, "", "unknown", "26", "26.9.99", "27.beta", "27..0", "27.0 junk", "27.0.0.0"] {
+            let siri = status(version)
+            #expect(!siri.ready)
+            #expect(siri.detail.contains("iOS 27 or later"))
+            #expect(status(version, requiresSiri: false).ready)
+        }
+        for version in ["27", "27.0", "27.1.2", "27.0 (24A100)", "28.0"] {
+            #expect(status(version).ready)
+        }
+        #expect(!status("27.0", platform: .iOSSimulator).ready)
+        #expect(!status("27.0", platform: .macOS).ready)
+        #expect(status(nil, requiresSiri: false, platform: .iOSSimulator).ready)
+        #expect(status(nil, requiresSiri: false, platform: .macOS).ready)
     }
 
     @Test func schemeTestActionConfigurationUsesSelectedOwnerAndDeclaredTestMode() throws {
@@ -1282,6 +1306,73 @@ struct ScenarioContractsTests {
         #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: products) != beforeResource)
     }
 
+    @Test func connectionBuildWorkspaceIsStableAndSeparatesSelectedConfigurations() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appending(path: "Fixture.xcodeproj")
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "Fixture", testTarget: "FixtureUITests",
+            testBundleIdentifier: "dev.example.FixtureUITests", destinationIdentifier: "device",
+            generatedResourceDirectory: root.path,
+            selectedTestProductID: "\(project.path)#UITESTS",
+            selectedApplicationProductID: "\(project.path)#APP"
+        )
+        func workspace(_ selection: XcodeTestConfiguration, owner: URL? = nil) throws -> URL {
+            try XcodeTestExecutor.connectionDerivedDataURL(
+                workDirectory: root, configuration: selection, owningProjectURL: owner ?? project
+            )
+        }
+        let original = try workspace(configuration)
+        let source = root.appending(path: "Feature.swift")
+        try Data("struct Feature {}".utf8).write(to: source)
+        #expect(try workspace(configuration) == original)
+        try Data("struct Feature { let defect = true }".utf8).write(to: source)
+        #expect(try workspace(configuration) == original)
+        #expect(original.path.contains("/BuildWorkspaces/"))
+        #expect(original.lastPathComponent == "DerivedData")
+        #expect(try workspace(configuration, owner: root.appending(path: "Other.xcodeproj")) != original)
+
+        let changes: [(inout XcodeTestConfiguration) -> Void] = [
+            { $0.containerPath = root.appending(path: "Other.xcodeproj").path },
+            { $0.isWorkspace = true },
+            { $0.scheme = "Other" },
+            { $0.testTarget = "OtherUITests" },
+            { $0.testBundleIdentifier = "dev.example.OtherUITests" },
+            { $0.selectedTestProductID = "\(project.path)#OTHER_TESTS" },
+            { $0.selectedApplicationProductID = "\(project.path)#OTHER_APP" },
+            { $0.configuration = "Release" },
+            { $0.destinationIdentifier = "other-device" },
+            { $0.destinationPlatform = .iOSSimulator },
+            { $0.generatedResourceDirectory = root.appending(path: "Generated").path },
+            { $0.xcodebuildPath = "/bin/echo" },
+            { $0.xcresulttoolPath = "/bin/cat" },
+            { $0.developmentTeam = "OTHER_TEAM" },
+            { $0.allowProvisioningUpdates = true },
+        ]
+        for change in changes {
+            var changed = configuration
+            change(&changed)
+            #expect(try workspace(changed) != original)
+        }
+    }
+
+    @Test func connectionBuildWorkspaceLeaseExcludesOtherOwnersUntilReleased() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let derivedData = root.appending(path: "Shared/DerivedData")
+        do {
+            let lease = try XcodeBuildWorkspaceLease(derivedData: derivedData)
+            defer { withExtendedLifetime(lease) {} }
+            #expect(throws: XcodeTestExecutorError.self) {
+                _ = try XcodeBuildWorkspaceLease(derivedData: derivedData)
+            }
+            let other = try XcodeBuildWorkspaceLease(derivedData: root.appending(path: "Other/DerivedData"))
+            withExtendedLifetime(other) {}
+        }
+        let reacquired = try XcodeBuildWorkspaceLease(derivedData: derivedData)
+        withExtendedLifetime(reacquired) {}
+    }
+
     @Test func reusableExecutionKeepsCheckedGenerationAndRejectsChangedInputs() throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1294,7 +1385,17 @@ struct ScenarioContractsTests {
             "ROOT": ["isa": "PBXGroup", "children": ["SOURCE"]],
             "SOURCE": ["isa": "PBXFileReference", "path": "Feature.swift"],
         ], mainGroup: "ROOT").write(to: project.appending(path: "project.pbxproj"))
-        let productsRoot = root.appending(path: "DerivedData/Build/Products")
+        let testBundleIdentifier = "dev.example.FixtureUITests"
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "Fixture", testTarget: "FixtureUITests",
+            testBundleIdentifier: testBundleIdentifier, destinationIdentifier: "device",
+            generatedResourceDirectory: root.path, xcodebuildPath: "/bin/echo",
+            selectedTestProductID: "\(project.path)#UITESTS"
+        )
+        let derivedData = try XcodeTestExecutor.connectionDerivedDataURL(
+            workDirectory: root, configuration: configuration, owningProjectURL: project
+        )
+        let productsRoot = derivedData.appending(path: "Build/Products")
         let products = XCTestRunProductPaths(
             sourceURL: productsRoot.appending(path: "Fixture.xctestrun"),
             appBundleURL: productsRoot.appending(path: "Fixture.app"),
@@ -1305,7 +1406,6 @@ struct ScenarioContractsTests {
         let declaration = Data("{\"fixture\":\"checked\"}".utf8)
         definition.integration?.digest = SHA256.hash(data: declaration).map { String(format: "%02x", $0) }.joined()
         definition = try definition.frozen()
-        let testBundleIdentifier = "dev.example.FixtureUITests"
         let executables = [
             (products.appBundleURL, "Fixture", definition.target.bundleIdentifier),
             (products.testHostURL, "FixtureUITests-Runner", "dev.example.FixtureUITests-Runner"),
@@ -1326,12 +1426,6 @@ struct ScenarioContractsTests {
                 "TestBundlePath": "__TESTHOST__/PlugIns/FixtureUITests.xctest"],
         ], format: .xml, options: 0)
         try testRunBytes.write(to: products.sourceURL)
-        let configuration = XcodeTestConfiguration(
-            containerPath: project.path, isWorkspace: false, scheme: "Fixture", testTarget: "FixtureUITests",
-            testBundleIdentifier: testBundleIdentifier, destinationIdentifier: "device",
-            generatedResourceDirectory: root.path, xcodebuildPath: "/bin/echo",
-            selectedTestProductID: "\(project.path)#UITESTS"
-        )
         let runtime = ScenarioRuntimeProfileIdentity(destinationIdentifier: "device", destinationPlatform: .iOS,
             destinationOSVersion: "27.0", xcodeBuild: "checked-xcode", sdkBuild: "checked-sdk")
         let connection = ScenarioVerifiedConnection(
@@ -1373,6 +1467,9 @@ struct ScenarioContractsTests {
         #expect(sameCheckedProducts.buildGenerationDigest == connection.buildGenerationDigest)
         #expect(sameCheckedProducts.buildInputsDigest == connection.buildInputsDigest)
         try Data("struct Feature { let changed = true }".utf8).write(to: source)
+        #expect(try XcodeTestExecutor.connectionDerivedDataURL(
+            workDirectory: root, configuration: configuration, owningProjectURL: project
+        ) == derivedData)
         #expect(reused() == nil)
         try sourceBytes.write(to: source)
         #expect(reused() != nil)
@@ -1380,6 +1477,10 @@ struct ScenarioContractsTests {
             let file = bundle.appending(path: executable)
             let bytes = try Data(contentsOf: file)
             try Data("changed executable".utf8).write(to: file)
+            #expect(reused() == nil)
+            try bytes.write(to: file)
+            #expect(reused() != nil)
+            try FileManager.default.removeItem(at: file)
             #expect(reused() == nil)
             try bytes.write(to: file)
             #expect(reused() != nil)
@@ -2676,6 +2777,40 @@ struct ScenarioContractsTests {
         let recovered = try await relaunched.reconcileInterruptedJournals()
         #expect(recovered.map(\.id) == [interrupted.id])
         #expect(await relaunched.reservation(for: invocation.destinationIdentifier) != nil)
+    }
+
+    @Test func timedOutHostStopsBeforeSharedWorkspaceCanBeReused() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executor = XcodeTestExecutor(workDirectory: root, persistence: ScenarioPersistence(rootDirectory: root))
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        let activeJournal = journal(for: definition, invocation: invocation, phase: .running)
+        let derivedData = root.appending(path: "Shared/DerivedData")
+        let logURL = root.appending(path: "timeout.log")
+        do {
+            let lease = try XcodeBuildWorkspaceLease(derivedData: derivedData)
+            defer { withExtendedLifetime(lease) {} }
+            do {
+                _ = try await executor.runProcess(
+                    executable: "/bin/zsh",
+                    arguments: ["-c", "trap '' INT TERM; zmodload zsh/zselect; print $$; while true; do zselect -t 100; done"],
+                    logURL: logURL, invocationID: invocation.id,
+                    destinationIdentifier: invocation.destinationIdentifier, journal: activeJournal,
+                    appendLog: false, deadline: .seconds(1)
+                )
+                Issue.record("The TERM-resistant host unexpectedly completed.")
+            } catch XcodeTestExecutorError.timedOut { }
+            let pid = try #require(Int32(String(contentsOf: logURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+            #expect(pid > 0)
+            if pid > 0 {
+                let hostStillRunning = Darwin.kill(pid, 0) == 0
+                if hostStillRunning { _ = Darwin.kill(pid, SIGKILL) }
+                #expect(!hostStillRunning)
+            }
+        }
+        let reacquired = try XcodeBuildWorkspaceLease(derivedData: derivedData)
+        withExtendedLifetime(reacquired) {}
     }
 
     @Test func inSessionCancellationQuarantinesAndCanBeExplicitlyCleared() async throws {

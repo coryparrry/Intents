@@ -2,6 +2,34 @@ import CryptoKit
 import Darwin
 import Foundation
 
+/// Covers both builds and use of their products, across executor instances.
+/// Nonblocking acquisition keeps cancellation responsive when another owner is busy.
+final class XcodeBuildWorkspaceLease {
+    private let descriptor: Int32
+
+    init(derivedData: URL, fileManager: FileManager = .default) throws {
+        let workspace = derivedData.deletingLastPathComponent()
+        try fileManager.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let lock = workspace.appending(path: ".intentlab-build.lock")
+        let descriptor = lock.path.withCString { open($0, O_CREAT | O_RDWR | O_CLOEXEC, 0o600) }
+        guard descriptor >= 0 else {
+            throw XcodeTestExecutorError.connectionCheck("The private build workspace could not be locked.")
+        }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            close(descriptor)
+            throw XcodeTestExecutorError.connectionCheck(
+                "The private build workspace is in use. Wait for its connection check or scenario run to finish."
+            )
+        }
+        self.descriptor = descriptor
+    }
+
+    deinit {
+        flock(descriptor, LOCK_UN)
+        close(descriptor)
+    }
+}
+
 private final class SchemeTestableReferenceParser: NSObject, XMLParserDelegate {
     private var inTestAction = false
     private var inTestableReference = false
@@ -535,7 +563,14 @@ actor XcodeTestExecutor {
     }
 
     private func removeInvocationTestRuns(derivedDataPath: String) {
-        let products = URL(filePath: derivedDataPath).appending(path: "Build/Products", directoryHint: .isDirectory)
+        let derivedData = URL(filePath: derivedDataPath)
+        guard let workspaceLease = try? XcodeBuildWorkspaceLease(derivedData: derivedData, fileManager: fileManager) else { return }
+        defer { withExtendedLifetime(workspaceLease) {} }
+        removeInvocationTestRuns(derivedData: derivedData)
+    }
+
+    private func removeInvocationTestRuns(derivedData: URL) {
+        let products = derivedData.appending(path: "Build/Products", directoryHint: .isDirectory)
         guard let files = try? fileManager.contentsOfDirectory(at: products, includingPropertiesForKeys: nil) else { return }
         for file in files where file.lastPathComponent.hasPrefix("IntentLab-") && file.pathExtension == "xctestrun" {
             try? fileManager.removeItem(at: file)
@@ -1092,7 +1127,13 @@ actor XcodeTestExecutor {
         }
         let checkID = UUID()
         let directory = workDirectory.appending(path: "Connection-\(checkID.uuidString)", directoryHint: .isDirectory)
-        let derivedData = directory.appending(path: "DerivedData", directoryHint: .isDirectory)
+        let derivedData = try Self.connectionDerivedDataURL(
+            workDirectory: workDirectory, configuration: configuration,
+            owningProjectURL: URL(filePath: owningProjectPath)
+        )
+        let workspaceLease = try XcodeBuildWorkspaceLease(derivedData: derivedData, fileManager: fileManager)
+        defer { withExtendedLifetime(workspaceLease) {} }
+        removeInvocationTestRuns(derivedData: derivedData)
         let resultBundle = directory.appending(path: "Connection.xcresult", directoryHint: .isDirectory)
         let log = directory.appending(path: "xcodebuild.log")
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -1303,6 +1344,29 @@ actor XcodeTestExecutor {
                 configuration: configuration, appBundleURL: verifiedConnection.appBundleURL
             )
         )
+    }
+
+    /// This is only an incremental build cache key. Source/product/runtime evidence
+    /// is recomputed by every connection check and validated again before execution.
+    static func connectionDerivedDataURL(
+        workDirectory: URL,
+        configuration: XcodeTestConfiguration,
+        owningProjectURL: URL
+    ) throws -> URL {
+        var selection = configuration
+        selection.containerPath = URL(filePath: selection.containerPath).resolvingSymlinksInPath().path
+        selection.generatedResourceDirectory = URL(filePath: selection.generatedResourceDirectory).resolvingSymlinksInPath().path
+        selection.xcodebuildPath = URL(filePath: selection.xcodebuildPath).resolvingSymlinksInPath().path
+        selection.xcresulttoolPath = URL(filePath: selection.xcresulttoolPath).resolvingSymlinksInPath().path
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let key = try encoder.encode([
+            "version": "1",
+            "configuration": String(decoding: encoder.encode(selection), as: UTF8.self),
+            "owningTestProject": owningProjectURL.resolvingSymlinksInPath().path,
+        ])
+        let digest = SHA256.hash(data: key).map { String(format: "%02x", $0) }.joined()
+        return workDirectory.appending(path: "BuildWorkspaces/\(digest)/DerivedData", directoryHint: .isDirectory)
     }
 
     /// Validate cached products against source files, generated products, and
@@ -2462,14 +2526,17 @@ actor XcodeTestExecutor {
         }
         let outcome = await stream.first { _ in true }
         timeout.cancel()
-        if connectionCancellationRequested { throw XcodeTestExecutorError.cancelled }
         guard case .some(.exited(let code)) = outcome else {
             process.interrupt()
             try? await Task.sleep(for: .seconds(2))
             if process.isRunning { process.terminate() }
+            try? await Task.sleep(for: .milliseconds(250))
+            if process.isRunning { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
+            if connectionCancellationRequested || Task.isCancelled { throw XcodeTestExecutorError.cancelled }
             throw XcodeTestExecutorError.connectionCheck("Xcode timed out during the read-only setup check.")
         }
-        if Task.isCancelled { throw XcodeTestExecutorError.cancelled }
+        if connectionCancellationRequested || Task.isCancelled { throw XcodeTestExecutorError.cancelled }
         return code
     }
 
@@ -2547,6 +2614,9 @@ actor XcodeTestExecutor {
         let invocationDirectory = workDirectory.appending(path: invocationID.uuidString, directoryHint: .isDirectory)
         let derivedData = selectedConnection?.derivedDataURL
             ?? invocationDirectory.appending(path: "DerivedData", directoryHint: .isDirectory)
+        let workspaceLease = try XcodeBuildWorkspaceLease(derivedData: derivedData, fileManager: fileManager)
+        defer { withExtendedLifetime(workspaceLease) {} }
+        removeInvocationTestRuns(derivedData: derivedData)
         let resultBundle = invocationDirectory.appending(path: "IntentLab.xcresult", directoryHint: .isDirectory)
         let attachments = invocationDirectory.appending(path: "Attachments", directoryHint: .isDirectory)
         let buildLog = invocationDirectory.appending(path: "xcodebuild.log")
@@ -2865,6 +2935,15 @@ actor XcodeTestExecutor {
         guard !requiresSiri || device.platform == .iOS else {
             return (false, "Siri checks require an available physical iPhone; select one before checking the connection or running this test.", device.platform)
         }
+        if requiresSiri {
+            let version = device.operatingSystemVersion?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let version,
+                  version.range(of: #"^[0-9]+(?:\.[0-9]+){0,2}(?: \([A-Za-z0-9]+\))?$"#, options: .regularExpression) != nil,
+                  let majorText = version.split(whereSeparator: { $0 == "." || $0 == " " }).first,
+                  let major = Int(majorText), major >= 27 else {
+                return (false, "Siri checks require a physical iPhone with iOS 27 or later reported by Xcode. Refresh destinations and select a supported version before running this test.", device.platform)
+            }
+        }
         let detail: String
         switch device.platform {
         case .macOS: detail = "\(device.name) is available as the local Mac test destination."
@@ -2991,6 +3070,9 @@ actor XcodeTestExecutor {
             process.interrupt()
             try? await Task.sleep(for: .seconds(2))
             if process.isRunning { process.terminate() }
+            try? await Task.sleep(for: .milliseconds(250))
+            if process.isRunning { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
             throw XcodeTestExecutorError.timedOut
         }
         if Task.isCancelled || cancelledInvocationIDs.contains(invocationID) {

@@ -141,7 +141,6 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
       - name: Run selected UI tests
         if: ${{ needs.changes.outputs.ui == 'true' }}
-        continue-on-error: true
         timeout-minutes: 14
         run: |
           lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
