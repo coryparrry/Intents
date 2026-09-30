@@ -13,7 +13,8 @@ struct ScenarioSavedExecutionReportTests {
         var selection: ScenarioAssessmentSelectionRecord
     }
 
-    private func savedFixture(root: URL) async throws -> Fixture {
+    private func savedFixture(root: URL, semanticOnlyFeature: Bool = false,
+                              response: String = "A summary", directState: String = "packing-001") async throws -> Fixture {
         var definition = ScenarioDefinition.starter()
         definition.target.destinationIdentifier = "simulator"
         definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
@@ -49,6 +50,14 @@ struct ScenarioSavedExecutionReportTests {
         definition.purpose = .releaseRequirement
         definition.checkMode = .basic
         definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        if semanticOnlyFeature {
+            definition.assertions.removeAll { $0.kind == .returnedField && $0.applies(to: .appFeature) }
+            definition.assertions[1].kind = .stateTransition
+            definition.observationPlan?[1].source = .uiElement
+            definition.observationPlan?[1].selector = "selected-note"
+            definition.checkMode = .behaviour
+            definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
+        }
         definition = try definition.frozen()
         let persistence = ScenarioPersistence(rootDirectory: root)
         try await persistence.saveDefinition(definition)
@@ -62,7 +71,7 @@ struct ScenarioSavedExecutionReportTests {
         configuration.approvedConnectionID = judge.connection.id
         configuration.approvedConnectionDigest = judge.connection.disclosureDigest
         configuration.approvedIncludeReferenceAttachments = configuration.includeReferenceAttachments
-        let semantic = definition.assertions[1]
+        let semantic = try #require(definition.assertions.first { $0.kind == .semanticRubric })
         let policy = try ScenarioFrozenSemanticPolicy.make(
             definition: definition, assertionID: semantic.id, configuration: configuration, resolvedJudge: judge)
         let assessments = ScenarioAssessmentStore(directory: root.appending(path: "Assessments"))
@@ -92,21 +101,21 @@ struct ScenarioSavedExecutionReportTests {
             kind: action.kind, operationID: action.operationID, resolvedParameters: action.resolvedParameters,
             terminalStatus: .succeeded, operationError: nil, sequence: 1, startedAt: now, completedAt: now,
             observationTransport: .testOnlyIntent)
-        let observations: [String: ScenarioValue] = ["feature.response": .string("A summary"),
+        let observations: [String: ScenarioValue] = ["feature.response": .string(response),
             "intentlab.actionReceipts": .string(String(decoding: try CanonicalJSON.data(for: [receipt], prettyPrinted: false), as: UTF8.self))]
         let evaluated = ScenarioResultEvaluator.evaluate(definition: definition, lane: .appFeature,
             observations: observations, executionStatus: .completed, actionReceipts: [receipt], invocation: invocation, attempt: 1)
         let lane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: .appFeature,
-            executionStatus: .completed, outcome: evaluated.0, startedAt: now, completedAt: now,
+            executionStatus: .completed, outcome: semanticOnlyFeature ? .notObserved : evaluated.0, startedAt: now, completedAt: now,
             observations: observations, assertionResults: evaluated.1,
             observationSources: ["feature.response": .testOnlyIntent, "intentlab.actionReceipts": .testOnlyIntent],
-            actionReceipts: [receipt], cleanupVerified: true)
+            claims: [.executionCompleted], actionReceipts: [receipt], cleanupVerified: true)
         var run = ScenarioRun(id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
             scenarioDigest: definition.definitionDigest, invocation: invocation, startedAt: now, completedAt: now,
             environment: .init(xcodeVersion: "27", sdkVersion: "27", deviceModel: "fixture", operatingSystem: "fixture",
                 operatingSystemBuild: nil, languageCode: "en", regionCode: "GB", timeZoneIdentifier: "UTC",
                 siriConfiguration: nil, siriConfigurationSource: nil, executedAt: now),
-            executionStatus: .completed, outcome: evaluated.0, laneResults: [lane], linkedFeatureRunID: nil,
+            executionStatus: .completed, outcome: lane.outcome, laneResults: [lane], linkedFeatureRunID: nil,
             importedAt: now, xctestExitCode: 0, fixture: definition.fixture,
             scenarioSchemaVersion: ScenarioDefinition.stableSchemaVersion, testContractDigest: definition.testContractDigest,
             executedTestCount: 1)
@@ -143,7 +152,7 @@ struct ScenarioSavedExecutionReportTests {
         directReceipt.kind = .productionIntent
         directReceipt.operationID = "OpenNoteIntent"
         directReceipt.resolvedParameters = enteredParameters
-        let directObservations: [String: ScenarioValue] = ["selectedNoteID": .string("packing-001"),
+        let directObservations: [String: ScenarioValue] = ["selectedNoteID": .string(directState),
             "intentlab.actionReceipts": .string(String(decoding: try CanonicalJSON.data(for: [directReceipt], prettyPrinted: false), as: UTF8.self))]
         let directEvaluated = ScenarioResultEvaluator.evaluate(definition: definition, lane: .intentIntegration,
             observations: directObservations, executionStatus: .completed, actionReceipts: [directReceipt],
@@ -151,8 +160,10 @@ struct ScenarioSavedExecutionReportTests {
         let directLane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: .intentIntegration,
             executionStatus: .completed, outcome: directEvaluated.0, startedAt: now, completedAt: now,
             observations: directObservations, assertionResults: directEvaluated.1,
-            observationSources: ["selectedNoteID": .appIntentsTesting, "intentlab.actionReceipts": .testOnlyIntent],
-            claims: [.executionCompleted, .returnedValueChecked], actionReceipts: [directReceipt], cleanupVerified: true)
+            observationSources: ["selectedNoteID": semanticOnlyFeature ? .accessibleUI : .appIntentsTesting,
+                                 "intentlab.actionReceipts": .testOnlyIntent],
+            claims: [.executionCompleted, semanticOnlyFeature ? .applicationStateChecked : .returnedValueChecked],
+            actionReceipts: [directReceipt], cleanupVerified: true)
         var directRun = run
         directRun.id = directInvocation.id
         directRun.invocation = directInvocation
@@ -177,7 +188,7 @@ struct ScenarioSavedExecutionReportTests {
         let assessment = try await ScenarioIndependentAssessmentService.assess(
             .init(scenarioRunID: run.id, laneResult: lane, assertion: semantic, effectiveInput: definition.goal.requestText,
                   verifiedReference: "A summary", judgeConfiguration: configuration), resolvedJudge: nil)
-        #expect(assessment.sample?.status == .passed)
+        #expect(assessment.sample?.status == (response == "A summary" ? .passed : .failed))
         try await assessments.appendFeature(assessment, for: record, definition: definition,
             nativeEvidence: .init(plan: plan, run: run, journal: journal))
         let selection = try await assessments.sealSelection(executionRecord: record, runs: [run, directRun],
@@ -187,12 +198,17 @@ struct ScenarioSavedExecutionReportTests {
     }
 
     @MainActor
-    @Test func guiMCPAndOfflineQualifyTheSameSavedSemanticSelectionWithoutWrites() async throws {
+    @Test(arguments: [false, true])
+    func guiMCPAndOfflineQualifyTheSameSavedSemanticSelectionWithoutWrites(semanticOnlyFeature: Bool) async throws {
         let support = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: support) }
         let store = EvaluationStore(supportDirectory: support)
         let root = store.overviewStorageDirectory.appending(path: "IntentLab")
-        let fixture = try await savedFixture(root: root)
+        let fixture = try await savedFixture(root: root, semanticOnlyFeature: semanticOnlyFeature)
+        if semanticOnlyFeature {
+            #expect(fixture.run.laneResults[0].outcome == .notObserved)
+            #expect(fixture.run.laneResults[0].claims == [.executionCompleted])
+        }
         let service = ScenarioSavedExecutionReportService(rootDirectory: root)
         let coordinator = ScenarioCoordinator(supportDirectory: store.overviewStorageDirectory, evaluationStore: store,
                                               executionAdmission: ScenarioExecutionAdmission())
@@ -221,6 +237,57 @@ struct ScenarioSavedExecutionReportTests {
         let offline = try IntentEvidenceQualification.check(imported: IntentEvidenceBundle.read(bundle), trusted: trusted,
             expectedSource: "fixture-revision", expectedAppDigest: fixture.plan.appProductDigest, referenceTime: Date())
         #expect(offline.requirementsMet)
+        let requirementsURL = support.appending(path: "trusted-requirements.json")
+        try CanonicalJSON.data(for: trusted, prettyPrinted: false).write(to: requirementsURL)
+        let cli = try IntentEvidenceChecker.check(bundle: bundle, requirements: requirementsURL,
+            expectedSource: "fixture-revision", expectedAppDigest: fixture.plan.appProductDigest,
+            policy: IntentEvidenceChecker.policyID, referenceTime: Date())
+        #expect(cli.exitCode == 0)
+        #expect(try fileSnapshot(root) == before)
+    }
+
+    @Test(arguments: ["semantic", "direct"])
+    func scoredSemanticEvidenceCannotOverrideARequiredFailure(failingLane: String) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try await savedFixture(root: root, semanticOnlyFeature: true,
+            response: failingLane == "semantic" ? "Wrong summary" : "A summary",
+            directState: failingLane == "direct" ? "wrong-note" : "packing-001")
+        let before = try fileSnapshot(root)
+        let decision = try await ScenarioSavedExecutionReportService(rootDirectory: root)
+            .qualification(executionID: fixture.record.id)
+        #expect(!decision.requiredFailures.isEmpty)
+        #expect(decision.incompleteEvidence.isEmpty)
+        #expect(decision.report?.outcome == .failed)
+        #expect(try fileSnapshot(root) == before)
+    }
+
+    @Test(arguments: ["output", "receipt", "cleanup"])
+    func scoredSemanticEvidenceCannotOverrideTamperedNativeEvidence(field: String) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try await savedFixture(root: root, semanticOnlyFeature: true)
+        let runURL = root.appending(path: "Runs/\(fixture.definition.id.uuidString)/\(fixture.run.id.uuidString)/run.json")
+        var json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: runURL)) as? [String: Any])
+        var lanes = try #require(json["laneResults"] as? [[String: Any]])
+        switch field {
+        case "output":
+            var observations = try #require(lanes[0]["observations"] as? [String: Any])
+            observations["feature.response"] = ["string": ["_0": "Changed after assessment"]]
+            lanes[0]["observations"] = observations
+        case "receipt": lanes[0].removeValue(forKey: "actionReceipts")
+        default: lanes[0]["cleanupVerified"] = false
+        }
+        json["laneResults"] = lanes
+        try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]).write(to: runURL)
+        let before = try fileSnapshot(root)
+        var qualified = false
+        do {
+            let decision = try await ScenarioSavedExecutionReportService(rootDirectory: root)
+                .qualification(executionID: fixture.record.id)
+            qualified = decision.report?.outcome == .passed
+        } catch { /* Corrupt saved evidence may fail before qualification. */ }
+        #expect(!qualified)
         #expect(try fileSnapshot(root) == before)
     }
 
@@ -230,7 +297,7 @@ struct ScenarioSavedExecutionReportTests {
         defer { try? FileManager.default.removeItem(at: support) }
         let store = EvaluationStore(supportDirectory: support)
         let root = store.overviewStorageDirectory.appending(path: "IntentLab")
-        let fixture = try await savedFixture(root: root)
+        let fixture = try await savedFixture(root: root, semanticOnlyFeature: true)
         let authority = MCPStoreAuthority.make(store: store)
         let missing = await authority.call(.getScenarioExecutionReport(.init(executionID: UUID())))
         #expect(missing.isError)
@@ -271,6 +338,14 @@ struct ScenarioSavedExecutionReportTests {
         #expect(try fileSnapshot(root) == beforeCorruptSelection)
         try savedSelectionBytes.write(to: selectionPath)
         let policyPath = root.appending(path: "Assessments/Requirements/\(fixture.definition.id.uuidString.lowercased())-v\(fixture.definition.version).json")
+        let policyBytes = try Data(contentsOf: policyPath)
+        try FileManager.default.removeItem(at: policyPath)
+        let beforeMissingPolicy = try fileSnapshot(root)
+        let missingPolicy = try await service.qualification(executionID: fixture.record.id)
+        #expect(!missingPolicy.incompleteEvidence.isEmpty)
+        #expect(missingPolicy.report?.outcome != .passed)
+        #expect(try fileSnapshot(root) == beforeMissingPolicy)
+        try policyBytes.write(to: policyPath)
         var policy = fixture.policy
         policy.definitionDigest = String(repeating: "0", count: 64)
         try CanonicalJSON.data(for: policy, prettyPrinted: false).write(to: policyPath)

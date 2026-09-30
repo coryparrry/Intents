@@ -501,8 +501,15 @@ enum IntentEvidenceQualification {
                 failed.append("Coordinate \(coordinate.id) failed its observed requirement: wrongOutcome.")
             }
             var assessedLane = laneResult
+            // A captured semantic response can carry the runner's provisional
+            // notObserved verdict. Resolve only that verdict from the trusted,
+            // scored assessment; missing observations or action evidence still
+            // fail the independent recomputation and integrity checks above.
+            let hasScoredSemanticEvidence = !semantic.isEmpty && !semanticIncomplete
+                && recomputed.0 == .needsReview && laneResult.executionStatus == .completed
+                && action.0 == .passed
             if laneResult.executionStatus != .completed || recomputed.0 == .notObserved
-                || semanticIncomplete || laneResult.outcome == .notObserved
+                || semanticIncomplete || (laneResult.outcome == .notObserved && !hasScoredSemanticEvidence)
                 || (semantic.isEmpty && laneResult.outcome == .needsReview) {
                 incomplete.append("Coordinate \(coordinate.id) has incomplete independently evaluated evidence.")
                 assessedLane.outcome = .needsReview
