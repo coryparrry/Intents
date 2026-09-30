@@ -708,7 +708,7 @@ public enum IntentLabScenarioEngine {
                 var baseline: [String: IntentLabValue]?
                 var preparationStarted = false
                 var attemptScreenshot: IntentLabArtifactReference?
-                let completedAttempt = IntentLabAttemptLifecycle.execute(action: {
+                let completedAttempt = executeSiriAttempt(action: {
                     try sequence.run {
                         preparationStarted = true
                         let application = try integration.prepare(
@@ -745,6 +745,13 @@ public enum IntentLabScenarioEngine {
                         attemptFence.recordVerifiedSiriCompletion()
                         return completedObservations
                     }
+                }, evaluate: { observations in
+                    result(
+                        for: .siri, scenario: scenario, observations: observations,
+                        baseline: baseline, integration: integration, declaration: declaration,
+                        context: context, startedAt: siriStart, attempt: attempt,
+                        artifacts: [attemptScreenshot ?? EvidenceAttachmentWriter.attachScreenshot(to: testCase)]
+                    )
                 }, cleanupRequired: {
                     scenario.schemaVersion == 2 && preparationStarted
                 }, skipCleanupAfter: { _ in
@@ -771,19 +778,8 @@ public enum IntentLabScenarioEngine {
                 )
                 var siriLaneResult: IntentLabLaneResult
                 switch completedAttempt.action {
-                case .success(let observations):
-                    siriLaneResult = result(
-                        for: .siri,
-                        scenario: scenario,
-                        observations: observations,
-                        baseline: baseline,
-                        integration: integration,
-                        declaration: declaration,
-                        context: context,
-                        startedAt: siriStart,
-                        attempt: attempt,
-                        artifacts: [screenshot]
-                    )
+                case .success(let laneResult):
+                    siriLaneResult = laneResult
                 case .failure(let error):
                     siriLaneResult = failed(
                         for: .siri,
@@ -814,6 +810,21 @@ public enum IntentLabScenarioEngine {
         )
         try EvidenceAttachmentWriter.attach(envelope, to: testCase)
         return envelope
+    }
+
+    static func executeSiriAttempt(
+        action: () throws -> [String: IntentLabValue],
+        evaluate: ([String: IntentLabValue]) -> IntentLabLaneResult,
+        cleanupRequired: () -> Bool,
+        skipCleanupAfter: (Error) -> Bool,
+        cleanup: () throws -> Void
+    ) -> (action: Result<IntentLabLaneResult, Error>, cleanupError: Error?) {
+        // Completion can depend on consumer-owned active context. Freeze the
+        // observed result before cleanup clears that context or resets app state.
+        IntentLabAttemptLifecycle.execute(
+            action: { evaluate(try action()) }, cleanupRequired: cleanupRequired,
+            skipCleanupAfter: skipCleanupAfter, cleanup: cleanup
+        )
     }
 
     static func captureDirectObservations(
