@@ -6,28 +6,6 @@ final class FoundationEvalsUITests: XCTestCase {
     }
 
     @MainActor
-    func testDebugAppDoesNotOfferSelfUpdates() throws {
-        let app = XCUIApplication()
-        let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
-        defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
-        app.launch()
-        defer { app.terminate() }
-        app.activate()
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
-
-        let appMenu = app.menuBars.menuBarItems["Intents"]
-        XCTAssertTrue(appMenu.waitForExistence(timeout: 5))
-        appMenu.click()
-        XCTAssertTrue(app.menuItems["About Intents"].waitForExistence(timeout: 5),
-                      "The app menu must be open before checking its update commands")
-        XCTAssertFalse(app.menuItems["Check for Updates…"].exists,
-                       "Debug verification must not start or expose the release updater")
-        app.typeKey(.escape, modifierFlags: [])
-    }
-
-    @MainActor
     func testIntentLabOpensWithScenarioAndConnectionControls() throws {
         let app = XCUIApplication()
         let storageName = UUID().uuidString

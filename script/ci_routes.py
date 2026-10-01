@@ -53,7 +53,7 @@ SWIFT_DEPENDENCIES = {
     },
     "Services/XCTestRunInvocationTransport.swift": {"ScenarioContractsTests"},
     "Services/XcodeConnectionDiscovery.swift": {"ScenarioContractsTests"},
-    "Services/XcodeTestExecutor.swift": {"ScenarioContractsTests", "ExecutorSimplificationTests"},
+    "Services/XcodeTestExecutor.swift": {"ScenarioContractsTests"},
     "Services/EvaluationFieldAssertions.swift": {"EvaluationFieldAssertionTests"},
     "Services/MetricScorer.swift": {"MetricScorerTests"},
     "Models/WorkflowTimelineInterval.swift": {

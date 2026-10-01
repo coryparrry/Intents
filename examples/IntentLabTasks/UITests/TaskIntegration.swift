@@ -27,6 +27,7 @@ final class TaskIntegration: IntentLabIntegration {
     private(set) var completedCleanups = 0
     private var activeBundleIdentifier: String?
     private var activeContext: String?
+    private var baselineReceiptByContext: [String: String] = [:]
 
     init(faultMode: String = "none", forceCleanupFailure: Bool = false) {
         self.faultMode = faultMode
@@ -65,6 +66,9 @@ final class TaskIntegration: IntentLabIntegration {
 
         activeBundleIdentifier = bundleIdentifier
         activeContext = context
+        // Dataset seeding clears all prior action receipts. The runner takes its
+        // own declaration-backed baseline observation after prepare returns.
+        baselineReceiptByContext[context] = ""
         return application
     }
 
@@ -103,7 +107,8 @@ final class TaskIntegration: IntentLabIntegration {
         guard activeContext == context,
               observations["invocationContext"] == .string(context),
               let receipt = try? requiredString("actionReceiptID", from: observations),
-              !receipt.isEmpty else {
+              !receipt.isEmpty,
+              baselineReceiptByContext[context] != receipt else {
             return false
         }
         return true

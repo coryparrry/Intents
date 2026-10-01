@@ -52,11 +52,10 @@ struct OpenStepProjectDocument {
     }
 
     mutating func addObject(id: String, value: String) throws {
-        let root = try root()
-        guard root.dictionary?["objects"]?.dictionary?[id] == nil else {
+        guard !((try root().dictionary?["objects"]?.dictionary?[id]) != nil) else {
             throw Error.duplicate("object \(id)")
         }
-        guard let objects = root.dictionary?["objects"] else { throw Error.missing("objects") }
+        guard let objects = try root().dictionary?["objects"] else { throw Error.missing("objects") }
         insert("\n\t\t\(id) /* Intent Lab */ = \(value);", at: objects.range.upperBound - 1)
         try validate()
     }

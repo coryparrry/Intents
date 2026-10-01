@@ -36,14 +36,6 @@ enum IntentEvidenceQualification {
     ) throws -> IntentEvidenceDecisionPayload {
         try validateTrust(imported: imported, trusted: trusted, expectedSource: expectedSource,
                           expectedAppDigest: expectedAppDigest)
-        return decisionForValidatedInput(imported: imported, trusted: trusted, referenceTime: referenceTime)
-    }
-
-    private static func decisionForValidatedInput(
-        imported: IntentEvidenceBundle.Imported,
-        trusted: IntentEvidenceRequirements,
-        referenceTime: Date
-    ) -> IntentEvidenceDecisionPayload {
         let byID = Dictionary(uniqueKeysWithValues: imported.cases.map { ($0.definition.id, $0) })
         var results: [IntentEvidenceCaseDecision] = []
         for requirement in trusted.cases.sorted(by: { $0.definition.id.uuidString < $1.definition.id.uuidString }) {
@@ -122,11 +114,12 @@ enum IntentEvidenceQualification {
                           expectedAppDigest: baselineAppDigest)
         try validateTrust(imported: candidate, trusted: trusted, expectedSource: candidateSource,
                           expectedAppDigest: candidateAppDigest)
-        var decision = decisionForValidatedInput(
-            imported: candidate, trusted: trusted, referenceTime: referenceTime
-        )
-        let baselineDecision = decisionForValidatedInput(
-            imported: baseline, trusted: trusted, referenceTime: referenceTime
+        var decision = try check(imported: candidate, trusted: trusted,
+                                 expectedSource: candidateSource, expectedAppDigest: candidateAppDigest,
+                                 referenceTime: referenceTime)
+        let baselineDecision = try check(
+            imported: baseline, trusted: trusted, expectedSource: baselineSource,
+            expectedAppDigest: baselineAppDigest, referenceTime: referenceTime
         )
         decision.incompleteEvidence.append(contentsOf: baselineDecision.incompleteEvidence.map {
             "Baseline: \($0)"

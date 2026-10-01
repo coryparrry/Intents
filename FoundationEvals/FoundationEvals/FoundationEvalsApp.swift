@@ -11,12 +11,9 @@ struct FoundationEvalsApp: App {
     @State private var runnerStore: DeveloperRunnerStore
     @State private var telemetry: TelemetryController
     @State private var mcpSettings: MCPSettingsController
-    // Debug builds must retain the exact executable being tested.
-    #if !DEBUG
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
     )
-    #endif
     private let mcpRuntime: FoundationEvalsMCPRuntime
 
     init() {
@@ -122,11 +119,9 @@ struct FoundationEvalsApp: App {
             CommandGroup(replacing: .newItem) { }
             // AppKit's Services scanner blocks accessibility menu inspection on a lower-QoS thread.
             CommandGroup(replacing: .systemServices) { }
-            #if !DEBUG
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updaterController.updater)
             }
-            #endif
 
             CommandMenu("Evaluation") {
                 Button("Show Suite Editor") {

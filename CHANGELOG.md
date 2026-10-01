@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/coryparrry/Intents/compare/v1.3.0...v1.4.0) (2026-09-20)
+
+
+### Features
+
+* **brand:** rename Foundation Evals to Intents across the app and release experience ([27741da](https://github.com/coryparrry/Intents/commit/27741dac23b71a6d7815dbec8a659ba02d13a2c4))
+
+
+### Bug Fixes
+
+* **brand:** restore the established Intents social preview layout ([b60b097](https://github.com/coryparrry/Intents/commit/b60b097d9489160e9148928f7115166242138453))
+
 ## [1.3.0](https://github.com/coryparrry/Intents/compare/v1.2.0...v1.3.0) (2026-09-19)
 
 

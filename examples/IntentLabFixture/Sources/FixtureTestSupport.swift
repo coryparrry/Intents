@@ -178,6 +178,10 @@ enum FixtureTestSupport {
             throw error
         }
     }
+
+    static func validateFeatureOperation(_ operationID: String) -> Bool {
+        featureOperations[operationID] != nil
+    }
 }
 
 enum FixtureTestSupportError: LocalizedError {

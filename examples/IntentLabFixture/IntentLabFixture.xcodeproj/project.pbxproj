@@ -80,7 +80,7 @@
 		98BA05A8D0207C8615A2DE24 /* FixtureTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureTestSupport.swift; sourceTree = "<group>"; };
 		9ED21154C6372ED75D575421 /* IntentLabScenarioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabScenarioTests.swift; sourceTree = "<group>"; };
 		9EE60FD197B480A5396210E9 /* IntentLabScenario.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = IntentLabScenario.json; sourceTree = "<group>"; };
-		A0D24CF9569EC4BC128D678A /* SiriActivationBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = SiriActivationBridge.m; path = ../../Sources/IntentLabSiriBridge/SiriActivationBridge.m; sourceTree = SOURCE_ROOT; };
+		A0D24CF9569EC4BC128D678A /* SiriActivationBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SiriActivationBridge.m; sourceTree = "<group>"; };
 		A8C73DA6601F4848FD17B6C0 /* IntentLabWireContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabWireContracts.swift; sourceTree = "<group>"; };
 		A99B9D3A34C1C80E9C78A6CA /* FixtureNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureNotes.swift; sourceTree = "<group>"; };
 		AB012819E50B7AA1332348AA /* IntentLabFixtureUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = IntentLabFixtureUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -90,7 +90,7 @@
 		E54E14FAD1E3BAA2DE59DD5B /* IntentLabFixtureRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabFixtureRunner.swift; sourceTree = "<group>"; };
 		E64A43484EA1AA050108904A /* IntentLabIntegration.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = IntentLabIntegration.json; sourceTree = "<group>"; };
 		F021F2A5EE32391CBE2815DC /* IntentLabSiriScenarioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabSiriScenarioTests.swift; sourceTree = "<group>"; };
-		FAF40E2C9CC322498F15FDB3 /* SiriActivationBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SiriActivationBridge.h; path = ../../Sources/IntentLabSiriBridge/include/SiriActivationBridge.h; sourceTree = SOURCE_ROOT; };
+		FAF40E2C9CC322498F15FDB3 /* SiriActivationBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SiriActivationBridge.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -591,11 +591,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.coryparry.IntentLabFixtureUITests;
 				SDKROOT = iphoneos;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../../Sources/IntentLabSiriBridge/include",
-				);
-				SWIFT_OBJC_BRIDGING_HEADER = ../../Sources/IntentLabSiriBridge/include/SiriActivationBridge.h;
+				SWIFT_OBJC_BRIDGING_HEADER = ../../Integration/AppIntentsTesting/SiriActivationBridge.h;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = IntentLabFixture;
 			};
@@ -683,11 +679,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.coryparry.IntentLabFixtureUITests;
 				SDKROOT = iphoneos;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../../Sources/IntentLabSiriBridge/include",
-				);
-				SWIFT_OBJC_BRIDGING_HEADER = ../../Sources/IntentLabSiriBridge/include/SiriActivationBridge.h;
+				SWIFT_OBJC_BRIDGING_HEADER = ../../Integration/AppIntentsTesting/SiriActivationBridge.h;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = IntentLabFixture;
 			};
@@ -892,11 +884,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.coryparry.IntentLabFixtureUITests;
 				SDKROOT = iphoneos;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../../Sources/IntentLabSiriBridge/include",
-				);
-				SWIFT_OBJC_BRIDGING_HEADER = ../../Sources/IntentLabSiriBridge/include/SiriActivationBridge.h;
+				SWIFT_OBJC_BRIDGING_HEADER = ../../Integration/AppIntentsTesting/SiriActivationBridge.h;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = IntentLabFixture;
 			};

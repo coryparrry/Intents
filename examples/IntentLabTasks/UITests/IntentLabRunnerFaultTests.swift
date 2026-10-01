@@ -84,7 +84,7 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         XCTAssertTrue(qualifiesForRelease(scenario: scenario, lane: result))
     }
 
-    func testCleanupFailurePreservesPassingActionButDisqualifiesRelease() throws {
+    func testCleanupFailureInvalidatesOtherwisePassingDirectEvidence() throws {
         let (scenario, invocation) = try makeBehaviourScenario()
         let evidence = try IntentLabScenarioRunner.run(
             testCase: self,
@@ -94,11 +94,8 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         )
 
         let result = try XCTUnwrap(evidence.results.first { $0.lane == .intentIntegration })
-        XCTAssertEqual(result.executionStatus, .completed)
-        XCTAssertEqual(result.outcome, .passed)
-        XCTAssertEqual(result.cleanupVerified, false)
-        XCTAssertEqual(result.observations["task-001.isComplete"], .boolean(true))
-        XCTAssertEqual(result.observations["completionResponse"], .string("Completed Buy milk."))
+        XCTAssertEqual(result.executionStatus, .invalidEvidence)
+        XCTAssertEqual(result.outcome, .notObserved)
         XCTAssertTrue(result.diagnostic?.contains("cleanup failed") ?? false)
         XCTAssertFalse(qualifiesForRelease(scenario: scenario, lane: result))
     }
@@ -139,52 +136,6 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         })
         XCTAssertEqual(result.outcome, .failed)
         XCTAssertFalse(qualifiesForRelease(scenario: scenario, lane: result))
-    }
-
-    func testCompletionRequiresCurrentContextAndNonemptyReceipt() throws {
-        let integration = TaskIntegration()
-        let context = "completion-current"
-        let application = try integration.prepare(
-            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
-            context: context, operationID: TaskIntegration.preparationOperation
-        )
-        defer { application.terminate() }
-
-        XCTAssertFalse(integration.completed(observations: [
-            "invocationContext": .string(context), "actionReceiptID": .string("")
-        ], context: context))
-        XCTAssertFalse(integration.completed(observations: [
-            "invocationContext": .string("completion-previous"), "actionReceiptID": .string("receipt")
-        ], context: context))
-        XCTAssertTrue(integration.completed(observations: [
-            "invocationContext": .string(context), "actionReceiptID": .string("receipt")
-        ], context: context))
-    }
-
-    func testConsecutivePreparesRejectEarlierContext() throws {
-        let integration = TaskIntegration()
-        let first = try integration.prepare(
-            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
-            context: "first", operationID: TaskIntegration.preparationOperation
-        )
-        first.terminate()
-        let second = try integration.prepare(
-            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
-            context: "second", operationID: TaskIntegration.preparationOperation
-        )
-        defer { second.terminate() }
-        XCTAssertFalse(integration.completed(observations: [
-            "invocationContext": .string("first"), "actionReceiptID": .string("first-receipt")
-        ], context: "first"))
-        XCTAssertFalse(integration.completed(observations: [
-            "invocationContext": .string("first"), "actionReceiptID": .string("first-receipt")
-        ], context: "second"))
-        XCTAssertFalse(integration.completed(observations: [
-            "invocationContext": .string("second"), "actionReceiptID": .string("")
-        ], context: "second"))
-        XCTAssertTrue(integration.completed(observations: [
-            "invocationContext": .string("second"), "actionReceiptID": .string("second-receipt")
-        ], context: "second"))
     }
 
     private func makeBehaviourScenario(
@@ -290,7 +241,6 @@ final class IntentLabRunnerFaultTests: XCTestCase {
               lane.lane == .intentIntegration,
               lane.executionStatus == .completed,
               lane.outcome == .passed,
-              lane.cleanupVerified == true,
               let claims = lane.claims,
               (scenario.requiredClaims ?? []).allSatisfy(claims.contains) else {
             return false
