@@ -126,44 +126,6 @@ class CoverageTests(unittest.TestCase):
             swift=("WorkflowTimelineIntervalTests", "TimelineRenderingTests"),
         )
 
-    def test_scenario_execution_dependencies_select_contract_tests(self):
-        for source in (
-            "ScenarioExecutionRecovery.swift",
-            "XCTestRunInvocationTransport.swift",
-            "XcodeConnectionDiscovery.swift",
-        ):
-            with self.subTest(source=source):
-                self.assert_selection(
-                    [routes.APP + "Services/" + source],
-                    native=True,
-                    swift=("ScenarioContractsTests",),
-                )
-
-    def test_executor_changes_select_contract_and_helper_regressions(self):
-        self.assert_selection(
-            [routes.APP + "Services/XcodeTestExecutor.swift"],
-            native=True,
-            swift=("ScenarioContractsTests", "ExecutorSimplificationTests"),
-        )
-        self.assert_selection(
-            [routes.TESTS + "ExecutorSimplificationTests.swift"],
-            native=True,
-            swift=("ExecutorSimplificationTests",),
-            python=("script.tests.test_ci_routes",),
-        )
-
-    def test_project_installer_sources_select_installer_tests(self):
-        for source in (
-            "IntentLabProjectInstaller.swift",
-            "OpenStepProjectDocument.swift",
-        ):
-            with self.subTest(source=source):
-                self.assert_selection(
-                    [routes.APP + "Services/" + source],
-                    native=True,
-                    swift=("IntentLabProjectInstallerTests",),
-                )
-
     def test_sidebar_and_toolbar_do_not_rerun_scoring_or_installer_tests(self):
         for source, suite in (
             ("FullWidthDisclosureStyle.swift", "NavigationInteractionTests"),

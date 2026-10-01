@@ -126,8 +126,7 @@ actor EvaluationCompatibleJudgeClient {
         guard connection.capabilities.structuredOutputs else {
             throw EvaluationCompatibleJudgeError.capabilityMismatch("Structured verdicts are required for judging.")
         }
-        let transmittedImages = suite.judgeConfiguration.includeReferenceAttachments ? images : []
-        guard transmittedImages.isEmpty || connection.capabilities.multimodal else {
+        guard images.isEmpty || connection.capabilities.multimodal else {
             throw EvaluationCompatibleJudgeError.capabilityMismatch(
                 "This evaluation includes image evidence, but the judge connection is not configured and verified for multimodal input.")
         }
@@ -153,7 +152,7 @@ actor EvaluationCompatibleJudgeClient {
             attempts.append(.init(prompt: attemptPrompt, requestConfiguration: configuration))
             do {
                 let envelope = try await requestVerdict(prompt: attemptPrompt, configuration: configuration,
-                    images: transmittedImages, resolved: resolved)
+                    images: suite.judgeConfiguration.includeReferenceAttachments ? images : [], resolved: resolved)
                 // Capture before parsing: malformed JSON is evidence, not a
                 // reason to discard the provider's actual answer.
                 attempts[attempt - 1].rawResponse = envelope.rawContent
@@ -275,7 +274,7 @@ actor EvaluationCompatibleJudgeClient {
 
     private func applyHeaders(to request: inout URLRequest, resolved: EvaluationResolvedJudgeConnection) {
         if let apiKey = resolved.apiKey, !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
-        if resolved.connection.kind == .openRouter { request.setValue("Intents", forHTTPHeaderField: "X-OpenRouter-Title") }
+        if resolved.connection.kind == .openRouter { request.setValue("Foundation Evals", forHTTPHeaderField: "X-OpenRouter-Title") }
     }
 
     private func validate(response: URLResponse, data: Data) throws {

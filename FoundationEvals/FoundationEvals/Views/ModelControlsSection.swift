@@ -252,6 +252,6 @@ struct ModelControlsSection: View {
         .accessibilityElement(children: .combine)
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceInset(radius: 9)
+        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 9))
     }
 }

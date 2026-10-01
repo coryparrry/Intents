@@ -139,7 +139,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
 
         selectSetup("Scoring")
         app.radioButtons["Exact text"].click()
-        app.radioButtons["Cases"].click()
+        app.buttons["Cases"].click()
         let expected = app.textViews["Scoring expected text"]
         XCTAssertTrue(expected.waitForExistence(timeout: 3))
         replaceText(in: expected, with: "Deterministic fixture stream.")
@@ -162,7 +162,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
 
     @MainActor
     private func selectSetup(_ title: String) {
-        app.radioButtons["Setup"].click()
+        app.buttons["Setup"].click()
         let menu = app.popUpButtons["Suite setup"]
         if menu.exists {
             menu.click()

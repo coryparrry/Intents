@@ -39,8 +39,6 @@ public struct DeveloperRunnerIdentity: Codable, Hashable, Sendable, Identifiable
     public var appVersion: String
     public var localeIdentifier: String?
     public var protocolVersion: DeveloperProtocolVersion
-    /// Metadata supplied by the application build. It is not device attestation.
-    public var buildProvenance: DeveloperRunnerBuildProvenance?
 
     public init(
         id: UUID,
@@ -51,8 +49,7 @@ public struct DeveloperRunnerIdentity: Codable, Hashable, Sendable, Identifiable
         appBundleIdentifier: String,
         appVersion: String,
         localeIdentifier: String? = nil,
-        protocolVersion: DeveloperProtocolVersion = .current,
-        buildProvenance: DeveloperRunnerBuildProvenance? = nil
+        protocolVersion: DeveloperProtocolVersion = .current
     ) {
         self.id = id
         self.displayName = displayName
@@ -63,31 +60,6 @@ public struct DeveloperRunnerIdentity: Codable, Hashable, Sendable, Identifiable
         self.appVersion = appVersion
         self.localeIdentifier = localeIdentifier
         self.protocolVersion = protocolVersion
-        self.buildProvenance = buildProvenance
-    }
-}
-
-/// Values embedded by the developer's build process and reported during the authenticated handshake.
-/// A host must compare these with its checked product before claiming an exact build match.
-public struct DeveloperRunnerBuildProvenance: Codable, Hashable, Sendable {
-    public var logicalAppID: String
-    public var buildID: String
-    public var sourceManifestDigest: String?
-    public var packageRevision: String?
-    public var compiledProductNonce: String?
-
-    public init(
-        logicalAppID: String,
-        buildID: String,
-        sourceManifestDigest: String? = nil,
-        packageRevision: String? = nil,
-        compiledProductNonce: String? = nil
-    ) {
-        self.logicalAppID = logicalAppID
-        self.buildID = buildID
-        self.sourceManifestDigest = sourceManifestDigest
-        self.packageRevision = packageRevision
-        self.compiledProductNonce = compiledProductNonce
     }
 }
 
@@ -98,8 +70,6 @@ public struct DeveloperFeatureDescriptor: Codable, Hashable, Sendable, Identifia
     public var inputTypeName: String
     public var outputTypeName: String
     public var capabilityNames: [String]
-    /// Present only when the app explicitly supports the expectation-free input contract.
-    public var subjectInputSchema: DeveloperSubjectInputSchema?
 
     public init(
         id: String,
@@ -107,8 +77,7 @@ public struct DeveloperFeatureDescriptor: Codable, Hashable, Sendable, Identifia
         version: String,
         inputTypeName: String,
         outputTypeName: String,
-        capabilityNames: [String] = [],
-        subjectInputSchema: DeveloperSubjectInputSchema? = nil
+        capabilityNames: [String] = []
     ) {
         self.id = id
         self.displayName = displayName
@@ -116,177 +85,6 @@ public struct DeveloperFeatureDescriptor: Codable, Hashable, Sendable, Identifia
         self.inputTypeName = inputTypeName
         self.outputTypeName = outputTypeName
         self.capabilityNames = capabilityNames
-        self.subjectInputSchema = subjectInputSchema
-    }
-}
-
-public enum DeveloperFeatureInputContract: String, Codable, Hashable, Sendable {
-    case legacyTypedV1
-    case subjectV1
-}
-
-public indirect enum DeveloperSubjectValue: Codable, Hashable, Sendable {
-    case string(String)
-    case integer(Int64)
-    case number(Double)
-    case boolean(Bool)
-    case array([DeveloperSubjectValue])
-    case object([String: DeveloperSubjectValue])
-    case null
-}
-
-public indirect enum DeveloperSubjectValueType: Codable, Hashable, Sendable {
-    case string
-    case integer
-    case number
-    case boolean
-    case array(DeveloperSubjectValueType)
-    case object([DeveloperSubjectInputField])
-}
-
-public struct DeveloperSubjectInputField: Codable, Hashable, Sendable {
-    public var name: String
-    public var valueType: DeveloperSubjectValueType
-    public var required: Bool
-    public var nullable: Bool
-
-    public init(name: String, valueType: DeveloperSubjectValueType, required: Bool = true, nullable: Bool = false) {
-        self.name = name
-        self.valueType = valueType
-        self.required = required
-        self.nullable = nullable
-    }
-}
-
-public struct DeveloperSubjectInputSchema: Codable, Hashable, Sendable {
-    public static let capabilityName = "expectation-free-subject-input-v1"
-    public var version: String
-    public var fields: [DeveloperSubjectInputField]
-
-    public init(version: String, fields: [DeveloperSubjectInputField]) {
-        self.version = version
-        self.fields = fields
-    }
-
-    public func validate(_ input: DeveloperSubjectInput) throws {
-        guard !version.isEmpty else { throw invalid("The subject input schema has no version.") }
-        try validate(input.businessInputs, against: fields, path: "businessInputs")
-        let fixtureIDs = input.fixtureReferences.map(\.identifier)
-        guard Set(fixtureIDs).count == fixtureIDs.count else {
-            throw invalid("Fixture references must have unique identifiers.")
-        }
-        guard input.fixtureReferences.allSatisfy({ !$0.identifier.isEmpty && !$0.contractDigest.isEmpty }) else {
-            throw invalid("Fixture references require an identifier and contract digest.")
-        }
-    }
-
-    private func validate(
-        _ values: [String: DeveloperSubjectValue],
-        against fields: [DeveloperSubjectInputField],
-        path: String
-    ) throws {
-        let names = fields.map(\.name)
-        guard Set(names).count == names.count else { throw invalid("The \(path) schema has duplicate fields.") }
-        for field in fields {
-            guard !field.name.isEmpty, !Self.isOracleName(field.name) else {
-                throw invalid("The \(path) schema declares an unsupported assessment field: \(field.name).")
-            }
-            guard let value = values[field.name] else {
-                if field.required { throw invalid("Missing required subject input \(path).\(field.name).") }
-                continue
-            }
-            try validate(value, as: field.valueType, nullable: field.nullable, path: "\(path).\(field.name)")
-        }
-        for name in values.keys where !names.contains(name) {
-            throw invalid("Unsupported subject input \(path).\(name).")
-        }
-    }
-
-    private func validate(
-        _ value: DeveloperSubjectValue,
-        as type: DeveloperSubjectValueType,
-        nullable: Bool,
-        path: String
-    ) throws {
-        if case .null = value {
-            if nullable { return }
-            throw invalid("Subject input \(path) cannot be null.")
-        }
-        switch (value, type) {
-        case (.string, .string), (.integer, .integer), (.number, .number), (.boolean, .boolean):
-            return
-        case (.array(let values), .array(let elementType)):
-            for (index, element) in values.enumerated() {
-                try validate(element, as: elementType, nullable: false, path: "\(path)[\(index)]")
-            }
-        case (.object(let values), .object(let fields)):
-            try validate(values, against: fields, path: path)
-        default:
-            throw invalid("Subject input \(path) has the wrong declared type.")
-        }
-    }
-
-    private static func isOracleName(_ name: String) -> Bool {
-        let compact = name.lowercased().filter(\.isLetter)
-        return ["expected", "expectedanswer", "expectedfacts", "referenceanswer", "goldenanswer",
-                "answerkey", "rubric", "threshold", "passthreshold", "scoringinstructions"].contains(compact)
-    }
-
-    private func invalid(_ message: String) -> DeveloperExecutionFailure {
-        .init(code: .invalidInput, message: message)
-    }
-}
-
-public struct DeveloperSubjectFixtureReference: Codable, Hashable, Sendable {
-    public var identifier: String
-    public var contractDigest: String
-
-    public init(identifier: String, contractDigest: String) {
-        self.identifier = identifier
-        self.contractDigest = contractDigest
-    }
-}
-
-/// The app receives only the user-facing business input, intended fixture and execution correlation.
-/// Assessment references, expected answers, rubrics and thresholds stay on the host.
-public struct DeveloperSubjectInput: Codable, Hashable, Sendable {
-    public var caseID: UUID
-    public var attemptID: UUID
-    public var businessInputs: [String: DeveloperSubjectValue]
-    public var fixtureReferences: [DeveloperSubjectFixtureReference]
-
-    public init(
-        caseID: UUID,
-        attemptID: UUID,
-        businessInputs: [String: DeveloperSubjectValue],
-        fixtureReferences: [DeveloperSubjectFixtureReference] = []
-    ) {
-        self.caseID = caseID
-        self.attemptID = attemptID
-        self.businessInputs = businessInputs
-        self.fixtureReferences = fixtureReferences
-    }
-
-    private enum CodingKeys: String, CodingKey { case caseID, attemptID, businessInputs, fixtureReferences }
-
-    public init(from decoder: Decoder) throws {
-        let keys = try decoder.container(keyedBy: AnyCodingKey.self)
-        let allowed = Set(["caseID", "attemptID", "businessInputs", "fixtureReferences"])
-        guard Set(keys.allKeys.map(\.stringValue)).isSubset(of: allowed) else {
-            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown subject input field."))
-        }
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        caseID = try values.decode(UUID.self, forKey: .caseID)
-        attemptID = try values.decode(UUID.self, forKey: .attemptID)
-        businessInputs = try values.decode([String: DeveloperSubjectValue].self, forKey: .businessInputs)
-        fixtureReferences = try values.decode([DeveloperSubjectFixtureReference].self, forKey: .fixtureReferences)
-    }
-
-    private struct AnyCodingKey: CodingKey {
-        var stringValue: String
-        var intValue: Int? { nil }
-        init?(stringValue: String) { self.stringValue = stringValue }
-        init?(intValue: Int) { return nil }
     }
 }
 
@@ -345,8 +143,6 @@ public struct DeveloperFeatureExecutionRequest: Codable, Hashable, Sendable, Ide
     public var featureVersion: String
     public var encodedInput: Data
     public var inputTypeName: String
-    /// Nil decodes as the historical typed input contract.
-    public var inputContract: DeveloperFeatureInputContract?
     public var deadline: Date
 
     public init(
@@ -356,7 +152,6 @@ public struct DeveloperFeatureExecutionRequest: Codable, Hashable, Sendable, Ide
         featureVersion: String,
         encodedInput: Data,
         inputTypeName: String,
-        inputContract: DeveloperFeatureInputContract? = nil,
         deadline: Date
     ) {
         self.id = id
@@ -365,7 +160,6 @@ public struct DeveloperFeatureExecutionRequest: Codable, Hashable, Sendable, Ide
         self.featureVersion = featureVersion
         self.encodedInput = encodedInput
         self.inputTypeName = inputTypeName
-        self.inputContract = inputContract
         self.deadline = deadline
     }
 }
@@ -376,7 +170,6 @@ public enum DeveloperExecutionErrorCode: String, Codable, Sendable {
     case featureNotFound
     case incompatibleFeatureVersion
     case invalidInput
-    case unsupportedInputContract
     case executionFailed
     case disconnected
     case protocolMismatch

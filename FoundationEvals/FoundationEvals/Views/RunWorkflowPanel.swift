@@ -17,11 +17,7 @@ struct RunWorkflowPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                WorkspaceIcon(symbol: "person.badge.shield.checkmark", size: 26)
-                Text("Review and approval").font(.headline).accessibilityAddTraits(.isHeader)
-            }
+        GroupBox("Review and approval") {
             VStack(alignment: .leading, spacing: 12) {
                 if let assessments = run.assessments, !assessments.isEmpty {
                     Picker("Selected assessment", selection: Binding(
@@ -101,13 +97,11 @@ struct RunWorkflowPanel: View {
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
                         .padding(10)
-                        .workspaceInset(radius: 7)
+                        .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 7))
                 }
             }
+            .padding(8)
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceSurface()
         .sheet(item: $correctionSample) { sample in
             JudgmentCorrectionView(store: store, run: run, assessment: selectedAssessment, sample: sample)
         }

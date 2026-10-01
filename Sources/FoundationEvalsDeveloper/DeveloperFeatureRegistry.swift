@@ -24,7 +24,6 @@ public struct DeveloperFeatureContext: Sendable {
 
 private struct AnyDeveloperFeature: Sendable {
     var descriptor: DeveloperFeatureDescriptor
-    var inputContract: DeveloperFeatureInputContract
     var invoke: @Sendable (Data, DeveloperFeatureContext) async throws -> DeveloperFeatureOutput
 }
 
@@ -47,10 +46,7 @@ public actor DeveloperFeatureRegistry {
         usage: @escaping @Sendable (Output) -> DeveloperFeatureUsage = { _ in .init() },
         metadata: @escaping @Sendable (Output) -> [String: String] = { _ in [:] }
     ) {
-        var legacyDescriptor = descriptor
-        legacyDescriptor.subjectInputSchema = nil
-        legacyDescriptor.capabilityNames.removeAll { $0 == DeveloperSubjectInputSchema.capabilityName }
-        features[descriptor.id] = AnyDeveloperFeature(descriptor: legacyDescriptor, inputContract: .legacyTypedV1) { data, context in
+        features[descriptor.id] = AnyDeveloperFeature(descriptor: descriptor) { data, context in
             let value: Input
             do {
                 value = try JSONDecoder().decode(Input.self, from: data)
@@ -88,48 +84,13 @@ public actor DeveloperFeatureRegistry {
             outputTypeName: String(reflecting: DeveloperFeatureOutput.self),
             capabilityNames: capabilityNames
         )
-        features[id] = AnyDeveloperFeature(descriptor: descriptor, inputContract: .legacyTypedV1) { data, context in
+        features[id] = AnyDeveloperFeature(descriptor: descriptor) { data, context in
             let input: DeveloperTextFeatureInput
             do {
                 input = try JSONDecoder().decode(DeveloperTextFeatureInput.self, from: data)
             } catch {
                 throw DeveloperExecutionFailure(code: .invalidInput, message: "The text feature input is invalid.")
             }
-            try context.checkCancellation()
-            let output = try await operation(input, context)
-            try context.checkCancellation()
-            return output
-        }
-    }
-
-    /// Registers an app-owned mapping for the expectation-free combined workflow.
-    /// This is separate from the historical typed and text registration paths.
-    public func registerSubjectFeature(
-        id: String,
-        displayName: String,
-        version: String,
-        outputTypeName: String,
-        inputSchema: DeveloperSubjectInputSchema,
-        capabilityNames: [String] = [],
-        operation: @escaping @Sendable (DeveloperSubjectInput, DeveloperFeatureContext) async throws -> DeveloperFeatureOutput
-    ) {
-        let descriptor = DeveloperFeatureDescriptor(
-            id: id,
-            displayName: displayName,
-            version: version,
-            inputTypeName: String(reflecting: DeveloperSubjectInput.self),
-            outputTypeName: outputTypeName,
-            capabilityNames: Array(Set(capabilityNames + [DeveloperSubjectInputSchema.capabilityName])).sorted(),
-            subjectInputSchema: inputSchema
-        )
-        features[id] = AnyDeveloperFeature(descriptor: descriptor, inputContract: .subjectV1) { data, context in
-            let input: DeveloperSubjectInput
-            do {
-                input = try JSONDecoder().decode(DeveloperSubjectInput.self, from: data)
-            } catch {
-                throw DeveloperExecutionFailure(code: .invalidInput, message: "The expectation-free subject input is invalid or contains unsupported fields.")
-            }
-            try inputSchema.validate(input)
             try context.checkCancellation()
             let output = try await operation(input, context)
             try context.checkCancellation()
@@ -156,20 +117,6 @@ public actor DeveloperFeatureRegistry {
             let result = failure(request, startedAt: startedAt, code: .incompatibleFeatureVersion,
                                  message: "The requested feature version is not available on this runner.")
             return Task { result }
-        }
-        guard (request.inputContract ?? .legacyTypedV1) == feature.inputContract else {
-            let result = failure(request, startedAt: startedAt, code: .unsupportedInputContract,
-                                 message: "This feature does not support the requested input contract. Rebuild the app with expectation-free subject input support, or use a legacy standalone feature run.")
-            return Task { result }
-        }
-        if feature.inputContract == .subjectV1 {
-            guard feature.descriptor.inputTypeName == request.inputTypeName,
-                  feature.descriptor.subjectInputSchema != nil,
-                  feature.descriptor.capabilityNames.contains(DeveloperSubjectInputSchema.capabilityName) else {
-                let result = failure(request, startedAt: startedAt, code: .unsupportedInputContract,
-                                     message: "The app has not declared a compatible subject input schema and capability.")
-                return Task { result }
-            }
         }
         guard Date() < request.deadline else {
             let result = failure(request, startedAt: startedAt, code: .deadlineExceeded,

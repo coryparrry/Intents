@@ -6,153 +6,6 @@ final class FoundationEvalsUITests: XCTestCase {
     }
 
     @MainActor
-    func testDebugAppDoesNotOfferSelfUpdates() throws {
-        let app = XCUIApplication()
-        let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
-        defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
-        app.launch()
-        defer { app.terminate() }
-        app.activate()
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
-
-        let appMenu = app.menuBars.menuBarItems["Intents"]
-        XCTAssertTrue(appMenu.waitForExistence(timeout: 5))
-        appMenu.click()
-        XCTAssertTrue(app.menuItems["About Intents"].waitForExistence(timeout: 5),
-                      "The app menu must be open before checking its update commands")
-        XCTAssertFalse(app.menuItems["Check for Updates…"].exists,
-                       "Debug verification must not start or expose the release updater")
-        app.typeKey(.escape, modifierFlags: [])
-    }
-
-    @MainActor
-    func testIntentLabOpensWithScenarioAndConnectionControls() throws {
-        let app = XCUIApplication()
-        let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
-        defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
-        app.launch()
-        defer { app.terminate() }
-        app.activate()
-        app.typeKey("2", modifierFlags: .command)
-
-        XCTAssertTrue(app.staticTexts["Intent Lab"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Connect an app"].exists)
-        XCTAssertTrue(app.buttons["Choose Project…"].exists)
-
-        app.radioButtons["Create test"].click()
-        XCTAssertTrue(app.staticTexts["What should happen?"].exists)
-        XCTAssertTrue(app.buttons["Run test"].exists)
-
-        app.radioButtons["Results"].click()
-        XCTAssertTrue(app.staticTexts["No results yet"].waitForExistence(timeout: 3))
-        let title = app.staticTexts["Intent Lab page title"]
-        XCTAssertGreaterThan(title.frame.minY - app.windows.firstMatch.frame.minY, 45,
-                             "The page header must remain below the window toolbar")
-        XCTAssertLessThan(title.frame.minY - app.windows.firstMatch.frame.minY, 120,
-                          "Results must keep the page header at the top of the window")
-        XCTAssertLessThan(app.staticTexts["No results yet"].frame.minY - title.frame.minY, 180,
-                          "The empty state must sit directly beneath page navigation")
-        let resultsAttachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        resultsAttachment.name = "Intent Lab results"
-        resultsAttachment.lifetime = .keepAlways
-        add(resultsAttachment)
-        app.radioButtons["Create test"].click()
-
-        XCTAssertTrue(app.textFields["Test name"].isHittable)
-        XCTAssertTrue(app.buttons["Run test"].isHittable)
-
-        let screenshot = app.windows.firstMatch.screenshot()
-        let attachment = XCTAttachment(screenshot: screenshot)
-        attachment.name = "Intent Lab initial state"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        try screenshot.pngRepresentation.write(
-            to: FileManager.default.temporaryDirectory.appending(path: "foundation-evals-intent-lab.png"),
-            options: .atomic
-        )
-    }
-
-    @MainActor
-    func testDuplicateParameterDraftsRemoveOneAtATime() throws {
-        let app = XCUIApplication()
-        let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
-        defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
-        app.launch()
-        defer { app.terminate() }
-        app.activate()
-        app.typeKey("2", modifierFlags: .command)
-        app.radioButtons["Create test"].click()
-        let inputs = app.disclosureTriangles.matching(NSPredicate(format: "label BEGINSWITH %@", "Inputs ·")).firstMatch
-        for _ in 0..<12 where !inputs.isHittable { app.scrollViews.element(boundBy: app.scrollViews.count - 1).swipeUp() }
-        inputs.click()
-
-        let names = app.textFields.matching(identifier: "Parameter name")
-        XCTAssertEqual(names.count, 1)
-        let addButton = app.buttons["Add parameter"]
-        addButton.click()
-        addButton.click()
-        XCTAssertEqual(names.count, 3)
-
-        let remove = app.buttons.matching(identifier: "Remove parameter")
-        XCTAssertEqual(remove.count, 3)
-        remove.element(boundBy: 2).click()
-        XCTAssertEqual(names.count, 2)
-
-        let screenshot = app.windows.firstMatch.screenshot()
-        let attachment = XCTAttachment(screenshot: screenshot)
-        attachment.name = "Intent Lab parameter rows after removal"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        try screenshot.pngRepresentation.write(
-            to: FileManager.default.temporaryDirectory.appending(path: "foundation-evals-parameter-rows.png"),
-            options: .atomic
-        )
-    }
-
-    @MainActor
-    func testRunCommandsMatchInvalidSuiteControls() throws {
-        let app = XCUIApplication()
-        let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
-        defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
-        app.launch()
-        defer { app.terminate() }
-        app.activate()
-        app.menuBars.menuBarItems["Evaluation"].click()
-        app.menuItems["Show Suite Editor"].click()
-        let prompt = app.textViews["Case prompt"]
-        XCTAssertTrue(prompt.waitForExistence(timeout: 5))
-        prompt.click()
-        app.typeKey("a", modifierFlags: .command)
-        app.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
-        XCTAssertEqual(prompt.value as? String, "", "The edit must clear the case prompt")
-        // Prompt edits reach suite validation after the debounced save.
-        let runDisabled = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "enabled == false"),
-            object: app.buttons["Run evaluation"]
-        )
-        XCTAssertEqual(XCTWaiter.wait(for: [runDisabled], timeout: 3), .completed)
-
-        app.menuBars.menuBarItems["Evaluation"].click()
-        XCTAssertFalse(app.menuItems["Run Evaluation"].isEnabled)
-        XCTAssertFalse(app.menuItems["Cancel Run"].isEnabled)
-        let screenshot = XCUIScreen.main.screenshot()
-        let attachment = XCTAttachment(screenshot: screenshot)
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        try screenshot.pngRepresentation.write(to: FileManager.default.temporaryDirectory
-            .appending(path: "foundation-evals-shortcut-menu.png"), options: .atomic)
-        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
-    }
-
-    @MainActor
     func testSuiteEditorShowsPrimaryRunControls() throws {
         let app = XCUIApplication()
         let storageName = UUID().uuidString
@@ -181,7 +34,7 @@ final class FoundationEvalsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Add Case"].exists)
         XCTAssertTrue(app.buttons["Add Case"].isHittable)
-        XCTAssertTrue(app.buttons["This Mac"].exists)
+        XCTAssertTrue(app.buttons["Run destination"].exists)
 
         selectSetup("Instructions", in: app)
         XCTAssertTrue(app.textViews["Model instructions"].exists)
@@ -220,7 +73,7 @@ final class FoundationEvalsUITests: XCTestCase {
         for (mode, expectedCount) in [("Collect only", 0), ("Exact text", 1), ("Contains text", 1), ("AI rubric", 1)] {
             selectSetup("Scoring", in: app)
             app.radioButtons[mode].click()
-            app.radioButtons["Cases"].click()
+            app.buttons["Cases"].click()
             XCTAssertTrue(app.textViews["Case prompt"].exists)
             XCTAssertEqual(app.textViews.matching(identifier: "Scoring expected text").count, expectedCount)
         }
@@ -266,7 +119,7 @@ final class FoundationEvalsUITests: XCTestCase {
         app.menuItems["Show Suite Editor"].click()
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
 
-        app.radioButtons["Setup"].click()
+        app.buttons["Setup"].click()
 
         for title in ["Scoring", "Tools", "Structured output", "Session profile", "Performance"] {
             selectSetup(title, in: app)
@@ -307,45 +160,15 @@ final class FoundationEvalsUITests: XCTestCase {
         caseName.typeText("Selection regression case")
 
         selectSetup("Scoring", in: app)
-        app.radioButtons["Cases"].click()
+        app.buttons["Cases"].click()
         XCTAssertEqual(caseName.value as? String, "Selection regression case")
 
-        app.buttons.matching(NSPredicate(
-            format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "Select case ", "Example"
-        )).firstMatch.click()
+        app.buttons["Example"].click()
         XCTAssertEqual(caseName.value as? String, "Example")
         selectSetup("Scoring", in: app)
-        app.radioButtons["Cases"].click()
+        app.buttons["Cases"].click()
         XCTAssertEqual(caseName.value as? String, "Example")
 
-    }
-
-    @MainActor
-    func testSameNamedCasesHaveDistinctAccessibilityLabels() throws {
-        let app = XCUIApplication()
-        let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
-        defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
-        app.launch()
-        defer { app.terminate() }
-        app.activate()
-        app.menuBars.menuBarItems["Evaluation"].click()
-        app.menuItems["Show Suite Editor"].click()
-        XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 5))
-
-        app.buttons["Add Case"].click()
-        let name = app.textFields["Case name"]
-        XCTAssertTrue(name.waitForExistence(timeout: 2))
-        name.click()
-        app.typeKey("a", modifierFlags: .command)
-        name.typeText("Example")
-
-        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "Select case "))
-        XCTAssertEqual(rows.count, 2)
-        XCTAssertTrue(rows.element(boundBy: 0).label.contains("Example"))
-        XCTAssertTrue(rows.element(boundBy: 1).label.contains("Example"))
-        XCTAssertNotEqual(rows.element(boundBy: 0).label, rows.element(boundBy: 1).label)
     }
 
     @MainActor
@@ -376,7 +199,7 @@ final class FoundationEvalsUITests: XCTestCase {
         name.typeText("Renamed case")
         XCTAssertEqual(search.value as? String, "", "Editing out of a search preserves the visible editor")
         selectSetup("Scoring", in: app)
-        app.radioButtons["Cases"].click()
+        app.buttons["Cases"].click()
         XCTAssertEqual(name.value as? String, "Renamed case")
 
         search.click()
@@ -391,7 +214,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     private func selectSetup(_ title: String, in app: XCUIApplication) {
-        app.radioButtons["Setup"].click()
+        app.buttons["Setup"].click()
         let menu = app.popUpButtons["Suite setup"]
         if menu.exists {
             menu.click()

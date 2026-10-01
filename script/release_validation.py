@@ -14,7 +14,6 @@ REQUIRED_CHECKS = {
     "Portable regression tests",
     "Workflow and script checks",
 }
-APP_DISPLAY_NAME = "Intents"
 
 
 def validate_checks(jobs):
@@ -38,10 +37,6 @@ def verify_checksum(directory, filename):
 
 
 def validate_app_metadata(info, version, expected_commit=None):
-    if info.get("CFBundleDisplayName") != APP_DISPLAY_NAME:
-        raise ValueError("App display name does not match the Intents release brand.")
-    if info.get("CFBundleName") != APP_DISPLAY_NAME:
-        raise ValueError("App bundle name does not match the Intents release brand.")
     if info.get("CFBundleShortVersionString") != version:
         raise ValueError("App version does not match the release tag.")
     if expected_commit and info.get("FoundationEvalsSourceCommit") != expected_commit:
@@ -51,7 +46,7 @@ def validate_app_metadata(info, version, expected_commit=None):
 
 
 SPARKLE_NS = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
-FEED_URL = "https://github.com/coryparrry/Intents/releases/latest/download/appcast.xml"
+FEED_URL = "https://github.com/coryparrry/Foundation-Eval-Labs/releases/latest/download/appcast.xml"
 PUBLIC_KEY = "fpED/OlsZgCvLG9IgiEI0+/JmGjbwEkxmnwwkwymPgY="
 
 
@@ -70,9 +65,9 @@ def validate_update_feed(directory, info, tag):
     item = items[0]
     if item.findtext(SPARKLE_NS + "version") != build:
         raise ValueError("Feed build does not match the signed app.")
-    filename = f"Intents-{tag[1:]}-macOS-arm64.dmg"
+    filename = f"Foundation-Evals-{tag[1:]}-macOS-arm64.dmg"
     enclosure = item.find("enclosure")
-    expected_url = f"https://github.com/coryparrry/Intents/releases/download/{tag}/{filename}"
+    expected_url = f"https://github.com/coryparrry/Foundation-Eval-Labs/releases/download/{tag}/{filename}"
     if enclosure is None or enclosure.get("url") != expected_url:
         raise ValueError("Feed must point to this release's installer.")
     if enclosure.get("length") != str((directory / filename).stat().st_size):

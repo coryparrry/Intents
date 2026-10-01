@@ -6,12 +6,13 @@ struct CaseImportView: View {
     @Bindable var store: EvaluationStore
     @State private var isChoosingFile = false
     @State private var filename = ""
-    @State private var fileSelection = CaseImportFileSelection()
+    @State private var data: Data?
     @State private var format = EvaluationCaseImportFormat.csv
     @State private var columns: [String] = []
     @State private var nameColumn: String?
     @State private var promptColumn = ""
     @State private var expectedColumn: String?
+    @State private var preview: EvaluationCaseImportPreview?
     @State private var errorMessage: String?
 
     var body: some View {
@@ -23,13 +24,10 @@ struct CaseImportView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Choose File…") {
-                    clearSelection()
-                    isChoosingFile = true
-                }
+                Button("Choose File…") { isChoosingFile = true }
             }
 
-            if fileSelection.data != nil {
+            if data != nil {
                 LabeledContent("File", value: filename)
                 Picker("Format", selection: $format) {
                     Text("CSV").tag(EvaluationCaseImportFormat.csv)
@@ -47,7 +45,7 @@ struct CaseImportView: View {
                 .onChange(of: promptColumn) { _, _ in updatePreview() }
                 .onChange(of: expectedColumn) { _, _ in updatePreview() }
 
-                if let preview = fileSelection.preview {
+                if let preview {
                     if preview.rows.isEmpty {
                         ContentUnavailableView("No importable rows", systemImage: "exclamationmark.tablecells")
                     } else {
@@ -86,7 +84,7 @@ struct CaseImportView: View {
                 Spacer()
                 Button("Import \(importCount) Cases") { importCases() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(fileSelection.preview?.canImport != true || importCount == 0)
+                    .disabled(preview?.canImport != true || importCount == 0)
             }
         }
         .padding(22)
@@ -100,7 +98,10 @@ struct CaseImportView: View {
                 guard let url = try result.get().first else { return }
                 let granted = url.startAccessingSecurityScopedResource()
                 defer { if granted { url.stopAccessingSecurityScopedResource() } }
-                try fileSelection.load(at: url, maximumBytes: EvaluationStore.maximumTextFileBytes)
+                data = try EvaluationAttachmentStorage.readCaseImportFile(
+                    at: url,
+                    maximumBytes: EvaluationStore.maximumTextFileBytes
+                )
                 filename = url.lastPathComponent
                 format = url.pathExtension.lowercased() == "csv" ? .csv : .jsonLines
                 prepareColumns()
@@ -108,16 +109,6 @@ struct CaseImportView: View {
                 errorMessage = error.localizedDescription
             }
         }
-    }
-
-    private func clearSelection() {
-        fileSelection.clear()
-        filename = ""
-        columns = []
-        nameColumn = nil
-        promptColumn = ""
-        expectedColumn = nil
-        errorMessage = nil
     }
 
     private func optionalColumnPicker(selection: Binding<String?>) -> some View {
@@ -138,7 +129,7 @@ struct CaseImportView: View {
     }
 
     private func prepareColumns() {
-        guard let data = fileSelection.data else { return }
+        guard let data else { return }
         do {
             columns = try EvaluationCaseImporter.columns(in: data, format: format)
             promptColumn = columns.first(where: { $0.localizedCaseInsensitiveCompare("prompt") == .orderedSame })
@@ -147,32 +138,32 @@ struct CaseImportView: View {
             expectedColumn = columns.first(where: { $0.localizedCaseInsensitiveCompare("expected") == .orderedSame })
             updatePreview()
         } catch {
-            fileSelection.preview = nil
+            preview = nil
             errorMessage = error.localizedDescription
         }
     }
 
     private func updatePreview() {
-        guard let data = fileSelection.data, !promptColumn.isEmpty else { return }
+        guard let data, !promptColumn.isEmpty else { return }
         do {
-            fileSelection.preview = try EvaluationCaseImporter.preview(
+            preview = try EvaluationCaseImporter.preview(
                 data: data,
                 format: format,
                 mapping: .init(nameColumn: nameColumn, promptColumn: promptColumn, expectedColumn: expectedColumn)
             )
             errorMessage = nil
         } catch {
-            fileSelection.preview = nil
+            preview = nil
             errorMessage = error.localizedDescription
         }
     }
 
     private var importCount: Int {
-        min(fileSelection.preview?.totalValidRowCount ?? 0, store.remainingCaseImportCapacity)
+        min(preview?.totalValidRowCount ?? 0, store.remainingCaseImportCapacity)
     }
 
     private func importCases() {
-        guard let data = fileSelection.data else { return }
+        guard let data else { return }
         do {
             let remaining = store.remainingCaseImportCapacity
             guard remaining > 0 else { throw EvaluationCaseImportError.tooManyRows(maximum: 0) }
@@ -187,20 +178,5 @@ struct CaseImportView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-}
-
-struct CaseImportFileSelection {
-    var data: Data?
-    var preview: EvaluationCaseImportPreview?
-
-    mutating func clear() {
-        data = nil
-        preview = nil
-    }
-
-    mutating func load(at url: URL, maximumBytes: Int) throws {
-        clear()
-        data = try EvaluationAttachmentStorage.readCaseImportFile(at: url, maximumBytes: maximumBytes)
     }
 }

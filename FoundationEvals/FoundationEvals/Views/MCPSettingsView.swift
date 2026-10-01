@@ -12,7 +12,7 @@ struct MCPSettingsView: View {
                         .foregroundStyle(statusColor)
                 }
 
-                Text("Intents uses one fixed local address and starts the connector automatically after Codex setup.")
+                Text("Foundation Evals uses one fixed local address and starts the connector automatically after Codex setup.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
@@ -34,7 +34,7 @@ struct MCPSettingsView: View {
                         .foregroundStyle(controller.installationState == .needsAttention ? .orange : .secondary)
                 }
 
-                Text("Choose Connect once. Intents updates Codex, starts the local connector, and starts it automatically whenever the app is open.")
+                Text("Choose Connect once. Foundation Evals updates Codex, starts the local connector, and starts it automatically whenever the app is open.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
@@ -66,7 +66,7 @@ struct MCPSettingsView: View {
         .frame(width: 620, height: 440)
         .navigationTitle("MCP Connector")
         .confirmationDialog(
-            "Remove Intents from Codex?",
+            "Remove Foundation Evals from Codex?",
             isPresented: $isConfirmingRemoval,
             titleVisibility: .visible
         ) {
@@ -75,7 +75,7 @@ struct MCPSettingsView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Only the managed Intents block is removed. Restart Codex afterward.")
+            Text("Only the managed Foundation Evals block is removed. Restart Codex afterward.")
         }
         .alert(
             "MCP Connector",

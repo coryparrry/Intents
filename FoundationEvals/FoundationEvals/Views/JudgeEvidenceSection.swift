@@ -61,7 +61,7 @@ struct JudgeEvidenceSection: View {
                 .font(.caption.monospaced())
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
-                .workspaceInset(radius: 6)
+                .background(.quaternary, in: .rect(cornerRadius: 6))
         }
     }
 }

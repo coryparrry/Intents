@@ -14,7 +14,6 @@ actor MCPServer {
     init(
         port: Int = 17_873,
         authority: MCPAuthority,
-        credential: String,
         maximumBodyBytes: Int = 16 * 1_024 * 1_024,
         maximumConcurrentRequests: Int = 8,
         onRequest: (@Sendable (Date) async -> Void)? = nil,
@@ -26,7 +25,6 @@ actor MCPServer {
         self.handler = MCPProtocolHandler(
             port: port,
             authority: authority,
-            credential: credential,
             maximumBodyBytes: maximumBodyBytes,
             maximumConcurrentRequests: maximumConcurrentRequests,
             onRequest: onRequest

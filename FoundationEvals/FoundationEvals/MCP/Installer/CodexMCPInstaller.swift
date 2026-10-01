@@ -1,23 +1,15 @@
 import CryptoKit
 import Foundation
-import Security
 
 struct CodexMCPConfiguration: Equatable, Sendable {
     static let defaultPort = 17_873
 
     let port: Int
-    let credential: String
-    init(port: Int = Self.defaultPort, credential: String) throws {
+    init(port: Int = Self.defaultPort) throws {
         guard (1_024...65_535).contains(port) else {
             throw CodexMCPInstallerError.invalidPort
         }
-        guard credential.utf8.count == 43,
-              credential.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0)
-                  || (48...57).contains($0) || $0 == 45 || $0 == 95 }) else {
-            throw CodexMCPInstallerError.invalidCredential
-        }
         self.port = port
-        self.credential = credential
     }
 
     var endpoint: URL {
@@ -29,7 +21,6 @@ struct CodexMCPConfiguration: Equatable, Sendable {
         \(CodexMCPInstaller.beginMarker)
         [mcp_servers.foundation-evals]
         url = "\(endpoint.absoluteString)"
-        http_headers = { Authorization = "Bearer \(credential)" }
         \(CodexMCPInstaller.endMarker)
         """
     }
@@ -41,7 +32,6 @@ struct CodexMCPConfiguration: Equatable, Sendable {
 
 enum CodexMCPInstallerError: Error, Equatable, LocalizedError {
     case invalidPort
-    case invalidCredential
     case invalidDirectory
     case invalidUTF8
     case configurationTooLarge
@@ -58,8 +48,6 @@ enum CodexMCPInstallerError: Error, Equatable, LocalizedError {
         switch self {
         case .invalidPort:
             "The MCP server port is invalid."
-        case .invalidCredential:
-            "The local MCP credential is invalid."
         case .invalidDirectory:
             "The ~/.codex configuration path is not a directory."
         case .invalidUTF8:
@@ -73,7 +61,7 @@ enum CodexMCPInstallerError: Error, Equatable, LocalizedError {
         case .conflictingConfiguration:
             "Codex already has an unmanaged foundation-evals MCP entry. Remove or rename it, then try again."
         case .malformedManagedBlock:
-            "The Intents managed block is incomplete or duplicated. No changes were made."
+            "The Foundation Evals managed block is incomplete or duplicated. No changes were made."
         case .unsafeFile:
             "The selected configuration target is not a regular file. No changes were made."
         case .concurrentModification:
@@ -97,82 +85,6 @@ struct CodexMCPInstallReceipt: Equatable, Sendable {
     let change: CodexMCPInstallChange
     let configURL: URL
     let backupURL: URL?
-}
-
-struct MCPCredentialStore {
-    var load: () throws -> String?
-    var save: (String) throws -> Void
-    var remove: () throws -> Void
-
-    static var keychain: Self { Self(
-        load: {
-            let query = MCPCredentialKeychain.query.merging([
-                kSecReturnData as String: true,
-                kSecMatchLimit as String: kSecMatchLimitOne
-            ]) { _, new in new }
-            var result: CFTypeRef?
-            let status = SecItemCopyMatching(query as CFDictionary, &result)
-            if status == errSecItemNotFound { return nil }
-            guard status == errSecSuccess, let data = result as? Data,
-                  let value = String(data: data, encoding: .utf8) else {
-                throw MCPCredentialError.keychain(status)
-            }
-            return value
-        },
-        save: { credential in
-            let attributes = MCPCredentialKeychain.query.merging([
-                kSecValueData as String: Data(credential.utf8),
-                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            ]) { _, new in new }
-            let status = SecItemAdd(attributes as CFDictionary, nil)
-            guard status == errSecSuccess else { throw MCPCredentialError.keychain(status) }
-        },
-        remove: {
-            let status = SecItemDelete(MCPCredentialKeychain.query as CFDictionary)
-            guard status == errSecSuccess || status == errSecItemNotFound else {
-                throw MCPCredentialError.keychain(status)
-            }
-        }
-    ) }
-
-    func loadOrCreate() throws -> String {
-        if let existing = try load() { return existing }
-        var bytes = [UInt8](repeating: 0, count: 32)
-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
-            throw MCPCredentialError.randomGenerationFailed
-        }
-        let credential = Data(bytes).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        do {
-            try save(credential)
-            return credential
-        } catch MCPCredentialError.keychain(errSecDuplicateItem) {
-            if let existing = try load() { return existing }
-            throw MCPCredentialError.keychain(errSecDuplicateItem)
-        }
-    }
-}
-
-private enum MCPCredentialKeychain {
-    static var query: [String: Any] { [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "com.coryparry.FoundationEvals.mcp.authorization.v1",
-        kSecAttrAccount as String: "local-connector"
-    ] }
-}
-
-enum MCPCredentialError: LocalizedError {
-    case keychain(OSStatus)
-    case randomGenerationFailed
-
-    var errorDescription: String? {
-        switch self {
-        case .keychain(let status): "The local MCP credential could not be accessed (Keychain status \(status))."
-        case .randomGenerationFailed: "The local MCP credential could not be generated securely."
-        }
-    }
 }
 
 struct CodexMCPInstaller {
@@ -200,17 +112,6 @@ struct CodexMCPInstaller {
         return try Self.managedRange(in: text) != nil
     }
 
-    func isInstalled(in directory: URL, matching configuration: CodexMCPConfiguration) throws -> Bool {
-        guard try prepare(directory, createIfMissing: false) else { return false }
-        let snapshot = try readConfig(in: directory)
-        guard let text = String(data: snapshot.data, encoding: .utf8) else {
-            throw CodexMCPInstallerError.invalidUTF8
-        }
-        guard let range = try Self.managedRange(in: text) else { return false }
-        return text[range].contains(configuration.tomlBlock)
-            && snapshot.permissions & 0o077 == 0
-    }
-
     func installOrUpdate(
         in directory: URL,
         configuration: CodexMCPConfiguration
@@ -225,9 +126,6 @@ struct CodexMCPInstaller {
         let updated = Data(updatedText.utf8)
 
         guard updated != before.data else {
-            if before.permissions & 0o077 != 0 {
-                try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: before.url.path)
-            }
             return CodexMCPInstallReceipt(
                 change: .unchanged,
                 configURL: before.url,
@@ -391,9 +289,6 @@ struct CodexMCPInstaller {
             try rejectSymbolicLinkIfPresent(at: backupURL)
             try replaceAtomically(before.data, at: backupURL, permissions: 0o600)
         }
-        if before.existed, before.permissions & 0o077 != 0 {
-            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: before.url.path)
-        }
 
         let temporaryURL = directory.appending(
             path: ".config.toml.foundation-evals.\(UUID().uuidString).tmp",
@@ -403,18 +298,7 @@ struct CodexMCPInstaller {
         try writeTemporary(data, at: temporaryURL, permissions: 0o600)
         try coordinatedReplace(temporaryURL, replacing: before)
 
-        do {
-            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: before.url.path)
-        } catch {
-            do {
-                try restore(before)
-            } catch {
-                throw CodexMCPInstallerError.rollbackFailed
-            }
-            throw CodexMCPInstallerError.verificationFailed
-        }
-        guard (try? Data(contentsOf: before.url)) == data,
-              (try? fileManager.attributesOfItem(atPath: before.url.path)[.posixPermissions] as? NSNumber)?.intValue == 0o600 else {
+        guard (try? Data(contentsOf: before.url)) == data else {
             do {
                 try restore(before)
             } catch {
@@ -488,7 +372,7 @@ struct CodexMCPInstaller {
                         coordinatedURL,
                         withItemAt: temporaryURL,
                         backupItemName: nil,
-                        options: [.usingNewMetadataOnly]
+                        options: []
                     )
                 } else {
                     try fileManager.moveItem(at: temporaryURL, to: coordinatedURL)

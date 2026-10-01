@@ -32,46 +32,6 @@ struct DeveloperProtocolTests {
         #expect(!DeveloperProtocolVersion.current.canRead(.init(major: 2, minor: 0)))
     }
 
-    @Test("Legacy runner, descriptor and request decode without new fields")
-    func legacyPayloadsRemainDecodable() throws {
-        let identity = DeveloperRunnerIdentity(
-            id: UUID(), displayName: "Legacy", platform: .iPhone,
-            operatingSystem: "iOS 26", hardwareModel: "iPhone",
-            appBundleIdentifier: "example.legacy", appVersion: "1"
-        )
-        let descriptor = DeveloperFeatureDescriptor(
-            id: "legacy", displayName: "Legacy", version: "1",
-            inputTypeName: "Legacy.Input", outputTypeName: "Legacy.Output"
-        )
-        let request = DeveloperFeatureExecutionRequest(
-            runID: UUID(), featureID: descriptor.id, featureVersion: descriptor.version,
-            encodedInput: Data(), inputTypeName: descriptor.inputTypeName,
-            deadline: Date(timeIntervalSince1970: 2_000)
-        )
-        let oldIdentity = try remove(keys: ["buildProvenance"], from: identity)
-        let oldDescriptor = try remove(keys: ["subjectInputSchema"], from: descriptor)
-        let oldRequest = try remove(keys: ["inputContract"], from: request)
-
-        #expect(try JSONDecoder().decode(DeveloperRunnerIdentity.self, from: oldIdentity).buildProvenance == nil)
-        #expect(try JSONDecoder().decode(DeveloperFeatureDescriptor.self, from: oldDescriptor).subjectInputSchema == nil)
-        #expect(try JSONDecoder().decode(DeveloperFeatureExecutionRequest.self, from: oldRequest).inputContract == nil)
-
-        let supplied = DeveloperRunnerBuildProvenance(
-            logicalAppID: "notes", buildID: "candidate-b",
-            sourceManifestDigest: "source-digest", packageRevision: "package-revision",
-            compiledProductNonce: "compiled-nonce"
-        )
-        var updated = identity
-        updated.buildProvenance = supplied
-        #expect(try JSONDecoder().decode(DeveloperRunnerIdentity.self, from: JSONEncoder().encode(updated)).buildProvenance == supplied)
-    }
-
-    private func remove<T: Encodable>(keys: [String], from value: T) throws -> Data {
-        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? [String: Any])
-        for key in keys { object[key] = nil }
-        return try JSONSerialization.data(withJSONObject: object)
-    }
-
     @Test("Authenticated envelopes reject replay and tampering")
     func secureEnvelopeIntegrity() throws {
         let runner = DeveloperRunnerIdentity(
@@ -187,121 +147,6 @@ struct DeveloperFeatureRegistryTests {
         #expect(try JSONDecoder().decode(Output.self, from: encoded).normalized == "REAL APP VALUE")
     }
 
-    @Test("Subject feature receives only declared business input and fixture correlation")
-    func subjectFeature() async throws {
-        let registry = DeveloperFeatureRegistry()
-        let schema = DeveloperSubjectInputSchema(version: "1", fields: [
-            .init(name: "request", valueType: .string),
-            .init(name: "source", valueType: .string)
-        ])
-        let received = SubjectInputRecorder()
-        await registry.registerSubjectFeature(
-            id: "summary", displayName: "Summary", version: "1",
-            outputTypeName: "Summary.Output", inputSchema: schema
-        ) { input, _ in
-            await received.record(input)
-            return .init(response: "Summary from app")
-        }
-        let descriptor = try #require(await registry.descriptors.first)
-        #expect(descriptor.subjectInputSchema == schema)
-        #expect(descriptor.capabilityNames.contains(DeveloperSubjectInputSchema.capabilityName))
-
-        let input = DeveloperSubjectInput(
-            caseID: UUID(), attemptID: UUID(),
-            businessInputs: ["request": .string("Summarise this"), "source": .string("Source document")],
-            fixtureReferences: [.init(identifier: "note-1", contractDigest: "fixture-digest")]
-        )
-        let request = DeveloperFeatureExecutionRequest(
-            runID: UUID(), featureID: descriptor.id, featureVersion: descriptor.version,
-            encodedInput: try JSONEncoder().encode(input), inputTypeName: descriptor.inputTypeName,
-            inputContract: .subjectV1, deadline: Date().addingTimeInterval(10)
-        )
-        let payload = String(decoding: request.encodedInput, as: UTF8.self)
-        #expect(!payload.contains("expected"))
-        #expect(!payload.contains("rubric"))
-        #expect(!payload.contains("threshold"))
-
-        let result = await registry.execute(request)
-        #expect(result.failure == nil)
-        #expect(result.output?.response == "Summary from app")
-        #expect(await received.value == input)
-    }
-
-    @Test("Subject contract rejects injected oracle, unsupported field and wrong type before app code")
-    func subjectInputRejectsUnsafePayload() async throws {
-        let registry = DeveloperFeatureRegistry()
-        let invoked = InvocationCounter()
-        let schema = DeveloperSubjectInputSchema(version: "1", fields: [
-            .init(name: "request", valueType: .string)
-        ])
-        await registry.registerSubjectFeature(
-            id: "summary", displayName: "Summary", version: "1",
-            outputTypeName: "Summary.Output", inputSchema: schema
-        ) { _, _ in
-            await invoked.increment()
-            return .init(response: "unexpected")
-        }
-        let base = DeveloperSubjectInput(
-            caseID: UUID(), attemptID: UUID(), businessInputs: ["request": .string("Summarise")]
-        )
-        let descriptor = try #require(await registry.descriptors.first)
-        func request(_ data: Data) -> DeveloperFeatureExecutionRequest {
-            .init(runID: UUID(), featureID: "summary", featureVersion: "1", encodedInput: data,
-                  inputTypeName: descriptor.inputTypeName, inputContract: .subjectV1,
-                  deadline: Date().addingTimeInterval(10))
-        }
-
-        var injected = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(base)) as? [String: Any])
-        injected["expected"] = "answer key"
-        let injectedResult = await registry.execute(request(try JSONSerialization.data(withJSONObject: injected)))
-        #expect(injectedResult.failure?.code == .invalidInput)
-
-        let oracleField = DeveloperSubjectInput(
-            caseID: base.caseID, attemptID: base.attemptID,
-            businessInputs: ["request": .string("Summarise"), "expectedAnswer": .string("answer key")]
-        )
-        #expect((await registry.execute(request(try JSONEncoder().encode(oracleField)))).failure?.code == .invalidInput)
-        let wrongType = DeveloperSubjectInput(
-            caseID: base.caseID, attemptID: base.attemptID,
-            businessInputs: ["request": .integer(42)]
-        )
-        #expect((await registry.execute(request(try JSONEncoder().encode(wrongType)))).failure?.code == .invalidInput)
-        #expect(await invoked.value == 0)
-    }
-
-    @Test("Subject and legacy contracts cannot be silently interchanged")
-    func contractsRequireNegotiation() async throws {
-        let registry = DeveloperFeatureRegistry()
-        let invoked = InvocationCounter()
-        await registry.registerTextFeature(id: "old", displayName: "Old", version: "1") { _, _ in
-            await invoked.increment()
-            return .init(response: "unexpected")
-        }
-        let newInput = DeveloperSubjectInput(caseID: UUID(), attemptID: UUID(), businessInputs: [:])
-        let request = DeveloperFeatureExecutionRequest(
-            runID: UUID(), featureID: "old", featureVersion: "1",
-            encodedInput: try JSONEncoder().encode(newInput),
-            inputTypeName: String(reflecting: DeveloperSubjectInput.self),
-            inputContract: .subjectV1, deadline: Date().addingTimeInterval(10)
-        )
-        let result = await registry.execute(request)
-        #expect(result.failure?.code == .unsupportedInputContract)
-        #expect(await invoked.value == 0)
-
-        await registry.registerSubjectFeature(
-            id: "new", displayName: "New", version: "1", outputTypeName: "Output",
-            inputSchema: .init(version: "1", fields: [])
-        ) { _, _ in
-            await invoked.increment()
-            return .init(response: "unexpected")
-        }
-        var legacyRequest = request
-        legacyRequest.featureID = "new"
-        legacyRequest.inputContract = nil
-        #expect((await registry.execute(legacyRequest)).failure?.code == .unsupportedInputContract)
-        #expect(await invoked.value == 0)
-    }
-
     @Test("Feature version mismatches fail without invoking application code")
     func versionMismatch() async throws {
         let registry = DeveloperFeatureRegistry()
@@ -384,11 +229,6 @@ struct DeveloperFeatureRegistryTests {
 private actor InvocationCounter {
     var value = 0
     func increment() { value += 1 }
-}
-
-private actor SubjectInputRecorder {
-    var value: DeveloperSubjectInput?
-    func record(_ input: DeveloperSubjectInput) { value = input }
 }
 
 private actor ExecutionStartGate {

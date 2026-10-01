@@ -3,7 +3,7 @@ import SwiftUI
 
 struct DeveloperIntegrationGuideView: View {
     @Environment(\.dismiss) private var dismiss
-    private let packageURL = "https://github.com/coryparrry/Intents.git"
+    private let packageURL = "https://github.com/coryparrry/Foundation-Eval-Labs.git"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -98,7 +98,7 @@ struct DeveloperIntegrationGuideView: View {
     """
     private static let networkConfiguration = """
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Connect to Intents on your Mac.</string>
+    <string>Connect to Foundation Evals on your Mac.</string>
     <key>NSBonjourServices</key>
     <array><string>_fnd-evals._tcp</string></array>
     """
@@ -109,22 +109,17 @@ struct DeveloperConnectionBanner: View {
     @State private var showsDevices = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                WorkspaceIcon(symbol: "laptopcomputer.and.iphone", size: 32, presentation: .header)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Test inside your app").font(.callout.weight(.semibold))
-                    Text("Connect a Swift app to evaluate the real feature on iPhone, iPad, and Mac.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        HStack(spacing: 16) {
+            Image(systemName: "laptopcomputer.and.iphone").font(.title2).foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Test the feature inside your app").font(.callout.weight(.semibold))
+                Text("Connect a Swift app to evaluate it on iPhone, iPad, and Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            Button("Devices & Apps…") { showsDevices = true }
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            Spacer()
+            Button("Devices & apps", systemImage: "arrow.up.right") { showsDevices = true }
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceSurface()
+        .padding(20).workspaceSurface()
         .sheet(isPresented: $showsDevices) { DeveloperDevicesView(runners: runners) }
     }
 }

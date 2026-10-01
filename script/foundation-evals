@@ -1,12 +1,6 @@
 #!/usr/bin/env swift
 
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
-#if canImport(Security)
-import Security
-#endif
 
 enum CLIError: LocalizedError {
     case usage(String)
@@ -81,112 +75,21 @@ struct Options {
     }
 
     static let help = """
-    Usage:
-      foundation-evals check --project <id|name|repository-path> --suite <id|name> [options]
-      foundation-evals scenario-report --run-id <uuid> [--endpoint <url>]
-      foundation-evals scenario-execution-report --execution-id <uuid> [--endpoint <url>]
+    Usage: foundation-evals check --project <id|name|repository-path> --suite <id|name> [options]
 
-    check options:
-      --project <id|name|repository-path>
-      --suite <id|name>
       --run-id <uuid>       Reuse a stable run ID after an uncertain response.
       --timeout <seconds>   Overall wait limit (default: 1800).
-
-    scenario-execution-report options:
-      --execution-id <uuid> Saved stable execution record to qualify (read-only).
-      Returns 0 for qualified evidence, 10 for required failures, 20 for incomplete evidence.
-
-    scenario-report options:
-      --run-id <uuid>       Saved Intent Lab scenario run to report.
       --endpoint <url>      Running app MCP endpoint (default: http://127.0.0.1:17873/mcp).
 
-    The Intents macOS app must be running with its MCP connector started.
+    The Foundation Evals macOS app must be running with its MCP connector started.
     """
-}
-
-struct ScenarioReportOptions {
-    var runID: UUID
-    var stableExecution = false
-    var endpoint = URL(string: "http://127.0.0.1:17873/mcp")!
-
-    init(arguments: [String]) throws {
-        guard ["scenario-report", "scenario-execution-report"].contains(arguments.first ?? "") else {
-            throw CLIError.usage(Options.help)
-        }
-        var values: [String: String] = [:]
-        var index = 1
-        while index < arguments.count {
-            let option = arguments[index]
-            guard option.hasPrefix("--"), index + 1 < arguments.count else {
-                throw CLIError.usage("Invalid argument '\(option)'.\n\n\(Options.help)")
-            }
-            guard values[option] == nil else {
-                throw CLIError.usage("Option '\(option)' was provided more than once.\n\n\(Options.help)")
-            }
-            values[option] = arguments[index + 1]
-            index += 2
-        }
-        stableExecution = arguments.first == "scenario-execution-report"
-        let idOption = stableExecution ? "--execution-id" : "--run-id"
-        guard let value = values[idOption], let id = UUID(uuidString: value) else {
-            throw CLIError.usage("\(arguments[0]) requires \(idOption) with a UUID.\n\n\(Options.help)")
-        }
-        runID = id
-        if let value = values["--endpoint"] {
-            guard let url = URL(string: value),
-                  let scheme = url.scheme?.lowercased(),
-                  ["http", "https"].contains(scheme),
-                  url.host != nil else {
-                throw CLIError.usage("--endpoint must be an absolute HTTP or HTTPS URL.")
-            }
-            endpoint = url
-        }
-        let known = Set([idOption, "--endpoint"])
-        if let unknown = values.keys.first(where: { !known.contains($0) }) {
-            throw CLIError.usage("Unknown option '\(unknown)'.\n\n\(Options.help)")
-        }
-    }
 }
 
 final class MCPClient {
     private let endpoint: URL
-    private let credential: String
     private var nextID = 1
 
-    init(endpoint: URL) throws {
-        self.endpoint = endpoint
-        credential = try Self.localCredential(for: endpoint)
-    }
-
-    private static func localCredential(for endpoint: URL) throws -> String {
-        if let supplied = ProcessInfo.processInfo.environment["FOUNDATION_EVALS_MCP_CREDENTIAL"],
-           !supplied.isEmpty {
-            return supplied
-        }
-        guard endpoint == URL(string: "http://127.0.0.1:17873/mcp")! else {
-            throw CLIError.transport("Set FOUNDATION_EVALS_MCP_CREDENTIAL for a custom endpoint.")
-        }
-        #if canImport(Security)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.coryparry.FoundationEvals.mcp.authorization.v1",
-            kSecAttrAccount as String: "local-connector",
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let credential = String(data: data, encoding: .utf8),
-              !credential.isEmpty else {
-            throw CLIError.transport("The local MCP credential is unavailable. Configure the connector in Intents and retry.")
-        }
-        return credential
-        #else
-        throw CLIError.transport("Set FOUNDATION_EVALS_MCP_CREDENTIAL to connect on this platform.")
-        #endif
-    }
+    init(endpoint: URL) { self.endpoint = endpoint }
 
     func initialize() throws {
         _ = try request(method: "initialize", params: [
@@ -219,7 +122,6 @@ final class MCPClient {
         request.httpBody = bodyData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
         if includeVersion { request.setValue("2025-06-18", forHTTPHeaderField: "MCP-Protocol-Version") }
 
         let semaphore = DispatchSemaphore(value: 0)
@@ -286,8 +188,9 @@ func resolveTargets(_ content: [String: Any], projectInput: String, suiteInput: 
     return (projectID, suiteID)
 }
 
-func runCheck(_ options: Options) throws -> Int32 {
-    let client = try MCPClient(endpoint: options.endpoint)
+func run() throws -> Int32 {
+    let options = try Options(arguments: Array(CommandLine.arguments.dropFirst()))
+    let client = MCPClient(endpoint: options.endpoint)
     try client.initialize()
     let catalog = try client.call(tool: "eval_list_projects", arguments: [:])
     let (projectID, suiteID) = try resolveTargets(catalog, projectInput: options.project, suiteInput: options.suite)
@@ -325,68 +228,6 @@ func runCheck(_ options: Options) throws -> Int32 {
         Thread.sleep(forTimeInterval: 0.5)
     }
     throw CLIError.transport("Timed out waiting for run \(options.runID.uuidString). The run continues in the app.")
-}
-
-func runScenarioReport(_ options: ScenarioReportOptions) throws -> Int32 {
-    let client = try MCPClient(endpoint: options.endpoint)
-    try client.initialize()
-    if options.stableExecution {
-        let report = try client.call(tool: "eval_get_scenario_execution_report", arguments: ["executionID": options.runID.uuidString])
-        guard let qualification = report["qualification"] as? [String: Any],
-              let incomplete = qualification["incompleteEvidence"] as? [String],
-              let failures = qualification["requiredFailures"] as? [String] else {
-            throw CLIError.protocolFailure("The app returned no saved execution qualification.")
-        }
-        let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
-        print(String(decoding: data, as: UTF8.self))
-        let release = qualification["report"] as? [String: Any]
-        return !incomplete.isEmpty ? 20 : !failures.isEmpty ? 10 : release?["outcome"] as? String == "passed" ? 0 : 20
-    }
-    let report = try client.call(tool: "eval_get_scenario_report", arguments: [
-        "runID": options.runID.uuidString
-    ])
-    guard let releaseCheck = report["releaseCheck"] as? [String: Any] else {
-        throw CLIError.protocolFailure("The app returned no release check for scenario run \(options.runID.uuidString).")
-    }
-    guard let outcome = releaseCheck["outcome"] as? String,
-          let summary = releaseCheck["summary"] as? String,
-          let failures = releaseCheck["failures"] as? [String] else {
-        throw CLIError.protocolFailure("The app returned an incomplete scenario release check.")
-    }
-
-    print("Intent Lab scenario run \(options.runID.uuidString): \(outcome)")
-    print(summary)
-    if failures.isEmpty {
-        print("Failures: none")
-    } else {
-        print("Failures:")
-        failures.forEach { print("- \($0)") }
-    }
-    return outcome == "passed" ? 0 : 30
-}
-
-func run() throws -> Int32 {
-    let arguments = Array(CommandLine.arguments.dropFirst())
-    guard let command = arguments.first else { throw CLIError.usage(Options.help) }
-    switch command {
-    case "check":
-        if arguments.dropFirst().elementsEqual(["--help"]) || arguments.dropFirst().elementsEqual(["-h"]) {
-            print(Options.help)
-            return 0
-        }
-        return try runCheck(Options(arguments: arguments))
-    case "scenario-report", "scenario-execution-report":
-        if arguments.dropFirst().elementsEqual(["--help"]) || arguments.dropFirst().elementsEqual(["-h"]) {
-            print(Options.help)
-            return 0
-        }
-        return try runScenarioReport(ScenarioReportOptions(arguments: arguments))
-    case "--help", "-h":
-        print(Options.help)
-        return 0
-    default:
-        throw CLIError.usage(Options.help)
-    }
 }
 
 do {
