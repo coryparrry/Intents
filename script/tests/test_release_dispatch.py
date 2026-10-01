@@ -1,11 +1,11 @@
 """Exercise release orchestration with real Git and a recording GitHub fixture."""
-
+import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
-from pathlib import Path
 
 
 class ReleaseDispatchTests(unittest.TestCase):
@@ -14,33 +14,21 @@ class ReleaseDispatchTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         source = Path(__file__).resolve().parents[1]
-        shutil.copytree(
-            source, self.root / "script", ignore=shutil.ignore_patterns("__pycache__")
-        )
+        shutil.copytree(source, self.root / "script", ignore=shutil.ignore_patterns("__pycache__"))
         (self.root / "script/verify_installer.sh").write_text(
             '#!/bin/bash\nprintf "installer\\n" >> "$CALL_LOG"\n'
             'if [[ "$1" != dist/release && -n "${FAIL_DOWNLOADED_INSTALLER:-}" ]]; then exit 1; fi\nexit "${FAIL_INSTALLER:-0}"\n'
         )
-        (self.root / ".gitignore").write_text(
-            "dist/\nbin/\ncalls.jsonl\nsummary.md\n__pycache__/\n"
-        )
+        (self.root / ".gitignore").write_text("dist/\nbin/\ncalls.jsonl\nsummary.md\n__pycache__/\n")
         self.git("init", "-q", "-b", "main")
         self.git("add", ".")
-        self.git(
-            "-c",
-            "user.name=Fixture",
-            "-c",
-            "user.email=fixture@example.com",
-            "commit",
-            "-qm",
-            "fixture",
-        )
+        self.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "fixture")
         self.commit = self.git("rev-parse", "HEAD").strip()
         self.git("tag", "v1.2.3")
         binary = self.root / "bin"
         binary.mkdir()
         gh = binary / "gh"
-        gh.write_text("""#!/usr/bin/env python3
+        gh.write_text('''#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
 args = sys.argv[1:]
@@ -80,32 +68,19 @@ elif args[:2] == ["release", "edit"]:
     assert "--draft=false" in args
 else:
     sys.exit("Unexpected GitHub operation: " + repr(args))
-""")
+''')
         gh.chmod(0o755)
-        self.env = dict(
-            os.environ,
-            PATH=f"{binary}:{os.environ['PATH']}",
-            RELEASE_TAG="v1.2.3",
-            BUILD_NUMBER="2",
-            GITHUB_SHA=self.commit,
-            GITHUB_REPOSITORY="owner/repo",
-            RELEASE_BRANCH="main",
-            GITHUB_REF="refs/heads/main",
-            CALL_LOG=str(self.root / "calls.jsonl"),
-            GITHUB_STEP_SUMMARY=str(self.root / "summary.md"),
-        )
+        self.env = dict(os.environ, PATH=f"{binary}:{os.environ['PATH']}", RELEASE_TAG="v1.2.3",
+                        BUILD_NUMBER="2", GITHUB_SHA=self.commit, GITHUB_REPOSITORY="owner/repo",
+                        RELEASE_BRANCH="main", GITHUB_REF="refs/heads/main", CALL_LOG=str(self.root / "calls.jsonl"),
+                        GITHUB_STEP_SUMMARY=str(self.root / "summary.md"))
 
     def git(self, *args):
         return subprocess.check_output(["git", *args], cwd=self.root, text=True)
 
     def run_dispatch(self, mode="prepare", success=True, **environment):
-        result = subprocess.run(
-            ["bash", "script/release_dispatch.sh", mode],
-            cwd=self.root,
-            env=dict(self.env, **environment),
-            text=True,
-            capture_output=True,
-        )
+        result = subprocess.run(["bash", "script/release_dispatch.sh", mode], cwd=self.root,
+                                env=dict(self.env, **environment), text=True, capture_output=True)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         return result
 
@@ -119,22 +94,14 @@ else:
         self.assertNotIn('"release", "upload"', self.calls())
 
     def test_reject_invalid_inputs(self):
-        for variables in (
-            {"RELEASE_TAG": "bad"},
-            {"BUILD_NUMBER": "0"},
-            {"GITHUB_REF": "refs/heads/feature"},
-        ):
+        for variables in ({"RELEASE_TAG": "bad"}, {"BUILD_NUMBER": "0"},
+                          {"GITHUB_REF": "refs/heads/feature"}):
             with self.subTest(variables=variables):
                 self.run_dispatch(success=False, **variables)
 
     def test_reject_missing_release_or_source_mismatch(self):
-        for variables in (
-            {"MISSING_RELEASE": "1"},
-            {"REMOTE_SHA": "a" * 40},
-            {"FAIL_API": "1"},
-            {"NO_CI": "1"},
-            {"FAILED_JOB": "1"},
-        ):
+        for variables in ({"MISSING_RELEASE": "1"}, {"REMOTE_SHA": "a" * 40},
+                          {"FAIL_API": "1"}, {"NO_CI": "1"}, {"FAILED_JOB": "1"}):
             with self.subTest(variables=variables):
                 self.run_dispatch(success=False, **variables)
         self.assertNotIn('"release", "upload"', self.calls())
@@ -146,7 +113,7 @@ else:
     def test_upload_and_verify_existing_release(self):
         self.run_dispatch("publish")
         self.assertIn('"release", "upload"', self.calls())
-        self.assertIn("dist/release/appcast.xml", self.calls())
+        self.assertIn('dist/release/appcast.xml', self.calls())
         self.assertIn('"release", "download"', self.calls())
         self.assertNotIn('"release", "create"', self.calls())
         self.assertIn('"release", "edit"', self.calls())
@@ -154,7 +121,7 @@ else:
     def test_upload_failure_does_not_verify_or_overwrite(self):
         self.run_dispatch("publish", success=False, EXISTING_ASSET="1")
         self.assertNotIn('"release", "download"', self.calls())
-        self.assertNotIn("--clobber", self.calls())
+        self.assertNotIn('--clobber', self.calls())
 
     def test_invalid_installer_never_uploads(self):
         self.run_dispatch("publish", success=False, FAIL_INSTALLER="1")
@@ -167,35 +134,17 @@ else:
         source = self.root / "bin/source"
         subprocess.check_call(["git", "clone", "-q", str(self.root), str(source)])
         subprocess.check_call(["git", "rm", "-rq", "script"], cwd=source)
-        subprocess.check_call(
-            [
-                "git",
-                "-c",
-                "user.name=Fixture",
-                "-c",
-                "user.email=fixture@example.com",
-                "commit",
-                "-qm",
-                "source only",
-            ],
-            cwd=source,
-        )
-        subprocess.check_call(
-            ["git", "tag", "-f", "v1.2.3"], cwd=source, stdout=subprocess.DEVNULL
-        )
-        commit = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=source, text=True
-        ).strip()
+        subprocess.check_call(["git", "-c", "user.name=Fixture", "-c",
+                               "user.email=fixture@example.com", "commit", "-qm", "source only"], cwd=source)
+        subprocess.check_call(["git", "tag", "-f", "v1.2.3"], cwd=source, stdout=subprocess.DEVNULL)
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
         self.run_dispatch(SOURCE_DIR=str(source), REMOTE_SHA=commit, DRAFT_SHA=commit)
-        self.run_dispatch(
-            "publish", SOURCE_DIR=str(source), REMOTE_SHA=commit, DRAFT_SHA=commit
-        )
+        self.run_dispatch("publish", SOURCE_DIR=str(source), REMOTE_SHA=commit, DRAFT_SHA=commit)
         self.assertIn('"release", "download"', self.calls())
 
     def test_tag_need_not_be_current_main(self):
-        self.run_dispatch(
-            GITHUB_SHA="b" * 40, REMOTE_SHA=self.commit, DRAFT_SHA=self.commit
-        )
+        self.run_dispatch(GITHUB_SHA="b" * 40, REMOTE_SHA=self.commit, DRAFT_SHA=self.commit)
+
 
     def test_draft_without_tag_prepares_and_creates_remote_tag(self):
         self.git("tag", "-d", "v1.2.3")
@@ -206,16 +155,8 @@ else:
         self.assertIn('"release", "edit"', self.calls())
 
     def test_mismatched_local_tag_is_rejected(self):
-        self.git(
-            "-c",
-            "user.name=Fixture",
-            "-c",
-            "user.email=fixture@example.com",
-            "commit",
-            "--allow-empty",
-            "-qm",
-            "new source",
-        )
+        self.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com",
+                 "commit", "--allow-empty", "-qm", "new source")
         commit = self.git("rev-parse", "HEAD").strip()
         self.run_dispatch(success=False, DRAFT_SHA=commit, REMOTE_SHA=commit)
         self.assertNotIn('"release", "upload"', self.calls())
@@ -225,16 +166,11 @@ else:
         self.assertNotIn('"release", "upload"', self.calls())
 
     def test_failed_publication_prerequisites_never_publish(self):
-        cases = (
-            {"FAIL_API": "1"},
-            {"EXISTING_ASSET": "1"},
-            {"FAIL_DOWNLOAD": "1"},
-            {"FAIL_INSTALLER": "1"},
-            {"FAIL_DOWNLOADED_INSTALLER": "1"},
-            {"FAIL_TAG_CREATE": "1", "NO_REMOTE_TAG": "1"},
-            {"REMOTE_SHA": "a" * 40},
-            {"DRAFT_SHA": "a" * 40},
-        )
+        cases = ({"FAIL_API": "1"}, {"EXISTING_ASSET": "1"},
+                 {"FAIL_DOWNLOAD": "1"}, {"FAIL_INSTALLER": "1"},
+                 {"FAIL_DOWNLOADED_INSTALLER": "1"},
+                 {"FAIL_TAG_CREATE": "1", "NO_REMOTE_TAG": "1"},
+                 {"REMOTE_SHA": "a" * 40}, {"DRAFT_SHA": "a" * 40})
         for variables in cases:
             with self.subTest(variables=variables):
                 (self.root / "calls.jsonl").unlink(missing_ok=True)

@@ -40,7 +40,7 @@ struct WorkspaceResetControl: View {
         var title: String {
             switch self {
             case .suite: "Reset Current Suite"
-            case .history: "Clear This Suite’s Runs and Traces"
+            case .history: "Clear All Runs and Traces"
             case .everything: "Start from Scratch"
             }
         }
@@ -49,9 +49,9 @@ struct WorkspaceResetControl: View {
             case .suite:
                 "Replace the current suite and draft with one blank case. Instructions, scoring, model settings, features, and reference-file selections will reset. Saved runs and traces will remain. This cannot be undone."
             case .history:
-                "Permanently delete this suite’s saved runs, results, and traces. The suite and draft will remain. Other suites are unaffected. This cannot be undone."
+                "Permanently delete all saved runs, results, and traces on this Mac. Your current suite and draft will remain. This cannot be undone."
             case .everything:
-                "Reset the current suite and draft to one blank case and permanently delete its saved runs, results, and traces. Other suites are unaffected. This cannot be undone."
+                "Reset the current suite and draft to one blank case and permanently delete all saved runs, results, and traces on this Mac. This cannot be undone."
             }
         }
     }

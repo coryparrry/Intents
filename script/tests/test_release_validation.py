@@ -1,16 +1,11 @@
 import hashlib
+from pathlib import Path
 import sys
 import tempfile
 import unittest
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from release_validation import (
-    REQUIRED_CHECKS,
-    validate_app_metadata,
-    validate_checks,
-    verify_checksum,
-)
+from release_validation import REQUIRED_CHECKS, validate_app_metadata, validate_checks, verify_checksum
 
 
 class ReleaseValidationTests(unittest.TestCase):
@@ -23,41 +18,22 @@ class ReleaseValidationTests(unittest.TestCase):
 
     def test_legacy_compile_only_ci_cannot_authorize_release(self):
         with self.assertRaises(ValueError):
-            validate_checks(
-                [{"name": "Compile app and tests", "conclusion": "success"}]
-            )
+            validate_checks([{"name": "Compile app and tests", "conclusion": "success"}])
 
     def test_signed_metadata_must_match_both_tag_version_and_commit(self):
         commit = "a" * 40
-        info = {
-            "CFBundleDisplayName": "Intents",
-            "CFBundleName": "Intents",
-            "CFBundleShortVersionString": "1.2.3",
-            "FoundationEvalsSourceCommit": commit,
-        }
+        info = {"CFBundleShortVersionString": "1.2.3", "FoundationEvalsSourceCommit": commit}
         validate_app_metadata(info, "1.2.3", commit)
-        for display_name in (None, "", "Foundation Evals"):
-            with self.subTest(display_name=display_name), self.assertRaises(ValueError):
-                validate_app_metadata(
-                    dict(info, CFBundleDisplayName=display_name), "1.2.3", commit
-                )
-        for bundle_name in (None, "", "FoundationEvals"):
-            with self.subTest(bundle_name=bundle_name), self.assertRaises(ValueError):
-                validate_app_metadata(
-                    dict(info, CFBundleName=bundle_name), "1.2.3", commit
-                )
         with self.assertRaises(ValueError):
             validate_app_metadata(info, "1.2.4", commit)
         for source in (None, "", "b" * 40):
             with self.subTest(source=source), self.assertRaises(ValueError):
-                validate_app_metadata(
-                    dict(info, FoundationEvalsSourceCommit=source), "1.2.3", commit
-                )
+                validate_app_metadata(dict(info, FoundationEvalsSourceCommit=source), "1.2.3", commit)
 
     def test_installer_integrity_and_filename_are_both_required(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            filename = "Intents-1.2.3-macOS-arm64.dmg"
+            filename = "Foundation-Evals-1.2.3-macOS-arm64.dmg"
             installer = directory / filename
             installer.write_bytes(b"signed installer fixture")
             digest = hashlib.sha256(installer.read_bytes()).hexdigest()

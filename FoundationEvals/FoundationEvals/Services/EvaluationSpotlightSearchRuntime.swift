@@ -60,8 +60,7 @@ struct EvaluationSpotlightSearchRuntime: Sendable {
 
     static func make(
         from configuration: EvaluationSpotlightSearchConfiguration,
-        limiter: EvaluationToolCallLimiter,
-        tokenCounter: any EvaluationToolOutputTokenCounting = EvaluationSystemPromptTokenCounter()
+        limiter: EvaluationToolCallLimiter
     ) throws -> Self? {
         guard configuration.enabled else { return nil }
         if let issue = configuration.validationIssue {
@@ -112,7 +111,7 @@ struct EvaluationSpotlightSearchRuntime: Sendable {
         let tool = EvaluationBoundedTool(
             tool: nativeTool,
             limiter: limiter,
-            tokenCounter: tokenCounter
+            tokenCounter: EvaluationSystemPromptTokenCounter()
         )
         let recorder = EvaluationSpotlightSearchRecorder(
             initialTrace: EvaluationSpotlightSearchTrace(configuration: configuration)
@@ -227,7 +226,7 @@ private actor EvaluationSpotlightSearchRecorder {
             trace.groupedItemResultCount += groups.values.reduce(0) { $0 + $1.count }
         case .count(let count):
             trace.countReplyCount += 1
-            trace.countResultTotal = trace.countResultTotal.saturatedAdding(count.value)
+            trace.countResultTotal = Self.saturatingAdd(trace.countResultTotal, count.value)
         case .table(let table):
             trace.tableReplyCount += 1
             trace.tableRowCount += table.rows.count
@@ -262,6 +261,11 @@ private actor EvaluationSpotlightSearchRecorder {
         return snapshot()
     }
 
+    private static func saturatingAdd(_ lhs: Int, _ rhs: Int) -> Int {
+        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+        if !overflow { return sum }
+        return rhs >= 0 ? .max : .min
+    }
 }
 
 enum EvaluationSpotlightRecordingDrain {

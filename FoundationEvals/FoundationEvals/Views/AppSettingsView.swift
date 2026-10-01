@@ -1,26 +1,13 @@
 import SwiftUI
 
-private enum AppSettingsPage: String, Hashable {
-    case mcp
-    case judges
-    case privacy
-}
-
 struct AppSettingsView: View {
-    @Bindable var store: EvaluationStore
     @Bindable var mcpSettings: MCPSettingsController
     @Bindable var telemetry: TelemetryController
-    @AppStorage("settingsPage") private var selectedPage = AppSettingsPage.mcp
 
     var body: some View {
-        TabView(selection: $selectedPage) {
+        TabView {
             MCPSettingsView(controller: mcpSettings)
                 .tabItem { Label("MCP Connector", systemImage: "network") }
-                .tag(AppSettingsPage.mcp)
-
-            JudgeConnectionsSettingsView(store: store)
-                .tabItem { Label("Judges", systemImage: "checkmark.seal") }
-                .tag(AppSettingsPage.judges)
 
             Form {
                 Section("Optional telemetry") {
@@ -49,7 +36,6 @@ struct AppSettingsView: View {
             .formStyle(.grouped)
             .frame(width: 620, height: 440)
             .tabItem { Label("Privacy", systemImage: "hand.raised") }
-            .tag(AppSettingsPage.privacy)
         }
         .padding(12)
     }

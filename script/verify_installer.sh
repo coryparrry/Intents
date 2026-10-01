@@ -13,7 +13,7 @@ if [[ -n "$expected_commit" && ! "$expected_commit" =~ ^[a-f0-9]{40}$ ]]; then
   exit 1
 fi
 version="${tag#v}"
-filename="Intents-$version-macOS-arm64.dmg"
+filename="Foundation-Evals-$version-macOS-arm64.dmg"
 python3 "$(dirname "$0")/release_validation.py" checksum "$directory" "$filename"
 dmg="$directory/$filename"
 requirement="anchor apple generic and certificate leaf[subject.OU] = \"$EXPECTED_TEAM_ID\""
@@ -44,7 +44,7 @@ cleanup() {
 trap cleanup EXIT
 hdiutil attach -readonly -nobrowse -mountpoint "$mountpoint" "$dmg"
 mounted=true
-app="$mountpoint/Intents.app"
+app="$mountpoint/Foundation Evals.app"
 codesign --verify --strict --deep -R "=$requirement" "$app"
 spctl --assess --type execute --verbose=2 "$app"
 test "$(readlink "$mountpoint/Applications")" = /Applications

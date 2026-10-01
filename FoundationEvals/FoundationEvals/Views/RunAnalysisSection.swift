@@ -50,7 +50,11 @@ struct RunAnalysisSection: View {
             }
         }
         .padding(18)
-        .workspaceSurface()
+        .background(.thinMaterial, in: .rect(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.secondary.opacity(0.14))
+        }
         .onChange(of: run.id) { _, _ in
             selectedBaselineID = RunBaselineSelection.defaultID(for: run, candidates: baselineRuns)
         }
@@ -103,7 +107,8 @@ private struct RunAnalysisHeader: View {
     }
 
     private func baselineLabel(_ run: EvaluationRun) -> String {
-        run.comparisonDisplayName
+        let date = run.startedAt.formatted(date: .abbreviated, time: .standard)
+        return "\(run.suiteName) \(run.suiteVersion) · \(date) · \(run.environment.model)"
     }
 }
 

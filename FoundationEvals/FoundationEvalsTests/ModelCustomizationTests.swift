@@ -70,8 +70,7 @@ struct ModelCustomizationTests {
         suite.modelConfiguration.provider = .customHTTP
         suite.features.spotlightSearch.enabled = true
         suite.features.spotlightSearch.fileSource.enabled = true
-        suite.features.spotlightSearch.fileSource.folderPath = FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: "Documents/FoundationEvalsSpotlightFixture").path
+        suite.features.spotlightSearch.fileSource.folderPath = directory.path
         #expect(store.validationIssue(for: suite, includeModelReadiness: false) == "The selected model does not support tool calling.")
         suite.modelConfiguration.customProviderSettings.supportsToolCalling = true
         #expect(store.validationIssue(for: suite, includeModelReadiness: false) == nil)

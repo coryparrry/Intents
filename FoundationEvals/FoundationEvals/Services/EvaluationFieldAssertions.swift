@@ -5,6 +5,7 @@ enum EvaluationFieldAssertions {
 
     static func validationIssue(assertions: [EvaluationFieldAssertion], scoringMode: ScoringMode) -> String? {
         guard !assertions.isEmpty else { return nil }
+        if scoringMode == .review { return "Field assertions require a scoring mode. Choose Exact text, Contains text, or AI rubric, or remove the assertions." }
         if assertions.count > maximumAssertions { return "Use at most \(maximumAssertions) field assertions per case." }
         if Set(assertions.map(\.id)).count != assertions.count { return "Field assertions must have unique IDs." }
         for (index, assertion) in assertions.enumerated() {
@@ -58,16 +59,9 @@ enum EvaluationFieldAssertions {
         }
     }
 
-    static func gatedStatus(
-        baseStatus: EvaluationResultStatus,
-        results: [EvaluationFieldAssertionResult],
-        allowAssertionsToScore: Bool = false
-    ) -> EvaluationResultStatus {
-        guard !results.isEmpty else { return baseStatus }
-        if results.contains(where: { !$0.passed }) {
-            return baseStatus == .passed || (baseStatus == .unscored && allowAssertionsToScore) ? .failed : baseStatus
-        }
-        return baseStatus == .unscored && allowAssertionsToScore ? .passed : baseStatus
+    static func gatedStatus(baseStatus: EvaluationResultStatus, results: [EvaluationFieldAssertionResult]) -> EvaluationResultStatus {
+        guard baseStatus == .passed, results.contains(where: { !$0.passed }) else { return baseStatus }
+        return .failed
     }
 
     private static func parse(_ text: String) -> FieldAssertionJSON? {

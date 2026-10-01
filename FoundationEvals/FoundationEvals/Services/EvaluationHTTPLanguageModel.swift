@@ -10,9 +10,6 @@ struct EvaluationCustomProviderConfiguration: Codable, Equatable, Hashable, Send
     static let reservedMCPPort = 17_873
 
     var endpoint = defaultEndpoint
-    /// Optional endpoint that accepts the generation envelope and returns the
-    /// provider's exact input-token count before generation.
-    var tokenizerEndpoint: String? = nil
     var contextSize = 8_192
     var supportsVision = false
     var supportsGuidedGeneration = false
@@ -69,26 +66,7 @@ struct EvaluationCustomProviderConfiguration: Codable, Equatable, Hashable, Send
             return "Custom provider endpoint must use literal http://127.0.0.1:<port>/... without credentials, a query, or a fragment."
         }
         guard port != Self.reservedMCPPort else {
-            return "Port \(Self.reservedMCPPort) is reserved for the Intents MCP server."
-        }
-        if let tokenizerEndpoint, !tokenizerEndpoint.isEmpty {
-            guard tokenizerEndpoint.utf8.count <= 2_048 else {
-                return "Custom provider tokenizer endpoint must be 2,048 UTF-8 bytes or fewer."
-            }
-            guard let tokenizerComponents = URLComponents(string: tokenizerEndpoint),
-                  tokenizerComponents.scheme == "http",
-                  tokenizerComponents.host == "127.0.0.1",
-                  let tokenizerPort = tokenizerComponents.port,
-                  (1...65_535).contains(tokenizerPort),
-                  tokenizerComponents.user == nil,
-                  tokenizerComponents.password == nil,
-                  tokenizerComponents.query == nil,
-                  tokenizerComponents.fragment == nil else {
-                return "Custom provider tokenizer endpoint must use literal http://127.0.0.1:<port>/... without credentials, a query, or a fragment."
-            }
-            if tokenizerPort == Self.reservedMCPPort {
-                return "Port \(Self.reservedMCPPort) is reserved for the Intents MCP server."
-            }
+            return "Port \(Self.reservedMCPPort) is reserved for the Foundation Evals MCP server."
         }
         return nil
     }
@@ -96,13 +74,6 @@ struct EvaluationCustomProviderConfiguration: Codable, Equatable, Hashable, Send
     var validatedEndpoint: URL? {
         guard validationIssue == nil else { return nil }
         return URL(string: endpoint)
-    }
-
-    var validatedTokenizerEndpoint: URL? {
-        guard validationIssue == nil,
-              let tokenizerEndpoint,
-              !tokenizerEndpoint.isEmpty else { return nil }
-        return URL(string: tokenizerEndpoint)
     }
 }
 
@@ -169,7 +140,6 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
     typealias Configuration = EvaluationHTTPLanguageModelExecutionConfiguration
 
     private static let maximumRequestBytes = 8 * 1_024 * 1_024
-    private static let maximumTokenizationResponseBytes = 64 * 1_024
     private static let maximumResponseBytes = 8 * 1_024 * 1_024
     private static let maximumEventBytes = 1 * 1_024 * 1_024
 
@@ -208,15 +178,6 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         )
         guard body.count <= Self.maximumRequestBytes else {
             throw EvaluationHTTPProviderError.requestTooLarge(maximum: Self.maximumRequestBytes)
-        }
-        if let tokenizerEndpoint = configuration.validatedTokenizerEndpoint {
-            try await Self.validateTokenBudget(
-                body: body,
-                endpoint: tokenizerEndpoint,
-                request: request,
-                contextSize: configuration.contextSize,
-                timeout: configuration.requestTimeoutSeconds
-            )
         }
 
         let sessionConfiguration = URLSessionConfiguration.ephemeral
@@ -331,91 +292,6 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         guard responseEventCount > 0 else {
             throw EvaluationHTTPProviderError.missingOutputEvent
         }
-    }
-
-    private static func validateTokenBudget(
-        body: Data,
-        endpoint: URL,
-        request: LanguageModelExecutorGenerationRequest,
-        contextSize: Int,
-        timeout: TimeInterval
-    ) async throws {
-        let sessionConfiguration = URLSessionConfiguration.ephemeral
-        sessionConfiguration.timeoutIntervalForRequest = timeout
-        sessionConfiguration.timeoutIntervalForResource = timeout
-        sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        sessionConfiguration.urlCache = nil
-        sessionConfiguration.httpCookieStorage = nil
-        sessionConfiguration.httpShouldSetCookies = false
-        sessionConfiguration.urlCredentialStorage = nil
-        sessionConfiguration.connectionProxyDictionary = [:]
-        let session = URLSession(
-            configuration: sessionConfiguration,
-            delegate: EvaluationHTTPNoRedirectDelegate(),
-            delegateQueue: nil
-        )
-        defer { session.invalidateAndCancel() }
-
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.httpBody = body
-        urlRequest.timeoutInterval = timeout
-        urlRequest.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let (bytes, response) = try await session.bytes(for: urlRequest)
-        guard let response = response as? HTTPURLResponse else {
-            throw EvaluationHTTPProviderError.invalidHTTPResponse
-        }
-        guard (200...299).contains(response.statusCode) else {
-            throw EvaluationHTTPProviderError.httpStatus(response.statusCode)
-        }
-        let data = try await boundedData(
-            from: bytes,
-            maximumBytes: maximumTokenizationResponseBytes
-        )
-        let tokenization: EvaluationHTTPTokenizationResponse
-        do {
-            tokenization = try JSONDecoder().decode(EvaluationHTTPTokenizationResponse.self, from: data)
-        } catch {
-            throw EvaluationHTTPProviderError.invalidTokenizationResponse(error.localizedDescription)
-        }
-        guard tokenization.inputTokens >= 0 else {
-            throw EvaluationHTTPProviderError.invalidTokenizationResponse(
-                "inputTokens must not be negative."
-            )
-        }
-        guard tokenization.cachedInputTokens >= 0,
-              tokenization.cachedInputTokens <= tokenization.inputTokens else {
-            throw EvaluationHTTPProviderError.invalidTokenizationResponse(
-                "cachedInputTokens must be between zero and inputTokens."
-            )
-        }
-        let responseReserve = request.generationOptions.maximumResponseTokens ?? 0
-        let totalTokens = tokenization.inputTokens.saturatedAdding(responseReserve)
-        guard totalTokens <= contextSize else {
-            throw EvaluationHTTPProviderError.backend(
-                code: "contextSizeExceeded",
-                message: "The provider tokenizer measured \(tokenization.inputTokens) input tokens, leaving insufficient context for the requested response."
-            )
-        }
-    }
-
-    static func boundedData<Bytes: AsyncSequence>(
-        from bytes: Bytes,
-        maximumBytes: Int
-    ) async throws -> Data where Bytes.Element == UInt8 {
-        var data = Data()
-        data.reserveCapacity(min(maximumBytes, 4_096))
-        for try await byte in bytes {
-            try Task.checkCancellation()
-            guard data.count < maximumBytes else {
-                throw EvaluationHTTPProviderError.responseTooLarge(maximum: maximumBytes)
-            }
-            data.append(byte)
-        }
-        return data
     }
 
     private static func isVisibleContent(_ content: String) -> Bool {
@@ -654,22 +530,6 @@ struct EvaluationHTTPGenerationRequest: Encodable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return try encoder.encode(envelope)
-    }
-}
-
-/// Response from the optional custom-provider tokenizer endpoint.
-struct EvaluationHTTPTokenizationResponse: Decodable, Equatable, Sendable {
-    var inputTokens: Int
-    var cachedInputTokens: Int = 0
-
-    private enum CodingKeys: String, CodingKey {
-        case inputTokens, cachedInputTokens
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        inputTokens = try container.decode(Int.self, forKey: .inputTokens)
-        cachedInputTokens = try container.decodeIfPresent(Int.self, forKey: .cachedInputTokens) ?? 0
     }
 }
 
@@ -1018,7 +878,6 @@ enum EvaluationHTTPProviderError: LocalizedError, Sendable {
     case responseTooLarge(maximum: Int)
     case eventTooLarge(maximum: Int)
     case invalidHTTPResponse
-    case invalidTokenizationResponse(String)
     case httpStatus(Int)
     case unsupportedRequestOption(String)
     case invalidEvent(String)
@@ -1032,8 +891,6 @@ enum EvaluationHTTPProviderError: LocalizedError, Sendable {
         case .responseTooLarge(let maximum): "The custom provider response exceeded \(maximum) bytes."
         case .eventTooLarge(let maximum): "A custom provider event exceeded \(maximum) bytes."
         case .invalidHTTPResponse: "The custom provider did not return an HTTP response."
-        case .invalidTokenizationResponse(let detail):
-            "The custom provider tokenizer returned an invalid response: \(detail)"
         case .httpStatus(let status): "The custom provider returned HTTP status \(status)."
         case .unsupportedRequestOption(let option):
             "The custom provider adapter cannot encode the requested \(option)."

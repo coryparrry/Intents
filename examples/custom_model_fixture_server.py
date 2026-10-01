@@ -1,7 +1,8 @@
+#!/usr/bin/env python3
 """Deterministic protocol fixture for EvaluationHTTPLanguageModel.
 
 This is not an inference backend. It emits fixed, bounded NDJSON scenarios so the
-The Intents custom-provider UI can exercise text, guided output, reasoning,
+Foundation Evals custom-provider UI can exercise text, guided output, reasoning,
 tool continuation, failures, timeout, and cancellation.
 """
 
@@ -15,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+
 HOST = "127.0.0.1"
 PORT = 19096
 MAX_REQUEST_BYTES = 8 * 1024 * 1024
@@ -24,9 +26,7 @@ CANCEL_DELAY_SECONDS = 20.0
 
 ROUTES = {
     "/generate",
-    "/tokenize",
     "/text",
-    "/text-gated",
     "/guided",
     "/guided/simple",
     "/guided/stream",
@@ -63,13 +63,10 @@ class FixtureServer(ThreadingHTTPServer):
         self,
         server_address: tuple[str, int],
         request_log: Path | None = None,
-        gate_text_stream: bool = False,
     ) -> None:
         super().__init__(server_address, FixtureHandler)
         self.request_log = request_log
         self.request_log_lock = threading.Lock()
-        self.gate_text_stream = gate_text_stream
-        self.release_text_stream = threading.Event()
 
     def record_protocol_request(self, request: dict[str, Any]) -> None:
         if self.request_log is None:
@@ -81,28 +78,17 @@ class FixtureServer(ThreadingHTTPServer):
         ).encode("utf-8")
         if len(encoded) > MAX_REQUEST_BYTES:
             raise ValueError("canonical request exceeds the request size limit")
-        with self.request_log_lock, self.request_log.open("ab") as log:
-            log.write(encoded + b"\n")
+        with self.request_log_lock:
+            with self.request_log.open("ab") as log:
+                log.write(encoded + b"\n")
 
 
 class FixtureHandler(BaseHTTPRequestHandler):
     server_version = "FoundationEvalsFixture/2"
 
-    def do_GET(self) -> None:
-        if self.path != "/release-text-stream" or not self.server.gate_text_stream:
-            self.send_error(404, "Unknown fixture route")
-            return
-        self.server.release_text_stream.set()
-        self.send_response(204)
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-
-    def do_POST(self) -> None:
+    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
         if self.path not in ROUTES:
             self.send_error(404, "Unknown fixture route")
-            return
-        if self.path == "/text-gated" and not self.server.gate_text_stream:
-            self.send_error(404, "Gated text stream is disabled")
             return
 
         request = self.read_request(require_protocol=self.path != "/tool/execute")
@@ -111,10 +97,6 @@ class FixtureHandler(BaseHTTPRequestHandler):
 
         if self.path == "/tool/execute":
             self.serve_tool_execution(request)
-            return
-
-        if self.path == "/tokenize":
-            self.serve_tokenization(request)
             return
 
         if self.path == "/redirect":
@@ -168,17 +150,6 @@ class FixtureHandler(BaseHTTPRequestHandler):
                 return None
         return request
 
-    def serve_tokenization(self, request: dict[str, Any]) -> None:
-        # The fixture returns a stable count so client tests can verify the
-        # tokenizer handshake without depending on a model vocabulary.
-        body = json.dumps({"inputTokens": 7}, separators=(",", ":")).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
     def serve_tool_execution(self, request: dict[str, Any]) -> None:
         if request.get("toolName") != "lookupOrder":
             self.send_error(400, "Tool request must target lookupOrder")
@@ -209,9 +180,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
             return scenario
         if request.get("mode") == "guided":
             return "guided"
-        if request.get("enabledTools") or contains_tool_output(
-            request.get("transcript")
-        ):
+        if request.get("enabledTools") or contains_tool_output(request.get("transcript")):
             return "tool"
         if "reasoning" in request.get("provider", {}).get("capabilities", []):
             return "reasoning"
@@ -261,9 +230,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.emit_response("Deterministic reasoning response.", token_count=4)
             self.emit_usage(output_tokens=13, reasoning_tokens=9)
             return
-        self.serve_text(gated=scenario == "text-gated")
+        self.serve_text()
 
-    def serve_text(self, gated: bool = False) -> None:
+    def serve_text(self) -> None:
         chunks = [
             ("Deterministic ", 2),
             ("fixture ", 1),
@@ -271,9 +240,6 @@ class FixtureHandler(BaseHTTPRequestHandler):
         ]
         for index, (content, token_count) in enumerate(chunks):
             if index:
-                if index == 1 and gated:
-                    if not self.server.release_text_stream.wait(timeout=30):
-                        return
                 time.sleep(STREAM_DELAY_SECONDS)
             self.emit_response(content, token_count=token_count)
         self.emit_usage(output_tokens=4)
@@ -345,11 +311,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
             )
             return
         tool = next(
-            (
-                candidate
-                for candidate in tools
-                if candidate.get("name") == "lookupOrder"
-            ),
+            (candidate for candidate in tools if candidate.get("name") == "lookupOrder"),
             tools[0],
         )
         self.emit(
@@ -395,9 +357,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         )
 
     def emit(self, **event: Any) -> None:
-        self.wfile.write(
-            json.dumps(event, separators=(",", ":")).encode("utf-8") + b"\n"
-        )
+        self.wfile.write(json.dumps(event, separators=(",", ":")).encode("utf-8") + b"\n")
         self.wfile.flush()
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -446,9 +406,7 @@ def tool_arguments(tool: dict[str, Any]) -> dict[str, str]:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--port", type=int, default=PORT, help="Loopback port (default: %(default)s)"
-    )
+    parser.add_argument("--port", type=int, default=PORT, help="Loopback port (default: %(default)s)")
     parser.add_argument(
         "--stream-delay",
         type=float,
@@ -475,11 +433,6 @@ def parse_arguments() -> argparse.Namespace:
             "disabled by default"
         ),
     )
-    parser.add_argument(
-        "--gate-text-stream",
-        action="store_true",
-        help="Hold the text stream after its first chunk until released over HTTP",
-    )
     return parser.parse_args()
 
 
@@ -492,20 +445,10 @@ if __name__ == "__main__":
     STREAM_DELAY_SECONDS = arguments.stream_delay
     TIMEOUT_DELAY_SECONDS = arguments.timeout_delay
     CANCEL_DELAY_SECONDS = arguments.cancel_delay
-    server = FixtureServer(
-        (HOST, arguments.port),
-        request_log=arguments.request_log,
-        gate_text_stream=arguments.gate_text_stream,
-    )
+    server = FixtureServer((HOST, arguments.port), request_log=arguments.request_log)
     bound_port = server.server_address[1]
-    print(
-        f"Intents protocol fixture listening on http://{HOST}:{bound_port}",
-        flush=True,
-    )
-    print(
-        "This server returns fixed events; it does not perform model inference.",
-        flush=True,
-    )
+    print(f"Foundation Evals protocol fixture listening on http://{HOST}:{bound_port}", flush=True)
+    print("This server returns fixed events; it does not perform model inference.", flush=True)
     print("Routes: " + ", ".join(sorted(ROUTES)), flush=True)
     try:
         server.serve_forever()

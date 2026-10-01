@@ -118,25 +118,12 @@ struct EvaluationSpotlightSearchConfiguration: Codable, Equatable, Sendable {
     }
 
     static func isDisallowedFileScope(_ url: URL) -> Bool {
-        let canonicalURL = url.standardizedFileURL.resolvingSymlinksInPath()
-        let path = canonicalURL.path
-        let broadPaths = Set([
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        let broadPaths = [
             "/",
             "/Applications",
-            "/bin",
-            "/dev",
-            "/etc",
             "/Library",
-            "/opt",
-            "/private",
-            "/private/etc",
-            "/private/tmp",
-            "/private/var",
-            "/sbin",
             "/System",
-            "/System/Volumes/Data",
-            "/usr",
-            "/var",
             "/Users",
             "/Volumes",
             FileManager.default.homeDirectoryForCurrentUser
@@ -147,36 +134,8 @@ struct EvaluationSpotlightSearchConfiguration: Codable, Equatable, Sendable {
                 .standardizedFileURL
                 .resolvingSymlinksInPath()
                 .path
-        ])
-        if broadPaths.contains(path) { return true }
-
-        let components = canonicalURL.pathComponents
-        let broadSystemPaths = broadPaths.subtracting([
-            "/",
-            "/Users",
-            "/Volumes",
-            FileManager.default.homeDirectoryForCurrentUser
-                .standardizedFileURL
-                .resolvingSymlinksInPath()
-                .path,
-            FileManager.default.temporaryDirectory
-                .standardizedFileURL
-                .resolvingSymlinksInPath()
-                .path
-        ])
-        for broadPath in broadSystemPaths {
-            let broadComponents = URL(fileURLWithPath: broadPath, isDirectory: true)
-                .standardizedFileURL
-                .resolvingSymlinksInPath()
-                .pathComponents
-            guard components.count >= broadComponents.count else { continue }
-            if components.prefix(broadComponents.count).elementsEqual(broadComponents) {
-                return true
-            }
-        }
-
-        guard components.count == 3 else { return false }
-        return components[1] == "Users" || components[1] == "Volumes"
+        ]
+        return broadPaths.contains(path)
     }
 }
 

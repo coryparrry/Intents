@@ -39,17 +39,16 @@ struct FeaturePersistenceTests {
         suite.cases = [.init(name: "Boundary", prompt: "Summarize the reference.",
                              expected: String(repeating: "reference ", count: 1_500))]
         let runner = EvaluationRunner()
-        let tokenCounter = EvaluationPortablePromptInputTokenCounter()
-        // Find this counter's admission boundary; don't assume a fixed tokenization.
+        // Find this tokenizer's actual admission boundary; don't assume a fixed tokenization.
         var lower = 1_000
-        var upper = 65_536
+        var upper = 16_000
         _ = try await runner.preparedPrompt(for: suite.cases[0], suite: suite, images: [],
-                                            contextSize: upper, tools: [], tokenCounter: tokenCounter)
+                                            contextSize: upper, tools: [])
         while lower + 1 < upper {
             let midpoint = (lower + upper) / 2
             do {
                 _ = try await runner.preparedPrompt(for: suite.cases[0], suite: suite, images: [],
-                                                    contextSize: midpoint, tools: [], tokenCounter: tokenCounter)
+                                                    contextSize: midpoint, tools: [])
                 upper = midpoint
             } catch { lower = midpoint }
         }
@@ -57,17 +56,17 @@ struct FeaturePersistenceTests {
         var mixedSuite = suite
         mixedSuite.criteria = "exact: \"\(String(repeating: "LONG_LITERAL ", count: 200))\"\n" + suite.criteria
         _ = try await runner.preparedPrompt(for: mixedSuite.cases[0], suite: mixedSuite, images: [],
-                                            contextSize: upper, tools: [], tokenCounter: tokenCounter)
+                                            contextSize: upper, tools: [])
         suite.features.profile.enabled = true
         suite.features.profile.afterToolInstructions = String(repeating: "Use uppercase. ", count: 40)
-        let profileTokens = try await tokenCounter.tokenCount(
+        let profileTokens = try await SystemLanguageModel.default.tokenCount(
             for: Instructions(suite.features.profile.afterToolInstructions))
         let inputLimit = suite.modelConfiguration.contextAllocation(contextSize: upper, includesModelJudge: true)
         // The subject still fits. Only the additional judge contract should reject the run.
         #expect(profileTokens + 100 < inputLimit.effectiveInputLimit)
         await #expect(throws: (any Error).self) {
             try await runner.preparedPrompt(for: suite.cases[0], suite: suite, images: [],
-                                             contextSize: upper, tools: [], tokenCounter: tokenCounter)
+                                             contextSize: upper, tools: [])
         }
     }
 

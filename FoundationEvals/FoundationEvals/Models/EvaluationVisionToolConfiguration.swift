@@ -1,4 +1,3 @@
-import Foundation
 import FoundationModels
 import Vision
 
@@ -30,15 +29,12 @@ struct EvaluationVisionToolConfiguration: Codable, Equatable, Sendable {
         return tools
     }
 
-    func boundary(
-        limiter: EvaluationToolCallLimiter,
-        tokenCounter: any EvaluationToolOutputTokenCounting = EvaluationSystemPromptTokenCounter()
-    ) -> EvaluationBuiltinToolBoundary? {
+    func boundary(limiter: EvaluationToolCallLimiter) -> EvaluationBuiltinToolBoundary? {
         guard !isEmpty else { return nil }
         return EvaluationBuiltinToolBoundary(
             toolNames: Set(enabledToolNames),
             limiter: limiter,
-            tokenCounter: tokenCounter
+            tokenCounter: EvaluationSystemPromptTokenCounter()
         )
     }
 
@@ -100,11 +96,7 @@ struct EvaluationBuiltinToolBoundary: LanguageModelSession.DynamicProfileModifie
     }
 }
 
-protocol EvaluationToolCallLimiting: Sendable {
-    func beginCall() async throws
-}
-
-actor EvaluationToolCallLimiter: EvaluationToolCallLimiting {
+actor EvaluationToolCallLimiter {
     private let maximumCalls: Int
     private var callCount = 0
 
@@ -115,7 +107,7 @@ actor EvaluationToolCallLimiter: EvaluationToolCallLimiting {
         )
     }
 
-    func beginCall() async throws {
+    func beginCall() throws {
         guard callCount < maximumCalls else {
             throw EvaluationBoundedToolError.callLimitReached(maximum: maximumCalls)
         }

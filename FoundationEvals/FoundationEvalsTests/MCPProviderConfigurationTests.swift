@@ -40,7 +40,6 @@ struct MCPProviderConfigurationTests {
         let authority = MCPStoreAuthority.make(store: store)
         let customProvider = EvaluationCustomProviderConfiguration(
             endpoint: "http://127.0.0.1:19097/v1/generate",
-            tokenizerEndpoint: "http://127.0.0.1:19097/v1/tokenize",
             contextSize: 32_768,
             supportsVision: true,
             supportsGuidedGeneration: true,
@@ -73,7 +72,6 @@ struct MCPProviderConfigurationTests {
         let reportedCustomization = try #require(model["customization"]?.objectValue)
         #expect(model["provider"] == .string("customHTTP"))
         #expect(custom["endpoint"] == .string(customProvider.endpoint))
-        #expect(custom["tokenizerEndpoint"] == .string(customProvider.tokenizerEndpoint!))
         #expect(custom["contextSize"] == .integer(32_768))
         #expect(custom["capabilities"] == .array([
             .string("vision"),
@@ -150,55 +148,6 @@ struct MCPProviderConfigurationTests {
             suite: reportedSuite
         )))
         #expect(outcome(replayed) == "duplicate")
-    }
-
-    @MainActor
-    @Test func partialCustomProviderJSONPreservesTokenizerEndpoint() async throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let tokenizerEndpoint = "http://127.0.0.1:19097/v1/tokenize"
-        store.draftSuite.modelConfiguration.provider = .customHTTP
-        store.draftSuite.modelConfiguration.customProvider = EvaluationCustomProviderConfiguration(
-            endpoint: "http://127.0.0.1:19097/v1/generate",
-            tokenizerEndpoint: tokenizerEndpoint,
-            contextSize: 32_768,
-            supportsGuidedGeneration: true
-        )
-        #expect(store.saveSuite())
-
-        var declaration = suiteDeclaration(from: store.suite)
-        declaration.name = "Partial custom provider update"
-        declaration.modelConfiguration.customProvider?.endpoint = "http://127.0.0.1:19098/v1/generate"
-        var arguments = try MCPJSONValue.encode(MCPReplaceSuiteArguments(
-            expectedRevision: store.suiteRevision,
-            confirmDeletes: false,
-            suite: declaration
-        ))
-        var root = try #require(arguments.objectValue)
-        var suite = try #require(root["suite"]?.objectValue)
-        var model = try #require(suite["modelConfiguration"]?.objectValue)
-        var customProvider = try #require(model["customProvider"]?.objectValue)
-        customProvider.removeValue(forKey: "tokenizerEndpoint")
-        model["customProvider"] = .object(customProvider)
-        suite["modelConfiguration"] = .object(model)
-        root["suite"] = .object(suite)
-        arguments = .object(root)
-
-        #expect(
-            arguments.objectValue?["suite"]?.objectValue?["modelConfiguration"]?
-                .objectValue?["customProvider"]?.objectValue?["tokenizerEndpoint"] == nil
-        )
-        let result = await MCPStoreAuthority.make(store: store).call(
-            try MCPToolCatalog.parse(name: "eval_replace_suite", arguments: arguments)
-        )
-
-        #expect(outcome(result) == "committed")
-        #expect(
-            store.suite.modelConfiguration.customProvider?.endpoint
-                == "http://127.0.0.1:19098/v1/generate"
-        )
-        #expect(store.suite.modelConfiguration.customProvider?.tokenizerEndpoint == tokenizerEndpoint)
     }
 
     @Test func customProviderValidationRejectsDuplicateCapabilities() throws {

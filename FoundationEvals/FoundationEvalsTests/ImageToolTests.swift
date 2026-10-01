@@ -1,8 +1,9 @@
 import CoreGraphics
 import Foundation
 import FoundationModels
-import Testing
 import Vision
+import ImageIO
+import Testing
 @testable import FoundationEvals
 
 struct ImageToolTests {
@@ -316,7 +317,7 @@ struct ImageToolTests {
         )
 
         let promptSegments = try EvaluationBuiltinToolBoundary.promptSegments(for: output)
-        let tokenCount = try await FixedToolOutputTokenCounter(count: 3).tokenCount(
+        let tokenCount = try await EvaluationSystemPromptTokenCounter().tokenCount(
             for: promptSegments
         )
 
@@ -376,26 +377,6 @@ private struct PromptTokenRouteCounter: EvaluationPromptInputTokenCounting {
     }
 
     func tokenCount(for prompt: Prompt) async throws -> Int {
-        guard let promptCount else { throw PromptTokenRouteError.unexpectedPromptCount }
-        return promptCount
-    }
-
-    func tokenCount(for instructions: Instructions) async throws -> Int {
-        guard let promptCount else { throw PromptTokenRouteError.unexpectedPromptCount }
-        return promptCount
-    }
-
-    func tokenCount(for schema: GenerationSchema) async throws -> Int {
-        guard let promptCount else { throw PromptTokenRouteError.unexpectedPromptCount }
-        return promptCount
-    }
-
-    func tokenCount(for history: [Transcript.Entry]) async throws -> Int {
-        guard let promptCount else { throw PromptTokenRouteError.unexpectedPromptCount }
-        return promptCount
-    }
-
-    func tokenCount(for tools: [any Tool]) async throws -> Int {
         guard let promptCount else { throw PromptTokenRouteError.unexpectedPromptCount }
         return promptCount
     }

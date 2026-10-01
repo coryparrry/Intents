@@ -69,35 +69,6 @@ struct MCPFeatureTests {
     }
 
     @MainActor
-    @Test func malformedWorkloadCountsSaturateInsteadOfCrashingStateReaders() async throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let seed = EvaluationStore(supportDirectory: directory)
-        var malformed = seed.suite
-        malformed.repetitions = .max
-        malformed.cases.append(
-            EvaluationCase(name: "Overflow", prompt: "Return a value.", expected: "value")
-        )
-        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: directory,
-            projectID: seed.selectedProjectID,
-            suiteID: seed.selectedSuiteID
-        )
-        try CanonicalJSON.data(for: malformed).write(
-            to: suiteDirectory.appending(path: "suite.json"),
-            options: .atomic
-        )
-
-        let store = EvaluationStore(supportDirectory: directory)
-        #expect(store.plannedSampleCount == .max)
-        #expect(store.plannedRequestCount == .max)
-        let state = await MCPStoreAuthority.make(store: store).call(.getState)
-        let workload = try #require(state.structuredContent.objectValue?["workload"]?.objectValue)
-        #expect(workload["plannedSamples"] == .integer(Int64.max))
-        #expect(workload["plannedModelRequests"] == .integer(Int64.max))
-    }
-
-    @MainActor
     @Test func omittedFeaturesPreserveTheStoredConfigurationForLegacyClients() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -122,43 +93,6 @@ struct MCPFeatureTests {
         )
         #expect(store.suite.name == "Legacy replacement")
         #expect(store.suite.features == existingFeatures)
-    }
-
-    @MainActor
-    @Test func replacementPreservesPoliciesOutsideTheMCPWritableSchema() async throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let caseID = store.draftSuite.cases[0].id
-        store.draftSuite.scoringMode = .review
-        store.draftSuite.judgeConfiguration = EvaluationJudgeConfiguration(
-            mode: .connection,
-            connectionID: UUID(),
-            includeReferenceAttachments: false
-        )
-        store.draftSuite.releasePolicy = EvaluationReleasePolicy(
-            required: true,
-            criticalCaseIDs: [caseID],
-            maximumErrorCount: 1,
-            maximumAverageLatencyMilliseconds: 2_500,
-            requireApprovedBaseline: true,
-            maximumPassRateRegression: 0.1
-        )
-        #expect(store.saveSuite())
-        let expectedJudgeConfiguration = store.suite.judgeConfiguration
-        let expectedReleasePolicy = store.suite.releasePolicy
-        var declaration = suiteDeclaration(name: "Policy-preserving update", features: nil)
-        declaration.cases[0].id = caseID
-
-        let result = await MCPStoreAuthority.make(store: store).call(.replaceSuite(.init(
-            expectedRevision: store.suiteRevision,
-            confirmDeletes: false,
-            suite: declaration
-        )))
-
-        #expect(!result.isError)
-        #expect(store.suite.judgeConfiguration == expectedJudgeConfiguration)
-        #expect(store.suite.releasePolicy == expectedReleasePolicy)
     }
 
     @MainActor

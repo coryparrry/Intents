@@ -9,16 +9,6 @@ struct CustomProviderControls: View {
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("Custom provider endpoint")
 
-            TextField("Optional tokenizer endpoint", text: Binding(
-                get: { configuration.tokenizerEndpoint ?? "" },
-                set: { configuration.tokenizerEndpoint = $0.isEmpty ? nil : $0 }
-            ))
-            .textFieldStyle(.roundedBorder)
-            .accessibilityIdentifier("Custom provider tokenizer endpoint")
-            Text("When configured, this endpoint receives the same JSON generation envelope and returns {\"inputTokens\": number} before generation.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
             HStack(alignment: .top, spacing: 24) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Context size")

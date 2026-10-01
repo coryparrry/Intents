@@ -6,7 +6,7 @@ if [[ ! "$commit" =~ ^[a-f0-9]{40}$ ]]; then
   echo 'Release source must be a full Git SHA.' >&2
   exit 1
 fi
-repository="${GITHUB_REPOSITORY:-coryparrry/Intents}"
+repository="${GITHUB_REPOSITORY:-coryparrry/Foundation-Eval-Labs}"
 branch="${RELEASE_BRANCH:-main}"
 run_id="$(gh run list --repo "$repository" --workflow ci.yml --commit "$commit" \
   --branch "$branch" --event push --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')"

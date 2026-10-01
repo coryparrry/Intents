@@ -2,9 +2,8 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
   workflow_dispatch:
 
 permissions:
@@ -12,46 +11,17 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
-  changes:
-    name: Route changed files
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      native: ${{ steps.route.outputs.native }}
-      ui: ${{ steps.route.outputs.ui }}
-      regression: ${{ steps.route.outputs.regression }}
-      swift_suites: ${{ steps.route.outputs.swift_suites }}
-      python_tests: ${{ steps.route.outputs.python_tests }}
-      macos_tests: ${{ steps.route.outputs.macos_tests }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Select coverage
-        id: route
-        run: python3 script/ci_routes.py
-
   quality:
     name: Workflow and script checks
-    needs: changes
-    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Require successful routing
-        env:
-          ROUTING_RESULT: ${{ needs.changes.result }}
-        run: test "$ROUTING_RESULT" = success
-      - name: Validate release notes
-        if: github.event_name == 'pull_request'
-        run: python3 script/release_notes.py validate-event
       - name: Validate workflows
         # actionlint has not listed GitHub's hosted Xcode 27 preview label yet.
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color -ignore 'label "xcode-27" is unknown'
@@ -59,37 +29,22 @@ jobs:
         run: shellcheck script/*.sh
       - name: Check Python examples
         run: python3 -m compileall -q examples
-      - name: Run selected script unit tests
-        if: needs.changes.outputs.python_tests != '[]'
-        env:
-          CI_TEST_SELECTION: ${{ needs.changes.outputs.python_tests }}
-        run: python3 script/ci_run_tests.py python
+      - name: Test release validation
+        run: python3 -m unittest discover -s script/tests -v
 
   regression:
     name: Portable regression tests
-    needs: changes
-    if: ${{ needs.changes.outputs.regression == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Run selected portable Swift suites
-        if: needs.changes.outputs.swift_suites != '[]'
-        env:
-          CI_TEST_SELECTION: ${{ needs.changes.outputs.swift_suites }}
-        run: python3 script/ci_run_tests.py swift
-      - name: Run selected macOS script tests
-        if: needs.changes.outputs.macos_tests != '[]'
-        env:
-          CI_TEST_SELECTION: ${{ needs.changes.outputs.macos_tests }}
-        run: python3 script/ci_run_tests.py python
+      - name: Execute production scoring and installer tests
+        run: swift test --enable-code-coverage
 
   build:
     name: Compile app and tests
-    needs: changes
-    if: ${{ needs.changes.outputs.native == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 30
     steps:
@@ -109,83 +64,15 @@ jobs:
           for path in Path('examples').rglob('*.py'):
               ast.parse(path.read_text(), filename=str(path))
           PY
-      # The Xcode 27 hosted image is a macOS 27 ARM public-preview runner.
-      # Compile the full scheme for UI-impacting changes, but execute only core tests.
-      - name: Enable UI snapshots
+      # The Xcode 27 hosted image runs macOS 26; this app needs macOS 27.
+      # Compile both test targets here; execute tests on a macOS 27 machine.
+      - name: Build app and test bundles
         run: |
-          echo "TEST_RUNNER_INTENTS_SNAPSHOT_DIR=$RUNNER_TEMP/ui-snapshots" >> "$GITHUB_ENV"
-          defaults write com.coryparry.FoundationEvals SUEnableAutomaticChecks -bool false
-          defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
-      - name: Build app and selected test bundles
-        env:
-          INCLUDE_UI: ${{ needs.changes.outputs.ui }}
-        run: |
-          python3 script/ci_core_scheme.py
-          if [[ "$INCLUDE_UI" == true ]]; then
-            xcodebuild build-for-testing \
-              -project FoundationEvals/FoundationEvals.xcodeproj \
-              -scheme FoundationEvals \
-              -configuration Debug \
-              -destination 'platform=macOS' \
-              -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-              -disableAutomaticPackageResolution \
-              CODE_SIGNING_ALLOWED=NO
-          fi
-          xcodebuild test \
-            -project FoundationEvals/FoundationEvals.xcodeproj \
-            -scheme FoundationEvalsCoreCI \
-            -configuration Debug \
-            -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            -disableAutomaticPackageResolution \
-            CODE_SIGNING_ALLOWED=NO
-      - name: Run selected UI tests
-        if: ${{ needs.changes.outputs.ui == 'true' }}
-        timeout-minutes: 14
-        run: |
-          lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-          built="$RUNNER_TEMP/DerivedData/Build/Products/Debug/Intents.app"
-          echo "::group::App copies"
-          ls -la "$RUNNER_TEMP/DerivedData/Build/Products/Debug" || true
-          for run in "$RUNNER_TEMP"/DerivedData/Build/Products/*.xctestrun; do
-            echo "$run"; plutil -p "$run" | grep -E "UITargetAppPath|TestHostPath|BlueprintName" || true
-          done
-          mdfind "kMDItemCFBundleIdentifier == 'com.coryparry.FoundationEvals'" || true
-          "$lsregister" -dump | grep -E "^path:.*\.app" | grep -iE "intents|foundationevals" || true
-          for label in "Filter runs" "Search run history"; do
-            if grep -aq "$label" "$built/Contents/MacOS/Intents" "$built"/Contents/MacOS/*.dylib 2>/dev/null; then
-              echo "built binary contains: $label"
-            fi
-          done
-          plutil -p "$built/Contents/Info.plist" | grep -E "CFBundleVersion|CFBundleShortVersionString" || true
-          ls "$built/Contents/MacOS" || true
-          echo "::endgroup::"
-          xcodebuild test-without-building \
+          xcodebuild build-for-testing \
             -project FoundationEvals/FoundationEvals.xcodeproj \
             -scheme FoundationEvals \
             -configuration Debug \
-            -destination 'platform=macOS' \
+            -destination 'generic/platform=macOS' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            -resultBundlePath "$RUNNER_TEMP/ui-tests.xcresult" \
-            -only-testing:FoundationEvalsUITests/FoundationEvalsUITests \
-            -only-testing:FoundationEvalsUITests/IntentLabGuidanceUITests \
-            -only-testing:FoundationEvalsUITests/SimplificationUITests \
-            -only-testing:FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration \
-            -only-testing:FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence \
+            -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO
-      - name: Export UI test attachments
-        if: ${{ always() && needs.changes.outputs.ui == 'true' }}
-        continue-on-error: true
-        run: |
-          mkdir -p "$RUNNER_TEMP/ui-snapshots/ui-tests"
-          if [[ -d "$RUNNER_TEMP/ui-tests.xcresult" ]]; then
-            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/ui-tests.xcresult" --output-path "$RUNNER_TEMP/ui-snapshots/ui-tests" || true
-          fi
-          cp -R /private/tmp/foundation-evals-ui-tests/Screenshots "$RUNNER_TEMP/ui-snapshots/ui-tests/" 2>/dev/null || true
-      - name: Upload UI snapshots
-        if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: ui-snapshots
-          path: ${{ runner.temp }}/ui-snapshots
-          if-no-files-found: warn

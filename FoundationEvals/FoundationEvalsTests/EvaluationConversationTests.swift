@@ -219,42 +219,6 @@ struct EvaluationConversationTests {
         #expect(projection?["retainedTurnCount"] == .integer(1))
     }
 
-    @MainActor
-    @Test func legacyMCPReplacementPreservesExistingConversationUnlessExplicitlyChanged() async throws {
-        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let existing = EvaluationConversationConfiguration(
-            setupTurns: [EvaluationSetupTurn(prompt: "Remember amber.")],
-            historyPolicy: .resetBeforeFinal,
-            modelHistoryProjection: .init(policy: .retainRecentCompleteTurns, retainedTurnCount: 1)
-        )
-        store.draftSuite.cases[0].conversation = existing
-        #expect(store.saveSuite())
-
-        let authority = MCPStoreAuthority.make(store: store)
-        var declaration = Self.mcpSuite()
-        declaration.cases[0].id = store.suite.cases[0].id
-        declaration.cases[0].conversation = nil
-
-        let legacyReplacement = await authority.call(.replaceSuite(.init(
-            expectedRevision: store.suiteRevision,
-            confirmDeletes: true,
-            suite: declaration
-        )))
-        #expect(!legacyReplacement.isError)
-        #expect(store.suite.cases[0].conversation == existing)
-
-        declaration.cases[0].conversation = EvaluationConversationConfiguration()
-        let explicitReset = await authority.call(.replaceSuite(.init(
-            expectedRevision: store.suiteRevision,
-            confirmDeletes: true,
-            suite: declaration
-        )))
-        #expect(!explicitReset.isError)
-        #expect(store.suite.cases[0].conversation == EvaluationConversationConfiguration())
-    }
-
     private static func turn(prompt: String, response: String) -> [Transcript.Entry] {
         [Self.prompt(prompt), Self.response(response)]
     }

@@ -1,8 +1,8 @@
 # Custom local provider protocol
 
-Intents can run a developer-owned model implementation through its Foundation Models `LanguageModel` adapter. The adapter sends one HTTP request for each `LanguageModelExecutor` response turn and converts the returned event stream into Foundation Models response, reasoning, tool-call, and usage channel updates.
+Foundation Evals can run a developer-owned model implementation through its Foundation Models `LanguageModel` adapter. The adapter sends one HTTP request for each `LanguageModelExecutor` response turn and converts the returned event stream into Foundation Models response, reasoning, tool-call, and usage channel updates.
 
-This page defines Intents protocol version 1. It is an app-specific loopback protocol, not an Apple API or a general model-provider standard.
+This page defines Foundation Evals protocol version 1. It is an app-specific loopback protocol, not an Apple API or a general model-provider standard.
 
 ## Transport and endpoint rules
 
@@ -15,9 +15,7 @@ Accept: application/x-ndjson
 
 The request body is one JSON object. The response body is newline-delimited JSON (NDJSON), with one event object per line. A final event without a trailing newline is accepted. Empty lines and lines containing only ASCII spaces or tabs are ignored. Both LF and CRLF line endings work.
 
-The configured URL must use literal `http://127.0.0.1:<port>/...`. Intents rejects HTTPS, hostnames such as `localhost`, IPv6 loopback, missing ports, credentials, query strings, fragments, and port `17873`, which is reserved for the app's MCP server. The URL is limited to 2,048 UTF-8 bytes.
-
-An optional tokenizer URL can be configured with the same loopback restrictions. It receives the exact JSON generation envelope before each generation request and returns the provider's token count. When configured, Intents defers prompt admission to this endpoint instead of estimating tokens locally.
+The configured URL must use literal `http://127.0.0.1:<port>/...`. Foundation Evals rejects HTTPS, hostnames such as `localhost`, IPv6 loopback, missing ports, credentials, query strings, fragments, and port `17873`, which is reserved for the app's MCP server. The URL is limited to 2,048 UTF-8 bytes.
 
 The adapter uses an ephemeral URL session with redirects, proxies, cookies, credentials, and caches disabled. It accepts only a 2xx HTTP status. It does not retry a request. Initialization and `prewarm` do not contact the provider.
 
@@ -174,18 +172,6 @@ custom:<name>
 
 The `custom:` prefix is part of the version 1 outer protocol. For example, the custom name `fixture-custom` becomes `custom:fixture-custom`. Backends should read the outer `context` object for these normalized values; the SDK-encoded transcript may represent its own recorded context options differently.
 
-### Tokenizer endpoint
-
-The tokenizer endpoint uses `POST` with `Content-Type: application/json` and `Accept: application/json`. Its request body is byte-for-byte the same generation envelope described above. It must return a single JSON object:
-
-~~~json
-{"inputTokens":1234,"cachedInputTokens":0}
-~~~
-
-`inputTokens` is required and must be nonnegative. `cachedInputTokens` is optional, defaults to zero, and must not exceed `inputTokens`. The endpoint must count the complete transcript, tools, schema, images, and context represented by the envelope. A non-2xx response, invalid JSON, or invalid count stops the generation request before `/generate` is contacted. If the input count plus `options.maximumResponseTokens` exceeds the declared provider context size, the run fails with `contextSizeExceeded`.
-
-The tokenizer endpoint is optional for compatibility with existing providers. Without it, Intents uses a conservative local estimate for prompt admission.
-
 ### Capabilities
 
 `provider.capabilities` contains zero or more of these exact strings, in this order when enabled:
@@ -209,7 +195,7 @@ These values come from the suite configuration. A backend should fail a request 
 
 Vision input has no separate top-level `images` field. Prompt images remain attachment segments inside the encoded transcript, using the SDK's attachment representation. The adapter does not create a second path, URL, or byte-array contract for them.
 
-An image-reference **tool argument** is a different boundary. A generated `ImageReference` identifies an attachment already in the session by its label. When Intents resolves that reference and invokes a configured custom-tool HTTP endpoint, it sends only this safe metadata shape inside the tool arguments:
+An image-reference **tool argument** is a different boundary. A generated `ImageReference` identifies an attachment already in the session by its label. When Foundation Evals resolves that reference and invokes a configured custom-tool HTTP endpoint, it sends only this safe metadata shape inside the tool arguments:
 
 ~~~json
 {
@@ -345,7 +331,6 @@ The default port is `19096`. `--port 0` asks the operating system to choose a fr
 | Route | Behavior |
 |---|---|
 | `/generate` | Selects guided, tool, reasoning, or text behavior from the request. |
-| `/tokenize` | Returns the deterministic fixture count `{"inputTokens":7}` for the same generation envelope. |
 | `/text` | Streams three delayed `response` chunks. |
 | `/guided`, `/guided/simple`, `/guided/order` | Return deterministic guided JSON. |
 | `/guided/stream` | Streams three delayed `guidedResponse` chunks that form `{"answer":"fixture"}`. |

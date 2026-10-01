@@ -91,83 +91,6 @@ struct CoreAIModelLoaderTests {
         }
     }
 
-    @Test func cacheFingerprintChangesWhenAModelAssetChanges() throws {
-        let directory = try coreAITemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let metadataURL = directory.appending(path: "metadata.json", directoryHint: .notDirectory)
-        let assetURL = directory.appending(path: "weights.bin", directoryHint: .notDirectory)
-        try Data("{}".utf8).write(to: metadataURL)
-        try Data([0, 1, 2, 3]).write(to: assetURL)
-        let fixedMetadataDate = Date(timeIntervalSinceReferenceDate: 1_000)
-        try FileManager.default.setAttributes(
-            [.modificationDate: fixedMetadataDate],
-            ofItemAtPath: metadataURL.path
-        )
-
-        let first = try CoreAIModelLoader.resourceFingerprint(for: directory)
-        #expect(try CoreAIModelLoader.resourceFingerprint(for: directory) == first)
-        try Data([3, 2, 1, 0]).write(to: assetURL, options: .atomic)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSinceReferenceDate: 2_000)],
-            ofItemAtPath: assetURL.path
-        )
-        let second = try CoreAIModelLoader.resourceFingerprint(for: directory)
-        let metadataDate = try metadataURL.resourceValues(
-            forKeys: [.contentModificationDateKey]
-        ).contentModificationDate
-
-        #expect(metadataDate == fixedMetadataDate)
-        #expect(first != second)
-    }
-
-    @Test func resourceIdentityChangesWhenConfiguredAssetsChange() throws {
-        let directory = try coreAITemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let assetURL = directory.appending(path: "weights.bin", directoryHint: .notDirectory)
-        let initialBytes = Data([0, 1, 2, 3, 4, 5, 6, 7])
-        let replacementBytes = Data([7, 6, 5, 4, 3, 2, 1, 0])
-        try initialBytes.write(to: assetURL)
-        let originalValues = try assetURL.resourceValues(
-            forKeys: [.contentModificationDateKey, .fileSizeKey]
-        )
-        let originalModificationDate = try #require(originalValues.contentModificationDate)
-        let originalFileSize = try #require(originalValues.fileSize)
-        let configuration = EvaluationCoreAIConfiguration(resourcesPath: directory.path)
-
-        let first = try CoreAIModelLoader.resourceIdentity(for: configuration)
-        #expect(initialBytes.count == replacementBytes.count)
-        let handle = try FileHandle(forWritingTo: assetURL)
-        try handle.seek(toOffset: 0)
-        try handle.write(contentsOf: replacementBytes)
-        try handle.close()
-
-        let deadline = DispatchTime.now().uptimeNanoseconds + 2_000_000_000
-        var statusChangeObserved = false
-        while DispatchTime.now().uptimeNanoseconds < deadline {
-            if try CoreAIModelLoader.resourceIdentity(for: configuration) != first {
-                statusChangeObserved = true
-                break
-            }
-            Thread.sleep(forTimeInterval: 0.01)
-        }
-        #expect(statusChangeObserved)
-        guard statusChangeObserved else { return }
-
-        try FileManager.default.setAttributes(
-            [.modificationDate: originalModificationDate],
-            ofItemAtPath: assetURL.path
-        )
-        let restoredValues = try assetURL.resourceValues(
-            forKeys: [.contentModificationDateKey, .fileSizeKey]
-        )
-        #expect(restoredValues.fileSize == originalFileSize)
-        #expect(restoredValues.contentModificationDate == originalModificationDate)
-        let second = try CoreAIModelLoader.resourceIdentity(for: configuration)
-
-        #expect(first.resourceURL == directory.standardizedFileURL.resolvingSymlinksInPath())
-        #expect(first != second)
-    }
-
     @Test func cancelledCoreAIRunIsNotRecordedAsAModelLoadFailure() async {
         var suite = EvaluationSuite()
         suite.scoringMode = .review
@@ -188,26 +111,6 @@ struct CoreAIModelLoaderTests {
         #expect(run.cancelled)
         #expect(run.terminationReason == "cancelled")
         #expect(run.results.isEmpty)
-    }
-
-    @Test func failedCoreAIAdmissionDoesNotBorrowSystemModelCapabilities() async {
-        var suite = EvaluationSuite()
-        suite.scoringMode = .review
-        suite.modelConfiguration.provider = .coreAI
-        suite.modelConfiguration.coreAISettings.resourcesPath = "/missing-core-ai-\(UUID().uuidString)"
-
-        let run = await EvaluationRunner().run(
-            id: UUID(),
-            suiteRevision: "missing-core-ai",
-            startedAt: Date(),
-            suite: suite,
-            images: []
-        ) { _, _, _ in }
-
-        #expect(run.results.count == 1)
-        #expect(run.results.first?.errorCategory == "modelAssetsUnavailable")
-        #expect(run.environment.modelContextSize == 0)
-        #expect(run.execution?.capabilities.isEmpty == true)
     }
 
     @Test(

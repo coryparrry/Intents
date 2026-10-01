@@ -98,6 +98,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
     }
 
     private func launchApp() throws -> XCUIApplication {
+        try UITestStorage.verifyWritable(storage)
         let launchedApp = XCUIApplication()
         launchedApp.launchArguments += [
             "--disable-mcp-autostart",
@@ -121,7 +122,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         try UITestStorage.requireNoAlert(in: app)
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
-        try UITestStorage.waitFor(app.buttons["Run evaluation"], in: app, timeout: 5)
+        try UITestStorage.waitFor(app.buttons["Run"], in: app, timeout: 5)
         let showSidebar = app.buttons["Show Sidebar"]
         if showSidebar.exists { showSidebar.click() }
     }
@@ -137,14 +138,16 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
     private func configureSuite(name: String, endpointPath: String) {
         replaceText(in: app.textFields["Suite name"], with: name)
 
-        selectSetup("Scoring")
+        app.radioButtons["Scoring"].click()
         app.radioButtons["Exact text"].click()
-        app.radioButtons["Cases"].click()
         let expected = app.textViews["Scoring expected text"]
         XCTAssertTrue(expected.waitForExistence(timeout: 3))
+        // The summary cards place the nested text editor below the initial viewport.
+        app.scrollViews.containing(.textField, identifier: "Suite name").firstMatch
+            .scroll(byDeltaX: 0, deltaY: -480)
         replaceText(in: expected, with: "Deterministic fixture stream.")
 
-        selectSetup("Model")
+        app.radioButtons["Model"].click()
         let provider = app.popUpButtons["Model provider"]
         XCTAssertTrue(provider.waitForExistence(timeout: 3))
         provider.click()
@@ -157,19 +160,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertEqual(endpoint.value as? String, endpointURL)
         // End endpoint editing and bring the run controls back into view.
         app.textFields["Suite name"].click()
-        XCTAssertTrue(app.buttons["Run evaluation"].isEnabled, app.debugDescription)
-    }
-
-    @MainActor
-    private func selectSetup(_ title: String) {
-        app.radioButtons["Setup"].click()
-        let menu = app.popUpButtons["Suite setup"]
-        if menu.exists {
-            menu.click()
-            app.menuItems[title].click()
-        } else {
-            app.buttons[title].click()
-        }
+        XCTAssertTrue(app.staticTexts["Ready to run"].waitForExistence(timeout: 3), app.debugDescription)
     }
 
     @MainActor

@@ -63,7 +63,7 @@ struct EvaluationFieldAssertionTests {
     }
 
     @Test func validatesConfigurationBeforeRun() {
-        #expect(EvaluationFieldAssertions.validationIssue(assertions: [assertion("", .exists)], scoringMode: .review) == nil)
+        #expect(EvaluationFieldAssertions.validationIssue(assertions: [assertion("", .exists)], scoringMode: .review) != nil)
         #expect(EvaluationFieldAssertions.validationIssue(assertions: [], scoringMode: .review) == nil)
         for item in [assertion("/n", .minimum, "\"2\""), assertion("/n", .maximum, "true"),
                      assertion("/x", .equals, "unquoted"), assertion("/x", .containsText)] {
@@ -89,15 +89,6 @@ struct EvaluationFieldAssertionTests {
             #expect(EvaluationFieldAssertions.gatedStatus(baseStatus: status, results: passing) == status)
             #expect(EvaluationFieldAssertions.gatedStatus(baseStatus: status, results: failing) == status)
         }
-        #expect(EvaluationFieldAssertions.gatedStatus(
-            baseStatus: .unscored, results: passing, allowAssertionsToScore: true
-        ) == .passed)
-        #expect(EvaluationFieldAssertions.gatedStatus(
-            baseStatus: .unscored, results: failing, allowAssertionsToScore: true
-        ) == .failed)
-        #expect(EvaluationFieldAssertions.gatedStatus(
-            baseStatus: .error, results: passing, allowAssertionsToScore: true
-        ) == .error)
     }
 
     private func assertion(_ pointer: String, _ operation: EvaluationFieldAssertionOperation, _ expected: String = "") -> EvaluationFieldAssertion {

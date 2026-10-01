@@ -41,45 +41,6 @@ struct EvaluationHTTPLanguageModelTests {
         }
     }
 
-    @Test func customProviderTokenizerEndpointUsesTheSameLoopbackRules() {
-        var configuration = EvaluationCustomProviderConfiguration()
-        configuration.tokenizerEndpoint = "https://127.0.0.1:19096/tokenize"
-        #expect(configuration.validationIssue?.contains("tokenizer endpoint") == true)
-
-        configuration.tokenizerEndpoint = "http://127.0.0.1:17873/tokenize"
-        #expect(configuration.validationIssue?.contains("reserved") == true)
-
-        configuration.tokenizerEndpoint = "http://127.0.0.1:19096/tokenize"
-        #expect(configuration.validationIssue == nil)
-        #expect(configuration.validatedTokenizerEndpoint?.absoluteString == configuration.tokenizerEndpoint)
-    }
-
-    @Test func portableTokenEstimateDoesNotUndercountUTF8Bytes() async throws {
-        let text = "ASCII, cafe\u{301}, \u{4F60}\u{597D}, \u{1F642}"
-        let count = try await EvaluationPortablePromptInputTokenCounter().tokenCount(forText: text)
-
-        #expect(count == text.utf8.count)
-    }
-
-    @Test func tokenizerResponseIsRejectedWhileStreamingPastItsLimit() async {
-        let bytes = AsyncStream<UInt8> { continuation in
-            for byte in Data("four".utf8) { continuation.yield(byte) }
-            continuation.finish()
-        }
-
-        do {
-            _ = try await EvaluationHTTPLanguageModelExecutor.boundedData(
-                from: bytes,
-                maximumBytes: 3
-            )
-            Issue.record("Expected the tokenizer response to stop at its byte limit.")
-        } catch let error as EvaluationHTTPProviderError {
-            #expect(error.localizedDescription.contains("response exceeded 3 bytes"))
-        } catch {
-            Issue.record("Unexpected tokenizer response error: \(error)")
-        }
-    }
-
     @Test func requestEnvelopeCarriesTranscriptToolsSchemaOptionsContextAndMetadata() throws {
         let id = UUID(uuidString: "12345678-1234-1234-1234-123456789ABC")!
         let tool = Transcript.ToolDefinition(
@@ -260,14 +221,14 @@ struct EvaluationHTTPLanguageModelTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func gatedLoopbackFixturePublishesBeforeSDKStreamCompletion() async throws {
-        let fixture = try RunningCustomModelFixture(streamDelay: 0.05, gateTextStream: true)
+    func delayedLoopbackFixturePublishesBeforeSDKStreamCompletion() async throws {
+        let fixture = try RunningCustomModelFixture(streamDelay: 0.4)
+        defer { fixture.stop() }
 
         let caseID = UUID()
         let recorder = HTTPPartialResponseRecorder()
-        let completionRecorder = HTTPResponseCompletionRecorder()
         var configuration = EvaluationCustomProviderConfiguration()
-        configuration.endpoint = "http://127.0.0.1:\(fixture.port)/text-gated"
+        configuration.endpoint = "http://127.0.0.1:\(fixture.port)/text"
         let model = EvaluationHTTPLanguageModel(
             configuration: configuration,
             liveResponseObserver: EvaluationHTTPLiveResponseObserver { update in
@@ -280,49 +241,25 @@ struct EvaluationHTTPLanguageModelTests {
         suite.modelConfiguration.customProvider = configuration
         suite.features.streamResponse = true
 
-        let responseTask = Task {
-            do {
-                let response = try await EvaluationFeatureResponse.generate(
-                    session: session,
-                    prompt: Prompt { "Return the fixture response." },
-                    suite: suite,
-                    metadata: [
-                        "evalCaseID": caseID.uuidString,
-                        "repetition": 1
-                    ]
-                )
-                await completionRecorder.recordCompletion()
-                return response
-            } catch {
-                await completionRecorder.recordCompletion()
-                throw error
-            }
-        }
-        defer {
-            responseTask.cancel()
-            fixture.stop()
-        }
+        let started = ContinuousClock.now
+        let response = try await EvaluationFeatureResponse.generate(
+            session: session,
+            prompt: Prompt { "Return the fixture response." },
+            suite: suite,
+            metadata: [
+                "evalCaseID": caseID.uuidString,
+                "repetition": 1
+            ]
+        )
+        let completedMilliseconds = started.milliseconds(to: .now)
+        let updates = await recorder.updates
+        let firstContentMilliseconds = try #require(response.firstContentMilliseconds)
 
-        do {
-            let firstUpdate = try await recorder.firstUpdate(timeout: .seconds(10))
-            #expect(firstUpdate.caseID == caseID)
-            #expect(firstUpdate.content == "Deterministic ")
-            #expect(!(await completionRecorder.didComplete))
-
-            try await fixture.releaseTextStream()
-            let response = try await responseTask.value
-            let updates = await recorder.updates
-
-            #expect(await completionRecorder.didComplete)
-            #expect(response.content == "Deterministic fixture stream.")
-            #expect(response.firstContentMilliseconds != nil)
-            #expect(updates.first?.caseID == caseID)
-            #expect(updates.first?.content == "Deterministic ")
-            #expect(updates.last?.content == response.content)
-        } catch {
-            try? await fixture.releaseTextStream()
-            throw error
-        }
+        #expect(response.content == "Deterministic fixture stream.")
+        #expect(updates.first?.caseID == caseID)
+        #expect(updates.first?.content == "Deterministic ")
+        #expect(updates.last?.content == response.content)
+        #expect(completedMilliseconds - firstContentMilliseconds > 500)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -339,8 +276,6 @@ struct EvaluationHTTPLanguageModelTests {
         ]
         suite.modelConfiguration.provider = .customHTTP
         suite.modelConfiguration.customProviderSettings.endpoint = "http://127.0.0.1:\(fixture.port)/text"
-        suite.modelConfiguration.customProviderSettings.tokenizerEndpoint =
-            "http://127.0.0.1:\(fixture.port)/tokenize"
         suite.features.streamResponse = true
 
         let run = await EvaluationRunner().run(
@@ -350,7 +285,6 @@ struct EvaluationHTTPLanguageModelTests {
 
         #expect(run.results.count == 4)
         #expect(run.results.allSatisfy { $0.response == "Deterministic fixture stream." })
-        #expect(run.execution?.inputTokenCountingMethod == "Provider tokenizer endpoint")
         let updates = await recorder.updates
         for evaluationCase in suite.cases {
             for repetition in 1...suite.repetitions {
@@ -358,14 +292,6 @@ struct EvaluationHTTPLanguageModelTests {
                     $0.caseID == evaluationCase.id && $0.repetition == repetition
                 }
                 #expect(sampleUpdates.contains { $0.content == "Deterministic " })
-                #expect(
-                    sampleUpdates.map(\.content)
-                        == [
-                            "Deterministic ",
-                            "Deterministic fixture ",
-                            "Deterministic fixture stream.",
-                        ]
-                )
                 #expect(sampleUpdates.allSatisfy { $0.caseName == evaluationCase.name })
                 #expect(sampleUpdates.allSatisfy { $0.turnName == "Scored prompt" })
             }
@@ -491,31 +417,6 @@ private actor HTTPPartialResponseRecorder {
     func record(_ update: EvaluationHTTPLiveResponseUpdate) {
         updates.append(update)
     }
-
-    func firstUpdate(timeout: Duration) async throws -> EvaluationHTTPLiveResponseUpdate {
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        while ContinuousClock.now < deadline {
-            if let update = updates.first { return update }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        throw HTTPPartialResponseRecorderError.firstUpdateTimedOut
-    }
-}
-
-private actor HTTPResponseCompletionRecorder {
-    private(set) var didComplete = false
-
-    func recordCompletion() {
-        didComplete = true
-    }
-}
-
-private enum HTTPPartialResponseRecorderError: LocalizedError {
-    case firstUpdateTimedOut
-
-    var errorDescription: String? {
-        "The gated custom model fixture did not publish its first response chunk in time."
-    }
 }
 
 private actor RunnerLiveResponseRecorder {
@@ -530,7 +431,7 @@ private final class RunningCustomModelFixture {
     let port: Int
     private let process: Process
 
-    init(streamDelay: Double, gateTextStream: Bool = false) throws {
+    init(streamDelay: Double) throws {
         let sourceFile = URL(fileURLWithPath: #filePath)
         let repository = sourceFile
             .deletingLastPathComponent()
@@ -546,9 +447,6 @@ private final class RunningCustomModelFixture {
             "--port", "0",
             "--stream-delay", String(streamDelay)
         ]
-        if gateTextStream {
-            process.arguments?.append("--gate-text-stream")
-        }
         process.standardOutput = output
         process.standardError = errors
         try process.run()
@@ -580,23 +478,6 @@ private final class RunningCustomModelFixture {
         guard process.isRunning else { return }
         process.terminate()
         process.waitUntilExit()
-    }
-
-    func releaseTextStream() async throws {
-        guard let url = URL(string: "http://127.0.0.1:\(port)/release-text-stream") else {
-            throw URLError(.badURL)
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = 5
-        let sessionConfiguration = URLSessionConfiguration.ephemeral
-        sessionConfiguration.connectionProxyDictionary = [:]
-        let session = URLSession(configuration: sessionConfiguration)
-        defer { session.invalidateAndCancel() }
-        let (_, response) = try await session.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 204 else {
-            throw URLError(.badServerResponse)
-        }
     }
 }
 

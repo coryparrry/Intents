@@ -20,7 +20,7 @@ enum ScoringMode: String, Codable, CaseIterable, Identifiable, Sendable {
     var explanation: String {
         switch self {
         case .review:
-            "Collect responses without a score unless deterministic JSON field assertions assign pass or fail."
+            "Collect responses for external review. The app records traces but does not assign pass or fail."
         case .exactMatch:
             "Pass only when the complete response equals the expected response after trimming outer whitespace."
         case .containsExpected:

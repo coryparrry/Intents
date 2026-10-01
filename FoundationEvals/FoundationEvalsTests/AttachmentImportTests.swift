@@ -30,7 +30,6 @@ struct AttachmentImportTests {
         let pdf = try pdfData(text: "Reference order A104 is delivered.")
         let importedPDF = try await upload(store, name: "reference.pdf", type: "application/pdf", data: pdf)
         #expect(importedPDF.attachment.text?.contains("A104 is delivered") == true)
-        #expect(try store.attachmentData(id: importedPDF.attachment.id).data == Data(try #require(importedPDF.attachment.text).utf8))
         let png = try imageData()
         let image = try await upload(store, name: "reference.png", type: "image/png", data: png)
         #expect(image.attachment.kind == .image)
@@ -72,231 +71,18 @@ struct AttachmentImportTests {
         try imageData().write(to: imageURL)
         try Data("batch reference".utf8).write(to: textURL)
         try Data([0xFF]).write(to: badURL)
-        try await importFilesAndWait([imageURL, textURL, badURL], into: store)
+        store.importFiles([imageURL, textURL, badURL])
+        try await waitForImport(store)
         #expect(store.notice?.contains("Could not import") == true)
         #expect(store.suite.attachments.isEmpty)
-        let attachmentDirectory = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: directory.appending(path: "store"),
-            projectID: store.selectedProjectID,
-            suiteID: store.selectedSuiteID
-        ).appending(path: "Attachments")
+        let attachmentDirectory = directory.appending(path: "store/Attachments")
         #expect(try FileManager.default.contentsOfDirectory(atPath: attachmentDirectory.path).isEmpty)
         store.notice = nil
-        try await importFilesAndWait([imageURL, textURL], into: store)
+        store.importFiles([imageURL, textURL])
+        try await waitForImport(store)
         #expect(store.notice == nil)
         #expect(Set(store.suite.attachments.map(\.name)) == ["good.png", "good.txt"])
         #expect(EvaluationStore(supportDirectory: directory.appending(path: "store")).suite.attachments.count == 2)
-    }
-
-    @Test func filePickerRejectsRemoteURLsAndDirectoriesBeforeReading() async throws {
-        let directory = temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory.appending(path: "store"))
-
-        try await importFilesAndWait(
-            [try #require(URL(string: "https://example.invalid/reference.txt"))], into: store
-        )
-        #expect(store.notice?.contains("regular local files") == true)
-        #expect(store.suite.attachments.isEmpty)
-
-        let folder = directory.appending(path: "folder.txt", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        store.notice = nil
-        try await importFilesAndWait([folder], into: store)
-        #expect(store.notice?.contains("regular local files") == true)
-        #expect(store.suite.attachments.isEmpty)
-    }
-
-    @Test func persistedAttachmentFilenamesCannotEscapeTheirPrivateDirectory() async throws {
-        let directory = temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let imported = try await upload(
-            store,
-            name: "reference.png",
-            type: "image/png",
-            data: try imageData()
-        )
-        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: directory,
-            projectID: store.selectedProjectID,
-            suiteID: store.selectedSuiteID
-        )
-        let outsideURL = suiteDirectory.appending(path: "outside.png")
-        let outsideData = try imageData()
-        try outsideData.write(to: outsideURL)
-
-        var poisoned = store.suite
-        poisoned.attachments[0].storedFilename = "../outside.png"
-        try CanonicalJSON.data(for: poisoned).write(
-            to: suiteDirectory.appending(path: "suite.json"),
-            options: .atomic
-        )
-        let restored = EvaluationStore(supportDirectory: directory)
-
-        #expect(throws: EvaluationStoreError.self) {
-            _ = try restored.attachmentData(id: imported.attachment.id)
-        }
-        #expect(throws: EvaluationStoreError.self) {
-            _ = try restored.removeAttachment(
-                id: imported.attachment.id,
-                expectedRevision: restored.suiteRevision
-            )
-        }
-        #expect(try Data(contentsOf: outsideURL) == outsideData)
-        #expect(restored.suite.attachments.map(\.id) == [imported.attachment.id])
-    }
-
-    @Test func persistedAttachmentCannotAliasAnotherAttachmentsStoredFile() async throws {
-        let directory = temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let first = try await upload(
-            store, name: "first.png", type: "image/png", data: try imageData()
-        )
-        let second = try await upload(
-            store, name: "second.png", type: "image/png", data: try imageData()
-        )
-        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: directory,
-            projectID: store.selectedProjectID,
-            suiteID: store.selectedSuiteID
-        )
-        let attachmentsDirectory = suiteDirectory.appending(path: "Attachments")
-        let secondFilename = try #require(second.attachment.storedFilename)
-        let secondURL = attachmentsDirectory.appending(path: secondFilename)
-
-        var poisoned = store.suite
-        poisoned.attachments[0].storedFilename = secondFilename
-        try CanonicalJSON.data(for: poisoned).write(
-            to: suiteDirectory.appending(path: "suite.json"),
-            options: .atomic
-        )
-        let restored = EvaluationStore(supportDirectory: directory)
-
-        #expect(throws: EvaluationStoreError.self) {
-            _ = try restored.attachmentData(id: first.attachment.id)
-        }
-        #expect(throws: EvaluationStoreError.self) {
-            _ = try restored.removeAttachment(
-                id: first.attachment.id,
-                expectedRevision: restored.suiteRevision
-            )
-        }
-        #expect(FileManager.default.fileExists(atPath: secondURL.path))
-        let expectedData = try imageData()
-        #expect(try restored.attachmentData(id: second.attachment.id).data == expectedData)
-        #expect(restored.suite.attachments.map(\.id) == [first.attachment.id, second.attachment.id])
-    }
-
-    @Test func corruptStoredAttachmentFailsReadsAndDuplicateRetriesClosed() async throws {
-        let directory = temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let original = try imageData()
-        let id = UUID()
-        let imported = try await store.importAttachment(
-            id: id, name: "evidence.png", mediaType: "image/png", data: original,
-            expectedRevision: store.suiteRevision
-        )
-        let storedFilename = try #require(imported.attachment.storedFilename)
-        let storedURL = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: directory,
-            projectID: store.selectedProjectID,
-            suiteID: store.selectedSuiteID
-        ).appending(path: "Attachments/\(storedFilename)")
-        try Data("corrupt replacement".utf8).write(to: storedURL, options: .atomic)
-
-        #expect(throws: EvaluationStoreError.self) {
-            _ = try store.attachmentData(id: id)
-        }
-        await #expect(throws: EvaluationStoreError.self) {
-            _ = try await store.importAttachment(
-                id: id, name: "evidence.png", mediaType: "image/png", data: original,
-                expectedRevision: store.suiteRevision
-            )
-        }
-    }
-
-    @Test func corruptInlineTextProjectionFailsDuplicateRetryClosed() async throws {
-        let directory = temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let imported = try await upload(
-            store, name: "reference.txt", type: "text/plain", data: Data("trusted text".utf8)
-        )
-        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: directory,
-            projectID: store.selectedProjectID,
-            suiteID: store.selectedSuiteID
-        )
-        var poisoned = store.suite
-        poisoned.attachments[0].text = "poisoned projection"
-        try CanonicalJSON.data(for: poisoned).write(
-            to: suiteDirectory.appending(path: "suite.json"), options: .atomic
-        )
-        let restored = EvaluationStore(supportDirectory: directory)
-
-        await #expect(throws: EvaluationStoreError.self) {
-            _ = try await restored.importAttachment(
-                id: imported.attachment.id,
-                name: "reference.txt",
-                mediaType: "text/plain",
-                data: Data("trusted text".utf8),
-                expectedRevision: restored.suiteRevision
-            )
-        }
-    }
-
-    @Test func oversizedReplacementImageFailsBeforeUnboundedBuffering() async throws {
-        let directory = temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let imported = try await upload(
-            store, name: "replacement.png", type: "image/png", data: try imageData()
-        )
-        let filename = try #require(imported.attachment.storedFilename)
-        let storedURL = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: directory,
-            projectID: store.selectedProjectID,
-            suiteID: store.selectedSuiteID
-        ).appending(path: "Attachments/\(filename)")
-        try Data(repeating: 0x41, count: EvaluationStore.maximumImageBytes + 1)
-            .write(to: storedURL, options: .atomic)
-
-        #expect(throws: EvaluationStoreError.self) {
-            _ = try store.attachmentData(id: imported.attachment.id)
-        }
-    }
-
-    @Test func catalogFailureRollsBackAttachmentMetadataAndPrivateBytes() async throws {
-        let directory = temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let originalSuite = store.suite
-        let originalWorkspace = store.workspace
-        let suiteURL = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: directory,
-            projectID: store.selectedProjectID,
-            suiteID: store.selectedSuiteID
-        ).appending(path: "suite.json")
-        let originalSuiteData = try Data(contentsOf: suiteURL)
-        let catalogURL = directory.appending(path: EvaluationWorkspacePersistence.catalogFilename)
-        try FileManager.default.removeItem(at: catalogURL)
-        try FileManager.default.createDirectory(at: catalogURL, withIntermediateDirectories: true)
-
-        await #expect(throws: EvaluationStoreError.self) {
-            _ = try await store.importAttachment(
-                id: UUID(), name: "evidence.png", mediaType: "image/png",
-                data: try imageData(), expectedRevision: store.suiteRevision
-            )
-        }
-
-        #expect(store.suite == originalSuite)
-        #expect(store.workspace == originalWorkspace)
-        #expect(try Data(contentsOf: suiteURL) == originalSuiteData)
-        let attachmentsURL = suiteURL.deletingLastPathComponent().appending(path: "Attachments")
-        #expect(try FileManager.default.contentsOfDirectory(atPath: attachmentsURL.path).isEmpty)
     }
 
     @Test func textByteBoundaryAndCharacterTruncationAreEnforced() async throws {
@@ -310,7 +96,6 @@ struct AttachmentImportTests {
         let truncated = try await upload(store, name: "long.txt", type: "text/plain", data: Data((limitText + "X").utf8))
         #expect(truncated.truncated)
         #expect(truncated.attachment.text == limitText + "\n[File truncated during import.]")
-        #expect(try store.attachmentData(id: truncated.attachment.id).data == Data(try #require(truncated.attachment.text).utf8))
         let boundary = try await upload(store, name: "boundary.txt", type: "text/plain", data: Data(repeating: 65, count: 5_000_000))
         #expect(boundary.attachment.byteCount == 5_000_000)
         #expect(boundary.truncated)
@@ -398,10 +183,12 @@ struct AttachmentImportTests {
         } catch {}
     }
 
-    private func importFilesAndWait(_ urls: [URL], into store: EvaluationStore) async throws {
-        let importTask = try #require(store.importFiles(urls), "File import was not started.")
-        await importTask.value
-        try #require(!store.isProcessingFiles, "File import task completed without clearing processing state.")
+    private func waitForImport(_ store: EvaluationStore) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while store.isProcessingFiles, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(!store.isProcessingFiles, "File import did not complete within ten seconds.")
     }
 
     private func temporaryDirectory() -> URL {

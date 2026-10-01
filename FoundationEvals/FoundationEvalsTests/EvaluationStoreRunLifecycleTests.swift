@@ -6,195 +6,6 @@ import Testing
 struct EvaluationStoreRunLifecycleTests {
     @MainActor
     @Test(.timeLimit(.minutes(1)))
-    func scenarioFeatureSuiteRegistrationPreservesSelectionAndRejectsChangedContract() throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let projectID = store.selectedProjectID
-        let visibleSuiteID = store.selectedSuiteID
-        let visibleDraft = store.draftSuite
-        let visibleSelection = store.selection
-        var scenarioSuite = EvaluationSuite()
-        scenarioSuite.name = "Scenario feature"
-        scenarioSuite.scoringMode = .exactMatch
-        scenarioSuite.cases = [EvaluationCase(name: "Frozen", prompt: "request", expected: "RESULT")]
-
-        let revision = try store.ensureScenarioFeatureSuite(projectID: projectID, suite: scenarioSuite)
-        #expect(revision == (try EvaluationStore.revision(for: scenarioSuite)))
-        #expect(try store.ensureScenarioFeatureSuite(projectID: projectID, suite: scenarioSuite) == revision)
-        #expect(store.selectedProjectID == projectID)
-        #expect(store.selectedSuiteID == visibleSuiteID)
-        #expect(store.draftSuite == visibleDraft)
-        #expect(store.selection == visibleSelection)
-
-        scenarioSuite.cases[0].expected = "CHANGED"
-        #expect(throws: EvaluationStoreError.self) {
-            try store.ensureScenarioFeatureSuite(projectID: projectID, suite: scenarioSuite)
-        }
-        let reloaded = EvaluationStore(supportDirectory: directory)
-        #expect(reloaded.projects.first { $0.id == projectID }?.suites.contains {
-            $0.id == scenarioSuite.id
-        } == true)
-        #expect(reloaded.selectedSuiteID == visibleSuiteID)
-    }
-
-    @MainActor
-    @Test(.timeLimit(.minutes(1)))
-    func snapshotFeatureRunKeepsOriginalWorkspaceWhenSelectionChanges() async throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        store.draftSuite.scoringMode = .exactMatch
-        store.draftSuite.cases = [EvaluationCase(name: "Frozen", prompt: "request", expected: "RESULT")]
-        #expect(store.saveSuite())
-        let projectID = store.selectedProjectID
-        let snapshot = store.suite
-        let revision = try store.currentSuiteRevision()
-        let otherSuiteID = try store.createSuite(name: "Other")
-        try store.switchSuite(id: snapshot.id)
-        let gate = FinalProgressGate()
-        let runID = UUID()
-        let task = Task {
-            try await store.runFeatureAdapterSnapshot(
-                id: runID, projectID: projectID, suite: snapshot,
-                expectedRevision: revision,
-                adapter: ClosureFeatureAdapter(displayName: "Frozen fixture") { _ in
-                    await gate.suspend()
-                    return "RESULT"
-                }
-            )
-        }
-        await gate.waitUntilSuspended()
-        try store.switchSuite(id: otherSuiteID)
-        await gate.release()
-        let run = try await task.value
-        #expect(store.selectedSuiteID == otherSuiteID)
-        #expect(run.id == runID)
-        #expect(run.projectID == projectID)
-        #expect(run.suiteID == snapshot.id)
-        #expect(run.suiteRevision == revision)
-        #expect(run.results.first?.status == .passed)
-        #expect(EvaluationStore(supportDirectory: directory).run(with: runID)?.suiteID == snapshot.id)
-    }
-
-    @MainActor
-    @Test(.timeLimit(.minutes(1)))
-    func snapshotSaveRetryDoesNotRepeatAppAction() async throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let writer = SnapshotWriterGate()
-        let store = EvaluationStore(supportDirectory: directory, runWriter: { data, url in
-            if writer.shouldFail { throw SnapshotWriterError.forced }
-            try data.write(to: url, options: .atomic)
-        })
-        store.draftSuite.scoringMode = .exactMatch
-        store.draftSuite.cases = [EvaluationCase(name: "Saved", prompt: "request", expected: "RESULT")]
-        #expect(store.saveSuite())
-        let snapshot = store.suite
-        let projectID = store.selectedProjectID
-        let revision = try store.currentSuiteRevision()
-        let runID = UUID()
-        let invocations = SnapshotInvocationCount()
-        do {
-            _ = try await store.runFeatureAdapterSnapshot(
-                id: runID, projectID: projectID, suite: snapshot,
-                expectedRevision: revision,
-                adapter: ClosureFeatureAdapter(displayName: "Save retry fixture") { _ in
-                    await invocations.increment()
-                    return "RESULT"
-                }
-            )
-            Issue.record("Expected the first history save to fail.")
-        } catch let error as EvaluationStoreError {
-            guard case .persistence = error else { Issue.record("Unexpected error: \(error)"); return }
-        }
-        #expect(await invocations.count == 1)
-        writer.shouldFail = false
-        let retried = try store.retrySnapshotRunSave(
-            id: runID, projectID: projectID, suiteID: snapshot.id
-        )
-        let saved = try #require(retried)
-        #expect(saved.results.first?.status == .passed)
-        #expect(await invocations.count == 1)
-        #expect(EvaluationStore(supportDirectory: directory).run(with: runID)?.id == runID)
-    }
-
-    @MainActor
-    @Test(.timeLimit(.minutes(1)))
-    func cancelledSnapshotRunPersistsCancelledOutcome() async throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        store.draftSuite.scoringMode = .exactMatch
-        store.draftSuite.cases = [EvaluationCase(name: "Cancelled", prompt: "request", expected: "RESULT")]
-        #expect(store.saveSuite())
-        let snapshot = store.suite
-        let projectID = store.selectedProjectID
-        let revision = try store.currentSuiteRevision()
-        let gate = FinalProgressGate()
-        let runID = UUID()
-        let task = Task {
-            try await store.runFeatureAdapterSnapshot(
-                id: runID, projectID: projectID, suite: snapshot,
-                expectedRevision: revision,
-                adapter: ClosureFeatureAdapter(displayName: "Cancellation fixture") { _ in
-                    await gate.suspend()
-                    try Task.checkCancellation()
-                    return "RESULT"
-                }
-            )
-        }
-        await gate.waitUntilSuspended()
-        task.cancel()
-        await gate.release()
-        let run = try await task.value
-        #expect(run.cancelled)
-        #expect(run.terminationReason == "cancelled")
-        #expect(EvaluationStore(supportDirectory: directory).run(with: runID)?.cancelled == true)
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    func cancellationWhileFinalProgressIsSuspendedMarksRunCancelled() async throws {
-        let fixture = try LifecycleCustomModelFixture()
-        defer { fixture.stop() }
-        let progressGate = FinalProgressGate()
-        var suite = EvaluationSuite()
-        suite.scoringMode = .exactMatch
-        suite.repetitions = 1
-        suite.cases = [EvaluationCase(
-            name: "Final sample",
-            prompt: "Return the fixture response.",
-            expected: "Deterministic fixture stream."
-        )]
-        suite.modelConfiguration.provider = .customHTTP
-        suite.modelConfiguration.customProviderSettings.endpoint = fixture.endpoint(path: "/text")
-
-        let task = Task {
-            await EvaluationRunner().run(
-                id: UUID(),
-                suiteRevision: "final-progress-cancellation",
-                startedAt: Date(),
-                suite: suite,
-                images: []
-            ) { _, completed, total in
-                #expect(completed == total)
-                await progressGate.suspend()
-            }
-        }
-
-        await progressGate.waitUntilSuspended()
-        task.cancel()
-        await progressGate.release()
-        let run = await task.value
-
-        #expect(run.results.count == 1)
-        #expect(run.cancelled)
-        #expect(run.terminationReason == "cancelled")
-        #expect(!run.stoppedEarly)
-    }
-
-    @MainActor
-    @Test(.timeLimit(.minutes(1)))
     func exactMatchRunCompletesPersistsReloadsAndAnalyzes() async throws {
         let fixture = try LifecycleCustomModelFixture()
         defer { fixture.stop() }
@@ -232,14 +43,9 @@ struct EvaluationStoreRunLifecycleTests {
         #expect(result.status == .passed)
         #expect(result.errorCategory == nil)
         #expect(store.runStatus(id: runID)?.phase == .completed)
-        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: directory,
-            projectID: store.selectedProjectID,
-            suiteID: store.selectedSuiteID
-        )
-        #expect(!FileManager.default.fileExists(atPath: suiteDirectory.appending(path: "active-run.json").path))
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "active-run.json").path))
         #expect(FileManager.default.fileExists(
-            atPath: suiteDirectory.appending(path: "Runs/\(runID.uuidString).json").path
+            atPath: directory.appending(path: "Runs/\(runID.uuidString).json").path
         ))
 
         let reloadedStore = EvaluationStore(supportDirectory: directory)
@@ -332,43 +138,13 @@ struct EvaluationStoreRunLifecycleTests {
     }
 }
 
-private actor FinalProgressGate {
-    private var isSuspended = false
-    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
-    private var releaseContinuation: CheckedContinuation<Void, Never>?
-
-    func suspend() async {
-        isSuspended = true
-        let waiters = entryWaiters
-        entryWaiters.removeAll()
-        for waiter in waiters { waiter.resume() }
-        await withCheckedContinuation { continuation in
-            releaseContinuation = continuation
-        }
-    }
-
-    func waitUntilSuspended() async {
-        if isSuspended { return }
-        await withCheckedContinuation { continuation in
-            entryWaiters.append(continuation)
-        }
-    }
-
-    func release() {
-        releaseContinuation?.resume()
-        releaseContinuation = nil
-    }
-}
-
-final class LifecycleCustomModelFixture: @unchecked Sendable {
+private final class LifecycleCustomModelFixture: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "FoundationEvalsTests.LifecycleHTTPFixture")
     private let ready = DispatchSemaphore(value: 0)
-    private let responseDelay: TimeInterval
     private(set) var port: UInt16 = 0
 
-    init(responseDelay: TimeInterval = 0) throws {
-        self.responseDelay = responseDelay
+    init() throws {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: parameters)
@@ -449,42 +225,15 @@ final class LifecycleCustomModelFixture: @unchecked Sendable {
             \r
             \(body)
             """
-        let send: @Sendable () -> Void = {
-            connection.send(
-                content: Data(response.utf8),
-                contentContext: .defaultMessage,
-                isComplete: true,
-                completion: .contentProcessed { _ in connection.cancel() }
-            )
-        }
-        if responseDelay > 0 {
-            queue.asyncAfter(deadline: .now() + responseDelay, execute: send)
-        } else {
-            send()
-        }
+        connection.send(
+            content: Data(response.utf8),
+            contentContext: .defaultMessage,
+            isComplete: true,
+            completion: .contentProcessed { _ in connection.cancel() }
+        )
     }
 }
 
-enum LifecycleCustomModelFixtureError: Error {
+private enum LifecycleCustomModelFixtureError: Error {
     case failedToListen
-}
-
-private enum SnapshotWriterError: Error {
-    case forced
-}
-
-private final class SnapshotWriterGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var failing = true
-
-    var shouldFail: Bool {
-        get { lock.lock(); defer { lock.unlock() }; return failing }
-        set { lock.lock(); defer { lock.unlock() }; failing = newValue }
-    }
-}
-
-private actor SnapshotInvocationCount {
-    private(set) var count = 0
-
-    func increment() { count += 1 }
 }

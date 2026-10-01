@@ -182,8 +182,7 @@ struct EvaluationCustomTool: Tool {
 
     static func makeTools(
         definitions: [EvaluationCustomToolDefinition],
-        recorder: EvaluationCustomToolRecorder,
-        tokenCounter: any EvaluationCustomToolTokenCounting = EvaluationSystemModelTokenCounter()
+        recorder: EvaluationCustomToolRecorder
     ) throws -> [EvaluationCustomTool] {
         guard definitions.count <= EvaluationFeatureConfiguration.maximumTools else {
             throw EvaluationFeatureConfigurationError.invalid(
@@ -194,14 +193,7 @@ struct EvaluationCustomTool: Tool {
         if let issue = configuration.validationIssue {
             throw EvaluationFeatureConfigurationError.invalid(issue)
         }
-        return try definitions.map {
-            try EvaluationCustomTool(
-                definition: $0,
-                recorder: recorder,
-                httpClient: EvaluationLocalHTTPToolClient(),
-                tokenCounter: tokenCounter
-            )
-        }
+        return try definitions.map { try EvaluationCustomTool(definition: $0, recorder: recorder) }
     }
 
     @concurrent

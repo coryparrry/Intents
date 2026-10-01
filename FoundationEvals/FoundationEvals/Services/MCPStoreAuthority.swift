@@ -15,138 +15,6 @@ enum MCPStoreAuthority {
             switch call {
             case .getState:
                 return try state(store)
-            case .listProjects:
-                return listProjects(store)
-            case .check(let arguments):
-                if let existing = store.runStatus(id: arguments.runID) {
-                    guard existing.projectID == arguments.projectID,
-                          existing.suiteID == arguments.suiteID else {
-                        throw EvaluationStoreError.resourceConflict(
-                            "Run ID already belongs to another project or suite."
-                        )
-                    }
-                    if let expectedRevision = arguments.expectedRevision,
-                       existing.suiteRevision != expectedRevision {
-                        throw EvaluationStoreError.resourceConflict(
-                            "Run ID already belongs to another suite revision."
-                        )
-                    }
-                    return mutation("duplicate", [
-                        "projectID": .string(arguments.projectID.uuidString),
-                        "suiteID": .string(arguments.suiteID.uuidString),
-                        "revision": .string(existing.suiteRevision ?? arguments.expectedRevision ?? "unavailable"),
-                        "run": try operationJSON(existing)
-                    ])
-                }
-                try store.activateAutomationTarget(projectID: arguments.projectID, suiteID: arguments.suiteID)
-                let revision = arguments.expectedRevision ?? store.suiteRevision
-                let operation = try store.startRun(id: arguments.runID, expectedRevision: revision)
-                return mutation("committed", [
-                    "projectID": .string(arguments.projectID.uuidString),
-                    "suiteID": .string(arguments.suiteID.uuidString),
-                    "revision": .string(revision),
-                    "run": try operationJSON(operation)
-                ])
-            case .releaseReport(let arguments):
-                try store.activateAutomationTarget(projectID: arguments.projectID, suiteID: arguments.suiteID)
-                let report = store.releaseCheckReport(runID: arguments.runID)
-                return readPayload([
-                    "report": try json(report),
-                    "markdown": .string(EvaluationReleaseCheckEvaluator.markdown(report))
-                ])
-            case .projectReleaseReport(let arguments):
-                let suiteReport = try store.projectReleaseCheckReport(projectID: arguments.projectID)
-                let persistence = scenarioPersistence(store)
-                let allDefinitions: [ScenarioDefinition]
-                do {
-                    allDefinitions = try await persistence.loadDefinitions()
-                } catch {
-                    var incomplete = suiteReport
-                    incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " Intent Lab definition storage could not be verified: \(error.localizedDescription)"
-                    incomplete.scenarios = []
-                    return readPayload([
-                        "report": try json(incomplete),
-                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
-                    ])
-                }
-                let latestDefinitions = ScenarioDefinition.latestVersions(in: allDefinitions)
-                let unassigned = latestDefinitions.filter { $0.projectID == nil }
-                if !unassigned.isEmpty {
-                    var incomplete = suiteReport
-                    incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " \(unassigned.count) saved Intent Lab scenario(s) have no project assignment; assign or remove them before a project release check can pass."
-                    incomplete.scenarios = []
-                    return readPayload([
-                        "report": try json(incomplete),
-                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
-                    ])
-                }
-                let definitions = latestDefinitions
-                    .filter { $0.projectID == arguments.projectID }
-                let runs: [ScenarioRun]
-                let journals: [ScenarioExecutionJournal]
-                do {
-                    runs = try await persistence.loadRuns()
-                    journals = try await persistence.loadJournals()
-                } catch {
-                    var incomplete = suiteReport
-                    incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " Intent Lab run or journal storage could not be verified: \(error.localizedDescription)"
-                    incomplete.scenarios = []
-                    return readPayload([
-                        "report": try json(incomplete),
-                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
-                    ])
-                }
-                let definitionIdentities = Set(allDefinitions.map {
-                    "\($0.id.uuidString):\($0.version):\($0.definitionDigest)"
-                })
-                let orphanedRuns = runs.filter {
-                    !definitionIdentities.contains("\($0.scenarioID.uuidString):\($0.scenarioVersion):\($0.scenarioDigest)")
-                }
-                if !orphanedRuns.isEmpty {
-                    var incomplete = suiteReport
-                    incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " \(orphanedRuns.count) saved Intent Lab run(s) have no matching definition; restore or remove their frozen definition before a project release check can pass."
-                    incomplete.scenarios = []
-                    return readPayload([
-                        "report": try json(incomplete),
-                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
-                    ])
-                }
-                let scenarioReports = definitions.map { definition in
-                    let run = runs.first {
-                        $0.scenarioID == definition.id
-                            && $0.scenarioVersion == definition.version
-                            && $0.scenarioDigest == definition.definitionDigest
-                    }
-                    let comparison = run.flatMap { candidate in
-                        runs.first(where: {
-                            $0.id != candidate.id
-                                && $0.scenarioID == candidate.scenarioID
-                                && $0.scenarioVersion == candidate.scenarioVersion
-                                && $0.scenarioDigest == candidate.scenarioDigest
-                                && $0.startedAt < candidate.startedAt
-                        }).map { ScenarioComparison.compare(baseline: $0, candidate: candidate) }
-                    }
-                    return ScenarioReleaseCheckEvaluator.report(
-                        definition: definition,
-                        run: run,
-                        comparison: comparison,
-                        journalAccepted: run.map {
-                            ScenarioReleaseCheckEvaluator.acceptedJournal(for: $0, in: journals)
-                        }
-                    )
-                }
-                let report = EvaluationReleaseCheckEvaluator.integratingScenarios(
-                    suiteReport,
-                    scenarios: scenarioReports
-                )
-                return readPayload([
-                    "report": try json(report),
-                    "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(report))
-                ])
             case .replaceSuite(let arguments):
                 let before = store.suiteRevision
                 let revision = try store.replaceSuite(
@@ -196,18 +64,6 @@ enum MCPStoreAuthority {
                 return try analyzeRun(arguments, store: store)
             case .listRuns(let arguments):
                 return try listRuns(arguments, store: store)
-            case .listScenarioRuns(let arguments):
-                return try await listScenarioRuns(arguments, store: store)
-            case .getScenarioReport(let arguments):
-                return try await getScenarioReport(arguments, store: store)
-            case .getScenarioExecutionReport(let arguments):
-                let root = store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
-                let decision = try await ScenarioSavedExecutionReportService(rootDirectory: root)
-                    .qualification(executionID: arguments.executionID)
-                return readPayload([
-                    "executionID": .string(arguments.executionID.uuidString),
-                    "qualification": try json(decision)
-                ])
             case .cancelRun(let arguments):
                 let previous = store.runStatus(id: arguments.runID)
                 let operation = try store.cancelRun(id: arguments.runID)
@@ -219,110 +75,6 @@ enum MCPStoreAuthority {
         } catch {
             return failure(error)
         }
-    }
-
-    private static func listProjects(_ store: EvaluationStore) -> MCPToolPayload {
-        readPayload([
-            "selectedProjectID": .string(store.selectedProjectID.uuidString),
-            "selectedSuiteID": .string(store.selectedSuiteID.uuidString),
-            "projects": .array(store.projects.filter { !$0.isArchived }.map { project in
-                var value: [String: MCPJSONValue] = [
-                    "id": .string(project.id.uuidString),
-                    "name": .string(project.name),
-                    "suites": .array(project.suites.filter { !$0.isArchived }.map { suite in
-                        .object([
-                            "id": .string(suite.id.uuidString),
-                            "name": .string(suite.name)
-                        ])
-                    })
-                ]
-                value["repositoryRoot"] = project.repository.map { .string($0.rootPath) } ?? .null
-                return .object(value)
-            })
-        ])
-    }
-
-    private static func listScenarioRuns(
-        _ arguments: MCPListScenarioRunsArguments,
-        store: EvaluationStore
-    ) async throws -> MCPToolPayload {
-        let persistence = scenarioPersistence(store)
-        let offset: Int
-        if let cursor = arguments.cursor {
-            guard let parsed = Int(cursor), parsed >= 0 else {
-                throw MCPStoreAuthorityError.invalidCursor
-            }
-            offset = parsed
-        } else {
-            offset = 0
-        }
-        let limit = arguments.limit ?? 20
-        guard (1...50).contains(limit) else {
-            return .failure(code: "invalid_request", message: "Limit must be between 1 and 50.")
-        }
-        let page = try await persistence.loadRunPage(
-            scenarioID: arguments.scenarioID,
-            offset: offset,
-            limit: limit
-        )
-        guard offset <= page.totalCount else { throw MCPStoreAuthorityError.invalidCursor }
-        return readPayload([
-            "runs": .array(try page.runs.map { run in
-                try json([
-                    "id": run.id.uuidString,
-                    "scenarioID": run.scenarioID.uuidString,
-                    "scenarioVersion": String(run.scenarioVersion),
-                    "scenarioDigest": run.scenarioDigest,
-                    "executionStatus": run.executionStatus.rawValue,
-                    "outcome": run.outcome.rawValue,
-                    "acceptanceStatus": run.acceptanceStatus?.rawValue ?? "legacy",
-                    "startedAt": run.startedAt.ISO8601Format(),
-                    "completedAt": run.completedAt.ISO8601Format(),
-                    "device": run.environment.deviceModel,
-                    "operatingSystem": run.environment.operatingSystem
-                ])
-            }),
-            "nextCursor": page.hasMore ? .string(String(offset + page.runs.count)) : .null
-        ])
-    }
-
-    private static func getScenarioReport(
-        _ arguments: MCPGetScenarioReportArguments,
-        store: EvaluationStore
-    ) async throws -> MCPToolPayload {
-        let persistence = scenarioPersistence(store)
-        guard let run = try await persistence.loadRuns().first(where: { $0.id == arguments.runID }) else {
-            throw EvaluationStoreError.resourceNotFound("Intent Lab scenario run")
-        }
-        let definition = try await persistence.loadDefinitions().first {
-            $0.id == run.scenarioID && $0.version == run.scenarioVersion && $0.definitionDigest == run.scenarioDigest
-        }
-        let baseline = try await persistence.loadRuns(scenarioID: run.scenarioID).first {
-            $0.id != run.id
-                && $0.scenarioVersion == run.scenarioVersion
-                && $0.scenarioDigest == run.scenarioDigest
-                && $0.startedAt < run.startedAt
-        }
-        let comparison = baseline.map { ScenarioComparison.compare(baseline: $0, candidate: run) }
-        let journals = try await persistence.loadJournals()
-        let release = definition.map {
-            ScenarioReleaseCheckEvaluator.report(
-                definition: $0, run: run, comparison: comparison,
-                journalAccepted: ScenarioReleaseCheckEvaluator.acceptedJournal(for: run, in: journals)
-            )
-        }
-        let sharingCopy = await persistence.redactedSharingCopy(of: run)
-        return readPayload([
-            "run": try json(sharingCopy),
-            "diagnostic": .string(ScenarioDiagnosticClassifier.message(for: run.laneResults)),
-            "releaseCheck": try release.map(json) ?? .null
-        ])
-    }
-
-    private static func scenarioPersistence(_ store: EvaluationStore) -> ScenarioPersistence {
-        ScenarioPersistence(
-            rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
-        )
     }
 
     private static func read(_ request: MCPResourceRequest, store: EvaluationStore) async -> MCPResourcePayload {
@@ -363,21 +115,16 @@ enum MCPStoreAuthority {
         let capabilities = store.selectedModelCapabilities(for: suite)
         let plannedSamples = saturatedProduct(suite.cases.count, suite.repetitions)
         let plannedSubjectRequests = saturatedProduct(
-            suite.cases.reduce(0) {
-                $0.saturatedAdding($1.conversation.setupTurns.count).saturatedAdding(1)
-            },
+            suite.cases.reduce(0) { $0 + $1.conversation.setupTurns.count + 1 },
             suite.repetitions
         )
-        let plannedJudgeRequests = suite.needsModelJudge
-            ? saturatedProduct(plannedSamples, 2)
-            : 0
         let toolCallFamilies = suite.hasConfiguredTools ? 1 : 0
         let active = try store.activeRun.map { try operationJSON(store.runStatus(id: $0.id)!) } ?? .null
         return readPayload([
             "revision": .string(try store.currentSuiteRevision()),
             "suite": suiteJSON(suite),
             "attachments": .array(suite.attachments.map(attachmentMetadata)),
-            "readinessBlocker": (store.pendingRunSaveMessage ?? store.validationIssue(for: suite)).map(MCPJSONValue.string) ?? .null,
+            "readinessBlocker": store.validationIssue(for: suite).map(MCPJSONValue.string) ?? .null,
             "model": .object([
                 "available": .bool(modelStatus.isAvailable),
                 "label": .string(modelStatus.label),
@@ -387,7 +134,7 @@ enum MCPStoreAuthority {
             "workload": .object([
                 "plannedSamples": .integer(Int64(plannedSamples)),
                 "plannedModelRequests": .integer(Int64(
-                    plannedSubjectRequests.saturatedAdding(plannedJudgeRequests)
+                    plannedSubjectRequests + (suite.needsModelJudge ? saturatedProduct(plannedSamples, 2) : 0)
                 )),
                 "plannedToolCalls": .integer(Int64(
                     saturatedProduct(
@@ -552,7 +299,7 @@ enum MCPStoreAuthority {
         from declaration: MCPSuiteDeclaration,
         current: EvaluationSuite
     ) -> EvaluationSuite {
-        var suite = current
+        var suite = EvaluationSuite()
         suite.name = declaration.name
         suite.version = declaration.version
         suite.instructions = declaration.instructions
@@ -566,19 +313,15 @@ enum MCPStoreAuthority {
                 name: declaredCase.name,
                 prompt: declaredCase.prompt,
                 expected: declaredCase.expected,
-                conversation: declaredCase.conversation ?? currentCase?.conversation ?? EvaluationConversationConfiguration(),
+                conversation: declaredCase.conversation ?? EvaluationConversationConfiguration(),
                 fieldAssertions: declaredCase.fieldAssertions ?? currentCase?.fieldAssertions
             )
         }
-        var configuration = current.modelConfiguration
+        var configuration = EvaluationModelConfiguration()
         configuration.customization = declaration.modelConfiguration.customization ?? current.modelConfiguration.customization
         configuration.provider = declaration.modelConfiguration.provider ?? current.modelConfiguration.provider
-        if let declaredCustomProvider = declaration.modelConfiguration.customProvider {
-            var customProvider = declaredCustomProvider.evaluationConfiguration
-            customProvider.tokenizerEndpoint = declaredCustomProvider.tokenizerEndpoint
-                ?? current.modelConfiguration.customProvider?.tokenizerEndpoint
-            configuration.customProvider = customProvider
-        }
+        configuration.customProvider = declaration.modelConfiguration.customProvider?.evaluationConfiguration
+            ?? current.modelConfiguration.customProvider
         configuration.coreAI = declaration.modelConfiguration.coreAI?.evaluationConfiguration
             ?? current.modelConfiguration.coreAI
         configuration.reasoningLevel = declaration.modelConfiguration.reasoningLevel ?? current.modelConfiguration.reasoningLevel
@@ -703,16 +446,12 @@ enum MCPStoreAuthority {
         }
         if let customProvider = configuration.customProvider {
             let provider = MCPCustomProviderConfiguration(customProvider)
-            var providerJSON: [String: MCPJSONValue] = [
+            value["customProvider"] = .object([
                 "endpoint": .string(provider.endpoint),
                 "contextSize": .integer(Int64(provider.contextSize)),
                 "capabilities": .array(provider.capabilities.map { .string($0.rawValue) }),
                 "requestTimeoutSeconds": .number(provider.requestTimeoutSeconds)
-            ]
-            if let tokenizerEndpoint = provider.tokenizerEndpoint {
-                providerJSON["tokenizerEndpoint"] = .string(tokenizerEndpoint)
-            }
-            value["customProvider"] = .object(providerJSON)
+            ])
         }
         if let coreAI = configuration.coreAI {
             var coreAIJSON: [String: MCPJSONValue] = [
@@ -928,7 +667,7 @@ enum MCPStoreAuthority {
         case EvaluationStoreError.staleRevision(let current):
             outcome = "conflicted"
             fields["currentRevision"] = .string(current)
-        case EvaluationStoreError.resourceConflict, EvaluationWorkspaceError.repositoryConflict:
+        case EvaluationStoreError.resourceConflict:
             outcome = "conflicted"
         default:
             outcome = "failed"
@@ -947,7 +686,6 @@ enum MCPStoreAuthority {
         case EvaluationStoreError.resourceConflict: "resource_conflict"
         case EvaluationStoreError.resourceNotFound: "not_found"
         case EvaluationStoreError.persistence: "persistence_failed"
-        case EvaluationWorkspaceError.repositoryConflict: "resource_conflict"
         case MCPStoreAuthorityError.invalidCursor: "invalid_cursor"
         default: "invalid_request"
         }
@@ -997,7 +735,9 @@ enum MCPStoreAuthority {
     }
 
     private static func saturatedProduct(_ lhs: Int, _ rhs: Int) -> Int {
-        lhs.nonnegativeSaturatedMultiplying(rhs)
+        guard lhs >= 0, rhs >= 0 else { return 0 }
+        let (value, overflow) = lhs.multipliedReportingOverflow(by: rhs)
+        return overflow ? Int.max : value
     }
 
     private static func cursor(_ offset: Int) -> String {

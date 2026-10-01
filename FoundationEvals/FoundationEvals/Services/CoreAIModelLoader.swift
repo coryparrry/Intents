@@ -1,5 +1,4 @@
 import CoreAILanguageModels
-import Darwin
 import Foundation
 import FoundationModels
 
@@ -32,7 +31,6 @@ struct CoreAIModelLoadResult: Sendable {
     let contextSize: Int
     let capabilities: LanguageModelCapabilities
     let estimatedSizeOnDiskBytes: Int?
-    let resourceIdentity: CoreAIModelLoader.ResourceIdentity
 
     fileprivate let securityScopedAccess: CoreAISecurityScopedAccess
 }
@@ -68,46 +66,24 @@ enum CoreAIModelControlStatus: Equatable, Sendable {
 actor CoreAIModelLoader {
     static let shared = CoreAIModelLoader()
 
-    struct ResourceStamp: Hashable, Sendable {
-        let relativePath: String
-        let modificationDate: Date?
-        let fileSize: Int?
-        let fileIdentifier: String?
-        let statusChangeTime: FileStatusChangeTime
-    }
-
-    struct FileStatusChangeTime: Hashable, Sendable {
-        let seconds: Int64
-        let nanoseconds: Int64
-    }
-
-    struct ResourceIdentity: Hashable, Sendable {
+    private struct CacheKey: Hashable, Sendable {
         let resourceURL: URL
-        let resourceFingerprint: [ResourceStamp]
+        let metadataModificationDate: Date?
+        let metadataFileSize: Int?
     }
 
     private struct CachedModel: Sendable {
-        let key: ResourceIdentity
+        let key: CacheKey
         let result: CoreAIModelLoadResult
     }
 
     private var cachedModel: CachedModel?
-    private var latestRequestedKey: ResourceIdentity?
+    private var latestRequestedKey: CacheKey?
 
     func load(configuration: EvaluationCoreAIConfiguration) async throws -> CoreAIModelLoadResult {
         try Task.checkCancellation()
         let resolved = try Self.resolveResources(configuration)
-        let key: ResourceIdentity
-        do {
-            key = try Self.resourceIdentity(for: resolved.url)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            throw CoreAIModelLoadingError.modelLoadFailed(
-                path: resolved.url.path(percentEncoded: false),
-                message: "Could not inspect the model resource files: \(error.localizedDescription)"
-            )
-        }
+        let key = Self.cacheKey(for: resolved.url)
 
         latestRequestedKey = key
         if let cachedModel, cachedModel.key == key {
@@ -129,7 +105,6 @@ actor CoreAIModelLoader {
                     contextSize: bundle.maxContextLength,
                     capabilities: model.capabilities,
                     estimatedSizeOnDiskBytes: model.estimatedSizeOnDiskBytes,
-                    resourceIdentity: key,
                     securityScopedAccess: resolved.securityScopedAccess
                 )
             } catch {
@@ -196,80 +171,16 @@ actor CoreAIModelLoader {
         return (canonicalURL, access)
     }
 
-    nonisolated static func resourceIdentity(
-        for configuration: EvaluationCoreAIConfiguration
-    ) throws -> ResourceIdentity {
-        let resolved = try resolveResources(configuration)
-        return try withExtendedLifetime(resolved.securityScopedAccess) {
-            try resourceIdentity(for: resolved.url)
-        }
-    }
-
-    private nonisolated static func resourceIdentity(for url: URL) throws -> ResourceIdentity {
-        ResourceIdentity(
-            resourceURL: url,
-            resourceFingerprint: try resourceFingerprint(for: url)
-        )
-    }
-
-    nonisolated static func resourceFingerprint(for url: URL) throws -> [ResourceStamp] {
-        let keys: Set<URLResourceKey> = [
-            .isRegularFileKey,
+    private static func cacheKey(for url: URL) -> CacheKey {
+        let metadataURL = url.appending(path: "metadata.json", directoryHint: .notDirectory)
+        let values = try? metadataURL.resourceValues(forKeys: [
             .contentModificationDateKey,
             .fileSizeKey,
-            .fileResourceIdentifierKey,
-        ]
-        var enumerationError: Error?
-        guard let enumerator = FileManager.default.enumerator(
-            at: url,
-            includingPropertiesForKeys: Array(keys),
-            options: [],
-            errorHandler: { _, error in
-                enumerationError = error
-                return false
-            }
-        ) else {
-            throw CocoaError(.fileReadUnknown)
-        }
-
-        let rootComponents = url.standardizedFileURL.pathComponents
-        var fingerprint: [ResourceStamp] = []
-        for case let fileURL as URL in enumerator {
-            try Task.checkCancellation()
-            let values = try fileURL.resourceValues(forKeys: keys)
-            guard values.isRegularFile == true else { continue }
-            let relativePath = fileURL.standardizedFileURL.pathComponents
-                .dropFirst(rootComponents.count)
-                .joined(separator: "/")
-            fingerprint.append(ResourceStamp(
-                relativePath: relativePath,
-                modificationDate: values.contentModificationDate,
-                fileSize: values.fileSize,
-                fileIdentifier: values.fileResourceIdentifier.map { String(describing: $0) },
-                statusChangeTime: try statusChangeTime(for: fileURL)
-            ))
-        }
-        if let enumerationError { throw enumerationError }
-        return fingerprint.sorted { $0.relativePath < $1.relativePath }
-    }
-
-    private nonisolated static func statusChangeTime(for url: URL) throws -> FileStatusChangeTime {
-        var metadata = stat()
-        let (result, errorCode) = url.withUnsafeFileSystemRepresentation { path -> (Int32, Int32) in
-            guard let path else { return (-1, EINVAL) }
-            let result = stat(path, &metadata)
-            return (result, result == 0 ? 0 : errno)
-        }
-        guard result == 0 else {
-            throw NSError(
-                domain: NSPOSIXErrorDomain,
-                code: Int(errorCode),
-                userInfo: [NSFilePathErrorKey: url.path]
-            )
-        }
-        return FileStatusChangeTime(
-            seconds: Int64(metadata.st_ctimespec.tv_sec),
-            nanoseconds: Int64(metadata.st_ctimespec.tv_nsec)
+        ])
+        return CacheKey(
+            resourceURL: url,
+            metadataModificationDate: values?.contentModificationDate,
+            metadataFileSize: values?.fileSize
         )
     }
 }

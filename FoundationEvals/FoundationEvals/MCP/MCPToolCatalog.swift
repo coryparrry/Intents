@@ -92,39 +92,15 @@ struct MCPResourcePayload: Sendable {
 
 enum MCPToolCall: Sendable {
     case getState
-    case listProjects
-    case check(MCPCheckArguments)
-    case releaseReport(MCPReleaseReportArguments)
-    case projectReleaseReport(MCPProjectReleaseReportArguments)
     case replaceSuite(MCPReplaceSuiteArguments)
     case uploadAttachment(MCPUploadAttachmentArguments)
     case removeAttachment(MCPRemoveAttachmentArguments)
     case startRun(MCPStartRunArguments)
     case getRun(MCPGetRunArguments)
     case listRuns(MCPListRunsArguments)
-    case listScenarioRuns(MCPListScenarioRunsArguments)
-    case getScenarioReport(MCPGetScenarioReportArguments)
-    case getScenarioExecutionReport(MCPGetScenarioExecutionReportArguments)
     case analyzeRun(MCPAnalyzeRunArguments)
     case cancelRun(MCPCancelRunArguments)
     case deleteRun(MCPDeleteRunArguments)
-}
-
-struct MCPCheckArguments: Codable, Sendable {
-    var projectID: UUID
-    var suiteID: UUID
-    var runID: UUID
-    var expectedRevision: String?
-}
-
-struct MCPReleaseReportArguments: Codable, Sendable {
-    var projectID: UUID
-    var suiteID: UUID
-    var runID: UUID?
-}
-
-struct MCPProjectReleaseReportArguments: Codable, Sendable {
-    var projectID: UUID
 }
 
 struct MCPReplaceSuiteArguments: Codable, Sendable {
@@ -201,14 +177,12 @@ enum MCPModelCapability: String, Codable, CaseIterable, Hashable, Sendable {
 
 struct MCPCustomProviderConfiguration: Codable, Sendable {
     var endpoint: String
-    var tokenizerEndpoint: String? = nil
     var contextSize: Int
     var capabilities: [MCPModelCapability]
     var requestTimeoutSeconds: Double
 
     init(_ configuration: EvaluationCustomProviderConfiguration) {
         endpoint = configuration.endpoint
-        tokenizerEndpoint = configuration.tokenizerEndpoint
         contextSize = configuration.contextSize
         capabilities = [
             configuration.supportsVision ? .vision : nil,
@@ -223,7 +197,6 @@ struct MCPCustomProviderConfiguration: Codable, Sendable {
         let declared = Set(capabilities)
         return EvaluationCustomProviderConfiguration(
             endpoint: endpoint,
-            tokenizerEndpoint: tokenizerEndpoint,
             contextSize: contextSize,
             supportsVision: declared.contains(.vision),
             supportsGuidedGeneration: declared.contains(.guidedGeneration),
@@ -295,20 +268,6 @@ struct MCPListRunsArguments: Codable, Sendable {
     var status: String?
 }
 
-struct MCPListScenarioRunsArguments: Codable, Sendable {
-    var scenarioID: UUID?
-    var cursor: String?
-    var limit: Int?
-}
-
-struct MCPGetScenarioReportArguments: Codable, Sendable {
-    var runID: UUID
-}
-
-struct MCPGetScenarioExecutionReportArguments: Codable, Sendable {
-    var executionID: UUID
-}
-
 struct MCPCancelRunArguments: Codable, Sendable {
     var runID: UUID
 }
@@ -339,37 +298,6 @@ enum MCPToolCatalog {
             "eval_get_state", "Get evaluation state",
             "Read the shared suite, Foundation Models feature configuration, revision, readiness, limits, capabilities, attachments, and active run.",
             properties: [:], required: [], readOnly: true
-        ),
-        tool(
-            "eval_list_projects", "List evaluation projects",
-            "List stable project and suite IDs for explicitly targeted automation. Repository links are returned only as local identity metadata.",
-            properties: [:], required: [], readOnly: true
-        ),
-        tool(
-            "eval_check", "Check an explicit suite",
-            "Select an exact project and suite by stable ID, validate its saved definition, and start a durable asynchronous run without relying on the current UI selection.",
-            properties: [
-                "projectID": uuid("Stable project UUID from eval_list_projects."),
-                "suiteID": uuid("Stable suite UUID from eval_list_projects."),
-                "runID": uuid("Stable caller-supplied run UUID."),
-                "expectedRevision": string("Optional exact suite revision. If omitted, executes the currently saved revision after targeting.")
-            ], required: ["projectID", "suiteID", "runID"], idempotent: true
-        ),
-        tool(
-            "eval_release_report", "Evaluate a release check",
-            "Select an explicit project and suite so the native UI follows the target, then evaluate its selected or latest saved run. Missing, stale, incomplete, or incompatible evidence fails closed.",
-            properties: [
-                "projectID": uuid("Stable project UUID from eval_list_projects."),
-                "suiteID": uuid("Stable suite UUID from eval_list_projects."),
-                "runID": uuid("Optional saved run UUID; defaults to the latest run for this suite.")
-            ], required: ["projectID", "suiteID"]
-        ),
-        tool(
-            "eval_project_release_report", "Evaluate project release readiness",
-            "Evaluate every suite marked as required in one explicit project. Missing, failed, stale, or incompatible required-suite evidence fails the project report closed without changing UI selection.",
-            properties: [
-                "projectID": uuid("Stable project UUID from eval_list_projects.")
-            ], required: ["projectID"], readOnly: true
         ),
         tool(
             "eval_replace_suite", "Replace evaluation suite",
@@ -436,28 +364,6 @@ enum MCPToolCatalog {
             ], required: ["runID"], readOnly: true
         ),
         tool(
-            "eval_list_scenario_runs", "List Intent Lab scenario runs",
-            "Read immutable Intent Lab run summaries. This tool never builds a project, controls a device, or starts a scenario.",
-            properties: [
-                "scenarioID": uuid("Optional frozen scenario UUID filter."),
-                "cursor": string("Opaque cursor returned by this tool."),
-                "limit": integer("Maximum summaries to return.", minimum: 1, maximum: 50)
-            ], required: [], readOnly: true
-        ),
-        tool(
-            "eval_get_scenario_report", "Get Intent Lab scenario report",
-            "Read a saved scenario run, its lane evidence, diagnostic classification, and fail-closed release check. Artifact paths remain local metadata.",
-            properties: [
-                "runID": uuid("Saved Intent Lab run UUID.")
-            ], required: ["runID"], readOnly: true
-        ),
-        tool(
-            "eval_get_scenario_execution_report", "Get saved Intent Lab execution report",
-            "Qualify an immutable stable execution using its frozen plan, requirement, retained assessment selection and frozen semantic policy. Uses the GUI and offline evidence qualifier without recovery, model calls or history changes.",
-            properties: ["executionID": uuid("Saved stable execution record UUID.")],
-            required: ["executionID"], readOnly: true
-        ),
-        tool(
             "eval_cancel_run", "Cancel evaluation run",
             "Request cooperative cancellation of the identified active run; poll eval_get_run for its terminal state.",
             properties: ["runID": uuid("Run UUID.")], required: ["runID"], idempotent: true
@@ -499,16 +405,6 @@ enum MCPToolCatalog {
                 let object = try requireObject(arguments)
                 guard object.isEmpty else { throw MCPToolInputError.invalidArguments }
                 return .getState
-            case "eval_list_projects":
-                let object = try requireObject(arguments)
-                guard object.isEmpty else { throw MCPToolInputError.invalidArguments }
-                return .listProjects
-            case "eval_check":
-                return .check(try arguments.decode(MCPCheckArguments.self))
-            case "eval_release_report":
-                return .releaseReport(try arguments.decode(MCPReleaseReportArguments.self))
-            case "eval_project_release_report":
-                return .projectReleaseReport(try arguments.decode(MCPProjectReleaseReportArguments.self))
             case "eval_replace_suite":
                 if arguments.objectValue?["suite"]?.objectValue?["features"] == .null {
                     throw MCPToolInputError.invalidArguments
@@ -543,14 +439,6 @@ enum MCPToolCatalog {
                 return .listRuns(value)
             case "eval_analyze_run":
                 return .analyzeRun(try arguments.decode(MCPAnalyzeRunArguments.self))
-            case "eval_list_scenario_runs":
-                let value = try arguments.decode(MCPListScenarioRunsArguments.self)
-                try validatePage(cursor: value.cursor, limit: value.limit)
-                return .listScenarioRuns(value)
-            case "eval_get_scenario_report":
-                return .getScenarioReport(try arguments.decode(MCPGetScenarioReportArguments.self))
-            case "eval_get_scenario_execution_report":
-                return .getScenarioExecutionReport(try arguments.decode(MCPGetScenarioExecutionReportArguments.self))
             case "eval_cancel_run":
                 return .cancelRun(try arguments.decode(MCPCancelRunArguments.self))
             case "eval_delete_run":
@@ -688,10 +576,6 @@ enum MCPToolCatalog {
                         properties: [
                             "endpoint": string(
                                 "Explicit http://127.0.0.1:<port> generation endpoint.",
-                                maximumLength: 2_048
-                            ),
-                            "tokenizerEndpoint": string(
-                                "Optional http://127.0.0.1:<port> endpoint for exact input-token counts.",
                                 maximumLength: 2_048
                             ),
                             "contextSize": integer(minimum: 1, maximum: 262_144),

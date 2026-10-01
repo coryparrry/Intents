@@ -10,40 +10,9 @@
 4. Creates the version tag at the verified source if it does not already exist, uploads the DMG, `SHA256SUMS.txt`, and signed `appcast.xml`, then downloads and verifies all three.
 5. Publishes the release only after those checks pass.
 
-Draft staging and release PR generation run in separate Release Please steps. Before generating a PR, the workflow requires the version in the current `main` manifest to have a published GitHub release. A draft pauses PR generation until packaging succeeds; a missing release or API error stops the workflow instead of treating old commits as unreleased. A run with no releasable changes skips PR CI without parsing an absent PR output.
-
 No separate packaging action is required. A missing signing secret, failed CI/build/notarization, source mismatch, failed upload, or failed download verification leaves the release unpublished. The installer is built from the release PR's source, never a previously generated local DMG. Hosted build numbers are fixed to that source's Git commit count, which increases as commits land on `main`.
 
 Tags use `vMAJOR.MINOR.PATCH`. `fix:` changes produce a patch and `feat:` changes produce a minor release. Docs and chores alone do not normally produce a release PR. Release Please updates `version.txt`, `CHANGELOG.md`, and `.release-please-manifest.json` in its PR; the initial baseline is the existing `v1.0.0` release.
-
-### Curate squash-merge release notes
-
-GitHub squash-merges each pull request into one commit, so Release Please cannot
-infer several user-facing capabilities from the file diff or the commit body.
-Every `feat:` and `fix:` pull request must therefore include one active Release
-Please override block in its body:
-
-```text
-BEGIN_COMMIT_OVERRIDE
-feat(workspace): organize evaluations into projects and saved suites
-feat(judging): configure independent judges and reassess saved responses
-END_COMMIT_OVERRIDE
-```
-
-Add one Conventional Commit line for each independently useful user-visible
-change. Keep implementation details, tests, CI, and maintenance out of the block.
-The pull request template contains a commented example, and CI fails releasable
-pull requests whose active block is missing, malformed, duplicated, or does not
-retain the pull request's `feat`/`fix` release type. Editing the pull request body
-reruns that validation. Breaking-change markers must agree between the pull
-request title and the override entries. Release Please reads the block after the
-squash merge and uses those entries for `CHANGELOG.md` and the GitHub release
-notes.
-
-The repository permits squash merges only. Do not change that setting without
-also replacing this release-note contract: merge commits and rebase merges do
-not preserve the single squash commit whose pull request body Release Please
-uses for the override.
 
 Enable **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests**. The workflow creates PRs but does not approve or merge them. Since PRs created with `GITHUB_TOKEN` do not trigger normal PR workflows, Release Me explicitly dispatches CI on the generated branch.
 
@@ -53,7 +22,7 @@ The reusable **Build DMG and publish release** workflow also has a manual recove
 
 Published releases are rejected and existing tags are never moved. Uploads do not overwrite existing assets. A partial upload can leave assets on the draft; inspect and remove only those failed-attempt assets deliberately before retrying. **Release verification** remains available to recheck an existing published installer without changing it.
 
-Hosted CI uses GitHub's `xcode-27` macOS 27 runner. It runs the core test scheme and, for UI-impacting changes, builds the app and UI-test bundle; it does not execute UI tests or prove native model generation. Automatic publication does not claim those checks ran.
+Hosted CI runs macOS 26 with Xcode 27, so it can compile this macOS 27 app but cannot launch it. Native launch and real model generation remain separate validation; automatic publication does not claim they ran.
 
 ## One-time signing setup
 
@@ -85,7 +54,7 @@ and enables scheduled checks, automatic background downloads, and installation
 by default. Sparkle handles installation through its standard update flow;
 existing saved update preferences remain respected. End-to-end automatic installation and
 relaunch will be tested after release. The feed is
-`https://github.com/coryparrry/Intents/releases/latest/download/appcast.xml`.
+`https://github.com/coryparrry/Foundation-Eval-Labs/releases/latest/download/appcast.xml`.
 Each stable release must include its generated `appcast.xml` and be marked as the
 latest release. Drafts and prereleases do not advance this feed. Publish the feed
 and installer together; the feed points to that release's immutable download URL.

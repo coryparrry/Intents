@@ -12,7 +12,6 @@ actor EvaluationRunner {
         subsystem: "com.coryparry.FoundationEvals",
         category: "Evaluation"
     )
-    let compatibleJudgeClient = EvaluationCompatibleJudgeClient()
 
     func run(
         id: UUID,
@@ -20,14 +19,12 @@ actor EvaluationRunner {
         startedAt: Date,
         suite: EvaluationSuite,
         images: [ImageEvaluationInput],
-        externalJudge: EvaluationResolvedJudgeConnection? = nil,
         liveResponse: @escaping @Sendable (EvaluationLiveResponse) async -> Void = { _ in },
         progress: @Sendable (EvaluationSampleResult, Int, Int) async -> Void
     ) async -> EvaluationRun {
         switch suite.modelConfiguration.provider {
         case .onDevice:
             let model = suite.modelConfiguration.systemModel
-            let contextSize = ModelContextSizeCache.resolvedOnDeviceContextSize(model.contextSize)
             return await run(
                 id: id,
                 suiteRevision: suiteRevision,
@@ -35,12 +32,11 @@ actor EvaluationRunner {
                 suite: suite,
                 images: images,
                 model: model,
-                contextSize: contextSize,
+                contextSize: model.contextSize,
                 modelName: "On-device · \(model.variant.displayName)",
                 admissionError: Self.unavailableMessage(for: model.availability).map {
                     (category: "modelUnavailable", message: $0)
                 },
-                externalJudge: externalJudge,
                 liveResponse: liveResponse,
                 progress: progress
             )
@@ -61,7 +57,6 @@ actor EvaluationRunner {
                     admissionError: availabilityMessage.map {
                         (category: "modelUnavailable", message: $0)
                     },
-                    externalJudge: externalJudge,
                     liveResponse: liveResponse,
                     progress: progress
                 )
@@ -79,7 +74,6 @@ actor EvaluationRunner {
                     admissionError: availabilityMessage.map {
                         (category: "modelUnavailable", message: $0)
                     } ?? traceError,
-                    externalJudge: externalJudge,
                     liveResponse: liveResponse,
                     progress: progress
                 )
@@ -117,7 +111,6 @@ actor EvaluationRunner {
                 images: images, model: model, contextSize: model.contextSize,
                 modelName: "Custom local HTTP model",
                 admissionError: configuration.validationIssue.map { (category: "invalidConfiguration", message: $0) },
-                externalJudge: externalJudge,
                 liveResponse: liveResponse, progress: progress
             )
         case .coreAI:
@@ -128,7 +121,6 @@ actor EvaluationRunner {
                     id: id, suiteRevision: suiteRevision, startedAt: startedAt, suite: suite,
                     images: images, model: loaded.model, contextSize: loaded.contextSize,
                     modelName: "Core AI · \(loaded.modelName)", admissionError: nil,
-                    externalJudge: externalJudge,
                     liveResponse: liveResponse, progress: progress
                 )
             } catch {
@@ -144,8 +136,6 @@ actor EvaluationRunner {
                     images: images, model: SystemLanguageModel.default, contextSize: 0,
                     modelName: "Core AI · resources unavailable",
                     admissionError: admissionError,
-                    executionCapabilities: LanguageModelCapabilities([]),
-                    externalJudge: externalJudge,
                     liveResponse: liveResponse, progress: progress
                 )
             }
@@ -162,8 +152,6 @@ actor EvaluationRunner {
         contextSize: Int,
         modelName: String,
         admissionError: (category: String, message: String)?,
-        executionCapabilities: LanguageModelCapabilities? = nil,
-        externalJudge: EvaluationResolvedJudgeConnection?,
         liveResponse: @Sendable (EvaluationLiveResponse) async -> Void,
         progress: @Sendable (EvaluationSampleResult, Int, Int) async -> Void
     ) async -> EvaluationRun {
@@ -172,14 +160,6 @@ actor EvaluationRunner {
         var results: [EvaluationSampleResult] = []
         var cancelled = false
         var terminationReason: String?
-        let promptTokenCounter: any EvaluationPromptInputTokenCounting = switch suite.modelConfiguration.provider {
-        case .customHTTP where suite.modelConfiguration.customProviderSettings.validatedTokenizerEndpoint != nil:
-            EvaluationDeferredPromptInputTokenCounter()
-        case .customHTTP:
-            EvaluationPortablePromptInputTokenCounter()
-        default:
-            EvaluationSystemPromptInputTokenCounter()
-        }
 
         let environment = EvaluationEnvironment(
             operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
@@ -213,9 +193,6 @@ actor EvaluationRunner {
                         images: images,
                         model: model,
                         contextSize: contextSize,
-                        modelName: modelName,
-                        externalJudge: externalJudge,
-                        promptTokenCounter: promptTokenCounter,
                         liveResponse: liveResponse
                     )
                 }
@@ -224,9 +201,7 @@ actor EvaluationRunner {
                 completed += 1
                 await progress(result, completed, total)
 
-                if Task.isCancelled
-                    || result.errorCategory == "cancelled"
-                    || result.judgeErrorCategory == "cancelled" {
+                if result.errorCategory == "cancelled" || result.judgeErrorCategory == "cancelled" {
                     cancelled = true
                     terminationReason = "cancelled"
                     break outer
@@ -249,7 +224,7 @@ actor EvaluationRunner {
             includesModelJudge: suite.needsModelJudge,
             sharedToolOutputReserve: suite.sharedToolOutputReserve
         )
-        var run = EvaluationRun(
+        return EvaluationRun(
             id: runID,
             suiteID: suite.id,
             suiteName: suite.name,
@@ -276,7 +251,7 @@ actor EvaluationRunner {
                 behaviorVersion: EvaluationModelConfiguration.currentBehaviorVersion,
                 configuration: suite.modelConfiguration,
                 modelDisplayName: modelName,
-                capabilities: (executionCapabilities ?? model.capabilities).evaluationNames,
+                capabilities: model.capabilities.evaluationNames,
                 toolNames: (suite.modelConfiguration.referenceMode == .lookupTool
                     ? [ReferenceLookupTool.toolName] : [])
                     + suite.features.tools.map(\.name)
@@ -287,23 +262,13 @@ actor EvaluationRunner {
                 reservedJudgeOverheadTokens: allocation.judgeOverheadReserve,
                 inputTokenCountingMethod: suite.modelConfiguration.provider == .onDevice
                     ? "System model tokenizer"
-                    : suite.modelConfiguration.provider == .customHTTP
-                        ? suite.modelConfiguration.customProviderSettings.validatedTokenizerEndpoint != nil
-                            ? "Provider tokenizer endpoint"
-                            : "Portable conservative estimate"
-                        : "System model tokenizer estimate",
+                    : "System model tokenizer estimate",
                 imageInputTokenCountAvailable: images.isEmpty && results.allSatisfy {
                     $0.imageInputTokenCountAvailable != false
                 },
                 features: suite.features
             )
         )
-        if suite.scoringMode == .modelJudge {
-            let assessment = Self.initialAssessment(runID: runID, suite: suite, results: results, modelName: modelName)
-            run.assessments = [assessment]
-            run.selectedAssessmentID = assessment.id
-        }
-        return run
     }
 
     private func evaluate<Model: LanguageModel>(
@@ -314,20 +279,9 @@ actor EvaluationRunner {
         images: [ImageEvaluationInput],
         model: Model,
         contextSize: Int,
-        modelName: String,
-        externalJudge: EvaluationResolvedJudgeConnection?,
-        promptTokenCounter: any EvaluationPromptInputTokenCounting,
         liveResponse: @Sendable (EvaluationLiveResponse) async -> Void
     ) async -> EvaluationSampleResult {
         let started = ContinuousClock.now
-        let outputTokenCounter: any EvaluationToolOutputTokenCounting =
-            suite.modelConfiguration.provider == .customHTTP
-                ? EvaluationPortablePromptInputTokenCounter()
-                : EvaluationSystemPromptTokenCounter()
-        let customToolTokenCounter: any EvaluationCustomToolTokenCounting =
-            suite.modelConfiguration.provider == .customHTTP
-                ? EvaluationPortablePromptInputTokenCounter()
-                : EvaluationSystemModelTokenCounter()
         let workflow = EvaluationWorkflowRecorder(origin: started)
         let rootSpanID = workflow.begin(kind: .sample, title: evaluationCase.name, metadata: [
             "caseID": evaluationCase.id.uuidString, "repetition": String(repetition),
@@ -385,21 +339,13 @@ actor EvaluationRunner {
                 metadata: ["operation": "sessionSetup"])
             var tools: [any Tool] = suite.modelConfiguration.referenceMode == .lookupTool
                 ? [ReferenceLookupTool(index: ReferenceSearchIndex(attachments: suite.attachments), recorder: recorder)] : []
-            tools += try EvaluationCustomTool.makeTools(
-                definitions: suite.features.tools,
-                recorder: customRecorder,
-                tokenCounter: customToolTokenCounter
-            )
+            tools += try EvaluationCustomTool.makeTools(definitions: suite.features.tools, recorder: customRecorder)
             let visionConfiguration = suite.modelConfiguration.customizationSettings.visionSettings
             tools += visionConfiguration.makeTools()
-            let visionToolBoundary = visionConfiguration.boundary(
-                limiter: toolCallLimiter,
-                tokenCounter: outputTokenCounter
-            )
+            let visionToolBoundary = visionConfiguration.boundary(limiter: toolCallLimiter)
             spotlightRuntime = try EvaluationSpotlightSearchRuntime.make(
                 from: suite.features.spotlightSearch,
-                limiter: toolCallLimiter,
-                tokenCounter: outputTokenCounter
+                limiter: toolCallLimiter
             )
             if let spotlightRuntime {
                 tools.append(spotlightRuntime.tool)
@@ -460,8 +406,7 @@ actor EvaluationRunner {
                         projection: evaluationCase.conversation.modelHistoryProjection
                     )
                     let historyEstimate = try await EvaluationInputTokenCounter.historyEstimate(
-                        modelFacingHistory,
-                        using: promptTokenCounter
+                        modelFacingHistory
                     )
                     imageInputTokenCountAvailable = imageInputTokenCountAvailable
                         && historyEstimate.imageTokenCountAvailable
@@ -478,8 +423,7 @@ actor EvaluationRunner {
                         contextSize: contextSize,
                         tools: tools,
                         historyTokenCount: historyEstimate.count,
-                        historyImageTokenCountAvailable: historyEstimate.imageTokenCountAvailable,
-                        tokenCounter: promptTokenCounter
+                        historyImageTokenCountAvailable: historyEstimate.imageTokenCountAvailable
                     )
                     setupEffectivePrompt = setupPrepared.text
                     workflow.finish(setupPreparationSpanID, metadata: ["estimatedInputTokens": String(setupPrepared.tokenCount)])
@@ -503,7 +447,6 @@ actor EvaluationRunner {
                             "imageInputTokenCountAvailable": setupPrepared.imageInputTokenCountAvailable
                         ],
                         onPartial: { content in
-                            guard suite.modelConfiguration.provider != .customHTTP else { return }
                             await liveResponse(EvaluationLiveResponse(
                                 caseID: evaluationCase.id,
                                 caseName: evaluationCase.name,
@@ -588,8 +531,7 @@ actor EvaluationRunner {
             )
             conversationTrace.modelFacingHistoryEntryCountBeforeFinal = modelFacingHistory.count
             let historyEstimate = try await EvaluationInputTokenCounter.historyEstimate(
-                modelFacingHistory,
-                using: promptTokenCounter
+                modelFacingHistory
             )
             imageInputTokenCountAvailable = imageInputTokenCountAvailable
                 && historyEstimate.imageTokenCountAvailable
@@ -601,8 +543,7 @@ actor EvaluationRunner {
                 contextSize: contextSize,
                 tools: tools,
                 historyTokenCount: historyEstimate.count,
-                historyImageTokenCountAvailable: historyEstimate.imageTokenCountAvailable,
-                tokenCounter: promptTokenCounter
+                historyImageTokenCountAvailable: historyEstimate.imageTokenCountAvailable
             )
             imageInputTokenCountAvailable = imageInputTokenCountAvailable
                 && prepared.imageInputTokenCountAvailable
@@ -621,7 +562,6 @@ actor EvaluationRunner {
                            "repetition": repetition, "estimatedInputTokens": prepared.tokenCount,
                            "imageInputTokenCountAvailable": prepared.imageInputTokenCountAvailable],
                 onPartial: { content in
-                    guard suite.modelConfiguration.provider != .customHTTP else { return }
                     await liveResponse(EvaluationLiveResponse(
                         caseID: evaluationCase.id,
                         caseName: evaluationCase.name,
@@ -710,10 +650,7 @@ actor EvaluationRunner {
                 images: images,
                 model: model,
                 contextSize: contextSize,
-                modelName: modelName,
-                externalJudge: externalJudge,
                 toolEvidence: toolEvidence,
-                tokenCounter: promptTokenCounter,
                 workflowRecorder: workflow
             )
             timing.scoringMilliseconds = Self.milliseconds(since: scoringStarted)
@@ -723,8 +660,7 @@ actor EvaluationRunner {
             )
             let finalStatus = EvaluationFieldAssertions.gatedStatus(
                 baseStatus: scoring.status,
-                results: assertionResults,
-                allowAssertionsToScore: scoringSuite.scoringMode == .review
+                results: assertionResults
             )
 
             let workflowStatus: EvaluationWorkflowSpanStatus = scoring.errorCategory == "cancelled"
@@ -759,8 +695,6 @@ actor EvaluationRunner {
                 timing: timing,
                 featureTrace: featureTrace,
                 judgeTrace: scoring.trace,
-                judgeIdentity: scoring.identity,
-                judgeCost: scoring.cost,
                 fieldAssertionResults: assertionResults.isEmpty ? nil : assertionResults,
                 imageInputTokenCountAvailable: imageInputTokenCountAvailable,
                 workflowTrace: workflow.snapshot()
@@ -855,81 +789,5 @@ actor EvaluationRunner {
                 workflowTrace: workflow.snapshot()
             )
         }
-    }
-
-    private static func initialAssessment(
-        runID: UUID,
-        suite: EvaluationSuite,
-        results: [EvaluationSampleResult],
-        modelName: String
-    ) -> EvaluationAssessment {
-        let identities = results.compactMap(\.judgeIdentity)
-        let modelIdentities = identities.filter { $0.requestedModelID != "none" }
-        let identityCandidates = modelIdentities.isEmpty ? identities : modelIdentities
-        let observedIdentities = identityCandidates.reduce(into: [EvaluationJudgeIdentity]()) { unique, identity in
-            if !unique.contains(identity) { unique.append(identity) }
-        }
-        let identity = observedIdentities.first ?? EvaluationJudgeIdentity(
-            mode: .sameModel,
-            connectionID: nil,
-            connectionName: "Same model as subject",
-            endpointKind: nil,
-            baseURL: nil,
-            requestedModelID: modelName,
-            reportedModelID: modelName,
-            provider: suite.modelConfiguration.provider.rawValue,
-            providerOrder: []
-        )
-        var usage = EvaluationUsage()
-        var hasUsage = false
-        var knownCost = 0.0
-        var hasKnownCost = false
-        var hasEstimatedCost = false
-        var hasUnavailableCost = false
-        let samples = results.map { result in
-            if let judgeUsage = result.judgeUsage {
-                usage.add(judgeUsage)
-                hasUsage = true
-            }
-            if let cost = result.judgeCost, let usd = cost.usd {
-                knownCost += usd
-                hasKnownCost = true
-                hasEstimatedCost = hasEstimatedCost || cost.availability == .estimated
-            } else if result.judgeCost?.availability == .unavailable {
-                hasUnavailableCost = true
-            }
-            return EvaluationSampleAssessment(
-                id: UUID(), sampleID: result.id, status: result.status,
-                score: result.score, rationale: result.rationale, trace: result.judgeTrace,
-                errorCategory: result.judgeErrorCategory, errorMessage: result.judgeErrorMessage,
-                usage: result.judgeUsage, durationMilliseconds: result.judgeDurationMilliseconds
-            )
-        }
-        let cost: EvaluationCost
-        if hasUnavailableCost {
-            cost = .init(
-                availability: .unavailable,
-                usd: nil,
-                explanation: "At least one judge request did not report or estimate cost."
-            )
-        } else if hasKnownCost {
-            cost = .init(
-                availability: hasEstimatedCost ? .estimated : .known,
-                usd: knownCost,
-                explanation: hasEstimatedCost ? "Includes configured token-price estimates." : "Reported by the judge endpoint."
-            )
-        } else {
-            cost = .init(availability: .unavailable, usd: nil, explanation: "Judge cost was not reported or configured.")
-        }
-        return EvaluationAssessment(
-            id: UUID(), runID: runID, createdAt: Date(), origin: .initialRun,
-            judge: identity, promptVersion: EvaluationRunner.judgePromptVersion,
-            rubric: suite.criteria, passingScore: EvaluationSuite.judgePassingScore,
-            samples: samples, totalUsage: hasUsage ? usage : nil,
-            durationMilliseconds: EvaluationAssessment.summedJudgeDurationMilliseconds(samples),
-            cost: cost, supersedesAssessmentID: nil,
-            observedJudgeIdentities: observedIdentities.isEmpty ? [identity] : observedIdentities,
-            scoringContract: try? EvaluationScoringContract(suite: suite)
-        )
     }
 }
