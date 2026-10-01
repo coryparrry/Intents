@@ -37,8 +37,9 @@ struct SuiteResultsView: View {
 private struct RunTrendPanel: View {
     let runs: [EvaluationRun]
 
+    private var trend: RunTrendSummary { RunTrendSummary(runs: runs) }
+
     var body: some View {
-        let trend = RunTrendSummary(runs: runs)
         HStack(alignment: .center, spacing: 28) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Latest pass rate").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)

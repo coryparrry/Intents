@@ -652,10 +652,16 @@ public enum IntentLabScenarioEngine {
                 try EvidenceAttachmentWriter.attach(checkpoint, to: testCase, checkpoint: true)
                 throw error
             }
+            let directCleanupWasSkipped: Bool
+            if case .failure(let error) = directAttempt.action {
+                directCleanupWasSkipped = error is IntentLabDirectIntentTimeout
+            } else {
+                directCleanupWasSkipped = false
+            }
             let verifiedCleanup = cleanupVerification(
                 required: scenario.schemaVersion == 2 && preparationStarted,
                 cleanupError: directAttempt.cleanupError,
-                cleanupWasSkipped: false
+                cleanupWasSkipped: directCleanupWasSkipped
             )
             var directLaneResult: IntentLabLaneResult
             switch directAttempt.action {

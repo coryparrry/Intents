@@ -929,29 +929,12 @@ struct ScenarioExpectedValueEditor: View {
             set: { value = .string($0) }
         )
     }
-    private var boolValue: Binding<Bool> {
-        ScenarioExpectedValueBinding.scalar($value, default: false,
-            get: { if case .boolean(let item) = $0 { item } else { nil } }, wrap: ScenarioValue.boolean)
-    }
-    private var integerValue: Binding<Int64> {
-        ScenarioExpectedValueBinding.scalar($value, default: 0,
-            get: { if case .integer(let item) = $0 { item } else { nil } }, wrap: ScenarioValue.integer)
-    }
-    private var numberValue: Binding<Double> {
-        ScenarioExpectedValueBinding.scalar($value, default: 0,
-            get: { if case .number(let item) = $0 { item } else { nil } }, wrap: ScenarioValue.number)
-    }
-}
+    private var boolValue: Binding<Bool> { scalar(default: false, get: { if case .boolean(let item) = $0 { item } else { nil } }, wrap: ScenarioValue.boolean) }
+    private var integerValue: Binding<Int64> { scalar(default: 0, get: { if case .integer(let item) = $0 { item } else { nil } }, wrap: ScenarioValue.integer) }
+    private var numberValue: Binding<Double> { scalar(default: 0, get: { if case .number(let item) = $0 { item } else { nil } }, wrap: ScenarioValue.number) }
 
-enum ScenarioExpectedValueBinding {
-    static func scalar<Value>(
-        _ value: Binding<ScenarioValue?>,
-        default defaultValue: Value,
-        get: @escaping (ScenarioValue) -> Value?,
-        wrap: @escaping (Value) -> ScenarioValue
-    ) -> Binding<Value> {
-        Binding(get: { value.wrappedValue.flatMap(get) ?? defaultValue },
-                set: { value.wrappedValue = wrap($0) })
+    private func scalar<T>(default defaultValue: T, get: @escaping (ScenarioValue) -> T?, wrap: @escaping (T) -> ScenarioValue) -> Binding<T> {
+        Binding(get: { value.flatMap(get) ?? defaultValue }, set: { value = wrap($0) })
     }
 }
 

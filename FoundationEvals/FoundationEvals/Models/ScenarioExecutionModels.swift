@@ -640,21 +640,6 @@ struct ScenarioExecutionRecord: Codable, Equatable, Identifiable, Sendable {
               selectedAssessmentsAreBound(selectedAssessments, to: records) else {
             throw ScenarioPersistenceError.invalidRun("coordinate population or selected assessment")
         }
-        let sorted = records.sorted { $0.id.uuidString < $1.id.uuidString }
-        let selected = sortedAssessments(selectedAssessments)
-        let digest = try sealDigest(planID: plan.id, records: sorted, selectedAssessments: selected)
-        return .init(id: plan.id, planID: plan.id, records: sorted,
-                     completedAt: completedAt, evidenceDigest: digest,
-                     selectedAssessments: selected.isEmpty ? nil : selected)
-    }
-
-    /// Canonical terminal seal bytes; nil and empty assessment selections share
-    /// the same seal. Creation and verification use this exact wire contract.
-    static func canonicalSealBytes(
-        planID: UUID,
-        records: [ScenarioExecutionCoordinateRecord],
-        selectedAssessments: [ScenarioSelectedAssessmentProjection]
-    ) throws -> Data {
         struct Seal: Encodable {
             var planID: UUID
             var records: [ScenarioExecutionCoordinateRecord]
@@ -663,21 +648,15 @@ struct ScenarioExecutionRecord: Codable, Equatable, Identifiable, Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(Seal(
-            planID: planID,
-            records: records.sorted { $0.id.uuidString < $1.id.uuidString },
-            selectedAssessments: sortedAssessments(selectedAssessments)
-        ))
-    }
-
-    static func sealDigest(
-        planID: UUID,
-        records: [ScenarioExecutionCoordinateRecord],
-        selectedAssessments: [ScenarioSelectedAssessmentProjection]
-    ) throws -> String {
-        SHA256.hash(data: try canonicalSealBytes(
-            planID: planID, records: records, selectedAssessments: selectedAssessments
-        )).map { String(format: "%02x", $0) }.joined()
+        let sorted = records.sorted { $0.id.uuidString < $1.id.uuidString }
+        let selected = sortedAssessments(selectedAssessments)
+        let digest = SHA256.hash(data: try encoder.encode(Seal(
+            planID: plan.id, records: sorted, selectedAssessments: selected
+        )))
+            .map { String(format: "%02x", $0) }.joined()
+        return .init(id: plan.id, planID: plan.id, records: sorted,
+                     completedAt: completedAt, evidenceDigest: digest,
+                     selectedAssessments: selected.isEmpty ? nil : selected)
     }
 
     static func sortedAssessments(
@@ -1060,23 +1039,5 @@ enum ScenarioFeatureSubjectDigest {
         case .date, .enumeration, .entity:
             throw InputError.unsupportedValue(name)
         }
-    }
-}
-
-/// Digests normalized native evidence, not persisted file bytes. Acceptance is
-/// host-owned state and does not change the captured run's evidence identity.
-enum ScenarioNativeRunEvidence {
-    static func canonicalBytes(_ run: ScenarioRun) throws -> Data {
-        var immutableRun = run
-        immutableRun.acceptanceStatus = .pending
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(immutableRun)
-    }
-
-    static func digest(_ run: ScenarioRun) throws -> String {
-        SHA256.hash(data: try canonicalBytes(run))
-            .map { String(format: "%02x", $0) }.joined()
     }
 }

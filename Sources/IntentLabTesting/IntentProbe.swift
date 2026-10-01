@@ -6,11 +6,13 @@ import IntentLabContracts
 @MainActor
 public enum IntentProbe {
     public static func run(_ scenario: IntentLabScenario) async throws -> [String: IntentLabValue] {
-        let result = try await invoke(
-            bundleIdentifier: scenario.target.bundleIdentifier,
-            intentIdentifier: scenario.directControl.intentIdentifier,
-            parameters: scenario.directControl.parameters
-        )
+        let definitions = IntentDefinitions(bundleIdentifier: scenario.target.bundleIdentifier)
+        let definition = definitions.intents[scenario.directControl.intentIdentifier]
+        var intent = definition.makeIntent()
+        for parameter in scenario.directControl.parameters {
+            try set(parameter, on: &intent, definitions: definitions)
+        }
+        let result = try await intent.run()
 
         var observations: [String: IntentLabValue] = [:]
         for field in scenario.directControl.outputFields {
@@ -31,11 +33,13 @@ public enum IntentProbe {
         parameters: [IntentLabParameter],
         outputProjections: [IntentLabIntegrationDeclaration.Projection]
     ) async throws -> [String: IntentLabValue] {
-        let result = try await invoke(
-            bundleIdentifier: bundleIdentifier,
-            intentIdentifier: intentIdentifier,
-            parameters: parameters
-        )
+        let definitions = IntentDefinitions(bundleIdentifier: bundleIdentifier)
+        let definition = definitions.intents[intentIdentifier]
+        var intent = definition.makeIntent()
+        for parameter in parameters {
+            try set(parameter, on: &intent, definitions: definitions)
+        }
+        let result = try await intent.run()
 
         var observations: [String: IntentLabValue] = [:]
         for projection in outputProjections {
@@ -50,20 +54,6 @@ public enum IntentProbe {
             observations[field.name] = try project(field, from: result, schemaVersion: 2)
         }
         return observations
-    }
-
-    private static func invoke(
-        bundleIdentifier: String,
-        intentIdentifier: String,
-        parameters: [IntentLabParameter]
-    ) async throws -> ResolvedIntentResult {
-        let definitions = IntentDefinitions(bundleIdentifier: bundleIdentifier)
-        let definition = definitions.intents[intentIdentifier]
-        var intent = definition.makeIntent()
-        for parameter in parameters {
-            try set(parameter, on: &intent, definitions: definitions)
-        }
-        return try await intent.run()
     }
 
     private static func project(

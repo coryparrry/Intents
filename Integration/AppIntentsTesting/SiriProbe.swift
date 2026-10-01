@@ -260,6 +260,7 @@ enum SiriProbeError: LocalizedError {
     case priorAttemptUnresolved(String)
     case permissionRequired
     case missingRequest
+    case fixtureUnavailable
     case outcomeNotObserved
     case invocationNotCorrelated
     var errorDescription: String? {
@@ -267,6 +268,7 @@ enum SiriProbeError: LocalizedError {
         case .priorAttemptUnresolved(let reason): "This Siri attempt was not started because an earlier attempt did not finish: \(reason)"
         case .permissionRequired: "Siri permission or confirmation blocked this attempt. Approve the prompt on the device, then rerun. Remaining attempts were not started."
         case .missingRequest: "The approved Siri request is empty."
+        case .fixtureUnavailable: "The synthetic fixture did not expose its baseline observation."
         case .outcomeNotObserved: "Siri did not establish the declared visible outcome before the deadline."
         case .invocationNotCorrelated: "The application outcome was not correlated to this scenario attempt."
         }

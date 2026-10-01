@@ -40,7 +40,16 @@ enum ScenarioFeatureEvidence {
         from run: EvaluationRun,
         definition: ScenarioDefinition
     ) -> ScenarioLaneResult {
-        let status: ScenarioExecutionStatus = isEligible(run, for: definition) ? .completed : .invalidEvidence
+        let status: ScenarioExecutionStatus
+        if !isEligible(run, for: definition) {
+            status = .invalidEvidence
+        } else if run.cancelled {
+            status = .cancelled
+        } else if run.terminationReason != nil {
+            status = .crashed
+        } else {
+            status = .completed
+        }
 
         var observations: [String: ScenarioValue] = [
             "feature.runID": .string(run.id.uuidString),
@@ -68,12 +77,13 @@ enum ScenarioFeatureEvidence {
             observations: observations,
             executionStatus: status
         )
+        let hasSubjectFailure = run.failedCount > 0 || run.errorCount > 0
         let outcome: ScenarioOutcome
         if status != .completed {
             outcome = .notObserved
-        } else if run.failedCount > 0 || evaluated.0 == .failed {
+        } else if hasSubjectFailure || evaluated.0 == .failed {
             outcome = .failed
-        } else if evaluated.0 == .needsReview {
+        } else if run.scoredCount == 0 || evaluated.0 == .needsReview {
             outcome = .needsReview
         } else {
             outcome = .passed

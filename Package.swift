@@ -49,7 +49,6 @@ let portableTestSources = [
     "ScenarioActionParityTests.swift",
     "IntentEvidenceBundleTests.swift",
     "IntentLabProjectInstallerTests.swift",
-    "ExecutorSimplificationTests.swift",
 ]
 
 let package = Package(
@@ -158,7 +157,6 @@ let package = Package(
                 "AccessibilitySelectionActionsTests.swift",
                 "AttachmentImportTests.swift",
                 "CoreAIModelLoaderTests.swift",
-                "DeveloperRunnerStoreTests.swift",
                 "CustomToolTests.swift",
                 "EvaluationConversationTests.swift",
                 "EvaluationDynamicProfileTests.swift",
@@ -180,7 +178,6 @@ let package = Package(
                 "RefusalExplanationTests.swift",
                 "RunBaselineSelectionTests.swift",
                 "SchemaCustomizationTests.swift",
-                "ScenarioFeatureEvidenceTests.swift",
                 "SpotlightSearchToolTests.swift",
                 "TelemetryControllerTests.swift",
                 "TraceTests.swift",

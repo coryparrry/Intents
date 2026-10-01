@@ -1812,6 +1812,28 @@ final class EvaluationStore {
         return saved
     }
 
+    func runDeveloperFeatureSnapshot(
+        id: UUID,
+        projectID: UUID,
+        suite: EvaluationSuite,
+        expectedRevision: String,
+        runner: DeveloperRunnerSnapshot,
+        feature: DeveloperFeatureDescriptor,
+        client: DeveloperRunnerClient,
+        executionOwnerID: UUID? = nil,
+        timeout: Duration = .seconds(120),
+        progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }
+    ) async throws -> EvaluationRun {
+        let adapter = EvaluationDeveloperFeatureAdapter(
+            runID: id, runner: runner, feature: feature, client: client, timeout: timeout
+        )
+        return try await runFeatureAdapterSnapshot(
+            id: id, projectID: projectID, suite: suite,
+            expectedRevision: expectedRevision, executionOwnerID: executionOwnerID,
+            adapter: adapter, progress: progress
+        )
+    }
+
     private func updateFeatureAdapterProgress(completed: Int, total: Int) {
         completedSamples = completed
         totalSamples = total
