@@ -46,3 +46,5 @@ Physical Siri, actual screenshot timing, a real native Mac direct-check connecti
 - Two independent review lanes found no material defects in the reconciled source.
 
 The overall package command exited 1 because the existing IntentLabTesting test bundle cannot load the installed SDK's AppIntentsTesting framework on this Mac: it requires a missing private OS symbol. That target did not execute; the other four suites above passed. This is a local SDK/runtime limit and is not presented as an application defect or a passing full suite.
+
+Publication follow-up: the repository requires curated release-note overrides, now present and locally validated in the PR body. The new native-bundle suite is registered in the CI dependency catalog for executor and test-file edits. All 104 CI-selected script unit tests passed locally after that registration, including all 11 CLI integration tests.
