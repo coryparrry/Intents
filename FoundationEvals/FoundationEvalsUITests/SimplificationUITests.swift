@@ -30,6 +30,12 @@ final class SimplificationUITests: XCTestCase {
         let results = app.radioButtons["Results"]
         XCTAssertTrue(results.waitForExistence(timeout: 10), app.debugDescription)
         results.click()
+        let laneTitle = format == "individual" ? "App action" : "Intent integration"
+        let lane = app.disclosureTriangles.matching(
+            NSPredicate(format: "label BEGINSWITH %@", laneTitle)
+        ).firstMatch
+        XCTAssertTrue(lane.waitForExistence(timeout: 10), app.debugDescription)
+        lane.click()
         let passed = app.staticTexts["Returned value matched"].firstMatch
         let failed = app.staticTexts["Saved state did not match"].firstMatch
         XCTAssertTrue(passed.waitForExistence(timeout: 10), app.debugDescription)

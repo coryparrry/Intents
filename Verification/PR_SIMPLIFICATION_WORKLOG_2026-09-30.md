@@ -48,3 +48,13 @@ Collect focused regression tests, review the stable scoped diff independently, r
 All 26 required groups and C2 are implemented on the isolated cleanup branch. C1 remains deferred. No change to the dirty primary source checkout, public SDK contracts, persisted versions, or UI layout is intended. Generated logs/builds are excluded from the commit.
 
 Remaining limitations: the aggregate SwiftPM test command is not green because of the host framework load failure; Mac editor/report UI automation could not start after two attempts; the two R9 live paired-client entry points were not rerun end to end. Focused passing suites and source review do not erase those limits.
+
+## CI repair — 1 October 2026
+
+- PR #63 run `36792202517`: portable regressions pass; script checks fail because `ExecutorSimplificationTests` was not added to the route catalog; the native job fails in the new report UI test because assertion rows are inside a collapsed disclosure group.
+- Inspected the failing CI screen recording and accessibility hierarchy. The individual fixture loads correctly, with the App action section collapsed; this is a test-navigation error.
+- Added the executor suite to its production dependency route and regression coverage for both executor-source and test-file selection.
+- The report UI test now expands the correct individual/coordinated lane before checking row content and order. Existing screen behavior and assertions are retained.
+- `python3 -m unittest -v script.tests.test_ci_routes script.tests.test_ci_run_tests`: **37 tests passed**, including catalog completeness and executor source/test-file routing.
+- Focused `xcodebuild build-for-testing` for `SimplificationUITests` passes; `git diff --check` passes.
+- Hosted CI rerun and inspection of both saved-report screenshots remain pending.
