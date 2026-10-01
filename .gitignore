@@ -36,4 +36,16 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 *.provisionprofile
 
 # Local working notes.
+/Verification/LocalReliability-20260930/
+/Verification/PR57-CI-20260930/
+/Verification/IntentLabUX-20261001/
+/Verification/FinalFollowup/
 /worklog.md
+
+/Verification/INTENT_LAB_USABILITY_WORKLOG.md
+
+/Verification/PR_SIMPLIFICATION_REVIEW_2026-09-30.md
+
+/Verification/PR_SIMPLIFICATION_REVIEW_COVERAGE_2026-09-30.md
+
+/Verification/REUSABLE_INTENT_LAB_IMPLEMENTATION_LOG.md

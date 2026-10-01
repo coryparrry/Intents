@@ -1583,12 +1583,64 @@ struct IntentLabProjectInstaller: Sendable {
         )
     }
 
+    private func existingSchemeDocument(_ data: Data) throws -> XMLDocument {
+        // Inspect Unicode before constructing a DOM: disabling external loads alone
+        // does not prevent expansion of internal DTD entities.
+        let prefix = Array(data.prefix(4))
+        let encoding: String.Encoding
+        switch prefix {
+        case [0x00, 0x00, 0xFE, 0xFF], [0x00, 0x00, 0x00, 0x3C]: encoding = .utf32BigEndian
+        case [0xFF, 0xFE, 0x00, 0x00], [0x3C, 0x00, 0x00, 0x00]: encoding = .utf32LittleEndian
+        case let bytes where bytes.starts(with: [0xFE, 0xFF]) || bytes.starts(with: [0x00, 0x3C]):
+            encoding = .utf16BigEndian
+        case let bytes where bytes.starts(with: [0xFF, 0xFE]) || bytes.starts(with: [0x3C, 0x00]):
+            encoding = .utf16LittleEndian
+        default: encoding = .utf8
+        }
+        guard var text = String(data: data, encoding: encoding),
+              !text.unicodeScalars.contains(where: { $0.value == 0 }) else {
+            throw IntentLabProjectInstallerError.unsupported("Use UTF-8, UTF-16, or UTF-32 shared scheme XML.")
+        }
+        if text.first == "\u{FEFF}" { text.removeFirst() }
+        var cursor = text.startIndex
+        while let opening = text.range(of: "<", range: cursor..<text.endIndex) {
+            let tail = text[opening.lowerBound...]
+            let terminator: String?
+            if tail.hasPrefix("<!--") { terminator = "-->" }
+            else if tail.hasPrefix("<![CDATA[") { terminator = "]]>" }
+            else if tail.hasPrefix("<?") { terminator = "?>" }
+            else { terminator = nil }
+            if let terminator {
+                guard let ending = text.range(of: terminator, range: opening.upperBound..<text.endIndex) else {
+                    throw IntentLabProjectInstallerError.unsupported("Invalid shared scheme XML.")
+                }
+                cursor = ending.upperBound
+            } else {
+                guard !tail.hasPrefix("<!DOCTYPE") else {
+                    throw IntentLabProjectInstallerError.unsupported("Shared scheme XML containing a document type is not supported. Remove its DTD before automatic setup.")
+                }
+                cursor = opening.upperBound
+            }
+        }
+        // Parse exactly the Unicode inspected above. Normalize the declaration's
+        // encoding so a conflicting declaration cannot reinterpret the UTF-8 bytes.
+        if text.hasPrefix("<?xml"), text.dropFirst(5).first?.isWhitespace == true,
+           let end = text.range(of: "?>") {
+            let declaration = String(text[..<end.upperBound])
+            let normalized = declaration.replacingOccurrences(
+                of: #"encoding\s*=\s*(['"])[^'"]*\1"#,
+                with: "encoding=\"UTF-8\"", options: .regularExpression)
+            text.replaceSubrange(text.startIndex..<end.upperBound, with: normalized)
+        }
+        return try XMLDocument(data: Data(text.utf8), options: [.nodeLoadExternalEntitiesNever])
+    }
+
     private func scheme(existing: Data?, project: URL, appID: String,
                         appName: String, appProductName: String,
                         targetID: String, targetName: String, schemeContainer: URL) throws -> Data {
         let xml: XMLDocument
         if let existing {
-            xml = try XMLDocument(data: existing)
+            xml = try existingSchemeDocument(existing)
         } else {
             xml = try XMLDocument(xmlString: "<Scheme LastUpgradeVersion=\"2700\" version=\"1.3\"><BuildAction parallelizeBuildables=\"YES\" buildImplicitDependencies=\"YES\"><BuildActionEntries/></BuildAction><TestAction buildConfiguration=\"Debug\"><Testables/></TestAction></Scheme>")
         }

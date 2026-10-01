@@ -1,6 +1,11 @@
 #!/usr/bin/env swift
 
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -28,6 +33,7 @@ struct Options {
     var runID = UUID()
     var timeout = 1_800.0
     var endpoint = URL(string: "http://127.0.0.1:17873/mcp")!
+    var credentialFile: URL?
 
     init(arguments: [String]) throws {
         if arguments == ["--help"] || arguments == ["-h"] {
@@ -74,7 +80,8 @@ struct Options {
             }
             endpoint = url
         }
-        let known = Set(["--project", "--suite", "--run-id", "--timeout", "--endpoint"])
+        credentialFile = values["--credential-file"].map { URL(fileURLWithPath: $0) }
+        let known = Set(["--project", "--suite", "--run-id", "--timeout", "--endpoint", "--credential-file"])
         if let unknown = values.keys.first(where: { !known.contains($0) }) {
             throw CLIError.usage("Unknown option '\(unknown)'.\n\n\(Self.help)")
         }
@@ -99,8 +106,12 @@ struct Options {
     scenario-report options:
       --run-id <uuid>       Saved Intent Lab scenario run to report.
       --endpoint <url>      Running app MCP endpoint (default: http://127.0.0.1:17873/mcp).
+      --credential-file <path>  Private UTF-8 bearer token file (all commands).
 
     The Intents macOS app must be running with its MCP connector started.
+    The default endpoint uses its login Keychain credential; macOS may ask to allow access.
+    Custom endpoints require --credential-file or FOUNDATION_EVALS_MCP_CREDENTIAL.
+    Remote credentials require HTTPS. Redirects are not followed.
     """
 }
 
@@ -108,6 +119,7 @@ struct ScenarioReportOptions {
     var runID: UUID
     var stableExecution = false
     var endpoint = URL(string: "http://127.0.0.1:17873/mcp")!
+    var credentialFile: URL?
 
     init(arguments: [String]) throws {
         guard ["scenario-report", "scenario-execution-report"].contains(arguments.first ?? "") else {
@@ -141,52 +153,93 @@ struct ScenarioReportOptions {
             }
             endpoint = url
         }
-        let known = Set([idOption, "--endpoint"])
+        credentialFile = values["--credential-file"].map { URL(fileURLWithPath: $0) }
+        let known = Set([idOption, "--endpoint", "--credential-file"])
         if let unknown = values.keys.first(where: { !known.contains($0) }) {
             throw CLIError.usage("Unknown option '\(unknown)'.\n\n\(Options.help)")
         }
     }
 }
 
+enum MCPCredential {
+    static func load(for endpoint: URL, file: URL?) throws -> String {
+        let host = endpoint.host?.lowercased() ?? ""
+        let isLoopback = ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host)
+        guard endpoint.user == nil, endpoint.password == nil, endpoint.fragment == nil,
+              endpoint.scheme?.lowercased() == "https" || isLoopback else {
+            throw CLIError.usage("Credentials require a loopback HTTP endpoint or an HTTPS endpoint without embedded credentials.")
+        }
+        let data: Data
+        if let file {
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+            guard values.isRegularFile == true, values.isSymbolicLink != true,
+                  (values.fileSize ?? Int.max) <= 4_096,
+                  let permissions = attributes[.posixPermissions] as? NSNumber,
+                  permissions.intValue & 0o077 == 0,
+                  let owner = attributes[.ownerAccountID] as? NSNumber,
+                  owner.uint32Value == getuid() else {
+                throw CLIError.usage("The credential file must be owned by you, readable only by you, and at most 4096 bytes.")
+            }
+            data = try Data(contentsOf: file)
+        } else if let supplied = ProcessInfo.processInfo.environment["FOUNDATION_EVALS_MCP_CREDENTIAL"], !supplied.isEmpty {
+            data = Data(supplied.utf8)
+        } else {
+            guard endpoint == URL(string: "http://127.0.0.1:17873/mcp")! else {
+                throw CLIError.usage("A custom endpoint requires --credential-file or FOUNDATION_EVALS_MCP_CREDENTIAL; the local connector credential is not sent to other endpoints.")
+            }
+            #if canImport(Security)
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: "com.coryparry.FoundationEvals.mcp.authorization.v1",
+                kSecAttrAccount as String: "local-connector",
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne,
+            ]
+            var result: CFTypeRef?
+            guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+                  let stored = result as? Data else {
+                throw CLIError.usage("The MCP credential is unavailable. Allow Keychain access for this CLI, connect to Codex in Intents, or provide --credential-file.")
+            }
+            data = stored
+            #else
+            throw CLIError.usage("Provide --credential-file on platforms without the macOS Keychain.")
+            #endif
+        }
+        guard data.count <= 4_096,
+              let text = String(data: data, encoding: .utf8) else {
+            throw CLIError.usage("The MCP credential must be a UTF-8 bearer token.")
+        }
+        let token = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty, token.utf8.allSatisfy({ (33...126).contains($0) }) else {
+            throw CLIError.usage("The MCP credential must be a nonempty bearer token without whitespace.")
+        }
+        return token
+    }
+}
+
+/// Authentication must never be forwarded to a redirected endpoint.
+final class MCPRedirectPolicy: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
 final class MCPClient {
     private let endpoint: URL
     private let credential: String
+    private let session = URLSession(configuration: .ephemeral, delegate: MCPRedirectPolicy(), delegateQueue: nil)
     private var nextID = 1
 
-    init(endpoint: URL) throws {
+    init(endpoint: URL, credentialFile: URL?) throws {
+        credential = try MCPCredential.load(for: endpoint, file: credentialFile)
         self.endpoint = endpoint
-        credential = try Self.localCredential(for: endpoint)
     }
 
-    private static func localCredential(for endpoint: URL) throws -> String {
-        if let supplied = ProcessInfo.processInfo.environment["FOUNDATION_EVALS_MCP_CREDENTIAL"],
-           !supplied.isEmpty {
-            return supplied
-        }
-        guard endpoint == URL(string: "http://127.0.0.1:17873/mcp")! else {
-            throw CLIError.transport("Set FOUNDATION_EVALS_MCP_CREDENTIAL for a custom endpoint.")
-        }
-        #if canImport(Security)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.coryparry.FoundationEvals.mcp.authorization.v1",
-            kSecAttrAccount as String: "local-connector",
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let credential = String(data: data, encoding: .utf8),
-              !credential.isEmpty else {
-            throw CLIError.transport("The local MCP credential is unavailable. Configure the connector in Intents and retry.")
-        }
-        return credential
-        #else
-        throw CLIError.transport("Set FOUNDATION_EVALS_MCP_CREDENTIAL to connect on this platform.")
-        #endif
-    }
+    deinit { session.invalidateAndCancel() }
 
     func initialize() throws {
         _ = try request(method: "initialize", params: [
@@ -224,7 +277,7 @@ final class MCPClient {
 
         let semaphore = DispatchSemaphore(value: 0)
         var output: Result<Data, Error>?
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        session.dataTask(with: request) { data, response, error in
             if let error {
                 output = .failure(error)
             } else if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -287,7 +340,7 @@ func resolveTargets(_ content: [String: Any], projectInput: String, suiteInput: 
 }
 
 func runCheck(_ options: Options) throws -> Int32 {
-    let client = try MCPClient(endpoint: options.endpoint)
+    let client = try MCPClient(endpoint: options.endpoint, credentialFile: options.credentialFile)
     try client.initialize()
     let catalog = try client.call(tool: "eval_list_projects", arguments: [:])
     let (projectID, suiteID) = try resolveTargets(catalog, projectInput: options.project, suiteInput: options.suite)
@@ -328,7 +381,7 @@ func runCheck(_ options: Options) throws -> Int32 {
 }
 
 func runScenarioReport(_ options: ScenarioReportOptions) throws -> Int32 {
-    let client = try MCPClient(endpoint: options.endpoint)
+    let client = try MCPClient(endpoint: options.endpoint, credentialFile: options.credentialFile)
     try client.initialize()
     if options.stableExecution {
         let report = try client.call(tool: "eval_get_scenario_execution_report", arguments: ["executionID": options.runID.uuidString])

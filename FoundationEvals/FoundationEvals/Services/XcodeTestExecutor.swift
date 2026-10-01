@@ -30,6 +30,51 @@ final class XcodeBuildWorkspaceLease {
     }
 }
 
+/// Xcode produces native macOS bundles and flat iOS bundles. Read Info.plist
+/// from disk each time because Foundation can cache a Bundle's info dictionary.
+private struct XcodeProductBundle {
+    let url: URL
+
+    private var contentsURL: URL {
+        let contents = url.appending(path: "Contents", directoryHint: .isDirectory)
+        return FileManager.default.fileExists(atPath: contents.appending(path: "Info.plist").path)
+            ? contents : url
+    }
+
+    var infoURL: URL { contentsURL.appending(path: "Info.plist") }
+
+    var info: [String: Any]? {
+        guard let data = try? Data(contentsOf: infoURL) else { return nil }
+        return (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any]
+    }
+
+    var executableName: String {
+        info?["CFBundleExecutable"] as? String ?? url.deletingPathExtension().lastPathComponent
+    }
+
+    var executableURL: URL {
+        let directory = contentsURL == url ? url : contentsURL.appending(path: "MacOS", directoryHint: .isDirectory)
+        let expected = directory.appending(path: executableName)
+        if let executable = Bundle(url: url)?.executableURL,
+           executable.standardizedFileURL == expected.standardizedFileURL { return executable }
+        return expected
+    }
+
+    var declarationURL: URL {
+        let expected = contentsURL == url ? url : contentsURL.appending(path: "Resources", directoryHint: .isDirectory)
+        if let resources = Bundle(url: url)?.resourceURL,
+           resources.standardizedFileURL == expected.standardizedFileURL {
+            return resources.appending(path: "IntentLabIntegration.json")
+        }
+        return expected.appending(path: "IntentLabIntegration.json")
+    }
+
+    var metadataURLs: [URL] {
+        ["Info.plist", "_CodeSignature/CodeResources", "embedded.mobileprovision", "embedded.provisionprofile"]
+            .map { contentsURL.appending(path: $0) }
+    }
+}
+
 private final class SchemeTestableReferenceParser: NSObject, XMLParserDelegate {
     private var inTestAction = false
     private var inTestableReference = false
@@ -1430,7 +1475,7 @@ actor XcodeTestExecutor {
               inputs == connection.buildInputsDigest,
               let runtimeProfile = connection.runtimeProfile,
               runtimeProfile == currentRuntimeProfile(),
-              let declaration = try? Data(contentsOf: connection.testBundleURL.appending(path: "IntentLabIntegration.json")),
+              let declaration = try? Data(contentsOf: XcodeProductBundle(url: connection.testBundleURL).declarationURL),
               SHA256.hash(data: declaration).map({ String(format: "%02x", $0) }).joined()
                 == definition.integration?.digest else { return nil }
         return connection
@@ -1574,7 +1619,7 @@ actor XcodeTestExecutor {
     }
 
     private static func declarationRequiresAppIntentsTesting(in testBundleURL: URL) -> Bool {
-        let url = testBundleURL.appending(path: "IntentLabIntegration.json")
+        let url = XcodeProductBundle(url: testBundleURL).declarationURL
         guard let data = try? Data(contentsOf: url),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let capabilities = object["capabilities"] as? [String] else { return false }
@@ -1583,7 +1628,7 @@ actor XcodeTestExecutor {
     }
 
     private static func readinessOperationID(in testBundleURL: URL) -> String? {
-        let url = testBundleURL.appending(path: "IntentLabIntegration.json")
+        let url = XcodeProductBundle(url: testBundleURL).declarationURL
         guard let data = try? Data(contentsOf: url),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let control = object["readinessControl"] as? [String: Any],
@@ -1599,7 +1644,7 @@ actor XcodeTestExecutor {
         testBundleURL: URL,
         destinationPlatform: IntentLabDestinationPlatform?
     ) -> [String: String]? {
-        let infoURL = testBundleURL.appending(path: "Info.plist")
+        let infoURL = XcodeProductBundle(url: testBundleURL).infoURL
         guard let data = try? Data(contentsOf: infoURL),
               let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let sdkName = info["DTSDKName"] as? String,
@@ -1650,7 +1695,7 @@ actor XcodeTestExecutor {
                     : nil
               ),
               !destinationOSVersion.isEmpty,
-              let infoData = try? Data(contentsOf: appBundleURL.appending(path: "Info.plist")),
+              let infoData = try? Data(contentsOf: XcodeProductBundle(url: appBundleURL).infoURL),
               let info = try? PropertyListSerialization.propertyList(
                   from: infoData, format: nil
               ) as? [String: Any],
@@ -1911,6 +1956,12 @@ actor XcodeTestExecutor {
             hasher.update(data: Data(url.standardizedFileURL.path.utf8))
         }
         hasher.update(data: Data(productMetadataDigest(products: products).utf8))
+        hasher.update(data: Data("integration-declaration".utf8))
+        if let data = try? Data(contentsOf: XcodeProductBundle(url: products.testBundleURL).declarationURL) {
+            hasher.update(data: data)
+        } else {
+            hasher.update(data: Data("<missing-integration-declaration>".utf8))
+        }
         if let data = try? Data(contentsOf: products.sourceURL, options: [.mappedIfSafe]) {
             hasher.update(data: data)
         } else {
@@ -2346,9 +2397,10 @@ actor XcodeTestExecutor {
     static func productMetadataDigest(products: XCTestRunProductPaths) -> String {
         var hasher = SHA256()
         for bundle in [products.appBundleURL, products.testHostURL, products.testBundleURL] {
-            for name in ["Info.plist", "_CodeSignature/CodeResources", "embedded.mobileprovision"] {
-                hasher.update(data: Data(name.utf8))
-                if let data = try? Data(contentsOf: bundle.appending(path: name), options: [.mappedIfSafe]) {
+            for file in XcodeProductBundle(url: bundle).metadataURLs {
+                // Product metadata stays comparable across build directories.
+                hasher.update(data: Data(file.path.dropFirst(bundle.path.count).utf8))
+                if let data = try? Data(contentsOf: file, options: [.mappedIfSafe]) {
                     hasher.update(data: data)
                 } else {
                     hasher.update(data: Data("<missing>".utf8))
@@ -3088,7 +3140,7 @@ actor XcodeTestExecutor {
         }
     }
 
-    private func verifyBuiltProducts(
+    func verifyBuiltProducts(
         definition: ScenarioDefinition,
         configuration: XcodeTestConfiguration,
         paths: XCTestRunProductPaths
@@ -3113,15 +3165,13 @@ actor XcodeTestExecutor {
     }
 
     static func productIdentity(bundle: URL, fallbackBundleIdentifier: String) throws -> ScenarioProductIdentity {
-        let info = NSDictionary(contentsOf: bundle.appending(path: "Info.plist")) as? [String: Any]
-        let executableName = info?["CFBundleExecutable"] as? String ?? bundle.deletingPathExtension().lastPathComponent
-        let executable = bundle.appending(path: executableName)
-        guard let data = try? Data(contentsOf: executable, options: [.mappedIfSafe]) else {
+        let product = XcodeProductBundle(url: bundle)
+        guard let data = try? Data(contentsOf: product.executableURL, options: [.mappedIfSafe]) else {
             throw XcodeTestExecutorError.productMissing("could not fingerprint \(bundle.lastPathComponent)")
         }
         return .init(
-            bundleIdentifier: info?["CFBundleIdentifier"] as? String ?? fallbackBundleIdentifier,
-            executableName: executableName,
+            bundleIdentifier: product.info?["CFBundleIdentifier"] as? String ?? fallbackBundleIdentifier,
+            executableName: product.executableName,
             sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         )
     }
@@ -3147,7 +3197,7 @@ actor XcodeTestExecutor {
     }
 
     private func bundleIdentifier(at bundle: URL) -> String? {
-        (NSDictionary(contentsOf: bundle.appending(path: "Info.plist")) as? [String: Any])?["CFBundleIdentifier"] as? String
+        XcodeProductBundle(url: bundle).info?["CFBundleIdentifier"] as? String
     }
 
     private func exportAttachments(
