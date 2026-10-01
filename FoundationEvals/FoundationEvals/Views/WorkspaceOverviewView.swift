@@ -41,41 +41,35 @@ struct WorkspaceOverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 26) {
                 header
                 if let notice = store.migrationNotice {
                     Label(notice, systemImage: "tray.and.arrow.down")
                         .font(.callout).foregroundStyle(.secondary)
-                        .padding(.horizontal, 14).padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .workspaceInset()
                 }
-                WorkspaceHealthPanel(summaries: summaries, total: records.count, isLoaded: isLoaded, compact: availableWidth < 700)
-                let wide = availableWidth >= 820
-                let layout = wide
-                    ? AnyLayout(HStackLayout(alignment: .top, spacing: 20))
-                    : AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
+                metrics
+                DeveloperConnectionBanner()
+                let layout = availableWidth >= 820
+                    ? AnyLayout(HStackLayout(alignment: .top, spacing: 22))
+                    : AnyLayout(VStackLayout(alignment: .leading, spacing: 22))
                 layout {
                     suitePanel.frame(maxWidth: .infinity)
-                    VStack(spacing: 20) {
+                    VStack(spacing: 22) {
+                        WorkspaceCoverageCard(summaries: summaries, total: records.count)
                         WorkspaceActivityCard(summaries: summaries, disabled: isBusy, open: openLatest)
-                        DeveloperConnectionBanner()
                     }
-                    .frame(width: wide ? 300 : nil)
-                    .frame(maxWidth: wide ? 300 : .infinity)
+                    .frame(maxWidth: availableWidth >= 820 ? 280 : .infinity)
                 }
             }
-            .workspacePage()
+            .padding(28)
+            .frame(maxWidth: 1_400, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(WorkspaceStyle.canvas)
-        .onGeometryChange(for: CGFloat.self) { min($0.size.width, WorkspaceStyle.readableWidth) - 2 * WorkspaceStyle.pagePadding } action: { availableWidth = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width - 56 } action: { availableWidth = $0 }
         .navigationTitle("Overview")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Refresh", systemImage: "arrow.clockwise") { refresh += 1 }
-                    .help("Reload saved results for every suite")
-                    .accessibilityLabel("Refresh project")
-            }
+            Button("Refresh project", systemImage: "arrow.clockwise") { refresh += 1 }
         }
         .task(id: "\(store.selectedProject.id)-\(store.selectedProject.updatedAt)-\(refresh)") {
             let values = await loader.load(project: store.selectedProject, directory: store.overviewStorageDirectory)
@@ -91,36 +85,64 @@ struct WorkspaceOverviewView: View {
         .sheet(isPresented: $isCreatingSuite) { NewSuiteView(store: store) }
     }
 
-    private var eyebrow: String {
-        guard let repository = store.selectedProject.repository else { return "Project" }
-        return "Project · " + URL(filePath: repository.rootPath).lastPathComponent
+    private var header: some View {
+        HStack(alignment: .center, spacing: 20) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.stack.3d.up")
+                    Text("WORKSPACE").tracking(1.8)
+                    if let repository = store.selectedProject.repository {
+                        Text("/").padding(.horizontal, 4)
+                        Text(URL(filePath: repository.rootPath).lastPathComponent)
+                            .tracking(0).lineLimit(1).help(repository.rootPath)
+                    }
+                }
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                Text(store.selectedProject.name)
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .tracking(-0.8).lineLimit(2)
+                Text("Your Foundation Models evaluations, at a glance.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button { isCreatingSuite = true } label: {
+                Label("New suite", systemImage: "plus")
+                    .font(.callout.weight(.semibold)).padding(.vertical, 4)
+            }
+            .buttonStyle(.borderedProminent).controlSize(.large).disabled(isBusy)
+        }
+        .padding(.bottom, 2)
     }
 
-    private var header: some View {
-        WorkspacePageHeader(
-            store.selectedProject.name,
-            eyebrow: eyebrow,
-            subtitle: "Your Foundation Models evaluations, at a glance."
-        ) {
-            Button { isCreatingSuite = true } label: {
-                Label("New Suite", systemImage: "plus").labelStyle(.titleAndIcon)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(isBusy)
+    private var metrics: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: availableWidth < 680 ? 2 : 4), spacing: 14) {
+            WorkspaceMetric(title: "Active suites", value: records.count.formatted(),
+                            detail: "In this project", symbol: "square.stack", color: .accentColor)
+            WorkspaceMetric(title: "Test cases", value: summaries.contains { $0.loadError != nil } ? "—" : metricValue(summaries.reduce(0) { $0 + $1.caseCount }),
+                            detail: summaries.contains { $0.loadError != nil } ? "Some suites unavailable" : "Across your suites",
+                            symbol: "checklist", color: .secondary)
+            WorkspaceMetric(title: "Passing suites", value: metricValue(summaries.filter { $0.state == .passed }.count),
+                            detail: "Current checks only", symbol: "checkmark.circle", color: WorkspaceStyle.success)
+            WorkspaceMetric(title: "Needs attention", value: metricValue(summaries.filter { $0.state.needsAttention }.count),
+                            detail: "Changed or incomplete", symbol: "flag", color: WorkspaceStyle.warning)
         }
+    }
+
+    private func metricValue(_ count: Int) -> String {
+        guard isLoaded else { return "—" }
+        return count.formatted()
     }
 
     private var suitePanel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            WorkspacePanelHeader("Suites", count: records.count) {
-                WorkspaceSearchField(prompt: "Find a suite", text: $search)
-                    .frame(maxWidth: 200)
+            HStack {
+                Text("Evaluation suites").font(.headline)
+                Text(records.count.formatted()).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Spacer()
                 Button {
                     withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { attentionOnly.toggle() }
                 } label: {
                     Image(systemName: attentionOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                        .font(.title3)
                         .foregroundStyle(attentionOnly ? Color.accentColor : .secondary)
                 }
                 .buttonStyle(.plain)
@@ -128,10 +150,23 @@ struct WorkspaceOverviewView: View {
                 .accessibilityValue(attentionOnly ? "On" : "Off")
                 .help(attentionOnly ? "Show all suites" : "Show suites needing attention")
             }
+            .padding(20)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+                TextField("Find a suite…", text: $search).textFieldStyle(.plain)
+                    .accessibilityLabel("Find a suite")
+                if !search.isEmpty {
+                    Button("Clear search", systemImage: "xmark.circle.fill") { search = "" }
+                        .labelStyle(.iconOnly).buttonStyle(.plain).foregroundStyle(.secondary)
+                }
+            }
+            .padding(10)
+            .background(WorkspaceStyle.canvas, in: .rect(cornerRadius: 8))
+            .padding(.horizontal, 20).padding(.bottom, 16)
             if attentionOnly {
-                Label("Showing suites that need attention", systemImage: "flag.fill")
-                    .font(.caption.weight(.medium)).foregroundStyle(WorkspaceStyle.warning)
-                    .padding(.horizontal, 18).padding(.bottom, 10)
+                Text("Showing suites that need attention")
+                    .font(.caption).foregroundStyle(WorkspaceStyle.warning)
+                    .padding(.horizontal, 20).padding(.bottom, 12)
             }
             Divider()
             if visibleRecords.isEmpty {
@@ -144,15 +179,17 @@ struct WorkspaceOverviewView: View {
                         WorkspaceSuiteRow(summary: summary(for: record), name: record.name,
                                           isRunning: store.isRunning && record.id == store.selectedSuiteID,
                                           disabled: isBusy, open: { open(record.id) }, run: { open(record.id, run: true) })
-                        if record.id != visibleRecords.last?.id { Divider().padding(.leading, 64) }
+                        if record.id != visibleRecords.last?.id { Divider().padding(.leading, 68) }
                     }
                 }
             }
-            Divider()
-            WorkspaceMetaLabel("Suites and evidence are saved on this Mac.", symbol: "internaldrive")
-                .font(.caption).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 18).padding(.vertical, 12)
+            HStack(spacing: 6) {
+                Image(systemName: "internaldrive")
+                Text("Suites and evidence are saved on this Mac.")
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16).background(WorkspaceStyle.canvas.opacity(0.5))
         }
         .workspaceSurface()
     }
@@ -178,7 +215,7 @@ extension SuiteCheckState {
     var color: Color {
         switch self {
         case .passed: WorkspaceStyle.success
-        case .failed: WorkspaceStyle.failure
+        case .failed: .red
         case .changed, .incomplete, .unavailable: WorkspaceStyle.warning
         case .notRun, .collected: .secondary
         }

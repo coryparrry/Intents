@@ -1,12 +1,12 @@
 # Developer Swift integration and device runners
 
 `FoundationEvalsDeveloper` lets an app expose its real feature entry points to
-Intents. The model session, `@Generable` values, tools, app data, and
+Foundation Evals. The model session, `@Generable` values, tools, app data, and
 feature implementation remain in the developer app. The desktop sends a typed
 test input and receives explicit response evidence over an encrypted, paired
 connection.
 
-The package supports iOS 26, iPadOS 26, and macOS 26 or later. Intents
+The package supports iOS 26, iPadOS 26, and macOS 26 or later. Foundation Evals
 itself currently targets macOS 27.
 
 ## Add the package
@@ -19,7 +19,7 @@ For an iPhone or iPad target, add these values to its Info.plist:
 
 ```xml
 <key>NSLocalNetworkUsageDescription</key>
-<string>Connect to Intents on your development Mac.</string>
+<string>Connect to Foundation Evals on your development Mac.</string>
 <key>NSBonjourServices</key>
 <array>
     <string>_fnd-evals._tcp</string>
@@ -83,7 +83,7 @@ await registry.register(
 For a feature that already returns a displayable result or needs a custom
 encoding, use `registerTextFeature`. Its closure returns
 `DeveloperFeatureOutput` directly. Capturing a configured service or tools in
-either `@Sendable` closure is supported; Intents does not reconstruct
+either `@Sendable` closure is supported; Foundation Evals does not reconstruct
 those values on the desktop.
 
 Feature IDs and versions are compatibility contracts. Change the version when
@@ -117,7 +117,7 @@ Pairing is never automatic:
 
 1. On the runner, choose **Start pairing**. The service displays a 128-bit,
    grouped pairing code, endpoint name, and five-minute expiry.
-2. In Intents, connect to that discovered runner and enter the code
+2. In Foundation Evals, connect to that discovered runner and enter the code
    shown on the runner.
 3. The Multipeer Connectivity session requires transport encryption. The code
    itself is never sent: the desktop sends a transcript-bound HMAC proof, and
@@ -254,7 +254,7 @@ test target and must not be linked into the iPhone/iPad/Mac runner product.
 
 The supported interoperability boundary is the production feature closure:
 call the same app service from an Apple `Evaluation.subject(from:)` method and
-from the Intents registry closure. This preserves the real
+from the Foundation Evals registry closure. This preserves the real
 `@Generable` type and tools in both paths without translating or inventing
 Evaluations APIs.
 
@@ -291,7 +291,7 @@ struct SummaryEvaluation: Evaluation {
 func summaryQuality() {}
 ```
 
-Intents does not currently import Apple's `EvaluationResult` files.
+Foundation Evals does not currently import Apple's `EvaluationResult` files.
 Both systems can run the same subject code, while each retains its own scoring
 and report schema. If a later Apple SDK adds a stable interchange API, add it as
 a separate development-only adapter instead of making the device runtime depend

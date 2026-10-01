@@ -12,24 +12,24 @@ struct CodexMCPInstallerTests {
         shell_tool = true
         """ + "\n"
         let first = try CodexMCPInstaller.installing(
-            configuration: CodexMCPConfiguration(port: 19_001, credential: testMCPCredential),
+            configuration: CodexMCPConfiguration(port: 19_001),
             into: original
         )
 
         #expect(first.hasPrefix(original))
         #expect(first.components(separatedBy: CodexMCPInstaller.beginMarker).count == 2)
         #expect(first.contains("http://127.0.0.1:19001/mcp"))
-        #expect(first.contains("http_headers = { Authorization = \"Bearer \(testMCPCredential)\" }"))
+        #expect(!first.contains("http_headers"))
         #expect(!first.contains("approval_mode"))
 
         let identical = try CodexMCPInstaller.installing(
-            configuration: CodexMCPConfiguration(port: 19_001, credential: testMCPCredential),
+            configuration: CodexMCPConfiguration(port: 19_001),
             into: first
         )
         #expect(identical == first)
 
         let updated = try CodexMCPInstaller.installing(
-            configuration: CodexMCPConfiguration(credential: testMCPCredential),
+            configuration: CodexMCPConfiguration(),
             into: first
         )
         #expect(updated.hasPrefix(original))
@@ -41,7 +41,7 @@ struct CodexMCPInstallerTests {
     }
 
     @Test func unmanagedEquivalentEntriesAreRefusedAcrossSupportedTOMLLayouts() throws {
-        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let configuration = try CodexMCPConfiguration()
         let conflicts = [
             "[mcp_servers.foundation-evals]\nurl = \"http://example\"\n",
             "[mcp_servers]\nfoundation-evals = { url = \"http://example\" }\n",
@@ -72,7 +72,7 @@ struct CodexMCPInstallerTests {
         """# + "\n"
 
         let installed = try CodexMCPInstaller.installing(
-            configuration: CodexMCPConfiguration(credential: testMCPCredential),
+            configuration: CodexMCPConfiguration(),
             into: original
         )
 
@@ -91,7 +91,7 @@ struct CodexMCPInstallerTests {
         """ + "\n"
 
         let installed = try CodexMCPInstaller.installing(
-            configuration: CodexMCPConfiguration(credential: testMCPCredential),
+            configuration: CodexMCPConfiguration(),
             into: original
         )
 
@@ -99,7 +99,7 @@ struct CodexMCPInstallerTests {
     }
 
     @Test func malformedConfigurationsAreLeftUntouched() throws {
-        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let configuration = try CodexMCPConfiguration()
 
         #expect(throws: CodexMCPInstallerError.malformedManagedBlock) {
             try CodexMCPInstaller.installing(
@@ -128,7 +128,7 @@ struct CodexMCPInstallerTests {
     }
 
     @Test func escapedQuotedKeyIsRefusedAsUnsupported() throws {
-        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let configuration = try CodexMCPConfiguration()
         let escapedConflict = "[\"mcp_servers\".\"foundation\\u002Devals\"]\nurl = \"http://example\"\n"
 
         #expect(throws: CodexMCPInstallerError.unsupportedConfiguration) {
@@ -145,7 +145,7 @@ struct CodexMCPInstallerTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: configURL.path)
 
         let installer = CodexMCPInstaller()
-        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let configuration = try CodexMCPConfiguration()
         let installed = try installer.installOrUpdate(in: directory, configuration: configuration)
 
         #expect(installed.change == .installed)
@@ -154,8 +154,7 @@ struct CodexMCPInstallerTests {
         #expect(try Data(contentsOf: installed.backupURL!) == original)
         let backupMode = try fileMode(at: installed.backupURL!)
         #expect(backupMode == 0o600)
-        #expect(try fileMode(at: configURL) == 0o600)
-        #expect(try installer.isInstalled(in: directory, matching: configuration))
+        #expect(try fileMode(at: configURL) == 0o640)
 
         let unchanged = try installer.installOrUpdate(in: directory, configuration: configuration)
         #expect(unchanged.change == .unchanged)
@@ -173,56 +172,13 @@ struct CodexMCPInstallerTests {
 
         let receipt = try CodexMCPInstaller().installOrUpdate(
             in: directory,
-            configuration: CodexMCPConfiguration(credential: testMCPCredential)
+            configuration: CodexMCPConfiguration()
         )
 
         #expect(receipt.change == .installed)
         #expect(receipt.backupURL == nil)
         #expect(try fileMode(at: directory) == 0o700)
         #expect(try fileMode(at: receipt.configURL) == 0o600)
-    }
-
-    @Test func oldOrLooseManagedConfigurationRequiresRepair() throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let configURL = directory.appending(path: "config.toml")
-        let legacy = """
-        \(CodexMCPInstaller.beginMarker)
-        [mcp_servers.foundation-evals]
-        url = "http://127.0.0.1:17873/mcp"
-        \(CodexMCPInstaller.endMarker)
-        """ + "\n"
-        try Data(legacy.utf8).write(to: configURL)
-        let installer = CodexMCPInstaller()
-        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
-        #expect(try installer.isInstalled(in: directory))
-        #expect(!(try installer.isInstalled(in: directory, matching: configuration)))
-
-        _ = try installer.installOrUpdate(in: directory, configuration: configuration)
-        #expect(try installer.isInstalled(in: directory, matching: configuration))
-        try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: configURL.path)
-        #expect(!(try installer.isInstalled(in: directory, matching: configuration)))
-        _ = try installer.installOrUpdate(in: directory, configuration: configuration)
-        #expect(try fileMode(at: configURL) == 0o600)
-    }
-
-    @Test func credentialStoreGeneratesAStablePerInstallSecret() throws {
-        final class MemoryStorage {
-            var value: String?
-        }
-        let storage = MemoryStorage()
-        let store = MCPCredentialStore(
-            load: { storage.value },
-            save: { storage.value = $0 },
-            remove: { storage.value = nil }
-        )
-        let first = try store.loadOrCreate()
-        #expect(first.count == 43)
-        #expect(try CodexMCPConfiguration(credential: first).credential == first)
-        #expect(try store.loadOrCreate() == first)
-        try store.remove()
-        let second = try store.loadOrCreate()
-        #expect(second != first)
     }
 
     @Test func symbolicConfigurationDirectoryIsRefused() throws {
@@ -238,7 +194,7 @@ struct CodexMCPInstallerTests {
         #expect(throws: CodexMCPInstallerError.unsafeFile) {
             try CodexMCPInstaller().installOrUpdate(
                 in: directory,
-                configuration: CodexMCPConfiguration(credential: testMCPCredential)
+                configuration: CodexMCPConfiguration()
             )
         }
         #expect(!FileManager.default.fileExists(atPath: outsideDirectory.appending(path: "config.toml").path))
@@ -262,7 +218,7 @@ struct CodexMCPInstallerTests {
         #expect(throws: CodexMCPInstallerError.unsafeFile) {
             try CodexMCPInstaller().installOrUpdate(
                 in: directory,
-                configuration: CodexMCPConfiguration(credential: testMCPCredential)
+                configuration: CodexMCPConfiguration()
             )
         }
         #expect(try Data(contentsOf: outside) == outsideData)
@@ -282,7 +238,7 @@ struct CodexMCPInstallerTests {
         #expect(throws: CodexMCPInstallerError.concurrentModification) {
             try installer.installOrUpdate(
                 in: directory,
-                configuration: CodexMCPConfiguration(credential: testMCPCredential)
+                configuration: CodexMCPConfiguration()
             )
         }
         #expect(try Data(contentsOf: configURL) == concurrent)
@@ -300,5 +256,3 @@ struct CodexMCPInstallerTests {
         return (attributes[.posixPermissions] as? NSNumber)?.intValue ?? -1
     }
 }
-
-private let testMCPCredential = String(repeating: "A", count: 43)

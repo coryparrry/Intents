@@ -4,19 +4,18 @@ set -euo pipefail
 MODE="${1:-run}"
 CONFIGURATION="Debug"
 APP_NAME="FoundationEvals"
-PRODUCT_NAME="Intents"
 BUNDLE_ID="com.coryparry.FoundationEvals"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT="$ROOT_DIR/FoundationEvals/FoundationEvals.xcodeproj"
 BUILD_ROOT="$(mktemp -d /tmp/FoundationEvals-build.XXXXXX)"
 trap 'rm -rf -- "$BUILD_ROOT"' EXIT
 DERIVED_DATA="$BUILD_ROOT/DerivedData"
-BUILT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/$PRODUCT_NAME.app"
-APP_BUNDLE="$ROOT_DIR/dist/$PRODUCT_NAME.app"
+BUILT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
+APP_BUNDLE="$ROOT_DIR/dist/Foundation Evals.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 if pgrep -x "$APP_NAME" >/dev/null; then
-  echo "Intents is already running. Finish or cancel its run, then quit it before rebuilding." >&2
+  echo "Foundation Evals is already running. Finish or cancel its run, then quit it before rebuilding." >&2
   exit 3
 fi
 

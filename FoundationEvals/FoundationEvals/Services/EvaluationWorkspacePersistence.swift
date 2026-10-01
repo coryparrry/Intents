@@ -363,7 +363,7 @@ enum EvaluationWorkspaceError: LocalizedError, Sendable {
         case .missingProject: "The selected project no longer exists."
         case .missingSuite: "The selected suite no longer exists."
         case .invalidRepositoryPath: "The repository suite path must be a safe relative path."
-        case .repositoryConflict: "The repository suite changed outside Intents. Review or reload it before saving."
+        case .repositoryConflict: "The repository suite changed outside Foundation Evals. Review or reload it before saving."
         }
     }
 }

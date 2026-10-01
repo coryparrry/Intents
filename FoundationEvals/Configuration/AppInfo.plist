@@ -9,7 +9,7 @@
 	<key>SUAutomaticallyUpdate</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://github.com/coryparrry/Intents/releases/latest/download/appcast.xml</string>
+	<string>https://github.com/coryparrry/Foundation-Eval-Labs/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>fpED/OlsZgCvLG9IgiEI0+/JmGjbwEkxmnwwkwymPgY=</string>
 	<key>PostHogProjectToken</key>

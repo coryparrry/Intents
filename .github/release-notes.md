@@ -1,4 +1,4 @@
-Download the DMG below, open it, and drag **Intents** onto **Applications**.
+Download the DMG below, open it, and drag **Foundation Evals** onto **Applications**.
 
 Requires **Apple Silicon**, **macOS 27 or later**, and **Apple Intelligence** enabled with its on-device model downloaded.
 

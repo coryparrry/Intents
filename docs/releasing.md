@@ -53,7 +53,7 @@ The reusable **Build DMG and publish release** workflow also has a manual recove
 
 Published releases are rejected and existing tags are never moved. Uploads do not overwrite existing assets. A partial upload can leave assets on the draft; inspect and remove only those failed-attempt assets deliberately before retrying. **Release verification** remains available to recheck an existing published installer without changing it.
 
-Hosted CI uses GitHub's `xcode-27` macOS 27 runner. It runs the core test scheme and, for UI-impacting changes, builds the app and UI-test bundle; it does not execute UI tests or prove native model generation. Automatic publication does not claim those checks ran.
+Hosted CI runs macOS 26 with Xcode 27, so it can compile this macOS 27 app but cannot launch it. Native launch and real model generation remain separate validation; automatic publication does not claim they ran.
 
 ## One-time signing setup
 
@@ -85,7 +85,7 @@ and enables scheduled checks, automatic background downloads, and installation
 by default. Sparkle handles installation through its standard update flow;
 existing saved update preferences remain respected. End-to-end automatic installation and
 relaunch will be tested after release. The feed is
-`https://github.com/coryparrry/Intents/releases/latest/download/appcast.xml`.
+`https://github.com/coryparrry/Foundation-Eval-Labs/releases/latest/download/appcast.xml`.
 Each stable release must include its generated `appcast.xml` and be marked as the
 latest release. Drafts and prereleases do not advance this feed. Publish the feed
 and installer together; the feed points to that release's immutable download URL.

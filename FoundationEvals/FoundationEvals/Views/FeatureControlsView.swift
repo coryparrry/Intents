@@ -311,7 +311,7 @@ private struct CustomToolEditor: View {
             )
         }
         .padding(14)
-        .workspaceInset(radius: 11)
+        .background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 11))
         .confirmationDialog(
             "Delete \(tool.name.isEmpty ? "this tool" : tool.name)?",
             isPresented: $isConfirmingRemoval,
@@ -596,7 +596,7 @@ private struct EmptyFeatureMessage: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceInset(radius: 9)
+        .background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 9))
         .accessibilityElement(children: .combine)
     }
 }

@@ -1,4 +1,4 @@
-# Intents demo
+# Foundation Evals demo
 
 One uninterrupted recording accelerated to 16 seconds, followed by a four-second animation of the existing app logo. Bright user-supplied background. Fixed window size and position. No audio, captions, artificial camera movement, or cuts between app pages. 1920 × 1080 at 60 fps.
 

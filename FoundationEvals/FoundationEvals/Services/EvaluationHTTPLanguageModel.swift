@@ -69,7 +69,7 @@ struct EvaluationCustomProviderConfiguration: Codable, Equatable, Hashable, Send
             return "Custom provider endpoint must use literal http://127.0.0.1:<port>/... without credentials, a query, or a fragment."
         }
         guard port != Self.reservedMCPPort else {
-            return "Port \(Self.reservedMCPPort) is reserved for the Intents MCP server."
+            return "Port \(Self.reservedMCPPort) is reserved for the Foundation Evals MCP server."
         }
         if let tokenizerEndpoint, !tokenizerEndpoint.isEmpty {
             guard tokenizerEndpoint.utf8.count <= 2_048 else {
@@ -87,7 +87,7 @@ struct EvaluationCustomProviderConfiguration: Codable, Equatable, Hashable, Send
                 return "Custom provider tokenizer endpoint must use literal http://127.0.0.1:<port>/... without credentials, a query, or a fragment."
             }
             if tokenizerPort == Self.reservedMCPPort {
-                return "Port \(Self.reservedMCPPort) is reserved for the Intents MCP server."
+                return "Port \(Self.reservedMCPPort) is reserved for the Foundation Evals MCP server."
             }
         }
         return nil

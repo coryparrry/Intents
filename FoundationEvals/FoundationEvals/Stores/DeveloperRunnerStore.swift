@@ -26,7 +26,6 @@ final class DeveloperRunnerStore {
 
     @ObservationIgnored private let evaluationStore: EvaluationStore
     @ObservationIgnored private var runTasks: [UUID: Task<Void, Never>] = [:]
-    @ObservationIgnored private var snapshotTasks: [UUID: Task<EvaluationRun, Error>] = [:]
 
     init(
         evaluationStore: EvaluationStore,
@@ -71,10 +70,7 @@ final class DeveloperRunnerStore {
         for task in runTasks.values {
             task.cancel()
         }
-        for task in snapshotTasks.values {
-            task.cancel()
-        }
-        if runTasks.isEmpty && snapshotTasks.isEmpty {
+        if runTasks.isEmpty {
             executingRunID = nil
         }
         client.shutdown()
@@ -108,8 +104,7 @@ final class DeveloperRunnerStore {
         featureID: String,
         timeout: Duration = .seconds(120)
     ) throws -> UUID {
-        guard ScenarioExecutionAdmission.shared.allows(nil),
-              executingRunID == nil, !evaluationStore.hasActiveExecution else {
+        guard executingRunID == nil, !evaluationStore.isRunning else {
             throw EvaluationStoreError.resourceConflict("Another evaluation is already running.")
         }
         guard let runner = runners.first(where: { $0.id == runnerID && $0.state == .connected }) else {
@@ -150,9 +145,29 @@ final class DeveloperRunnerStore {
                 ) { [weak self] completed, total in
                     await self?.updateProgress(runID: runID, completed: completed, total: total)
                 }
-                self.projectCompletion(.success(run), for: runID)
+                self.activeRuns[runID]?.completedSamples = run.results.count
+                self.activeRuns[runID]?.detail = run.terminationReason
+                switch run.terminationReason {
+                case "cancelled", "developerRunner:cancelled":
+                    self.activeRuns[runID]?.phase = .cancelled
+                case "developerRunner:deadlineExceeded":
+                    self.activeRuns[runID]?.phase = .timedOut
+                case "developerRunner:disconnected":
+                    self.activeRuns[runID]?.phase = .disconnected
+                case .some:
+                    self.activeRuns[runID]?.phase = .failed
+                case nil:
+                    self.activeRuns[runID]?.phase = .completed
+                }
+            } catch is CancellationError {
+                self.activeRuns[runID]?.phase = .cancelled
+                self.activeRuns[runID]?.detail = "Run cancelled."
+            } catch let failure as DeveloperExecutionFailure {
+                self.activeRuns[runID]?.phase = Self.phase(for: failure.code)
+                self.activeRuns[runID]?.detail = failure.message
             } catch {
-                self.projectCompletion(.failure(error), for: runID)
+                self.activeRuns[runID]?.phase = .failed
+                self.activeRuns[runID]?.detail = error.localizedDescription
             }
         }
         return runID
@@ -160,73 +175,8 @@ final class DeveloperRunnerStore {
 
     func cancelRun(_ runID: UUID) {
         runTasks[runID]?.cancel()
-        snapshotTasks[runID]?.cancel()
         activeRuns[runID]?.phase = .cancelled
         activeRuns[runID]?.detail = "Cancellation requested."
-    }
-
-    /// Runs a frozen suite against an explicitly selected runner and feature.
-    /// The supplied adapter may use the negotiated, expectation-free subject
-    /// input. This method does not read or update the UI's selected suite.
-    func runFeatureSnapshot(
-        id: UUID,
-        projectID: UUID,
-        suite: EvaluationSuite,
-        expectedRevision: String,
-        runnerID: UUID,
-        featureID: String,
-        executionOwnerID: UUID? = nil,
-        adapter: any EvaluationFeatureAdapter
-    ) async throws -> EvaluationRun {
-        guard ScenarioExecutionAdmission.shared.allows(executionOwnerID),
-              executingRunID == nil else {
-            throw EvaluationStoreError.resourceConflict("Another developer runner execution is active.")
-        }
-        guard let runner = runners.first(where: { $0.id == runnerID && $0.state == .connected }) else {
-            throw DeveloperExecutionFailure(code: .disconnected, message: "Connect the runner before starting a run.")
-        }
-        guard runner.features.contains(where: { $0.id == featureID }) else {
-            throw DeveloperExecutionFailure(
-                code: .featureNotFound,
-                message: "The selected feature is not available on this runner."
-            )
-        }
-        executingRunID = id
-        activeRuns[id] = .init(
-            id: id, runnerID: runnerID, featureID: featureID, phase: .preparing,
-            completedSamples: 0, totalSamples: suite.cases.count * suite.repetitions
-        )
-        let evaluationStore = self.evaluationStore
-        let task = Task<EvaluationRun, Error> { @MainActor [weak self] in
-            try await evaluationStore.runFeatureAdapterSnapshot(
-                id: id, projectID: projectID, suite: suite,
-                expectedRevision: expectedRevision,
-                executionOwnerID: executionOwnerID, adapter: adapter
-            ) { [weak self] completed, total in
-                await self?.updateProgress(runID: id, completed: completed, total: total)
-            }
-        }
-        snapshotTasks[id] = task
-        activeRuns[id]?.phase = .dispatching
-        defer {
-            snapshotTasks[id] = nil
-            if executingRunID == id { executingRunID = nil }
-        }
-        do {
-            let run = try await withTaskCancellationHandler {
-                try await task.value
-            } onCancel: {
-                task.cancel()
-            }
-            projectCompletion(.success(run), for: id)
-            return run
-        } catch is CancellationError {
-            projectCompletion(.failure(CancellationError()), for: id)
-            throw CancellationError()
-        } catch {
-            projectCompletion(.failure(error), for: id)
-            throw error
-        }
     }
 
     func status(for runID: UUID) -> DeveloperRunStatus? {
@@ -253,45 +203,9 @@ final class DeveloperRunnerStore {
     }
 
     private func updateProgress(runID: UUID, completed: Int, total: Int) {
-        guard executingRunID == runID,
-              activeRuns[runID]?.phase != .cancelled else { return }
         activeRuns[runID]?.phase = .running
         activeRuns[runID]?.completedSamples = completed
         activeRuns[runID]?.totalSamples = total
-    }
-
-    private func projectCompletion(_ result: Result<EvaluationRun, Error>, for runID: UUID) {
-        Self.projectCompletion(result, status: &activeRuns[runID])
-    }
-
-    /// Projects terminal state only; callers retain task lifetime and return/throw ownership.
-    static func projectCompletion(
-        _ result: Result<EvaluationRun, Error>,
-        status: inout DeveloperRunStatus?
-    ) {
-        switch result {
-        case .success(let run):
-            status?.completedSamples = run.results.count
-            status?.detail = run.terminationReason
-            switch run.terminationReason {
-            case "cancelled", "developerRunner:cancelled": status?.phase = .cancelled
-            case "developerRunner:deadlineExceeded": status?.phase = .timedOut
-            case "developerRunner:disconnected": status?.phase = .disconnected
-            case .some: status?.phase = .failed
-            case nil: status?.phase = .completed
-            }
-        case .failure(let error):
-            if error is CancellationError {
-                status?.phase = .cancelled
-                status?.detail = "Run cancelled."
-            } else if let failure = error as? DeveloperExecutionFailure {
-                status?.phase = phase(for: failure.code)
-                status?.detail = failure.message
-            } else {
-                status?.phase = .failed
-                status?.detail = error.localizedDescription
-            }
-        }
     }
 
     private static func phase(for code: DeveloperExecutionErrorCode) -> DeveloperRunPhase {

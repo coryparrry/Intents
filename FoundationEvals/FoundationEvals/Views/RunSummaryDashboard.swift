@@ -36,16 +36,17 @@ struct RunSummaryDashboard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Response latency")
-                    .font(.headline)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Label("Captured samples", systemImage: "circle.fill")
-                    .font(.caption2)
+                    .font(.system(size: 9))
                     .foregroundStyle(Color.accentColor)
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(run.results.isEmpty ? "—" : Duration.milliseconds(run.averageDurationMilliseconds)
                     .formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .font(.system(size: 28, weight: .medium))
                     .monospacedDigit()
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
@@ -64,18 +65,13 @@ struct RunSummaryDashboard: View {
                         x: .value("Sample", index + 1),
                         y: .value("Seconds", result.durationMilliseconds / 1_000)
                     )
-                    .foregroundStyle(LinearGradient(
-                        colors: [Color.accentColor.opacity(0.22), Color.accentColor.opacity(0.02)],
-                        startPoint: .top, endPoint: .bottom
-                    ))
-                    .interpolationMethod(.monotone)
+                    .foregroundStyle(Color.accentColor.opacity(0.09))
                     LineMark(
                         x: .value("Sample", index + 1),
                         y: .value("Seconds", result.durationMilliseconds / 1_000)
                     )
-                    .foregroundStyle(Color.accentColor)
-                    .lineStyle(StrokeStyle(lineWidth: 1.75, lineCap: .round, lineJoin: .round))
-                    .interpolationMethod(.monotone)
+                    .foregroundStyle(Color.accentColor.opacity(0.65))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
                     if run.results.count == 1 {
                         PointMark(x: .value("Sample", index + 1), y: .value("Seconds", result.durationMilliseconds / 1_000))
                             .foregroundStyle(Color.accentColor)
@@ -100,49 +96,37 @@ struct RunSummaryDashboard: View {
         .summaryCard()
     }
 
-    private var unscoredCount: Int { run.results.count - run.scoredCount }
-
     private var outcomeCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 13) {
             Text("Outcome breakdown")
-                .font(.headline)
-            HStack(spacing: 18) {
-                ZStack {
-                    WorkspaceRing(
-                        segments: [
-                            WorkspaceRingSegment(count: run.passedCount, color: WorkspaceStyle.success),
-                            WorkspaceRingSegment(count: run.failedCount, color: WorkspaceStyle.failure),
-                            WorkspaceRingSegment(count: unscoredCount, color: WorkspaceStyle.warning)
-                        ],
-                        total: max(run.results.count, 1),
-                        lineWidth: 9
-                    )
-                    VStack(spacing: 0) {
-                        Text("\(run.passedCount)")
-                            .font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
-                        Text("of \(run.results.count)").font(.caption2).foregroundStyle(.secondary)
-                    }
-                    .accessibilityHidden(true)
+                .font(.system(size: 12, weight: .semibold))
+            GeometryReader { geometry in
+                HStack(spacing: 2) {
+                    outcomeSegment(count: run.passedCount, color: .blue, width: geometry.size.width)
+                    outcomeSegment(count: run.failedCount, color: .pink, width: geometry.size.width)
+                    outcomeSegment(count: run.results.count - run.scoredCount, color: .orange, width: geometry.size.width)
                 }
-                .frame(width: 86, height: 86)
-                VStack(spacing: 9) {
-                    outcomeRow("Passed", count: run.passedCount, color: WorkspaceStyle.success)
-                    outcomeRow("Failed", count: run.failedCount, color: WorkspaceStyle.failure)
-                    outcomeRow("Unscored / errors", count: unscoredCount, color: WorkspaceStyle.warning)
-                }
+            }
+            .frame(height: 5)
+            .background(Color.primary.opacity(0.04))
+            .clipShape(.capsule)
+            VStack(spacing: 9) {
+                outcomeRow("Passed", count: run.passedCount, color: .blue)
+                outcomeRow("Failed", count: run.failedCount, color: .pink)
+                outcomeRow("Unscored / errors", count: run.results.count - run.scoredCount, color: .orange)
             }
             Spacer(minLength: 0)
             Text("Only scored samples count toward pass rate.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
         }
         .summaryCard()
     }
 
     private var metricsCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 17) {
             Text("Run at a glance")
-                .font(.headline)
+                .font(.system(size: 12, weight: .semibold))
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 16) {
                 GridRow {
                     metric(run.passRate.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—", label: "Scored pass rate")
@@ -162,25 +146,32 @@ struct RunSummaryDashboard: View {
         .summaryCard()
     }
 
+    @ViewBuilder
+    private func outcomeSegment(count: Int, color: Color, width: CGFloat) -> some View {
+        if count > 0 {
+            color.frame(width: max(0, (width - 4) * Double(count) / Double(max(1, run.results.count))))
+        }
+    }
+
     private func outcomeRow(_ title: LocalizedStringKey, count: Int, color: Color) -> some View {
-        HStack(spacing: 8) {
-            WorkspaceStatusDot(color: color, size: 7)
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 4, height: 4)
             Text(title).foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            Text(count.formatted()).monospacedDigit().fontWeight(.semibold)
+            Text(count.formatted()).monospacedDigit()
         }
-        .font(.callout)
+        .font(.system(size: 11))
     }
 
     private func metric(_ value: String, label: LocalizedStringKey) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .font(.system(size: 20, weight: .medium))
                 .monospacedDigit()
                 .minimumScaleFactor(0.65)
                 .lineLimit(1)
             Text(label)
-                .font(.caption)
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -191,6 +182,10 @@ private extension View {
     func summaryCard() -> some View {
         padding(18)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .workspaceSurface()
+            .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+            }
     }
 }

@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 
 #if canImport(UIKit)
 import UIKit
@@ -38,31 +37,7 @@ public extension DeveloperRunnerIdentity {
             hardwareModel: hardwareModel,
             appBundleIdentifier: bundle.bundleIdentifier ?? "unknown",
             appVersion: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
-            localeIdentifier: Locale.current.identifier,
-            buildProvenance: buildProvenance(for: bundle)
-        )
-    }
-
-    /// This is app-supplied provenance from the paired process, not device
-    /// attestation. The host still compares it with its checked build product.
-    private static func buildProvenance(for bundle: Bundle) -> DeveloperRunnerBuildProvenance? {
-        guard let executableURL = bundle.executableURL,
-              let file = try? FileHandle(forReadingFrom: executableURL) else { return nil }
-        defer { try? file.close() }
-        var hash = SHA256()
-        do {
-            while let chunk = try file.read(upToCount: 1_048_576), !chunk.isEmpty {
-                hash.update(data: chunk)
-            }
-        } catch { return nil }
-        let buildID = hash.finalize().map { String(format: "%02x", $0) }.joined()
-        guard let appID = bundle.bundleIdentifier, !appID.isEmpty else { return nil }
-        return .init(
-            logicalAppID: appID,
-            buildID: buildID,
-            sourceManifestDigest: bundle.object(forInfoDictionaryKey: "IntentLabSourceManifestDigest") as? String,
-            packageRevision: bundle.object(forInfoDictionaryKey: "IntentLabPackageRevision") as? String,
-            compiledProductNonce: bundle.object(forInfoDictionaryKey: "IntentLabBuildNonce") as? String
+            localeIdentifier: Locale.current.identifier
         )
     }
 

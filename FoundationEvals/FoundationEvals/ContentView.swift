@@ -2,42 +2,44 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var store: EvaluationStore
-    @State private var scenarioCoordinator: ScenarioCoordinator
     @Environment(DeveloperRunnerStore.self) private var runners
+    @State private var showsDevices = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
-    init(store: EvaluationStore) {
-        self.store = store
-        _scenarioCoordinator = State(initialValue: ScenarioCoordinator(
-            supportDirectory: store.overviewStorageDirectory,
-            evaluationStore: store
-        ))
-    }
-
     var body: some View {
-        GeometryReader { geometry in
-            VStack(spacing: 0) {
-                workspaceNavigation
-                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-                WorkbenchStatusBar(store: store)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("Workspace status")
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+        VStack(spacing: 0) {
+            workspaceNavigation
+            WorkbenchStatusBar(store: store)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("Workspace status")
         }
         .frame(minWidth: 1_000, minHeight: 700)
-        .background(WorkspaceStyle.canvas)
-        .toolbar(removing: .title)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .sheet(isPresented: $showsDevices) { DeveloperDevicesView(runners: runners) }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Devices", systemImage: "laptopcomputer.and.iphone") { showsDevices = true }
+                    .help("Connect your app and manage device runners")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                WorkspaceResetControl(store: store)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                SettingsLink {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .help("Judge connections and app settings")
+            }
+        }
         .background { SuiteAutosaveObserver(store: store) }
         .onChange(of: runners.activeRuns) { previous, current in
             for status in current.values where [.failed, .timedOut, .disconnected].contains(status.phase) {
                 guard previous[status.id] != status else { continue }
-                let sampleMessage = store.run(with: status.id)?.results.last { $0.errorMessage != nil }?.errorMessage
-                store.notice = DeveloperRunPresentation.failureMessage(for: status, sampleMessage: sampleMessage)
+                store.notice = status.detail ?? "The device run could not finish. Check its connection and try again."
             }
         }
         .alert(
-            "Intents",
+            "Foundation Evals",
             isPresented: Binding(
                 get: { store.notice != nil },
                 set: { if !$0 { store.notice = nil } }
@@ -52,13 +54,11 @@ struct ContentView: View {
     private var workspaceNavigation: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             WorkspaceSidebar(store: store)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
+                .navigationSplitViewColumnWidth(min: 210, ideal: 245, max: 300)
         } detail: {
             switch store.selection {
             case .overview:
                 WorkspaceOverviewView(store: store)
-            case .intentLab:
-                IntentLabView(coordinator: scenarioCoordinator, store: store, projects: store.projects)
             case .suite:
                 SuiteEditorView(store: store)
                     .disclosureGroupStyle(FullWidthDisclosureStyle())

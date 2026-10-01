@@ -54,28 +54,6 @@ struct CaseImportBoundedReadTests {
         #expect(emitted == streamedByteCount)
     }
 
-    @Test func failedReplacementCannotImportThePreviousFile() throws {
-        let valid = try temporaryFile(data: Data("name,prompt,expected\nFirst,Hello,World\n".utf8))
-        defer { try? FileManager.default.removeItem(at: valid.deletingLastPathComponent()) }
-        let oversized = valid.deletingLastPathComponent().appending(path: "replacement.csv")
-        try Data(repeating: 0x61, count: 129).write(to: oversized)
-
-        var selection = CaseImportFileSelection()
-        try selection.load(at: valid, maximumBytes: 128)
-        selection.preview = try EvaluationCaseImporter.preview(
-            data: #require(selection.data),
-            format: .csv,
-            mapping: .init(nameColumn: "name", promptColumn: "prompt", expectedColumn: "expected")
-        )
-        #expect(selection.preview?.canImport == true)
-
-        #expect(throws: EvaluationCaseImportError.self) {
-            try selection.load(at: oversized, maximumBytes: 128)
-        }
-        #expect(selection.data == nil)
-        #expect(selection.preview == nil)
-    }
-
     private func temporaryFile(data: Data) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "CaseImportBoundedReadTests-\(UUID().uuidString)")
