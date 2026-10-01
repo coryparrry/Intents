@@ -111,7 +111,7 @@ struct DeveloperConnectionBanner: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                WorkspaceIconTile(symbol: "laptopcomputer.and.iphone", tint: .indigo, size: 32)
+                WorkspaceIcon(symbol: "laptopcomputer.and.iphone", size: 32, presentation: .header)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Test inside your app").font(.callout.weight(.semibold))
                     Text("Connect a Swift app to evaluate the real feature on iPhone, iPad, and Mac.")

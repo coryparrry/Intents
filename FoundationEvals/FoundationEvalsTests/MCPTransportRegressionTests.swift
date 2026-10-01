@@ -3,6 +3,49 @@ import Testing
 @testable import FoundationEvals
 
 struct MCPTransportRegressionTests {
+    @MainActor
+    @Test func changedCredentialRestartsRunningListener() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "MCPTransportRegressionTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let firstCredential = String(repeating: "A", count: 43)
+        let replacementCredential = String(repeating: "B", count: 43)
+        var storedCredential: String? = firstCredential
+        let credentialStore = MCPCredentialStore(
+            load: { storedCredential },
+            save: { storedCredential = $0 },
+            remove: { storedCredential = nil }
+        )
+        let factory = TestServerFactory()
+        let runtime = FoundationEvalsMCPRuntime(
+            store: EvaluationStore(supportDirectory: directory),
+            serverFactory: { configuration in factory.make(configuration) }
+        )
+        let defaults = UserDefaults(suiteName: "MCPTransportRegressionTests-\(UUID().uuidString)")!
+        let controller = MCPSettingsController(serverControl: MCPServerControl(
+            start: { configuration in try await runtime.start(configuration) },
+            stop: { await runtime.stop() }
+        ), userDefaults: defaults, credentialStore: credentialStore)
+        runtime.settingsController = controller
+
+        await controller.startServer()
+        let firstServer = try #require(factory.latest)
+        #expect(firstServer.configuration.credential == firstCredential)
+        await controller.startServer()
+        #expect(factory.creationCount == 1)
+
+        storedCredential = replacementCredential
+        await controller.startServer()
+        #expect(controller.serverState == .running)
+        #expect(factory.creationCount == 2)
+        #expect(await firstServer.stopCount == 1)
+        let replacement = try #require(factory.latest)
+        #expect(replacement.configuration.credential == replacementCredential)
+        await runtime.stop()
+    }
+
     @Test func resourceFailuresUseResourceAndInternalErrorCodes() async throws {
         let runID = UUID()
         let uri = "foundation-evals://runs/\(runID.uuidString)"
@@ -54,7 +97,11 @@ struct MCPTransportRegressionTests {
         let controller = MCPSettingsController(serverControl: MCPServerControl(
             start: { configuration in try await runtime.start(configuration) },
             stop: { await runtime.stop() }
-        ), userDefaults: defaults)
+        ), userDefaults: defaults, credentialStore: MCPCredentialStore(
+            load: { String(repeating: "A", count: 43) },
+            save: { _ in },
+            remove: { }
+        ))
         runtime.settingsController = controller
 
         await controller.startServer()
@@ -87,7 +134,7 @@ struct MCPTransportRegressionTests {
             store: EvaluationStore(supportDirectory: directory),
             serverFactory: { configuration in factory.make(configuration) }
         )
-        let configuration = try CodexMCPConfiguration()
+        let configuration = try CodexMCPConfiguration(credential: String(repeating: "A", count: 43))
         let starting = Task { try await runtime.start(configuration) }
         let firstServer = await factory.waitForLatest()
         await firstServer.waitUntilStartSuspends()
@@ -114,7 +161,7 @@ struct MCPTransportRegressionTests {
         MCPProtocolHandler(authority: MCPAuthority(
             call: { _ in .failure(code: "unexpected", message: "Unexpected") },
             readResource: { _ in resource }
-        ))
+        ), credential: String(repeating: "A", count: 43))
     }
 
     private func resourceRequest(uri: String) throws -> MCPHTTPRequest {
@@ -123,7 +170,8 @@ struct MCPTransportRegressionTests {
             headers: [
                 "Host": "127.0.0.1:17873",
                 "Content-Type": "application/json",
-                "MCP-Protocol-Version": "2025-06-18"
+                "MCP-Protocol-Version": "2025-06-18",
+                "Authorization": "Bearer \(String(repeating: "A", count: 43))"
             ],
             body: try JSONEncoder.sorted.encode(MCPJSONValue.object([
                 "jsonrpc": .string("2.0"),

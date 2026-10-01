@@ -23,6 +23,7 @@ struct ScenarioContractsTests {
         ]
         try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
             .write(to: source)
+        let checkedTestRun = try Data(contentsOf: source)
         let paths = try XCTestRunInvocationTransport.resolveProducts(
             derivedData: root.appending(path: "DerivedData"),
             testTarget: "FixtureUITests"
@@ -39,6 +40,14 @@ struct ScenarioContractsTests {
             definition: definition,
             invocation: boundInvocation
         )
+        let nextOutput = try XCTestRunInvocationTransport.materialize(
+            products: paths,
+            testTarget: "FixtureUITests",
+            definition: definition,
+            invocation: invocation(for: definition)
+        )
+        #expect(output != nextOutput)
+        #expect(try Data(contentsOf: source) == checkedTestRun)
         #expect(
             output.deletingLastPathComponent().standardizedFileURL
                 == source.deletingLastPathComponent().standardizedFileURL
@@ -88,6 +97,86 @@ struct ScenarioContractsTests {
         }
     }
 
+    @Test func workspaceDuplicateTestNamesBindOwningProjectInTestRun() throws {
+        let root = try temporaryDirectory()
+        let workspace = root.appending(path: "Combined.xcworkspace", directoryHint: .isDirectory)
+        let firstProject = root.appending(path: "First/Shared.xcodeproj", directoryHint: .isDirectory)
+        let secondProject = root.appending(path: "Second/Shared.xcodeproj", directoryHint: .isDirectory)
+        for directory in [workspace, firstProject, secondProject] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let products = root.appending(path: "DerivedData/Build/Products", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: products, withIntermediateDirectories: true)
+        let source = products.appending(path: "Combined_iphoneos.xctestrun")
+        func target(owner: String, runner: String) -> [String: Any] {
+            ["BlueprintName": "SharedUITests", "BlueprintProviderRelativePath": owner,
+             "ProductModuleName": "SharedUITests",
+             "UITargetAppPath": "__TESTROOT__/Debug-iphoneos/Shared.app",
+             "TestHostPath": "__TESTROOT__/Debug-iphoneos/\(runner).app",
+             "TestBundlePath": "__TESTHOST__/PlugIns/SharedUITests.xctest"]
+        }
+        let plist: [String: Any] = [
+            "__xctestrun_metadata__": ["FormatVersion": 2],
+            "TestConfigurations": [["Name": "Combined", "TestTargets": [
+                target(owner: "First/Shared.xcodeproj", runner: "FirstRunner"),
+                target(owner: "Second/Shared.xcodeproj", runner: "SecondRunner"),
+            ]]],
+        ]
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: source)
+        #expect(throws: XCTestRunInvocationTransportError.self) {
+            _ = try XCTestRunInvocationTransport.resolveProducts(
+                derivedData: root.appending(path: "DerivedData"), testTarget: "SharedUITests"
+            )
+        }
+        let paths = try XCTestRunInvocationTransport.resolveProducts(
+            derivedData: root.appending(path: "DerivedData"), testTarget: "SharedUITests",
+            owningProjectURL: secondProject, containerURL: workspace
+        )
+        #expect(paths.testHostURL.lastPathComponent == "SecondRunner.app")
+        let definition = try scenario()
+        let output = try XCTestRunInvocationTransport.materialize(
+            products: paths, testTarget: "SharedUITests",
+            definition: definition, invocation: invocation(for: definition)
+        )
+        let stored = try #require(PropertyListSerialization.propertyList(
+            from: Data(contentsOf: output), options: [], format: nil
+        ) as? [String: Any])
+        let configurations = try #require(stored["TestConfigurations"] as? [[String: Any]])
+        let targets = try #require(configurations[0]["TestTargets"] as? [[String: Any]])
+        #expect(targets[0]["EnvironmentVariables"] == nil)
+        let selectedEnvironment = targets[1]["EnvironmentVariables"] as? [String: String]
+        #expect(selectedEnvironment?[XCTestRunInvocationTransport.invocationEnvironmentKey] != nil)
+        #expect(throws: XCTestRunInvocationTransportError.self) {
+            _ = try XCTestRunInvocationTransport.resolveProducts(
+                derivedData: root.appending(path: "DerivedData"), testTarget: "SharedUITests",
+                owningProjectURL: root.appending(path: "Other.xcodeproj"), containerURL: workspace
+            )
+        }
+
+        let scheme = workspace.appending(path: "xcshareddata/xcschemes/Combined.xcscheme")
+        try FileManager.default.createDirectory(at: scheme.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("""
+        <Scheme><TestAction><Testables><TestableReference><BuildableReference
+        BlueprintIdentifier="SECOND-ID" BlueprintName="SharedUITests"
+        ReferencedContainer="container:Second/Shared.xcodeproj"/>
+        </TestableReference></Testables></TestAction></Scheme>
+        """.utf8).write(to: scheme)
+        let configuration = XcodeTestConfiguration(
+            containerPath: workspace.path, isWorkspace: true, scheme: "Combined",
+            testTarget: "SharedUITests", testBundleIdentifier: "dev.example.SharedUITests",
+            destinationIdentifier: "device", generatedResourceDirectory: root.path
+        )
+        let selected = XcodeDiscoveredProduct(
+            targetName: "SharedUITests", bundleIdentifier: "dev.example.SharedUITests",
+            productType: "com.apple.product-type.bundle.ui-testing", isApplication: false,
+            isUITestBundle: true, projectPath: secondProject.path, targetID: "SECOND-ID"
+        )
+        #expect(XcodeTestExecutor.selectedSchemeContainsTarget(configuration: configuration, product: selected))
+        var wrong = selected
+        wrong.targetID = "FIRST-ID"
+        #expect(!XcodeTestExecutor.selectedSchemeContainsTarget(configuration: configuration, product: wrong))
+    }
+
     @Test func quickConnectDiscoveryParsesProjectsProductsAndPhysicalIPhones() throws {
         let listing = Data("""
         {"project":{"name":"Fixture","targets":["Fixture","FixtureUITests"],"schemes":["Fixture"]}}
@@ -125,14 +214,21 @@ struct ScenarioContractsTests {
         let devices = Data("""
         [
           {"identifier":"phone-1","name":"Cory's iPhone","platform":"com.apple.platform.iphoneos","simulator":false,"available":true,"ignored":false,"operatingSystemVersion":"27.0"},
+          {"identifier":"mac-1","name":"This Mac","platform":"com.apple.platform.macosx","simulator":false,"available":true,"ignored":false,"operatingSystemVersion":"27.0"},
           {"identifier":"sim-1","name":"Simulator","platform":"com.apple.platform.iphonesimulator","simulator":true,"available":true}
         ]
         """.utf8)
         let physical = try XcodeConnectionDiscoveryService.parseDevices(devices)
-        #expect(physical == [.init(
-            identifier: "phone-1", name: "Cory's iPhone",
-            operatingSystemVersion: "27.0", available: true
-        )])
+        #expect(physical == [
+            .init(identifier: "phone-1", name: "Cory's iPhone",
+                  operatingSystemVersion: "27.0", available: true, platform: .iOS),
+            .init(identifier: "mac-1", name: "This Mac",
+                  operatingSystemVersion: "27.0", available: true, platform: .macOS),
+        ])
+        let macDestination = XcodeTestExecutor.destinationStatus(identifier: "mac-1", devices: physical)
+        #expect(macDestination.ready && macDestination.platform == .macOS)
+        #expect(macDestination.detail.contains("local Mac"))
+        #expect(!XcodeTestExecutor.destinationStatus(identifier: "sim-1", devices: physical).ready)
     }
 
     @Test func frozenDefinitionRoundTripsWithStableDigest() throws {
@@ -143,6 +239,532 @@ struct ScenarioContractsTests {
         #expect(decoded == definition)
         #expect(decoded.hasValidDigest)
         #expect(try decoded.calculatedDigest() == definition.definitionDigest)
+        let json = String(decoding: data, as: UTF8.self)
+        #expect(!json.contains("requiredClaims"))
+        #expect(!json.contains("observationPlan"))
+    }
+
+    @Test func verifiedMacConnectionCanSatisfyLocalSigningGate() {
+        let configuration = XcodeTestConfiguration(
+            containerPath: "/tmp/App.xcodeproj", isWorkspace: false, scheme: "App",
+            testTarget: "AppUITests", testBundleIdentifier: "dev.example.AppUITests",
+            destinationIdentifier: "mac-1", generatedResourceDirectory: "/tmp",
+            applicationSigningConfigured: false, testSigningConfigured: false
+        )
+        #expect(XcodeTestExecutor.signingReady(
+            configuration: configuration, destinationPlatform: .macOS,
+            reusableConnectionVerified: true
+        ))
+        #expect(!XcodeTestExecutor.signingReady(
+            configuration: configuration, destinationPlatform: .macOS,
+            reusableConnectionVerified: false
+        ))
+        #expect(!XcodeTestExecutor.signingReady(
+            configuration: configuration, destinationPlatform: .iOS,
+            reusableConnectionVerified: true
+        ))
+    }
+
+    @Test func selectedDefinitionPersistsByIdentityAcrossRelaunch() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        var alpha = try scenario()
+        alpha.name = "Alpha"
+        alpha = try alpha.frozen()
+        var zeta = try scenario()
+        zeta.name = "Zeta"
+        zeta = try zeta.frozen()
+        try await persistence.saveDefinition(alpha)
+        try await persistence.saveDefinition(zeta)
+        try await persistence.saveSelectedDefinition(id: alpha.id, version: alpha.version)
+        let reloaded = ScenarioPersistence(rootDirectory: root)
+        #expect(try await reloaded.loadSelectedDefinition() == .init(id: alpha.id, version: alpha.version))
+        #expect(try await reloaded.loadDefinitions().last?.id == zeta.id)
+    }
+
+    @Test func archivedVersionOneFilesKeepTheirDigestAndImportMeaning() throws {
+        let fixtures = URL(filePath: #filePath).deletingLastPathComponent()
+            .appending(path: "Fixtures/LegacyV1", directoryHint: .isDirectory)
+        let scenarioBytes = try Data(contentsOf: fixtures.appending(path: "scenario.json"))
+        let invocationBytes = try Data(contentsOf: fixtures.appending(path: "invocation.json"))
+        let journalBytes = try Data(contentsOf: fixtures.appending(path: "journal.json"))
+        let evidenceBytes = try Data(contentsOf: fixtures.appending(path: "evidence.json"))
+        let definition = try decoder.decode(ScenarioDefinition.self, from: scenarioBytes)
+        let invocation = try decoder.decode(ScenarioInvocationIdentity.self, from: invocationBytes)
+        let journal = try decoder.decode(ScenarioExecutionJournal.self, from: journalBytes)
+        let envelope = try decoder.decode(ScenarioEvidenceEnvelope.self, from: evidenceBytes)
+        #expect(definition.schemaVersion == 1)
+        #expect(definition.definitionDigest == "39c7be7efc7df732a4ea0dbdf5392f3f5763b32c80137af2d69b7e87d043b077")
+        #expect(definition.hasValidDigest)
+        #expect(invocation.harnessVersion == "intent-lab-v1")
+        #expect(envelope.schemaVersion == 1)
+        #expect(journal.invocation == invocation)
+        var ledger = ScenarioImportLedger()
+        var run = try XCTestEvidenceImporter().importEvidence(
+            data: evidenceBytes, definition: definition, journal: journal,
+            artifactRoot: temporaryDirectory(), ledger: &ledger
+        )
+        #expect(run.outcome == .passed)
+        run.xctestExitCode = 0
+        let report = ScenarioReleaseCheckEvaluator.report(definition: definition, run: run)
+        #expect(report.outcome == .passed)
+        #expect(report.policyVersion == nil)
+        #expect(try Data(contentsOf: fixtures.appending(path: "scenario.json")) == scenarioBytes)
+    }
+
+    @Test func reusableBasicAllowsDirectExecutionWithoutInventedStateEvidence() throws {
+        let definition = try reusableBasicScenario()
+        #expect(ScenarioValidator.issues(in: definition).filter { $0.severity == .error }.isEmpty)
+        let restored = try decoder.decode(ScenarioDefinition.self, from: encoder.encode(definition))
+        #expect(restored.hasValidDigest)
+        #expect(restored.definitionDigest == definition.definitionDigest)
+        let invocation = reusableInvocation(for: definition)
+        var envelope = evidence(for: definition, invocation: invocation)
+        envelope.schemaVersion = ScenarioEvidenceEnvelope.reusableSchemaVersion
+        envelope.results.removeAll { $0.lane != .intentIntegration }
+        envelope.results[0].observations = [:]
+        envelope.results[0].assertionResults = []
+        var ledger = ScenarioImportLedger()
+        var run = try XCTestEvidenceImporter().importEvidence(
+            data: try encoder.encode(envelope), definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            artifactRoot: temporaryDirectory(), ledger: &ledger
+        )
+        #expect(run.outcome == .passed)
+        #expect(run.laneResults[0].observations.isEmpty)
+        #expect(run.integration == definition.integration)
+        #expect(run.runnerPackageVersion == "0.1.0")
+        #expect(run.negotiatedCapabilities == ScenarioHarnessCapabilities.required(for: definition).sorted())
+        var changed = run
+        changed.integration?.version = "2.0"
+        #expect(!ScenarioComparison.compare(baseline: run, candidate: changed).isDirectlyComparable)
+        run.xctestExitCode = 0
+        let release = ScenarioReleaseCheckEvaluator.report(definition: definition, run: run)
+        #expect(release.outcome != .passed)
+        #expect(release.policyVersion == ScenarioReleaseCheckEvaluator.reusablePolicyVersion)
+        #expect(release.failures.contains { $0.contains("Exploratory") })
+        #expect(release.failures.contains { $0.contains("Execution-only") })
+    }
+
+    @Test func reusablePassedEvidenceRequiresSupportedDistinctProofClaims() throws {
+        let definition = try reusableBasicScenario()
+        let invocation = reusableInvocation(for: definition)
+        let evidenceJournal = journal(for: definition, invocation: invocation, phase: .stopped)
+        var envelope = evidence(for: definition, invocation: invocation)
+        envelope.results.removeAll { $0.lane != .intentIntegration }
+        envelope.results[0].claims = nil
+        try expectRejected(envelope, definition: definition, journal: evidenceJournal,
+                           root: temporaryDirectory(), importer: XCTestEvidenceImporter())
+        envelope.results[0].claims = [.executionCompleted, .executionCompleted]
+        try expectRejected(envelope, definition: definition, journal: evidenceJournal,
+                           root: temporaryDirectory(), importer: XCTestEvidenceImporter())
+        envelope.results[0].claims = [.executionCompleted, .applicationStateChecked]
+        try expectRejected(envelope, definition: definition, journal: evidenceJournal,
+                           root: temporaryDirectory(), importer: XCTestEvidenceImporter())
+    }
+
+    @Test func reusableReturnClaimDoesNotBecomePersistenceProof() throws {
+        var definition = try reusableBasicScenario()
+        definition.purpose = .releaseRequirement
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        definition.goal.expectedBehavior = "The returned task ID is task-001."
+        definition.directControl.outputFields = [.init(
+            name: "taskID", type: .primitive(.string), displayName: "Task ID",
+            path: [.init(kind: .property, name: "value")]
+        )]
+        let assertion = ScenarioAssertion(
+            kind: .returnedField, observationKey: "taskID", expectedValue: .string("task-001"),
+            explanation: "The returned task ID matches.", applicableLanes: [.intentIntegration]
+        )
+        definition.assertions = [assertion]
+        definition.observationPlan = [.init(id: "taskID", source: .intentResult)]
+        definition = try definition.frozen()
+        #expect(ScenarioValidator.issues(in: definition).filter { $0.severity == .error }.isEmpty)
+        let invocation = reusableInvocation(for: definition)
+        var envelope = evidence(for: definition, invocation: invocation)
+        envelope.schemaVersion = ScenarioEvidenceEnvelope.reusableSchemaVersion
+        envelope.results.removeAll { $0.lane != .intentIntegration }
+        envelope.results[0].observationSources = ["taskID": .appIntentsTesting]
+        envelope.results[0].claims = [.executionCompleted, .returnedValueChecked]
+        var ledger = ScenarioImportLedger()
+        var run = try XCTestEvidenceImporter().importEvidence(
+            data: try encoder.encode(envelope), definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            artifactRoot: temporaryDirectory(), ledger: &ledger
+        )
+        run.xctestExitCode = 0
+        run.acceptanceStatus = .accepted
+        #expect(ScenarioReleaseCheckEvaluator.report(definition: definition, run: run).outcome == .passed)
+        #expect(!ScenarioResultEvaluator.verifiedClaim(
+            .applicationStateChecked, definition: definition, result: run.laneResults[0]
+        ))
+        envelope.results[0].observationSources = nil
+        try expectRejected(envelope, definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            root: temporaryDirectory(), importer: XCTestEvidenceImporter())
+    }
+
+    @Test func reusableBehaviourRetainsFailedStateAfterSuccessfulReturn() throws {
+        var definition = try reusableBasicScenario()
+        definition.purpose = .releaseRequirement
+        definition.checkMode = .behaviour
+        definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
+        definition.goal.expectedBehavior = "The task remains complete in storage."
+        let assertion = ScenarioAssertion(
+            kind: .stateTransition, observationKey: "taskComplete", expectedValue: .boolean(true),
+            explanation: "The stored task is complete.", applicableLanes: [.intentIntegration]
+        )
+        definition.assertions = [assertion]
+        definition.observationPlan = [.init(id: "taskComplete", source: .entityQuery, operationID: "queryTask")]
+        definition = try definition.frozen()
+        #expect(ScenarioValidator.issues(in: definition).filter { $0.severity == .error }.isEmpty)
+        let invocation = reusableInvocation(for: definition)
+        var envelope = evidence(for: definition, invocation: invocation)
+        envelope.schemaVersion = ScenarioEvidenceEnvelope.reusableSchemaVersion
+        envelope.results.removeAll { $0.lane != .intentIntegration }
+        envelope.results[0].observations = ["taskComplete": .boolean(false)]
+        envelope.results[0].observationSources = ["taskComplete": .entityQuery]
+        envelope.results[0].assertionResults = [.init(
+            assertionID: assertion.id, passed: false, observedValue: .boolean(false), message: "Still incomplete"
+        )]
+        envelope.results[0].outcome = .failed
+        var ledger = ScenarioImportLedger()
+        var run = try XCTestEvidenceImporter().importEvidence(
+            data: try encoder.encode(envelope), definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            artifactRoot: temporaryDirectory(), ledger: &ledger
+        )
+        #expect(run.outcome == .failed)
+        run.xctestExitCode = 0
+        #expect(ScenarioReleaseCheckEvaluator.report(definition: definition, run: run).outcome == .failed)
+
+        envelope.results[0].observations = ["taskComplete": .boolean(true)]
+        envelope.results[0].observationSources = ["taskComplete": .appIntentsTesting]
+        envelope.results[0].assertionResults = [.init(
+            assertionID: assertion.id, passed: true, observedValue: .boolean(true), message: "Return looked right"
+        )]
+        envelope.results[0].outcome = .passed
+        envelope.results[0].claims = [.executionCompleted, .applicationStateChecked]
+        try expectRejected(envelope, definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            root: temporaryDirectory(), importer: XCTestEvidenceImporter())
+    }
+
+    @Test func semanticRubricAloneCannotDeclareApplicationStateProof() throws {
+        var definition = try reusableBasicScenario()
+        definition.purpose = .releaseRequirement
+        definition.checkMode = .behaviour
+        definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
+        definition.goal.expectedBehavior = "The stored task is complete."
+        definition.coverage.siri = .required
+        definition.assertions = [.init(
+            kind: .semanticRubric, observationKey: "taskState",
+            explanation: "The task appears complete.", applicableLanes: [.intentIntegration, .siri]
+        )]
+        definition.observationPlan = [.init(id: "taskState", source: .entityQuery, operationID: "queryTask")]
+
+        let semanticOnlyErrors = ScenarioValidator.issues(in: definition, requireFrozenDigest: false)
+            .filter { $0.severity == .error }
+        #expect(semanticOnlyErrors.contains { $0.path == "requiredClaims" })
+        #expect(semanticOnlyErrors.contains { $0.path == "coverage.siri" })
+
+        definition.assertions.append(.init(
+            kind: .stateTransition, observationKey: "taskState", expectedValue: .boolean(true),
+            explanation: "The stored task is complete.", applicableLanes: [.intentIntegration, .siri]
+        ))
+        let stateProofErrors = ScenarioValidator.issues(in: definition, requireFrozenDigest: false)
+            .filter { $0.severity == .error }
+        #expect(!stateProofErrors.contains { $0.path == "requiredClaims" || $0.path == "coverage.siri" })
+    }
+
+    @Test func reusableMutationRequiresRealCleanupOperation() throws {
+        var definition = try reusableBasicScenario()
+        definition.safety.mutationPolicy = .syntheticMutation
+        definition.fixture = .init(
+            id: "task-fixture", version: "1", digest: String(repeating: "a", count: 64),
+            isSynthetic: true, preparationOperation: "prepareFixture", cleanupOperation: "none"
+        )
+        definition.coverage.siriAttemptCount = 1
+
+        let uncleanable = ScenarioValidator.issues(in: definition, requireFrozenDigest: false)
+        #expect(uncleanable.contains { $0.severity == .error && $0.path == "fixture.cleanupOperation" })
+
+        definition.fixture.cleanupOperation = "restoreFixture"
+        let cleanable = ScenarioValidator.issues(in: definition, requireFrozenDigest: false)
+        #expect(!cleanable.contains { $0.severity == .error && $0.path == "fixture.cleanupOperation" })
+    }
+
+    @Test func reusableVersionsAndInvalidProjectionPathsFailClosed() throws {
+        let definition = try reusableBasicScenario()
+        let invocation = reusableInvocation(for: definition)
+        var envelope = evidence(for: definition, invocation: invocation)
+        envelope.results.removeAll { $0.lane != .intentIntegration }
+        envelope.results[0].observations = [:]
+        envelope.results[0].assertionResults = []
+        envelope.schemaVersion = ScenarioEvidenceEnvelope.currentSchemaVersion
+        try expectRejected(envelope, definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            root: temporaryDirectory(), importer: XCTestEvidenceImporter())
+
+        envelope.schemaVersion = ScenarioEvidenceEnvelope.reusableSchemaVersion
+        envelope.invocation.harnessVersion = ScenarioInvocationIdentity.currentHarnessVersion
+        try expectRejected(envelope, definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            root: temporaryDirectory(), importer: XCTestEvidenceImporter())
+
+        envelope.invocation.harnessVersion = ScenarioInvocationIdentity.reusableHarnessVersion
+        envelope.integration?.digest = String(repeating: "b", count: 64)
+        try expectRejected(envelope, definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            root: temporaryDirectory(), importer: XCTestEvidenceImporter())
+        envelope.integration = definition.integration
+        envelope.negotiatedCapabilities = ["environment-payload"]
+        try expectRejected(envelope, definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            root: temporaryDirectory(), importer: XCTestEvidenceImporter())
+
+        var invalid = definition
+        invalid.directControl.outputFields = [.init(
+            name: "taskID", type: .primitive(.string),
+            path: [.init(kind: .index, index: 100)]
+        )]
+        #expect(ScenarioValidator.issues(in: invalid, requireFrozenDigest: false)
+            .contains { $0.path.contains("outputFields[0].path") })
+        invalid.directControl.outputFields[0].path = [.init(kind: .count), .init(kind: .property, name: "id")]
+        #expect(ScenarioValidator.issues(in: invalid, requireFrozenDigest: false)
+            .contains { $0.message.contains("final path component") })
+    }
+
+    @Test func reusableCapabilitiesFollowObservationPlan() throws {
+        var definition = try reusableBasicScenario()
+        #expect(ScenarioHarnessCapabilities.required(for: definition) == [
+            "environment-payload", "direct-intent-execution"
+        ])
+        definition.fixture.preparationOperation = "none"
+        definition.fixture.cleanupOperation = "readOnly"
+        #expect(!ScenarioHarnessCapabilities.required(for: definition).contains("preparation"))
+        definition.observationPlan = [.init(id: "taskComplete", source: .entityQuery, operationID: "queryTask")]
+        #expect(ScenarioHarnessCapabilities.required(for: definition).contains("entity-query"))
+        #expect(!ScenarioHarnessCapabilities.required(for: definition).contains("accessible-result"))
+        definition.coverage.siri = .required
+        let capabilities = ScenarioHarnessCapabilities.required(for: definition)
+        #expect(capabilities.contains("siri-completion"))
+        #expect(capabilities.contains("invocation-correlation"))
+        #expect(!capabilities.contains("fixture-reset"))
+        #expect(ScenarioHarnessCapabilities.required(for: try scenario()).contains("fixture-reset"))
+    }
+
+    @Test func reusableTransportMapsOnlyDeviceFieldsAndKeepsProjectionPath() throws {
+        var definition = try reusableBasicScenario()
+        definition.directControl.outputFields = [.init(
+            name: "taskID", type: .primitive(.string), displayName: "Task ID",
+            path: [.init(kind: .property, name: "value"), .init(kind: .index, index: 0)]
+        )]
+        definition.observationPlan = [.init(id: "taskID", source: .intentResult)]
+        definition = try definition.frozen()
+        let payload = try XCTestRunInvocationTransport.scenarioPayload(for: definition)
+        let object = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        let target = try #require(object["target"] as? [String: Any])
+        let goal = try #require(object["goal"] as? [String: Any])
+        let direct = try #require(object["directControl"] as? [String: Any])
+        let output = try #require((direct["outputFields"] as? [[String: Any]])?.first)
+        let path = try #require(output["path"] as? [[String: Any]])
+        #expect(target["bundleIdentifier"] as? String == definition.target.bundleIdentifier)
+        #expect(target["projectPath"] == nil)
+        #expect(goal["expectedBehavior"] == nil)
+        #expect(direct["linkedFeatureRunID"] == nil)
+        #expect(output["displayName"] as? String == "Task ID")
+        #expect(path.map { $0["kind"] as? String } == ["property", "index"])
+        #expect((object["integration"] as? [String: Any])?["digest"] as? String == definition.integration?.digest)
+    }
+
+    @Test func reusableXCTestRunCarriesFrozenReadOnlyPolicy() throws {
+        let root = try temporaryDirectory()
+        let productsDirectory = root.appending(path: "Build/Products", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: productsDirectory, withIntermediateDirectories: true)
+        let source = productsDirectory.appending(path: "Tasks_iphoneos.xctestrun")
+        let plist: [String: Any] = ["TasksUITests": [
+            "BlueprintName": "TasksUITests",
+            "UITargetAppPath": "__TESTROOT__/Debug-iphoneos/Tasks.app",
+            "TestHostPath": "__TESTROOT__/Debug-iphoneos/TasksUITests-Runner.app",
+            "TestBundlePath": "__TESTHOST__/PlugIns/TasksUITests.xctest",
+        ]]
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: source)
+        let definition = try reusableBasicScenario()
+        #expect(definition.safety.mutationPolicy == .readOnly)
+        let products = try XCTestRunInvocationTransport.resolveProducts(
+            derivedData: root, testTarget: "TasksUITests"
+        )
+        let output = try XCTestRunInvocationTransport.materialize(
+            products: products, testTarget: "TasksUITests",
+            definition: definition, invocation: reusableInvocation(for: definition)
+        )
+        let stored = try #require(PropertyListSerialization.propertyList(
+            from: Data(contentsOf: output), options: [], format: nil
+        ) as? [String: Any])
+        let target = try #require(stored["TasksUITests"] as? [String: Any])
+        let environment = try #require(target["EnvironmentVariables"] as? [String: String])
+        let encoded = try #require(environment[XCTestRunInvocationTransport.scenarioEnvironmentKey])
+        let payload = try #require(Data(base64Encoded: encoded))
+        let transported = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        let safety = try #require(transported["safety"] as? [String: Any])
+        #expect(safety["mutationPolicy"] as? String == "readOnly")
+        #expect(safety["allowedActions"] == nil)
+    }
+
+    @Test func connectionReceiptRequiresOneBoundAttachment() throws {
+        let root = try temporaryDirectory()
+        let definition = try reusableBasicScenario()
+        let receipt = ScenarioConnectionReceipt(
+            schemaVersion: 1, integration: try #require(definition.integration),
+            targetBundleIdentifier: definition.target.bundleIdentifier,
+            projectIdentity: "Tasks.xcodeproj", targetIdentity: "TasksUITests",
+            testBundleIdentifier: "dev.example.TasksUITests", harnessProtocol: "intent-lab-v2",
+            runnerPackageVersion: "0.2.0-dev", capabilities: ["direct-intent-execution", "environment-payload"],
+            inspectedAt: Date()
+        )
+        let receiptName = "IntentLabConnectionReceipt-\(UUID().uuidString).json"
+        let exportedName = "receipt.json"
+        try encoder.encode(receipt).write(to: root.appending(path: exportedName))
+        let attachment: [String: Any] = [
+            "suggestedHumanReadableName": receiptName, "exportedFileName": exportedName
+        ]
+        func writeManifest(_ attachments: [[String: Any]]) throws {
+            let manifest: [[String: Any]] = [[
+                "testIdentifier": "IntentLabScenarioTests/testIntentLabConnection()",
+                "attachments": attachments
+            ]]
+            try JSONSerialization.data(withJSONObject: manifest).write(to: root.appending(path: "manifest.json"))
+        }
+        try writeManifest([attachment])
+        #expect(try XcodeTestExecutor.connectionReceipt(in: root).integration == definition.integration)
+        try writeManifest([attachment, attachment])
+        #expect(throws: XcodeTestExecutorError.self) {
+            _ = try XcodeTestExecutor.connectionReceipt(in: root)
+        }
+    }
+
+    @Test func compiledReceiptRejectsSameNameTargetFromAnotherProject() throws {
+        let root = try temporaryDirectory()
+        let first = root.appending(path: "First/Tasks.xcodeproj")
+        let second = root.appending(path: "Second/Tasks.xcodeproj")
+        let workspace = root.appending(path: "Combined.xcworkspace")
+        for directory in [first, second, workspace] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try Data("""
+        <Workspace version="1.0"><FileRef location="group:First/Tasks.xcodeproj"/>
+        <FileRef location="group:Second/Tasks.xcodeproj"/></Workspace>
+        """.utf8).write(to: workspace.appending(path: "contents.xcworkspacedata"))
+        let definition = try reusableBasicScenario()
+        var receipt = ScenarioConnectionReceipt(
+            schemaVersion: 1, integration: try #require(definition.integration),
+            targetBundleIdentifier: definition.target.bundleIdentifier,
+            projectIdentity: "First/Tasks.xcodeproj", targetIdentity: "TasksUITests",
+            testBundleIdentifier: "dev.example.TasksUITests", harnessProtocol: "intent-lab-v2",
+            runnerPackageVersion: "0.2.0-dev", capabilities: [], inspectedAt: Date()
+        )
+        var configuration = XcodeTestConfiguration(
+            containerPath: workspace.path,
+            isWorkspace: true, scheme: "Combined", testTarget: "TasksUITests",
+            testBundleIdentifier: "dev.example.TasksUITests", destinationIdentifier: "device",
+            generatedResourceDirectory: root.path
+        )
+        configuration.selectedTestProductID = "\(first.path)#FIRST-ID"
+        #expect(XcodeTestExecutor.receiptMatchesSelection(
+            receipt, configuration: configuration, selectedProjectURL: first
+        ))
+        receipt.projectIdentity = "Tasks.xcodeproj"
+        #expect(!XcodeTestExecutor.receiptMatchesSelection(
+            receipt, configuration: configuration, selectedProjectURL: first
+        ))
+        receipt.projectIdentity = "First/Tasks.xcodeproj"
+        configuration.selectedTestProductID = "\(second.path)#SECOND-ID"
+        #expect(!XcodeTestExecutor.receiptMatchesSelection(
+            receipt, configuration: configuration, selectedProjectURL: second
+        ))
+        #expect(!XcodeTestExecutor.receiptMatchesSelection(
+            receipt, configuration: configuration, selectedProjectURL: first
+        ))
+        configuration.selectedTestProductID = "\(first.path)#FIRST-ID"
+        configuration.testTarget = "OtherUITests"
+        #expect(!XcodeTestExecutor.receiptMatchesSelection(
+            receipt, configuration: configuration, selectedProjectURL: first
+        ))
+    }
+
+    @Test func connectionFingerprintChangesWithSigningAndPackageInputs() throws {
+        let root = try temporaryDirectory()
+        let project = root.appending(path: "Tasks.xcodeproj", directoryHint: .isDirectory)
+        let products = root.appending(path: "Products", directoryHint: .isDirectory)
+        let app = products.appending(path: "Tasks.app", directoryHint: .isDirectory)
+        let test = products.appending(path: "TasksUITests.xctest", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: test, withIntermediateDirectories: true)
+        let pbxproj = project.appending(path: "project.pbxproj")
+        let appInfo = app.appending(path: "Info.plist")
+        let signature = app.appending(path: "_CodeSignature/CodeResources")
+        let resolved = project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved")
+        try FileManager.default.createDirectory(at: signature.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: resolved.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("project-v1".utf8).write(to: pbxproj)
+        try Data("info-v1".utf8).write(to: appInfo)
+        try Data("signature-v1".utf8).write(to: signature)
+        try Data("package-v1".utf8).write(to: resolved)
+        let source = products.appending(path: "Tasks.xctestrun")
+        try Data("run-v1".utf8).write(to: source)
+        let paths = XCTestRunProductPaths(
+            sourceURL: source, appBundleURL: app, testHostURL: test, testBundleURL: test
+        )
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "Tasks",
+            testTarget: "TasksUITests", testBundleIdentifier: "dev.example.TasksUITests",
+            destinationIdentifier: "device", generatedResourceDirectory: root.path,
+            xcodebuildPath: "/bin/echo"
+        )
+        let original = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        let originalProducts = XcodeTestExecutor.productMetadataDigest(products: paths)
+        try Data("signature-v2".utf8).write(to: signature)
+        let signed = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        #expect(signed != original)
+        #expect(XcodeTestExecutor.productMetadataDigest(products: paths) != originalProducts)
+        try Data("package-v2".utf8).write(to: resolved)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != signed)
+
+        let workspace = root.appending(path: "Tasks.xcworkspace", directoryHint: .isDirectory)
+        let workspaceScheme = workspace.appending(path: "xcshareddata/xcschemes/Tasks.xcscheme")
+        try FileManager.default.createDirectory(at: workspaceScheme.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("<Workspace version=\"1.0\"><FileRef location=\"group:Tasks.xcodeproj\"/></Workspace>".utf8)
+            .write(to: workspace.appending(path: "contents.xcworkspacedata"))
+        try Data("scheme-v1".utf8).write(to: workspaceScheme)
+        var workspaceConfiguration = configuration
+        workspaceConfiguration.containerPath = workspace.path
+        workspaceConfiguration.isWorkspace = true
+        let workspaceDigest = try XcodeTestExecutor.buildInputsDigest(configuration: workspaceConfiguration, products: paths)
+        try Data("scheme-v2".utf8).write(to: workspaceScheme)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: workspaceConfiguration, products: paths) != workspaceDigest)
+    }
+
+    @Test func v2DeclaredBuildSettingsCannotClaimVerifiedReadiness() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let executor = XcodeTestExecutor(workDirectory: root, persistence: persistence)
+        let definition = try reusableBasicScenario()
+        let configuration = XcodeTestConfiguration(
+            containerPath: root.path, isWorkspace: false, scheme: "Tasks",
+            testTarget: "TasksUITests", testBundleIdentifier: "dev.example.TasksUITests",
+            destinationIdentifier: "", generatedResourceDirectory: root.path,
+            harnessVersion: "intent-lab-v2",
+            harnessCapabilities: ScenarioHarnessCapabilities.required(for: definition).sorted(),
+            applicationSigningConfigured: true, testSigningConfigured: true,
+            selectedTestProductID: "project#test", selectedApplicationProductID: "project#app"
+        )
+        let report = await executor.preflight(
+            definition: definition, configuration: configuration, projectTrusted: true
+        )
+        #expect(report.checks.first(where: { $0.id == "harness" })?.state == .blocked)
+        #expect(report.checks.first(where: { $0.id == "capability.direct-intent-execution" })?.state == .blocked)
     }
 
     @Test func validationKeepsMissingNullAndTypedValuesDistinct() throws {
@@ -183,6 +805,27 @@ struct ScenarioContractsTests {
         try await executor.finishEvidenceValidation(journal: stopped, accepted: false)
         #expect(await executor.reservation(for: invocation.destinationIdentifier) != nil)
         #expect(try await executor.currentRecoveryJournals().map(\.id) == [stopped.id])
+        do {
+            _ = try await executor.beginQuarantineClear(
+                destinationIdentifier: invocation.destinationIdentifier,
+                fixtureReadinessProven: false
+            )
+            Issue.record("Clearing quarantine without proven readiness unexpectedly succeeded.")
+        } catch is XcodeTestExecutorError {
+            // The device remains reserved until readiness is proven.
+        } catch {
+            throw error
+        }
+        let configuration = XcodeTestConfiguration(
+            containerPath: root.path, isWorkspace: false, scheme: "Fixture",
+            testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: invocation.destinationIdentifier,
+            generatedResourceDirectory: root.path
+        )
+        let report = await executor.preflight(
+            definition: definition, configuration: configuration, projectTrusted: true
+        )
+        #expect(report.checks.first(where: { $0.id == "reservation" })?.state == .blocked)
     }
 
     @Test func validEvidenceImportsOnceAndRequiresEveryLane() throws {
@@ -516,6 +1159,47 @@ struct ScenarioContractsTests {
         }
     }
 
+    @Test func completedFailedOutcomeCanBeRetainedButTimeoutCannotClearQuarantine() throws {
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        let envelope = evidence(for: definition, invocation: invocation)
+        var ledger = ScenarioImportLedger()
+        var run = try XCTestEvidenceImporter().importEvidence(
+            data: try encoder.encode(envelope), definition: definition,
+            journal: journal(for: definition, invocation: invocation, phase: .stopped),
+            artifactRoot: temporaryDirectory(), ledger: &ledger
+        )
+        run.xctestExitCode = 0
+        let final = ScenarioEvidenceAttachment(
+            url: URL(filePath: "/tmp/final.json"), name: "IntentLabEvidence-\(invocation.id.uuidString).json"
+        )
+        run.laneResults[0].outcome = .failed
+        run.outcome = .failed
+        #expect(ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+            attachments: [final], runs: [run], xctestExitCode: 0
+        ))
+        var emptyRun = run
+        emptyRun.laneResults = []
+        #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+            attachments: [final], runs: [emptyRun], xctestExitCode: 0
+        ))
+        run.laneResults[0].executionStatus = .timedOut
+        #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+            attachments: [final], runs: [run], xctestExitCode: 0
+        ))
+        run.laneResults[0].executionStatus = .completed
+        let checkpoint = ScenarioEvidenceAttachment(
+            url: URL(filePath: "/tmp/checkpoint.json"),
+            name: "IntentLabEvidence-\(invocation.id.uuidString)-checkpoint.json"
+        )
+        #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+            attachments: [checkpoint], runs: [run], xctestExitCode: 0
+        ))
+        #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+            attachments: [final], runs: [run], xctestExitCode: 1
+        ))
+    }
+
     @Test func initialJournalSaveFailureReleasesOnlyItsReservation() async throws {
         let root = try temporaryDirectory()
         let blockedRoot = root.appending(path: "not-a-directory")
@@ -607,6 +1291,33 @@ struct ScenarioContractsTests {
             persistence: persistence
         )
         #expect(try await nextLaunch.reconcileInterruptedJournals().isEmpty)
+    }
+
+    @Test func corruptJournalBlocksRecoveryAndNextDeviceAttempt() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        let interrupted = journal(for: definition, invocation: invocation, phase: .running)
+        try await persistence.saveJournal(interrupted)
+        let corruptURL = root.appending(path: "Journals/\(UUID().uuidString).json")
+        try Data("{corrupt".utf8).write(to: corruptURL)
+
+        let relaunched = XcodeTestExecutor(
+            workDirectory: root.appending(path: "Executor"), persistence: persistence
+        )
+        await #expect(throws: ScenarioPersistenceError.self) {
+            _ = try await relaunched.reconcileInterruptedJournals()
+        }
+        await #expect(throws: ScenarioPersistenceError.self) {
+            try await relaunched.persistPreparingJournal(interrupted)
+        }
+        #expect(await relaunched.reservation(for: invocation.destinationIdentifier) == nil)
+
+        try FileManager.default.removeItem(at: corruptURL)
+        let recovered = try await relaunched.reconcileInterruptedJournals()
+        #expect(recovered.map(\.id) == [interrupted.id])
+        #expect(await relaunched.reservation(for: invocation.destinationIdentifier) != nil)
     }
 
     @Test func inSessionCancellationQuarantinesAndCanBeExplicitlyCleared() async throws {
@@ -915,6 +1626,36 @@ struct ScenarioContractsTests {
         return try value.frozen()
     }
 
+    private func reusableBasicScenario() throws -> ScenarioDefinition {
+        var value = try scenario()
+        value.schemaVersion = ScenarioDefinition.reusableSchemaVersion
+        value.goal.requestText = ""
+        value.goal.languageCode = ""
+        value.goal.expectedBehavior = ""
+        value.fixture = .init(
+            id: "", version: "", digest: "", isSynthetic: false,
+            preparationOperation: "", cleanupOperation: ""
+        )
+        value.assertions = []
+        value.directControl.outputFields = []
+        value.coverage.appFeature = .notApplicable
+        value.coverage.siri = .notApplicable
+        value.purpose = .exploratory
+        value.checkMode = .basic
+        value.requiredClaims = [.executionCompleted]
+        value.observationPlan = []
+        value.integration = .init(id: "tasks", version: "1.0", digest: String(repeating: "a", count: 64))
+        return try value.frozen()
+    }
+
+    private func reusableInvocation(for definition: ScenarioDefinition) -> ScenarioInvocationIdentity {
+        var value = invocation(for: definition)
+        value.harnessVersion = ScenarioInvocationIdentity.reusableHarnessVersion
+        value.integration = definition.integration
+        value.requiredCapabilities = ScenarioHarnessCapabilities.required(for: definition).sorted()
+        return value
+    }
+
     private func invocation(for definition: ScenarioDefinition) -> ScenarioInvocationIdentity {
         let app = ScenarioProductIdentity(bundleIdentifier: definition.target.bundleIdentifier, executableName: "Fixture", sha256: "app-sha")
         let test = ScenarioProductIdentity(bundleIdentifier: "com.example.IntentLabFixtureUITests", executableName: "FixtureUITests", sha256: "test-sha")
@@ -949,7 +1690,7 @@ struct ScenarioContractsTests {
                 observations: observations, assertionResults: assertionResults
             ))
         }
-        return .init(
+        var envelope = ScenarioEvidenceEnvelope(
             invocation: invocation, sourceBundleIdentifier: definition.target.bundleIdentifier,
             observedAppProduct: invocation.appProduct!, observedTestProduct: invocation.testProduct!,
             environment: .init(
@@ -960,6 +1701,18 @@ struct ScenarioContractsTests {
             ),
             testCount: 1, results: lanes
         )
+        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+            envelope.schemaVersion = ScenarioEvidenceEnvelope.reusableSchemaVersion
+            envelope.integration = definition.integration
+            envelope.runnerPackageVersion = "0.1.0"
+            envelope.negotiatedCapabilities = ScenarioHarnessCapabilities.required(for: definition).sorted()
+            envelope.results = envelope.results.map { result in
+                var result = result
+                result.claims = [.executionCompleted]
+                return result
+            }
+        }
+        return envelope
     }
 
     private func journal(

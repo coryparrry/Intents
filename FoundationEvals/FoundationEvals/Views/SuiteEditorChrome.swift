@@ -36,17 +36,6 @@ enum SuiteSetupPage: String, WorkspacePane {
         case .performance: "gauge.with.dots.needle.50percent"
         }
     }
-    var tint: Color {
-        switch self {
-        case .instructions: .blue
-        case .scoring: .green
-        case .model: .purple
-        case .tools: .gray
-        case .output: .pink
-        case .profile: .teal
-        case .performance: .orange
-        }
-    }
 }
 
 struct SuiteOptionalSection<Content: View>: View {
@@ -61,7 +50,7 @@ struct SuiteOptionalSection<Content: View>: View {
             content.padding(.top, 16)
         } label: {
             HStack(spacing: 12) {
-                WorkspaceSymbolBadge(symbol: symbol, tint: .secondary, size: 26)
+                WorkspaceIcon(symbol: symbol, size: 26)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.callout.weight(.semibold)).foregroundStyle(.primary)
                     Text(detail).font(.caption).foregroundStyle(.secondary)

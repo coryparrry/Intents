@@ -5,6 +5,7 @@ actor MCPProtocolHandler {
 
     private let port: Int
     private let authority: MCPAuthority
+    private let credential: String
     private let onRequest: (@Sendable (Date) async -> Void)?
     private let maximumBodyBytes: Int
     private let maximumConcurrentRequests: Int
@@ -13,6 +14,7 @@ actor MCPProtocolHandler {
     init(
         port: Int = 17_873,
         authority: MCPAuthority,
+        credential: String,
         maximumBodyBytes: Int = 16 * 1_024 * 1_024,
         maximumConcurrentRequests: Int = 8,
         onRequest: (@Sendable (Date) async -> Void)? = nil
@@ -20,8 +22,10 @@ actor MCPProtocolHandler {
         precondition((1...65_535).contains(port))
         precondition(maximumBodyBytes > 0)
         precondition(maximumConcurrentRequests > 0)
+        precondition(!credential.isEmpty)
         self.port = port
         self.authority = authority
+        self.credential = credential
         self.onRequest = onRequest
         self.maximumBodyBytes = maximumBodyBytes
         self.maximumConcurrentRequests = maximumConcurrentRequests
@@ -41,6 +45,11 @@ actor MCPProtocolHandler {
         guard request.method == "POST" else { return .empty(405, allow: "POST") }
         guard hostIsAllowed(request[header: "host"]), originIsAllowed(request[header: "origin"]) else {
             return .rejected(.empty(403))
+        }
+        guard authorized(request[header: "authorization"]) else {
+            var response = MCPHTTPResponse.empty(401)
+            response.headers["WWW-Authenticate"] = "Bearer"
+            return .rejected(response)
         }
         guard isJSONContentType(request[header: "content-type"]) else {
             return .rejected(.empty(415))
@@ -306,6 +315,14 @@ actor MCPProtocolHandler {
     private func hostIsAllowed(_ host: String?) -> Bool {
         guard let host = host?.lowercased() else { return false }
         return host == "127.0.0.1:\(port)" || host == "localhost:\(port)"
+    }
+
+    private func authorized(_ header: String?) -> Bool {
+        guard let header, header.hasPrefix("Bearer ") else { return false }
+        let supplied = Data(header.dropFirst("Bearer ".count).utf8)
+        let expected = Data(credential.utf8)
+        guard supplied.count == expected.count else { return false }
+        return zip(supplied, expected).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
     }
 
     private func originIsAllowed(_ origin: String?) -> Bool {

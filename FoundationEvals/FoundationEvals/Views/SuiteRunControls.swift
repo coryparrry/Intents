@@ -61,7 +61,7 @@ private struct SuiteRunDestinationButton: View {
     private var destination: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
-                WorkspaceIconTile(symbol: "play.circle.fill", tint: .accentColor, size: 28)
+                WorkspaceIcon(symbol: "play.circle.fill", size: 28)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Run destination").font(.headline)
                     Text("Where each case is sent when you run the suite.")
@@ -178,7 +178,7 @@ struct SuiteRunActivityBanner: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            WorkspaceIconTile(symbol: "waveform", tint: .accentColor, size: 32)
+            WorkspaceIcon(symbol: "waveform", size: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Collecting responses").font(.headline)
                 Text("\(store.completedSamples) of \(total) responses")
@@ -252,7 +252,7 @@ struct DeveloperExecutionSummary: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            WorkspaceIconTile(symbol: "laptopcomputer.and.iphone", tint: .indigo, size: 28)
+            WorkspaceIcon(symbol: "laptopcomputer.and.iphone", size: 28)
             VStack(alignment: .leading, spacing: 3) {
                 Text(execution.runnerName).font(.callout.weight(.semibold))
                 Text("\(execution.hardwareModel) · \(execution.operatingSystem)")

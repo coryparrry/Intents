@@ -515,6 +515,38 @@ struct EvaluationCompatibleJudgeClientTests {
         }
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func imageCapabilityFollowsImagesActuallySent() async throws {
+        let fixture = try CompatibleJudgeFixture(mode: .valid)
+        defer { fixture.stop() }
+        let connection = EvaluationJudgeConnection(
+            id: UUID(), name: "Text-only judge", kind: .localCompatible,
+            baseURL: fixture.baseURL, modelID: "judge-fixture",
+            capabilities: .init(structuredOutputs: true, multimodal: false)
+        )
+        var suite = approvedSuite(for: connection)
+        let image = ImageEvaluationInput(label: "reference", url: URL(filePath: "/tmp/not-read.png"))
+        _ = try await EvaluationCompatibleJudgeClient().judge(
+            response: "Response", evaluationCase: suite.cases[0], effectivePrompt: "Prompt",
+            suite: suite, images: [image], toolEvidence: nil,
+            resolved: .init(connection: connection, apiKey: nil)
+        )
+        #expect(fixture.lastCompletionRequest?.contains("image_url") == false)
+
+        suite.judgeConfiguration.includeReferenceAttachments = true
+        suite.judgeConfiguration.approvedIncludeReferenceAttachments = true
+        do {
+            _ = try await EvaluationCompatibleJudgeClient().judge(
+                response: "Response", evaluationCase: suite.cases[0], effectivePrompt: "Prompt",
+                suite: suite, images: [image], toolEvidence: nil,
+                resolved: .init(connection: connection, apiKey: nil)
+            )
+            Issue.record("Expected text-only judge to reject transmitted images")
+        } catch EvaluationCompatibleJudgeError.capabilityMismatch {
+            // The capability check runs before reading or sending the image.
+        }
+    }
+
     @Test func disclosureApprovalIsBoundToConnectionAndAttachmentSharing() {
         let connectionID = UUID()
         var configuration = EvaluationJudgeConfiguration(

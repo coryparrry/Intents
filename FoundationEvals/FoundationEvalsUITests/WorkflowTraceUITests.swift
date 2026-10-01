@@ -287,8 +287,32 @@ final class WorkflowTraceUITests: XCTestCase {
     }
 
     @MainActor
+    func testReportShowsResponsesBeforeAdvancedTools() throws {
+        try withFixtureApplication(openTrace: false) { app in
+            XCTAssertTrue(app.staticTexts["Evaluation result headline"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.outlines["Result list"].exists)
+            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Response latency", "Response latency")).firstMatch.exists)
+            XCTAssertFalse(app.buttons["Approve as baseline"].exists)
+            try capture(app, name: "simplified-results-report")
+
+            let tools = app.disclosureTriangles["Review and release tools"]
+            for _ in 0..<12 where !tools.isHittable { app.scrollViews.firstMatch.swipeUp() }
+            XCTAssertTrue(tools.isHittable)
+            tools.click()
+            XCTAssertTrue(app.buttons["Approve as baseline"].exists)
+            tools.click()
+            let performance = app.disclosureTriangles["Performance and comparison"]
+            for _ in 0..<8 where !performance.isHittable { app.scrollViews.firstMatch.swipeDown() }
+            XCTAssertTrue(performance.isHittable)
+            performance.click()
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Response latency", "Response latency")).firstMatch.exists)
+        }
+    }
+
+    @MainActor
     private func withFixtureApplication(
         longJudgeEvidence: Bool = false,
+        openTrace: Bool = true,
         _ body: (XCUIApplication) throws -> Void
     ) throws {
         let storage = try UITestStorage.makeDirectory(prefix: "workflow-trace")
@@ -314,7 +338,11 @@ final class WorkflowTraceUITests: XCTestCase {
             .matching(NSPredicate(format: "label == %@", WorkflowTraceFixture.runName)).firstMatch
         try UITestStorage.waitFor(savedRun, in: app, timeout: 5)
         savedRun.click()
-        try UITestStorage.waitFor(app.popUpButtons["Trace case"], in: app, timeout: 5)
+        try UITestStorage.waitFor(app.radioButtons["Workflow trace"], in: app, timeout: 5)
+        if openTrace {
+            app.radioButtons["Workflow trace"].click()
+            try UITestStorage.waitFor(app.popUpButtons["Trace case"], in: app, timeout: 5)
+        }
         try body(app)
     }
 
@@ -484,7 +512,13 @@ private enum WorkflowTraceFixture {
             "results": [firstSample, legacySample, cancelledSample, overflowingSample]
         ]
         let data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: runs.appending(path: "trace-inspector-test-fixture.json"), options: .atomic)
+        try data.write(to: runs.appending(path: "D0000000-0000-0000-0000-000000000001.json"), options: .atomic)
+        // Legacy runs are migrated only when they have a matching saved suite.
+        let suite: [String: Any] = [
+            "id": "D0000000-0000-0000-0000-000000000002", "name": runName, "version": "fixture-v1"
+        ]
+        try JSONSerialization.data(withJSONObject: suite, options: [.prettyPrinted, .sortedKeys])
+            .write(to: directory.appending(path: "suite.json"), options: .atomic)
     }
 
     private static var recordedSample: [String: Any] {

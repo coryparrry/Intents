@@ -126,7 +126,8 @@ actor EvaluationCompatibleJudgeClient {
         guard connection.capabilities.structuredOutputs else {
             throw EvaluationCompatibleJudgeError.capabilityMismatch("Structured verdicts are required for judging.")
         }
-        guard images.isEmpty || connection.capabilities.multimodal else {
+        let transmittedImages = suite.judgeConfiguration.includeReferenceAttachments ? images : []
+        guard transmittedImages.isEmpty || connection.capabilities.multimodal else {
             throw EvaluationCompatibleJudgeError.capabilityMismatch(
                 "This evaluation includes image evidence, but the judge connection is not configured and verified for multimodal input.")
         }
@@ -152,7 +153,7 @@ actor EvaluationCompatibleJudgeClient {
             attempts.append(.init(prompt: attemptPrompt, requestConfiguration: configuration))
             do {
                 let envelope = try await requestVerdict(prompt: attemptPrompt, configuration: configuration,
-                    images: suite.judgeConfiguration.includeReferenceAttachments ? images : [], resolved: resolved)
+                    images: transmittedImages, resolved: resolved)
                 // Capture before parsing: malformed JSON is evidence, not a
                 // reason to discard the provider's actual answer.
                 attempts[attempt - 1].rawResponse = envelope.rawContent

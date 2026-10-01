@@ -240,7 +240,7 @@ private struct SuiteOverviewHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 16) {
-                WorkspaceIconTile(symbol: "checklist", tint: .accentColor, size: 46)
+                WorkspaceIcon(symbol: "checklist", size: 46, presentation: .header)
                 VStack(alignment: .leading, spacing: 5) {
                     TextField("Suite name", text: $store.draftSuite.name)
                         .textFieldStyle(.plain)

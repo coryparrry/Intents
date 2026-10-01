@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "id": "com.example.intent-lab-tasks",
+  "version": "1.0.0",
+  "targetBundleIdentifier": "com.example.IntentLabTasks.integration-tests",
+  "projectIdentity": "IntentLabTasks.xcodeproj",
+  "targetIdentity": "IntentLabTasksUITests",
+  "supportedHarnessProtocols": ["intent-lab-v2"],
+  "actions": [
+    {
+      "id": "CompleteTaskIntent",
+      "parameters": [
+        {
+          "name": "task",
+          "type": { "entity": { "typeIdentifier": "TaskEntity" } },
+          "required": true
+        }
+      ]
+    }
+  ],
+  "resultProjections": [
+    {
+      "id": "completionResponse",
+      "type": { "primitive": { "_0": "string" } },
+      "path": [{ "kind": "property", "name": "value" }]
+    }
+  ],
+  "preparationOperations": ["prepare-task-fixture"],
+  "cleanupOperations": ["cleanup-task-fixture"],
+  "queryOperations": [
+    {
+      "id": "tasks-by-stable-id",
+      "source": "entityQuery",
+      "typeIdentifier": "TaskEntity",
+      "identifiers": ["task-001", "task-002"]
+    }
+  ],
+  "observers": [
+    { "id": "task-001.id", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.id" },
+    { "id": "task-001.title", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.title" },
+    { "id": "task-001.isComplete", "source": "entityQuery", "type": { "primitive": { "_0": "boolean" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.isComplete" },
+    { "id": "task-002.id", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-002.id" },
+    { "id": "task-002.title", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-002.title" },
+    { "id": "task-002.isComplete", "source": "entityQuery", "type": { "primitive": { "_0": "boolean" } }, "operationID": "tasks-by-stable-id", "selector": "task-002.isComplete" },
+    { "id": "invocationContext", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.invocationContext" },
+    { "id": "actionReceiptID", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.actionReceiptID" }
+  ],
+  "isolation": { "kind": "synthetic", "readinessOperationID": "prepare-task-fixture" },
+  "capabilities": [
+    "environment-payload",
+    "direct-intent-execution",
+    "direct-intent-output",
+    "preparation",
+    "entity-query",
+    "siri",
+    "siri-completion",
+    "invocation-correlation"
+  ]
+}

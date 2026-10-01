@@ -19,7 +19,7 @@ struct RunWorkflowPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                WorkspaceSymbolBadge(symbol: "person.badge.shield.checkmark", tint: .teal, size: 26)
+                WorkspaceIcon(symbol: "person.badge.shield.checkmark", size: 26)
                 Text("Review and approval").font(.headline).accessibilityAddTraits(.isHeader)
             }
             VStack(alignment: .leading, spacing: 12) {

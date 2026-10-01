@@ -26,6 +26,8 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 !/docs/releasing.md
 !/docs/telemetry.md
 !/docs/workflow-traces.md
+!/docs/wiki/
+!/docs/wiki/*.md
 
 # Local signing material.
 *.p12
@@ -34,4 +36,8 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 *.provisionprofile
 
 # Local working notes.
+/Verification/LocalReliability-20260930/
+/Verification/PR57-CI-20260930/
+/Verification/IntentLabUX-20261001/
+/Verification/FinalFollowup/
 /worklog.md

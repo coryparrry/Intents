@@ -11,7 +11,7 @@ struct IntentLabRegressionTests {
             deadlineSeconds: 60
         )
 
-        #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 135)
+        #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 255)
     }
 
     @Test func testProcessDeadlineBudgetsThreeSiriAttemptsAndDirectLane() {
@@ -22,7 +22,7 @@ struct IntentLabRegressionTests {
             deadlineSeconds: 60
         )
 
-        #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 540)
+        #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 660)
     }
 
     @Test func testProcessDeadlineUsesConfiguredScenarioWaitForEveryLane() {
@@ -33,7 +33,66 @@ struct IntentLabRegressionTests {
             deadlineSeconds: 30
         )
 
-        #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 420)
+        #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 480)
+    }
+
+    @Test func siriCoverageRequiresPhysicalIPhoneButDirectChecksAllowMac() {
+        let mac = IntentLabDeviceDestination(
+            identifier: "mac-1", name: "Mac", operatingSystemVersion: "27.0",
+            available: true, platform: .macOS
+        )
+        let phone = IntentLabDeviceDestination(
+            identifier: "phone-1", name: "iPhone", operatingSystemVersion: "27.0",
+            available: true, platform: .iOS
+        )
+        let devices = [mac, phone]
+
+        #expect(XcodeTestExecutor.destinationStatus(identifier: mac.identifier, devices: devices).ready)
+        let rejected = XcodeTestExecutor.destinationStatus(
+            identifier: mac.identifier, devices: devices, requiresSiri: true
+        )
+        #expect(!rejected.ready)
+        #expect(rejected.detail.contains("physical iPhone"))
+        #expect(XcodeTestExecutor.destinationStatus(
+            identifier: phone.identifier, devices: devices, requiresSiri: true
+        ).ready)
+    }
+
+    @Test func connectionFingerprintChangesWithSourceAndResourceEdits() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appending(path: "Fixture.xcodeproj", directoryHint: .isDirectory)
+        let products = root.appending(path: "Products", directoryHint: .isDirectory)
+        let app = products.appending(path: "Fixture.app", directoryHint: .isDirectory)
+        let tests = products.appending(path: "FixtureUITests.xctest", directoryHint: .isDirectory)
+        for directory in [project, app, tests] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
+        let source = root.appending(path: "Sources/NoteIntent.swift")
+        let resource = root.appending(path: "Resources/NoteTemplate.json")
+        for file in [source, resource] {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("original".utf8).write(to: file)
+        }
+        let testRun = products.appending(path: "Fixture.xctestrun")
+        try Data("run".utf8).write(to: testRun)
+        let paths = XCTestRunProductPaths(
+            sourceURL: testRun, appBundleURL: app, testHostURL: tests, testBundleURL: tests
+        )
+        let configuration = XcodeTestConfiguration(
+            containerPath: project.path, isWorkspace: false, scheme: "Fixture",
+            testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: "device", generatedResourceDirectory: root.path,
+            xcodebuildPath: "/bin/echo"
+        )
+
+        let original = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        try Data("changed source".utf8).write(to: source)
+        let afterSource = try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths)
+        #expect(afterSource != original)
+        try Data("changed resource".utf8).write(to: resource)
+        #expect(try XcodeTestExecutor.buildInputsDigest(configuration: configuration, products: paths) != afterSource)
     }
 
     @Test func xcresultManifestFindsUUIDExportsAndPrefersFinalEvidence() throws {
@@ -91,6 +150,32 @@ struct IntentLabRegressionTests {
         #expect(XcodeTestExecutor.failureMessages(in: nodes) == ["Timed out waiting for Siri to activate"])
         #expect(ScenarioDiagnosticClassifier.checkpointDiagnostic(for: "Timed out waiting for Siri to activate")
             .contains("approve it, then rerun"))
+    }
+
+    @Test func failedIntentWithoutFeatureEvidenceDoesNotClaimFeaturePassed() {
+        let message = ScenarioDiagnosticClassifier.message(for: [lane(.intentIntegration, .failed)])
+        #expect(message.contains("No passing app-feature control was recorded"))
+        #expect(!message.contains("feature control passed"))
+
+        let unobservedMessage = ScenarioDiagnosticClassifier.message(for: [
+            lane(.appFeature, .notObserved), lane(.intentIntegration, .failed)
+        ])
+        #expect(unobservedMessage.contains("No passing app-feature control was recorded"))
+    }
+
+    @Test func passingFeatureControlCanLocateFailedIntentBoundary() {
+        let message = ScenarioDiagnosticClassifier.message(for: [
+            lane(.appFeature, .passed), lane(.intentIntegration, .failed)
+        ])
+        #expect(message.contains("The feature control passed"))
+    }
+
+    private func lane(_ lane: ScenarioLane, _ outcome: ScenarioOutcome) -> ScenarioLaneResult {
+        ScenarioLaneResult(
+            caseID: UUID(), attempt: 1, lane: lane,
+            executionStatus: .completed, outcome: outcome,
+            startedAt: Date(), completedAt: Date()
+        )
     }
 
     @Test func injectedSemanticAssessmentFinalizesLaneAndRunOutcome() async throws {
@@ -248,6 +333,202 @@ struct IntentLabRegressionTests {
         #expect(reloaded.configuration.scheme == "Fixture")
         #expect(reloaded.configuration.destinationIdentifier == "physical-device-1")
         #expect(reloaded.projectTrusted == false)
+    }
+
+    @MainActor
+    @Test func reusableCheckSelectionKeepsValidAppAndAvoidsAmbiguousFallback() {
+        let first = XcodeDiscoveredProduct(
+            targetName: "FirstApp", bundleIdentifier: "dev.example.FirstApp",
+            productType: "com.apple.product-type.application", isApplication: true,
+            isUITestBundle: false, projectPath: "/tmp/Apps.xcodeproj", targetID: "FIRST"
+        )
+        let second = XcodeDiscoveredProduct(
+            targetName: "SecondApp", bundleIdentifier: "dev.example.SecondApp",
+            productType: "com.apple.product-type.application", isApplication: true,
+            isUITestBundle: false, projectPath: "/tmp/Apps.xcodeproj", targetID: "SECOND"
+        )
+        let discovery = XcodeConnectionDiscovery(
+            schemes: ["Apps"], applications: [first, second], uiTestBundles: []
+        )
+
+        #expect(ScenarioCoordinator.selectedReusableApplication(
+            in: discovery, selectedProductID: second.id
+        )?.id == second.id)
+        #expect(ScenarioCoordinator.selectedReusableApplication(
+            in: discovery, selectedProductID: "stale-product-id"
+        ) == nil)
+        #expect(ScenarioCoordinator.selectedReusableApplication(
+            in: discovery, selectedProductID: nil
+        ) == nil)
+
+        let uniqueDiscovery = XcodeConnectionDiscovery(
+            schemes: ["Apps"], applications: [first], uiTestBundles: []
+        )
+        #expect(ScenarioCoordinator.selectedReusableApplication(
+            in: uniqueDiscovery, selectedProductID: "stale-product-id"
+        )?.id == first.id)
+    }
+
+    @MainActor
+    @Test func discoveryPreservesAvailableSavedSchemeBeforeUsingPreferredDefault() {
+        let app = XcodeDiscoveredProduct(
+            targetName: "IntentLabFixture", bundleIdentifier: "dev.example.Fixture",
+            productType: "com.apple.product-type.application", isApplication: true,
+            isUITestBundle: false
+        )
+        let discovery = XcodeConnectionDiscovery(
+            schemes: ["IntentLabFixture", "IntentLabFixtureV2"],
+            applications: [app], uiTestBundles: []
+        )
+        #expect(discovery.automaticallySelectedScheme == "IntentLabFixture")
+        #expect(ScenarioCoordinator.schemeAfterDiscovery("IntentLabFixtureV2", in: discovery)
+            == "IntentLabFixtureV2")
+        #expect(ScenarioCoordinator.schemeAfterDiscovery("", in: discovery)
+            == "IntentLabFixture")
+        #expect(ScenarioCoordinator.schemeAfterDiscovery("RemovedScheme", in: discovery)
+            == "IntentLabFixture")
+    }
+
+    @MainActor
+    @Test func installedIntegrationUsesOnlyMatchingDiscoveredProducts() {
+        let app = XcodeDiscoveredProduct(
+            targetName: "Fixture", bundleIdentifier: "dev.example.Fixture",
+            productType: "com.apple.product-type.application", isApplication: true,
+            isUITestBundle: false, projectPath: "/tmp/Fixture.xcodeproj", targetID: "APP",
+            signingConfigured: true
+        )
+        let legacyTests = XcodeDiscoveredProduct(
+            targetName: "LegacyUITests", bundleIdentifier: "dev.example.LegacyUITests",
+            productType: "com.apple.product-type.bundle.ui-testing", isApplication: false,
+            isUITestBundle: true, projectPath: "/tmp/Fixture.xcodeproj", targetID: "OLD"
+        )
+        let installedTests = XcodeDiscoveredProduct(
+            targetName: "IntentLabUITests", bundleIdentifier: "dev.example.IntentLabUITests",
+            productType: "com.apple.product-type.bundle.ui-testing", isApplication: false,
+            isUITestBundle: true, projectPath: "/tmp/Fixture.xcodeproj", targetID: "NEW",
+            harnessVersion: "2", harnessCapabilities: ["direct-intent-execution"], signingConfigured: true
+        )
+        let discovery = XcodeConnectionDiscovery(
+            schemes: ["Fixture"], applications: [app], uiTestBundles: [legacyTests, installedTests]
+        )
+
+        let matched = ScenarioCoordinator.installedProducts(
+            in: discovery, appBundleID: app.bundleIdentifier, applicationProductID: app.id,
+            testTarget: installedTests.targetName, testProductID: installedTests.id
+        )
+        #expect(matched.application == app)
+        #expect(matched.tests == installedTests)
+        #expect(ScenarioCoordinator.installedProducts(
+            in: discovery, appBundleID: app.bundleIdentifier, applicationProductID: app.id,
+            testTarget: installedTests.targetName, testProductID: legacyTests.id
+        ).tests == nil)
+    }
+
+    @MainActor
+    @Test func installedIntegrationClearsLegacyTestMetadataWithoutMatchingDiscovery() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let coordinator = ScenarioCoordinator(
+            supportDirectory: root, evaluationStore: EvaluationStore(supportDirectory: root)
+        )
+        coordinator.configuration.testBundleIdentifier = "dev.example.LegacyUITests"
+        coordinator.configuration.harnessVersion = "1"
+        coordinator.configuration.harnessCapabilities = ["legacy"]
+        coordinator.configuration.testSigningConfigured = true
+
+        coordinator.recordInstalledIntegration(
+            .init(id: "dev.example.Fixture.intentlab", version: "1", digest: String(repeating: "a", count: 64)),
+            appBundleID: "dev.example.Fixture", projectPath: "/tmp/Fixture.xcodeproj",
+            scheme: "Fixture", testTarget: "IntentLabUITests",
+            applicationProductID: "/tmp/Fixture.xcodeproj#APP",
+            testProductID: "/tmp/Fixture.xcodeproj#NEW"
+        )
+        #expect(coordinator.configuration.testTarget == "IntentLabUITests")
+        #expect(coordinator.configuration.testBundleIdentifier.isEmpty)
+        #expect(coordinator.configuration.harnessVersion == nil)
+        #expect(coordinator.configuration.harnessCapabilities == nil)
+        #expect(coordinator.configuration.testSigningConfigured == nil)
+    }
+
+    @MainActor
+    @Test func deviceDiscoverySelectsOnlyOneAvailableDestinationWithoutSavedChoice() {
+        let phone = IntentLabDeviceDestination(
+            identifier: "phone-1", name: "iPhone", operatingSystemVersion: "27.0",
+            available: true, platform: .iOS
+        )
+        let unavailableMac = IntentLabDeviceDestination(
+            identifier: "mac-1", name: "Mac", operatingSystemVersion: "27.0",
+            available: false, platform: .macOS
+        )
+        let availableMac = IntentLabDeviceDestination(
+            identifier: "mac-2", name: "Mac", operatingSystemVersion: "27.0",
+            available: true, platform: .macOS
+        )
+
+        #expect(ScenarioCoordinator.soleAvailableDestinationIdentifier(
+            in: [phone, unavailableMac], savedDestinationIdentifier: ""
+        ) == phone.identifier)
+        #expect(ScenarioCoordinator.soleAvailableDestinationIdentifier(
+            in: [phone, availableMac], savedDestinationIdentifier: ""
+        ) == nil)
+        #expect(ScenarioCoordinator.soleAvailableDestinationIdentifier(
+            in: [phone], savedDestinationIdentifier: "previously-saved-device"
+        ) == nil)
+        #expect(ScenarioCoordinator.soleAvailableDestinationIdentifier(
+            in: [phone], savedDestinationIdentifier: phone.identifier
+        ) == nil)
+    }
+
+    @MainActor
+    @Test func savedTestSwitchRestoresTargetAndClearsStaleConnection() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: store)
+        coordinator.configuration.containerPath = "/tmp/First.xcodeproj"
+        coordinator.configuration.destinationIdentifier = "first-device"
+        let first = try await coordinator.freezeAndSave()
+        coordinator.draft.id = UUID()
+        coordinator.draft.name = "Second test"
+        coordinator.configuration.containerPath = "/tmp/Second.xcodeproj"
+        coordinator.configuration.destinationIdentifier = "second-device"
+        let second = try await coordinator.freezeAndSave()
+        coordinator.projectTrusted = true
+        coordinator.configuration.selectedApplicationProductID = "stale-app"
+        coordinator.configuration.selectedTestProductID = "stale-tests"
+        coordinator.configuration.applicationSigningConfigured = true
+        coordinator.parameterArrayDraftTexts = [0: "1,"]
+        coordinator.invalidParameterDraftIndices = [0]
+        coordinator.selectedRunID = UUID()
+
+        await coordinator.selectSavedDefinition(id: first.id, version: first.version)
+        #expect(coordinator.draft == first)
+        #expect(coordinator.configuration.containerPath == first.target.projectPath)
+        #expect(coordinator.configuration.destinationIdentifier == "first-device")
+        #expect(!coordinator.projectTrusted)
+        #expect(coordinator.configuration.selectedApplicationProductID == nil)
+        #expect(coordinator.configuration.selectedTestProductID == nil)
+        #expect(coordinator.configuration.applicationSigningConfigured == nil)
+        #expect(coordinator.parameterArrayDraftTexts.isEmpty)
+        #expect(coordinator.invalidParameterDraftIndices.isEmpty)
+        #expect(coordinator.selectedRunID == nil)
+        #expect(coordinator.preflight == nil)
+        #expect(coordinator.verifiedIntegrationSummary == nil)
+
+        await coordinator.selectSavedDefinition(id: second.id, version: second.version)
+        #expect(coordinator.draft == second)
+        #expect(coordinator.configuration.destinationIdentifier == "second-device")
+        let persistence = ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab"))
+        let selected = try await persistence.loadSelectedDefinition()
+        #expect(selected?.id == second.id)
+        #expect(selected?.version == second.version)
+
+        coordinator.projectTrusted = true
+        await coordinator.selectSavedDefinition(id: second.id, version: second.version)
+        #expect(coordinator.projectTrusted, "The same project keeps its session approval")
+        #expect(coordinator.preflight != nil, "Switching within an approved project refreshes readiness")
+        await coordinator.selectSavedDefinition(id: UUID(), version: 1)
+        #expect(coordinator.draft == second, "An unknown saved test cannot replace the current draft")
     }
 
     private func temporaryDirectory() throws -> URL {

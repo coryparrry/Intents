@@ -19,6 +19,8 @@ let portableProductionSources = [
     "Services/XCTestRunInvocationTransport.swift",
     "Services/XcodeConnectionDiscovery.swift",
     "Services/XcodeTestExecutor.swift",
+    "Services/OpenStepProjectDocument.swift",
+    "Services/IntentLabProjectInstaller.swift",
 ]
 
 let portableTestSources = [
@@ -30,6 +32,8 @@ let portableTestSources = [
     "TimelineRenderingTests.swift",
     "RunToolbarProgressTests.swift",
     "ScenarioContractsTests.swift",
+    "IntentLabProjectInstallerTests.swift",
+    "XcodeBundleLayoutTests.swift",
 ]
 
 let package = Package(
@@ -37,8 +41,21 @@ let package = Package(
     platforms: [.macOS(.v26), .iOS(.v26)],
     products: [
         .library(name: "FoundationEvalsDeveloper", targets: ["FoundationEvalsDeveloper"]),
+        .library(name: "IntentLabContracts", targets: ["IntentLabContracts"]),
+        .library(name: "IntentLabTesting", targets: ["IntentLabTesting"]),
     ],
     targets: [
+        .target(name: "IntentLabContracts", path: "Sources/IntentLabContracts"),
+        .target(
+            name: "IntentLabSiriBridge",
+            path: "Sources/IntentLabSiriBridge",
+            publicHeadersPath: "include"
+        ),
+        .target(
+            name: "IntentLabTesting",
+            dependencies: ["IntentLabContracts", "IntentLabSiriBridge"],
+            path: "Sources/IntentLabTesting"
+        ),
         .target(
             name: "FoundationEvalsDeveloper",
             path: "Sources/FoundationEvalsDeveloper"
@@ -109,6 +126,7 @@ let package = Package(
             dependencies: ["FoundationEvals", "FoundationEvalsUIComponents"],
             path: "FoundationEvals/FoundationEvalsTests",
             exclude: [
+                "Fixtures",
                 "AccessibilitySelectionActionsTests.swift",
                 "AttachmentImportTests.swift",
                 "CoreAIModelLoaderTests.swift",
@@ -120,6 +138,7 @@ let package = Package(
                 "EvaluationJudgeTests.swift",
                 "EvaluationRunAnalysisTests.swift",
                 "EvaluationStoreRunLifecycleTests.swift",
+                "EvaluationStorePersistenceRecoveryTests.swift",
                 "FeaturePersistenceTests.swift",
                 "FoundationEvalsTests.swift",
                 "ImageToolTests.swift",
@@ -146,6 +165,16 @@ let package = Package(
             name: "FoundationEvalsDeveloperTests",
             dependencies: ["FoundationEvalsDeveloper"],
             path: "Tests/FoundationEvalsDeveloperTests"
+        ),
+        .testTarget(
+            name: "IntentLabContractsTests",
+            dependencies: ["IntentLabContracts"],
+            path: "Tests/IntentLabContractsTests"
+        ),
+        .testTarget(
+            name: "IntentLabResultCaptureTests",
+            dependencies: ["IntentLabContracts"],
+            path: "Tests/IntentLabTestingTests"
         ),
     ]
 )

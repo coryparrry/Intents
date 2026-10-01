@@ -94,6 +94,98 @@ struct EvaluationDevelopmentWorkflowTests {
     }
 
     @MainActor
+    @Test func failedSuiteSwitchRestoresPendingCompletedRunsBeforeRetry() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let failRunWrites = true
+        let producer = EvaluationStore(
+            supportDirectory: directory,
+            runWriter: { data, url in
+                if failRunWrites { throw CocoaError(.fileWriteNoPermission) }
+                try data.write(to: url, options: .atomic)
+            }
+        )
+        let projectID = producer.selectedProjectID
+        let sourceSuiteID = producer.selectedSuiteID
+        let destinationSuiteID = try producer.createSuite(name: "Pending destination")
+        producer.draftSuite.scoringMode = .exactMatch
+        producer.draftSuite.cases = [EvaluationCase(name: "Feature", prompt: "ready", expected: "READY")]
+        #expect(producer.saveSuite())
+
+        let runID = UUID()
+        await #expect(throws: EvaluationStoreError.self) {
+            try await producer.runFeatureAdapter(
+                id: runID,
+                expectedRevision: producer.suiteRevision,
+                adapter: ClosureFeatureAdapter(displayName: "Saved response") { _ in "READY" }
+            )
+        }
+        let destinationDirectory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: projectID, suiteID: destinationSuiteID
+        )
+        let pendingMarkerURL = destinationDirectory.appending(path: "pending-completed-runs.json")
+        let destinationRunURL = destinationDirectory
+            .appending(path: "Runs", directoryHint: .isDirectory)
+            .appending(path: "\(runID.uuidString).json")
+        #expect(FileManager.default.fileExists(atPath: pendingMarkerURL.path))
+        #expect(try Data(contentsOf: pendingMarkerURL).isEmpty == false)
+        #expect(!FileManager.default.fileExists(atPath: destinationRunURL.path))
+
+        var catalogWithSourceSelected = producer.workspace
+        catalogWithSourceSelected.selectedProjectID = projectID
+        let projectIndex = try #require(catalogWithSourceSelected.projects.firstIndex { $0.id == projectID })
+        catalogWithSourceSelected.projects[projectIndex].selectedSuiteID = sourceSuiteID
+        try EvaluationWorkspacePersistence.save(catalogWithSourceSelected, in: directory)
+
+        let catalogURL = directory.appending(path: EvaluationWorkspacePersistence.catalogFilename)
+        var failNextCatalogWrite = false
+        var catalogBeforeFailure: Data?
+        let store = EvaluationStore(
+            supportDirectory: directory,
+            suiteLocalStateWriter: { data, url in
+                if failNextCatalogWrite {
+                    failNextCatalogWrite = false
+                    catalogBeforeFailure = try Data(contentsOf: catalogURL)
+                    try FileManager.default.removeItem(at: catalogURL)
+                    try FileManager.default.createDirectory(at: catalogURL, withIntermediateDirectories: true)
+                }
+                try data.write(to: url, options: .atomic)
+            }
+        )
+        #expect(store.selectedSuiteID == sourceSuiteID)
+        #expect(!store.hasUnsavedCompletedRun)
+        let sourceDirectory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: projectID, suiteID: sourceSuiteID
+        )
+        let sourceRunURL = sourceDirectory
+            .appending(path: "Runs", directoryHint: .isDirectory)
+            .appending(path: "\(runID.uuidString).json")
+        failNextCatalogWrite = true
+        #expect(throws: EvaluationStoreError.self) {
+            try store.switchSuite(id: destinationSuiteID)
+        }
+        #expect(store.selectedSuiteID == sourceSuiteID)
+        #expect(!store.hasUnsavedCompletedRun)
+        store.retryPendingRunSave()
+        #expect(!store.hasUnsavedCompletedRun)
+        #expect(!FileManager.default.fileExists(atPath: sourceRunURL.path))
+        #expect(!FileManager.default.fileExists(atPath: destinationRunURL.path))
+        #expect(FileManager.default.fileExists(atPath: pendingMarkerURL.path))
+
+        let originalCatalogData = try #require(catalogBeforeFailure)
+        try FileManager.default.removeItem(at: catalogURL)
+        try originalCatalogData.write(to: catalogURL, options: .atomic)
+        try store.switchSuite(id: destinationSuiteID)
+        #expect(store.hasUnsavedCompletedRun)
+        store.retryPendingRunSave()
+
+        #expect(!store.hasUnsavedCompletedRun)
+        #expect(FileManager.default.fileExists(atPath: destinationRunURL.path))
+        #expect(!FileManager.default.fileExists(atPath: pendingMarkerURL.path))
+        #expect(!FileManager.default.fileExists(atPath: sourceRunURL.path))
+    }
+
+    @MainActor
     @Test func failedArchiveProjectSwitchLeavesTheCurrentProjectActive() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1543,6 +1635,133 @@ struct EvaluationDevelopmentWorkflowTests {
     }
 
     @MainActor
+    @Test func completedFeatureEvidenceSurvivesFinalSaveFailureAndRelaunch() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory, runWriter: { _, _ in
+            throw CocoaError(.fileWriteNoPermission)
+        })
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [EvaluationCase(name: "Feature", prompt: "ready", expected: "READY")]
+        #expect(store.saveSuite())
+        let imageData = try #require(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        ))
+        let image = try await store.importAttachment(
+            id: UUID(), name: "reference.png", mediaType: "image/png", data: imageData,
+            expectedRevision: store.suiteRevision
+        )
+        let runID = UUID()
+        await #expect(throws: EvaluationStoreError.self) {
+            try await store.runFeatureAdapter(
+                id: runID, expectedRevision: store.suiteRevision,
+                adapter: ClosureFeatureAdapter(displayName: "Saved response") { _ in "READY" }
+            )
+        }
+        #expect(store.hasUnsavedCompletedRun)
+        #expect(store.run(with: runID)?.results.first?.status == .passed)
+        #expect(store.run(with: runID)?.subjectEvidence?.hasValidDigest == true)
+        let storedFilename = try #require(store.run(with: runID)?.subjectEvidence?.attachments
+            .first(where: { $0.id == image.attachment.id })?.storedFilename)
+        let evidenceURL = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID
+        ).appending(path: "RunEvidence/\(runID.uuidString)/\(storedFilename)")
+        #expect(try Data(contentsOf: evidenceURL) == imageData)
+
+        let reopened = EvaluationStore(supportDirectory: directory)
+        #expect(reopened.hasUnsavedCompletedRun)
+        #expect(reopened.run(with: runID)?.results.first?.status == .passed)
+        reopened.retryPendingRunSave()
+        #expect(!reopened.hasUnsavedCompletedRun)
+        #expect(EvaluationStore(supportDirectory: directory).run(with: runID)?.results.first?.status == .passed)
+        #expect(try Data(contentsOf: evidenceURL) == imageData)
+    }
+
+    @MainActor
+    @Test func simultaneousRetryMarkerAndRunWriteFailureWarnsToKeepAppOpen() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var failRunWrite = true
+        let store = EvaluationStore(
+            supportDirectory: directory,
+            runWriter: { data, url in
+                if failRunWrite { throw CocoaError(.fileWriteNoPermission) }
+                try data.write(to: url, options: .atomic)
+            },
+            pendingCompletedRunsWriter: { _, _ in throw CocoaError(.fileWriteNoPermission) }
+        )
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [EvaluationCase(name: "Feature", prompt: "ready", expected: "READY")]
+        #expect(store.saveSuite())
+        let runID = UUID()
+        await #expect(throws: EvaluationStoreError.self) {
+            try await store.runFeatureAdapter(
+                id: runID, expectedRevision: store.suiteRevision,
+                adapter: ClosureFeatureAdapter(displayName: "Saved response") { _ in "READY" }
+            )
+        }
+        #expect(store.hasUnsavedCompletedRun)
+        #expect(store.run(with: runID)?.results.first?.status == .passed)
+        #expect(store.pendingRunSaveMessage?.contains("Keep the app open") == true)
+        #expect(store.notice?.contains("Keep the app open") == true)
+        #expect(EvaluationStore(supportDirectory: directory).run(with: runID) == nil)
+
+        failRunWrite = false
+        store.retryPendingRunSave()
+        #expect(!store.hasUnsavedCompletedRun)
+        #expect(EvaluationStore(supportDirectory: directory).run(with: runID)?.results.first?.status == .passed)
+    }
+
+    @MainActor
+    @Test func completedExperimentRetriesBothRunWritesAndStateLink() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var blockedRunID: UUID?
+        var failStateWrite = false
+        let store = EvaluationStore(
+            supportDirectory: directory,
+            suiteLocalStateWriter: { data, url in
+                if failStateWrite { throw CocoaError(.fileWriteNoPermission) }
+                try data.write(to: url, options: .atomic)
+            },
+            runWriter: { data, url in
+                if let blockedRunID, url.lastPathComponent == "\(blockedRunID.uuidString).json" {
+                    throw CocoaError(.fileWriteNoPermission)
+                }
+                try data.write(to: url, options: .atomic)
+            }
+        )
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [EvaluationCase(name: "Feature", prompt: "ready", expected: "READY")]
+        #expect(store.saveSuite())
+        let adapter = ClosureFeatureAdapter(displayName: "Saved response") { _ in "READY" }
+        let current = try await store.runFeatureAdapter(expectedRevision: store.suiteRevision, adapter: adapter)
+        let candidate = try await store.runFeatureAdapter(expectedRevision: store.suiteRevision, adapter: adapter)
+        let experimentID = try store.createInstructionExperiment(name: "Retry", candidateInstructions: "Change")
+        blockedRunID = candidate.id
+        #expect(throws: EvaluationStoreError.self) {
+            try store.saveCompletedRuns([current, candidate], experimentID: experimentID)
+        }
+        #expect(store.hasUnsavedCompletedRun)
+        #expect(store.suiteLocalState.experiments.first(where: { $0.id == experimentID })?.runIDs.isEmpty == true)
+
+        blockedRunID = nil
+        failStateWrite = true
+        store.retryPendingRunSave()
+        #expect(store.hasUnsavedCompletedRun)
+        #expect(store.suiteLocalState.experiments.first(where: { $0.id == experimentID })?.runIDs.isEmpty == true)
+
+        failStateWrite = false
+        store.retryPendingRunSave()
+        #expect(!store.hasUnsavedCompletedRun)
+        #expect(store.suiteLocalState.experiments.first(where: { $0.id == experimentID })?.runIDs == [current.id, candidate.id])
+        let reopened = EvaluationStore(supportDirectory: directory)
+        #expect(reopened.run(with: current.id) != nil)
+        #expect(reopened.run(with: candidate.id) != nil)
+        #expect(reopened.suiteLocalState.experiments.first(where: { $0.id == experimentID })?.runIDs == [current.id, candidate.id])
+    }
+
+    @MainActor
     @Test func developerRunnerDisconnectTerminatesAndPersistsIncompleteRun() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1634,6 +1853,10 @@ struct EvaluationDevelopmentWorkflowTests {
         )
         try store.saveJudgeConnection(connection, apiKey: nil)
         store.draftSuite.judgeConfiguration = .init(mode: .connection, connectionID: connection.id)
+        store.draftSuite.judgeConfiguration.includeReferenceAttachments = false
+        #expect(store.externalJudgeDisclosure?.contains("Reference images remain local.") == true)
+        store.draftSuite.judgeConfiguration.includeReferenceAttachments = true
+        #expect(store.externalJudgeDisclosure?.contains("1 reference image") == true)
         store.approveExternalJudgeDisclosure()
         let run = try await store.runFeatureAdapter(
             expectedRevision: store.suiteRevision,
@@ -1690,8 +1913,22 @@ struct EvaluationDevelopmentWorkflowTests {
         )
 
         store.reassessRun(id: run.id, connectionID: connection.id)
+        #expect(store.isReassessing)
+        let originalCaseCount = store.suite.cases.count
+        store.addCase()
+        #expect(store.draftSuite.cases.count == originalCaseCount)
+        let reference = directory.appending(path: "held-reference.txt")
+        try Data("reference".utf8).write(to: reference)
+        store.importFiles([reference])
+        #expect(!store.isProcessingFiles)
+        #expect(store.suite.attachments.isEmpty)
+        store.draftSuite.name = "Must not commit during reassessment"
+        #expect(!store.saveSuite())
+        #expect(store.suite.name != "Must not commit during reassessment")
         #expect(throws: EvaluationStoreError.self) { try store.switchSuite(id: secondSuiteID) }
         try await waitForReassessment(store)
+        store.draftSuite = store.suite
+        #expect(store.saveSuite())
         let assessment = try #require(store.run(with: run.id)?.selectedAssessment)
         try store.markJudgmentIncorrect(
             runID: run.id, assessmentID: assessment.id, sampleID: run.results[0].id,

@@ -21,7 +21,7 @@ struct EditorSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 12) {
-                WorkspaceSymbolBadge(symbol: systemImage)
+                WorkspaceIcon(symbol: systemImage)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.headline)

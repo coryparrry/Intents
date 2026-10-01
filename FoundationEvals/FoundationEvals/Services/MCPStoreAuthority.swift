@@ -218,13 +218,25 @@ enum MCPStoreAuthority {
         store: EvaluationStore
     ) async throws -> MCPToolPayload {
         let persistence = scenarioPersistence(store)
-        let offset = arguments.cursor.flatMap(Int.init) ?? 0
-        let limit = min(max(arguments.limit ?? 20, 1), 50)
+        let offset: Int
+        if let cursor = arguments.cursor {
+            guard let parsed = Int(cursor), parsed >= 0 else {
+                throw MCPStoreAuthorityError.invalidCursor
+            }
+            offset = parsed
+        } else {
+            offset = 0
+        }
+        let limit = arguments.limit ?? 20
+        guard (1...50).contains(limit) else {
+            return .failure(code: "invalid_request", message: "Limit must be between 1 and 50.")
+        }
         let page = try await persistence.loadRunPage(
             scenarioID: arguments.scenarioID,
             offset: offset,
             limit: limit
         )
+        guard offset <= page.totalCount else { throw MCPStoreAuthorityError.invalidCursor }
         return readPayload([
             "runs": .array(try page.runs.map { run in
                 try json([
@@ -234,6 +246,7 @@ enum MCPStoreAuthority {
                     "scenarioDigest": run.scenarioDigest,
                     "executionStatus": run.executionStatus.rawValue,
                     "outcome": run.outcome.rawValue,
+                    "acceptanceStatus": run.acceptanceStatus?.rawValue ?? "legacy",
                     "startedAt": run.startedAt.ISO8601Format(),
                     "completedAt": run.completedAt.ISO8601Format(),
                     "device": run.environment.deviceModel,

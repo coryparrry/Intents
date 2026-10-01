@@ -39,6 +39,12 @@ enum ScenarioComparison {
             dimension("fixtureID", baseline.fixture?.id ?? "unknown", candidate.fixture?.id ?? "unknown"),
             dimension("fixtureVersion", baseline.fixture?.version ?? "unknown", candidate.fixture?.version ?? "unknown"),
             dimension("fixtureDigest", baseline.fixture?.digest ?? "unknown", candidate.fixture?.digest ?? "unknown"),
+            dimension("integrationID", baseline.integration?.id ?? "legacy/unspecified", candidate.integration?.id ?? "legacy/unspecified"),
+            dimension("integrationVersion", baseline.integration?.version ?? "legacy/unspecified", candidate.integration?.version ?? "legacy/unspecified"),
+            dimension("integrationDigest", baseline.integration?.digest ?? "legacy/unspecified", candidate.integration?.digest ?? "legacy/unspecified"),
+            dimension("runnerPackageVersion", baseline.runnerPackageVersion ?? "legacy/unspecified", candidate.runnerPackageVersion ?? "legacy/unspecified"),
+            dimension("negotiatedCapabilities", baseline.negotiatedCapabilities?.sorted().joined(separator: ",") ?? "legacy/unspecified",
+                      candidate.negotiatedCapabilities?.sorted().joined(separator: ",") ?? "legacy/unspecified"),
             dimension("appBuild", baseline.invocation.appProduct?.sha256 ?? "unknown", candidate.invocation.appProduct?.sha256 ?? "unknown"),
             dimension("testBuild", baseline.invocation.testProduct?.sha256 ?? "unknown", candidate.invocation.testProduct?.sha256 ?? "unknown"),
             dimension("Xcode", baseline.environment.xcodeVersion, candidate.environment.xcodeVersion),
@@ -102,24 +108,38 @@ struct ScenarioReleaseCheckReport: Codable, Equatable, Sendable {
     var summary: String
     var failures: [String]
     var generatedAt: Date
+    var policyVersion: String? = nil
 }
 
 enum ScenarioReleaseCheckEvaluator {
+    static let reusablePolicyVersion = "intent-lab-report-v2"
     static func report(
         definition: ScenarioDefinition,
         run: ScenarioRun?,
         comparison: ScenarioComparisonReport? = nil
     ) -> ScenarioReleaseCheckReport {
         var failures: [String] = []
+        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion,
+           definition.purpose != .releaseRequirement {
+            failures.append("Exploratory checks do not qualify as release requirements.")
+        }
+        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion,
+           ScenarioValidator.issues(in: definition).contains(where: { $0.severity == .error }) {
+            failures.append("The version 2 scenario definition is invalid or its frozen digest changed.")
+        }
         guard let run else {
-            return .init(
+            var report = ScenarioReleaseCheckReport(
                 scenarioID: definition.id,
                 runID: nil,
                 outcome: .incompleteOrIncompatibleEvidence,
                 summary: "No imported scenario run is available.",
-                failures: ["Run the current frozen scenario and import its bound evidence."],
+                failures: failures + ["Run the current frozen scenario and import its bound evidence."],
                 generatedAt: Date()
             )
+            if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                report.policyVersion = reusablePolicyVersion
+            }
+            return report
         }
         if run.scenarioID != definition.id || run.scenarioVersion != definition.version
             || run.scenarioDigest != definition.definitionDigest || !definition.hasValidDigest {
@@ -143,6 +163,24 @@ enum ScenarioReleaseCheckEvaluator {
         }
         if requiredObservableAssertions.isEmpty {
             failures.append("The scenario has no required observable outcome assertion in a required lane.")
+        }
+        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+            if run.acceptanceStatus != .accepted {
+                failures.append("The saved run has no verified durable acceptance receipt for its execution journal.")
+            }
+            if run.integration != definition.integration
+                || run.runnerPackageVersion?.isEmpty != false
+                || !ScenarioHarnessCapabilities.required(for: definition).isSubset(
+                    of: Set(run.negotiatedCapabilities ?? [])
+                ) {
+                failures.append("The saved run lacks compatible integration and runner capability evidence.")
+            }
+            if Set(definition.requiredClaims ?? []) == Set([.executionCompleted]) {
+                failures.append("Execution-only evidence cannot satisfy a release requirement.")
+            }
+            if ScenarioResultEvaluator.overall(definition: definition, laneResults: run.laneResults) != .passed {
+                failures.append("The required proof claims are not supported by verified observations.")
+            }
         }
         for lane in ScenarioLane.allCases where definition.coverage[lane] == .required {
             let results = run.laneResults.filter { $0.lane == lane }
@@ -176,7 +214,7 @@ enum ScenarioReleaseCheckEvaluator {
         } else {
             outcome = .incompleteOrIncompatibleEvidence
         }
-        return .init(
+        var report = ScenarioReleaseCheckReport(
             scenarioID: definition.id,
             runID: run.id,
             outcome: outcome,
@@ -186,5 +224,9 @@ enum ScenarioReleaseCheckEvaluator {
             failures: failures,
             generatedAt: Date()
         )
+        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+            report.policyVersion = reusablePolicyVersion
+        }
+        return report
     }
 }

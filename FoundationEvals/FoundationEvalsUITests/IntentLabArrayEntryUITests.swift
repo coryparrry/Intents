@@ -12,8 +12,10 @@ final class IntentLabArrayEntryUITests: XCTestCase {
         defer { app.terminate() }
         app.activate()
         app.typeKey("2", modifierFlags: .command)
-        app.radioButtons["Scenario"].click()
-        app.buttons["Parameters"].click()
+        app.radioButtons["Create test"].click()
+        let inputs = app.disclosureTriangles.matching(NSPredicate(format: "label BEGINSWITH %@", "Inputs ·")).firstMatch
+        for _ in 0..<12 where !inputs.isHittable { app.scrollViews.element(boundBy: app.scrollViews.count - 1).swipeUp() }
+        inputs.click()
 
         let parameterType = app.popUpButtons.matching(identifier: "Parameter type").firstMatch
         XCTAssertTrue(parameterType.waitForExistence(timeout: 5), app.debugDescription)

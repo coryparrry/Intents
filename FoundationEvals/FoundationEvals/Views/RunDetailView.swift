@@ -40,7 +40,7 @@ struct RunDetailView: View {
     @State private var exportDocument = JSONDocument()
     @State private var isExporting = false
     @State private var exportError: String?
-    @State private var showsWorkflow = true
+    @State private var showsWorkflow = false
 
     var body: some View {
         Group {
@@ -57,8 +57,8 @@ struct RunDetailView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Run view", selection: $showsWorkflow) {
-                    Text("Workflow trace").tag(true)
                     Text("Report").tag(false)
+                    Text("Workflow trace").tag(true)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -102,11 +102,18 @@ struct RunDetailView: View {
                 if let execution = run.developerExecution {
                     DeveloperExecutionSummary(execution: execution)
                 }
-                RunSummaryDashboard(run: run)
-                RunWorkflowPanel(store: store, run: run)
+                RunReportSummary(run: run)
                 ResultsSection(run: run)
                     .id(run.id)
-                RunAnalysisSection(run: run, baselineRuns: baselineRuns)
+                DisclosureGroup("Performance and comparison") {
+                    VStack(alignment: .leading, spacing: 20) {
+                        RunSummaryDashboard(run: run)
+                        RunAnalysisSection(run: run, baselineRuns: baselineRuns)
+                    }.padding(.top, 12)
+                }
+                DisclosureGroup("Review and release tools") {
+                    RunWorkflowPanel(store: store, run: run).padding(.top, 12)
+                }
                 RunConfigurationSection(run: run)
             }
             .workspacePage()
@@ -135,19 +142,19 @@ private struct RunOverviewHeader: View {
                 Spacer(minLength: 16)
                 RunStatusBadge(run: run)
             }
-            WorkspaceFlowLayout(spacing: 16, lineSpacing: 6) {
-                WorkspaceMetaLabel(run.suiteVersion, symbol: "tag")
-                WorkspaceMetaLabel(run.scoringMode.title, symbol: "checkmark.seal")
-                WorkspaceMetaLabel(run.execution?.modelDisplayName ?? run.environment.model, symbol: "cpu")
-                WorkspaceMetaLabel(scorerSummary, symbol: "person.badge.shield.checkmark")
-                WorkspaceMetaLabel(
-                    run.totalDuration.formatted(.units(allowed: [.minutes, .seconds], width: .abbreviated)),
-                    symbol: "timer"
-                )
+            Text("\(run.execution?.modelDisplayName ?? run.environment.model) · \(scorerSummary)")
+                .font(.callout).foregroundStyle(.secondary)
+            DisclosureGroup("Run information") {
+                WorkspaceFlowLayout(spacing: 16, lineSpacing: 6) {
+                    WorkspaceMetaLabel(run.suiteVersion, symbol: "tag")
+                    WorkspaceMetaLabel(run.scoringMode.title, symbol: "checkmark.seal")
+                    WorkspaceMetaLabel(
+                        run.totalDuration.formatted(.units(allowed: [.minutes, .seconds], width: .abbreviated)),
+                        symbol: "timer"
+                    )
+                }
+                .font(.callout).foregroundStyle(.secondary).padding(.top, 8)
             }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .accessibilityElement(children: .combine)
         }
     }
 
@@ -377,29 +384,18 @@ private struct ResultsSection: View {
                         ResultStatusLabel(result: result)
                     }
                     .width(min: 90, ideal: 110)
-                    TableColumn("Scorer") { result in
-                        Text(result.scorerSummary(scoringMode: run.scoringMode))
-                            .lineLimit(1)
-                            .help(result.scorerSummary(scoringMode: run.scoringMode))
-                    }
-                    .width(min: 140, ideal: 220)
                     TableColumn("Score") { result in
                         Text(result.score.map { "\($0) / 4" } ?? "—")
                             .monospacedDigit()
                             .foregroundStyle(result.score == nil ? Color.secondary : Color.accentColor)
                     }
                     .width(70)
-                    TableColumn("Latency") { result in
+                    TableColumn("Response time") { result in
                         Text(Duration.milliseconds(result.durationMilliseconds)
                             .formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))
                             .monospacedDigit()
                     }
                     .width(min: 90, ideal: 110)
-                    TableColumn("Tokens") { result in
-                        Text(result.usage.totalTokens.formatted())
-                            .monospacedDigit()
-                    }
-                    .width(75)
                     TableColumn("Repetition") { result in
                         Text("\(result.repetition) / \(run.repetitions)")
                             .monospacedDigit()
@@ -505,14 +501,6 @@ private struct ResultDetail: View {
 
             Divider()
 
-            LabeledText(label: "Generated by", text: subjectModelName)
-            LabeledText(
-                label: scoringMode == .modelJudge && result.judgeIdentity?.requestedModelID != "none"
-                    ? "Judged by"
-                    : "Scored by",
-                text: result.scorerSummary(scoringMode: scoringMode)
-            )
-
             if let errorMessage = result.errorMessage {
                 ErrorBanner(
                     title: "Response failed",
@@ -525,10 +513,6 @@ private struct ResultDetail: View {
             }
 
             LabeledText(label: "Prompt", text: result.prompt)
-
-            if let effectivePrompt = result.effectivePrompt, effectivePrompt != result.prompt {
-                LabeledText(label: "Effective model input", text: effectivePrompt)
-            }
 
             if !result.expected.isEmpty {
                 LabeledText(label: "Expected or reference answer", text: result.expected)
@@ -550,7 +534,7 @@ private struct ResultDetail: View {
 
             if let rationale = result.rationale {
                 LabeledText(
-                    label: "Scoring rationale",
+                    label: result.status == .passed ? "Why it passed" : result.status == .failed ? "Why it failed" : "About this result",
                     text: rationale
                 )
             }
@@ -574,6 +558,18 @@ private struct ResultDetail: View {
                 RefusalExplanationView(trace: refusal, title: "Why the judge refused")
             }
 
+            DisclosureGroup("Response details") {
+                VStack(alignment: .leading, spacing: 10) {
+                    LabeledText(label: "Generated by", text: subjectModelName)
+                    LabeledText(label: "Scored by", text: result.scorerSummary(scoringMode: scoringMode))
+                    LabeledContent("Response time", value: Duration.milliseconds(result.durationMilliseconds)
+                        .formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))
+                    LabeledContent("Total tokens", value: result.usage.totalTokens.formatted())
+                    if let effectivePrompt = result.effectivePrompt, effectivePrompt != result.prompt {
+                        LabeledText(label: "Effective model input", text: effectivePrompt)
+                    }
+                }.font(.callout).padding(.top, 8)
+            }
             SampleTraceSection(result: result)
             if let assertions = result.fieldAssertionResults, !assertions.isEmpty {
                 FieldAssertionEvidenceSection(results: assertions)
