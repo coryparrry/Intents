@@ -19,9 +19,7 @@ struct ModelControlsSection: View {
                 Divider()
                 decodingControls
                 Divider()
-                DisclosureGroup("Context and tool limits") {
-                    contextAndToolControls.padding(.top, 12)
-                }
+                contextAndToolControls
                 capabilitySummary
                 Divider()
                 DisclosureGroup("Advanced model options") {
@@ -83,7 +81,7 @@ struct ModelControlsSection: View {
             Text("Generation")
                 .font(.headline)
 
-            VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline, spacing: 24) {
                 LabeledContent("Sampling") {
                     Picker("Sampling", selection: $store.draftSuite.modelConfiguration.samplingMode) {
                         ForEach(EvaluationSamplingMode.allCases) { mode in
@@ -164,7 +162,7 @@ struct ModelControlsSection: View {
             Text("Context and references")
                 .font(.headline)
 
-            VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline, spacing: 24) {
                 LabeledContent("Requested input ceiling") {
                     Picker("Requested input ceiling", selection: $store.draftSuite.modelConfiguration.maximumInputTokens) {
                         Text("Automatic").tag(Int?.none)
@@ -252,6 +250,6 @@ struct ModelControlsSection: View {
         .accessibilityElement(children: .combine)
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceInset(radius: 9)
+        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 9))
     }
 }

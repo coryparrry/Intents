@@ -15,7 +15,7 @@ class UpdateFeedTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
         self.tag = "v1.2.3"
-        self.filename = "Intents-1.2.3-macOS-arm64.dmg"
+        self.filename = "Foundation-Evals-1.2.3-macOS-arm64.dmg"
         (self.directory / self.filename).write_bytes(b"installer fixture")
         self.info = {
             "SUFeedURL": FEED_URL,
@@ -29,7 +29,7 @@ class UpdateFeedTests(unittest.TestCase):
             self.item,
             "enclosure",
             {
-                "url": f"https://github.com/coryparrry/Intents/releases/download/{self.tag}/{self.filename}",
+                "url": f"https://github.com/coryparrry/Foundation-Eval-Labs/releases/download/{self.tag}/{self.filename}",
                 "length": "17",
                 SPARKLE_NS + "edSignature": base64.b64encode(b"x" * 64).decode(),
             },

@@ -1,4 +1,4 @@
 {
-  "name": "Intents",
+  "name": "Foundation Evals",
   "install": "sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck && (go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -version >/dev/null 2>&1 || true)"
 }

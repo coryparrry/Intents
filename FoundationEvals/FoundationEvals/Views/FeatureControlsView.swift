@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum FeatureEditorPage: String, CaseIterable, Identifiable {
+private enum FeatureEditorPage: String, CaseIterable, Identifiable {
     case tools
     case profile
     case output
@@ -20,7 +20,7 @@ enum FeatureEditorPage: String, CaseIterable, Identifiable {
 
 struct FeatureControlsView: View {
     @Bindable var store: EvaluationStore
-    var selectedPage: FeatureEditorPage = .tools
+    @State private var selectedPage = FeatureEditorPage.tools
 
     private var isDisabled: Bool {
         store.isRunning || store.isImportingFiles || store.isProcessingFiles
@@ -28,11 +28,23 @@ struct FeatureControlsView: View {
 
     var body: some View {
         EditorSection(
-            selectedPage.title,
-            systemImage: "slider.horizontal.3",
-            description: "These settings apply to every case in this suite."
+            "Foundation Models features",
+            systemImage: "wand.and.stars",
+            description: "Evaluate custom tools, profiles, structured output, prewarming, and streaming as part of this suite."
         ) {
             VStack(alignment: .leading, spacing: 16) {
+                Text("Feature settings are saved with the suite. Custom tool arguments and outputs are saved locally in each run trace. Reference-file privacy settings are unchanged.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                Picker("Feature", selection: $selectedPage) {
+                    ForEach(FeatureEditorPage.allCases) { page in
+                        Text(page.title).tag(page)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("Feature editor page")
+
                 FeaturePageContent(
                     selectedPage: selectedPage,
                     configuration: $store.draftSuite.features,
@@ -63,8 +75,6 @@ private struct FeaturePageContent: View {
                 VStack(alignment: .leading, spacing: 16) {
                     SpotlightSearchToolEditor(configuration: $configuration.spotlightSearch)
                     Divider()
-                    Text("Tool arguments and outputs are saved with each run.")
-                        .font(.caption).foregroundStyle(.secondary)
                     CustomToolsEditor(
                         tools: $configuration.tools,
                         maximumToolCalls: $maximumToolCalls
@@ -311,7 +321,7 @@ private struct CustomToolEditor: View {
             )
         }
         .padding(14)
-        .workspaceInset(radius: 11)
+        .background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 11))
         .confirmationDialog(
             "Delete \(tool.name.isEmpty ? "this tool" : tool.name)?",
             isPresented: $isConfirmingRemoval,
@@ -596,7 +606,7 @@ private struct EmptyFeatureMessage: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceInset(radius: 9)
+        .background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 9))
         .accessibilityElement(children: .combine)
     }
 }

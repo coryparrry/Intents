@@ -16,7 +16,7 @@ enum UITestStorage {
     static func verifyWritable(_ directory: URL) throws {
         let probe = directory.appending(path: "storage-preflight-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: probe) }
-        try Data("Intents UI test storage preflight".utf8).write(to: probe, options: .atomic)
+        try Data("Foundation Evals UI test storage preflight".utf8).write(to: probe, options: .atomic)
     }
 
     static func screenshotURL(name: String) throws -> URL {

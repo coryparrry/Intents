@@ -1,6 +1,6 @@
 # Use a Core AI model
 
-Intents can evaluate a local model exported for Apple's Core AI runtime. Model resources are supplied separately; the app does not download them for you.
+Foundation Evals can evaluate a local model exported for Apple's Core AI runtime. Model resources are supplied separately; the app does not download them for you.
 
 ## Choose and load a model
 

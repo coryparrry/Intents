@@ -86,14 +86,14 @@ PY
 xcodebuild -exportArchive -archivePath "$work/FoundationEvals.xcarchive" \
   -exportPath "$work/export" -exportOptionsPlist "$work/ExportOptions.plist"
 mkdir -p "$work/payload"
-app="$work/payload/Intents.app"
-ditto --norsrc --noextattr "$work/export/Intents.app" "$app"
+app="$work/payload/Foundation Evals.app"
+ditto --norsrc --noextattr "$work/export/FoundationEvals.app" "$app"
 xattr -cr "$app"
 codesign --verify --strict --deep "$app"
 test -f "$app/Contents/Resources/AppIcon.icns"
 ln -s /Applications "$work/payload/Applications"
-dmg="$work/Intents-$version-macOS-arm64.dmg"
-hdiutil create -volname 'Intents' -srcfolder "$work/payload" -format UDZO "$dmg"
+dmg="$work/Foundation-Evals-$version-macOS-arm64.dmg"
+hdiutil create -volname 'Foundation Evals' -srcfolder "$work/payload" -format UDZO "$dmg"
 codesign --sign "$identity" --timestamp "$dmg"
 
 notary_auth=(--key "$work/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
@@ -120,7 +120,7 @@ if [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]]; then
 fi
 "$sparkle_bin/generate_appcast" "${sparkle_key_args[@]}" \
   --maximum-deltas 0 \
-  --download-url-prefix "https://github.com/coryparrry/Intents/releases/download/$RELEASE_TAG/" \
+  --download-url-prefix "https://github.com/coryparrry/Foundation-Eval-Labs/releases/download/$RELEASE_TAG/" \
   "$work/verified"
 EXPECTED_TEAM_ID="$APPLE_TEAM_ID" bash "$script_directory/verify_installer.sh" "$work/verified" "$RELEASE_TAG" "$source_commit"
 mkdir -p dist/release

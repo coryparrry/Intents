@@ -23,37 +23,6 @@ SWIFT_DEPENDENCIES = {
         "EvaluationFieldAssertionTests",
         "MetricScorerTests",
     },
-    "Models/ScenarioModels.swift": {
-        "ScenarioContractsTests", "ScenarioActionParityTests", "ScenarioV3HarnessBridgeTests",
-    },
-    "Models/ScenarioExecutionModels.swift": {
-        "ScenarioExecutionPlanTests", "ScenarioExecutionComparisonTests",
-    },
-    "Models/ScenarioCollectionModels.swift": {"ScenarioCollectionTests"},
-    "Services/ScenarioComparison.swift": {"ScenarioContractsTests"},
-    "Services/ScenarioExecutionComparison.swift": {"ScenarioExecutionComparisonTests"},
-    "Services/ScenarioExecutionRecovery.swift": {"ScenarioContractsTests"},
-    "Services/ScenarioExpectationAuthoring.swift": {
-        "ScenarioExpectationAuthoringTests", "ScenarioV3HarnessBridgeTests",
-    },
-    "Services/ScenarioCollectionService.swift": {"ScenarioCollectionTests"},
-    "Services/ScenarioCollectionStore.swift": {"ScenarioCollectionTests"},
-    "Services/IntentEvidenceBundle.swift": {"IntentEvidenceBundleTests"},
-    "Services/IntentEvidenceQualification.swift": {
-        "IntentEvidenceBundleTests", "ScenarioActionParityTests",
-    },
-    "Services/ScenarioPersistence.swift": {"ScenarioContractsTests"},
-    "Services/ScenarioValidation.swift": {
-        "ScenarioContractsTests", "ScenarioNoMutationTests", "ScenarioV3HarnessBridgeTests",
-    },
-    "Services/IntentLabProjectInstaller.swift": {"IntentLabProjectInstallerTests"},
-    "Services/OpenStepProjectDocument.swift": {"IntentLabProjectInstallerTests"},
-    "Services/XCTestEvidenceImporter.swift": {
-        "ScenarioContractsTests", "ScenarioV3HarnessBridgeTests",
-    },
-    "Services/XCTestRunInvocationTransport.swift": {"ScenarioContractsTests"},
-    "Services/XcodeConnectionDiscovery.swift": {"ScenarioContractsTests"},
-    "Services/XcodeTestExecutor.swift": {"ScenarioContractsTests", "ExecutorSimplificationTests"},
     "Services/EvaluationFieldAssertions.swift": {"EvaluationFieldAssertionTests"},
     "Services/MetricScorer.swift": {"MetricScorerTests"},
     "Models/WorkflowTimelineInterval.swift": {

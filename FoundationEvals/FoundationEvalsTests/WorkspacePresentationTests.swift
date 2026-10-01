@@ -1,85 +1,9 @@
 import Foundation
 import Testing
-import SwiftUI
-import AppKit
 @testable import FoundationEvals
 
 @MainActor
 struct WorkspacePresentationTests {
-    @Test func primitiveExpectedBindingsPreserveDefaultsUpdatesAndSetterEffects() {
-        checkExpectedBinding(default: false, initial: .boolean(true), changed: true,
-                             get: { if case .boolean(let item) = $0 { item } else { nil } },
-                             wrap: ScenarioValue.boolean)
-        checkExpectedBinding(default: Int64(0), initial: .integer(-4), changed: 17,
-                             get: { if case .integer(let item) = $0 { item } else { nil } },
-                             wrap: ScenarioValue.integer)
-        checkExpectedBinding(default: Double(0), initial: .number(1.25), changed: -2.5,
-                             get: { if case .number(let item) = $0 { item } else { nil } },
-                             wrap: ScenarioValue.number)
-    }
-
-    private func checkExpectedBinding<Value: Equatable>(
-        default defaultValue: Value, initial: ScenarioValue, changed: Value,
-        get: @escaping (ScenarioValue) -> Value?, wrap: @escaping (Value) -> ScenarioValue
-    ) {
-        var stored: ScenarioValue?
-        var writes = 0
-        let source = Binding<ScenarioValue?>(get: { stored }, set: { stored = $0; writes += 1 })
-        let binding = ScenarioExpectedValueBinding.scalar(source, default: defaultValue, get: get, wrap: wrap)
-        #expect(binding.wrappedValue == defaultValue)
-        #expect(stored == nil)
-        stored = .string("Different type")
-        #expect(binding.wrappedValue == defaultValue)
-        #expect(writes == 0)
-        stored = initial
-        #expect(binding.wrappedValue == (get(initial) ?? defaultValue))
-        binding.wrappedValue = changed
-        #expect(stored == wrap(changed))
-        #expect(writes == 1)
-        #expect(binding.wrappedValue == changed)
-        stored = nil
-        #expect(binding.wrappedValue == defaultValue)
-        #expect(writes == 1)
-    }
-
-    @Test func appFeatureFooterUsesPersistedRunnerIdentity() {
-        var run = fixture()
-        run.execution = nil
-        run.developerExecution = .init(
-            runnerID: UUID(), runnerName: "Verification Mac", platform: "mac",
-            operatingSystem: "macOS 27", hardwareModel: "Mac",
-            appBundleIdentifier: "test.runner", appVersion: "1",
-            featureID: "verification.echo", featureVersion: "1",
-            protocolMajorVersion: 1, protocolMinorVersion: 0
-        )
-        #expect(DeveloperRunPresentation.providerLabel(for: run) == "App feature · Verification Mac")
-        run.developerExecution = nil
-        #expect(DeveloperRunPresentation.providerLabel(for: run) == "Provider not recorded")
-    }
-
-    @Test func renderAppFeatureFooterForVisualInspection() throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        var run = fixture()
-        run.execution = nil
-        run.developerExecution = .init(
-            runnerID: UUID(), runnerName: "UI fixture Mac", platform: "mac",
-            operatingSystem: "macOS 27", hardwareModel: "Mac",
-            appBundleIdentifier: "test.runner", appVersion: "1", featureID: "fixture.echo",
-            featureVersion: "1", protocolMajorVersion: 1, protocolMinorVersion: 0
-        )
-        store.runs = [run]
-        store.selection = .run(run.id)
-        let renderer = ImageRenderer(content: WorkbenchStatusBar(store: store).frame(width: 1100))
-        renderer.scale = 2
-        let image = try #require(renderer.cgImage)
-        let data = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
-        let output = FileManager.default.temporaryDirectory.appending(path: "foundation-evals-runner-footer.png")
-        try data.write(to: output)
-        print("Footer UI fixture: \(output.path)")
-    }
-
     @Test func savedResultsDistinguishPassingFailingAndUnassessedRuns() {
         for (status, expected) in [(EvaluationResultStatus.passed, SuiteCheckState.passed),
                                    (.failed, .failed), (.unscored, .collected), (.error, .incomplete)] {
@@ -87,38 +11,6 @@ struct WorkspacePresentationTests {
             #expect(SuiteCheckState.evaluate(run: run, currentRevision: "current", hasDraft: false) == expected)
         }
         #expect(SuiteCheckState.evaluate(run: nil, currentRevision: "current", hasDraft: false) == .notRun)
-    }
-
-    @Test func trendOmitsUnscoredRatesWithoutHidingScoredFailures() {
-        let unscored = fixture(status: .unscored)
-        let failed = fixture(status: .failed)
-        let trend = RunTrendSummary(runs: [unscored, failed])
-
-        #expect(trend.recentCount == 2)
-        #expect(trend.points.map(\.id) == [failed.id])
-        #expect(trend.points.map(\.rate) == [0])
-        #expect(trend.title == "Pass rate · 1 scored of last 2 runs")
-        #expect(trend.comparisonCaption == "No comparable scored run")
-        #expect(RunTrendSummary(runs: [unscored]).points.isEmpty)
-        #expect(RunTrendSummary(runs: [unscored]).comparisonCaption == "First saved run")
-    }
-
-    @Test func renderMixedScoredAndUnscoredTrendForInspection() throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        store.runs = [fixture(status: .unscored), fixture(status: .failed)]
-        for appearance in [ColorScheme.light, .dark] {
-            let renderer = ImageRenderer(content: SuiteResultsView(store: store)
-                .environment(\.colorScheme, appearance).frame(width: 850, height: 560))
-            renderer.scale = 2
-            let image = try #require(renderer.cgImage)
-            let data = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
-            let output = FileManager.default.temporaryDirectory
-                .appending(path: "foundation-evals-mixed-run-trend-\(appearance).png")
-            try data.write(to: output)
-            print("Mixed run trend: \(output.path)")
-        }
     }
 
     @Test func changedSuitesDoNotDisplayOldPassingChecksAsCurrent() {

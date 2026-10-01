@@ -26,8 +26,6 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 !/docs/releasing.md
 !/docs/telemetry.md
 !/docs/workflow-traces.md
-!/docs/wiki/
-!/docs/wiki/*.md
 
 # Local signing material.
 *.p12

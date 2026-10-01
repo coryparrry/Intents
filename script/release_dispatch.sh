@@ -54,7 +54,7 @@ if [[ "$mode" == prepare ]]; then
   fi
   bash "$script_directory/verify_release_source.sh" "$source_commit"
 else
-  filename="Intents-${RELEASE_TAG#v}-macOS-arm64.dmg"
+  filename="Foundation-Evals-${RELEASE_TAG#v}-macOS-arm64.dmg"
   bash "$script_directory/verify_installer.sh" dist/release "$RELEASE_TAG" "$source_commit"
   if [[ -z "$remote_tag" ]]; then
     gh api "repos/$GITHUB_REPOSITORY/git/refs" --method POST \

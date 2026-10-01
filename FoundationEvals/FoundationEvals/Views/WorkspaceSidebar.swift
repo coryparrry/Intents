@@ -2,7 +2,6 @@ import SwiftUI
 
 private enum WorkspaceDestination: Hashable {
     case overview
-    case intentLab
     case suite(UUID)
     case run(UUID)
 }
@@ -29,7 +28,6 @@ struct WorkspaceSidebar: View {
             get: {
                 switch store.selection {
                 case .overview: .overview
-                case .intentLab: .intentLab
                 case .suite: .suite(store.selectedSuiteID)
                 case .run(let id): .run(id)
                 }
@@ -39,7 +37,6 @@ struct WorkspaceSidebar: View {
                 do {
                     switch selection {
                     case .overview: store.selection = .overview
-                    case .intentLab: store.selection = .intentLab
                     case .suite(let id):
                         guard !isBusy || id == store.selectedSuiteID else { return }
                         if id != store.selectedSuiteID { try store.switchSuite(id: id) }
@@ -53,30 +50,13 @@ struct WorkspaceSidebar: View {
 
     var body: some View {
         SidebarNavigationList(selection: destination) {
-            Section {
-                Label { Text("Overview") } icon: { WorkspaceIcon(symbol: "square.grid.2x2", size: 18) }
-                    .tag(WorkspaceDestination.overview)
-                Label {
-                    HStack(spacing: 6) {
-                        Text("Intent Lab")
-                        Text("Beta")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.primary.opacity(0.06), in: Capsule())
-                    }
-                } icon: { WorkspaceIcon(symbol: "intent-lab", size: 18) }
-                    .accessibilityElement(children: .combine)
-                    .tag(WorkspaceDestination.intentLab)
-            }
+            Label("Project overview", systemImage: "square.grid.2x2")
+                .tag(WorkspaceDestination.overview)
 
             Section("Suites") {
                 ForEach(store.suiteRecords.filter { $0.archivedAt == nil }) { suite in
-                    Label {
-                        Text(suite.id == store.selectedSuiteID ? store.draftSuite.name : suite.name)
-                    } icon: { WorkspaceIcon(symbol: "checklist", size: 18) }
-                        .lineLimit(1)
+                    Label(suite.id == store.selectedSuiteID ? store.draftSuite.name : suite.name,
+                          systemImage: "checklist")
                         .tag(WorkspaceDestination.suite(suite.id))
                         .contextMenu {
                             Button("Duplicate suite", systemImage: "plus.square.on.square") {
@@ -91,7 +71,7 @@ struct WorkspaceSidebar: View {
                 }
             }
 
-            Section("Runs · \(store.draftSuite.name)") {
+            Section("Run history · \(store.draftSuite.name)") {
                 if filteredRuns.isEmpty {
                     EmptyRunHistoryRow(isSearching: !runSearch.isEmpty)
                 } else {
@@ -108,24 +88,46 @@ struct WorkspaceSidebar: View {
                 }
             }
         }
-        .searchable(text: $runSearch, placement: .sidebar, prompt: "Filter runs")
+        .searchable(text: $runSearch, placement: .sidebar, prompt: "Search run history")
         .onChange(of: store.selectedSuiteID) { _, _ in runSearch = "" }
         .safeAreaInset(edge: .top, spacing: 0) {
-            projectSwitcher
-                .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 8)
+            Menu {
+                ForEach(store.projects.filter { $0.archivedAt == nil }) { project in
+                    Button {
+                        perform {
+                            try store.switchProject(id: project.id)
+                            store.selection = .overview
+                        }
+                    } label: {
+                        if project.id == store.selectedProjectID {
+                            Label(project.name, systemImage: "checkmark")
+                        } else { Text(project.name) }
+                    }
+                }
+                Divider()
+                Button("New project…", systemImage: "folder.badge.plus") { isCreatingProject = true }
+                Button("Manage projects…", systemImage: "folder.badge.gearshape") { isManagingWorkspace = true }
+            } label: {
+                Label(store.selectedProject.name, systemImage: "folder")
+                    .font(.headline)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .menuStyle(.borderlessButton)
+            .padding(14)
+            .disabled(isBusy)
+            .accessibilityLabel("Choose project")
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            HStack(spacing: 8) {
-                Button { isCreatingSuite = true } label: {
-                    Label("New Suite", systemImage: "plus.circle.fill")
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Create a new evaluation suite in this project")
+            HStack {
+                Button("New suite", systemImage: "plus") { isCreatingSuite = true }
+                    .buttonStyle(.borderless)
                 Spacer()
+                Button("Manage projects", systemImage: "folder.badge.gearshape") { isManagingWorkspace = true }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
+            .padding(14)
             .disabled(isBusy)
         }
         .sheet(isPresented: $isCreatingSuite) { NewSuiteView(store: store) }
@@ -142,46 +144,6 @@ struct WorkspaceSidebar: View {
         } message: {
             Text("This removes the saved results and trace from this Mac. It cannot be undone.")
         }
-    }
-
-    private var projectSwitcher: some View {
-        Menu {
-            ForEach(store.projects.filter { $0.archivedAt == nil }) { project in
-                Button {
-                    perform {
-                        try store.switchProject(id: project.id)
-                        store.selection = .overview
-                    }
-                } label: {
-                    if project.id == store.selectedProjectID {
-                        Label(project.name, systemImage: "checkmark")
-                    } else { Text(project.name) }
-                }
-            }
-            Divider()
-            Button("New project…", systemImage: "folder.badge.plus") { isCreatingProject = true }
-            Button("Manage projects…", systemImage: "folder.badge.gearshape") { isManagingWorkspace = true }
-        } label: {
-            HStack(spacing: 9) {
-                WorkspaceIcon(symbol: "square.stack.3d.up.fill", size: 28, presentation: .header)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Project").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-                    Text(store.selectedProject.name)
-                        .font(.callout.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(Color.primary.opacity(0.05), in: .rect(cornerRadius: 9))
-            .contentShape(.rect)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .disabled(isBusy)
-        .accessibilityLabel("Choose project")
     }
 
     private func perform(_ action: () throws -> Void) {

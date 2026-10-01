@@ -30,35 +30,20 @@ actor EvaluationReassessmentService {
         run: EvaluationRun,
         suite: EvaluationSuite,
         images: [ImageEvaluationInput],
-        resolved: EvaluationResolvedJudgeConnection?,
+        resolved: EvaluationResolvedJudgeConnection,
         scoringContract: EvaluationScoringContract? = nil,
-        subjectEvidenceDigest: String? = nil,
-        origin: EvaluationAssessmentOrigin = .reassessment
+        subjectEvidenceDigest: String? = nil
     ) async throws -> EvaluationAssessment {
         var samples: [EvaluationSampleAssessment] = []
         var totalUsage = EvaluationUsage()
         var hasUsage = false
         var totalCost = 0.0
         var costAvailability = EvaluationCostAvailability.known
-        var identity = resolved.map { requestedIdentity($0.connection) } ?? EvaluationJudgeIdentity(
-            mode: .sameModel,
-            connectionID: nil,
-            connectionName: "Deterministic checks",
-            endpointKind: nil,
-            baseURL: nil,
-            requestedModelID: "none",
-            reportedModelID: "none",
-            provider: "local",
-            providerOrder: []
-        )
+        var identity = requestedIdentity(resolved.connection)
         var observedIdentities: [EvaluationJudgeIdentity] = []
 
         for saved in run.results {
-            if Task.isCancelled {
-                guard origin == .initialRun else { throw CancellationError() }
-                samples.append(cancelledInitialAssessment(for: saved))
-                break
-            }
+            try Task.checkCancellation()
             guard saved.hasCompleteSubjectEvidenceForJudging,
                   let evaluationCase = (run.plannedCases ?? suite.cases).first(where: { $0.id == saved.caseID }) else {
                 samples.append(.init(
@@ -89,17 +74,6 @@ actor EvaluationReassessmentService {
             }
             var semanticSuite = suite
             semanticSuite.criteria = semanticIndexes.map { criteria[$0] }.joined(separator: "\n")
-            guard let resolved else {
-                samples.append(.init(
-                    id: UUID(), sampleID: saved.id, status: .unscored, score: nil,
-                    rationale: "The app feature response needs an independent judge assessment.",
-                    trace: nil, errorCategory: "invalidJudgeConfiguration",
-                    errorMessage: "Choose an approved independent judge connection for AI-rubric app feature runs.",
-                    usage: nil, durationMilliseconds: nil
-                ))
-                costAvailability = .unavailable
-                break
-            }
             let judgeStarted = ContinuousClock.now
             do {
                 let judged = try await client.judge(
@@ -137,13 +111,9 @@ actor EvaluationReassessmentService {
                     durationMilliseconds: judged.durationMilliseconds
                 ))
             } catch is CancellationError {
-                guard origin == .initialRun else { throw CancellationError() }
-                samples.append(cancelledInitialAssessment(for: saved))
-                break
+                throw CancellationError()
             } catch let error as URLError where error.code == .cancelled {
-                guard origin == .initialRun else { throw CancellationError() }
-                samples.append(cancelledInitialAssessment(for: saved))
-                break
+                throw CancellationError()
             } catch {
                 let errorCategory = EvaluationRunner.externalJudgeErrorCategory(error)
                 samples.append(.init(
@@ -162,30 +132,20 @@ actor EvaluationReassessmentService {
             }
         }
         let cost = costAvailability == .unavailable
-            ? EvaluationCost(availability: .unavailable, usd: nil, explanation: "At least one judge request cost was unavailable.")
+            ? EvaluationCost(availability: .unavailable, usd: nil, explanation: "At least one reassessment cost was unavailable.")
             : EvaluationCost(availability: costAvailability, usd: totalCost,
                              explanation: costAvailability == .known ? "Reported by the judge endpoint." : "Estimated from configured token prices.")
         let assessmentIdentity = observedIdentities.first ?? identity
         return EvaluationAssessment(
-            id: UUID(), runID: run.id, createdAt: Date(), origin: origin,
+            id: UUID(), runID: run.id, createdAt: Date(), origin: .reassessment,
             judge: assessmentIdentity, promptVersion: EvaluationRunner.judgePromptVersion,
             rubric: suite.criteria, passingScore: EvaluationSuite.judgePassingScore,
             samples: samples, totalUsage: hasUsage ? totalUsage : nil,
             durationMilliseconds: EvaluationAssessment.summedJudgeDurationMilliseconds(samples), cost: cost,
-            supersedesAssessmentID: origin == .reassessment ? run.selectedAssessmentID : nil,
+            supersedesAssessmentID: run.selectedAssessmentID,
             observedJudgeIdentities: observedIdentities.isEmpty ? [assessmentIdentity] : observedIdentities,
             scoringContract: scoringContract ?? (try? EvaluationScoringContract(suite: suite)),
             subjectEvidenceDigest: subjectEvidenceDigest
-        )
-    }
-
-    private func cancelledInitialAssessment(for sample: EvaluationSampleResult) -> EvaluationSampleAssessment {
-        EvaluationSampleAssessment(
-            id: UUID(), sampleID: sample.id, status: .unscored, score: nil,
-            rationale: "The subject response was collected, but judging was cancelled.",
-            trace: nil, errorCategory: "cancelled",
-            errorMessage: "The independent judge request was cancelled.",
-            usage: nil, durationMilliseconds: nil
         )
     }
 

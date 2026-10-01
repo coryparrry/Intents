@@ -8,15 +8,11 @@ struct FoundationEvalsApp: App {
     @Environment(\.openWindow) private var openWindow
     @NSApplicationDelegateAdaptor(FoundationEvalsAppDelegate.self) private var appDelegate
     @State private var store: EvaluationStore
-    @State private var runnerStore: DeveloperRunnerStore
     @State private var telemetry: TelemetryController
     @State private var mcpSettings: MCPSettingsController
-    // Debug builds must retain the exact executable being tested.
-    #if !DEBUG
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
     )
-    #endif
     private let mcpRuntime: FoundationEvalsMCPRuntime
 
     init() {
@@ -27,15 +23,12 @@ struct FoundationEvalsApp: App {
             serverControl: MCPServerControl(
                 start: { configuration in try await runtime.start(configuration) },
                 stop: { await runtime.stop() }
-            ),
-            credentialStore: Self.launchCredentialStore,
-            existingCredentialOnly: Self.readOnlyMCPCredentialRequest
+            )
         )
         runtime.settingsController = settings
         _telemetry = State(initialValue: telemetry)
         telemetry.capture(.appOpened)
         _store = State(initialValue: store)
-        _runnerStore = State(initialValue: DeveloperRunnerStore(evaluationStore: store))
         _mcpSettings = State(initialValue: settings)
         mcpRuntime = runtime
     }
@@ -49,36 +42,6 @@ struct FoundationEvalsApp: App {
         }
         #endif
         return .bundled
-    }
-
-    private static var launchCredentialStore: MCPCredentialStore {
-        #if DEBUG
-        return MCPDebugLaunchConfiguration.credentialStore(
-            arguments: ProcessInfo.processInfo.arguments, environment: ProcessInfo.processInfo.environment,
-            isolatedStorage: acceptanceStorageDirectory, existing: .keychain
-        )
-        #else
-        return .keychain
-        #endif
-    }
-
-    private static var readOnlyMCPCredentialRequest: Bool {
-        #if DEBUG
-        return MCPDebugLaunchConfiguration.requestsExistingCredential(arguments: ProcessInfo.processInfo.arguments)
-        #else
-        return false
-        #endif
-    }
-
-    private static var useExistingMCPCredential: Bool {
-        #if DEBUG
-        return MCPDebugLaunchConfiguration.usesExistingCredential(
-            arguments: ProcessInfo.processInfo.arguments, environment: ProcessInfo.processInfo.environment,
-            isolatedStorage: acceptanceStorageDirectory
-        )
-        #else
-        return false
-        #endif
     }
 
     private static var acceptanceStorageDirectory: URL? {
@@ -102,14 +65,9 @@ struct FoundationEvalsApp: App {
     var body: some Scene {
         WindowGroup(id: "evaluation-main", for: String.self) { _ in
             ContentView(store: store)
-                .environment(runnerStore)
                 .task(id: mcpSettings.installationState) {
                     appDelegate.runtime = mcpRuntime
                     guard !ProcessInfo.processInfo.arguments.contains("--disable-mcp-autostart") else { return }
-                    if Self.useExistingMCPCredential {
-                        await mcpSettings.startServer()
-                        return
-                    }
                     guard mcpSettings.installationState == .installed else { return }
                     await mcpSettings.startServer()
                 }
@@ -122,11 +80,9 @@ struct FoundationEvalsApp: App {
             CommandGroup(replacing: .newItem) { }
             // AppKit's Services scanner blocks accessibility menu inspection on a lower-QoS thread.
             CommandGroup(replacing: .systemServices) { }
-            #if !DEBUG
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updaterController.updater)
             }
-            #endif
 
             CommandMenu("Evaluation") {
                 Button("Show Suite Editor") {
@@ -135,40 +91,33 @@ struct FoundationEvalsApp: App {
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
-                Button("Show Intent Lab") {
-                    store.selection = .intentLab
-                    openWindow(id: "evaluation-main", value: "main")
-                }
-                .keyboardShortcut("2", modifiers: [.command])
-
                 Button("Add Test Case") {
                     store.selection = .suite
                     store.addCase()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
-                .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
+                .disabled(store.isRunning || store.isProcessingFiles)
 
                 Button("Add Reference Files…") {
                     store.selection = .suite
                     store.isImportingFiles = true
                 }
                 .keyboardShortcut("o", modifiers: [.command])
-                .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
+                .disabled(store.isRunning || store.isProcessingFiles)
 
                 Divider()
 
                 Button("Run Evaluation") {
-                    do { try runnerStore.startSelectedRun(for: store) }
-                    catch { store.notice = error.localizedDescription }
+                    store.startRun()
                 }
                 .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(!runnerStore.canStartRun(for: store))
+                .disabled(store.isRunning || store.isProcessingFiles || store.runBlocker != nil)
 
                 Button("Cancel Run") {
-                    runnerStore.cancelCurrentRun(for: store)
+                    store.cancelRun()
                 }
                 .keyboardShortcut(".", modifiers: [.command])
-                .disabled(!runnerStore.canCancelRun(for: store))
+                .disabled(!store.isRunning)
             }
         }
 

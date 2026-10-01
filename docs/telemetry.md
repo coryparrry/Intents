@@ -28,7 +28,7 @@ historical events there.
 
 ## Configuration and verification
 
-Intents uses EU PostHog project **Default project (266962)** with the
+Foundation Evals uses EU PostHog project **Default project (266962)** with the
 `foundation_evals_` prefix. The public ingestion token and host are in
 `Configuration/AppInfo.plist`. The token permits ingestion, not reading analytics.
 

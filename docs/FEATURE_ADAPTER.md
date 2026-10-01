@@ -36,10 +36,6 @@ The example shape and production persistence path are compiled and executed by
 run and evaluates its release report. This remains an in-process macOS app
 integration, not a standalone or Linux runner.
 Exact-match and contains-text suites are scored directly. Review suites remain
-unscored unless they contain deterministic JSON field assertions. AI-rubric
-suites evaluate collected feature responses with the suite's approved
-independent judge connection before the run is saved. Deterministic literal
-requirements are checked locally. Missing approval, credentials, or a configured
-independent judge blocks the run before feature execution; judge failures remain
-unscored errors. Release checks fail closed rather than treating missing judgment
-as a pass.
+unscored unless they contain deterministic JSON field assertions; model-judge
+suites remain unscored until a complete assessment exists. Release checks fail
+closed rather than treating missing judgment as a pass.
