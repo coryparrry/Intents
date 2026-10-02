@@ -95,7 +95,7 @@ struct ScenarioContractsTests {
         try await persistence.saveDefinition(scenario())
         let restored = try await persistence.loadDefinitions()
         #expect(restored.count == 2)
-        #expect(restored.allSatisfy(\.hasValidDigest))
+        #expect(restored.allSatisfy { $0.hasValidDigest })
         let saved = try #require(restored.first { $0.id == definition.id })
         #expect(saved.directControl.parameters == definition.directControl.parameters)
         #expect(saved.assertions == definition.assertions)
