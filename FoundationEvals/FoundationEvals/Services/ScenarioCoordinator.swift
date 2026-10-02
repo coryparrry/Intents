@@ -1427,16 +1427,22 @@ final class ScenarioCoordinator {
             merged.importedArtifactIDs.formUnion(pending.ledger.importedArtifactIDs)
             try await persistence.saveLedger(merged)
             ledger = merged
-            guard let journal = try await persistence.loadJournals().first(where: { $0.id == saved.id }) else {
+            guard pending.evidenceValidationPassed == true,
+                  let journal = try await persistence.loadJournals().first(where: { $0.id == saved.id }),
+                  ScenarioExecutionRecoveryPolicy.hasBoundJournal(run: saved, journals: [journal]) else {
                 throw ScenarioPersistenceError.acceptanceNotReady
             }
+            // A rejected journal becomes stopped after explicit device recovery.
+            // Preserve that confirmation when the immutable stage still says unready.
+            let readinessConfirmed = journal.phase == .stopped
+                && journal.evidenceAccepted != nil && journal.recoveryReason == nil
             if journal.evidenceAccepted != true {
                 guard ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: saved, journal: journal, validationPassed: pending.evidenceValidationPassed) else {
                     throw ScenarioPersistenceError.acceptanceNotReady
                 }
                 try await executor.finishEvidenceValidation(
                     journal: journal, accepted: true,
-                    deviceReady: pending.deviceReadinessProven == true
+                    deviceReady: pending.deviceReadinessProven == true || readinessConfirmed
                 )
             }
             guard let validated = try await persistence.loadJournals()
