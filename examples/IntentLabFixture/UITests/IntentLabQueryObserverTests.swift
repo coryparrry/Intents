@@ -6,6 +6,21 @@ import XCTest
 @available(macOS 27.0, iOS 27.0, *)
 @MainActor
 final class IntentLabQueryObserverTests: XCTestCase {
+    func testReadOnlyResetCleanupUsesTheShippedDeclarationAndAdapter() throws {
+        let bundle = Bundle(for: Self.self)
+        let url = try XCTUnwrap(bundle.url(forResource: "IntentLabIntegration", withExtension: "json"))
+        let declaration = try JSONDecoder.intentLab.decode(IntentLabIntegrationDeclaration.self,
+            from: Data(contentsOf: url))
+        try declaration.validate()
+        XCTAssertTrue(declaration.allowsCleanupOperation("reset"))
+        let integration = NotesIntentLabIntegration()
+        XCTAssertThrowsError(try integration.cleanup(bundleIdentifier: declaration.targetBundleIdentifier,
+            context: "read-only-cleanup", operationID: "undeclared-reset"))
+        // Cleanup launches the fixture and verifies its empty baseline before terminating it.
+        XCTAssertNoThrow(try integration.cleanup(bundleIdentifier: declaration.targetBundleIdentifier,
+            context: "read-only-cleanup", operationID: "reset"))
+    }
+
     func testQueryWaitCompletesOnMainActor() throws {
         let observed = try IntentLabQueryObserver.runBounded(deadlineSeconds: 2) {
             ["status": .boolean(true)]
