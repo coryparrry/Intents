@@ -3,6 +3,27 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioCollectionTests {
+    @Test func sameMemberIDsWithNewRevisionsEnableCollectionUpdate() throws {
+        let original = try caseDefinition(projectID: UUID(), name: "Original")
+        let collection = try ScenarioCollection(projectID: original.projectID!, name: "Collection", members: [ScenarioCollectionService.member(original)])
+        #expect(ScenarioCollectionService.membershipMatchesLatest(collection, selectedIDs: [original.id], definitions: [original]))
+        var updated = original
+        updated.version += 1
+        updated.goal.requestText += " revised"
+        updated = try updated.frozen()
+        #expect(!ScenarioCollectionService.membershipMatchesLatest(collection, selectedIDs: [original.id], definitions: [original, updated]))
+    }
+
+    @Test func omittedSiriAttemptCountUsesThreeAttemptsInBatch() throws {
+        var definition = try caseDefinition(projectID: UUID(), name: "Siri default")
+        definition.coverage = .init(appFeature: .notApplicable, intentIntegration: .notApplicable, siri: .required)
+        definition.safety.mutationPolicy = .readOnly
+        definition = try definition.frozen()
+        let collection = try ScenarioCollection(projectID: definition.projectID!, name: "Siri", members: [ScenarioCollectionService.member(definition)])
+        let manifest = try ScenarioCollectionService.freezeManifest(collection: collection, definitions: [definition], scope: .full, appProductDigest: "app")
+        #expect(manifest.coordinates.map(\.repetition) == [1, 2, 3])
+    }
+
     @Test func interruptedBatchKeepsEntirePlannedPopulationVisibleAfterRelaunch() async throws {
         let projectID = UUID()
         let definitions = try (0..<3).map { try caseDefinition(projectID: projectID, name: "Case \($0)") }
