@@ -296,7 +296,7 @@ private struct BaselineComparisonContent: View {
 
     private var coverageMessage: String {
         let coverage = comparison.coverage
-        return "\(coverage.unchangedCaseCount) unchanged · \(coverage.changedCaseCount) changed · \(coverage.currentOnlyCaseCount) current only · \(coverage.baselineOnlyCaseCount) baseline only"
+        return "\(coverage.comparableRateCaseCount) of \(coverage.unchangedCaseCount) unchanged cases compared · \(coverage.changedCaseCount) changed · \(coverage.currentOnlyCaseCount) current only · \(coverage.baselineOnlyCaseCount) baseline only"
     }
 }
 

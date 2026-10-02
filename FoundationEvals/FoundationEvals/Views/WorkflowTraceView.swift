@@ -49,7 +49,7 @@ struct WorkflowTraceView: View {
                             sample.workflowTrace?.spans.first(where: { $0.kind == .sample })?.durationMilliseconds))
                             .help("The total time for this attempt, including preparation, the response, and scoring.")
                         TraceSummaryMetric(title: "Subject request", value: WorkflowTracePresentation.duration(sample.durationMilliseconds))
-                            .help("The time for the response model to answer. This excludes AI judge scoring.")
+                            .help("The time spent preparing and generating the response. This excludes AI judge scoring.")
                         TraceSummaryMetric(title: "Subject tokens", value: sample.usage.totalTokens == 0 && sample.status == .error
                             ? "Unavailable" : sample.usage.totalTokens.formatted())
                             .help("Tokens are pieces of text counted by the response model. This total includes input and output.")
