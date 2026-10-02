@@ -232,7 +232,7 @@ struct ScenarioExecutionPlanTests {
         #expect(terminal.isEmpty)
     }
 
-    @Test func importedNativeChildStageRemainsSaveOnlyAfterRelaunch() async throws {
+    @Test(arguments: [false, true]) func importedNativeChildStageRemainsSaveOnlyAfterRelaunch(wasSealed: Bool) async throws {
         let root = FileManager.default.temporaryDirectory
             .appending(path: "ScenarioNativeSaveRecovery-\(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -296,14 +296,45 @@ struct ScenarioExecutionPlanTests {
         #expect(pending?.deviceReadinessProven == true)
         let terminal = try await persistence.loadExecutionRecords()
         #expect(terminal.isEmpty)
+        let originalURL = root.appending(path: "ExecutionRecords/\(plan.id.uuidString).json")
+        var originalBytes: Data?
+        if wasSealed {
+            try await persistence.saveExecutionRecord(ScenarioExecutionRecord.make(plan: plan, records: rows))
+            originalBytes = try Data(contentsOf: originalURL)
+        }
         rows[0].state = .completed
         rows[0].laneResult = lane
         rows[0].evidenceRunID = run.id
         rows[0].evidenceLaneResultID = lane.id
         try await persistence.saveProgress(.init(planID: plan.id, records: rows, updatedAt: .now))
+        if wasSealed {
+            let stored = try await persistence.saveRun(run, artifactRoot: nil)
+            await #expect(throws: ScenarioPersistenceError.self) {
+                _ = try await persistence.finalizeExecutionRecord(plan: plan, records: rows)
+            }
+            var journal = ScenarioExecutionJournal(phase: .stopped, invocation: run.invocation, scenarioID: run.scenarioID, scenarioVersion: run.scenarioVersion, resultBundlePath: "result", derivedDataPath: "derived", buildLogPath: "log", intendedExecutable: "/usr/bin/xcodebuild", intendedArguments: [], processIdentifier: nil, processStartedAt: nil, updatedAt: .now, recoveryReason: nil)
+            journal.evidenceAccepted = true
+            try await persistence.saveJournal(journal)
+            var ledger = ScenarioImportLedger()
+            ledger.importedInvocationIDs.insert(run.invocation.id)
+            ledger.importedNonces.insert(run.invocation.nonce)
+            try await persistence.saveLedger(ledger)
+            let accepted = try await persistence.acceptRun(stored, journal: journal)
+            rows[0].laneResult = accepted.laneResults[0]
+        }
         let first = try await persistence.finalizeExecutionRecord(plan: plan, records: rows)
         let retry = try await persistence.finalizeExecutionRecord(plan: plan, records: rows)
         #expect(first.evidenceDigest == retry.evidenceDigest)
+        if let originalBytes {
+            #expect(try Data(contentsOf: originalURL) == originalBytes)
+            let reloaded = try await ScenarioPersistence(rootDirectory: root).loadExecutionRecords()
+            #expect(reloaded.count == 1 && reloaded[0].evidenceDigest == first.evidenceDigest)
+            var changed = rows
+            changed[0].detail = "unsupported change"
+            await #expect(throws: ScenarioPersistenceError.self) {
+                _ = try await persistence.finalizeExecutionRecord(plan: plan, records: changed)
+            }
+        }
         #expect(try await persistence.loadPendingNativeSave(planID: plan.id, coordinateID: rows[0].id) != nil)
 
     }

@@ -6,6 +6,11 @@ struct ScenarioSelectedDefinition: Codable, Equatable, Sendable {
     var version: Int
 }
 
+private struct ScenarioRecoveryFinalization: Codable {
+    var priorRecordDigest: String
+    var record: ScenarioExecutionRecord
+}
+
 private struct ScenarioAcceptanceReceipt: Codable {
     var runID: UUID
     var scenarioID: UUID
@@ -195,12 +200,44 @@ actor ScenarioPersistence {
     /// Retry finalization after progress was committed, including a failed
     /// cleanup after the immutable record was already written.
     func finalizeExecutionRecord(plan: ScenarioExecutionPlan, records: [ScenarioExecutionCoordinateRecord]) throws -> ScenarioExecutionRecord {
-        if let existing = try loadExecutionRecords().first(where: { $0.planID == plan.id }) {
-            guard try Self.encoder.encode(existing.records) == Self.encoder.encode(records) else { throw ScenarioPersistenceError.immutableExecutionRecordExists }
-            return existing
-        }
         guard !records.contains(where: { $0.state == .recoveryRequired }) else {
             throw ScenarioPersistenceError.invalidRun("Evidence still requires recovery.")
+        }
+        if let existing = try loadExecutionRecords().first(where: { $0.planID == plan.id }) {
+            if try Self.encoder.encode(existing.records) == Self.encoder.encode(records) { return existing }
+            // Older builds sealed unfinished progress. Preserve that immutable
+            // record and append a finalization bound to accepted staged evidence.
+            guard existing.records.count == records.count, existing.selectedAssessments?.isEmpty != false else {
+                throw ScenarioPersistenceError.immutableExecutionRecordExists
+            }
+            for previous in existing.records {
+                guard let next = records.first(where: { $0.id == previous.id }), next.coordinate == previous.coordinate else {
+                    throw ScenarioPersistenceError.immutableExecutionRecordExists
+                }
+                if try Self.encoder.encode(previous) == Self.encoder.encode(next) { continue }
+                guard previous.state == .recoveryRequired,
+                      let pending = try loadPendingNativeSave(planID: plan.id, coordinateID: previous.id),
+                      pending.evidenceValidationPassed == true,
+                      let saved = try loadRuns(scenarioID: plan.definitionID).first(where: { $0.id == pending.run.id }),
+                      saved.acceptanceStatus == .accepted,
+                      try savedRunMatchesCaptured(saved, captured: pending.run),
+                      saved.laneResults.count == 1,
+                      next.evidenceRunID == saved.id, next.evidenceLaneResultID == saved.laneResults[0].id,
+                      let lane = next.laneResult,
+                      try Self.encoder.encode(lane) == Self.encoder.encode(saved.laneResults[0]),
+                      next.state == (lane.executionStatus == .completed ? .completed : .failedToExecute) else {
+                    throw ScenarioPersistenceError.immutableExecutionRecordExists
+                }
+            }
+            let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
+            let directory = rootDirectory.appending(path: "RecoveryFinalizations", directoryHint: .isDirectory)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            let temporary = directory.appending(path: ".\(UUID().uuidString).stage")
+            defer { try? fileManager.removeItem(at: temporary) }
+            try Self.encoder.encode(ScenarioRecoveryFinalization(priorRecordDigest: existing.evidenceDigest, record: record))
+                .write(to: temporary, options: .atomic)
+            try fileManager.linkItem(at: temporary, to: directory.appending(path: "\(plan.id.uuidString).json"))
+            return record
         }
         let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
         try saveExecutionRecord(record)
@@ -234,10 +271,24 @@ actor ScenarioPersistence {
 
     func loadExecutionRecords() throws -> [ScenarioExecutionRecord] {
         guard fileManager.fileExists(atPath: recordsDirectory.path) else { return [] }
-        return try fileManager.contentsOfDirectory(at: recordsDirectory, includingPropertiesForKeys: nil)
+        let originals = try fileManager.contentsOfDirectory(at: recordsDirectory, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }
             .map { try Self.decoder.decode(ScenarioExecutionRecord.self, from: Data(contentsOf: $0)) }
-            .sorted { $0.completedAt > $1.completedAt }
+        return try originals.map { prior in
+            let url = rootDirectory.appending(path: "RecoveryFinalizations/\(prior.planID.uuidString).json")
+            guard fileManager.fileExists(atPath: url.path) else { return prior }
+            let finalization = try Self.decoder.decode(ScenarioRecoveryFinalization.self, from: Data(contentsOf: url))
+            let record = finalization.record
+            guard prior.records.contains(where: { $0.state == .recoveryRequired }),
+                  finalization.priorRecordDigest == prior.evidenceDigest,
+                  record.id == prior.id, record.planID == prior.planID,
+                  let plan = try loadPlan(id: record.planID),
+                  try ScenarioExecutionRecord.make(plan: plan, records: record.records,
+                    selectedAssessments: record.selectedAssessments ?? [], completedAt: record.completedAt).evidenceDigest == record.evidenceDigest else {
+                throw ScenarioPersistenceError.invalidRun("recovery finalization")
+            }
+            return record
+        }.sorted { $0.completedAt > $1.completedAt }
     }
 
     func savePendingNativeSave(_ pending: ScenarioPendingNativeSave) throws {
