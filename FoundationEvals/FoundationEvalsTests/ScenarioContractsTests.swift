@@ -29,10 +29,14 @@ struct ScenarioContractsTests {
         definition.requiredClaims = [.executionCompleted]
         definition.assertions[0].applicableLanes = [.appFeature]
         lane.lane = .appFeature
-        lane.observations = ["feature.response": .string("captured")]
-        lane.observationSources = ["feature.response": .applicationInstrumentation]
+        lane.observations = ["feature.runID": .string(UUID().uuidString), "feature.resultCount": .integer(2)]
+        lane.observationSources = ["feature.resultCount": .applicationInstrumentation]
         lane.claims = nil
         #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .passed)
+        definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .notObserved)
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .notObserved)
         lane.executionStatus = .timedOut
         #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .notObserved)
     }
@@ -49,6 +53,11 @@ struct ScenarioContractsTests {
         #expect(decoded.hasValidDigest)
         #expect(decoded.testContractDigest == definition.testContractDigest)
         #expect(decoded.directControl.parameters == definition.directControl.parameters)
+        var legacy = definition
+        legacy.schemaVersion = ScenarioDefinition.reusableSchemaVersion
+        legacy = try legacy.frozen()
+        let restoredLegacy = try decoder.decode(ScenarioDefinition.self, from: encoder.encode(legacy))
+        #expect(!restoredLegacy.hasValidDigest)
     }
 
     @Test func xctestrunTransportKeepsTestRootAndPreservesXcodeEnvironment() throws {
