@@ -57,7 +57,6 @@ test('search and AI crawlers are permitted and can find the sitemap', () => {
   assert.match(metadata('robots'), /\bindex\b/);
   assert.match(metadata('robots'), /\bfollow\b/);
   assert.doesNotMatch(html, /noindex|nofollow|nosnippet|data-nosnippet/i);
-  assert.doesNotMatch(read('_headers'), /noindex|nofollow|nosnippet/i);
 });
 
 test('AI reading guide is linked, resolves locally and retains product limitations', () => {
@@ -65,7 +64,7 @@ test('AI reading guide is linked, resolves locally and retains product limitatio
   const markdown = read('index.html.md');
   assert.match(html, /rel="alternate" type="text\/markdown"/);
   assert.match(html, /rel="describedby" type="text\/plain"/);
-  for (const text of [html, guide, markdown, read('_headers')]) {
+  for (const text of [html, guide, markdown]) {
     for (const match of text.matchAll(/https:\/\/intents-workbench\.coryparry\.chatgpt\.site\/([^\s"<>)]*)/g)) {
       const path = match[1].split('#')[0];
       assert.ok(existsSync(new URL(`../dist/${path || 'index.html'}`, import.meta.url)), path);
@@ -83,4 +82,10 @@ test('AI reading guide is linked, resolves locally and retains product limitatio
   for (const phrase of ['Foundation Models', 'Intent Lab', 'MCP server', 'MIT licence', 'Download for macOS']) {
     assert.ok(staticContent.includes(phrase), `Available without JavaScript: ${phrase}`);
   }
+});
+
+test('hosting returns not found rather than the homepage for nonexistent routes', () => {
+  const hosting = JSON.parse(readFileSync(new URL('../.openai/hosting.json', import.meta.url), 'utf8'));
+  assert.equal(hosting.static.not_found_handling, 'none');
+  assert.equal(hosting.static.directory, 'dist');
 });

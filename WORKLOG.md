@@ -24,3 +24,5 @@ Goal: create and host an animated open-source showcase using faithful code-rende
 - Implemented: head-only metadata/JSON-LD changes; robots.txt, sitemap.xml, llms.txt, Markdown overview, and text/alternate-link headers. No visual assets or runtime dependencies changed.
 - Local verification: 12 tests pass; approved body is byte-for-byte unchanged; inspected the browser, disabled JavaScript to verify product readability, restored it, and checked report selection. No console errors or warnings.
 - Review complete. Publishing the verified source, then enabling public discovery and testing anonymous delivery. Actual indexing remains controlled by search providers.
+- First publication succeeded and access is public. All nine anonymous product/discovery checks passed. A separate missing-route check exposed a homepage fallback with HTTP 200; Sites also ignored `_headers` (native text MIME types are already correct).
+- Correction: use the supported static `not_found_handling: none` setting and remove the ineffective `_headers` file. Added local and production regression checks for missing routes. Homepage content and visuals remain unchanged.

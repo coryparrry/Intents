@@ -11,24 +11,25 @@ const checks = [
   ['sitemap.xml', 'Googlebot', /(?:application|text)\/xml/, `<loc>${base}</loc>`],
   ['llms.txt', 'Claude-SearchBot', /text\/plain/, '# Intents'],
   ['index.html.md', 'ChatGPT-User', /text\/(?:markdown|plain)/, '# Intents'],
+  ['seo-check-missing-page', 'Googlebot', null, null, 404],
 ];
 
 // These anonymous requests test delivery with representative user-agent headers.
 // They do not prove that a provider's actual crawler IPs have visited or indexed it.
-const results = await Promise.allSettled(checks.map(async ([path, userAgent, type, content]) => {
+const results = await Promise.allSettled(checks.map(async ([path, userAgent, type, content, status = 200]) => {
   const response = await fetch(new URL(path, base), {
     headers: { 'User-Agent': userAgent }, redirect: 'manual', signal: AbortSignal.timeout(30000),
   });
-  assert.equal(response.status, 200, `${path || '/'} (${userAgent}): HTTP ${response.status}`);
-  assert.match(response.headers.get('content-type') || '', type, `${path || '/'} content type`);
-  assert.doesNotMatch(response.headers.get('x-robots-tag') || '', /noindex|none|nosnippet/i);
+  assert.equal(response.status, status, `${path || '/'} (${userAgent}): expected ${status}, got ${response.status}`);
+  if (type) assert.match(response.headers.get('content-type') || '', type, `${path || '/'} content type`);
+  if (status === 200) assert.doesNotMatch(response.headers.get('x-robots-tag') || '', /noindex|none|nosnippet/i);
   const body = await response.text();
-  assert.ok(body.includes(content), `${path || '/'} must deliver product content, not a login or challenge`);
+  if (content) assert.ok(body.includes(content), `${path || '/'} must deliver product content, not a login or challenge`);
   if (!path) {
     assert.match(body, /<meta name="robots" content="index, follow/);
     assert.match(body, /<link rel="canonical" href="https:\/\/intents-workbench\.coryparry\.chatgpt\.site\/"/);
   }
-  return `${path || '/'} · ${userAgent}: 200, readable, no indexing block`;
+  return `${path || '/'} · ${userAgent}: ${status}${status === 200 ? ', readable, no indexing block' : ', correctly not found'}`;
 }));
 for (const result of results) {
   if (result.status === 'fulfilled') console.log(`PASS ${result.value}`);

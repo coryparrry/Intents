@@ -82,6 +82,15 @@ The site has no backend, analytics, model endpoint, or secret.
   existing-UI preservation, and unnecessary dependencies. No material findings
   remained. No invented ratings or unverified version number were added.
 
-Production verification is a separate post-publication step using
-`node scripts/check-discovery.mjs`; local tests alone do not establish public
-access or actual indexing. Search Console and Bing verification are not claimed.
+The first public deployment passed all nine anonymous product/discovery checks.
+The page and discovery files returned HTTP 200 with appropriate content types
+and no `X-Robots-Tag` indexing block. Requests included Googlebot, Bingbot,
+OAI-SearchBot, Claude-SearchBot, and ChatGPT-User headers, without authentication.
+
+A separate missing-page request returned the homepage with HTTP 200. The hosting
+configuration now explicitly disables that fallback, with an added local
+configuration check and an HTTP 404 regression check in the production script.
+The ineffective `_headers` file was removed; HTML discovery links and native
+text MIME types remain in place. Recheck this correction after publication with
+`node scripts/check-discovery.mjs`. Actual indexing, crawler-IP visits, Search
+Console and Bing ownership verification are not claimed.

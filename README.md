@@ -73,7 +73,11 @@ repository. No JavaScript is needed to read the product information.
   proposal. It is not an indexing requirement or a ranking guarantee.
 - `dist/index.html.md` is a linked Markdown product overview. Keep its facts
   and the JSON-LD consistent with the visible site and current product.
-- `dist/_headers` declares text formats and alternate/canonical HTTP links.
+- `.openai/hosting.json` disables the homepage fallback for nonexistent URLs,
+  so missing pages return HTTP 404 instead of duplicate homepage content.
+- Alternate and canonical links are in the HTML head. Sites serves the text
+  files with their appropriate content types; its static deployment does not
+  apply Cloudflare `_headers` files.
 
 For anonymous production delivery checks after publication:
 
