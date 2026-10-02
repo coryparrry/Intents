@@ -65,24 +65,27 @@ struct ScenarioContractsTests {
         var definition = try schemaVersion == 1 ? scenario() : reusableBasicScenario()
         let date = ScenarioValue.date(.init(source: "authored", timeZoneIdentifier: "Europe/London",
             resolvedInstant: Date(timeIntervalSince1970: timestamp)))
-        let nestedDates = ScenarioValue.array([.array([date])])
+        let dates = ScenarioValue.array([date])
         definition.directControl.parameters = [
             .init(name: "when", type: .primitive(.date), isOptional: false, presence: .value(date)),
-            .init(name: "dates", type: .array(element: .array(element: .primitive(.date))),
-                isOptional: false, presence: .value(nestedDates))
+            .init(name: "dates", type: .array(element: .primitive(.date)),
+                isOptional: false, presence: .value(dates))
         ]
         definition.directControl.outputFields = [.init(name: "dates",
-            type: .array(element: .array(element: .primitive(.date))))]
+            type: .array(element: .primitive(.date)), path: [.init(kind: .property, name: "value")])]
         definition.assertions = [.init(kind: .returnedField, observationKey: "dates",
-            expectedValue: nestedDates, explanation: "The authored dates are returned.")]
+            expectedValue: dates, explanation: "The authored dates are returned.")]
+        if schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+            definition.observationPlan = [.init(id: "dates", source: .intentResult)]
+        }
         let legacyDigest = try definition.calculatedDigest()
         definition = try definition.frozen()
         #expect(definition.definitionDigest == legacyDigest)
         let normalized = ScenarioValue.date(.init(source: "authored", timeZoneIdentifier: "Europe/London",
             resolvedInstant: Date(timeIntervalSince1970: timestamp.rounded(.down))))
         #expect(definition.directControl.parameters[0].presence == .value(normalized))
-        #expect(definition.directControl.parameters[1].presence == .value(.array([.array([normalized])])))
-        #expect(definition.assertions[0].expectedValue == .array([.array([normalized])]))
+        #expect(definition.directControl.parameters[1].presence == .value(.array([normalized])))
+        #expect(definition.assertions[0].expectedValue == .array([normalized]))
         let decoded = try decoder.decode(ScenarioDefinition.self, from: encoder.encode(definition))
         #expect(decoded.hasValidDigest)
         #expect(decoded.directControl.parameters == definition.directControl.parameters)
