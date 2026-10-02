@@ -258,6 +258,7 @@ enum ScenarioValidator {
                     error("observationPlan[\(index)].id", "An observation needs a bounded stable ID.")
                 }
                 if observation.source != .intentResult && observation.source != .uiElement,
+                   !(observation.id == "feature.response" && observation.source == .testOnlyIntent && definition.featureBinding != nil),
                    observation.operationID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
                     error("observationPlan[\(index)].operationID", "State observers need a compiled operation ID.")
                 }
@@ -280,7 +281,10 @@ enum ScenarioValidator {
                     error("assertions[\(index)].observationKey", "The assertion needs a declared observation.")
                     continue
                 }
-                if assertion.kind == .returnedField && observation.source != .intentResult {
+                let featureResponse = assertion.observationKey == "feature.response"
+                    && assertion.applicableLanes == [.appFeature] && observation.source == .testOnlyIntent
+                    && definition.featureBinding != nil
+                if assertion.kind == .returnedField && observation.source != .intentResult && !featureResponse {
                     error("assertions[\(index)].kind", "Returned-value assertions must use an intent result observation.")
                 }
                 if assertion.kind != .returnedField && !observation.source.checksApplicationState {
@@ -503,17 +507,19 @@ enum ScenarioResultEvaluator {
         if !requiredResults.allSatisfy({ $0.outcome == .passed }) { return .notObserved }
         if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion {
             let direct = requiredResults.filter { $0.lane == .intentIntegration }
+            let completionRoutes = direct.isEmpty && definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+                ? requiredResults : direct
             let claims = definition.requiredClaims ?? []
             if claims.contains(.executionCompleted),
-               (direct.isEmpty || !direct.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
+               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.returnedValueChecked),
-               !direct.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) }) {
+               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.applicationStateChecked),
-               !direct.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) }) {
+               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if definition.coverage.siri != .notApplicable,
@@ -529,9 +535,20 @@ enum ScenarioResultEvaluator {
         definition: ScenarioDefinition,
         result: ScenarioLaneResult
     ) -> Bool {
-        guard result.executionStatus == .completed, result.outcome == .passed,
-              result.claims?.contains(claim) == true else { return false }
-        if claim == .executionCompleted { return result.lane == .intentIntegration }
+        guard result.executionStatus == .completed, result.outcome == .passed else { return false }
+        if claim == .executionCompleted,
+           definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+           result.lane == .appFeature {
+            guard case .integer(let count) = result.observations["feature.resultCount"], count > 0 else { return false }
+            return result.observations["feature.runID"] != nil
+                && result.observationSources?["feature.resultCount"] == .applicationInstrumentation
+        }
+        guard result.claims?.contains(claim) == true else { return false }
+        if claim == .executionCompleted {
+            if result.lane == .intentIntegration { return true }
+            return definition.schemaVersion == ScenarioDefinition.stableSchemaVersion && result.lane == .siri
+                && verifiedClaim(.applicationStateChecked, definition: definition, result: result)
+        }
         let plan = definition.observationPlan ?? []
         return definition.assertions.contains { assertion in
             guard assertion.required, assertion.applies(to: result.lane),

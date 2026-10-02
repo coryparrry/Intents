@@ -124,6 +124,10 @@ enum ScenarioExpectationAuthoring {
             throw ScenarioAuthoringError.incompatibleValue
         }
         var copy = definition
+        var observations = copy.observationPlan ?? []
+        guard !observations.contains(where: { $0.id == "feature.response" }) else { throw ScenarioAuthoringError.duplicateCheck }
+        observations.append(.init(id: "feature.response", source: .testOnlyIntent, operationID: nil, selector: nil))
+        copy.observationPlan = observations
         copy.assertions.append(.init(
             kind: semantic ? .semanticRubric : .returnedField,
             observationKey: "feature.response", expectedValue: expected,
