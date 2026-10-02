@@ -31,6 +31,24 @@ struct NotesIntentLabIntegration: NotesTestingIntegration {
         return application
     }
 
+    func cleanup(bundleIdentifier: String, context: String, operationID: String) throws {
+        guard ["", "reset", "resetNotes", "resetFixture"].contains(operationID) else {
+            throw NotesIntegrationError.unsupportedCleanup(operationID)
+        }
+        let application = try prepare(
+            bundleIdentifier: bundleIdentifier,
+            context: context,
+            operationID: operationID
+        )
+        defer { application.terminate() }
+        let observations = try observe(application: application)
+        guard observations["selectedNoteID"] == .string("none"),
+              observations["noteStoreMutationCount"] == .integer(0),
+              observations["applicationEvent"] == .string("none") else {
+            throw NotesIntegrationError.resetNotObserved
+        }
+    }
+
     func observe(application: XCUIApplication) throws -> [String: IntentLabValue] {
         var observations: [String: IntentLabValue] = [:]
         let selected = application.staticTexts["intent-lab-selected-note-id"]
@@ -91,11 +109,17 @@ struct NotesIntentLabIntegration: NotesTestingIntegration {
 
 private enum NotesIntegrationError: LocalizedError {
     case unsupportedPreparation(String)
+    case unsupportedCleanup(String)
+    case resetNotObserved
 
     var errorDescription: String? {
         switch self {
         case .unsupportedPreparation(let operation):
             "The Notes fixture does not provide preparation operation \(operation)."
+        case .unsupportedCleanup(let operation):
+            "The Notes fixture does not provide cleanup operation \(operation)."
+        case .resetNotObserved:
+            "The synthetic note fixture did not return to its empty baseline."
         }
     }
 }

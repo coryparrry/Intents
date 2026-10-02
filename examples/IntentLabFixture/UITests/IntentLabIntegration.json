@@ -49,6 +49,12 @@
     "resetNotes",
     "resetFixture"
   ],
+  "cleanupOperations": [
+    "",
+    "reset",
+    "resetNotes",
+    "resetFixture"
+  ],
   "observers": [
     {
       "id": "selectedNoteID",
