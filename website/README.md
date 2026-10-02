@@ -4,6 +4,12 @@ A static, responsive showcase of the current native Intents interface. The repor
 workflow trace, and Intent Lab examples are rendered as HTML and CSS, using the
 native app's icon assets, labels, design tokens, and recorded example outputs.
 
+All commands below run from the `website/` directory. From the repository root, enter it first:
+
+```sh
+cd website
+```
+
 ## Local preview
 
 ```sh
@@ -20,6 +26,7 @@ render-blocking requests while preserving the authored cascade and first paint.
 ```sh
 node --check dist/app.js
 node --check dist/demo-data.mjs
+node --check dist/demo-interactions.mjs
 node scripts/inline-styles.mjs --check
 node --test tests/*.test.mjs
 ```
@@ -72,9 +79,9 @@ repository. No JavaScript is needed to read the product information.
 
 The icon has responsive PNG sizes generated from the original app asset, plus a
 96px favicon. The original 256px icon remains the social/structured-data image.
-The below-fold icon loads lazily. A module preload discovers demo data in parallel
-with the app script, and ResizeObserver supplies preview geometry without an
-eager synchronous layout read.
+The below-fold icon loads lazily. Module preloads fetch the demo modules with
+the app script. ResizeObserver supplies preview geometry without an immediate
+layout read.
 
 - `dist/robots.txt` permits crawlers and advertises the sitemap.
 - `dist/sitemap.xml` lists only the canonical HTML page. Update `lastmod` when

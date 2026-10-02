@@ -14,6 +14,7 @@ test('first paint has the exact authored stylesheet cascade without network depe
   assert.doesNotMatch(css, /@import\b/);
   assert.ok(html.indexOf('<style id="site-styles">') < html.indexOf('<body>'));
   assert.match(html, /<link rel="modulepreload" href="\/demo-data\.mjs">/);
+  assert.match(html, /<link rel="modulepreload" href="\/demo-interactions\.mjs">/);
 });
 
 test('responsive icon candidates exist at their declared dimensions with bounded delivery size', () => {

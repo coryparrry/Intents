@@ -1,4 +1,5 @@
 import {cases, spans, filterCases, resolveSelection, escapeHTML as esc} from './demo-data.mjs';
+import {createViewMotion, copyCurrentResponse} from './demo-interactions.mjs';
 
 const screen = document.querySelector('#native-screen');
 const app = document.querySelector('#native-app');
@@ -12,6 +13,7 @@ let selectedCase = cases[0].id;
 let selectedSpan = 0;
 let collapsed = false;
 let motionContext;
+const viewMotion = createViewMotion();
 let userPaused = false;
 try { userPaused = localStorage.getItem('intents-motion-paused') === 'true'; } catch { /* Preferences are optional. */ }
 
@@ -77,6 +79,7 @@ function labMarkup() {
 function setView(next, moveFocus = false) {
   if (!['report','trace','lab'].includes(next)) return;
   const isInitialRender = !screen.hasChildNodes();
+  viewMotion.clear();
   view = next;
   screen.innerHTML = view === 'report' ? reportMarkup() : view === 'trace' ? traceMarkup() : labMarkup();
   if (view === 'report') renderResults();
@@ -96,8 +99,10 @@ function setView(next, moveFocus = false) {
   if (!isInitialRender) screen.scrollTop = 0;
   if (moveFocus) document.querySelector(`.demo-switcher [data-view="${view}"]`).focus({preventScroll:true});
   if (!motionDisabled() && window.gsap) {
-    gsap.fromTo(screen,{opacity:.2},{opacity:1,duration:.32,clearProps:'opacity',overwrite:true});
-    if (view === 'trace') gsap.from('.trace-track i',{scaleX:0,stagger:.025,duration:.65,ease:'power2.out',clearProps:'transform'});
+    viewMotion.start(gsap, () => {
+      gsap.fromTo(screen,{opacity:.2},{opacity:1,duration:.32,clearProps:'opacity',overwrite:true});
+      if (view === 'trace') gsap.from('.trace-track i',{scaleX:0,stagger:.025,duration:.65,ease:'power2.out',clearProps:'transform'});
+    });
   }
 }
 
@@ -142,14 +147,15 @@ document.addEventListener('click', async event => {
   }
   const copyButton = event.target.closest('#copy-response');
   if (copyButton) {
-    try {
-      await navigator.clipboard.writeText(cases.find(item => item.id === selectedCase).response);
-      copyButton.querySelector('span').textContent = 'Copied';
-      announcement.textContent = 'Response copied.';
-    } catch {
-      copyButton.querySelector('span').textContent = 'Select text to copy';
-      announcement.textContent = 'Clipboard unavailable. Select the response text to copy it.';
-    }
+    await copyCurrentResponse({
+      text: cases.find(item => item.id === selectedCase).response,
+      writeText: text => navigator.clipboard.writeText(text),
+      isCurrent: () => copyButton.isConnected,
+      onResult: copied => {
+        copyButton.querySelector('span').textContent = copied ? 'Copied' : 'Select text to copy';
+        announcement.textContent = copied ? 'Response copied.' : 'Clipboard unavailable. Select the response text to copy it.';
+      }
+    });
   }
 });
 
@@ -183,6 +189,7 @@ function configureMotion() {
   motionContext?.revert();
   motionContext = undefined;
   const disabled = motionDisabled();
+  if (disabled) viewMotion.clear();
   document.documentElement.classList.toggle('motion-paused',disabled);
   const toggle = document.querySelector('#motion-toggle');
   toggle.textContent = media.matches ? 'Reduced motion enabled' : userPaused ? 'Enable motion' : 'Pause motion';
