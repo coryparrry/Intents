@@ -264,6 +264,24 @@ indirect enum ScenarioValue: Codable, Equatable, Sendable {
         default: return true
         }
     }
+
+    /// Legacy digests bind ISO8601 seconds. Freeze values at that precision so
+    /// exact-date metadata cannot invalidate an otherwise unchanged saved test.
+    var withLegacyDatePrecision: Self {
+        switch self {
+        case .date(let date):
+            return .date(.init(
+                source: date.source,
+                timeZoneIdentifier: date.timeZoneIdentifier,
+                resolvedInstant: Date(timeIntervalSince1970:
+                    date.resolvedInstant.timeIntervalSince1970.rounded(.down))
+            ))
+        case .array(let values):
+            return .array(values.map(\.withLegacyDatePrecision))
+        default:
+            return self
+        }
+    }
 }
 
 enum ScenarioParameterPresence: Codable, Equatable, Sendable {
@@ -633,6 +651,16 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
 
     func frozen() throws -> Self {
         var copy = self
+        if schemaVersion == Self.currentSchemaVersion || schemaVersion == Self.reusableSchemaVersion {
+            for index in copy.directControl.parameters.indices {
+                if case .value(let value) = copy.directControl.parameters[index].presence {
+                    copy.directControl.parameters[index].presence = .value(value.withLegacyDatePrecision)
+                }
+            }
+            for index in copy.assertions.indices {
+                copy.assertions[index].expectedValue = copy.assertions[index].expectedValue?.withLegacyDatePrecision
+            }
+        }
         if schemaVersion == Self.stableSchemaVersion {
             guard directControl.linkedFeatureRunID == nil && directControl.linkedFeatureSubjectDigest.isEmpty else {
                 throw ScenarioV3ContractError.executionBoundDefinition
