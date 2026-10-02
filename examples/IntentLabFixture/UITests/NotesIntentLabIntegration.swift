@@ -42,6 +42,10 @@ struct NotesIntentLabIntegration: NotesTestingIntegration {
         )
         defer { application.terminate() }
         let observations = try observe(application: application)
+        try Self.verifyReset(observations)
+    }
+
+    static func verifyReset(_ observations: [String: IntentLabValue]) throws {
         guard observations["selectedNoteID"] == .string("none"),
               observations["noteStoreMutationCount"] == .integer(0),
               observations["applicationEvent"] == .string("none") else {
