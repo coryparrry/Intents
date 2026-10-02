@@ -123,7 +123,8 @@ struct AppleTestConnectionView: View {
                     }
                 }
 
-                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+                    || coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
                     connectionField(
                         title: "Check installed support",
                         detail: coordinator.verifiedIntegrationSummary
