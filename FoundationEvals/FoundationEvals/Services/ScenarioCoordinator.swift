@@ -976,7 +976,7 @@ final class ScenarioCoordinator {
         do {
             guard var progress = try await persistence.loadProgress(planID: planID),
                   let index = progress.records.firstIndex(where: {
-                      $0.coordinate.lane == .appFeature && ($0.state == .recoveryRequired || $0.state == .completed)
+                      $0.coordinate.lane == .appFeature && [.recoveryRequired, .completed, .failedToExecute].contains($0.state)
                         && $0.evidenceRunID != nil
                   }),
                   let runID = progress.records[index].evidenceRunID else {
