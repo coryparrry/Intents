@@ -152,6 +152,10 @@ struct ScenarioDateValue: Codable, Equatable, Sendable {
     var source: String
     var timeZoneIdentifier: String
     var resolvedInstant: Date
+    private(set) var persistedInstant: Date? = nil
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.source == rhs.source && lhs.timeZoneIdentifier == rhs.timeZoneIdentifier && lhs.resolvedInstant == rhs.resolvedInstant
+    }
     enum CodingKeys: String, CodingKey { case source, timeZoneIdentifier, resolvedInstant, resolvedInstantBits }
     init(source: String, timeZoneIdentifier: String, resolvedInstant: Date) {
         self.source = source; self.timeZoneIdentifier = timeZoneIdentifier; self.resolvedInstant = resolvedInstant
@@ -161,6 +165,7 @@ struct ScenarioDateValue: Codable, Equatable, Sendable {
         source = try values.decode(String.self, forKey: .source)
         timeZoneIdentifier = try values.decode(String.self, forKey: .timeZoneIdentifier)
         resolvedInstant = try values.decode(Date.self, forKey: .resolvedInstant)
+        persistedInstant = resolvedInstant
         if let text = try values.decodeIfPresent(String.self, forKey: .resolvedInstantBits) {
             guard let bits = UInt64(text, radix: 16), Double(bitPattern: bits).isFinite else {
                 throw DecodingError.dataCorruptedError(forKey: .resolvedInstantBits, in: values, debugDescription: "Invalid exact date instant.")
@@ -203,6 +208,14 @@ indirect enum ScenarioValue: Codable, Equatable, Sendable {
     case enumeration(ScenarioEnumValue)
     case entity(ScenarioEntityReference)
     case array([ScenarioValue])
+
+    var hasBoundLegacyDatePrecision: Bool {
+        switch self {
+        case .date(let date): return date.persistedInstant == nil || date.persistedInstant == date.resolvedInstant
+        case .array(let values): return values.allSatisfy(\.hasBoundLegacyDatePrecision)
+        default: return true
+        }
+    }
 }
 
 enum ScenarioParameterPresence: Codable, Equatable, Sendable {
@@ -544,7 +557,12 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
         if schemaVersion == Self.stableSchemaVersion {
             return (try? calculatedTestContractDigest()) == testContractDigest
         }
-        return true
+        // Legacy digests bind ISO8601 seconds, not exact-date metadata. Never
+        // accept metadata that changes the value covered by a legacy digest.
+        return directControl.parameters.allSatisfy { parameter in
+            if case .value(let value) = parameter.presence { return value.hasBoundLegacyDatePrecision }
+            return true
+        } && assertions.allSatisfy { $0.expectedValue?.hasBoundLegacyDatePrecision != false }
     }
 }
 

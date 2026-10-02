@@ -511,11 +511,11 @@ enum ScenarioResultEvaluator {
                 return .notObserved
             }
             if claims.contains(.returnedValueChecked),
-               !direct.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) }) {
+               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.applicationStateChecked),
-               !direct.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) }) {
+               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if definition.coverage.siri != .notApplicable,
@@ -535,8 +535,9 @@ enum ScenarioResultEvaluator {
         if claim == .executionCompleted,
            definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
            result.lane == .appFeature {
-            return result.observations["feature.response"] != nil
-                && result.observationSources?["feature.response"] == .applicationInstrumentation
+            guard case .integer(let count) = result.observations["feature.resultCount"], count > 0 else { return false }
+            return result.observations["feature.runID"] != nil
+                && result.observationSources?["feature.resultCount"] == .applicationInstrumentation
         }
         guard result.claims?.contains(claim) == true else { return false }
         if claim == .executionCompleted {
