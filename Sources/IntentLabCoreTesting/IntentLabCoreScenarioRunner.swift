@@ -227,7 +227,7 @@ public enum IntentLabScenarioEngine {
                 var baseline: [String: IntentLabValue]?
                 var preparationStarted = false
                 var attemptScreenshot: IntentLabArtifactReference?
-                let completedAttempt = IntentLabAttemptLifecycle.execute(action: {
+                let completedAttempt = executeSiriAttempt(action: {
                     try sequence.run {
                         preparationStarted = true
                         let application = try integration.prepare(
@@ -263,6 +263,11 @@ public enum IntentLabScenarioEngine {
                         attemptFence.recordVerifiedSiriCompletion()
                         return completedObservations
                     }
+                }, evaluate: { observations in
+                    result(for: .siri, scenario: scenario, observations: observations,
+                        baseline: baseline, integration: integration, declaration: declaration,
+                        context: context, startedAt: siriStart, attempt: attempt,
+                        artifacts: [attemptScreenshot ?? EvidenceAttachmentWriter.attachScreenshot(to: testCase)])
                 }, cleanupRequired: {
                     scenario.schemaVersion == 2 && preparationStarted
                 }, skipCleanupAfter: { _ in
@@ -286,19 +291,8 @@ public enum IntentLabScenarioEngine {
                     break
                 }
                 switch completedAttempt.action {
-                case .success(let observations):
-                    results.append(result(
-                        for: .siri,
-                        scenario: scenario,
-                        observations: observations,
-                        baseline: baseline,
-                        integration: integration,
-                        declaration: declaration,
-                        context: context,
-                        startedAt: siriStart,
-                        attempt: attempt,
-                        artifacts: [screenshot]
-                    ))
+                case .success(let laneResult):
+                    results.append(laneResult)
                 case .failure(let error):
                     results.append(failed(
                         for: .siri,
@@ -322,6 +316,18 @@ public enum IntentLabScenarioEngine {
         )
         try EvidenceAttachmentWriter.attach(envelope, to: testCase)
         return envelope
+    }
+
+    static func executeSiriAttempt(
+        action: () throws -> [String: IntentLabValue],
+        evaluate: ([String: IntentLabValue]) -> IntentLabLaneResult,
+        cleanupRequired: () -> Bool,
+        skipCleanupAfter: (Error) -> Bool,
+        cleanup: () throws -> Void
+    ) -> (action: Result<IntentLabLaneResult, Error>, cleanupError: Error?) {
+        // Freeze consumer-owned completion proof before fixture cleanup resets it.
+        IntentLabAttemptLifecycle.execute(action: { evaluate(try action()) },
+            cleanupRequired: cleanupRequired, skipCleanupAfter: skipCleanupAfter, cleanup: cleanup)
     }
 
     private static func cleanupFailure<Value>(action: Result<Value, Error>, cleanup: Error) -> Error {
@@ -399,7 +405,7 @@ public enum IntentLabScenarioEngine {
         }
     }
 
-    private static func result(
+    static func result(
         for lane: IntentLabLane,
         scenario: IntentLabScenario,
         observations: [String: IntentLabValue],

@@ -31,6 +31,7 @@ enum ScenarioPersistenceError: LocalizedError, Sendable {
     case invalidRun(String)
     case invalidJournal(String)
     case acceptanceNotReady
+    case conflictingAcceptanceReceipt
     case immutablePlanExists
     case immutableExecutionRecordExists
 
@@ -50,6 +51,8 @@ enum ScenarioPersistenceError: LocalizedError, Sendable {
             "The execution journal \(name) is unreadable or has inconsistent identity. Repair it before device recovery can continue."
         case .acceptanceNotReady:
             "The run cannot be accepted until its execution journal is durably validated."
+        case .conflictingAcceptanceReceipt:
+            "A different acceptance receipt already exists for this saved run."
         case .immutablePlanExists:
             "A different frozen execution plan already exists for this run."
         case .immutableExecutionRecordExists:
@@ -384,11 +387,26 @@ actor ScenarioPersistence {
         // atomic file in this directory, then create the final name with a hard
         // link. The link fails if an immutable receipt already exists; a crash
         // before the link leaves only an ignored temporary file.
-        let temporaryReceipt = receiptURL(run).deletingLastPathComponent()
+        let receiptData = try Self.encoder.encode(receipt)
+        let destination = receiptURL(run)
+        if fileManager.fileExists(atPath: destination.path) {
+            guard try Data(contentsOf: destination) == receiptData else {
+                throw ScenarioPersistenceError.conflictingAcceptanceReceipt
+            }
+            var accepted = persisted
+            accepted.acceptanceStatus = .accepted
+            return accepted
+        }
+        let temporaryReceipt = destination.deletingLastPathComponent()
             .appending(path: ".acceptance-\(UUID().uuidString).tmp")
         defer { try? fileManager.removeItem(at: temporaryReceipt) }
-        try Self.encoder.encode(receipt).write(to: temporaryReceipt, options: .atomic)
-        try fileManager.linkItem(at: temporaryReceipt, to: receiptURL(run))
+        try receiptData.write(to: temporaryReceipt, options: .atomic)
+        do {
+            try fileManager.linkItem(at: temporaryReceipt, to: destination)
+        } catch {
+            guard fileManager.fileExists(atPath: destination.path),
+                  try Data(contentsOf: destination) == receiptData else { throw error }
+        }
         var accepted = persisted
         accepted.acceptanceStatus = .accepted
         return accepted

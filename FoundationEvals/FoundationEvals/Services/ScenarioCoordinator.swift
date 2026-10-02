@@ -1268,20 +1268,29 @@ final class ScenarioCoordinator {
             merged.importedArtifactIDs.formUnion(pending.ledger.importedArtifactIDs)
             try await persistence.saveLedger(merged)
             ledger = merged
-            if let journal = try await persistence.loadJournals().first(where: { $0.id == saved.id }) {
-                try await executor.finishEvidenceValidation(journal: journal, accepted: pending.evidenceValidationPassed == true
-                    && pending.deviceReadinessProven == true
-                    && ScenarioExecutionRecoveryPolicy.hasBoundJournal(run: saved, journals: [journal]))
+            guard pending.evidenceValidationPassed == true,
+                  pending.deviceReadinessProven == true,
+                  let journal = try await persistence.loadJournals().first(where: { $0.id == saved.id }),
+                  ScenarioExecutionRecoveryPolicy.hasBoundJournal(run: saved, journals: [journal]) else {
+                throw ScenarioPersistenceError.acceptanceNotReady
             }
+            if journal.evidenceAccepted != true {
+                try await executor.finishEvidenceValidation(journal: journal, accepted: true)
+            }
+            guard let validated = try await persistence.loadJournals().first(where: { $0.id == saved.id }),
+                  validated.evidenceAccepted == true else {
+                throw ScenarioPersistenceError.acceptanceNotReady
+            }
+            let acceptedRun = try await persistence.acceptRun(saved, journal: validated)
             progress.records[index] = .init(
                 coordinate: progress.records[index].coordinate,
-                state: saved.laneResults[0].executionStatus == .completed
+                state: acceptedRun.laneResults[0].executionStatus == .completed
                     ? .completed : .failedToExecute,
-                evidenceRunID: saved.id,
-                evidenceLaneResultID: saved.laneResults[0].id,
-                detail: saved.laneResults[0].diagnostic,
-                laneResult: saved.laneResults[0],
-                evidenceDigest: try Self.evidenceDigest(saved)
+                evidenceRunID: acceptedRun.id,
+                evidenceLaneResultID: acceptedRun.laneResults[0].id,
+                detail: acceptedRun.laneResults[0].diagnostic,
+                laneResult: acceptedRun.laneResults[0],
+                evidenceDigest: try Self.evidenceDigest(acceptedRun)
             )
             try await checkpoint(plan: plan, records: progress.records)
             let record = try await persistence.finalizeExecutionRecord(plan: plan, records: progress.records)
@@ -1289,7 +1298,7 @@ final class ScenarioCoordinator {
             executionRecords.removeAll { $0.id == record.id }
             executionRecords.insert(record, at: 0)
             selectedExecutionID = record.id
-            runs.insert(saved, at: 0)
+            runs.insert(acceptedRun, at: 0)
             recoveryJournals = try await executor.currentRecoveryJournals()
             notice = "Saved the native evidence without rerunning the app. Confirm device readiness before another route."
             return record
