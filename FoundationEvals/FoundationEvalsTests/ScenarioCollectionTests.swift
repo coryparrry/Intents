@@ -3,6 +3,17 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioCollectionTests {
+    @Test func sameMemberIDsWithNewRevisionsEnableCollectionUpdate() throws {
+        let original = try caseDefinition(projectID: UUID(), name: "Original")
+        let collection = try ScenarioCollection(projectID: original.projectID!, name: "Collection", members: [ScenarioCollectionService.member(original)])
+        #expect(ScenarioCollectionService.membershipMatchesLatest(collection, selectedIDs: [original.id], definitions: [original]))
+        var updated = original
+        updated.version += 1
+        updated.goal.requestText += " revised"
+        updated = try updated.frozen()
+        #expect(!ScenarioCollectionService.membershipMatchesLatest(collection, selectedIDs: [original.id], definitions: [original, updated]))
+    }
+
     @Test func omittedSiriAttemptCountUsesThreeAttemptsInBatch() throws {
         var definition = try caseDefinition(projectID: UUID(), name: "Siri default")
         definition.coverage = .init(appFeature: .notApplicable, intentIntegration: .notApplicable, siri: .required)

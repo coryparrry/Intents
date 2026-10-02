@@ -112,6 +112,8 @@ struct ScenarioExpectationAuthoringTests {
         let check = try #require(authored.assertions.first)
         #expect(check.applicableLanes == [.appFeature])
         #expect(check.observationKey == "feature.response")
+        #expect(authored.observationPlan?.contains { $0.id == "feature.response" && $0.source == .testOnlyIntent } == true)
+        #expect(!ScenarioValidator.issues(in: authored, requireFrozenDigest: false).contains { $0.path.hasPrefix("observationPlan") || $0.path.hasPrefix("assertions") })
         let failed = ScenarioResultEvaluator.evaluate(
             definition: authored, lane: .appFeature,
             observations: ["feature.response": .string("Actual summary")],
