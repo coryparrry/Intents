@@ -138,7 +138,7 @@ enum ScenarioCollectionService {
                 guard requirement != .notApplicable else { continue }
                 let count: Int
                 if lane == .siri {
-                    count = definition.coverage.siriAttemptCount ?? 1
+                    count = definition.coverage.siriAttemptCount ?? 3
                     guard count >= 1 && count <= 3,
                           definition.safety.mutationPolicy == .readOnly || count == 1 else {
                         throw ScenarioCollectionError.invalidDefinition(member.caseID)

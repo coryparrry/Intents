@@ -64,6 +64,7 @@ final class EvaluationStore {
     var overviewStorageDirectory: URL { supportDirectory }
     @ObservationIgnored private var pendingPromptEdits: [UUID: String] = [:]
     @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
+    @ObservationIgnored private var draftSaveGeneration: UInt64 = 0
     @ObservationIgnored private let onDeviceContextSizes = ModelContextSizeCache()
     private(set) var isDraftSavePending = false
     private var runTask: Task<Void, Never>?
@@ -73,6 +74,7 @@ final class EvaluationStore {
     private var unsavedRun: EvaluationRun?
     private var pendingCompletedRuns: PendingCompletedRuns?
     private var pendingCompletedRunsIsDurable = false
+    private(set) var pendingCompletedRunsLoadError: String?
     private var latestRunHistorySequence: UInt64 = 0
     private var workspacePersistenceBlocker: String?
     /// Admission for snapshot feature runs. Their storage and UI selection are
@@ -242,10 +244,7 @@ final class EvaluationStore {
         activeRunEvidence = recovery.pending?.subjectEvidence
         activeRunResults = recovery.pending?.results ?? []
         unsavedRun = recovery.pending?.completedRun
-        pendingCompletedRuns = try? CanonicalJSON.decode(
-            PendingCompletedRuns.self, from: Data(contentsOf: pendingCompletedRunsURL)
-        )
-        pendingCompletedRunsIsDurable = pendingCompletedRuns != nil
+        loadPendingCompletedRuns()
         if let pendingCompletedRuns {
             let pendingIDs = Set(pendingCompletedRuns.runs.map(\.id))
             runs.removeAll { pendingIDs.contains($0.id) }
@@ -680,6 +679,7 @@ final class EvaluationStore {
         let previousUnsavedRun = unsavedRun
         let previousPendingCompletedRuns = pendingCompletedRuns
         let previousPendingCompletedRunsIsDurable = pendingCompletedRunsIsDurable
+        let previousPendingCompletedRunsLoadError = pendingCompletedRunsLoadError
         let previousCompletedSamples = completedSamples
         let previousTotalSamples = totalSamples
         let previousIsRunning = isRunning
@@ -715,6 +715,7 @@ final class EvaluationStore {
             unsavedRun = previousUnsavedRun
             pendingCompletedRuns = previousPendingCompletedRuns
             pendingCompletedRunsIsDurable = previousPendingCompletedRunsIsDurable
+            pendingCompletedRunsLoadError = previousPendingCompletedRunsLoadError
             completedSamples = previousCompletedSamples
             totalSamples = previousTotalSamples
             isRunning = previousIsRunning
@@ -821,10 +822,7 @@ final class EvaluationStore {
         activeRunResults = recovery.pending?.results ?? []
         unsavedRun = recovery.pending?.completedRun
         completedSamples = recovery.pending?.summary.completedSamples ?? 0
-        pendingCompletedRuns = try? CanonicalJSON.decode(
-            PendingCompletedRuns.self, from: Data(contentsOf: pendingCompletedRunsURL)
-        )
-        pendingCompletedRunsIsDurable = pendingCompletedRuns != nil
+        loadPendingCompletedRuns()
         if let pendingCompletedRuns {
             let pendingIDs = Set(pendingCompletedRuns.runs.map(\.id))
             runs.removeAll { pendingIDs.contains($0.id) }
@@ -2181,10 +2179,12 @@ final class EvaluationStore {
     }
 
     var hasUnsavedCompletedRun: Bool {
-        unsavedRun != nil || pendingCompletedRuns != nil || (activeRun != nil && !isRunning)
+        unsavedRun != nil || pendingCompletedRuns != nil || pendingCompletedRunsLoadError != nil
+            || (activeRun != nil && !isRunning)
     }
 
     var pendingRunSaveMessage: String? {
+        if let pendingCompletedRunsLoadError { return pendingCompletedRunsLoadError }
         guard hasUnsavedCompletedRun else { return nil }
         if pendingCompletedRuns != nil && !pendingCompletedRunsIsDurable {
             return "The completed evidence has no saved retry record. Keep the app open, restore storage access, then retry saving."
@@ -2674,11 +2674,21 @@ final class EvaluationStore {
 
     func scheduleSuiteSave() {
         draftSaveTask?.cancel()
+        draftSaveGeneration &+= 1
         if !isDraftSavePending { isDraftSavePending = true }
         draftSaveTask = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(350)) }
             catch { return }
             self?.saveSuite()
+        }
+    }
+
+    func waitForScheduledSuiteSave(onTaskCaptured: (@MainActor () -> Void)? = nil) async {
+        while let task = draftSaveTask {
+            let generation = draftSaveGeneration
+            onTaskCaptured?()
+            await task.value
+            guard generation != draftSaveGeneration else { return }
         }
     }
 
@@ -3932,6 +3942,38 @@ final class EvaluationStore {
         try retryCompletedRuns()
     }
 
+    private func loadPendingCompletedRuns() {
+        pendingCompletedRuns = nil
+        pendingCompletedRunsIsDurable = false
+        pendingCompletedRunsLoadError = nil
+        guard FileManager.default.fileExists(atPath: pendingCompletedRunsURL.path) else { return }
+        do {
+            pendingCompletedRuns = try CanonicalJSON.decode(
+                PendingCompletedRuns.self, from: Data(contentsOf: pendingCompletedRunsURL)
+            )
+            pendingCompletedRunsIsDurable = true
+        } catch {
+            pendingCompletedRunsLoadError = "Completed-run recovery data is unreadable. Preserve it for inspection before starting another run."
+        }
+    }
+
+    /// Explicit recovery keeps the original bytes; it never qualifies unreadable evidence.
+    @discardableResult
+    func preserveUnreadablePendingRuns() throws -> URL {
+        try requireWorkspaceWritable()
+        guard !isRunning else { throw EvaluationStoreError.runBusy }
+        try requireNoReassessmentMutation()
+        guard !isProcessingFiles, !isImportingFiles else { throw EvaluationStoreError.fileOperationBusy }
+        guard pendingCompletedRunsLoadError != nil else {
+            throw EvaluationStoreError.persistence("There is no unreadable pending evidence to preserve.")
+        }
+        let preserved = suiteDirectory.appending(path: "unreadable-pending-runs-\(UUID().uuidString).json")
+        try FileManager.default.moveItem(at: pendingCompletedRunsURL, to: preserved)
+        pendingCompletedRunsLoadError = nil
+        notice = "Unreadable evidence was preserved at \(preserved.path). It cannot qualify a release; run a new check when ready."
+        return preserved
+    }
+
     private func persistPendingCompletedRuns() throws {
         guard let pendingCompletedRuns else { return }
         try pendingCompletedRunsWriter(
@@ -3941,7 +3983,7 @@ final class EvaluationStore {
     }
 
     func saveCompletedRuns(_ completed: [EvaluationRun], experimentID: UUID? = nil) throws {
-        guard pendingCompletedRuns == nil else {
+        guard pendingCompletedRuns == nil, pendingCompletedRunsLoadError == nil else {
             throw EvaluationStoreError.persistence("A completed run still needs to be saved.")
         }
         pendingCompletedRuns = PendingCompletedRuns(runs: completed, experimentID: experimentID)
@@ -3955,6 +3997,9 @@ final class EvaluationStore {
     }
 
     private func retryCompletedRuns() throws {
+        if let pendingCompletedRunsLoadError {
+            throw EvaluationStoreError.persistence(pendingCompletedRunsLoadError)
+        }
         guard let pendingCompletedRuns else { return }
         if !pendingCompletedRunsIsDurable {
             do {

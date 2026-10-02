@@ -221,3 +221,28 @@ final class IntentLabContractsTests: XCTestCase {
         return try JSONDecoder.intentLab.decode(IntentLabScenario.self, from: JSONSerialization.data(withJSONObject: json))
     }
 }
+
+extension IntentLabContractsTests {
+    func testReturnedProofRejectsOptionalMismatchAndAcceptsRequiredMatch() throws {
+        let id = UUID()
+        func assertion(required: Bool) throws -> IntentLabAssertion {
+            let object: [String: Any] = ["id": id.uuidString, "kind": "returnedField",
+                "observationKey": "answer", "expectedValue": ["string": ["_0": "expected"]],
+                "required": required]
+            return try JSONDecoder().decode(IntentLabAssertion.self,
+                from: JSONSerialization.data(withJSONObject: object))
+        }
+        let optional = try assertion(required: false)
+        let failed = IntentLabAssertionResult(assertionID: id, passed: false,
+            observedValue: .string("wrong"), message: "mismatch")
+        XCTAssertFalse(IntentLabReturnedValueProof.isVerified(assertions: [optional],
+            observations: ["answer": .string("wrong")], resultKeys: ["answer"], checks: [failed]))
+        let required = try assertion(required: true)
+        let passed = IntentLabAssertionResult(assertionID: id, passed: true,
+            observedValue: .string("expected"), message: "matched")
+        XCTAssertTrue(IntentLabReturnedValueProof.isVerified(assertions: [required],
+            observations: ["answer": .string("expected")], resultKeys: ["answer"], checks: [passed]))
+        XCTAssertFalse(IntentLabReturnedValueProof.isVerified(assertions: [required],
+            observations: [:], resultKeys: ["answer"], checks: [passed]))
+    }
+}

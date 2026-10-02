@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import FoundationEvals
@@ -41,8 +42,28 @@ struct EditorPerformanceTests {
         }
         #expect(store.isDraftSavePending)
         #expect(try Data(contentsOf: suiteDirectory(store, in: directory).appending(path: "suite.json")) == original)
-        try await waitForSave(store)
+        await waitForSave(store)
         #expect(EvaluationStore(supportDirectory: directory).draftSuite.name == "Typed name 19")
+    }
+
+    @Test func pendingSaveWaiterFollowsRescheduledDraft() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.name = "Superseded draft"
+        store.scheduleSuiteSave()
+
+        var hasRescheduled = false
+        await store.waitForScheduledSuiteSave {
+            guard !hasRescheduled else { return }
+            hasRescheduled = true
+            store.draftSuite.name = "Latest draft"
+            store.scheduleSuiteSave()
+        }
+
+        #expect(hasRescheduled)
+        #expect(!store.isDraftSavePending)
+        #expect(EvaluationStore(supportDirectory: directory).draftSuite.name == "Latest draft")
     }
 
     @Test func terminationFlushesIncompleteDraftWithoutWaitingForDebounce() async throws {
@@ -65,7 +86,7 @@ struct EditorPerformanceTests {
         store.draftSuite.name = "Discarded edit"
         store.scheduleSuiteSave()
         try store.resetSuite()
-        try await waitForSave(store)
+        await waitForSave(store)
         #expect(EvaluationStore(supportDirectory: directory).draftSuite == store.draftSuite)
         #expect(store.draftSuite.name == "Untitled Suite")
     }
@@ -96,16 +117,36 @@ struct EditorPerformanceTests {
         #expect(!store.saveSuite())
         store.draftSuite = original
         store.scheduleSuiteSave()
-        try await waitForSave(store)
+        await waitForSave(store)
         #expect(EvaluationStore(supportDirectory: directory).draftSuite == original)
         #expect(!FileManager.default.fileExists(atPath: suiteDirectory(store, in: directory).appending(path: "suite-draft.json").path))
     }
 
-    private func waitForSave(_ store: EvaluationStore) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
-        while store.isDraftSavePending && ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(20))
-        }
+    @Test func blockedPendingSaveWaiterReturnsAndPreservesPendingState() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        _ = EvaluationStore(supportDirectory: directory)
+
+        let catalogURL = directory.appending(path: EvaluationWorkspacePersistence.catalogFilename)
+        let corruptCatalog = Data("{ damaged catalog".utf8)
+        try corruptCatalog.write(to: catalogURL, options: .atomic)
+        let digest = SHA256.hash(data: corruptCatalog).map { String(format: "%02x", $0) }.joined()
+        let backupURL = directory.appending(path: "workspace-v1-unreadable-\(digest).json")
+        try Data("conflicting backup".utf8).write(to: backupURL, options: .atomic)
+
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.name = "Pending while workspace is blocked"
+        store.scheduleSuiteSave()
+
+        await store.waitForScheduledSuiteSave()
+
+        #expect(store.isDraftSavePending)
+        #expect(store.draftSaveFailed)
+        #expect(store.notice?.contains("could not be preserved") == true)
+    }
+
+    private func waitForSave(_ store: EvaluationStore) async {
+        await store.waitForScheduledSuiteSave()
         #expect(!store.isDraftSavePending)
     }
 
