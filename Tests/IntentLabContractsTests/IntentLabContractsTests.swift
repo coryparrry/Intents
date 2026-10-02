@@ -3,6 +3,94 @@ import IntentLabContracts
 import XCTest
 
 final class IntentLabContractsTests: XCTestCase {
+    func testCleanupRunsAfterSuccessfulAttempt() throws {
+        var events: [String] = []
+        let attempt = IntentLabAttemptLifecycle.execute {
+            events.append("action")
+            return 7
+        } cleanupRequired: {
+            true
+        } cleanup: {
+            events.append("cleanup")
+        }
+        XCTAssertEqual(try attempt.action.get(), 7)
+        XCTAssertNil(attempt.cleanupError)
+        XCTAssertEqual(events, ["action", "cleanup"])
+    }
+
+    func testCleanupRunsAfterThrownActionAndCooperativeCancellation() {
+        let errors: [Error] = [LifecycleTestError.actionFailed, CancellationError()]
+        for error in errors {
+            var cleanupCount = 0
+            let attempt: (action: Result<Void, Error>, cleanupError: Error?) = IntentLabAttemptLifecycle.execute {
+                throw error
+            } cleanupRequired: {
+                true
+            } cleanup: {
+                cleanupCount += 1
+            }
+            XCTAssertEqual(cleanupCount, 1)
+            XCTAssertNil(attempt.cleanupError)
+            XCTAssertThrowsError(try attempt.action.get())
+        }
+    }
+
+    func testCleanupFailureIsReturnedEvenWhenActionSucceeded() throws {
+        let attempt = IntentLabAttemptLifecycle.execute {
+            "observed"
+        } cleanupRequired: {
+            true
+        } cleanup: {
+            throw LifecycleTestError.cleanupFailed
+        }
+        XCTAssertEqual(try attempt.action.get(), "observed")
+        XCTAssertNotNil(attempt.cleanupError)
+    }
+
+    func testUnresolvedActionSkipsCleanupAndUnstartedPreparationDoesNotCleanup() {
+        var cleanupCount = 0
+        let unresolved: (action: Result<Void, Error>, cleanupError: Error?) = IntentLabAttemptLifecycle.execute {
+            throw LifecycleTestError.actionFailed
+        } cleanupRequired: {
+            true
+        } skipCleanupAfter: { _ in
+            true
+        } cleanup: {
+            cleanupCount += 1
+        }
+        let unstarted = IntentLabAttemptLifecycle.execute {
+            1
+        } cleanupRequired: {
+            false
+        } cleanup: {
+            cleanupCount += 1
+        }
+        XCTAssertNil(unresolved.cleanupError)
+        XCTAssertNil(unstarted.cleanupError)
+        XCTAssertEqual(cleanupCount, 0)
+    }
+
+    func testUndeclaredMutatingCleanupIsRejectedWhileLegacyNoOpRemainsAllowed() throws {
+        let data = Data("""
+        {"schemaVersion":1,"id":"example-integration","version":"1","targetBundleIdentifier":"com.example.App","projectIdentity":"App.xcodeproj","targetIdentity":"AppUITests","supportedHarnessProtocols":["intent-lab-v2"],"actions":[],"resultProjections":[],"preparationOperations":["none"],"observers":[],"isolation":{"kind":"readOnly"},"capabilities":[]}
+        """.utf8)
+        var declaration = try JSONDecoder.intentLab.decode(IntentLabIntegrationDeclaration.self, from: data)
+        XCTAssertTrue(declaration.allowsCleanupOperation("none"))
+        XCTAssertFalse(declaration.allowsCleanupOperation("delete-records"))
+        XCTAssertFalse(declaration.allowsCleanupOperation("none", requiresMutationCleanup: true))
+        declaration.cleanupOperations = ["restore-synthetic-records"]
+        XCTAssertTrue(declaration.allowsCleanupOperation("restore-synthetic-records"))
+        XCTAssertTrue(declaration.allowsCleanupOperation("restore-synthetic-records", requiresMutationCleanup: true))
+        XCTAssertFalse(declaration.allowsCleanupOperation("none"))
+        declaration.cleanupOperations = ["restore-synthetic-records", "restore-synthetic-records"]
+        XCTAssertThrowsError(try declaration.validate())
+    }
+
+    private enum LifecycleTestError: Error {
+        case actionFailed
+        case cleanupFailed
+    }
+
     func testUnchangedStateRejectsFinalValueThatMatchesConstantAfterMutation() {
         let assertion = IntentLabAssertion(
             id: UUID(), kind: .noMutation, observationKey: "selectedNoteID",
@@ -110,6 +198,14 @@ final class IntentLabContractsTests: XCTestCase {
         var missingClaim = scenario
         missingClaim.requiredClaims = []
         XCTAssertThrowsError(try missingClaim.validateContract(harnessVersion: "intent-lab-v2"))
+    }
+
+    func testV2SyntheticMutationRequiresRealCleanupOperation() throws {
+        var scenario = try decodeScenario(v2: true)
+        scenario.safety.mutationPolicy = .syntheticMutation
+        XCTAssertThrowsError(try scenario.validateContract(harnessVersion: "intent-lab-v2"))
+        scenario.fixture.cleanupOperation = "restore-synthetic-records"
+        XCTAssertNoThrow(try scenario.validateContract(harnessVersion: "intent-lab-v2"))
     }
 
     func testBehaviourNeedsAStateSource() throws {

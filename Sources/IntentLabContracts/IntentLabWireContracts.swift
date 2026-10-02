@@ -234,6 +234,10 @@ public struct IntentLabScenario: Codable {
                 || !observationPlan.contains(where: { $0.source != .intentResult })) {
                 throw IntentLabPayloadError.unsupportedSchema
             }
+            if safety.mutationPolicy == .syntheticMutation,
+               ["", "none", "noop", "readOnly"].contains(fixture.cleanupOperation) {
+                throw IntentLabPayloadError.unsupportedSchema
+            }
             if let executionScope {
                 switch executionScope.lane {
                 case .appFeature:

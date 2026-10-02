@@ -64,7 +64,11 @@ public enum IntentLabScenarioEngine {
                   Set(loaded.capabilities).isSubset(of: integration.supportedCapabilities),
                   loaded.targetBundleIdentifier == scenario.target.bundleIdentifier,
                   let action = loaded.actions.first(where: { $0.id == scenario.directControl.intentIdentifier }),
-                  loaded.preparationOperations.contains(scenario.fixture.preparationOperation) else {
+                  loaded.preparationOperations.contains(scenario.fixture.preparationOperation),
+                  loaded.allowsCleanupOperation(
+                    scenario.fixture.cleanupOperation,
+                    requiresMutationCleanup: scenario.safety.mutationPolicy == .syntheticMutation
+                  ) else {
                 throw IntentLabDeclarationError.mismatchedIdentity
             }
             guard action.parameters.allSatisfy({ declared in
@@ -113,19 +117,21 @@ public enum IntentLabScenarioEngine {
             throw XCTSkip("The host did not embed a fully bound Intent Lab invocation.")
         }
         var results: [IntentLabLaneResult] = []
+        var cleanupFailed = false
 
         if runsDirect && scenario.coverage.intentIntegration != .notApplicable {
             guard let directExecutor else { throw IntentLabExecutionPathError.directIntentRequired }
             let context = "intent-\(invocation.id.uuidString)"
             let directStart = Date()
-            var directApplication: XCUIApplication?
-            do {
+            var preparationStarted = false
+            let directAttempt = IntentLabAttemptLifecycle.execute(action: {
+                preparationStarted = true
                 let application = try integration.prepare(
                     bundleIdentifier: scenario.target.bundleIdentifier,
                     context: context,
                     operationID: scenario.fixture.preparationOperation
                 )
-                directApplication = application
+                defer { application.terminate() }
                 let baseline = try integration.observe(
                     application: application,
                     declaration: declaration,
@@ -142,33 +148,60 @@ public enum IntentLabScenarioEngine {
                     throw IntentLabDeclarationError.mismatchedIdentity
                 }
                 observations.merge(stateObservations) { direct, _ in direct }
-                results.append(result(for: .intentIntegration, scenario: scenario, observations: observations, baseline: baseline, integration: integration, declaration: declaration, context: context, startedAt: directStart))
-                application.terminate()
-                directApplication = nil
-            } catch {
-                // A cancelled async intent may still finish. Do not give that
-                // action a later Siri attempt's fixture context.
-                directApplication?.terminate()
-                if error is IntentLabDirectIntentTimeout {
-                    attemptFence.recordUnresolvedDirectTimeout()
-                    let checkpoint = evidenceEnvelope(
-                        scenario: scenario, invocation: invocation,
-                        appProduct: appProduct, testProduct: testProduct,
-                        results: [failed(for: .intentIntegration, scenario: scenario, error: error, startedAt: directStart)]
-                            + (runsSiri ? unobservedSiriAttempts(for: scenario) : []),
-                        declaration: declaration
-                    )
-                    try EvidenceAttachmentWriter.attach(checkpoint, to: testCase, checkpoint: true)
-                    throw error
+                return result(
+                    for: .intentIntegration, scenario: scenario, observations: observations,
+                    baseline: baseline, integration: integration, declaration: declaration,
+                    context: context, startedAt: directStart
+                )
+            }, cleanupRequired: {
+                scenario.schemaVersion == 2 && preparationStarted
+            }, skipCleanupAfter: { error in
+                // A timed-out async intent can still mutate the fixture. Keep the
+                // attempt quarantined instead of racing a cleanup against it.
+                error is IntentLabDirectIntentTimeout
+            }, cleanup: {
+                try integration.cleanup(
+                    bundleIdentifier: scenario.target.bundleIdentifier,
+                    context: context,
+                    operationID: scenario.fixture.cleanupOperation
+                )
+            })
+            if case .failure(let error) = directAttempt.action,
+               error is IntentLabDirectIntentTimeout {
+                attemptFence.recordUnresolvedDirectTimeout()
+                let checkpoint = evidenceEnvelope(
+                    scenario: scenario, invocation: invocation,
+                    appProduct: appProduct, testProduct: testProduct,
+                    results: [failed(for: .intentIntegration, scenario: scenario, error: error, startedAt: directStart)]
+                        + (runsSiri ? unobservedSiriAttempts(for: scenario) : []),
+                    declaration: declaration
+                )
+                try EvidenceAttachmentWriter.attach(checkpoint, to: testCase, checkpoint: true)
+                throw error
+            }
+            if let cleanupError = directAttempt.cleanupError {
+                cleanupFailed = true
+                results.append(failed(
+                    for: .intentIntegration, scenario: scenario,
+                    error: cleanupFailure(action: directAttempt.action, cleanup: cleanupError),
+                    startedAt: directStart
+                ))
+            } else {
+                switch directAttempt.action {
+                case .success(let laneResult): results.append(laneResult)
+                case .failure(let error):
+                    results.append(failed(
+                        for: .intentIntegration, scenario: scenario,
+                        error: error, startedAt: directStart
+                    ))
                 }
-                results.append(failed(for: .intentIntegration, scenario: scenario, error: error, startedAt: directStart))
             }
         }
 
         // XCTest can terminate this method inside siriService.activate without throwing.
         // Persist completed direct observations before entering that API. Siri attempts
         // remain explicitly unobserved until a final envelope replaces this checkpoint.
-        if runsSiri && scenario.coverage.siri != .notApplicable {
+        if runsSiri && scenario.coverage.siri != .notApplicable && !cleanupFailed {
             let checkpoint = evidenceEnvelope(
                 scenario: scenario,
                 invocation: invocation,
@@ -180,7 +213,11 @@ public enum IntentLabScenarioEngine {
             try EvidenceAttachmentWriter.attach(checkpoint, to: testCase, checkpoint: true)
         }
 
-        if runsSiri && scenario.coverage.siri != .notApplicable {
+        if runsSiri && scenario.coverage.siri != .notApplicable && cleanupFailed {
+            results += unobservedSiriAttempts(for: scenario)
+        }
+
+        if runsSiri && scenario.coverage.siri != .notApplicable && !cleanupFailed {
             let attemptCount = scenario.coverage.siriAttemptCount ?? 3
             let attempts = scenario.executionScope.map { [$0.attempt] } ?? Array(1...attemptCount)
             var sequence = SiriAttemptSequence()
@@ -188,13 +225,21 @@ public enum IntentLabScenarioEngine {
                 let context = "siri-\(invocation.id.uuidString)-\(attempt)"
                 let siriStart = Date()
                 var baseline: [String: IntentLabValue]?
-                do {
-                    let observations = try sequence.run {
+                var preparationStarted = false
+                var attemptScreenshot: IntentLabArtifactReference?
+                let completedAttempt = IntentLabAttemptLifecycle.execute(action: {
+                    try sequence.run {
+                        preparationStarted = true
                         let application = try integration.prepare(
                             bundleIdentifier: scenario.target.bundleIdentifier,
                             context: context,
                             operationID: scenario.fixture.preparationOperation
                         )
+                        defer {
+                            // Preserve the Siri result before cleanup resets the fixture.
+                            attemptScreenshot = EvidenceAttachmentWriter.attachScreenshot(to: testCase)
+                            application.terminate()
+                        }
                         if scenario.executionScope != nil {
                             baseline = try integration.observe(
                                 application: application,
@@ -218,7 +263,30 @@ public enum IntentLabScenarioEngine {
                         attemptFence.recordVerifiedSiriCompletion()
                         return completedObservations
                     }
-                    let screenshot = EvidenceAttachmentWriter.attachScreenshot(to: testCase)
+                }, cleanupRequired: {
+                    scenario.schemaVersion == 2 && preparationStarted
+                }, skipCleanupAfter: { _ in
+                    // Siri may still be completing after an unobserved outcome.
+                    attemptFence.isQuarantined
+                }, cleanup: {
+                    try integration.cleanup(
+                        bundleIdentifier: scenario.target.bundleIdentifier,
+                        context: context,
+                        operationID: scenario.fixture.cleanupOperation
+                    )
+                })
+                let screenshot = attemptScreenshot ?? EvidenceAttachmentWriter.attachScreenshot(to: testCase)
+                if let cleanupError = completedAttempt.cleanupError {
+                    results.append(failed(
+                        for: .siri, scenario: scenario,
+                        error: cleanupFailure(action: completedAttempt.action, cleanup: cleanupError),
+                        startedAt: siriStart, attempt: attempt, artifacts: [screenshot]
+                    ))
+                    results += unobservedSiriAttempts(for: scenario).filter { $0.attempt > attempt }
+                    break
+                }
+                switch completedAttempt.action {
+                case .success(let observations):
                     results.append(result(
                         for: .siri,
                         scenario: scenario,
@@ -231,8 +299,7 @@ public enum IntentLabScenarioEngine {
                         attempt: attempt,
                         artifacts: [screenshot]
                     ))
-                } catch {
-                    let screenshot = EvidenceAttachmentWriter.attachScreenshot(to: testCase)
+                case .failure(let error):
                     results.append(failed(
                         for: .siri,
                         scenario: scenario,
@@ -255,6 +322,23 @@ public enum IntentLabScenarioEngine {
         )
         try EvidenceAttachmentWriter.attach(envelope, to: testCase)
         return envelope
+    }
+
+    private static func cleanupFailure<Value>(action: Result<Value, Error>, cleanup: Error) -> Error {
+        let actionDetail: String
+        if case .failure(let error) = action {
+            actionDetail = " The attempt also failed: \(error.localizedDescription)"
+        } else {
+            actionDetail = ""
+        }
+        return IntentLabCleanupFailure(
+            message: "Fixture cleanup failed: \(cleanup.localizedDescription)\(actionDetail)"
+        )
+    }
+
+    private struct IntentLabCleanupFailure: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
     }
 
     private static func evidenceEnvelope(
@@ -378,10 +462,7 @@ public enum IntentLabScenarioEngine {
             }
             return integration.source(for: key)
         }
-        let returnedChecked = assertions.contains {
-            $0.kind == .returnedField && observations[$0.observationKey] != nil
-                && resultKeys.contains($0.observationKey)
-        }
+        let returnedChecked = IntentLabReturnedValueProof.isVerified(assertions: assertions, observations: observations, resultKeys: resultKeys, checks: checks)
         let stateChecked = assertions.contains { assertion in
             guard assertion.required, let observed = observations[assertion.observationKey],
                   let plan = planned.first(where: { $0.id == assertion.observationKey }),

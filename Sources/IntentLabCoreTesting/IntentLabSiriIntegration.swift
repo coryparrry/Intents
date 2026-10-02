@@ -8,6 +8,9 @@ import XCTest
 public protocol IntentLabSiriIntegration {
     var supportedCapabilities: Set<String> { get }
     func prepare(bundleIdentifier: String, context: String, operationID: String) throws -> XCUIApplication
+    /// Restore an isolated fixture after an attempt. Throw unless cleanup and its
+    /// postcondition were verified by consumer-owned code.
+    func cleanup(bundleIdentifier: String, context: String, operationID: String) throws
     func observe(application: XCUIApplication) throws -> [String: IntentLabValue]
     func observe(
         application: XCUIApplication,
@@ -25,6 +28,12 @@ public extension IntentLabSiriIntegration {
     func source(for observationKey: String) -> String { "accessibleUI" }
     var supportsMutatingChecks: Bool { true }
 
+    func cleanup(bundleIdentifier: String, context: String, operationID: String) throws {
+        guard ["", "none", "noop", "readOnly"].contains(operationID) else {
+            throw IntentLabExecutionPathError.cleanupUnsupported(operationID)
+        }
+    }
+
     func observe(
         application: XCUIApplication,
         declaration: IntentLabIntegrationDeclaration?,
@@ -38,6 +47,7 @@ public enum IntentLabExecutionPathError: LocalizedError {
     case directIntentRequired
     case queryObservationRequired
     case unsafePreparation
+    case cleanupUnsupported(String)
 
     public var errorDescription: String? {
         switch self {
@@ -47,6 +57,8 @@ public enum IntentLabExecutionPathError: LocalizedError {
             "This scenario requires an App Intents query observation. Add the IntentLabTesting product or remove the query requirement."
         case .unsafePreparation:
             "The integration does not provide isolated preparation for this mutating check."
+        case .cleanupUnsupported(let operation):
+            "The integration does not provide cleanup operation \(operation)."
         }
     }
 }
