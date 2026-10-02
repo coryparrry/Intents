@@ -451,6 +451,9 @@ actor XcodeTestExecutor {
                   "Capture direct App Intent output fields and declare direct-intent-output.")
         }
         check("destination", "Execution destination", destination.ready, destination.detail)
+        check("siriPlatform", "Siri destination",
+              definition.coverage.siri == .notApplicable || destination.platform != .macOS,
+              "Siri UI automation requires an iOS destination; Mac supports the other routes.")
 
         let definitionIssues = ScenarioValidator.issues(in: definition, requireFrozenDigest: true)
         let definitionReady = !definitionIssues.contains { $0.severity == .error }
@@ -542,6 +545,9 @@ actor XcodeTestExecutor {
         }
         let destination = physicalDestination(configuration.destinationIdentifier)
         guard destination.ready else { throw XcodeTestExecutorError.deviceUnavailable(destination.detail) }
+        guard definition.coverage.siri == .notApplicable || destination.platform != .macOS else {
+            throw XcodeTestExecutorError.deviceUnavailable("Siri UI automation requires an iOS destination.")
+        }
 
         connectionCheckInProgress = true
         verifiedConnection = nil
