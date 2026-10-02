@@ -17,7 +17,7 @@ Open `http://127.0.0.1:4173/`. No build step or package installation is required
 ```sh
 node --check dist/app.js
 node --check dist/demo-data.mjs
-node --test tests/demo.test.mjs
+node --test tests/*.test.mjs
 ```
 
 `dist/` is the entire published artifact. `.openai/hosting.json` identifies the
@@ -59,3 +59,35 @@ source synchronization and publication.
 Motion follows the operating system's reduced-motion preference. The page also
 has a pause control with an optional local preference. App selection, filtering,
 and search remain available when motion is paused.
+
+## Search and AI discovery
+
+The homepage contains its marketing content in static HTML, with canonical and
+social metadata and Schema.org JSON-LD for the website, app, creator, and source
+repository. No JavaScript is needed to read the product information.
+
+- `dist/robots.txt` permits crawlers and advertises the sitemap.
+- `dist/sitemap.xml` lists only the canonical HTML page. Update `lastmod` when
+  its substantive content changes, not on every deployment.
+- `dist/llms.txt` is a concise reading guide following the optional llms.txt
+  proposal. It is not an indexing requirement or a ranking guarantee.
+- `dist/index.html.md` is a linked Markdown product overview. Keep its facts
+  and the JSON-LD consistent with the visible site and current product.
+- `dist/_headers` declares text formats and alternate/canonical HTTP links.
+
+For anonymous production delivery checks after publication:
+
+```sh
+node scripts/check-discovery.mjs
+```
+
+Public Sites access is required. The checks use representative crawler
+user-agent headers; they do not prove visits from real crawler IPs, indexing,
+rankings, or inclusion in AI answers. Search Console / Bing Webmaster ownership
+verification and sitemap submission can be completed by the domain owner; no
+verification token has been invented or added to this site.
+
+References: [Google AI search guidance](https://developers.google.com/search/docs/appearance/ai-features),
+[OpenAI crawlers](https://developers.openai.com/api/docs/bots),
+[Anthropic crawlers](https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler),
+[llms.txt proposal](https://llmstxt.org/), and [Schema.org SoftwareApplication](https://schema.org/SoftwareApplication).

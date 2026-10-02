@@ -64,3 +64,24 @@ HTML, CSS, JavaScript and data: reuse, code quality, efficiency. No additional
 material issues were found. No review-only refactors were applied (reuse 0,
 quality 0, efficiency 0). Vendor code was excluded from the authored-code review.
 The site has no backend, analytics, model endpoint, or secret.
+
+## Search and AI discovery update
+
+- `node --test tests/*.test.mjs` — 12 tests passed, 0 failures, including four
+  discovery contracts for canonical URLs, structured identities, crawler rules,
+  linked text resources, product limitations, and static content availability.
+- `node --check scripts/check-discovery.mjs` and `git diff --check` — passed.
+- Compared with approved source `43d76ed2628713485a333f712361fb1669e943d7`:
+  the complete HTML body is byte-for-byte unchanged. CSS, interactive code,
+  recorded data, images, and animation libraries are unchanged.
+- Inspected the rendered page at 1280×720. With JavaScript disabled, product
+  information, Intent Lab, MIT licence, and download links remain readable.
+- Restored JavaScript and selected “Correction replaces old value”: the recorded
+  Friday response appears. No browser errors or warnings were captured.
+- Reviewed the stable discovery changes for factual consistency, crawl access,
+  existing-UI preservation, and unnecessary dependencies. No material findings
+  remained. No invented ratings or unverified version number were added.
+
+Production verification is a separate post-publication step using
+`node scripts/check-discovery.mjs`; local tests alone do not establish public
+access or actual indexing. Search Console and Bing verification are not claimed.

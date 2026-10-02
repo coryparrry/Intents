@@ -14,3 +14,13 @@ Goal: create and host an animated open-source showcase using faithful code-rende
 - Final browser checks passed at 320, 390, 834, 1280 and 1440 pixels. No browser errors captured. Eight scoped tests passed. See QA.md.
 - Current app reference process is closed. No simulator was started.
 - Sites project registered. Recovering an intermittently unavailable plugin helper from an unchanged temporary copy; credentials remain in session memory.
+
+## Search and AI discovery update
+
+- Goal: make the approved showcase publicly discoverable and readable by search engines and AI services. Preserve the page body, CSS, interactions and animation.
+- Opened the existing Sites source at `43d76ed2628713485a333f712361fb1669e943d7`; checkout was clean. Current owner-only access prevents public discovery.
+- Plan: descriptive metadata and social previews, truthful JSON-LD, permissive robots.txt, sitemap, and linked Markdown product information. No additional runtime dependencies.
+- Verify: structured data and discovery-file contracts, unchanged visual source, no-JavaScript reading, browser presentation, and anonymous production requests after publication.
+- Implemented: head-only metadata/JSON-LD changes; robots.txt, sitemap.xml, llms.txt, Markdown overview, and text/alternate-link headers. No visual assets or runtime dependencies changed.
+- Local verification: 12 tests pass; approved body is byte-for-byte unchanged; inspected the browser, disabled JavaScript to verify product readability, restored it, and checked report selection. No console errors or warnings.
+- Review complete. Publishing the verified source, then enabling public discovery and testing anonymous delivery. Actual indexing remains controlled by search providers.
