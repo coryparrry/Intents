@@ -411,3 +411,19 @@ public extension JSONEncoder {
         return value
     }
 }
+
+/// Advertise only proof established by a required, matching returned-value check.
+public enum IntentLabReturnedValueProof {
+    public static func isVerified(
+        assertions: [IntentLabAssertion], observations: [String: IntentLabValue],
+        resultKeys: Set<String>, checks: [IntentLabAssertionResult]
+    ) -> Bool {
+        assertions.contains { assertion in
+            assertion.required && assertion.kind == .returnedField
+                && resultKeys.contains(assertion.observationKey)
+                && observations[assertion.observationKey] != nil
+                && observations[assertion.observationKey] == assertion.expectedValue
+                && checks.contains { $0.assertionID == assertion.id && $0.passed }
+        }
+    }
+}
