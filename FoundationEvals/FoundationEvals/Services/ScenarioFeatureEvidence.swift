@@ -90,7 +90,8 @@ enum ScenarioFeatureEvidence {
             observations: observations,
             assertionResults: evaluated.1,
             diagnostic: run.terminationSummary,
-            proposedCause: nil
+            proposedCause: nil,
+            observationSources: Dictionary(uniqueKeysWithValues: observations.keys.map { ($0, .applicationInstrumentation) })
         )
     }
 }

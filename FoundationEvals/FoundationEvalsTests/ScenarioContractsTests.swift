@@ -5,6 +5,90 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioContractsTests {
+    @Test func nativeSavePromotionUsesCapturedValidationAndRejectsCancellation() throws {
+        let definition = try scenario()
+        let identity = invocation(for: definition)
+        var bound = journal(for: definition, invocation: identity, phase: .running)
+        var ledger = ScenarioImportLedger()
+        let run = try XCTestEvidenceImporter().importEvidence(data: encoder.encode(evidence(for: definition, invocation: identity)), definition: definition, journal: bound, artifactRoot: temporaryDirectory(), ledger: &ledger)
+        #expect(ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: run, journal: bound, validationPassed: true))
+        bound.phase = .recoveryRequired
+        bound.evidenceAccepted = false
+        bound.recoveryReason = "Device execution or fixture readiness has not been proven after evidence capture."
+        #expect(ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: run, journal: bound, validationPassed: true))
+        #expect(!ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: run, journal: bound, validationPassed: nil))
+        bound.recoveryReason = ScenarioExecutionRecoveryPolicy.reason(for: .cancellation)
+        #expect(!ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: run, journal: bound, validationPassed: true))
+        bound.phase = .stopped
+        bound.invocation.nonce = "different"
+        #expect(!ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: run, journal: bound, validationPassed: true))
+    }
+
+
+
+    @Test func stableSiriAndFeatureOnlyCompletionRequiresObservedProof() throws {
+        var definition = try reusableBasicScenario()
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.coverage = .init(appFeature: .notApplicable, intentIntegration: .notApplicable,
+            siri: .required, siriAttemptCount: 1)
+        definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
+        definition.observationPlan = [.init(id: "state", source: .uiElement, selector: "state")]
+        let assertion = ScenarioAssertion(kind: .visibleText, observationKey: "state",
+            expectedValue: .string("complete"), explanation: "Observed final state", applicableLanes: [.siri])
+        definition.assertions = [assertion]
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var lane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: .siri,
+            executionStatus: .completed, outcome: .passed, startedAt: now, completedAt: now,
+            observations: ["state": .string("complete")],
+            assertionResults: [.init(assertionID: assertion.id, passed: true, message: "matched")],
+            observationSources: ["state": .accessibleUI], claims: [.executionCompleted, .applicationStateChecked])
+        let receipt = ScenarioActionReceipt(executionID: UUID(), appSessionID: UUID(), attemptContext: "current-attempt", lane: .siri, attempt: 1, kind: .productionIntent, operationID: "ObservedAction", resolvedParameters: [:], terminalStatus: .succeeded, operationError: nil, sequence: 1, startedAt: now, completedAt: now, observationTransport: .accessibleUI)
+        definition.actionPolicyVersion = 1
+        definition.actionRequirements = [.init(lane: .siri, kind: .productionIntent, operationID: "ObservedAction", resolvedParameters: [:])]
+        lane.actionReceipts = [receipt]
+        lane.cleanupVerified = true
+        lane.observations["intentlab.actionReceipts"] = .string(String(decoding: try encoder.encode([receipt]), as: UTF8.self))
+        lane.observationSources?["intentlab.actionReceipts"] = .accessibleUI
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .passed)
+        lane.observations = [:]
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .notObserved)
+        definition.coverage = .init(appFeature: .required, intentIntegration: .notApplicable, siri: .notApplicable)
+        definition.requiredClaims = [.executionCompleted]
+        definition.assertions[0].applicableLanes = [.appFeature]
+        lane.lane = .appFeature
+        definition.actionPolicyVersion = nil
+        definition.actionRequirements = nil
+        lane.observations = ["feature.runID": .string(UUID().uuidString), "feature.resultCount": .integer(2)]
+        lane.observationSources = ["feature.resultCount": .applicationInstrumentation]
+        lane.claims = nil
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .passed)
+        definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .notObserved)
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .notObserved)
+        lane.executionStatus = .timedOut
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [lane]) == .notObserved)
+    }
+
+    @Test func stableFractionalDateSurvivesPersistenceEncoding() throws {
+        var definition = try scenario()
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.directControl.parameters = [.init(name: "when", type: .primitive(.date), isOptional: false,
+            presence: .value(.date(.init(source: "fixed", timeZoneIdentifier: "UTC",
+                resolvedInstant: Date(timeIntervalSince1970: 1_234_567.1234567)))))]
+        definition = try definition.frozen()
+        let bytes = try encoder.encode(definition)
+        let decoded = try decoder.decode(ScenarioDefinition.self, from: bytes)
+        #expect(decoded.hasValidDigest)
+        #expect(decoded.testContractDigest == definition.testContractDigest)
+        #expect(decoded.directControl.parameters == definition.directControl.parameters)
+        var legacy = definition
+        legacy.schemaVersion = ScenarioDefinition.reusableSchemaVersion
+        legacy = try legacy.frozen()
+        let restoredLegacy = try decoder.decode(ScenarioDefinition.self, from: encoder.encode(legacy))
+        #expect(!restoredLegacy.hasValidDigest)
+    }
+
     @Test func xctestrunTransportKeepsTestRootAndPreservesXcodeEnvironment() throws {
         let root = try temporaryDirectory()
         let products = root.appending(path: "DerivedData/Build/Products", directoryHint: .isDirectory)
@@ -1929,6 +2013,11 @@ struct ScenarioContractsTests {
             candidate.laneResults[index].observations = ["summary": .string("Expected summary")]
             candidate.laneResults[index].observationSources = ["summary": candidate.laneResults[index].lane == .appFeature
                 ? .applicationInstrumentation : .appIntentsTesting]
+            if candidate.laneResults[index].lane == .appFeature {
+                candidate.laneResults[index].observations["feature.runID"] = .string(candidate.id.uuidString)
+                candidate.laneResults[index].observations["feature.resultCount"] = .integer(1)
+                candidate.laneResults[index].observationSources?["feature.resultCount"] = .applicationInstrumentation
+            }
             candidate.laneResults[index].claims = [.executionCompleted, .returnedValueChecked]
             candidate.laneResults[index].assertionResults = [
                 .init(assertionID: definition.assertions[0].id, passed: true,
@@ -2618,7 +2707,19 @@ struct ScenarioContractsTests {
         ))
         run.xctestExitCode = 1
         #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
-            attachments: [final], runs: [run], xctestExitCode: 1
+            attachments: [final], runs: [run], xctestExitCode: 1, definition: definition
+        ))
+        let failedAssertion = try #require(definition.assertions.first(where: { $0.required && $0.expectedValue != nil && $0.applies(to: run.laneResults[0].lane) }))
+        run.laneResults[0].observations[failedAssertion.observationKey] = .string("wrong observed value")
+        run.laneResults[0].assertionResults = [.init(assertionID: failedAssertion.id, passed: false, message: "Observed mismatch")]
+        #expect(ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: final, definition: definition))
+        #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+            attachments: [final], runs: [run], xctestExitCode: 1, definition: definition
+        ))
+        #expect(!ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: checkpoint))
+        run.laneResults[0].observations = [:]
+        #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+            attachments: [final], runs: [run], xctestExitCode: 1, definition: definition
         ))
     }
 

@@ -528,7 +528,7 @@ enum ScenarioResultEvaluator {
               case .string(let rawJSON) = result.observations["intentlab.actionReceipts"],
               rawJSON.utf8.count <= 65_536,
               let transport = result.observationSources?["intentlab.actionReceipts"],
-              transport == .accessibleUI || transport == .testOnlyIntent,
+              transport == .accessibleUI || transport == .testOnlyIntent || transport == .entityQuery,
               receipts.allSatisfy({ $0.observationTransport == transport }) else { return false }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -694,20 +694,19 @@ enum ScenarioResultEvaluator {
         if !requiredResults.allSatisfy({ $0.outcome == .passed }) { return .notObserved }
         if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion {
             let direct = requiredResults.filter { $0.lane == .intentIntegration }
-            let productionIntent = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
-                ? requiredResults.filter { $0.lane == .intentIntegration || $0.lane == .siri }
-                : direct
+            let completionRoutes = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion ? requiredResults : direct
+            let claimRoutes = direct.isEmpty && definition.schemaVersion == ScenarioDefinition.stableSchemaVersion ? requiredResults : direct
             let claims = definition.requiredClaims ?? []
             if claims.contains(.executionCompleted),
-               (productionIntent.isEmpty || !productionIntent.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
+               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.returnedValueChecked),
-               (direct.isEmpty || !direct.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) })) {
+               (claimRoutes.isEmpty || !claimRoutes.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.applicationStateChecked),
-               !direct.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) }) {
+               (claimRoutes.isEmpty || !claimRoutes.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if definition.coverage.siri != .notApplicable,
@@ -723,24 +722,29 @@ enum ScenarioResultEvaluator {
         definition: ScenarioDefinition,
         result: ScenarioLaneResult
     ) -> Bool {
-        guard result.executionStatus == .completed, result.outcome == .passed,
-              result.claims?.contains(claim) == true else { return false }
+        guard result.executionStatus == .completed, result.outcome == .passed else { return false }
+        if claim == .executionCompleted, result.lane == .appFeature,
+           definition.schemaVersion == ScenarioDefinition.stableSchemaVersion, definition.actionPolicyVersion == nil {
+            guard case .integer(let count) = result.observations["feature.resultCount"], count > 0 else { return false }
+            return result.observations["feature.runID"] != nil && result.observationSources?["feature.resultCount"] == .applicationInstrumentation
+        }
+        guard result.claims?.contains(claim) == true else { return false }
         if claim == .executionCompleted {
             if result.lane == .intentIntegration { return true }
             // Invocation freshness is checked by import/qualification against the
             // native journal. Siri completion also needs the observed typed action.
             guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
-                  result.lane == .siri, definition.actionPolicyVersion == 1,
+                  (result.lane == .siri || result.lane == .appFeature), definition.actionPolicyVersion == 1,
                   result.cleanupVerified == true, result.actionFailureReason == nil,
-                  let requirement = definition.actionRequirements?.first(where: { $0.lane == .siri }),
-                  requirement.kind == .productionIntent,
+                  let requirement = definition.actionRequirements?.first(where: { $0.lane == result.lane }),
+                  requirement.kind == (result.lane == .siri ? .productionIntent : .productionService),
                   let receipts = result.actionReceipts,
                   actionObservationIsConsistent(result) else { return false }
             let topLevel = receipts.filter(\.isTopLevel)
             return !topLevel.isEmpty && topLevel.count == requirement.allowedExecutionCount
-                && receipts.allSatisfy({ $0.lane == .siri && $0.attempt == result.attempt })
+                && receipts.allSatisfy({ $0.lane == result.lane && $0.attempt == result.attempt })
                 && topLevel.allSatisfy({
-                    $0.kind == .productionIntent && $0.operationID == requirement.operationID
+                    $0.kind == requirement.kind && $0.operationID == requirement.operationID
                         && $0.resolvedParameters == requirement.resolvedParameters
                         && $0.terminalStatus == .succeeded && $0.operationError == nil
                 })

@@ -32,6 +32,18 @@ struct ScenarioActionParityTests {
             sequence: 1, startedAt: start, completedAt: start.addingTimeInterval(1),
             observationTransport: .accessibleUI
         )
+        for source in [ScenarioObservationSource.accessibleUI, .testOnlyIntent, .entityQuery] {
+            var transported = correct
+            transported.observationTransport = source
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let raw = String(decoding: try encoder.encode([transported]), as: UTF8.self)
+            var result = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: .siri, executionStatus: .completed, outcome: .passed, startedAt: start, completedAt: start.addingTimeInterval(1), observations: ["intentlab.actionReceipts": .string(raw)], observationSources: ["intentlab.actionReceipts": source])
+            result.actionReceipts = [transported]
+            #expect(ScenarioResultEvaluator.actionObservationIsConsistent(result))
+            result.observationSources?["intentlab.actionReceipts"] = .manuallySupplied
+            #expect(!ScenarioResultEvaluator.actionObservationIsConsistent(result))
+        }
         var wrongAction = correct
         wrongAction.operationID = "OpenNoteIntent"
         var wrongParameter = correct
