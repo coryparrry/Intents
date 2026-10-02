@@ -793,7 +793,7 @@ final class ScenarioCoordinator {
                     statedChangedDimensions: changedDimensions
                 )
                 run.xctestExitCode = result.processExitCode
-                if result.processExitCode != 0, !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: attachment) {
+                if result.processExitCode != 0, !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: attachment, definition: definition) {
                     run.executionStatus = .invalidEvidence
                     run.outcome = .needsReview
                 }
@@ -824,7 +824,7 @@ final class ScenarioCoordinator {
             let canReleaseDevice = !cancellationRequested && Self.canReleaseDevice(
                 processExitCode: result.processExitCode,
                 attachments: result.evidenceAttachments,
-                importedRuns: imported
+                importedRuns: imported, definition: definition
             )
             try await executor.finishEvidenceValidation(journal: result.journal, accepted: canReleaseDevice)
             pendingJournal = nil
@@ -957,7 +957,6 @@ final class ScenarioCoordinator {
     func retryPendingFeatureSave(planID: UUID) async -> ScenarioExecutionRecord? {
         guard hasLoaded, !isRunning,
               let plan = executionPlans.first(where: { $0.id == planID }),
-              !executionRecords.contains(where: { $0.planID == planID }),
               let definition = definitions.first(where: {
                   $0.id == plan.definitionID && $0.version == plan.definitionVersion
                     && $0.definitionDigest == plan.definitionDigest
@@ -977,7 +976,7 @@ final class ScenarioCoordinator {
         do {
             guard var progress = try await persistence.loadProgress(planID: planID),
                   let index = progress.records.firstIndex(where: {
-                      $0.coordinate.lane == .appFeature && $0.state == .recoveryRequired
+                      $0.coordinate.lane == .appFeature && ($0.state == .recoveryRequired || $0.state == .completed)
                         && $0.evidenceRunID != nil
                   }),
                   let runID = progress.records[index].evidenceRunID else {
@@ -990,15 +989,17 @@ final class ScenarioCoordinator {
             guard let saved else {
                 throw ScenarioPersistenceError.invalidRun("The completed feature run has no recoverable snapshot or saved history.")
             }
+            if progress.records[index].state == .recoveryRequired {
             progress.records[index] = try await runFeatureChild(
                 coordinate: progress.records[index].coordinate,
                 plan: plan, definition: definition, ownerID: ownerID,
                 runID: runID, resumeRun: saved,
                 capturedMeasurement: progress.records[index].featureMeasurementImplementation
             )
+            }
             try await checkpoint(plan: plan, records: progress.records)
-            let record = try ScenarioExecutionRecord.make(plan: plan, records: progress.records)
-            try await persistence.saveExecutionRecord(record)
+            let record = try await persistence.finalizeExecutionRecord(plan: plan, records: progress.records)
+            executionRecords.removeAll { $0.id == record.id }
             executionRecords.insert(record, at: 0)
             selectedExecutionID = record.id
             notice = "The completed feature result was saved without rerunning the app. Unstarted routes remain visible."
@@ -1015,8 +1016,7 @@ final class ScenarioCoordinator {
     @discardableResult
     func retryPendingNativeSave(planID: UUID, coordinateID: UUID) async -> ScenarioExecutionRecord? {
         guard hasLoaded, !isRunning,
-              let plan = executionPlans.first(where: { $0.id == planID }),
-              !executionRecords.contains(where: { $0.planID == planID }) else {
+              let plan = executionPlans.first(where: { $0.id == planID }) else {
             notice = "Select an unfinished native execution before retrying its evidence save."
             return nil
         }
@@ -1033,7 +1033,7 @@ final class ScenarioCoordinator {
                 planID: planID, coordinateID: coordinateID
             ), var progress = try await persistence.loadProgress(planID: planID),
                   let index = progress.records.firstIndex(where: { $0.id == coordinateID }),
-                  progress.records[index].state == .recoveryRequired,
+                  [.recoveryRequired, .completed, .failedToExecute].contains(progress.records[index].state),
                   pending.run.scenarioID == plan.definitionID,
                   pending.run.scenarioVersion == plan.definitionVersion,
                   pending.run.scenarioDigest == plan.definitionDigest,
@@ -1089,9 +1089,9 @@ final class ScenarioCoordinator {
                 evidenceDigest: try Self.evidenceDigest(saved)
             )
             try await checkpoint(plan: plan, records: progress.records)
-            let record = try ScenarioExecutionRecord.make(plan: plan, records: progress.records)
-            try await persistence.saveExecutionRecord(record)
+            let record = try await persistence.finalizeExecutionRecord(plan: plan, records: progress.records)
             try await persistence.clearPendingNativeSave(planID: planID, coordinateID: coordinateID)
+            executionRecords.removeAll { $0.id == record.id }
             executionRecords.insert(record, at: 0)
             selectedExecutionID = record.id
             runs.insert(saved, at: 0)
@@ -1933,6 +1933,9 @@ final class ScenarioCoordinator {
                              prompt: definition.goal.requestText, expected: "")]
         let run: EvaluationRun
         if let resumeRun {
+            guard ScenarioExecutionRecoveryPolicy.canReevaluateFeature(captured: capturedMeasurement, current: Self.featureMeasurementImplementation()) else {
+                throw ScenarioPersistenceError.invalidRun("The Feature measurement code changed after dispatch. Preserve the saved raw run and recover with the captured runner build.")
+            }
             run = resumeRun
         } else {
             guard let selected = try selectedSubjectRunner(
@@ -2122,7 +2125,7 @@ final class ScenarioCoordinator {
             destinationIdentifier: plan.profile.destinationIdentifier,
             lane: coordinate.lane
         )
-        if result.processExitCode != 0, !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: attachment) {
+        if result.processExitCode != 0, !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: attachment, definition: definition) {
             run.executionStatus = .invalidEvidence
             run.outcome = .needsReview
             run.laneResults[0].executionStatus = .invalidEvidence
@@ -2155,8 +2158,8 @@ final class ScenarioCoordinator {
             try await persistence.savePendingNativeSave(.init(
                 planID: plan.id, coordinateID: coordinate.id, run: run,
                 artifactRootPath: result.attachmentDirectory.path, ledger: stagedLedger,
-                evidenceValidationPassed: !cancellationRequested && ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(attachments: [attachment], runs: [run], xctestExitCode: result.processExitCode),
-                deviceReadinessProven: !cancellationRequested && Self.canReleaseDevice(processExitCode: result.processExitCode, attachments: [attachment], importedRuns: [run])
+                evidenceValidationPassed: !cancellationRequested && ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(attachments: [attachment], runs: [run], xctestExitCode: result.processExitCode, definition: definition),
+                deviceReadinessProven: !cancellationRequested && Self.canReleaseDevice(processExitCode: result.processExitCode, attachments: [attachment], importedRuns: [run], definition: definition)
             ))
         } catch {
             try? await executor.finishEvidenceValidation(journal: result.journal, accepted: false)
@@ -2175,7 +2178,7 @@ final class ScenarioCoordinator {
         }
         let accepted = !cancellationRequested && Self.canReleaseDevice(
             processExitCode: result.processExitCode,
-            attachments: [attachment], importedRuns: [saved]
+            attachments: [attachment], importedRuns: [saved], definition: definition
         )
         try await executor.finishEvidenceValidation(journal: result.journal, accepted: accepted)
         recoveryJournals = try await executor.currentRecoveryJournals()
@@ -2222,9 +2225,9 @@ final class ScenarioCoordinator {
     static func canReleaseDevice(
         processExitCode: Int32,
         attachments: [ScenarioEvidenceAttachment],
-        importedRuns: [ScenarioRun]
+        importedRuns: [ScenarioRun], definition: ScenarioDefinition? = nil
     ) -> Bool {
-        ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(attachments: attachments, runs: importedRuns, xctestExitCode: processExitCode) &&
+        ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(attachments: attachments, runs: importedRuns, xctestExitCode: processExitCode, definition: definition) &&
         !attachments.isEmpty && attachments.allSatisfy { !$0.isCheckpoint } &&
         !importedRuns.isEmpty && importedRuns.allSatisfy { run in
             run.executionStatus == .completed &&

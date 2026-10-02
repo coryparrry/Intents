@@ -1832,16 +1832,18 @@ struct ScenarioContractsTests {
             attachments: [checkpoint], runs: [run], xctestExitCode: 0
         ))
         #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
-            attachments: [final], runs: [run], xctestExitCode: 1
+            attachments: [final], runs: [run], xctestExitCode: 1, definition: definition
         ))
-        run.laneResults[0].assertionResults = [.init(assertionID: UUID(), passed: false, message: "Observed mismatch")]
+        let failedAssertion = try #require(definition.assertions.first(where: { $0.required && $0.expectedValue != nil && $0.applies(to: run.laneResults[0].lane) }))
+        run.laneResults[0].observations[failedAssertion.observationKey] = .string("wrong observed value")
+        run.laneResults[0].assertionResults = [.init(assertionID: failedAssertion.id, passed: false, message: "Observed mismatch")]
         #expect(ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
-            attachments: [final], runs: [run], xctestExitCode: 1
+            attachments: [final], runs: [run], xctestExitCode: 1, definition: definition
         ))
         #expect(!ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: checkpoint))
         run.laneResults[0].observations = [:]
         #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
-            attachments: [final], runs: [run], xctestExitCode: 1
+            attachments: [final], runs: [run], xctestExitCode: 1, definition: definition
         ))
     }
 

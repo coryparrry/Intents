@@ -11,6 +11,10 @@ enum ScenarioRecoveryFailure: String, Codable, Sendable {
 }
 
 enum ScenarioExecutionRecoveryPolicy {
+    static func canReevaluateFeature(captured: ScenarioMeasurementImplementation?, current: ScenarioMeasurementImplementation?) -> Bool {
+        captured == nil || captured == current
+    }
+
     static func hasBoundJournal(run: ScenarioRun, journals: [ScenarioExecutionJournal]) -> Bool {
         journals.contains { journal in
             journal.id == run.id
@@ -27,31 +31,36 @@ enum ScenarioExecutionRecoveryPolicy {
         }
     }
 
-    static func hasTerminalBusinessFailure(_ run: ScenarioRun) -> Bool {
-        run.executionStatus == .completed && run.outcome == .failed
-            && run.laneResults.contains { $0.outcome == .failed }
-            && run.laneResults.allSatisfy {
-                $0.executionStatus == .completed && ($0.outcome == .passed ||
-                    ($0.outcome == .failed && !$0.observations.isEmpty && $0.assertionResults.contains { !$0.passed }))
+    static func hasTerminalBusinessFailure(_ run: ScenarioRun, definition: ScenarioDefinition?) -> Bool {
+        guard let definition, run.executionStatus == .completed, run.outcome == .failed,
+              run.laneResults.contains(where: { $0.outcome == .failed }) else { return false }
+        return run.laneResults.allSatisfy { lane in
+            guard lane.executionStatus == .completed else { return false }
+            if lane.outcome == .passed { return true }
+            guard lane.outcome == .failed else { return false }
+            return definition.assertions.contains { assertion in
+                guard assertion.required, assertion.applies(to: lane.lane),
+                      let expected = assertion.expectedValue,
+                      let observed = lane.observations[assertion.observationKey], observed != expected else { return false }
+                return lane.assertionResults.contains { $0.assertionID == assertion.id && !$0.passed }
             }
+        }
     }
 
-    static func shouldPreserveTerminalBusinessFailure(_ run: ScenarioRun, attachment: ScenarioEvidenceAttachment) -> Bool {
-        !attachment.isCheckpoint && hasTerminalBusinessFailure(run)
+    static func shouldPreserveTerminalBusinessFailure(_ run: ScenarioRun, attachment: ScenarioEvidenceAttachment, definition: ScenarioDefinition? = nil) -> Bool {
+        !attachment.isCheckpoint && hasTerminalBusinessFailure(run, definition: definition)
     }
 
     static func acceptsFinalEvidence(
-        attachments: [ScenarioEvidenceAttachment],
-        runs: [ScenarioRun],
-        xctestExitCode: Int32
+        attachments: [ScenarioEvidenceAttachment], runs: [ScenarioRun], xctestExitCode: Int32,
+        definition: ScenarioDefinition? = nil
     ) -> Bool {
         !attachments.isEmpty && attachments.allSatisfy { !$0.isCheckpoint }
             && !runs.isEmpty && runs.allSatisfy { run in
-                run.executionStatus == .completed
-                    && !run.laneResults.isEmpty
+                run.executionStatus == .completed && !run.laneResults.isEmpty
                     && run.laneResults.allSatisfy { $0.executionStatus == .completed }
             }
-            && (xctestExitCode == 0 || runs.allSatisfy(hasTerminalBusinessFailure))
+            && (xctestExitCode == 0 || runs.allSatisfy { hasTerminalBusinessFailure($0, definition: definition) })
     }
 
     static func requiresQuarantine(

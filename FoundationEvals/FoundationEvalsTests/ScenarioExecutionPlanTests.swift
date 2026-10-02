@@ -3,6 +3,15 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioExecutionPlanTests {
+    @Test func featureRecoveryCannotAttributeNewCodeToCapturedMeasurement() {
+        let captured = ScenarioMeasurementImplementation(observerID: "host", observerDigest: "old", evaluatorID: "host", evaluatorDigest: "old")
+        var changed = captured
+        changed.evaluatorDigest = "new"
+        #expect(ScenarioExecutionRecoveryPolicy.canReevaluateFeature(captured: captured, current: captured))
+        #expect(!ScenarioExecutionRecoveryPolicy.canReevaluateFeature(captured: captured, current: changed))
+        #expect(!ScenarioExecutionRecoveryPolicy.canReevaluateFeature(captured: captured, current: nil))
+    }
+
     @Test func frozenCoordinatesCoverEverySelectedRouteAttempt() throws {
         var definition = ScenarioDefinition.starter(projectID: UUID())
         definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
@@ -169,6 +178,16 @@ struct ScenarioExecutionPlanTests {
         #expect(pending?.deviceReadinessProven == true)
         let terminal = try await persistence.loadExecutionRecords()
         #expect(terminal.isEmpty)
+        rows[0].state = .completed
+        rows[0].laneResult = lane
+        rows[0].evidenceRunID = run.id
+        rows[0].evidenceLaneResultID = lane.id
+        try await persistence.saveProgress(.init(planID: plan.id, records: rows, updatedAt: .now))
+        let first = try await persistence.finalizeExecutionRecord(plan: plan, records: rows)
+        let retry = try await persistence.finalizeExecutionRecord(plan: plan, records: rows)
+        #expect(first.evidenceDigest == retry.evidenceDigest)
+        #expect(try await persistence.loadPendingNativeSave(planID: plan.id, coordinateID: rows[0].id) != nil)
+
     }
 
     @Test func optionalUnobservedRouteDoesNotEraseRequiredPass() throws {
