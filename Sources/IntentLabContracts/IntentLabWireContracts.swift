@@ -21,10 +21,28 @@ public struct IntentLabDateValue: Codable, Equatable {
     public var source: String
     public var timeZoneIdentifier: String
     public var resolvedInstant: Date
+    enum CodingKeys: String, CodingKey { case source, timeZoneIdentifier, resolvedInstant, resolvedInstantBits }
     public init(source: String, timeZoneIdentifier: String, resolvedInstant: Date) {
-        self.source = source
-        self.timeZoneIdentifier = timeZoneIdentifier
-        self.resolvedInstant = resolvedInstant
+        self.source = source; self.timeZoneIdentifier = timeZoneIdentifier; self.resolvedInstant = resolvedInstant
+    }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        source = try values.decode(String.self, forKey: .source)
+        timeZoneIdentifier = try values.decode(String.self, forKey: .timeZoneIdentifier)
+        resolvedInstant = try values.decode(Date.self, forKey: .resolvedInstant)
+        if let text = try values.decodeIfPresent(String.self, forKey: .resolvedInstantBits) {
+            guard let bits = UInt64(text, radix: 16), Double(bitPattern: bits).isFinite else {
+                throw DecodingError.dataCorruptedError(forKey: .resolvedInstantBits, in: values, debugDescription: "Invalid exact date instant.")
+            }
+            resolvedInstant = Date(timeIntervalSince1970: Double(bitPattern: bits))
+        }
+    }
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(source, forKey: .source)
+        try values.encode(timeZoneIdentifier, forKey: .timeZoneIdentifier)
+        try values.encode(resolvedInstant, forKey: .resolvedInstant)
+        try values.encode(String(resolvedInstant.timeIntervalSince1970.bitPattern, radix: 16), forKey: .resolvedInstantBits)
     }
 }
 
@@ -628,5 +646,21 @@ public extension JSONEncoder {
         value.dateEncodingStrategy = .iso8601
         value.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return value
+    }
+}
+
+/// Advertise only proof established by a required, matching returned-value check.
+public enum IntentLabReturnedValueProof {
+    public static func isVerified(
+        assertions: [IntentLabAssertion], observations: [String: IntentLabValue],
+        resultKeys: Set<String>, checks: [IntentLabAssertionResult]
+    ) -> Bool {
+        assertions.contains { assertion in
+            assertion.required && assertion.kind == .returnedField
+                && resultKeys.contains(assertion.observationKey)
+                && observations[assertion.observationKey] != nil
+                && observations[assertion.observationKey] == assertion.expectedValue
+                && checks.contains { $0.assertionID == assertion.id && $0.passed }
+        }
     }
 }

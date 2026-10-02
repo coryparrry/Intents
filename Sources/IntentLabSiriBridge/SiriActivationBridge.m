@@ -19,7 +19,6 @@ NSString * _Nullable IntentLabActivateSiri(NSString *request, BOOL (^shouldRecov
         return exception.name;
     }
 #else
-    [NSException raise:@"IntentLabUnsupportedPlatform" format:@"Siri UI automation requires iOS."];
-    return nil;
+    return @"IntentLabUnsupportedPlatform";
 #endif
 }

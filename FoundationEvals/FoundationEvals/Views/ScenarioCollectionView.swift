@@ -177,7 +177,7 @@ struct ScenarioCollectionView: View {
                     }
                 }
                 .disabled(membershipCaseIDs.isEmpty
-                          || membershipCaseIDs == Set(collection.members.map(\.caseID))
+                          || ScenarioCollectionService.membershipMatchesLatest(collection, selectedIDs: membershipCaseIDs, definitions: latestCases)
                           || coordinator.isRunning)
                 if !difference.isEmpty {
                     Text("Changes from version \(collection.version - 1): \(difference.filter { $0.change == .added }.count) added · \(difference.filter { $0.change == .removed }.count) removed · \(difference.filter { $0.change == .changed }.count) changed · \(difference.filter { $0.change == .unchanged }.count) unchanged")

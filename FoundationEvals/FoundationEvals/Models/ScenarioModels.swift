@@ -200,6 +200,40 @@ struct ScenarioDateValue: Codable, Equatable, Sendable {
     var source: String
     var timeZoneIdentifier: String
     var resolvedInstant: Date
+    private(set) var persistedInstant: Date? = nil
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.source == rhs.source && lhs.timeZoneIdentifier == rhs.timeZoneIdentifier && lhs.resolvedInstant == rhs.resolvedInstant
+    }
+    enum CodingKeys: String, CodingKey { case source, timeZoneIdentifier, resolvedInstant, resolvedInstantBits }
+    init(source: String, timeZoneIdentifier: String, resolvedInstant: Date) {
+        self.source = source; self.timeZoneIdentifier = timeZoneIdentifier; self.resolvedInstant = resolvedInstant
+    }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        source = try values.decode(String.self, forKey: .source)
+        timeZoneIdentifier = try values.decode(String.self, forKey: .timeZoneIdentifier)
+        resolvedInstant = try values.decode(Date.self, forKey: .resolvedInstant)
+        persistedInstant = resolvedInstant
+        if let text = try values.decodeIfPresent(String.self, forKey: .resolvedInstantBits) {
+            guard let bits = UInt64(text, radix: 16), Double(bitPattern: bits).isFinite else {
+                throw DecodingError.dataCorruptedError(forKey: .resolvedInstantBits, in: values, debugDescription: "Invalid exact date instant.")
+            }
+            resolvedInstant = Date(timeIntervalSince1970: Double(bitPattern: bits))
+        }
+    }
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(source, forKey: .source)
+        try values.encode(timeZoneIdentifier, forKey: .timeZoneIdentifier)
+        try values.encode(resolvedInstant, forKey: .resolvedInstant)
+        if encoder.userInfo[.omitPreciseScenarioDates] as? Bool != true {
+            try values.encode(String(resolvedInstant.timeIntervalSince1970.bitPattern, radix: 16), forKey: .resolvedInstantBits)
+        }
+    }
+}
+
+private extension CodingUserInfoKey {
+    static let omitPreciseScenarioDates = CodingUserInfoKey(rawValue: "omitPreciseScenarioDates")!
 }
 
 struct ScenarioEnumValue: Codable, Equatable, Sendable {
@@ -222,6 +256,14 @@ indirect enum ScenarioValue: Codable, Equatable, Sendable {
     case enumeration(ScenarioEnumValue)
     case entity(ScenarioEntityReference)
     case array([ScenarioValue])
+
+    var hasBoundLegacyDatePrecision: Bool {
+        switch self {
+        case .date(let date): return date.persistedInstant == nil || date.persistedInstant == date.resolvedInstant
+        case .array(let values): return values.allSatisfy(\.hasBoundLegacyDatePrecision)
+        default: return true
+        }
+    }
 }
 
 enum ScenarioParameterPresence: Codable, Equatable, Sendable {
@@ -564,6 +606,7 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
             return try ScenarioV3Canonical.digest(copy)
         }
         let encoder = JSONEncoder()
+        encoder.userInfo[.omitPreciseScenarioDates] = true
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         var data = try encoder.encode(copy)
@@ -606,7 +649,12 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
         if schemaVersion == Self.stableSchemaVersion {
             return (try? calculatedTestContractDigest()) == testContractDigest
         }
-        return true
+        // Legacy digests bind ISO8601 seconds, not exact-date metadata. Never
+        // accept metadata that changes the value covered by a legacy digest.
+        return directControl.parameters.allSatisfy { parameter in
+            if case .value(let value) = parameter.presence { return value.hasBoundLegacyDatePrecision }
+            return true
+        } && assertions.allSatisfy { $0.expectedValue?.hasBoundLegacyDatePrecision != false }
     }
 }
 
@@ -726,6 +774,7 @@ private enum ScenarioV3Canonical {
     /// use the exact binary64 seconds bit pattern, avoiding formatter rounding.
     static func digest<T: Encodable>(_ value: T) throws -> String {
         let encoder = JSONEncoder()
+        encoder.userInfo[.omitPreciseScenarioDates] = true
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
