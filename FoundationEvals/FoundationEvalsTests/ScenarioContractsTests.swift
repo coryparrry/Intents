@@ -5,6 +5,25 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioContractsTests {
+    @Test func nativeSavePromotionUsesCapturedValidationAndRejectsCancellation() throws {
+        let definition = try scenario()
+        let identity = invocation(for: definition)
+        var bound = journal(for: definition, invocation: identity, phase: .running)
+        var ledger = ScenarioImportLedger()
+        let run = try XCTestEvidenceImporter().importEvidence(data: encoder.encode(evidence(for: definition, invocation: identity)), definition: definition, journal: bound, artifactRoot: temporaryDirectory(), ledger: &ledger)
+        #expect(ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: run, journal: bound, validationPassed: true))
+        bound.phase = .recoveryRequired
+        bound.evidenceAccepted = false
+        bound.recoveryReason = "Device execution or fixture readiness has not been proven after evidence capture."
+        #expect(ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: run, journal: bound, validationPassed: true))
+        #expect(!ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: run, journal: bound, validationPassed: nil))
+        bound.recoveryReason = ScenarioExecutionRecoveryPolicy.reason(for: .cancellation)
+        #expect(!ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: run, journal: bound, validationPassed: true))
+        bound.phase = .stopped
+        bound.invocation.nonce = "different"
+        #expect(!ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: run, journal: bound, validationPassed: true))
+    }
+
 
 
     @Test func stableSiriAndFeatureOnlyCompletionRequiresObservedProof() throws {
@@ -17,7 +36,7 @@ struct ScenarioContractsTests {
         let assertion = ScenarioAssertion(kind: .visibleText, observationKey: "state",
             expectedValue: .string("complete"), explanation: "Observed final state", applicableLanes: [.siri])
         definition.assertions = [assertion]
-        let now = Date()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
         var lane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: .siri,
             executionStatus: .completed, outcome: .passed, startedAt: now, completedAt: now,
             observations: ["state": .string("complete")],
@@ -1994,6 +2013,11 @@ struct ScenarioContractsTests {
             candidate.laneResults[index].observations = ["summary": .string("Expected summary")]
             candidate.laneResults[index].observationSources = ["summary": candidate.laneResults[index].lane == .appFeature
                 ? .applicationInstrumentation : .appIntentsTesting]
+            if candidate.laneResults[index].lane == .appFeature {
+                candidate.laneResults[index].observations["feature.runID"] = .string(candidate.id.uuidString)
+                candidate.laneResults[index].observations["feature.resultCount"] = .integer(1)
+                candidate.laneResults[index].observationSources?["feature.resultCount"] = .applicationInstrumentation
+            }
             candidate.laneResults[index].claims = [.executionCompleted, .returnedValueChecked]
             candidate.laneResults[index].assertionResults = [
                 .init(assertionID: definition.assertions[0].id, passed: true,

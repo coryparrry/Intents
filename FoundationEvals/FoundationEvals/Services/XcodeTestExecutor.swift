@@ -1117,11 +1117,6 @@ actor XcodeTestExecutor {
                 )
             }
         }
-        let destination = physicalDestination(
-            configuration.destinationIdentifier,
-            requiresSiri: definition.coverage.siri != .notApplicable
-        )
-        guard destination.ready else { throw XcodeTestExecutorError.deviceUnavailable(destination.detail) }
         guard definition.coverage.siri == .notApplicable || destination.platform != .macOS else {
             throw XcodeTestExecutorError.deviceUnavailable("Siri UI automation requires an iOS destination.")
         }

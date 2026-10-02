@@ -1473,11 +1473,7 @@ final class ScenarioCoordinator {
                 throw ScenarioPersistenceError.acceptanceNotReady
             }
             if journal.evidenceAccepted != true {
-                let interruptedBeforeValidation = journal.phase == .running
-                    || (journal.phase == .recoveryRequired
-                        && journal.recoveryReason == "The desktop stopped before device-side termination and fixture readiness were established.")
-                guard pending.evidenceValidationPassed == true,
-                      interruptedBeforeValidation else {
+                guard ScenarioExecutionRecoveryPolicy.canPromoteCapturedNativeEvidence(run: saved, journal: journal, validationPassed: pending.evidenceValidationPassed) else {
                     throw ScenarioPersistenceError.acceptanceNotReady
                 }
                 try await executor.finishEvidenceValidation(

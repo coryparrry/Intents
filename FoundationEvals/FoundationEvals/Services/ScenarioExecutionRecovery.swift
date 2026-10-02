@@ -15,6 +15,15 @@ enum ScenarioExecutionRecoveryPolicy {
         captured == nil || captured == current
     }
 
+    static func canPromoteCapturedNativeEvidence(run: ScenarioRun, journal: ScenarioExecutionJournal, validationPassed: Bool?) -> Bool {
+        guard validationPassed == true, hasBoundJournal(run: run, journals: [journal]) else { return false }
+        if journal.phase == .running || journal.phase == .stopped { return true }
+        return journal.phase == .recoveryRequired && [
+            "The desktop stopped before device-side termination and fixture readiness were established.",
+            "Device execution or fixture readiness has not been proven after evidence capture."
+        ].contains(journal.recoveryReason ?? "")
+    }
+
     static func hasBoundJournal(run: ScenarioRun, journals: [ScenarioExecutionJournal]) -> Bool {
         journals.contains { journal in
             journal.id == run.id
