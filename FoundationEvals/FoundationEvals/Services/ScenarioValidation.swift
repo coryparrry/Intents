@@ -503,9 +503,11 @@ enum ScenarioResultEvaluator {
         if !requiredResults.allSatisfy({ $0.outcome == .passed }) { return .notObserved }
         if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion {
             let direct = requiredResults.filter { $0.lane == .intentIntegration }
+            let completionRoutes = direct.isEmpty && definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+                ? requiredResults : direct
             let claims = definition.requiredClaims ?? []
             if claims.contains(.executionCompleted),
-               (direct.isEmpty || !direct.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
+               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.returnedValueChecked),
@@ -529,9 +531,19 @@ enum ScenarioResultEvaluator {
         definition: ScenarioDefinition,
         result: ScenarioLaneResult
     ) -> Bool {
-        guard result.executionStatus == .completed, result.outcome == .passed,
-              result.claims?.contains(claim) == true else { return false }
-        if claim == .executionCompleted { return result.lane == .intentIntegration }
+        guard result.executionStatus == .completed, result.outcome == .passed else { return false }
+        if claim == .executionCompleted,
+           definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+           result.lane == .appFeature {
+            return result.observations["feature.response"] != nil
+                && result.observationSources?["feature.response"] == .applicationInstrumentation
+        }
+        guard result.claims?.contains(claim) == true else { return false }
+        if claim == .executionCompleted {
+            if result.lane == .intentIntegration { return true }
+            return definition.schemaVersion == ScenarioDefinition.stableSchemaVersion && result.lane == .siri
+                && verifiedClaim(.applicationStateChecked, definition: definition, result: result)
+        }
         let plan = definition.observationPlan ?? []
         return definition.assertions.contains { assertion in
             guard assertion.required, assertion.applies(to: result.lane),

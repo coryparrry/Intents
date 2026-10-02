@@ -654,6 +654,12 @@ final class ScenarioCoordinator {
     func recordInstalledIntegration(_ identity: ScenarioIntegrationIdentity, appBundleID: String,
                                     projectPath: String, scheme: String, testTarget: String,
                                     applicationProductID: String?, testProductID: String?) {
+        if configuration.scheme != scheme || configuration.testTarget != testTarget
+            || configuration.selectedApplicationProductID != applicationProductID
+            || configuration.selectedTestProductID != testProductID
+            || draft.target.projectPath != projectPath || draft.target.bundleIdentifier != appBundleID {
+            projectTrusted = false
+        }
         selectedIntegration = identity
         declarationCatalog = nil
         configuration.selectedApplicationProductID = applicationProductID
