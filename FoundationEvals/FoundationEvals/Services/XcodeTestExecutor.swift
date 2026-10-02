@@ -410,6 +410,9 @@ actor XcodeTestExecutor {
                 && [.preparing, .running, .cancelling, .recoveryRequired].contains(journal.phase) {
             journal.phase = .stopped
             journal.recoveryReason = nil
+            // Explicit readiness confirmation does not accept pending evidence.
+            // Record a rejected state when a crash preceded validation.
+            journal.evidenceAccepted = journal.evidenceAccepted ?? false
             journal.updatedAt = Date()
             try await persistence.saveJournal(journal)
         }
