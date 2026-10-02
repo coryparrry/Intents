@@ -5,6 +5,21 @@ import XCTest
 @available(iOS 27.0, *)
 @MainActor
 final class IntentLabScenarioTests: XCTestCase {
+    func testReadOnlyResetCleanupUsesTheShippedDeclarationAndAdapter() throws {
+        let bundle = Bundle(for: Self.self)
+        let url = try XCTUnwrap(bundle.url(forResource: "IntentLabIntegration", withExtension: "json"))
+        let declaration = try JSONDecoder.intentLab.decode(IntentLabIntegrationDeclaration.self,
+            from: Data(contentsOf: url))
+        try declaration.validate()
+        XCTAssertTrue(declaration.allowsCleanupOperation("reset"))
+        let integration = NotesIntentLabIntegration()
+        XCTAssertThrowsError(try integration.cleanup(bundleIdentifier: declaration.targetBundleIdentifier,
+            context: "read-only-cleanup", operationID: "undeclared-reset"))
+        // Cleanup launches the fixture and verifies its empty baseline before terminating it.
+        XCTAssertNoThrow(try integration.cleanup(bundleIdentifier: declaration.targetBundleIdentifier,
+            context: "read-only-cleanup", operationID: "reset"))
+    }
+
     func testIntentLabScenario() throws {
         _ = try IntentLabSiriScenarioRunner.run(
             testCase: self,

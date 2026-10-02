@@ -3,6 +3,24 @@ import IntentLabContracts
 import XCTest
 
 final class IntentLabContractsTests: XCTestCase {
+    func testShippedNotesDeclarationsAllowVerifiedReadOnlyResetCleanup() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        for path in ["examples/IntentLabFixture/UITests/IntentLabIntegration.json",
+                     "examples/IntentLabFixture/UITests/Siri/IntentLabIntegration.json"] {
+            let declaration = try JSONDecoder.intentLab.decode(IntentLabIntegrationDeclaration.self,
+                from: Data(contentsOf: root.appending(path: path)))
+            try declaration.validate()
+            for operation in ["reset", "resetNotes", "resetFixture"] {
+                XCTAssertTrue(declaration.preparationOperations.contains(operation), path)
+                XCTAssertTrue(declaration.allowsCleanupOperation(operation), path)
+                XCTAssertTrue(declaration.allowsCleanupOperation(operation, requiresMutationCleanup: true), path)
+            }
+            XCTAssertFalse(declaration.allowsCleanupOperation("undeclared-reset"), path)
+            XCTAssertFalse(declaration.allowsCleanupOperation("none", requiresMutationCleanup: true), path)
+        }
+    }
+
     func testCleanupRunsAfterSuccessfulAttempt() throws {
         var events: [String] = []
         let attempt = IntentLabAttemptLifecycle.execute {

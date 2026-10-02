@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import FoundationEvals
 
+@Suite(.serialized)
 struct ScenarioAcceptanceTests {
     @Test @MainActor func completedFailureNeedsVerifiedCleanupBeforeDeviceRelease() throws {
         let (_, original, _) = try fixture()
@@ -567,6 +568,113 @@ struct ScenarioAcceptanceTests {
         #expect(output.contains("\"code\":\"invalid_request\""))
         #expect(output.contains("execution journal"))
         #expect(output.contains("unreadable or has inconsistent identity"))
+    }
+
+    @MainActor
+    @Test(arguments: [false, true])
+    func nativeSaveRetryRequiresValidationAndPublishesDurableAcceptance(validationPassed: Bool) async throws {
+        let context = try await nativeRetryContext(validationPassed: validationPassed)
+        defer { try? FileManager.default.removeItem(at: context.support) }
+        let coordinate = try #require(context.plan.coordinates.first)
+        let record = await context.coordinator.retryPendingNativeSave(
+            planID: context.plan.id, coordinateID: coordinate.id)
+        let restored = try #require(try await context.persistence.loadRuns().first)
+        if validationPassed {
+            #expect(record?.isComplete == true)
+            #expect(restored.acceptanceStatus == .accepted)
+            let definition = try #require(try await context.persistence.loadDefinitions().first)
+            #expect(!ScenarioReleaseCheckEvaluator.report(definition: definition, run: restored)
+                .failures.contains { $0.contains("acceptance receipt") })
+            #expect(try await context.persistence.loadPendingNativeSave(
+                planID: context.plan.id, coordinateID: coordinate.id) == nil)
+        } else {
+            #expect(record == nil)
+            #expect(restored.acceptanceStatus == .pending)
+            #expect(try await context.persistence.loadPendingNativeSave(
+                planID: context.plan.id, coordinateID: coordinate.id) != nil)
+        }
+    }
+
+    @MainActor
+    @Test func nativeReceiptRemainsRetryableAfterFinalizationFails() async throws {
+        let context = try await nativeRetryContext(validationPassed: true)
+        defer { try? FileManager.default.removeItem(at: context.support) }
+        let coordinate = try #require(context.plan.coordinates.first)
+        let blockedRecord = context.support.appending(path:
+            "IntentLab/ExecutionRecords/\(context.plan.id.uuidString).json", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: blockedRecord, withIntermediateDirectories: true)
+        let failed = await context.coordinator.retryPendingNativeSave(
+            planID: context.plan.id, coordinateID: coordinate.id)
+        #expect(failed == nil)
+        #expect(try await context.persistence.loadRuns().first?.acceptanceStatus == .accepted)
+        #expect(try await context.persistence.loadPendingNativeSave(
+            planID: context.plan.id, coordinateID: coordinate.id) != nil)
+        try FileManager.default.removeItem(at: blockedRecord)
+        let retried = await context.coordinator.retryPendingNativeSave(
+            planID: context.plan.id, coordinateID: coordinate.id)
+        #expect(retried?.isComplete == true)
+        #expect(try await context.persistence.loadRuns().first?.acceptanceStatus == .accepted)
+        #expect(try await context.persistence.loadPendingNativeSave(
+            planID: context.plan.id, coordinateID: coordinate.id) == nil)
+    }
+
+    @Test func conflictingAcceptanceReceiptIsNotOverwritten() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let (_, run, journal) = try fixture()
+        _ = try await persistence.saveRun(run, artifactRoot: nil)
+        try await persistence.saveLedger(ledger(for: run))
+        try await persistence.saveJournal(journal)
+        _ = try await persistence.acceptRun(run, journal: journal)
+        let path = root.appending(path: "Runs/\(run.scenarioID.uuidString)/\(run.id.uuidString)/acceptance.json")
+        let conflict = Data("different receipt".utf8)
+        try conflict.write(to: path, options: .atomic)
+        await #expect(throws: ScenarioPersistenceError.self) {
+            _ = try await persistence.acceptRun(run, journal: journal)
+        }
+        #expect(try Data(contentsOf: path) == conflict)
+    }
+
+    @MainActor
+    private func nativeRetryContext(validationPassed: Bool) async throws -> (
+        support: URL, persistence: ScenarioPersistence, coordinator: ScenarioCoordinator, plan: ScenarioExecutionPlan
+    ) {
+        let support = temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: support.appending(path: "IntentLab"))
+        var (definition, run, journal) = try fixture()
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition = try definition.frozen()
+        run.scenarioDigest = definition.definitionDigest
+        run.scenarioSchemaVersion = definition.schemaVersion
+        run.testContractDigest = definition.testContractDigest
+        run.invocation.scenarioDigest = definition.definitionDigest
+        journal.invocation = run.invocation
+        journal.evidenceAccepted = false
+        let profile = ScenarioExecutionProfile(id: UUID(), projectPath: definition.target.projectPath,
+            scheme: definition.target.scheme, testTarget: definition.target.testTarget,
+            destinationIdentifier: definition.target.destinationIdentifier,
+            signingSelection: nil, trustedConnectionID: nil, buildConfiguration: "Debug")
+        let plan = try ScenarioExecutionPlan.make(definition: definition, profile: profile,
+            appProductDigest: "app", testProductDigest: "test", sourceInputsDigest: "source",
+            runnerBuildID: nil, runnerID: nil)
+        let coordinate = try #require(plan.coordinates.first)
+        run.laneResults[0].caseID = coordinate.caseID
+        run.laneResults[0].lane = coordinate.lane
+        run.laneResults[0].attempt = coordinate.repetition
+        try await persistence.saveDefinition(definition)
+        try await persistence.savePlan(plan)
+        var records = plan.coordinates.map(ScenarioExecutionCoordinateRecord.unstarted)
+        records[0].state = .recoveryRequired
+        try await persistence.saveProgress(.init(planID: plan.id, records: records, updatedAt: .now))
+        try await persistence.saveJournal(journal)
+        try await persistence.savePendingNativeSave(.init(planID: plan.id, coordinateID: coordinate.id,
+            run: run, artifactRootPath: support.path, ledger: ledger(for: run),
+            evidenceValidationPassed: validationPassed, deviceReadinessProven: true))
+        let coordinator = ScenarioCoordinator(supportDirectory: support,
+            evaluationStore: EvaluationStore(supportDirectory: support))
+        await coordinator.load()
+        return (support, persistence, coordinator, plan)
     }
 
     private func fixture() throws -> (ScenarioDefinition, ScenarioRun, ScenarioExecutionJournal) {
