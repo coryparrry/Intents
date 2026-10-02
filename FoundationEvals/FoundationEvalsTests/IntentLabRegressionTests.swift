@@ -524,3 +524,80 @@ struct IntentLabRegressionTests {
         return definition
     }
 }
+
+extension IntentLabRegressionTests {
+    @MainActor @Test func installedSchemeChangesRevokeApproval() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: store)
+        coordinator.draft.schemaVersion = ScenarioDefinition.reusableSchemaVersion
+        coordinator.configuration.scheme = "A"
+        coordinator.projectTrusted = true
+        coordinator.recordInstalledIntegration(
+            .init(id: "test", version: "1", digest: String(repeating: "a", count: 64)),
+            appBundleID: "dev.example.App", projectPath: root.path,
+            scheme: "B", testTarget: "Tests", applicationProductID: "app", testProductID: "tests"
+        )
+        #expect(!coordinator.projectTrusted)
+        coordinator.projectTrusted = true
+        coordinator.recordInstalledIntegration(
+            .init(id: "test", version: "1", digest: String(repeating: "a", count: 64)),
+            appBundleID: "dev.example.App", projectPath: root.path,
+            scheme: "B", testTarget: "Tests", applicationProductID: "app", testProductID: "tests"
+        )
+        #expect(coordinator.projectTrusted)
+    }
+
+    @MainActor @Test func corruptPendingRunIsBlockedAndPreserved() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = EvaluationStore(supportDirectory: root)
+        let directory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: root, projectID: original.selectedProjectID, suiteID: original.selectedSuiteID
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let marker = directory.appending(path: "pending-completed-runs.json")
+        let bytes = Data("broken recovery bytes".utf8)
+        try bytes.write(to: marker)
+        let loaded = EvaluationStore(supportDirectory: root)
+        #expect(loaded.pendingCompletedRunsLoadError != nil)
+        #expect(loaded.hasUnsavedCompletedRun)
+        loaded.retryPendingRunSave()
+        #expect(try Data(contentsOf: marker) == bytes)
+        let preserved = try loaded.preserveUnreadablePendingRuns()
+        #expect(try Data(contentsOf: preserved) == bytes)
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+        #expect(loaded.pendingCompletedRunsLoadError == nil)
+    }
+}
+
+extension IntentLabRegressionTests {
+    @MainActor @Test func failedWorkspaceSwitchRestoresCorruptMarkerOwnership() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var failSwitch = false
+        var writes = 0
+        let store = EvaluationStore(supportDirectory: root, workspaceCatalogWriter: { catalog, directory in
+            if failSwitch {
+                writes += 1
+                if writes == 2 { throw CocoaError(.fileWriteNoPermission) }
+            }
+            try EvaluationWorkspacePersistence.save(catalog, in: directory)
+        })
+        let source = store.selectedSuiteID
+        let target = try store.createSuite(name: "Corrupt target")
+        try store.switchSuite(id: source)
+        let directory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: root, projectID: store.selectedProjectID, suiteID: target
+        )
+        let marker = directory.appending(path: "pending-completed-runs.json")
+        let bytes = Data("unreadable".utf8)
+        try bytes.write(to: marker)
+        failSwitch = true
+        #expect(throws: EvaluationStoreError.self) { try store.switchSuite(id: target) }
+        #expect(store.selectedSuiteID == source)
+        #expect(store.pendingCompletedRunsLoadError == nil)
+        #expect(try Data(contentsOf: marker) == bytes)
+    }
+}
