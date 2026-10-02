@@ -3,6 +3,19 @@ import IntentLabContracts
 import XCTest
 
 final class IntentLabContractsTests: XCTestCase {
+    func testFractionalDateTransportPreservesScalarAndNestedArrayInstants() throws {
+        for timestamp in [1_700_000_000.375, -0.375] {
+            let instant = Date(timeIntervalSince1970: timestamp)
+            let date = IntentLabValue.date(.init(source: "authored", timeZoneIdentifier: "UTC",
+                resolvedInstant: instant))
+            for value in [date, .array([date]), .array([.array([date])])] {
+                let restored = try JSONDecoder.intentLab.decode(IntentLabValue.self,
+                    from: JSONEncoder.intentLab.encode(value))
+                XCTAssertEqual(restored, value)
+            }
+        }
+    }
+
     func testDirectTimeoutFenceRejectsEveryLaterAttempt() throws {
         var fence = IntentLabAttemptFence()
         XCTAssertNoThrow(try fence.validateNewAttempt())

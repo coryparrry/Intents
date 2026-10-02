@@ -217,21 +217,15 @@ indirect enum ScenarioValue: Codable, Equatable, Sendable {
         }
     }
 
-    /// Legacy digests bind ISO8601 seconds. Freeze values at that precision so
-    /// exact-date metadata cannot invalidate an otherwise unchanged saved test.
-    var withLegacyDatePrecision: Self {
+    var containsFractionalDate: Bool {
         switch self {
         case .date(let date):
-            return .date(.init(
-                source: date.source,
-                timeZoneIdentifier: date.timeZoneIdentifier,
-                resolvedInstant: Date(timeIntervalSince1970:
-                    date.resolvedInstant.timeIntervalSince1970.rounded(.down))
-            ))
+            let seconds = date.resolvedInstant.timeIntervalSince1970
+            return seconds != seconds.rounded(.towardZero)
         case .array(let values):
-            return .array(values.map(\.withLegacyDatePrecision))
+            return values.contains(where: \.containsFractionalDate)
         default:
-            return self
+            return false
         }
     }
 }
@@ -532,7 +526,9 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
             return try ScenarioV3Canonical.digest(copy)
         }
         let encoder = JSONEncoder()
-        encoder.userInfo[.omitPreciseScenarioDates] = true
+        // Keep historical whole-second digests, but bind exact metadata whenever
+        // ISO8601 alone would discard an authored instant's fractional seconds.
+        encoder.userInfo[.omitPreciseScenarioDates] = !hasFractionalDates
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         var data = try encoder.encode(copy)
@@ -559,16 +555,6 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
 
     func frozen() throws -> Self {
         var copy = self
-        if schemaVersion == Self.currentSchemaVersion || schemaVersion == Self.reusableSchemaVersion {
-            for index in copy.directControl.parameters.indices {
-                if case .value(let value) = copy.directControl.parameters[index].presence {
-                    copy.directControl.parameters[index].presence = .value(value.withLegacyDatePrecision)
-                }
-            }
-            for index in copy.assertions.indices {
-                copy.assertions[index].expectedValue = copy.assertions[index].expectedValue?.withLegacyDatePrecision
-            }
-        }
         if schemaVersion == Self.stableSchemaVersion {
             guard directControl.linkedFeatureRunID == nil && directControl.linkedFeatureSubjectDigest.isEmpty else {
                 throw ScenarioV3ContractError.executionBoundDefinition
@@ -585,12 +571,20 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
         if schemaVersion == Self.stableSchemaVersion {
             return (try? calculatedTestContractDigest()) == testContractDigest
         }
-        // Legacy digests bind ISO8601 seconds, not exact-date metadata. Never
-        // accept metadata that changes the value covered by a legacy digest.
+        // Fractional dates are bound by exact metadata in calculatedDigest().
+        // Whole-second definitions retain their historical digest and guard.
+        if hasFractionalDates { return true }
         return directControl.parameters.allSatisfy { parameter in
             if case .value(let value) = parameter.presence { return value.hasBoundLegacyDatePrecision }
             return true
         } && assertions.allSatisfy { $0.expectedValue?.hasBoundLegacyDatePrecision != false }
+    }
+
+    private var hasFractionalDates: Bool {
+        directControl.parameters.contains { parameter in
+            if case .value(let value) = parameter.presence { return value.containsFractionalDate }
+            return false
+        } || assertions.contains { $0.expectedValue?.containsFractionalDate == true }
     }
 }
 
