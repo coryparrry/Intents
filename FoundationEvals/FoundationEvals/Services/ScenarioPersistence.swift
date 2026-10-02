@@ -204,12 +204,14 @@ actor ScenarioPersistence {
             throw ScenarioPersistenceError.invalidRun("Evidence still requires recovery.")
         }
         if let existing = try loadExecutionRecords().first(where: { $0.planID == plan.id }) {
-            if try Self.encoder.encode(existing.records) == Self.encoder.encode(records) { return existing }
+            let ordered = records.sorted { $0.id.uuidString < $1.id.uuidString }
+            if try Self.encoder.encode(existing.records) == Self.encoder.encode(ordered) { return existing }
             // Older builds sealed unfinished progress. Preserve that immutable
             // record and append a finalization bound to accepted staged evidence.
             guard existing.records.count == records.count, existing.selectedAssessments?.isEmpty != false else {
                 throw ScenarioPersistenceError.immutableExecutionRecordExists
             }
+            var recoveredCoordinate = false
             for previous in existing.records {
                 guard let next = records.first(where: { $0.id == previous.id }), next.coordinate == previous.coordinate else {
                     throw ScenarioPersistenceError.immutableExecutionRecordExists
@@ -228,7 +230,9 @@ actor ScenarioPersistence {
                       next.state == (lane.executionStatus == .completed ? .completed : .failedToExecute) else {
                     throw ScenarioPersistenceError.immutableExecutionRecordExists
                 }
+                recoveredCoordinate = true
             }
+            guard recoveredCoordinate else { throw ScenarioPersistenceError.immutableExecutionRecordExists }
             let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
             let directory = rootDirectory.appending(path: "RecoveryFinalizations", directoryHint: .isDirectory)
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
