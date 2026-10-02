@@ -6,6 +6,11 @@ import Darwin
 #elseif canImport(Glibc)
 import Glibc
 #endif
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -162,26 +167,51 @@ struct ScenarioReportOptions {
 }
 
 enum MCPCredential {
+    static func isLiteralLoopback(_ host: String) -> Bool {
+        if ["localhost", "::1", "[::1]"].contains(host) { return true }
+        var address = in_addr()
+        return host.withCString { inet_pton(AF_INET, $0, &address) } == 1
+            && UInt32(bigEndian: address.s_addr) >> 24 == 127
+    }
+
+    static func readCredentialFile(_ file: URL) throws -> Data {
+        let message = "The credential file must be owned by you, readable only by you, a regular file, and at most 4096 bytes."
+        // Nonblocking open also prevents a substituted FIFO from hanging before
+        // fstat rejects it. All validation and reads use this single descriptor.
+        let descriptor = file.path.withCString { open($0, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK) }
+        guard descriptor >= 0 else { throw CLIError.usage(message) }
+        defer { close(descriptor) }
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0,
+              metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+              metadata.st_uid == getuid(), metadata.st_mode & 0o077 == 0,
+              metadata.st_size >= 0, metadata.st_size <= 4096 else {
+            throw CLIError.usage(message)
+        }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4097)
+        while data.count <= 4096 {
+            let count = buffer.withUnsafeMutableBytes { read(descriptor, $0.baseAddress!, 4097 - data.count) }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw CLIError.usage(message)
+            }
+            if count == 0 { return data }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        throw CLIError.usage(message)
+    }
+
     static func load(for endpoint: URL, file: URL?) throws -> String {
         let host = endpoint.host?.lowercased() ?? ""
-        let isLoopback = ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host)
+        let isLoopback = isLiteralLoopback(host)
         guard endpoint.user == nil, endpoint.password == nil, endpoint.fragment == nil,
               endpoint.scheme?.lowercased() == "https" || isLoopback else {
             throw CLIError.usage("Credentials require a loopback HTTP endpoint or an HTTPS endpoint without embedded credentials.")
         }
         let data: Data
         if let file {
-            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-            let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
-            guard values.isRegularFile == true, values.isSymbolicLink != true,
-                  (values.fileSize ?? Int.max) <= 4_096,
-                  let permissions = attributes[.posixPermissions] as? NSNumber,
-                  permissions.intValue & 0o077 == 0,
-                  let owner = attributes[.ownerAccountID] as? NSNumber,
-                  owner.uint32Value == getuid() else {
-                throw CLIError.usage("The credential file must be owned by you, readable only by you, and at most 4096 bytes.")
-            }
-            data = try Data(contentsOf: file)
+            data = try readCredentialFile(file)
         } else if let supplied = ProcessInfo.processInfo.environment["FOUNDATION_EVALS_MCP_CREDENTIAL"], !supplied.isEmpty {
             data = Data(supplied.utf8)
         } else {

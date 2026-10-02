@@ -31,6 +31,33 @@ class IntentLabCLITests(unittest.TestCase):
             cls.build_directory.cleanup()
             raise RuntimeError(completed.stdout + completed.stderr)
 
+        # Compile a test-only copy with a deterministic mutation immediately
+        # after descriptor validation. Production has no hook or environment flag.
+        marker = "        var data = Data()\n"
+        probe = """        if let replacement = ProcessInfo.processInfo.environment["INTENTS_TEST_REPLACEMENT"] {
+            try FileManager.default.moveItem(at: file, to: file.appendingPathExtension("opened"))
+            try FileManager.default.createSymbolicLink(at: file, withDestinationURL: URL(fileURLWithPath: replacement))
+        }
+        if ProcessInfo.processInfo.environment["INTENTS_TEST_GROW_FILE"] == "1" {
+            try Data(repeating: 65, count: 5000).write(to: file)
+        }
+"""
+        production = CLI.read_text()
+        if production.count(marker) != 1:
+            raise RuntimeError("Credential descriptor probe requires a unique post-validation read marker")
+        probe_source = production.replace(marker, probe + marker, 1)
+        probe_source = probe_source.replace("func run() throws -> Int32 {", """func run() throws -> Int32 {
+    if CommandLine.arguments.count == 4 && CommandLine.arguments[1] == "--probe-credential" {
+        let token = try MCPCredential.load(for: URL(string: CommandLine.arguments[2])!, file: URL(fileURLWithPath: CommandLine.arguments[3]))
+        return token == "synthetic-cli-regression-credential" ? 0 : 31
+    }
+""", 1)
+        source.write_text(probe_source)
+        cls.race_executable = Path(cls.build_directory.name) / "credential-race-probe"
+        completed = subprocess.run(["swiftc", str(source), "-o", str(cls.race_executable)], capture_output=True, text=True, timeout=120, check=False)
+        if completed.returncode:
+            raise RuntimeError(completed.stdout + completed.stderr)
+
     @classmethod
     def tearDownClass(cls):
         cls.build_directory.cleanup()
@@ -51,7 +78,7 @@ class IntentLabCLITests(unittest.TestCase):
         return completed
 
     @contextmanager
-    def connector(self, responder, *, redirect=None):
+    def connector(self, responder, *, redirect=None, address="127.0.0.1"):
         requests = []
 
         class Handler(BaseHTTPRequestHandler):
@@ -82,11 +109,11 @@ class IntentLabCLITests(unittest.TestCase):
             def log_message(self, _format, *_args):
                 pass
 
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server = ThreadingHTTPServer((address, 0), Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            yield f"http://127.0.0.1:{server.server_port}/mcp", requests
+            yield f"http://{address}:{server.server_port}/mcp", requests
         finally:
             server.shutdown()
             server.server_close()
@@ -194,6 +221,46 @@ class IntentLabCLITests(unittest.TestCase):
         self.assertIn("HTTP 302", completed.stderr)
         self.assertEqual(len(requests), 1)
         self.assertEqual(forwarded, [])
+
+    def test_path_replacement_after_validation_reads_the_opened_file(self):
+        replacement = Path(self.directory.name) / "replacement"
+        replacement.write_text("synthetic-replacement-credential")
+        replacement.chmod(0o644)
+        with self.connector(lambda _params: {"releaseCheck": {"outcome": "passed", "summary": "Verified", "failures": []}}) as (endpoint, requests):
+            completed = subprocess.run([str(self.race_executable), "scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint, "--credential-file", str(self.credential)], capture_output=True, text=True, env={**os.environ, "INTENTS_TEST_REPLACEMENT": str(replacement)}, timeout=30, check=False)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(requests)
+            self.assertTrue(all(header == f"Bearer {TOKEN}" for _, header in requests))
+            self.assertTrue(self.credential.is_symlink())
+
+    def test_file_growth_after_validation_is_bounded_and_rejected(self):
+        with self.connector(lambda _params: {}) as (endpoint, requests):
+            completed = subprocess.run([str(self.race_executable), "scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint, "--credential-file", str(self.credential)], capture_output=True, text=True, env={**os.environ, "INTENTS_TEST_GROW_FILE": "1"}, timeout=30, check=False)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertFalse(requests)
+
+    def test_other_literal_loopback_addresses_accept_explicit_credentials(self):
+        for endpoint in ["http://127.0.0.2/mcp", "http://127.255.255.254/mcp", "http://[::1]/mcp"]:
+            with self.subTest(endpoint=endpoint):
+                completed = subprocess.run([str(self.race_executable), "--probe-credential", endpoint, str(self.credential)], capture_output=True, text=True, timeout=30, check=False)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+        for endpoint in ["http://126.0.0.1/mcp", "http://128.0.0.1/mcp", "http://127.0.0.1.example.invalid/mcp"]:
+            with self.subTest(endpoint=endpoint):
+                completed = subprocess.run([str(self.race_executable), "--probe-credential", endpoint, str(self.credential)], capture_output=True, text=True, timeout=30, check=False)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("loopback HTTP", completed.stderr)
+
+    def test_fifo_directory_and_oversized_credentials_are_rejected_without_hanging(self):
+        fifo = Path(self.directory.name) / "fifo"
+        os.mkfifo(fifo, 0o600)
+        large = Path(self.directory.name) / "large"
+        large.write_text("a" * 4097)
+        large.chmod(0o600)
+        for path in [fifo, Path(self.directory.name), large]:
+            with self.subTest(path=path.name), self.connector(lambda _params: {}) as (endpoint, requests):
+                completed = self.run_cli("scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint, credential=path)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertFalse(requests)
 
     def test_remote_http_endpoint_is_rejected_before_loading_a_credential(self):
         completed = self.run_cli("scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", "http://example.invalid/mcp")
