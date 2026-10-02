@@ -19,6 +19,8 @@ struct ScenarioPendingNativeSave: Codable, Sendable {
     var run: ScenarioRun
     var artifactRootPath: String
     var ledger: ScenarioImportLedger
+    var evidenceValidationPassed: Bool? = nil
+    var deviceReadinessProven: Bool? = nil
 }
 
 enum ScenarioPersistenceError: LocalizedError, Sendable {
@@ -170,6 +172,21 @@ actor ScenarioPersistence {
             recovered.append(record)
         }
         return recovered
+    }
+
+    /// Retry finalization after progress was committed, including a failed
+    /// cleanup after the immutable record was already written.
+    func finalizeExecutionRecord(plan: ScenarioExecutionPlan, records: [ScenarioExecutionCoordinateRecord]) throws -> ScenarioExecutionRecord {
+        if let existing = try loadExecutionRecords().first(where: { $0.planID == plan.id }) {
+            guard try Self.encoder.encode(existing.records) == Self.encoder.encode(records) else { throw ScenarioPersistenceError.immutableExecutionRecordExists }
+            return existing
+        }
+        guard !records.contains(where: { $0.state == .recoveryRequired }) else {
+            throw ScenarioPersistenceError.invalidRun("Evidence still requires recovery.")
+        }
+        let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
+        try saveExecutionRecord(record)
+        return record
     }
 
     func saveExecutionRecord(_ record: ScenarioExecutionRecord) throws {

@@ -36,4 +36,4 @@ Intent Lab report tools only read saved reports. They cannot trust an Xcode proj
 | A manual client receives `401 Unauthorized` | Use **Connect to Codex** or **Copy Manual Configuration**. The endpoint alone does not include the required credential. |
 | A suite run is unavailable | Open the suite in Intents. Read the Run readiness reason. MCP uses the same run limits as the app. |
 
-The bundled `script/foundation-evals` CLI does not send the required Authorization header. Do not use its exit status as release evidence. Use the in-app report or an authenticated MCP client until this integration changes.
+The bundled `script/foundation-evals` CLI sends the Authorization header using the default local connector credential from the login Keychain or `FOUNDATION_EVALS_MCP_CREDENTIAL`. Keep the connector running and make its credential available. The `scenario-report` command exits successfully only when the returned release check passes. Custom endpoints require an explicitly supplied environment credential.

@@ -462,10 +462,7 @@ public enum IntentLabScenarioEngine {
             }
             return integration.source(for: key)
         }
-        let returnedChecked = assertions.contains {
-            $0.kind == .returnedField && observations[$0.observationKey] != nil
-                && resultKeys.contains($0.observationKey)
-        }
+        let returnedChecked = IntentLabReturnedValueProof.isVerified(assertions: assertions, observations: observations, resultKeys: resultKeys, checks: checks)
         let stateChecked = assertions.contains { assertion in
             guard assertion.required, let observed = observations[assertion.observationKey],
                   let plan = planned.first(where: { $0.id == assertion.observationKey }),
