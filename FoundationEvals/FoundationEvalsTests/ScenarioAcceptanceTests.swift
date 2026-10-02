@@ -637,7 +637,8 @@ struct ScenarioAcceptanceTests {
     }
 
     @MainActor
-    private func nativeRetryContext(validationPassed: Bool, deviceReady: Bool = true) async throws -> (
+    private func nativeRetryContext(validationPassed: Bool, deviceReady: Bool = true,
+                                    journalAcceptance: Bool? = false) async throws -> (
         support: URL, persistence: ScenarioPersistence, coordinator: ScenarioCoordinator, plan: ScenarioExecutionPlan
     ) {
         let support = temporaryDirectory()
@@ -650,7 +651,7 @@ struct ScenarioAcceptanceTests {
         run.testContractDigest = definition.testContractDigest
         run.invocation.scenarioDigest = definition.definitionDigest
         journal.invocation = run.invocation
-        journal.evidenceAccepted = false
+        journal.evidenceAccepted = journalAcceptance
         if !deviceReady {
             journal.phase = .recoveryRequired
             journal.recoveryReason = "Device execution or fixture readiness has not been proven after evidence capture."
@@ -683,14 +684,17 @@ struct ScenarioAcceptanceTests {
     }
 
     @MainActor
-    @Test func nativeSaveRetryRetainsConfirmedReadinessAfterFinalizationFailure() async throws {
-        let context = try await nativeRetryContext(validationPassed: true, deviceReady: false)
+    @Test(arguments: [Bool?.none, .some(false)])
+    func nativeSaveRetryRetainsConfirmedReadinessAfterFinalizationFailure(priorAcceptance: Bool?) async throws {
+        let context = try await nativeRetryContext(validationPassed: true, deviceReady: false,
+                                                   journalAcceptance: priorAcceptance)
         defer { try? FileManager.default.removeItem(at: context.support) }
         let coordinate = try #require(context.plan.coordinates.first)
         await context.coordinator.clearDeviceQuarantine(fixtureReadinessProven: false)
         #expect(try await context.persistence.loadJournals().first?.phase == .recoveryRequired)
         await context.coordinator.clearDeviceQuarantine(fixtureReadinessProven: true)
         #expect(try await context.persistence.loadJournals().first?.phase == .stopped)
+        #expect(try await context.persistence.loadJournals().first?.evidenceAccepted == false)
         #expect(try await context.persistence.loadPendingNativeSave(
             planID: context.plan.id, coordinateID: coordinate.id)?.deviceReadinessProven == false)
 
