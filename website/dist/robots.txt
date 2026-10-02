@@ -1,0 +1,6 @@
+# Public product showcase. Search engines and AI search/retrieval crawlers
+# (including Googlebot, Bingbot, OAI-SearchBot and Claude-SearchBot) may read it.
+User-agent: *
+Allow: /
+
+Sitemap: https://intents-workbench.coryparry.chatgpt.site/sitemap.xml
