@@ -10,13 +10,17 @@ native app's icon assets, labels, design tokens, and recorded example outputs.
 python3 -m http.server 4173 --bind 127.0.0.1 --directory dist
 ```
 
-Open `http://127.0.0.1:4173/`. No build step or package installation is required.
+Open `http://127.0.0.1:4173/`. No package installation is required. After changing
+`dist/styles.css` or `dist/native.css`, run `node scripts/inline-styles.mjs` to
+refresh the exact CSS embedded in the homepage. Keeping it inline removes two
+render-blocking requests while preserving the authored cascade and first paint.
 
 ## Checks
 
 ```sh
 node --check dist/app.js
 node --check dist/demo-data.mjs
+node scripts/inline-styles.mjs --check
 node --test tests/*.test.mjs
 ```
 
@@ -65,6 +69,12 @@ and search remain available when motion is paused.
 The homepage contains its marketing content in static HTML, with canonical and
 social metadata and Schema.org JSON-LD for the website, app, creator, and source
 repository. No JavaScript is needed to read the product information.
+
+The icon has responsive PNG sizes generated from the original app asset, plus a
+96px favicon. The original 256px icon remains the social/structured-data image.
+The below-fold icon loads lazily. A module preload discovers demo data in parallel
+with the app script, and ResizeObserver supplies preview geometry without an
+eager synchronous layout read.
 
 - `dist/robots.txt` permits crawlers and advertises the sitemap.
 - `dist/sitemap.xml` lists only the canonical HTML page. Update `lastmod` when

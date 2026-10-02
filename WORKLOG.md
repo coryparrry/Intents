@@ -26,3 +26,11 @@ Goal: create and host an animated open-source showcase using faithful code-rende
 - Review complete. Publishing the verified source, then enabling public discovery and testing anonymous delivery. Actual indexing remains controlled by search providers.
 - First publication succeeded and access is public. All nine anonymous product/discovery checks passed. A separate missing-route check exposed a homepage fallback with HTTP 200; Sites also ignored `_headers` (native text MIME types are already correct).
 - Correction: use the supported static `not_found_handling: none` setting and remove the ineffective `_headers` file. Added local and production regression checks for missing routes. Homepage content and visuals remain unchanged.
+
+## PageSpeed findings
+
+- User requested attention to the report's remaining warnings. Scope: retain approved appearance and motion; address measured delivery and startup costs.
+- Expanded original desktop findings: two CSS requests (60ms estimate), deferred data-module discovery (409ms critical chain), 46.6KiB icon displayed at 74px, and layout work from initial scroll reset/GSAP setup.
+- Changes: embed exact authored CSS, preload demo data, use responsive original-icon PNGs, and remove unnecessary initial layout/scroll work. GSAP's necessary animation measurements remain in scope for measurement, not speculative removal.
+- Verify: generated CSS parity, asset sizes, desktop/mobile preview geometry and interactions, then a fresh public PageSpeed run. No native app changes.
+- Local verification complete: 15 tests pass; inline CSS parity, JavaScript syntax and diff checks pass. Browser checks confirm 390px mobile and 1280px desktop presentation, preview scaling across the 760px breakpoint, demo switching, scroll reset, motion preference and no console warnings/errors. Independent scoped review found no remaining material issues. Publishing for fresh public PageSpeed measurement.

@@ -18,11 +18,10 @@ try { userPaused = localStorage.getItem('intents-motion-paused') === 'true'; } c
 const icon = (name, className = 'icon') => `<svg class="${className}" aria-hidden="true"><use href="/assets/icons.svg#${name}"/></svg>`;
 const passed = '<span class="check-circle" aria-hidden="true">✓</span>';
 
-function fitApp() {
-  app.style.transform = window.innerWidth > 760 ? `scale(${viewport.clientWidth / 1400})` : '';
-}
-new ResizeObserver(fitApp).observe(viewport);
-fitApp();
+const mobilePreview = window.matchMedia('(max-width: 760px)');
+new ResizeObserver(([entry]) => {
+  app.style.transform = !mobilePreview.matches ? `scale(${Math.round(entry.contentRect.width) / 1400})` : '';
+}).observe(viewport);
 
 function reportMarkup() {
   return `<div class="report-screen">
@@ -77,9 +76,9 @@ function labMarkup() {
 
 function setView(next, moveFocus = false) {
   if (!['report','trace','lab'].includes(next)) return;
+  const isInitialRender = !screen.hasChildNodes();
   view = next;
   screen.innerHTML = view === 'report' ? reportMarkup() : view === 'trace' ? traceMarkup() : labMarkup();
-  screen.scrollTop = 0;
   if (view === 'report') renderResults();
   if (view === 'trace') renderSpans();
   document.querySelector('#native-view-tabs').innerHTML = view === 'lab'
@@ -94,6 +93,7 @@ function setView(next, moveFocus = false) {
   const caption = view === 'report' ? 'Explore a real run. Select a result or switch to its trace.' : view === 'trace' ? 'Select a span to inspect its recorded timing.' : 'A saved Intent Lab test. Expand the details to explore.';
   document.querySelector('.demo-caption span').textContent = caption;
   announcement.textContent = `${view === 'report' ? 'Evaluation report' : view === 'trace' ? 'Workflow trace' : 'Intent Lab'} example selected.`;
+  if (!isInitialRender) screen.scrollTop = 0;
   if (moveFocus) document.querySelector(`.demo-switcher [data-view="${view}"]`).focus({preventScroll:true});
   if (!motionDisabled() && window.gsap) {
     gsap.fromTo(screen,{opacity:.2},{opacity:1,duration:.32,clearProps:'opacity',overwrite:true});
