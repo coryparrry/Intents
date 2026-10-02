@@ -78,14 +78,12 @@ struct ScenarioContractsTests {
         if schemaVersion == ScenarioDefinition.reusableSchemaVersion {
             definition.observationPlan = [.init(id: "dates", source: .intentResult)]
         }
-        let legacyDigest = try definition.calculatedDigest()
+        let exactDigest = try definition.calculatedDigest()
         definition = try definition.frozen()
-        #expect(definition.definitionDigest == legacyDigest)
-        let normalized = ScenarioValue.date(.init(source: "authored", timeZoneIdentifier: "Europe/London",
-            resolvedInstant: Date(timeIntervalSince1970: timestamp.rounded(.down))))
-        #expect(definition.directControl.parameters[0].presence == .value(normalized))
-        #expect(definition.directControl.parameters[1].presence == .value(.array([normalized])))
-        #expect(definition.assertions[0].expectedValue == .array([normalized]))
+        #expect(definition.definitionDigest == exactDigest)
+        #expect(definition.directControl.parameters[0].presence == .value(date))
+        #expect(definition.directControl.parameters[1].presence == .value(dates))
+        #expect(definition.assertions[0].expectedValue == dates)
         let decoded = try decoder.decode(ScenarioDefinition.self, from: encoder.encode(definition))
         #expect(decoded.hasValidDigest)
         #expect(decoded.directControl.parameters == definition.directControl.parameters)
@@ -117,8 +115,72 @@ struct ScenarioContractsTests {
             .replacingOccurrences(of: originalBits, with: alteredBits)
         #expect(altered != String(data: bytes, encoding: .utf8))
         let decoded = try decoder.decode(ScenarioDefinition.self, from: Data(altered.utf8))
-        #expect(try decoded.calculatedDigest() == definition.definitionDigest)
+        #expect(try decoded.calculatedDigest() != definition.definitionDigest)
         #expect(!decoded.hasValidDigest)
+    }
+
+    @Test(arguments: [1, 2])
+    func wholeSecondLegacyDatesKeepHistoricalDigests(schemaVersion: Int) throws {
+        var definition = try schemaVersion == 1 ? scenario() : reusableBasicScenario()
+        let date = ScenarioValue.date(.init(source: "fixed", timeZoneIdentifier: "UTC",
+            resolvedInstant: Date(timeIntervalSince1970: 1_700_000_000)))
+        definition.directControl.parameters = [.init(name: "when", type: .primitive(.date),
+            isOptional: false, presence: .value(date))]
+        definition.assertions = []
+        definition = try definition.frozen()
+
+        var unsigned = definition
+        unsigned.definitionDigest = ""
+        let legacyEncoder = encoder
+        legacyEncoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let text = try #require(String(data: legacyEncoder.encode(unsigned), encoding: .utf8))
+        let legacyText = text.replacingOccurrences(of: #",\"resolvedInstantBits\":\"[0-9a-f]+\""#,
+            with: "", options: .regularExpression)
+        #expect(legacyText != text)
+        let historicalDigest = SHA256.hash(data: Data(legacyText.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        #expect(definition.definitionDigest == historicalDigest)
+
+        let savedText = try #require(String(data: encoder.encode(definition), encoding: .utf8))
+            .replacingOccurrences(of: #",\"resolvedInstantBits\":\"[0-9a-f]+\""#,
+                with: "", options: .regularExpression)
+        let restored = try decoder.decode(ScenarioDefinition.self, from: Data(savedText.utf8))
+        #expect(restored.hasValidDigest)
+        #expect(restored.directControl.parameters == definition.directControl.parameters)
+    }
+
+    @Test(arguments: [1, 2])
+    func legacyNestedExpectedDatesKeepTheirAuthoredInstant(schemaVersion: Int) throws {
+        var definition = try schemaVersion == 1 ? scenario() : reusableBasicScenario()
+        let date = ScenarioValue.date(.init(source: "fixed", timeZoneIdentifier: "UTC",
+            resolvedInstant: Date(timeIntervalSince1970: -0.375)))
+        let expected = ScenarioValue.array([.array([date])])
+        definition.directControl.parameters = []
+        definition.assertions = [.init(kind: .returnedField, observationKey: "nested",
+            expectedValue: expected, explanation: "Preserve an expected date without date parameters.")]
+        definition = try definition.frozen()
+        #expect(definition.assertions[0].expectedValue == expected)
+        let restored = try decoder.decode(ScenarioDefinition.self, from: encoder.encode(definition))
+        #expect(restored.hasValidDigest)
+        #expect(restored.assertions[0].expectedValue == expected)
+    }
+
+    @Test(arguments: [1, 2], [1_700_000_000.375, -0.375])
+    func fractionalLegacyDateMetadataIsBoundByTheDigest(schemaVersion: Int, timestamp: Double) throws {
+        var definition = try schemaVersion == 1 ? scenario() : reusableBasicScenario()
+        definition.directControl.parameters = [.init(name: "when", type: .primitive(.date),
+            isOptional: false, presence: .value(.date(.init(source: "fixed", timeZoneIdentifier: "UTC",
+                resolvedInstant: Date(timeIntervalSince1970: timestamp)))))]
+        definition = try definition.frozen()
+        let text = try #require(String(data: encoder.encode(definition), encoding: .utf8))
+        let originalBits = String(timestamp.bitPattern, radix: 16)
+        for changed in [timestamp + 0.125, timestamp.rounded(.down)] {
+            let altered = text.replacingOccurrences(of: originalBits,
+                with: String(changed.bitPattern, radix: 16))
+            #expect(altered != text)
+            let decoded = try decoder.decode(ScenarioDefinition.self, from: Data(altered.utf8))
+            #expect(!decoded.hasValidDigest)
+        }
     }
 
     @Test func xctestrunTransportKeepsTestRootAndPreservesXcodeEnvironment() throws {
