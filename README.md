@@ -1,0 +1,61 @@
+# Intents showcase
+
+A static, responsive showcase of the current native Intents interface. The report,
+workflow trace, and Intent Lab examples are rendered as HTML and CSS, using the
+native app's icon assets, labels, design tokens, and recorded example outputs.
+
+## Local preview
+
+```sh
+python3 -m http.server 4173 --bind 127.0.0.1 --directory dist
+```
+
+Open `http://127.0.0.1:4173/`. No build step or package installation is required.
+
+## Checks
+
+```sh
+node --check dist/app.js
+node --check dist/demo-data.mjs
+node --test tests/demo.test.mjs
+```
+
+`dist/` is the entire published artifact. `.openai/hosting.json` identifies the
+Sites project. It contains no runtime secrets. The bundled Sites workflow owns
+source synchronization and publication.
+
+## Content and visual provenance
+
+- Native app: current Intents development build and `WorkspaceStyle.swift`,
+  inspected on 2 October 2026. Neutral canvas `#f5f5f7`, white panels, 12px panel
+  corners, 8px control corners, 28px page padding, macOS system fonts and blue.
+- Report: saved **Conversation behaviour** evaluation from 17 September 2026,
+  17:34. All three prompts, reference answers, model outputs and judge explanations
+  were transcribed from the actual app, including imperfect model responses.
+- Trace: the same saved run, **Latest preference wins**, 13 measured spans.
+  Expanded-scale bar placement follows the native view. Some inspector end
+  times are rounded from the recorded start plus duration; displayed timings
+  are not intended as performance benchmarks.
+- Intent Lab: the real **PR54 physical read-only check** test fixture. These are
+  static examples, not live model execution, Siri calls, or device connections.
+- Reference direction: [Inspora](https://www.inspora.design/?category=Web), including
+  its glassmorphism animation example: restrained depth, controlled transitions,
+  clear typographic hierarchy. No third-party artwork was copied.
+- Desktop previews retain the native interface geometry. On small screens the
+  sidebar is hidden and tables scroll horizontally to preserve readable controls.
+  Browser rendering approximates native materials; no screenshot is passed off
+  as an interactive code render.
+
+## Dependencies and licences
+
+- GSAP **3.15.0**, from the official npm package. Local `gsap.min.js` and
+  `ScrollTrigger.min.js`; package licence: https://gsap.com/standard-license.
+  Copyright notices are preserved in both files. No runtime CDN dependency.
+- Lucide Static **1.16.0**, the same version used by the native app. Symbols are
+  extracted from its original SVGs. ISC licence in `dist/vendor/LUCIDE-LICENSE.txt`.
+- Intents icon and app example: the Intents repository, MIT licence.
+- System fonts only. No analytics, external form, remote model call, or cookie.
+
+Motion follows the operating system's reduced-motion preference. The page also
+has a pause control with an optional local preference. App selection, filtering,
+and search remain available when motion is paused.

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fafafa">
+  <meta name="description" content="Put Apple's Foundation Models to the test. Intents is an open-source Mac workbench for repeatable evaluations, real app actions, and the evidence behind every response.">
+  <meta property="og:title" content="Intents — Put intelligence to the test.">
+  <meta property="og:description" content="The open-source Mac workbench for Apple Foundation Models. Build an evaluation. Inspect the evidence. See what changed.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://intents-workbench.coryparry.chatgpt.site/">
+  <link rel="canonical" href="https://intents-workbench.coryparry.chatgpt.site/">
+  <link rel="icon" href="/assets/intents-icon.png" type="image/png">
+  <title>Intents — Put intelligence to the test.</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/native.css">
+  <script defer src="/vendor/gsap.min.js"></script>
+  <script defer src="/vendor/ScrollTrigger.min.js"></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="Intents home"><img src="/assets/intents-icon.png" width="36" height="36" alt=""><span>Intents</span></a>
+    <nav aria-label="Main navigation">
+      <a href="#workbench">The workbench</a><a href="#intent-lab">Intent Lab</a><a href="#open-source">Open source</a>
+    </nav>
+    <a class="nav-download" href="https://github.com/coryparrry/Intents/releases/latest">Download<span class="desktop-only"> for Mac</span></a>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <a class="open-label" href="#open-source"><svg class="icon"><use href="/assets/icons.svg#code-xml"/></svg>Open source. Native to Mac.</a>
+        <h1 id="hero-title"><span>Put intelligence</span><span>to the <em>test.</em></span></h1>
+        <p class="hero-description">A little more certainty.<br class="mobile-only"> A lot less guesswork.<br>Meet your workbench for Apple’s Foundation Models.</p>
+        <div class="hero-actions"><a class="button button-primary" href="https://github.com/coryparrry/Intents/releases/latest">Download for macOS</a><a class="button button-light" href="https://github.com/coryparrry/Intents">Explore the source<svg class="icon"><use href="/assets/icons.svg#code-xml"/></svg></a></div>
+        <p class="requirements">Free & open source <span>·</span> macOS 27+ <span>·</span> Apple silicon</p>
+      </div>
+      <div class="showcase-wrap" id="workbench">
+        <div class="showcase-halo" aria-hidden="true"></div>
+        <div class="demo-switcher" role="group" aria-label="Explore the app"><button class="selected" data-view="report" aria-pressed="true">Results you can read</button><button data-view="trace" aria-pressed="false">Evidence you can follow</button><button data-view="lab" aria-pressed="false">Actions you can test</button></div>
+        <div class="app-frame reveal-window">
+          <div class="app-viewport" id="app-viewport">
+            <div class="native-app" id="native-app" aria-label="Interactive Intents app example">
+              <aside class="native-sidebar">
+                <div class="sidebar-toolbar"><div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div><svg class="icon"><use href="/assets/icons.svg#panel-left"/></svg></div>
+                <div class="native-search presentation-only"><svg class="icon"><use href="/assets/icons.svg#search"/></svg>Filter runs</div>
+                <div class="native-project"><span class="native-icon-box"><svg class="icon"><use href="/assets/icons.svg#layers"/></svg></span><span><small>Project</small><strong>Testing</strong></span><svg class="icon project-chevron"><use href="/assets/icons.svg#chevrons-up-down"/></svg></div>
+                <div class="native-nav"><div class="sidebar-label"><svg class="icon"><use href="/assets/icons.svg#layout-dashboard"/></svg>Overview</div><button data-view="lab" class="sidebar-label"><svg class="icon"><use href="/assets/icons.svg#workflow"/></svg>Intent Lab <small>Beta</small></button></div>
+                <small class="sidebar-section-title">Suites</small>
+                <div class="sidebar-label"><svg class="icon"><use href="/assets/icons.svg#list-checks"/></svg>Conversation behaviour</div>
+                <small class="sidebar-section-title">Runs · Conversation behaviour</small>
+                <button class="sidebar-run active" data-view="report"><span class="check-circle">✓</span><span>17 Sep at 5:34 pm<small>100% passed · v1</small></span></button>
+                <div class="sidebar-run"><span class="check-circle">✓</span><span>16 Sep at 1:35 pm<small>100% passed · v1</small></span></div>
+                <div class="sidebar-bottom"><svg class="icon"><use href="/assets/icons.svg#plus"/></svg>New Suite</div>
+              </aside>
+              <div class="native-body">
+                <div class="native-toolbar"><div class="native-segments" id="native-view-tabs" role="group" aria-label="Run view"><button data-view="report" class="active" aria-pressed="true">Report</button><button data-view="trace" aria-pressed="false">Workflow trace</button></div><span class="toolbar-actions" aria-hidden="true"><svg class="icon"><use href="/assets/icons.svg#rotate-ccw"/></svg><svg class="icon"><use href="/assets/icons.svg#share"/></svg></span></div>
+                <div class="native-screen" id="native-screen"></div>
+              </div>
+              <div class="native-status"><span><i></i>2 saved runs <b>·</b> 3 cases</span><span><svg class="icon"><use href="/assets/icons.svg#cpu"/></svg>On device <b>·</b><svg class="icon"><use href="/assets/icons.svg#lock-keyhole"/></svg>Local workspace</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="demo-caption"><span>Explore a real run. Select a result or switch to its trace.</span><span>Interactive app preview</span></div>
+      </div>
+    </section>
+
+    <section class="intro-section section-shell" aria-labelledby="intro-title">
+      <p class="eyebrow reveal">BUILT FOR THE QUESTIONS THAT MATTER</p>
+      <h2 id="intro-title" class="reveal">Does it follow the prompt?<br>Does it remember the change?<br><span>Now you can know.</span></h2>
+      <div class="intro-bottom reveal"><p>One good response is a start. Repeatable results are better.<br>Turn your prompts into test cases, run them again, and see<br class="desktop-only"> exactly where your model holds up.</p><div class="native-tag"><svg class="icon"><use href="/assets/icons.svg#cpu"/></svg>Made for Apple Foundation Models</div></div>
+    </section>
+
+    <section class="trace-section" id="evidence" aria-labelledby="trace-title">
+      <div class="section-shell trace-layout">
+        <div class="trace-copy reveal"><p class="eyebrow">01 / FOLLOW THE EVIDENCE</p><h2 id="trace-title">Every response<br>has a story.</h2><p>Read the answer. See why it passed. Then follow the whole journey, from the first input to the final score.</p><p class="muted-detail">A real workflow. Measured timings. Nothing hidden behind a single green tick.</p><button class="text-button" id="explore-trace">Explore this trace<svg class="icon"><use href="/assets/icons.svg#workflow"/></svg></button></div>
+        <div class="trace-card reveal" aria-label="Recorded workflow timing">
+          <div class="trace-card-heading"><span><svg class="icon"><use href="/assets/icons.svg#workflow"/></svg>Workflow trace</span><span class="green-pill">Completed</span></div>
+          <div class="trace-card-title">Latest preference wins<small>Conversation behaviour · 13 spans</small></div>
+          <div class="mini-timeline"><div class="timeline-ruler"><span>0s</span><span>9.2s</span><span>18.4s</span></div><div class="mini-span"><span>Prepare input</span><div><i class="cyan" style="--start:0%;--length:36.4%"></i></div><b>6.70 s</b></div><div class="mini-span"><span>Generate response</span><div><i class="blue" style="--start:36.4%;--length:14.6%"></i></div><b>2.68 s</b></div><div class="mini-span"><span>Score response</span><div><i class="purple" style="--start:51%;--length:49%"></i></div><b>9.00 s</b></div><div class="timeline-playhead" aria-hidden="true"></div></div>
+          <div class="trace-card-footer"><span><b>18.39 s</b>workflow</span><span><b>442 ms</b>first content</span><span><b>1,138</b>subject tokens</span></div>
+          <p class="recording-note">Recorded in Intents · 17 September 2026</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="lab-section section-shell" id="intent-lab" aria-labelledby="lab-title">
+      <div class="section-heading reveal"><div><p class="eyebrow">02 / GO BEYOND THE PROMPT</p><h2 id="lab-title">Real actions.<br>Real expectations.</h2></div><p>What should happen when someone asks<br class="desktop-only"> your app to do something?<br>Describe it. Check it. Keep the evidence.</p></div>
+      <div class="lab-showcase reveal">
+        <div class="lab-narrative"><span class="native-icon-box"><svg class="icon"><use href="/assets/icons.svg#workflow"/></svg></span><h3>Meet Intent Lab.<span>Beta</span></h3><p>Test an App Intent directly, include a Siri request on your iPhone, or link a saved app evaluation.</p><div class="lab-step"><b>01</b><span>Describe the request</span></div><div class="lab-step"><b>02</b><span>Define the expected result</span></div><div class="lab-step"><b>03</b><span>Choose what to check</span></div><button class="text-button" id="explore-lab">Take a closer look<svg class="icon"><use href="/assets/icons.svg#maximize-2"/></svg></button></div>
+        <div class="lab-window" aria-label="Intent Lab native form example"><div class="mini-window-toolbar"><div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div><div class="native-segments"><span>Connect app</span><span class="active">Create test</span><span>Results</span></div></div><div class="lab-window-content"><h4>What should happen?</h4><p>Describe success, then add result checks to verify it.</p><dl><div><dt>Request</dt><dd>Open the packing note in Intent Lab Fixture</dd></div><div><dt>Expected result</dt><dd>Open packing-001 without changing the note store.</dd></div><div><dt>App action</dt><dd>OpenNoteIntent</dd></div></dl><div class="lab-check-row"><div><strong>App action</strong><span>Run the action directly, without Siri.</span></div><span class="native-select">Required<svg class="icon"><use href="/assets/icons.svg#chevrons-up-down"/></svg></span></div><div class="lab-check-row"><div><strong>Siri</strong><span>Send the request text to Siri on your iPhone.</span></div><span class="native-select">Not included<svg class="icon"><use href="/assets/icons.svg#chevrons-up-down"/></svg></span></div><p class="lab-footnote">Checks the returned value. Changes inside the app need additional verification.</p></div></div>
+      </div>
+    </section>
+
+    <section class="local-section section-shell" aria-labelledby="local-title">
+      <div class="local-heading reveal"><p class="eyebrow">03 / PART OF YOUR WORKFLOW</p><h2 id="local-title">Feels at home.<br><span>Works with your tools.</span></h2></div>
+      <div class="capability-grid">
+        <article class="capability reveal"><svg class="feature-icon"><use href="/assets/icons.svg#cpu"/></svg><h3>On your Mac.</h3><p>Run Apple’s on-device model with native SwiftUI controls. Your suites and evidence stay in a local workspace.</p><div class="capability-foot">Native SwiftUI <span>·</span> Apple silicon</div></article>
+        <article class="capability reveal"><svg class="feature-icon"><use href="/assets/icons.svg#terminal"/></svg><h3>With your agent.</h3><p>The built-in MCP server lets your coding agent manage suites and run evaluations. Review the same results in the app.</p><a href="https://github.com/coryparrry/Intents#connect-an-agent">Connect an agent</a></article>
+        <article class="capability reveal"><svg class="feature-icon"><use href="/assets/icons.svg#monitor-smartphone"/></svg><h3>Inside your app.</h3><p>Evaluate real Swift feature closures on a paired iPhone, iPad, or Mac. Test the behaviour your users actually experience.</p><a href="https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md">Read the integration guide</a></article>
+      </div>
+      <p class="provider-note reveal">Need another model? Connect compatible Core AI models or your own HTTP provider. Remote providers and judges use their configured services.</p>
+    </section>
+
+    <section class="open-source-section" id="open-source" aria-labelledby="source-title">
+      <div class="section-shell open-source-inner">
+        <div class="source-mark reveal" aria-hidden="true"><svg><use href="/assets/icons.svg#code-xml"/></svg></div>
+        <p class="eyebrow reveal">OPEN BY DESIGN</p>
+        <h2 id="source-title" class="reveal">Good tools get better<br>when they’re <em>shared.</em></h2>
+        <p class="reveal">Intents is free and open source under the MIT licence.<br>Read it. Run it. Make it your own.</p>
+        <div class="source-actions reveal"><a class="button button-dark" href="https://github.com/coryparrry/Intents">Explore on GitHub<svg class="icon"><use href="/assets/icons.svg#code-xml"/></svg></a><a class="source-docs" href="https://github.com/coryparrry/Intents#build-from-source">Build from source</a></div>
+        <div class="source-meta reveal"><span>Swift</span><span>MIT licensed</span><span>Made by Cory Parry</span></div>
+      </div>
+    </section>
+
+    <section class="closing section-shell reveal"><img src="/assets/intents-icon.png" width="88" height="88" alt="Intents app icon"><div><h2>A clearer picture starts here.</h2><p>Give your next idea a proper test.</p></div><a class="button button-primary" href="https://github.com/coryparrry/Intents/releases/latest">Download for macOS</a></section>
+  </main>
+  <footer class="site-footer section-shell"><div><a class="footer-brand" href="#">Intents</a><span>Made for curious minds.</span></div><div><a href="https://github.com/coryparrry/Intents">GitHub</a><a href="https://github.com/coryparrry/Intents/blob/main/LICENSE">MIT licence</a><a href="https://github.com/coryparrry/Intents/issues">Feedback</a><button id="motion-toggle" aria-pressed="false">Pause motion</button></div><p>Requires macOS 27 or later and an Apple Intelligence–capable Mac with its on-device model downloaded.<br>App examples use a recorded evaluation and a test fixture. Example scores are not model benchmarks.</p></footer>
+  <div class="sr-only" id="demo-announcement" aria-live="polite"></div>
+  <noscript><p class="no-script">The interactive app preview needs JavaScript. You can still explore the features and download Intents using the links above.</p></noscript>
+</body>
+</html>
