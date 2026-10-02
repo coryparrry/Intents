@@ -107,7 +107,7 @@ private struct ModelTraceControls: View {
                 .accessibilityIdentifier("Prewarm prompt prefix")
             Stepper("Lead time: \(configuration.warmupSeconds.formatted()) seconds", value: $configuration.warmupSeconds, in: 0...10, step: 1)
                 .accessibilityIdentifier("Prewarm lead time")
-            Text("Used when Prewarm is enabled in Features. A prefix should match the beginning of the upcoming prompt. Lead time gives the framework a chance to prepare; it does not guarantee a faster response.")
+            Text("Enable prewarming in Performance to use these settings. Match the prefix to the start of your prompt. Lead time allows extra preparation but does not guarantee a faster response.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

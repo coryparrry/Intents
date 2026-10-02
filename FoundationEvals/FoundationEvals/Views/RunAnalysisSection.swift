@@ -120,7 +120,7 @@ private struct RunAnalysisMetrics: View {
             AnalysisMetric(
                 title: "Not scored",
                 value: (analysis.unscoredSampleCount + analysis.errorSampleCount + analysis.missingSampleCount).formatted(),
-                detail: "\(analysis.unscoredSampleCount) unscored · \(analysis.errorSampleCount) errors · \(analysis.missingSampleCount) missing"
+                detail: "\(analysis.unscoredSampleCount) unscored · \(analysis.errorSampleCount) \(analysis.errorSampleCount == 1 ? "error" : "errors") · \(analysis.missingSampleCount) missing"
             )
             AnalysisMetric(
                 title: "Subject latency",
@@ -239,9 +239,9 @@ private struct CasePatternRow: View {
     }
 
     private var summary: String {
-        var parts = ["\(item.passedSampleCount)/\(item.scoredSampleCount) scored passed"]
+        var parts = ["\(item.passedSampleCount)/\(item.scoredSampleCount) scored responses passed"]
         if item.repetitionVariation == .mixedPassAndFail { parts.append("mixed repetitions") }
-        if item.errorSampleCount > 0 { parts.append("\(item.errorSampleCount) errors") }
+        if item.errorSampleCount > 0 { parts.append("\(item.errorSampleCount) \(item.errorSampleCount == 1 ? "error" : "errors")") }
         if item.unscoredSampleCount > 0 { parts.append("\(item.unscoredSampleCount) unscored") }
         if item.missingSampleCount > 0 { parts.append("\(item.missingSampleCount) missing") }
         return parts.joined(separator: " · ")
@@ -274,7 +274,7 @@ private struct BaselineComparisonContent: View {
             } else {
                 if comparison.compatibility == .partialCoverage {
                     ComparisonMessages(
-                        title: "Only unchanged cases can be compared",
+                        title: "Only unchanged, fully scored cases can be compared",
                         messages: [coverageMessage],
                         symbol: "circle.lefthalf.filled",
                         color: .orange

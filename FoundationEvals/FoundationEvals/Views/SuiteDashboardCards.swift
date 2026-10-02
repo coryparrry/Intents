@@ -26,8 +26,9 @@ struct WorkbenchStatusBar: View {
     var body: some View {
         HStack(spacing: 8) {
             if store.selection == .overview {
+                let suiteCount = store.suiteRecords.filter { !$0.isArchived }.count
                 Image(systemName: "square.stack").accessibilityHidden(true)
-                Text("\(store.suiteRecords.filter { !$0.isArchived }.count) suites")
+                Text("\(suiteCount) \(suiteCount == 1 ? "suite" : "suites")")
                 Text("·").foregroundStyle(.tertiary)
                 Text("Project overview")
             } else {
@@ -41,7 +42,7 @@ struct WorkbenchStatusBar: View {
                         ? "Evaluation in progress"
                         : store.hasUnsavedCompletedRun
                             ? "Run waiting to be saved"
-                            : "\(store.runs.count) saved runs"
+                            : "\(store.runs.count) saved \(store.runs.count == 1 ? "run" : "runs")"
                 )
                 Text("·").foregroundStyle(.tertiary)
                 Text("\(caseCount) case\(caseCount == 1 ? "" : "s")")

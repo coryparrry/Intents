@@ -12,7 +12,7 @@ struct MCPSettingsView: View {
                         .foregroundStyle(statusColor)
                 }
 
-                Text("Intents uses one fixed local address and starts the connector automatically after Codex setup.")
+                Text("The connector lets Codex use your local evaluation tools and results.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
@@ -34,7 +34,7 @@ struct MCPSettingsView: View {
                         .foregroundStyle(controller.installationState == .needsAttention ? .orange : .secondary)
                 }
 
-                Text("Choose Connect once. Intents updates Codex, starts the local connector, and starts it automatically whenever the app is open.")
+                Text("This saves the connection in Codex and starts the connector. After setup, it starts automatically whenever Intents is open.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
@@ -49,10 +49,12 @@ struct MCPSettingsView: View {
                     Button("Copy Endpoint") {
                         controller.copyEndpoint()
                     }
+                    .help("Copy the local address that Codex uses to connect to Intents.")
 
                     Button("Copy Manual Configuration") {
                         Task { await controller.copyManualConfiguration() }
                     }
+                    .help("Copy the connection settings to add to Codex yourself.")
 
                     Button("Remove from Codex", role: .destructive) {
                         isConfirmingRemoval = true

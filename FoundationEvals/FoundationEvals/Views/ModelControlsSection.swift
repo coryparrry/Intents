@@ -97,6 +97,7 @@ struct ModelControlsSection: View {
                     )
                     .labelsHidden()
                     .frame(width: 190)
+                    .help("Sampling controls how the model chooses the next piece of text. Greedy uses the most likely choice. Random modes allow more variation.")
                 }
 
                 LabeledContent("Response limit") {
@@ -112,17 +113,20 @@ struct ModelControlsSection: View {
                     )
                     .labelsHidden()
                     .frame(width: 150)
+                    .help("The maximum response length in tokens. Tokens are pieces of text, often shorter than a word.")
                 }
             }
 
             if configuration.samplingMode == .topK {
                 Stepper("Top K: \(configuration.topK)", value: $store.draftSuite.modelConfiguration.topK, in: 1...1_000)
+                    .help("Choose randomly from this many of the most likely next tokens.")
             } else if configuration.samplingMode == .probability {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Probability threshold")
                     Spacer()
                     Slider(value: $store.draftSuite.modelConfiguration.probabilityThreshold, in: 0.05...1, step: 0.05)
                         .accessibilityLabel("Probability threshold")
+                        .help("Choose from likely tokens whose combined probability reaches this value. Lower values narrow the choices.")
                         .frame(width: 180)
                     Text(configuration.probabilityThreshold.formatted(.number.precision(.fractionLength(2))))
                         .monospacedDigit()
@@ -132,6 +136,7 @@ struct ModelControlsSection: View {
 
             if configuration.samplingMode == .topK || configuration.samplingMode == .probability {
                 Toggle("Use a fixed seed", isOn: $store.draftSuite.modelConfiguration.seedEnabled)
+                    .help("Reuse the starting value for random choices to make repeated runs more consistent.")
                 if configuration.seedEnabled {
                     TextField("Seed", value: $store.draftSuite.modelConfiguration.seed, format: .number)
                         .textFieldStyle(.roundedBorder)
@@ -140,6 +145,7 @@ struct ModelControlsSection: View {
             }
 
             Toggle("Set temperature", isOn: $store.draftSuite.modelConfiguration.temperatureEnabled)
+                .help("Lower values favor more likely choices. Higher values allow more varied responses.")
             if configuration.temperatureEnabled {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Temperature")

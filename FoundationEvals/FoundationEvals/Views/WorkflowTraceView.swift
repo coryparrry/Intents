@@ -47,10 +47,14 @@ struct WorkflowTraceView: View {
                                 : sample.status == .error ? WorkspaceStyle.warning : WorkspaceStyle.failure)
                         TraceSummaryMetric(title: "Workflow", value: WorkflowTracePresentation.duration(
                             sample.workflowTrace?.spans.first(where: { $0.kind == .sample })?.durationMilliseconds))
+                            .help("The total time for this attempt, including preparation, the response, and scoring.")
                         TraceSummaryMetric(title: "Subject request", value: WorkflowTracePresentation.duration(sample.durationMilliseconds))
+                            .help("The time for the response model to answer. This excludes AI judge scoring.")
                         TraceSummaryMetric(title: "Subject tokens", value: sample.usage.totalTokens == 0 && sample.status == .error
                             ? "Unavailable" : sample.usage.totalTokens.formatted())
+                            .help("Tokens are pieces of text counted by the response model. This total includes input and output.")
                         TraceSummaryMetric(title: "First content", value: WorkflowTracePresentation.duration(sample.featureTrace?.firstContentMilliseconds))
+                            .help("The time until the first response content appears. A dash means that this timing was not recorded.")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -107,6 +111,7 @@ struct WorkflowSampleInspector: View {
             HStack(spacing: 8) {
                 Label("\(trace.nodes.count) spans", systemImage: "point.3.connected.trianglepath.dotted")
                     .fontWeight(.medium)
+                    .help("A span records one step in the workflow. Select a row to inspect that step.")
                 Text("·").foregroundStyle(.tertiary)
                 Text(trace.hasMeasuredOffsets ? "App-observed timing" : "Saved durations")
                     .foregroundStyle(.secondary)

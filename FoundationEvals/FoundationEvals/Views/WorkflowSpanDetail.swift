@@ -82,7 +82,7 @@ struct WorkflowSpanDetail: View {
                         .formatted(.percent.precision(.fractionLength(1))))
                 }
                 Text(node.startMilliseconds == nil ? "Timeline placement is unavailable for this span."
-                    : "Elapsed time measured by the app on a monotonic clock. Nested durations overlap and must not be added together.")
+                    : "The app measures elapsed time. Nested steps overlap, so the total is not the sum of their durations.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let usage = evidenceUsage {
@@ -91,10 +91,10 @@ struct WorkflowSpanDetail: View {
                     TraceDetailMetric(label: "Cached input", value: usage.cachedInputTokens.formatted())
                     TraceDetailMetric(label: "Output", value: usage.outputTokens.formatted())
                     TraceDetailMetric(label: "Reasoning", value: usage.reasoningTokens.formatted())
-                    Text("Framework-reported usage. Cached input is part of input; reasoning is part of output.")
+                    Text("The model reports these token counts. Input includes cached tokens. Output includes reasoning tokens.")
                         .font(.caption).foregroundStyle(.secondary)
                     if node.kind == .sample {
-                        Text("Includes recorded setup turns in the subject session. AI judge usage is separate.")
+                        Text("These counts include recorded setup messages for the response model. AI judge usage is separate.")
                             .font(.caption).foregroundStyle(.secondary)
                         if let judgeUsage = result.judgeUsage {
                             TraceDetailMetric(label: "AI judge tokens", value: judgeUsage.totalTokens.formatted())
@@ -107,7 +107,7 @@ struct WorkflowSpanDetail: View {
             if let first = firstContentMilliseconds {
                 detailSection("STREAMING") {
                     TraceDetailMetric(label: "First visible content", value: WorkflowTracePresentation.duration(first))
-                    Text("App-observed time to visible content during generation; not a per-token timestamp.")
+                    Text("The app measures the time until the first content appears. Individual tokens do not have timestamps.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

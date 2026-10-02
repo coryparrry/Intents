@@ -63,7 +63,9 @@ struct JudgeConnectionsSettingsView: View {
                     }
                     Section("Capabilities") {
                         Toggle("Strict structured outputs", isOn: $draft.capabilities.structuredOutputs)
+                            .help("The judge must return scores in the required JSON format. Enable this option only for services that support strict structured outputs.")
                         Toggle("Accepts image evidence", isOn: $draft.capabilities.multimodal)
+                            .help("Enable this option only for judges that can read images. Image evidence also needs approval in the suite’s Scoring setup.")
                         if draft.kind == .openRouter {
                             TextField("Provider order", text: Binding(
                                 get: { draft.providerOrder.joined(separator: ", ") },
@@ -77,12 +79,13 @@ struct JudgeConnectionsSettingsView: View {
                         Picker("Generation policy", selection: $draft.generationPolicy) {
                             ForEach(EvaluationJudgeGenerationPolicy.allCases) { Text($0.title).tag($0) }
                         }
+                        .help("Portable JSON returns one complete result. Streaming JSON reads the result as it arrives. DeepSeek thinking uses streaming with larger limits.")
                         Stepper("Configured timeout: \(draft.requestTimeoutSeconds.formatted(.number.precision(.fractionLength(0)))) seconds",
                             value: $draft.requestTimeoutSeconds, in: 1...900, step: 1)
                         LabeledContent("Effective output limit", value: "\(effectiveRequest.maximumResponseTokens.formatted()) tokens")
                         LabeledContent("Effective timeout", value: "\(effectiveRequest.timeoutSeconds.formatted(.number.precision(.fractionLength(0)))) seconds")
                     } header: { Text("Request policy") } footer: {
-                        Text("Select the policy supported by your endpoint. Changing its model or URL does not change this policy. DeepSeek thinking uses streaming, a 65,536-token limit and at least 300 seconds; these effective settings are saved in every attempt trace.")
+                        Text("Choose the policy your service supports. Changing the model or URL keeps this policy. The limits above apply to each attempt and are saved in its trace.")
                     }
                     if let issue = draft.validationIssue { Text(issue).font(.callout).foregroundStyle(.orange) }
                     if let message {
