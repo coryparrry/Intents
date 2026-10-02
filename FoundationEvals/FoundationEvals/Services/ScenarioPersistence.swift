@@ -11,6 +11,8 @@ struct ScenarioPendingNativeSave: Codable, Sendable {
     var run: ScenarioRun
     var artifactRootPath: String
     var ledger: ScenarioImportLedger
+    var evidenceValidationPassed: Bool? = nil
+    var deviceReadinessProven: Bool? = nil
 }
 
 enum ScenarioPersistenceError: LocalizedError, Sendable {

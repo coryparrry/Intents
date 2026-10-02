@@ -11,6 +11,35 @@ enum ScenarioRecoveryFailure: String, Codable, Sendable {
 }
 
 enum ScenarioExecutionRecoveryPolicy {
+    static func hasBoundJournal(run: ScenarioRun, journals: [ScenarioExecutionJournal]) -> Bool {
+        journals.contains { journal in
+            journal.id == run.id
+                && journal.invocation.nonce == run.invocation.nonce
+                && journal.invocation.testIdentity == run.invocation.testIdentity
+                && journal.invocation.harnessVersion == run.invocation.harnessVersion
+                && journal.invocation.destinationIdentifier == run.invocation.destinationIdentifier
+                && journal.invocation.scenarioDigest == run.invocation.scenarioDigest
+                && journal.invocation.resultBundleIdentity == run.invocation.resultBundleIdentity
+                && journal.invocation.appProduct == run.invocation.appProduct
+                && journal.invocation.testProduct == run.invocation.testProduct
+                && journal.scenarioID == run.scenarioID
+                && journal.scenarioVersion == run.scenarioVersion
+        }
+    }
+
+    static func hasTerminalBusinessFailure(_ run: ScenarioRun) -> Bool {
+        run.executionStatus == .completed && run.outcome == .failed
+            && run.laneResults.contains { $0.outcome == .failed }
+            && run.laneResults.allSatisfy {
+                $0.executionStatus == .completed && ($0.outcome == .passed ||
+                    ($0.outcome == .failed && !$0.observations.isEmpty && $0.assertionResults.contains { !$0.passed }))
+            }
+    }
+
+    static func shouldPreserveTerminalBusinessFailure(_ run: ScenarioRun, attachment: ScenarioEvidenceAttachment) -> Bool {
+        !attachment.isCheckpoint && hasTerminalBusinessFailure(run)
+    }
+
     static func acceptsFinalEvidence(
         attachments: [ScenarioEvidenceAttachment],
         runs: [ScenarioRun],
@@ -22,7 +51,7 @@ enum ScenarioExecutionRecoveryPolicy {
                     && !run.laneResults.isEmpty
                     && run.laneResults.allSatisfy { $0.executionStatus == .completed }
             }
-            && xctestExitCode == 0
+            && (xctestExitCode == 0 || runs.allSatisfy(hasTerminalBusinessFailure))
     }
 
     static func requiresQuarantine(

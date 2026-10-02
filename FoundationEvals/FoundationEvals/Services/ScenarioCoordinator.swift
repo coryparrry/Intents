@@ -793,7 +793,7 @@ final class ScenarioCoordinator {
                     statedChangedDimensions: changedDimensions
                 )
                 run.xctestExitCode = result.processExitCode
-                if result.processExitCode != 0 {
+                if result.processExitCode != 0, !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: attachment) {
                     run.executionStatus = .invalidEvidence
                     run.outcome = .needsReview
                 }
@@ -993,7 +993,8 @@ final class ScenarioCoordinator {
             progress.records[index] = try await runFeatureChild(
                 coordinate: progress.records[index].coordinate,
                 plan: plan, definition: definition, ownerID: ownerID,
-                runID: runID, resumeRun: saved
+                runID: runID, resumeRun: saved,
+                capturedMeasurement: progress.records[index].featureMeasurementImplementation
             )
             try await checkpoint(plan: plan, records: progress.records)
             let record = try ScenarioExecutionRecord.make(plan: plan, records: progress.records)
@@ -1073,9 +1074,10 @@ final class ScenarioCoordinator {
             try await persistence.saveLedger(merged)
             ledger = merged
             if let journal = try await persistence.loadJournals().first(where: { $0.id == saved.id }) {
-                try await executor.finishEvidenceValidation(journal: journal, accepted: false)
+                try await executor.finishEvidenceValidation(journal: journal, accepted: pending.evidenceValidationPassed == true
+                    && pending.deviceReadinessProven == true
+                    && ScenarioExecutionRecoveryPolicy.hasBoundJournal(run: saved, journals: [journal]))
             }
-            try await persistence.clearPendingNativeSave(planID: planID, coordinateID: coordinateID)
             progress.records[index] = .init(
                 coordinate: progress.records[index].coordinate,
                 state: saved.laneResults[0].executionStatus == .completed
@@ -1089,6 +1091,7 @@ final class ScenarioCoordinator {
             try await checkpoint(plan: plan, records: progress.records)
             let record = try ScenarioExecutionRecord.make(plan: plan, records: progress.records)
             try await persistence.saveExecutionRecord(record)
+            try await persistence.clearPendingNativeSave(planID: planID, coordinateID: coordinateID)
             executionRecords.insert(record, at: 0)
             selectedExecutionID = record.id
             runs.insert(saved, at: 0)
@@ -1849,13 +1852,17 @@ final class ScenarioCoordinator {
                 records[index].state = .recoveryRequired
                 records[index].detail = "Execution started; evidence has not been committed."
                 let featureRunID = coordinate.lane == .appFeature ? UUID() : nil
-                if let featureRunID { records[index].evidenceRunID = featureRunID }
+                if let featureRunID {
+                    records[index].evidenceRunID = featureRunID
+                    records[index].featureMeasurementImplementation = Self.featureMeasurementImplementation()
+                }
                 try await checkpoint(plan: plan, records: records)
                 do {
                     if coordinate.lane == .appFeature {
                         records[index] = try await runFeatureChild(
                             coordinate: coordinate, plan: plan, definition: definition,
-                            ownerID: ownerID, runID: featureRunID!
+                            ownerID: ownerID, runID: featureRunID!,
+                            capturedMeasurement: records[index].featureMeasurementImplementation
                         )
                     } else {
                         records[index] = try await runNativeChild(
@@ -1864,6 +1871,9 @@ final class ScenarioCoordinator {
                         )
                     }
                     try await checkpoint(plan: plan, records: records)
+                    if coordinate.lane != .appFeature {
+                        try await persistence.clearPendingNativeSave(planID: plan.id, coordinateID: coordinate.id)
+                    }
                     if records[index].state == .failedToExecute { break }
                 } catch {
                     records[index].state = cancellationRequested ? .cancelled : .recoveryRequired
@@ -1880,6 +1890,7 @@ final class ScenarioCoordinator {
                     records[index].detail = "Cancelled before dispatch."
                 }
             }
+            guard !records.contains(where: { $0.state == .recoveryRequired }) else { return nil }
             let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
             finalEvidenceCommitStarted = true
             try await persistence.saveExecutionRecord(record)
@@ -1902,7 +1913,8 @@ final class ScenarioCoordinator {
     private func runFeatureChild(
         coordinate: ScenarioPlannedCoordinate, plan: ScenarioExecutionPlan,
         definition: ScenarioDefinition, ownerID: UUID, runID: UUID,
-        resumeRun: EvaluationRun? = nil
+        resumeRun: EvaluationRun? = nil,
+        capturedMeasurement: ScenarioMeasurementImplementation? = nil
     ) async throws -> ScenarioExecutionCoordinateRecord {
         guard let projectID = definition.projectID,
               let binding = definition.featureBinding else {
@@ -2008,7 +2020,7 @@ final class ScenarioCoordinator {
                 ? "The app did not report an observed fixture content digest."
                 : (fixtureReceipt == .wrongSource ? "The app used different source content than the planned fixture."
                 : (sample.errorMessage ?? run.terminationReason))),
-            artifacts: [], observationSources: ["feature.response": .applicationInstrumentation]
+            artifacts: [], observationSources: Dictionary(uniqueKeysWithValues: observations.keys.map { ($0, .applicationInstrumentation) })
         )
         let child = try ScenarioFeatureChildEvidence(
             runID: run.id, sampleID: sample.id, startedAt: run.startedAt,
@@ -2025,14 +2037,14 @@ final class ScenarioCoordinator {
             runnerBuildID: plan.runnerBuildID ?? "",
             fixtureContractDigest: plan.fixtureContractDigest,
             subjectInputDigest: expectedSubjectDigest, digest: "",
-            measurementImplementation: resumeRun == nil
-                ? Self.featureMeasurementImplementation() : nil
+            measurementImplementation: capturedMeasurement
         ).sealed()
         return .init(coordinate: coordinate,
                      state: status == .completed ? .completed : .failedToExecute,
                      evidenceRunID: run.id, evidenceLaneResultID: lane.id,
                      detail: lane.diagnostic, laneResult: lane,
-                     evidenceDigest: child.digest, featureChild: child)
+                     evidenceDigest: child.digest, featureChild: child,
+                     featureMeasurementImplementation: capturedMeasurement)
     }
 
     private static func featureMeasurementImplementation(
@@ -2110,7 +2122,7 @@ final class ScenarioCoordinator {
             destinationIdentifier: plan.profile.destinationIdentifier,
             lane: coordinate.lane
         )
-        if result.processExitCode != 0 {
+        if result.processExitCode != 0, !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: attachment) {
             run.executionStatus = .invalidEvidence
             run.outcome = .needsReview
             run.laneResults[0].executionStatus = .invalidEvidence
@@ -2142,7 +2154,9 @@ final class ScenarioCoordinator {
         do {
             try await persistence.savePendingNativeSave(.init(
                 planID: plan.id, coordinateID: coordinate.id, run: run,
-                artifactRootPath: result.attachmentDirectory.path, ledger: stagedLedger
+                artifactRootPath: result.attachmentDirectory.path, ledger: stagedLedger,
+                evidenceValidationPassed: !cancellationRequested && ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(attachments: [attachment], runs: [run], xctestExitCode: result.processExitCode),
+                deviceReadinessProven: !cancellationRequested && Self.canReleaseDevice(processExitCode: result.processExitCode, attachments: [attachment], importedRuns: [run])
             ))
         } catch {
             try? await executor.finishEvidenceValidation(journal: result.journal, accepted: false)
@@ -2164,7 +2178,6 @@ final class ScenarioCoordinator {
             attachments: [attachment], importedRuns: [saved]
         )
         try await executor.finishEvidenceValidation(journal: result.journal, accepted: accepted)
-        try await persistence.clearPendingNativeSave(planID: plan.id, coordinateID: coordinate.id)
         recoveryJournals = try await executor.currentRecoveryJournals()
         journals = try await persistence.loadJournals()
         runs.insert(saved, at: 0)
@@ -2211,7 +2224,7 @@ final class ScenarioCoordinator {
         attachments: [ScenarioEvidenceAttachment],
         importedRuns: [ScenarioRun]
     ) -> Bool {
-        processExitCode == 0 &&
+        ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(attachments: attachments, runs: importedRuns, xctestExitCode: processExitCode) &&
         !attachments.isEmpty && attachments.allSatisfy { !$0.isCheckpoint } &&
         !importedRuns.isEmpty && importedRuns.allSatisfy { run in
             run.executionStatus == .completed &&

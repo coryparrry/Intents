@@ -1834,6 +1834,15 @@ struct ScenarioContractsTests {
         #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
             attachments: [final], runs: [run], xctestExitCode: 1
         ))
+        run.laneResults[0].assertionResults = [.init(assertionID: UUID(), passed: false, message: "Observed mismatch")]
+        #expect(ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+            attachments: [final], runs: [run], xctestExitCode: 1
+        ))
+        #expect(!ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: checkpoint))
+        run.laneResults[0].observations = [:]
+        #expect(!ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
+            attachments: [final], runs: [run], xctestExitCode: 1
+        ))
     }
 
     @Test func initialJournalSaveFailureReleasesOnlyItsReservation() async throws {

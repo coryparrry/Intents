@@ -94,11 +94,13 @@ struct ScenarioExecutionPlanTests {
         let pendingRunID = UUID()
         rows[feature].state = .recoveryRequired
         rows[feature].evidenceRunID = pendingRunID
+        rows[feature].featureMeasurementImplementation = .init(observerID: "captured", observerDigest: "old-observer", evaluatorID: "captured", evaluatorDigest: "old-evaluator")
         try await persistence.saveProgress(.init(planID: plan.id, records: rows, updatedAt: .now))
         let recovered = try await persistence.recoverIncompleteExecutionRecords()
         #expect(recovered.isEmpty)
         let saved = try await persistence.loadProgress(planID: plan.id)
         #expect(saved?.records[feature].evidenceRunID == pendingRunID)
+        #expect(saved?.records[feature].featureMeasurementImplementation?.observerDigest == "old-observer")
         let terminal = try await persistence.loadExecutionRecords()
         #expect(terminal.isEmpty)
     }
@@ -156,13 +158,15 @@ struct ScenarioExecutionPlanTests {
         )
         let stage = ScenarioPendingNativeSave(
             planID: plan.id, coordinateID: rows[0].id, run: run,
-            artifactRootPath: root.path, ledger: .init()
+            artifactRootPath: root.path, ledger: .init(), evidenceValidationPassed: true, deviceReadinessProven: true
         )
         try await persistence.savePendingNativeSave(stage)
         let recovered = try await persistence.recoverIncompleteExecutionRecords()
         #expect(recovered.isEmpty)
         let pending = try await persistence.loadPendingNativeSave(planID: plan.id, coordinateID: rows[0].id)
         #expect(pending?.run.id == invocation.id)
+        #expect(pending?.evidenceValidationPassed == true)
+        #expect(pending?.deviceReadinessProven == true)
         let terminal = try await persistence.loadExecutionRecords()
         #expect(terminal.isEmpty)
     }
