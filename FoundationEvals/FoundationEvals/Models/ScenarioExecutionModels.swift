@@ -178,6 +178,8 @@ struct ScenarioExecutionCoordinateRecord: Codable, Equatable, Identifiable, Send
     var laneResult: ScenarioLaneResult? = nil
     var evidenceDigest: String? = nil
     var featureChild: ScenarioFeatureChildEvidence? = nil
+    /// Captured before dispatch; save-only recovery must not substitute current code.
+    var featureMeasurementImplementation: ScenarioMeasurementImplementation? = nil
 
     static func unstarted(_ coordinate: ScenarioPlannedCoordinate) -> Self {
         .init(coordinate: coordinate, state: .notRun,

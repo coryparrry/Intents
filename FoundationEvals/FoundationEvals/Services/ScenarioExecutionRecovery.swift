@@ -11,6 +11,10 @@ enum ScenarioRecoveryFailure: String, Codable, Sendable {
 }
 
 enum ScenarioExecutionRecoveryPolicy {
+    static func canReevaluateFeature(captured: ScenarioMeasurementImplementation?, current: ScenarioMeasurementImplementation?) -> Bool {
+        captured == nil || captured == current
+    }
+
     static func hasBoundJournal(run: ScenarioRun, journals: [ScenarioExecutionJournal]) -> Bool {
         journals.contains { journal in
             journal.id == run.id
@@ -44,15 +48,30 @@ enum ScenarioExecutionRecoveryPolicy {
 
     static func shouldPreserveTerminalBusinessFailure(
         _ run: ScenarioRun,
-        attachment: ScenarioEvidenceAttachment
+        attachment: ScenarioEvidenceAttachment, definition: ScenarioDefinition? = nil
     ) -> Bool {
-        !attachment.isCheckpoint && hasTerminalBusinessFailure(run)
+        !attachment.isCheckpoint && (hasTerminalBusinessFailure(run) || hasObservedAssertionFailure(run, definition: definition))
+    }
+
+    static func hasObservedAssertionFailure(_ run: ScenarioRun, definition: ScenarioDefinition?) -> Bool {
+        guard let definition, run.executionStatus == .completed, run.outcome == .failed,
+              run.laneResults.contains(where: { $0.outcome == .failed }) else { return false }
+        return run.laneResults.allSatisfy { lane in
+            guard lane.executionStatus == .completed else { return false }
+            if lane.outcome == .passed { return true }
+            guard lane.outcome == .failed else { return false }
+            return definition.assertions.contains { assertion in
+                guard assertion.required, assertion.applies(to: lane.lane),
+                      let expected = assertion.expectedValue,
+                      let observed = lane.observations[assertion.observationKey], observed != expected else { return false }
+                return lane.assertionResults.contains { $0.assertionID == assertion.id && !$0.passed }
+            }
+        }
     }
 
     static func acceptsFinalEvidence(
-        attachments: [ScenarioEvidenceAttachment],
-        runs: [ScenarioRun],
-        xctestExitCode: Int32
+        attachments: [ScenarioEvidenceAttachment], runs: [ScenarioRun], xctestExitCode: Int32,
+        definition: ScenarioDefinition? = nil
     ) -> Bool {
         let hasFinalEnvelope = !attachments.isEmpty && attachments.allSatisfy { !$0.isCheckpoint }
         let hasCompletedRuns = !runs.isEmpty && runs.allSatisfy { run in

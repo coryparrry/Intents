@@ -32,6 +32,9 @@ enum SiriProbe {
         declaration: IntentLabIntegrationDeclaration?,
         permitsChooserAssistance: Bool = false
     ) throws -> [String: IntentLabValue] {
+        #if os(macOS)
+        throw SiriProbeError.unsupportedPlatform
+        #endif
         guard !request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw SiriProbeError.missingRequest
         }
@@ -322,6 +325,7 @@ private final class SiriChoiceHandler {
 
 enum SiriProbeError: LocalizedError {
     case priorAttemptUnresolved(String)
+    case unsupportedPlatform
     case permissionRequired
     case missingRequest
     case fixtureUnavailable
@@ -330,6 +334,7 @@ enum SiriProbeError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .priorAttemptUnresolved(let reason): "This Siri attempt was not started because an earlier attempt did not finish: \(reason)"
+        case .unsupportedPlatform: "Siri UI automation requires an iOS destination."
         case .permissionRequired: "Siri permission or confirmation blocked this attempt. Approve the prompt on the device, then rerun. Remaining attempts were not started."
         case .missingRequest: "The approved Siri request is empty."
         case .fixtureUnavailable: "The synthetic fixture did not expose its baseline observation."

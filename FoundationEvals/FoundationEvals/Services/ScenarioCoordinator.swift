@@ -884,6 +884,12 @@ final class ScenarioCoordinator {
             testTarget: testTarget,
             testProductID: testProductID
         )
+        if configuration.scheme != scheme || configuration.testTarget != testTarget
+            || configuration.selectedApplicationProductID != applicationProductID
+            || configuration.selectedTestProductID != testProductID
+            || draft.target.projectPath != projectPath || draft.target.bundleIdentifier != appBundleID {
+            projectTrusted = false
+        }
         selectedIntegration = identity
         declarationCatalog = nil
         configuration.selectedApplicationProductID = applicationProductID
@@ -1095,10 +1101,7 @@ final class ScenarioCoordinator {
                     statedChangedDimensions: changedDimensions
                 )
                 run.xctestExitCode = result.processExitCode
-                if result.processExitCode != 0,
-                   !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(
-                    run, attachment: attachment
-                   ) {
+                if result.processExitCode != 0, !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: attachment, definition: definition) {
                     run.executionStatus = .invalidEvidence
                     run.outcome = .needsReview
                 }
@@ -1121,8 +1124,7 @@ final class ScenarioCoordinator {
             let accepted = !cancellationRequested
                 && ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
                 attachments: result.evidenceAttachments,
-                runs: imported,
-                xctestExitCode: result.processExitCode
+                runs: imported, xctestExitCode: result.processExitCode, definition: definition
             )
             let deviceReady = !cancellationRequested && Self.canReleaseDevice(
                 processExitCode: result.processExitCode,
@@ -1367,7 +1369,6 @@ final class ScenarioCoordinator {
         guard hasLoaded, !isRunning,
               let plan = executionPlans.first(where: { $0.id == planID }),
               plan.profile.featureBackend == .connectedRunner,
-              !executionRecords.contains(where: { $0.planID == planID }),
               let definition = definitions.first(where: {
                   $0.id == plan.definitionID && $0.version == plan.definitionVersion
                     && $0.definitionDigest == plan.definitionDigest
@@ -1387,7 +1388,7 @@ final class ScenarioCoordinator {
         do {
             guard var progress = try await persistence.loadProgress(planID: planID),
                   let index = progress.records.firstIndex(where: {
-                      $0.coordinate.lane == .appFeature && $0.state == .recoveryRequired
+                      $0.coordinate.lane == .appFeature && [.recoveryRequired, .completed, .failedToExecute].contains($0.state)
                         && $0.evidenceRunID != nil
                   }),
                   let runID = progress.records[index].evidenceRunID else {
@@ -1400,14 +1401,17 @@ final class ScenarioCoordinator {
             guard let saved else {
                 throw ScenarioPersistenceError.invalidRun("The completed feature run has no recoverable snapshot or saved history.")
             }
+            if progress.records[index].state == .recoveryRequired {
             progress.records[index] = try await runFeatureChild(
                 coordinate: progress.records[index].coordinate,
                 plan: plan, definition: definition, ownerID: ownerID,
-                runID: runID, resumeRun: saved
+                runID: runID, resumeRun: saved,
+                capturedMeasurement: progress.records[index].featureMeasurementImplementation
             )
+            }
             try await checkpoint(plan: plan, records: progress.records)
-            let record = try ScenarioExecutionRecord.make(plan: plan, records: progress.records)
-            try await persistence.saveExecutionRecord(record)
+            let record = try await persistence.finalizeExecutionRecord(plan: plan, records: progress.records)
+            executionRecords.removeAll { $0.id == record.id }
             executionRecords.insert(record, at: 0)
             selectedExecutionID = record.id
             notice = "The completed feature result was saved without rerunning the app. Unstarted routes remain visible."
@@ -1424,8 +1428,7 @@ final class ScenarioCoordinator {
     @discardableResult
     func retryPendingNativeSave(planID: UUID, coordinateID: UUID) async -> ScenarioExecutionRecord? {
         guard hasLoaded, !isRunning,
-              let plan = executionPlans.first(where: { $0.id == planID }),
-              !executionRecords.contains(where: { $0.planID == planID }) else {
+              let plan = executionPlans.first(where: { $0.id == planID }) else {
             notice = "Select an unfinished native execution before retrying its evidence save."
             return nil
         }
@@ -1442,7 +1445,7 @@ final class ScenarioCoordinator {
                 planID: planID, coordinateID: coordinateID
             ), var progress = try await persistence.loadProgress(planID: planID),
                   let index = progress.records.firstIndex(where: { $0.id == coordinateID }),
-                  progress.records[index].state == .recoveryRequired,
+                  [.recoveryRequired, .completed, .failedToExecute].contains(progress.records[index].state),
                   pending.run.scenarioID == plan.definitionID,
                   pending.run.scenarioVersion == plan.definitionVersion,
                   pending.run.scenarioDigest == plan.definitionDigest,
@@ -1498,9 +1501,9 @@ final class ScenarioCoordinator {
                 evidenceDigest: try Self.evidenceDigest(acceptedRun)
             )
             try await checkpoint(plan: plan, records: progress.records)
-            let record = try ScenarioExecutionRecord.make(plan: plan, records: progress.records)
-            try await persistence.saveExecutionRecord(record)
+            let record = try await persistence.finalizeExecutionRecord(plan: plan, records: progress.records)
             try await persistence.clearPendingNativeSave(planID: planID, coordinateID: coordinateID)
+            executionRecords.removeAll { $0.id == record.id }
             executionRecords.insert(record, at: 0)
             selectedExecutionID = record.id
             runs.insert(acceptedRun, at: 0)
@@ -2453,14 +2456,19 @@ final class ScenarioCoordinator {
                 records[index].detail = "Execution started; evidence has not been committed."
                 let featureRunID = coordinate.lane == .appFeature
                     && plan.profile.featureBackend == .connectedRunner ? UUID() : nil
-                if let featureRunID { records[index].evidenceRunID = featureRunID }
+                                if let featureRunID {
+                    records[index].evidenceRunID = featureRunID
+                    records[index].featureMeasurementImplementation = Self.featureMeasurementImplementation()
+                }
+
                 try await checkpoint(plan: plan, records: records)
                 do {
                     if coordinate.lane == .appFeature
                         && plan.profile.featureBackend == .connectedRunner {
                         records[index] = try await runFeatureChild(
                             coordinate: coordinate, plan: plan, definition: definition,
-                            ownerID: ownerID, runID: featureRunID!
+                            ownerID: ownerID, runID: featureRunID!,
+                            capturedMeasurement: records[index].featureMeasurementImplementation
                         )
                     } else {
                         records[index] = try await runNativeChild(
@@ -2493,6 +2501,7 @@ final class ScenarioCoordinator {
                     records[index].detail = "Cancelled before dispatch."
                 }
             }
+            guard !records.contains(where: { $0.state == .recoveryRequired }) else { return nil }
             let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
             executionStage = "Finalizing results"
             finalEvidenceCommitStarted = true
@@ -2520,7 +2529,8 @@ final class ScenarioCoordinator {
     private func runFeatureChild(
         coordinate: ScenarioPlannedCoordinate, plan: ScenarioExecutionPlan,
         definition: ScenarioDefinition, ownerID: UUID, runID: UUID,
-        resumeRun: EvaluationRun? = nil
+        resumeRun: EvaluationRun? = nil,
+        capturedMeasurement: ScenarioMeasurementImplementation? = nil
     ) async throws -> ScenarioExecutionCoordinateRecord {
         if resumeRun == nil,
            let blocker = Self.connectedFeatureActionBlocker(definition) {
@@ -2543,6 +2553,9 @@ final class ScenarioCoordinator {
                              prompt: definition.goal.requestText, expected: "")]
         let run: EvaluationRun
         if let resumeRun {
+            guard ScenarioExecutionRecoveryPolicy.canReevaluateFeature(captured: capturedMeasurement, current: Self.featureMeasurementImplementation()) else {
+                throw ScenarioPersistenceError.invalidRun("The Feature measurement code changed after dispatch. Preserve the saved raw run and recover with the captured runner build.")
+            }
             run = resumeRun
         } else {
             guard let selected = try selectedSubjectRunner(
@@ -2630,7 +2643,7 @@ final class ScenarioCoordinator {
                 ? "The app did not report an observed fixture content digest."
                 : (fixtureReceipt == .wrongSource ? "The app used different source content than the planned fixture."
                 : (sample.errorMessage ?? run.terminationReason))),
-            artifacts: [], observationSources: ["feature.response": .applicationInstrumentation]
+            artifacts: [], observationSources: Dictionary(uniqueKeysWithValues: observations.keys.map { ($0, .applicationInstrumentation) })
         )
         let child = try ScenarioFeatureChildEvidence(
             runID: run.id, sampleID: sample.id, startedAt: run.startedAt,
@@ -2647,14 +2660,14 @@ final class ScenarioCoordinator {
             runnerBuildID: plan.runnerBuildID ?? "",
             fixtureContractDigest: plan.fixtureContractDigest,
             subjectInputDigest: expectedSubjectDigest, digest: "",
-            measurementImplementation: resumeRun == nil
-                ? Self.featureMeasurementImplementation() : nil
+            measurementImplementation: capturedMeasurement
         ).sealed()
         return .init(coordinate: coordinate,
                      state: status == .completed ? .completed : .failedToExecute,
                      evidenceRunID: run.id, evidenceLaneResultID: lane.id,
                      detail: lane.diagnostic, laneResult: lane,
-                     evidenceDigest: child.digest, featureChild: child)
+                     evidenceDigest: child.digest, featureChild: child,
+                     featureMeasurementImplementation: capturedMeasurement)
     }
 
     private static func featureMeasurementImplementation(
@@ -2739,10 +2752,7 @@ final class ScenarioCoordinator {
             destinationIdentifier: plan.profile.destinationIdentifier,
             lane: coordinate.lane
         )
-        if result.processExitCode != 0
-            && !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(
-                run, attachment: attachment
-            ) {
+        if result.processExitCode != 0, !ScenarioExecutionRecoveryPolicy.shouldPreserveTerminalBusinessFailure(run, attachment: attachment, definition: definition) {
             run.executionStatus = .invalidEvidence
             run.outcome = .needsReview
             run.laneResults[0].executionStatus = .invalidEvidence
