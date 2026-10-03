@@ -50,6 +50,7 @@ let portableTestSources = [
     "IntentEvidenceBundleTests.swift",
     "IntentLabProjectInstallerTests.swift",
     "ExecutorSimplificationTests.swift",
+    "XcodeBundleLayoutTests.swift",
 ]
 
 let package = Package(
@@ -167,6 +168,7 @@ let package = Package(
                 "EvaluationJudgeTests.swift",
                 "EvaluationRunAnalysisTests.swift",
                 "EvaluationStoreRunLifecycleTests.swift",
+                "EvaluationStorePersistenceRecoveryTests.swift",
                 "FeaturePersistenceTests.swift",
                 "FoundationEvalsTests.swift",
                 "ImageToolTests.swift",

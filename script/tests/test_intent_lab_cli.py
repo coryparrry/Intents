@@ -2,47 +2,126 @@ import json
 import os
 import shutil
 import subprocess
-import sys
+import tempfile
 import threading
 import unittest
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "script" / "foundation-evals"
+TOKEN = "synthetic-cli-regression-credential"
 
 
 @unittest.skipUnless(shutil.which("swift"), "Swift is required to run the CLI integration check")
 class IntentLabCLITests(unittest.TestCase):
-    def test_custom_endpoint_requires_explicit_credential(self):
-        environment = os.environ.copy()
-        environment.pop("FOUNDATION_EVALS_MCP_CREDENTIAL", None)
+    @classmethod
+    def setUpClass(cls):
+        cls.build_directory = tempfile.TemporaryDirectory(prefix="intents-cli-tests-")
+        source = Path(cls.build_directory.name) / "main.swift"
+        source.write_text(CLI.read_text())
+        cls.executable = Path(cls.build_directory.name) / "foundation-evals"
         completed = subprocess.run(
-            [
-                "swift",
-                str(CLI),
-                "scenario-report",
-                "--run-id",
-                "b895560e-634b-4323-a9e6-6c9eb12c5de6",
-                "--endpoint",
-                "http://127.0.0.1:19001/mcp",
-            ],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            env=environment,
-            timeout=120,
-            check=False,
+            ["swiftc", str(source), "-o", str(cls.executable)],
+            capture_output=True, text=True, timeout=120, check=False,
         )
-        self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("Set FOUNDATION_EVALS_MCP_CREDENTIAL for a custom endpoint.", completed.stderr)
+        if completed.returncode:
+            cls.build_directory.cleanup()
+            raise RuntimeError(completed.stdout + completed.stderr)
+
+        # Compile a test-only copy with a deterministic mutation immediately
+        # after descriptor validation. Production has no hook or environment flag.
+        marker = "        var data = Data()\n"
+        probe = """        if let replacement = ProcessInfo.processInfo.environment["INTENTS_TEST_REPLACEMENT"] {
+            try FileManager.default.moveItem(at: file, to: file.appendingPathExtension("opened"))
+            try FileManager.default.createSymbolicLink(at: file, withDestinationURL: URL(fileURLWithPath: replacement))
+        }
+        if ProcessInfo.processInfo.environment["INTENTS_TEST_GROW_FILE"] == "1" {
+            try Data(repeating: 65, count: 5000).write(to: file)
+        }
+"""
+        production = CLI.read_text()
+        if production.count(marker) != 1:
+            raise RuntimeError("Credential descriptor probe requires a unique post-validation read marker")
+        probe_source = production.replace(marker, probe + marker, 1)
+        probe_source = probe_source.replace("func run() throws -> Int32 {", """func run() throws -> Int32 {
+    if CommandLine.arguments.count == 4 && CommandLine.arguments[1] == "--probe-credential" {
+        let token = try MCPCredential.load(for: URL(string: CommandLine.arguments[2])!, file: URL(fileURLWithPath: CommandLine.arguments[3]))
+        return token == "synthetic-cli-regression-credential" ? 0 : 31
+    }
+""", 1)
+        source.write_text(probe_source)
+        cls.race_executable = Path(cls.build_directory.name) / "credential-race-probe"
+        completed = subprocess.run(["swiftc", str(source), "-o", str(cls.race_executable)], capture_output=True, text=True, timeout=120, check=False)
+        if completed.returncode:
+            raise RuntimeError(completed.stdout + completed.stderr)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.build_directory.cleanup()
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix="intents-cli-credential-")
+        self.addCleanup(self.directory.cleanup)
+        self.credential = Path(self.directory.name) / "credential"
+        self.credential.write_text(TOKEN + "\n")
+        self.credential.chmod(0o600)
+
+    def run_cli(self, *arguments, credential=None):
+        completed = subprocess.run(
+            [str(self.executable), *arguments, "--credential-file", str(credential or self.credential)],
+            cwd=ROOT, capture_output=True, text=True, timeout=30, check=False,
+        )
+        self.assertNotIn(TOKEN, completed.stdout + completed.stderr)
+        return completed
+
+    @contextmanager
+    def connector(self, responder, *, redirect=None, address="127.0.0.1"):
+        requests = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                requests.append((request, self.headers.get("Authorization")))
+                if self.headers.get("Authorization") != f"Bearer {TOKEN}":
+                    self.send_response(401)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                if redirect:
+                    self.send_response(302)
+                    self.send_header("Location", redirect)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                result = {} if request["method"] == "initialize" else {
+                    "structuredContent": responder(request["params"]), "isError": False,
+                }
+                body = json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, _format, *_args):
+                pass
+
+        server = ThreadingHTTPServer((address, 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://{address}:{server.server_port}/mcp", requests
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
     def test_failed_report_with_zero_xctest_capture_exits_nonzero(self):
         run_id = "b895560e-634b-4323-a9e6-6c9eb12c5de6"
-        credential = "A" * 43
         tool_calls = []
-        authorization_headers = []
         response_content = {
             "outcome": "read",
             "run": {
@@ -59,55 +138,15 @@ class IntentLabCLITests(unittest.TestCase):
             },
         }
 
-        class Handler(BaseHTTPRequestHandler):
-            def do_POST(self):
-                authorization_headers.append(self.headers.get("Authorization"))
-                request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                if request["method"] == "initialize":
-                    result = {}
-                else:
-                    params = request["params"]
-                    tool_calls.append(params)
-                    result = {
-                        "structuredContent": response_content,
-                        "isError": False,
-                    }
-                body = json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+        def respond(params):
+            tool_calls.append(params)
+            return response_content
 
-            def log_message(self, _format, *_args):
-                pass
-
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-        server_thread.start()
-        try:
-            endpoint = f"http://127.0.0.1:{server.server_port}/mcp"
-            completed = subprocess.run(
-                [
-                    "swift",
-                    str(CLI),
-                    "scenario-report",
-                    "--run-id",
-                    run_id,
-                    "--endpoint",
-                    endpoint,
-                ],
-                cwd=ROOT,
-                capture_output=True,
-                text=True,
-                env={**os.environ, "FOUNDATION_EVALS_MCP_CREDENTIAL": credential},
-                timeout=120,
-                check=False,
+        with self.connector(respond) as (endpoint, requests):
+            completed = self.run_cli(
+                "scenario-report", "--run-id", run_id, "--endpoint", endpoint,
             )
-        finally:
-            server.shutdown()
-            server.server_close()
-            server_thread.join(timeout=5)
+        self.assertTrue(all(header == f"Bearer {TOKEN}" for _, header in requests))
 
         self.assertNotEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("Required intent evidence is missing.", completed.stdout)
@@ -115,8 +154,144 @@ class IntentLabCLITests(unittest.TestCase):
         self.assertEqual(len(tool_calls), 1)
         self.assertEqual(tool_calls[0]["name"], "eval_get_scenario_report")
         self.assertEqual(tool_calls[0]["arguments"]["runID"].casefold(), run_id.casefold())
-        self.assertEqual(authorization_headers, [f"Bearer {credential}"] * 2)
 
+    def test_scenario_report_authenticates_initialization_and_tool_request(self):
+        with self.connector(lambda _params: {
+            "releaseCheck": {"outcome": "passed", "summary": "Verified", "failures": []}
+        }) as (endpoint, requests):
+            completed = self.run_cli("scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertEqual([item[0]["method"] for item in requests], ["initialize", "tools/call"])
+        self.assertTrue(all(header == f"Bearer {TOKEN}" for _, header in requests))
+
+    def test_check_authenticates_all_requests_and_reports_success(self):
+        def respond(params):
+            return {
+                "eval_list_projects": {"projects": [{"id": "project", "name": "Project", "suites": [{"id": "suite", "name": "Suite"}]}]},
+                "eval_check": {"revision": "fixture"},
+                "eval_get_run": {"run": {"phase": "completed", "completedSamples": 1, "plannedSampleCount": 1}},
+                "eval_release_report": {"markdown": "Release passed", "report": {"outcome": 0}},
+            }[params["name"]]
+        with self.connector(respond) as (endpoint, requests):
+            completed = self.run_cli("check", "--project", "Project", "--suite", "Suite", "--endpoint", endpoint)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("Release passed", completed.stdout)
+        self.assertEqual(len(requests), 5)
+        self.assertTrue(all(header == f"Bearer {TOKEN}" for _, header in requests))
+
+    def test_wrong_credential_is_rejected_without_disclosing_it(self):
+        self.credential.write_text("wrong-synthetic-credential")
+        with self.connector(lambda _params: {}) as (endpoint, requests):
+            completed = self.run_cli("scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("HTTP 401", completed.stderr)
+        self.assertNotIn("wrong-synthetic-credential", completed.stdout + completed.stderr)
+        self.assertEqual(len(requests), 1)
+
+    def test_invalid_or_missing_credential_fails_before_network_access(self):
+        for contents in ["", "fixture\r\nInjected: header", "x" * 4097]:
+            with self.subTest(contents_length=len(contents)):
+                self.credential.write_text(contents)
+                with self.connector(lambda _params: {}) as (endpoint, requests):
+                    completed = self.run_cli("scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertEqual(requests, [])
+        with self.connector(lambda _params: {}) as (endpoint, requests):
+            completed = self.run_cli("scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint, credential=Path(self.directory.name) / "missing")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(requests, [])
+
+    def test_group_readable_or_symlinked_credential_is_rejected(self):
+        link = Path(self.directory.name) / "link"
+        link.symlink_to(self.credential)
+        self.credential.chmod(0o644)
+        for path in [self.credential, link]:
+            if path == link:
+                self.credential.chmod(0o600)
+            with self.subTest(path=path.name), self.connector(lambda _params: {}) as (endpoint, requests):
+                completed = self.run_cli("scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint, credential=path)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertEqual(requests, [])
+
+    def test_redirect_does_not_forward_a_credential(self):
+        with self.connector(lambda _params: {}) as (target, forwarded):
+            with self.connector(lambda _params: {}, redirect=target) as (endpoint, requests):
+                completed = self.run_cli("scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("HTTP 302", completed.stderr)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(forwarded, [])
+
+    def test_path_replacement_after_validation_reads_the_opened_file(self):
+        replacement = Path(self.directory.name) / "replacement"
+        replacement.write_text("synthetic-replacement-credential")
+        replacement.chmod(0o644)
+        with self.connector(lambda _params: {"releaseCheck": {"outcome": "passed", "summary": "Verified", "failures": []}}) as (endpoint, requests):
+            completed = subprocess.run([str(self.race_executable), "scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint, "--credential-file", str(self.credential)], capture_output=True, text=True, env={**os.environ, "INTENTS_TEST_REPLACEMENT": str(replacement)}, timeout=30, check=False)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(requests)
+            self.assertTrue(all(header == f"Bearer {TOKEN}" for _, header in requests))
+            self.assertTrue(self.credential.is_symlink())
+
+    def test_file_growth_after_validation_is_bounded_and_rejected(self):
+        with self.connector(lambda _params: {}) as (endpoint, requests):
+            completed = subprocess.run([str(self.race_executable), "scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint, "--credential-file", str(self.credential)], capture_output=True, text=True, env={**os.environ, "INTENTS_TEST_GROW_FILE": "1"}, timeout=30, check=False)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertFalse(requests)
+
+    def test_other_literal_loopback_addresses_accept_explicit_credentials(self):
+        for endpoint in ["http://127.0.0.2/mcp", "http://127.255.255.254/mcp", "http://[::1]/mcp"]:
+            with self.subTest(endpoint=endpoint):
+                completed = subprocess.run([str(self.race_executable), "--probe-credential", endpoint, str(self.credential)], capture_output=True, text=True, timeout=30, check=False)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+        for endpoint in ["http://126.0.0.1/mcp", "http://128.0.0.1/mcp", "http://127.0.0.1.example.invalid/mcp"]:
+            with self.subTest(endpoint=endpoint):
+                completed = subprocess.run([str(self.race_executable), "--probe-credential", endpoint, str(self.credential)], capture_output=True, text=True, timeout=30, check=False)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("loopback HTTP", completed.stderr)
+
+    def test_fifo_directory_and_oversized_credentials_are_rejected_without_hanging(self):
+        fifo = Path(self.directory.name) / "fifo"
+        os.mkfifo(fifo, 0o600)
+        large = Path(self.directory.name) / "large"
+        large.write_text("a" * 4097)
+        large.chmod(0o600)
+        for path in [fifo, Path(self.directory.name), large]:
+            with self.subTest(path=path.name), self.connector(lambda _params: {}) as (endpoint, requests):
+                completed = self.run_cli("scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint, credential=path)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertFalse(requests)
+
+    def test_remote_http_endpoint_is_rejected_before_loading_a_credential(self):
+        completed = self.run_cli("scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", "http://example.invalid/mcp")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("loopback HTTP", completed.stderr)
+
+
+    def test_custom_endpoint_requires_explicit_credential(self):
+        environment = os.environ.copy()
+        environment.pop("FOUNDATION_EVALS_MCP_CREDENTIAL", None)
+        with self.connector(lambda _params: {}) as (endpoint, requests):
+            completed = subprocess.run([str(self.executable), "scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint], cwd=ROOT, capture_output=True, text=True, env=environment, timeout=30, check=False)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("A custom endpoint requires", completed.stderr)
+        self.assertEqual(requests, [])
+
+    def test_environment_credential_remains_supported(self):
+        with self.connector(lambda _params: {"releaseCheck": {"outcome": "passed", "summary": "Verified", "failures": []}}) as (endpoint, requests):
+            completed = subprocess.run([str(self.executable), "scenario-report", "--run-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint], cwd=ROOT, capture_output=True, text=True, env={**os.environ, "FOUNDATION_EVALS_MCP_CREDENTIAL": TOKEN}, timeout=30, check=False)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertTrue(all(header == f"Bearer {TOKEN}" for _, header in requests))
+        self.assertNotIn(TOKEN, completed.stdout + completed.stderr)
+
+    def test_saved_execution_reports_keep_qualification_exit_codes(self):
+        for expected, incomplete, failures, outcome in [(0, [], [], "passed"), (10, [], ["failed"], "failed"), (20, ["missing"], [], "failed")]:
+            with self.subTest(expected=expected):
+                with self.connector(lambda _params: {"qualification": {"incompleteEvidence": incomplete, "requiredFailures": failures, "report": {"outcome": outcome}}}) as (endpoint, requests):
+                    completed = self.run_cli("scenario-execution-report", "--execution-id", "b895560e-634b-4323-a9e6-6c9eb12c5de6", "--endpoint", endpoint)
+                self.assertEqual(completed.returncode, expected, completed.stdout + completed.stderr)
+                self.assertEqual(requests[1][0]["params"]["name"], "eval_get_scenario_execution_report")
+                self.assertTrue(all(header == f"Bearer {TOKEN}" for _, header in requests))
 
 if __name__ == "__main__":
     unittest.main()

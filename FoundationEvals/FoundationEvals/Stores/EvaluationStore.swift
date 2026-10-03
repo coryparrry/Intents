@@ -195,6 +195,9 @@ final class EvaluationStore {
 
         let loadedSuite = EvaluationWorkspaceStatePersistence.loadSuite(from: activeDirectory)
         var initialSuite = loadedSuite.suite ?? EvaluationSuite()
+        if loadedSuite.suite == nil {
+            initialSuite.id = initialSuiteID
+        }
         let migratedRubric = initialSuite.criteria == EvaluationSuite.legacyDefaultCriteria
         if migratedRubric {
             initialSuite.criteria = EvaluationSuite.defaultRubric
@@ -225,16 +228,19 @@ final class EvaluationStore {
         let loadedJudgeConnections = EvaluationWorkspaceStatePersistence.loadJudgeConnections(
             from: base.appending(path: "judge-connections.json")
         )
+        let loadedLocalState = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(
+            from: activeDirectory.appending(path: "state.json")
+        )
         let initialNotice = [startupNotice, legacySuite.notice, loadedSuite.notice,
                              loadedDraft.notice, loadedRuns.notice, recovery.notice,
                              snapshotRecoveryNotice,
-                             loadedJudgeConnections.notice]
+                             loadedJudgeConnections.notice, loadedLocalState.notice]
             .compactMap { $0 }
             .joined(separator: "\n")
         workspace = bootstrap.catalog
         selectedProjectID = initialProjectID
         selectedSuiteID = initialSuiteID
-        suiteLocalState = EvaluationSuiteLocalState()
+        suiteLocalState = loadedLocalState.state
         judgeConnections = loadedJudgeConnections.connections
         suite = initialSuite
         draftSuite = loadedDraft.suite ?? initialSuite
@@ -784,6 +790,10 @@ final class EvaluationStore {
     }
 
     private func loadSelectedSuite() throws {
+        // Repository parsing and refresh may fail. Keep the selected suite's
+        // durable decisions in memory before any of those operations can throw.
+        let loadedLocalState = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(from: suiteStateURL)
+        suiteLocalState = loadedLocalState.state
         let loaded = EvaluationWorkspaceStatePersistence.loadSuite(from: suiteDirectory)
         guard var canonical = loaded.suite, canonical.id == selectedSuiteID else {
             throw EvaluationWorkspaceError.missingSuite
@@ -814,8 +824,6 @@ final class EvaluationStore {
         suite = canonical
         draftSuite = draft.suite ?? canonical
         runs = loadedRuns.runs
-        let loadedLocalState = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(from: suiteStateURL)
-        suiteLocalState = loadedLocalState.state
         activeRun = recovery.pending?.summary
         activeRunSuite = recovery.pending?.suite
         activeRunEvidence = recovery.pending?.subjectEvidence
@@ -1927,11 +1935,24 @@ final class EvaluationStore {
             throw EvaluationWorkspaceError.repositoryConflict
         }
         let updated = definition.applyingLocalState(from: localSuite)
-        try CanonicalJSON.data(for: updated).write(to: suiteDirectory.appending(path: "suite.json"), options: .atomic)
-        try updateSelectedSuiteRecord { record in
-            record.lastRepositoryRevision = repoRevision
-            record.name = updated.name
-            record.updatedAt = Date()
+        let suiteURL = suiteDirectory.appending(path: "suite.json")
+        let previousSuiteFile = try snapshotFile(at: suiteURL)
+        do {
+            try CanonicalJSON.data(for: updated).write(to: suiteURL, options: .atomic)
+            try updateSelectedSuiteRecord { record in
+                record.lastRepositoryRevision = repoRevision
+                record.name = updated.name
+                record.updatedAt = Date()
+            }
+        } catch {
+            do {
+                try restoreFile(previousSuiteFile)
+            } catch let rollbackError {
+                throw EvaluationStoreError.persistence(
+                    "\(error.localizedDescription) Rollback also failed for suite metadata: \(rollbackError.localizedDescription)."
+                )
+            }
+            throw error
         }
         return updated
     }

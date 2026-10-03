@@ -40,4 +40,6 @@ For Debug verification with a separate store, launch the app with `--evaluation-
 | A manual client receives `401 Unauthorized` | Use **Connect to Codex** or **Copy Manual Configuration**. The endpoint alone does not include the required credential. |
 | A suite run is unavailable | Open the suite in Intents. Read the Run readiness reason. MCP uses the same run limits as the app. |
 
-The bundled `script/foundation-evals` CLI sends the Authorization header using the default local connector credential from the login Keychain or `FOUNDATION_EVALS_MCP_CREDENTIAL`. Keep the connector running and make its credential available. The `scenario-report` command exits successfully only when the returned release check passes. Custom endpoints require an explicitly supplied environment credential.
+The bundled `script/foundation-evals` CLI reads the default local connector credential from the login Keychain and sends the Authorization header. macOS may ask you to allow the CLI to read that item. Keep the connector running when requesting saved reports.
+
+For custom endpoints or automation, supply `--credential-file <path>` using a regular UTF-8 token file owned by you with owner-only permissions (`chmod 600`), or use the existing `FOUNDATION_EVALS_MCP_CREDENTIAL` environment option. The file takes precedence. All three commands support the same credential options. Plain HTTP is limited to loopback endpoints; remote endpoints require HTTPS and an explicitly supplied credential. Redirects are rejected. Credentials are never printed.

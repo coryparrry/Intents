@@ -1083,6 +1083,95 @@ struct IntentLabProjectInstallerTests {
         #expect(scheme.xmlString.contains("Intents.app"))
     }
 
+    private func assertSchemeRejected(_ data: Data, marker: String, fixture: Fixture) throws {
+        let schemeURL = fixture.project.appending(path: "xcshareddata/xcschemes/FoundationEvals.xcscheme")
+        let projectURL = fixture.project.appending(path: "project.pbxproj")
+        let originalProject = try Data(contentsOf: projectURL)
+        try data.write(to: schemeURL)
+        let preview = try IntentLabProjectInstaller().preview(fixture.request())
+        #expect(!preview.supported)
+        #expect(preview.changes.isEmpty)
+        #expect(preview.manualSteps.first?.contains("document type") == true)
+        #expect(preview.manualFiles.allSatisfy { !String(decoding: $0.data, as: UTF8.self).contains(marker) })
+        #expect(try Data(contentsOf: schemeURL) == data)
+        #expect(try Data(contentsOf: projectURL) == originalProject)
+    }
+
+    @Test func previewRejectsSharedSchemeExternalFileEntity() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let marker = "EXTERNAL_FILE_SECRET_\(UUID().uuidString)"
+        let secretURL = fixture.root.appending(path: "private-marker.txt")
+        try Data(marker.utf8).write(to: secretURL)
+        let input = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE Scheme [<!ENTITY secret SYSTEM "\(secretURL.absoluteString)">]>
+        <Scheme><BuildAction><BuildActionEntries/></BuildAction><TestAction><Testables/></TestAction><Injected>&secret;</Injected></Scheme>
+        """
+        try assertSchemeRejected(Data(input.utf8), marker: marker, fixture: fixture)
+    }
+
+    @Test func previewRejectsSharedSchemeExternalDTD() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let marker = "EXTERNAL_DTD_SECRET_\(UUID().uuidString)"
+        let dtdURL = fixture.root.appending(path: "external.dtd")
+        try Data("<!ENTITY secret '\(marker)'>".utf8).write(to: dtdURL)
+        let input = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE Scheme SYSTEM "\(dtdURL.absoluteString)">
+        <Scheme><BuildAction><BuildActionEntries/></BuildAction><TestAction><Testables/></TestAction><Injected>&secret;</Injected></Scheme>
+        """
+        try assertSchemeRejected(Data(input.utf8), marker: marker, fixture: fixture)
+    }
+
+    @Test(arguments: [String.Encoding.utf8, .utf16, .utf16BigEndian, .utf16LittleEndian,
+                      .utf32, .utf32BigEndian, .utf32LittleEndian])
+    func previewRejectsSharedSchemeInternalEntityExpansion(encoding: String.Encoding) throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let marker = "INTERNAL_ENTITY_MARKER"
+        var declarations = "<!ENTITY e0 '\(marker)'>"
+        for level in 1...5 {
+            let references = String(repeating: "&e\(level - 1);", count: 10)
+            declarations += "\n<!ENTITY e\(level) '\(references)'>"
+        }
+        let input = """
+        <?xml version="1.0"?>
+        <!DOCTYPE Scheme [\(declarations)]>
+        <Scheme><BuildAction><BuildActionEntries/></BuildAction><TestAction><Testables/></TestAction><Injected>&e5;</Injected></Scheme>
+        """
+        try assertSchemeRejected(try #require(input.data(using: encoding)), marker: marker, fixture: fixture)
+    }
+
+    @Test(arguments: [String.Encoding.utf8, .utf16, .utf16BigEndian, .utf16LittleEndian,
+                      .utf32, .utf32BigEndian, .utf32LittleEndian])
+    func previewPreservesNormalSharedSchemeXML(encoding: String.Encoding) throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let schemeURL = fixture.project.appending(path: "xcshareddata/xcschemes/FoundationEvals.xcscheme")
+        let input = """
+        <?xml version="1.0"?>
+        <!-- <!DOCTYPE Scheme [<!ENTITY harmless 'comment only'>]> -->
+        <?custom <!DOCTYPE comment-only ?>
+        <Scheme version="1.3"><BuildAction><BuildActionEntries/></BuildAction><TestAction customOption="keep &amp; preserve"><Testables/></TestAction><Custom><![CDATA[<!DOCTYPE comment-only>]]></Custom></Scheme>
+        """
+        try #require(input.data(using: encoding)).write(to: schemeURL)
+        let installer = IntentLabProjectInstaller()
+        let request = fixture.request()
+        let preview = try installer.preview(request)
+        #expect(preview.supported)
+        _ = try installer.apply(preview)
+        let installed = try Data(contentsOf: schemeURL)
+        let xml = try XMLDocument(data: installed, options: [.nodeLoadExternalEntitiesNever])
+        let root = try #require(xml.rootElement())
+        #expect(root.elements(forName: "TestAction").first?.attribute(forName: "customOption")?.stringValue == "keep & preserve")
+        #expect(xml.children?.contains { $0.kind == .comment && $0.stringValue?.contains("comment only") == true } == true)
+        #expect(root.elements(forName: "Custom").first?.stringValue == "<!DOCTYPE comment-only>")
+        #expect(try installer.preview(request).changes.isEmpty)
+        #expect(try Data(contentsOf: schemeURL) == installed)
+    }
+
     @Test func spacesUnicodeAndCustomSchemeSurviveRoundTrip() throws {
         let fixture = try Fixture(pathPrefix: "Intent Lab 測試")
         defer { fixture.cleanup() }
