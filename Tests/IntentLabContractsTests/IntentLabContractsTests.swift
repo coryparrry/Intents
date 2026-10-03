@@ -3,6 +3,61 @@ import IntentLabContracts
 import XCTest
 
 final class IntentLabContractsTests: XCTestCase {
+    func testUnchangedStateRejectsFinalValueThatMatchesConstantAfterMutation() {
+        let assertion = IntentLabAssertion(
+            id: UUID(), kind: .noMutation, observationKey: "selectedNoteID",
+            expectedValue: .string("packing-001"), required: true, applicableLanes: nil
+        )
+        let result = IntentLabAssertionEvaluator.evaluate(
+            assertion, observed: .string("packing-001"), before: .string("packing-002")
+        )
+        XCTAssertFalse(result.passed)
+        XCTAssertEqual(result.observedValue, .string("packing-001"))
+    }
+
+    func testUnchangedStateRequiresTypedBaselineAndPreservesExactValueChecks() {
+        let unchanged = IntentLabAssertion(
+            id: UUID(), kind: .noMutation, observationKey: "noteStoreMutationCount",
+            expectedValue: .integer(0), required: true, applicableLanes: nil
+        )
+        XCTAssertTrue(IntentLabAssertionEvaluator.evaluate(
+            unchanged, observed: .integer(0), before: .integer(0)
+        ).passed)
+        XCTAssertFalse(IntentLabAssertionEvaluator.evaluate(
+            unchanged, observed: .integer(0), before: nil
+        ).passed)
+        XCTAssertFalse(IntentLabAssertionEvaluator.evaluate(
+            unchanged, observed: .integer(0), before: .string("0")
+        ).passed)
+
+        let exact = IntentLabAssertion(
+            id: UUID(), kind: .returnedField, observationKey: "generatedSummary",
+            expectedValue: .string("Summary"), required: true, applicableLanes: nil
+        )
+        XCTAssertTrue(IntentLabAssertionEvaluator.evaluate(
+            exact, observed: .string("Summary"), before: nil
+        ).passed)
+    }
+
+    func testScopedEvidenceRetainsBeforeObservationAndDecodesLegacyLane() throws {
+        let lane = IntentLabLaneResult(
+            caseID: UUID(), attempt: 1, lane: .intentIntegration,
+            executionStatus: .completed, outcome: .failed,
+            startedAt: .now, completedAt: .now,
+            observations: ["selectedNoteID": .string("packing-001")],
+            assertionResults: [], diagnostic: nil, proposedCause: nil, artifacts: [],
+            beforeObservations: ["selectedNoteID": .string("packing-002")]
+        )
+        let data = try JSONEncoder().encode(lane)
+        let restored = try JSONDecoder().decode(IntentLabLaneResult.self, from: data)
+        XCTAssertEqual(restored.beforeObservations?["selectedNoteID"], .string("packing-002"))
+        var oldObject = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        oldObject.removeValue(forKey: "beforeObservations")
+        let legacy = try JSONDecoder().decode(
+            IntentLabLaneResult.self, from: JSONSerialization.data(withJSONObject: oldObject)
+        )
+        XCTAssertNil(legacy.beforeObservations)
+    }
     func testFractionalDateTransportPreservesScalarAndNestedArrayInstants() throws {
         for timestamp in [1_700_000_000.375, -0.375] {
             let instant = Date(timeIntervalSince1970: timestamp)
@@ -81,6 +136,30 @@ final class IntentLabContractsTests: XCTestCase {
         var scenario = try decodeScenario(v2: true)
         scenario.coverage.siri = .required
         scenario.goal.requestText = " "
+        XCTAssertThrowsError(try scenario.validateContract(harnessVersion: "intent-lab-v2"))
+    }
+
+    func testVersionTwoConsumerRejectsUnsupportedNativeScope() throws {
+        var scenario = try decodeScenario(v2: true)
+        scenario.executionScope = .init(lane: .intentIntegration, attempt: 1)
+        XCTAssertNoThrow(try scenario.validateContract(harnessVersion: "intent-lab-v2"))
+
+        scenario.executionScope = .init(lane: .intentIntegration, attempt: 2)
+        XCTAssertThrowsError(try scenario.validateContract(harnessVersion: "intent-lab-v2"))
+
+        scenario.executionScope = .init(lane: .siri, attempt: 1)
+        XCTAssertThrowsError(try scenario.validateContract(harnessVersion: "intent-lab-v2"))
+
+        scenario.coverage.siri = .required
+        scenario.goal.requestText = "Summarise my note"
+        scenario.executionScope = .init(lane: .siri, attempt: 2)
+        XCTAssertNoThrow(try scenario.validateContract(harnessVersion: "intent-lab-v2"))
+
+        scenario.coverage.siriAttemptCount = 0
+        XCTAssertThrowsError(try scenario.validateContract(harnessVersion: "intent-lab-v2"))
+        scenario.coverage.siriAttemptCount = 3
+
+        scenario.executionScope = .init(lane: .appFeature, attempt: 1)
         XCTAssertThrowsError(try scenario.validateContract(harnessVersion: "intent-lab-v2"))
     }
 

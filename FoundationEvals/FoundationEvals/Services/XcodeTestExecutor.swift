@@ -108,6 +108,7 @@ struct ScenarioVerifiedConnection: Sendable {
     var testRunURL: URL
     var selectedTestProjectURL: URL
     var buildInputsDigest: String
+    var sourceRevision: String = ""
     var productMetadataDigest: String
 
     var derivedDataURL: URL {
@@ -116,8 +117,14 @@ struct ScenarioVerifiedConnection: Sendable {
 }
 
 enum ScenarioHarnessCapabilities {
+    /// Stable v3 definitions still execute through the verified v2 consumer.
+    static func usesReusableProtocol(_ definition: ScenarioDefinition) -> Bool {
+        definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+            || definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+    }
+
     static func required(for definition: ScenarioDefinition) -> Set<String> {
-        guard definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion else {
+        guard usesReusableProtocol(definition) else {
             return ["environment-payload", "fixture-reset", "invocation-correlation", "accessible-result", "direct-intent-output"]
         }
         var capabilities: Set<String> = ["environment-payload", "direct-intent-execution"]
@@ -157,6 +164,28 @@ struct ScenarioExecutorResult: Sendable {
     var reportedTestCount: Int?
     var processExitCode: Int32
     var testFailureMessages: [String]
+    var measurementImplementation: ScenarioMeasurementImplementation? = nil
+}
+
+/// One native lane attempt per XCTest invocation. The App feature lane is run
+/// by the shared feature coordinator, not by the UI-test consumer.
+struct ScenarioNativeExecutionScope: Codable, Equatable, Sendable {
+    var lane: ScenarioLane
+    var attempt: Int
+
+    func isValid(for definition: ScenarioDefinition) -> Bool {
+        guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion else { return false }
+        switch lane {
+        case .appFeature: return false
+        case .intentIntegration:
+            return attempt == 1 && definition.coverage.intentIntegration != .notApplicable
+        case .siri:
+            let attemptCount = definition.coverage.siriAttemptCount ?? 3
+            return definition.coverage.siri != .notApplicable
+                && (1...3).contains(attemptCount)
+                && (1...attemptCount).contains(attempt)
+        }
+    }
 }
 
 struct ScenarioEvidenceAttachment: Equatable, Sendable {
@@ -205,12 +234,17 @@ enum XcodeTestDeadlineBudget {
 
     /// ScenarioValidation bounds the configured wait to 1...900 seconds and
     /// the Siri attempt count to 1...3 before an execution reaches this budget.
-    static func seconds(for definition: ScenarioDefinition) -> Double {
+    static func seconds(
+        for definition: ScenarioDefinition,
+        scope: ScenarioNativeExecutionScope? = nil
+    ) -> Double {
         let scenarioWaitSeconds = definition.safety.deadlineSeconds
-        let includesDirectLane = definition.coverage.intentIntegration != .notApplicable
-        let siriAttemptCount = definition.coverage.siri == .notApplicable
-            ? 0
-            : (definition.coverage.siriAttemptCount ?? 3)
+        let includesDirectLane = scope?.lane == .intentIntegration
+            || (scope == nil && definition.coverage.intentIntegration != .notApplicable)
+        let siriAttemptCount = scope?.lane == .siri
+            ? 1
+            : (scope == nil && definition.coverage.siri != .notApplicable
+                ? (definition.coverage.siriAttemptCount ?? 3) : 0)
         let fixtureCount = (includesDirectLane ? 1 : 0) + siriAttemptCount
         let directLaneSeconds = includesDirectLane ? scenarioWaitSeconds : 0
         let siriSeconds = Double(siriAttemptCount) * (siriActivationWaitSeconds + scenarioWaitSeconds)
@@ -382,7 +416,8 @@ actor XcodeTestExecutor {
         definition: ScenarioDefinition,
         configuration: XcodeTestConfiguration,
         projectTrusted: Bool,
-        linkedFeatureEvidenceAvailable: Bool = false
+        linkedFeatureEvidenceAvailable: Bool = false,
+        scope: ScenarioNativeExecutionScope? = nil
     ) -> ScenarioPreflightReport {
         var checks: [ScenarioPreflightCheck] = []
         func check(_ id: String, _ title: String, _ ready: Bool, _ detail: String) {
@@ -401,7 +436,7 @@ actor XcodeTestExecutor {
               "Choose the app-producing scheme.")
         check("testTarget", "UI-test target", !configuration.testTarget.trimmingCharacters(in: .whitespaces).isEmpty,
               "Choose the signed UI-test target containing testIntentLabScenario.")
-        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+        if ScenarioHarnessCapabilities.usesReusableProtocol(definition) {
             check("testProductIdentity", "UI-test project and target", configuration.selectedTestProductID != nil,
                   "Choose the owning project and UI-test target; a target name alone is ambiguous in a workspace.")
             check("appProductIdentity", "Application project and target", configuration.selectedApplicationProductID != nil,
@@ -411,7 +446,7 @@ actor XcodeTestExecutor {
               configuration.testBundleIdentifier.contains("."),
               "Enter the UI-test bundle identifier used by the signed test runner.")
         let discoveredCapabilities = Set(configuration.harnessCapabilities ?? [])
-        let isReusable = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+        let isReusable = ScenarioHarnessCapabilities.usesReusableProtocol(definition)
         let expectedHarnessVersion = isReusable
             ? ScenarioInvocationIdentity.reusableHarnessVersion
             : ScenarioInvocationIdentity.currentHarnessVersion
@@ -460,11 +495,15 @@ actor XcodeTestExecutor {
         check("definition", "Frozen scenario", definitionReady,
               definitionReady ? "The scenario digest and deterministic values are valid."
                   : definitionIssues.filter { $0.severity == .error }.map(\.message).joined(separator: " "))
+        if let scope {
+            check("nativeScope", "Native route and attempt", scope.isValid(for: definition),
+                  "Select one supported Intent or Siri attempt from a version 3 check.")
+        }
         check(
             "featureLane",
             "App feature evidence",
-            definition.coverage.appFeature != .required || linkedFeatureEvidenceAvailable,
-            definition.coverage.appFeature == .required && !linkedFeatureEvidenceAvailable
+            scope != nil || definition.coverage.appFeature != .required || linkedFeatureEvidenceAvailable,
+            scope == nil && definition.coverage.appFeature == .required && !linkedFeatureEvidenceAvailable
                 ? "Link a saved production feature run before executing this required lane."
                 : "The device harness will preserve the declared Intent and Siri lane requirements."
         )
@@ -493,8 +532,8 @@ actor XcodeTestExecutor {
         configuration: XcodeTestConfiguration,
         projectTrusted: Bool
     ) async throws -> ScenarioVerifiedConnection {
-        guard definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion else {
-            throw XcodeTestExecutorError.connectionCheck("A version 2 integration is required.")
+        guard ScenarioHarnessCapabilities.usesReusableProtocol(definition) else {
+            throw XcodeTestExecutorError.connectionCheck("A reusable integration is required.")
         }
         guard let integration = definition.integration,
               !integration.id.isEmpty, !integration.version.isEmpty,
@@ -598,6 +637,7 @@ actor XcodeTestExecutor {
             outputDirectory: attachments, invocationID: checkID
         )
         let receipt = try Self.connectionReceipt(in: attachments)
+        let fingerprint = try Self.buildInputsFingerprint(configuration: configuration, products: paths)
         let verified = ScenarioVerifiedConnection(
             receipt: receipt, configuration: configuration,
             appProduct: products.app,
@@ -609,7 +649,10 @@ actor XcodeTestExecutor {
             testBundleURL: paths.testBundleURL,
             testRunURL: paths.sourceURL,
             selectedTestProjectURL: URL(filePath: owningProjectPath),
-            buildInputsDigest: try Self.buildInputsDigest(configuration: configuration, products: paths),
+            buildInputsDigest: fingerprint.digest,
+            sourceRevision: Self.sourceRevision(
+                sourceLocations: fingerprint.sourceLocations, buildInputsDigest: fingerprint.digest
+            ),
             productMetadataDigest: Self.productMetadataDigest(products: paths)
         )
         guard connectionMatches(verified, definition: definition, configuration: configuration) else {
@@ -775,6 +818,15 @@ actor XcodeTestExecutor {
         products: XCTestRunProductPaths,
         fileManager: FileManager = .default
     ) throws -> String {
+        try buildInputsFingerprint(configuration: configuration, products: products,
+                                   fileManager: fileManager).digest
+    }
+
+    static func buildInputsFingerprint(
+        configuration: XcodeTestConfiguration,
+        products: XCTestRunProductPaths,
+        fileManager: FileManager = .default
+    ) throws -> (digest: String, sourceLocations: Set<URL>) {
         let container = URL(filePath: configuration.containerPath)
         var files = [
             products.sourceURL,
@@ -787,6 +839,8 @@ actor XcodeTestExecutor {
             products.testBundleURL.appending(path: "Info.plist"),
             products.testBundleURL.appending(path: "_CodeSignature/CodeResources"),
             products.testBundleURL.appending(path: "embedded.mobileprovision"),
+        ]
+        var checkedSourceFiles = [
             container.appending(path: "contents.xcworkspacedata"),
             container.appending(path: "xcshareddata/swiftpm/Package.resolved"),
             container.deletingLastPathComponent().appending(path: "Package.resolved"),
@@ -795,15 +849,16 @@ actor XcodeTestExecutor {
             ? (try? XcodeConnectionDiscoveryService.workspaceProjectURLs(workspace: container)) ?? []
             : [container]
         for project in projects {
-            files.append(project.appending(path: "project.pbxproj"))
-            files.append(project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"))
+            checkedSourceFiles.append(project.appending(path: "project.pbxproj"))
+            checkedSourceFiles.append(project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"))
         }
         for schemeContainer in (configuration.isWorkspace ? [container] + projects : projects) {
             let schemes = schemeContainer.appending(path: "xcshareddata/xcschemes", directoryHint: .isDirectory)
             if let entries = try? fileManager.contentsOfDirectory(at: schemes, includingPropertiesForKeys: nil) {
-                files.append(contentsOf: entries.filter { $0.pathExtension == "xcscheme" })
+                checkedSourceFiles.append(contentsOf: entries.filter { $0.pathExtension == "xcscheme" })
             }
         }
+        files.append(contentsOf: checkedSourceFiles)
         var hasher = SHA256()
         for file in Set(files).sorted(by: { $0.path < $1.path }) {
             hasher.update(data: Data(file.standardizedFileURL.path.utf8))
@@ -813,19 +868,79 @@ actor XcodeTestExecutor {
                 hasher.update(data: Data("<missing>".utf8))
             }
         }
-        try hashProjectSources(projects: projects, into: &hasher, fileManager: fileManager)
+        let projectSources = try hashProjectSources(projects: projects, into: &hasher,
+                                                    fileManager: fileManager)
         let toolPath = URL(filePath: configuration.xcodebuildPath).resolvingSymlinksInPath().path
         hasher.update(data: Data(toolPath.utf8))
         if let attributes = try? fileManager.attributesOfItem(atPath: toolPath) {
             let stamp = "\(attributes[.modificationDate] ?? "unknown"):\(attributes[.size] ?? "unknown")"
             hasher.update(data: Data(stamp.utf8))
         }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        // A workspace with no discoverable project cannot claim a Git source.
+        let existingConfiguration = checkedSourceFiles.filter { fileManager.fileExists(atPath: $0.path) }
+        let sourceLocations = projects.isEmpty ? Set<URL>()
+            : projectSources.union([container]).union(existingConfiguration)
+        return (digest, sourceLocations)
+    }
+
+    /// A Git label is only meaningful for a clean checkout. Keep the
+    /// independently checked build-input digest as the explicit fallback for
+    /// dirty or non-Git projects; never present it as a commit revision.
+    static func sourceRevision(sourceLocations: Set<URL>, buildInputsDigest: String) -> String {
+        let fallback = "inputs-sha256:\(buildInputsDigest)"
+        guard let first = sourceLocations.first else { return fallback }
+        var firstIsDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: first.path, isDirectory: &firstIsDirectory) else {
+            return fallback
+        }
+        let gitDirectory = firstIsDirectory.boolValue ? first.path : first.deletingLastPathComponent().path
+        func git(in directory: String, _ arguments: [String]) -> String? {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", directory] + arguments
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = Pipe()
+            guard (try? process.run()) != nil else { return nil }
+            let bytes = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            return String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let root = git(in: gitDirectory,
+                             ["rev-parse", "--show-toplevel"]), !root.isEmpty,
+              sourceLocations.allSatisfy({ location in
+                  let path = location.standardizedFileURL.resolvingSymlinksInPath().path
+                  let canonicalRoot = URL(filePath: root).resolvingSymlinksInPath().path
+                  return path == canonicalRoot || path.hasPrefix(canonicalRoot + "/")
+              }),
+              let status = git(in: root, ["status", "--porcelain", "--untracked-files=all"]),
+              status.isEmpty,
+              let trackedOutput = git(in: root, ["ls-files", "-z", "--cached", "--full-name"]),
+              !trackedOutput.isEmpty,
+              let revision = git(in: root, ["rev-parse", "HEAD"]),
+              revision.range(of: "^[0-9a-f]{40,64}$", options: .regularExpression) != nil else {
+            return fallback
+        }
+        let canonicalRoot = URL(filePath: root).resolvingSymlinksInPath().path
+        let tracked = Set(trackedOutput.split(separator: "\0").map(String.init))
+        for location in sourceLocations {
+            let path = location.standardizedFileURL.resolvingSymlinksInPath().path
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else {
+                return fallback
+            }
+            if !isDirectory.boolValue, !tracked.contains(String(path.dropFirst(canonicalRoot.count + 1))) {
+                return fallback
+            }
+        }
+        return "git:\(revision)"
     }
 
     private static func hashProjectSources(
         projects: [URL], into hasher: inout SHA256, fileManager: FileManager
-    ) throws {
+    ) throws -> Set<URL> {
         let generatedDirectories: Set<String> = [
             ".git", ".build", ".swiftpm", "DerivedData",
             "node_modules", "xcuserdata"
@@ -905,6 +1020,8 @@ actor XcodeTestExecutor {
                 hasher.update(data: Data("\(size):\(attributes[.modificationDate] ?? "unknown")".utf8))
             }
         }
+        return Set(projects + visitedDirectories.map { URL(filePath: $0) }
+            + sourceFiles.map { $0.resolvingSymlinksInPath() })
     }
 
     static func productMetadataDigest(products: XCTestRunProductPaths) -> String {
@@ -993,7 +1110,8 @@ actor XcodeTestExecutor {
         definition: ScenarioDefinition,
         configuration: XcodeTestConfiguration,
         projectTrusted: Bool,
-        linkedFeatureEvidenceAvailable: Bool = false
+        linkedFeatureEvidenceAvailable: Bool = false,
+        scope: ScenarioNativeExecutionScope? = nil
     ) async throws -> ScenarioExecutorResult {
         try Task.checkCancellation()
         guard active == nil, inFlightJournal == nil, awaitingValidationJournal == nil,
@@ -1004,10 +1122,11 @@ actor XcodeTestExecutor {
             definition: definition,
             configuration: configuration,
             projectTrusted: projectTrusted,
-            linkedFeatureEvidenceAvailable: linkedFeatureEvidenceAvailable
+            linkedFeatureEvidenceAvailable: linkedFeatureEvidenceAvailable,
+            scope: scope
         )
         guard report.isReady else { throw XcodeTestExecutorError.preflight(report.checks) }
-        let selectedConnection = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+        let selectedConnection = ScenarioHarnessCapabilities.usesReusableProtocol(definition)
             ? currentConnection(definition: definition, configuration: configuration) : nil
 
         let invocationID = UUID()
@@ -1029,7 +1148,7 @@ actor XcodeTestExecutor {
             nonce: randomNonce(),
             issuedAt: Date(),
             testIdentity: testIdentity,
-            harnessVersion: definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+            harnessVersion: ScenarioHarnessCapabilities.usesReusableProtocol(definition)
                 ? ScenarioInvocationIdentity.reusableHarnessVersion
                 : ScenarioInvocationIdentity.currentHarnessVersion,
             destinationIdentifier: configuration.destinationIdentifier,
@@ -1038,7 +1157,7 @@ actor XcodeTestExecutor {
             appProduct: nil,
             testProduct: nil
         )
-        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+        if ScenarioHarnessCapabilities.usesReusableProtocol(definition) {
             invocation.integration = definition.integration
             invocation.requiredCapabilities = ScenarioHarnessCapabilities.required(for: definition).sorted()
         }
@@ -1059,7 +1178,8 @@ actor XcodeTestExecutor {
             processIdentifier: nil,
             processStartedAt: nil,
             updatedAt: Date(),
-            recoveryReason: nil
+            recoveryReason: nil,
+            scope: scope
         )
         defer {
             inFlightJournal = nil
@@ -1119,7 +1239,10 @@ actor XcodeTestExecutor {
                 configuration: configuration,
                 paths: productPaths
             )
-            if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+            let measurement = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+                ? Self.measurementImplementation(testProduct: products.test)
+                : nil
+            if ScenarioHarnessCapabilities.usesReusableProtocol(definition) {
                 guard let connection = currentConnection(definition: definition, configuration: configuration),
                       connection.appProduct == products.app,
                       connection.testProduct == products.test,
@@ -1141,6 +1264,7 @@ actor XcodeTestExecutor {
                 testTarget: configuration.testTarget,
                 definition: definition,
                 invocation: boundInvocation,
+                scope: scope,
                 fileManager: fileManager
             )
             invocationTestRunURL = materializedTestRunURL
@@ -1162,7 +1286,7 @@ actor XcodeTestExecutor {
             inFlightJournal = journal
             try await persistence.saveJournal(journal)
             deviceTestLaunched = true
-            let testDeadline = Duration.seconds(XcodeTestDeadlineBudget.seconds(for: definition))
+            let testDeadline = Duration.seconds(XcodeTestDeadlineBudget.seconds(for: definition, scope: scope))
             let testExit = try await runProcess(
                 executable: configuration.xcodebuildPath,
                 arguments: testArguments,
@@ -1200,7 +1324,8 @@ actor XcodeTestExecutor {
                 evidenceAttachments: evidenceAttachments,
                 reportedTestCount: testCount,
                 processExitCode: testExit,
-                testFailureMessages: resultBundleFailureMessages(configuration: configuration, resultBundle: resultBundle)
+                testFailureMessages: resultBundleFailureMessages(configuration: configuration, resultBundle: resultBundle),
+                measurementImplementation: measurement
             )
         } catch {
             active = nil
@@ -1427,7 +1552,7 @@ actor XcodeTestExecutor {
         guard fileManager.fileExists(atPath: paths.testBundleURL.path) else {
             throw XcodeTestExecutorError.productMissing("the \(configuration.testTarget) test bundle was not built")
         }
-        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion,
+        if ScenarioHarnessCapabilities.usesReusableProtocol(definition),
            bundleIdentifier(at: paths.testBundleURL) != configuration.testBundleIdentifier {
             throw XcodeTestExecutorError.productMissing(
                 "the built UI-test bundle does not match the selected target's bundle identifier"
@@ -1450,6 +1575,26 @@ actor XcodeTestExecutor {
             bundleIdentifier: info?["CFBundleIdentifier"] as? String ?? fallbackBundleIdentifier,
             executableName: executableName,
             sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        )
+    }
+
+    /// Deliberately conservative: unrelated UI-test code changes also change
+    /// the observer identity. The digest never comes from declaration labels.
+    static func measurementImplementation(
+        testProduct: ScenarioProductIdentity,
+        hostBundle: Bundle = .main
+    ) -> ScenarioMeasurementImplementation? {
+        guard hostBundle.bundleIdentifier == "com.coryparry.FoundationEvals",
+              let hostExecutable = hostBundle.executableURL,
+              let bytes = try? Data(contentsOf: hostExecutable, options: [.mappedIfSafe]),
+              !bytes.isEmpty,
+              !testProduct.sha256.isEmpty else { return nil }
+        let hostDigest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        return .init(
+            observerID: "ui-test-executable:\(testProduct.bundleIdentifier):\(testProduct.executableName)",
+            observerDigest: testProduct.sha256,
+            evaluatorID: "host-executable:com.coryparry.FoundationEvals:\(hostExecutable.lastPathComponent)",
+            evaluatorDigest: hostDigest
         )
     }
 

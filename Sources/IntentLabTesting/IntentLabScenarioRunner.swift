@@ -103,8 +103,12 @@ public enum IntentLabScenarioRunner {
             throw XCTSkip("The host did not embed a fully bound Intent Lab invocation.")
         }
         var results: [IntentLabLaneResult] = []
+        let runsDirect = scenario.executionScope == nil
+            || scenario.executionScope?.lane == .intentIntegration
+        let runsSiri = scenario.executionScope == nil
+            || scenario.executionScope?.lane == .siri
 
-        if scenario.coverage.intentIntegration != .notApplicable {
+        if runsDirect && scenario.coverage.intentIntegration != .notApplicable {
             let context = "intent-\(invocation.id.uuidString)"
             let directStart = Date()
             var directApplication: XCUIApplication?
@@ -144,7 +148,7 @@ public enum IntentLabScenarioRunner {
                         scenario: scenario, invocation: invocation,
                         appProduct: appProduct, testProduct: testProduct,
                         results: [failed(for: .intentIntegration, scenario: scenario, error: error, startedAt: directStart)]
-                            + unobservedSiriAttempts(for: scenario),
+                            + (runsSiri ? unobservedSiriAttempts(for: scenario) : []),
                         declaration: declaration
                     )
                     try EvidenceAttachmentWriter.attach(checkpoint, to: testCase, checkpoint: true)
@@ -157,7 +161,7 @@ public enum IntentLabScenarioRunner {
         // XCTest can terminate this method inside siriService.activate without throwing.
         // Persist completed direct observations before entering that API. Siri attempts
         // remain explicitly unobserved until a final envelope replaces this checkpoint.
-        if scenario.coverage.siri != .notApplicable {
+        if runsSiri && scenario.coverage.siri != .notApplicable {
             let checkpoint = evidenceEnvelope(
                 scenario: scenario,
                 invocation: invocation,
@@ -169,12 +173,14 @@ public enum IntentLabScenarioRunner {
             try EvidenceAttachmentWriter.attach(checkpoint, to: testCase, checkpoint: true)
         }
 
-        if scenario.coverage.siri != .notApplicable {
+        if runsSiri && scenario.coverage.siri != .notApplicable {
             let attemptCount = scenario.coverage.siriAttemptCount ?? 3
+            let attempts = scenario.executionScope.map { [$0.attempt] } ?? Array(1...attemptCount)
             var sequence = SiriAttemptSequence()
-            for attempt in 1...attemptCount {
+            for attempt in attempts {
                 let context = "siri-\(invocation.id.uuidString)-\(attempt)"
                 let siriStart = Date()
+                var baseline: [String: IntentLabValue]?
                 do {
                     let observations = try sequence.run {
                         let application = try integration.prepare(
@@ -182,6 +188,13 @@ public enum IntentLabScenarioRunner {
                             context: context,
                             operationID: scenario.fixture.preparationOperation
                         )
+                        if scenario.executionScope != nil {
+                            baseline = try integration.observe(
+                                application: application,
+                                declaration: declaration,
+                                deadlineSeconds: scenario.safety.deadlineSeconds
+                            )
+                        }
                         guard !scenario.goal.requestText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                             throw SiriProbeError.missingRequest
                         }
@@ -203,7 +216,7 @@ public enum IntentLabScenarioRunner {
                         for: .siri,
                         scenario: scenario,
                         observations: observations,
-                        baseline: nil,
+                        baseline: baseline,
                         integration: integration,
                         declaration: declaration,
                         context: context,
@@ -297,7 +310,9 @@ public enum IntentLabScenarioRunner {
 
     static func unobservedSiriAttempts(for scenario: IntentLabScenario, at date: Date = Date()) -> [IntentLabLaneResult] {
         guard scenario.coverage.siri != .notApplicable else { return [] }
-        return (1...(scenario.coverage.siriAttemptCount ?? 3)).map { attempt in
+        let attempts = scenario.executionScope.map { [$0.attempt] }
+            ?? Array(1...(scenario.coverage.siriAttemptCount ?? 3))
+        return attempts.map { attempt in
             IntentLabLaneResult(
                 caseID: scenario.id,
                 attempt: attempt,
@@ -342,6 +357,12 @@ public enum IntentLabScenarioRunner {
                         : "Semantic evidence requires host assessment."
                 )
             }
+            if scenario.executionScope != nil {
+                return IntentLabAssertionEvaluator.evaluate(
+                    assertion, observed: observed, before: baseline?[assertion.observationKey]
+                )
+            }
+            // Unscoped v1/v2 evidence retains its original final-value semantics.
             return IntentLabAssertionResult(
                 assertionID: assertion.id,
                 passed: observed != nil && observed == assertion.expectedValue,
@@ -415,7 +436,8 @@ public enum IntentLabScenarioRunner {
                     ? "appIntentsTesting"
                     : $0 == "recognizedRequest" ? "siriRecognizedText" : observationSource($0))
             }),
-            claims: scenario.schemaVersion == 2 ? claims : nil
+            claims: scenario.schemaVersion == 2 ? claims : nil,
+            beforeObservations: scenario.executionScope == nil ? nil : baseline
         )
     }
 

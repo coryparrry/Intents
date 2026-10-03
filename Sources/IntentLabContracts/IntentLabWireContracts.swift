@@ -156,6 +156,17 @@ public struct IntentLabAssertion: Codable {
     public var expectedValue: IntentLabValue?
     public var required: Bool
     public var applicableLanes: Set<IntentLabLane>?
+    public init(
+        id: UUID, kind: IntentLabAssertionKind, observationKey: String,
+        expectedValue: IntentLabValue?, required: Bool, applicableLanes: Set<IntentLabLane>?
+    ) {
+        self.id = id
+        self.kind = kind
+        self.observationKey = observationKey
+        self.expectedValue = expectedValue
+        self.required = required
+        self.applicableLanes = applicableLanes
+    }
 }
 public enum IntentLabMutationPolicy: String, Codable { case readOnly, syntheticMutation }
 public struct IntentLabSafety: Codable {
@@ -167,6 +178,18 @@ public struct IntentLabCoverage: Codable {
     public var intentIntegration: IntentLabLaneRequirement
     public var siri: IntentLabLaneRequirement
     public var siriAttemptCount: Int?
+}
+
+/// Host-selected native coordinate. Absence retains the historical all-routes
+/// invocation; a selected coordinate executes in its own XCTest invocation.
+public struct IntentLabExecutionScope: Codable {
+    public var lane: IntentLabLane
+    public var attempt: Int
+
+    public init(lane: IntentLabLane, attempt: Int) {
+        self.lane = lane
+        self.attempt = attempt
+    }
 }
 
 public struct IntentLabScenario: Codable {
@@ -186,6 +209,7 @@ public struct IntentLabScenario: Codable {
     public var requiredClaims: [IntentLabProofClaim]?
     public var observationPlan: [IntentLabPlannedObservation]?
     public var integration: IntentLabIntegrationIdentity?
+    public var executionScope: IntentLabExecutionScope?
 
     public func validateContract(harnessVersion: String) throws {
         switch schemaVersion ?? 1 {
@@ -209,6 +233,24 @@ public struct IntentLabScenario: Codable {
             if checkMode == .behaviour && (!requiredClaims.contains(.applicationStateChecked)
                 || !observationPlan.contains(where: { $0.source != .intentResult })) {
                 throw IntentLabPayloadError.unsupportedSchema
+            }
+            if let executionScope {
+                switch executionScope.lane {
+                case .appFeature:
+                    throw IntentLabPayloadError.unsupportedSchema
+                case .intentIntegration:
+                    guard executionScope.attempt == 1,
+                          coverage.intentIntegration != .notApplicable else {
+                        throw IntentLabPayloadError.unsupportedSchema
+                    }
+                case .siri:
+                    let attemptCount = coverage.siriAttemptCount ?? 3
+                    guard coverage.siri != .notApplicable,
+                          (1...3).contains(attemptCount),
+                          (1...attemptCount).contains(executionScope.attempt) else {
+                        throw IntentLabPayloadError.unsupportedSchema
+                    }
+                }
             }
         default:
             throw IntentLabPayloadError.unsupportedSchema
@@ -335,13 +377,15 @@ public struct IntentLabLaneResult: Codable {
     public var startedAt: Date
     public var completedAt: Date
     public var observations: [String: IntentLabValue]
+    /// Scoped executions retain the typed state observed before the action.
+    public var beforeObservations: [String: IntentLabValue]? = nil
     public var assertionResults: [IntentLabAssertionResult]
     public var diagnostic: String?
     public var proposedCause: String?
     public var artifacts: [IntentLabArtifactReference]
     public var observationSources: [String: String]? = nil
     public var claims: [IntentLabProofClaim]? = nil
-    public init(caseID: UUID, attempt: Int, lane: IntentLabLane, executionStatus: IntentLabExecutionStatus, outcome: IntentLabOutcome, startedAt: Date, completedAt: Date, observations: [String: IntentLabValue], assertionResults: [IntentLabAssertionResult], diagnostic: String?, proposedCause: String?, artifacts: [IntentLabArtifactReference], observationSources: [String: String]? = nil, claims: [IntentLabProofClaim]? = nil) {
+    public init(caseID: UUID, attempt: Int, lane: IntentLabLane, executionStatus: IntentLabExecutionStatus, outcome: IntentLabOutcome, startedAt: Date, completedAt: Date, observations: [String: IntentLabValue], assertionResults: [IntentLabAssertionResult], diagnostic: String?, proposedCause: String?, artifacts: [IntentLabArtifactReference], observationSources: [String: String]? = nil, claims: [IntentLabProofClaim]? = nil, beforeObservations: [String: IntentLabValue]? = nil) {
         self.caseID = caseID
         self.attempt = attempt
         self.lane = lane
@@ -350,6 +394,7 @@ public struct IntentLabLaneResult: Codable {
         self.startedAt = startedAt
         self.completedAt = completedAt
         self.observations = observations
+        self.beforeObservations = beforeObservations
         self.assertionResults = assertionResults
         self.diagnostic = diagnostic
         self.proposedCause = proposedCause

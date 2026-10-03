@@ -418,7 +418,8 @@ enum ScenarioResultEvaluator {
         definition: ScenarioDefinition,
         lane: ScenarioLane,
         observations: [String: ScenarioValue],
-        executionStatus: ScenarioExecutionStatus
+        executionStatus: ScenarioExecutionStatus,
+        beforeObservations: [String: ScenarioValue]? = nil
     ) -> (ScenarioOutcome, [ScenarioAssertionResult]) {
         guard executionStatus == .completed else { return (.notObserved, []) }
         let assertions = definition.assertions.filter { $0.applies(to: lane) }
@@ -444,12 +445,20 @@ enum ScenarioResultEvaluator {
                     message: "Semantic evidence requires a separate recorded assessment."
                 )
             }
+            let hasBaseline = definition.schemaVersion != ScenarioDefinition.stableSchemaVersion
+                || assertion.kind != .noMutation
+                || beforeObservations?[assertion.observationKey] != nil
             let passed = observed == assertion.expectedValue
+                && (definition.schemaVersion != ScenarioDefinition.stableSchemaVersion
+                    || assertion.kind != .noMutation
+                    || beforeObservations?[assertion.observationKey] == observed)
             return .init(
                 assertionID: assertion.id,
                 passed: passed,
                 observedValue: observed,
-                message: passed ? assertion.explanation : "Observed value did not match the approved expectation."
+                message: passed ? assertion.explanation
+                    : (hasBaseline ? "Observed value did not match the approved expectation or changed from its baseline."
+                       : "The pre-action baseline was not captured.")
             )
         }
         let requiredIDs = Set(assertions.filter(\.required).map(\.id))
@@ -463,6 +472,12 @@ enum ScenarioResultEvaluator {
         let missingRequiredSemantic = requiredSemantic.contains {
             observations[$0.observationKey] == nil
         }
+        let missingRequiredBaseline = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+            && assertions.contains { assertion in
+                assertion.required && assertion.kind == .noMutation
+                    && beforeObservations?[assertion.observationKey] == nil
+            }
+        if missingRequiredBaseline { return (.notObserved, results) }
         if failedRequired || missingRequiredSemantic { return (.failed, results) }
         if !requiredSemantic.isEmpty { return (.needsReview, results) }
         return (.passed, results)
@@ -547,6 +562,11 @@ enum ScenarioResultEvaluator {
             case .testOnlyIntent: sourceMatches = source == .testOnlyIntent || source == .applicationInstrumentation
             }
             guard sourceMatches, observed == assertion.expectedValue else { return false }
+            if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+               assertion.kind == .noMutation,
+               result.beforeObservations?[assertion.observationKey] != observed {
+                return false
+            }
             switch claim {
             case .executionCompleted: return false
             case .returnedValueChecked: return assertion.kind == .returnedField

@@ -26,6 +26,8 @@ struct ScenarioExecutionJournal: Codable, Equatable, Identifiable, Sendable {
     var recoveryReason: String?
     /// Nil for older or unfinished journals; only true authorizes release evidence.
     var evidenceAccepted: Bool? = nil
+    /// v3-only native coordinate; nil retains the historical all-routes test.
+    var scope: ScenarioNativeExecutionScope? = nil
 }
 
 struct ScenarioImportLedger: Codable, Equatable, Sendable {
@@ -107,16 +109,22 @@ struct XCTestEvidenceImporter: Sendable {
         ledger: inout ScenarioImportLedger,
         supplementaryResults: [ScenarioLaneResult] = [],
         statedChangedDimensions: Set<String> = [],
-        importedAt: Date = Date()
+        importedAt: Date = Date(),
+        scope: ScenarioNativeExecutionScope? = nil,
+        measurementImplementation: ScenarioMeasurementImplementation? = nil
     ) throws -> ScenarioRun {
         try ScenarioValidator.validate(definition)
+        guard journal.scope == scope,
+              scope == nil || (scope?.isValid(for: definition) == true && supplementaryResults.isEmpty) else {
+            throw ScenarioEvidenceImportError.identityMismatch("the native route scope differs from its journal")
+        }
         let envelope = try decodeEnvelope(from: data)
-        let expectedEnvelopeVersion = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+        let expectedEnvelopeVersion = ScenarioHarnessCapabilities.usesReusableProtocol(definition)
             ? ScenarioEvidenceEnvelope.reusableSchemaVersion : ScenarioEvidenceEnvelope.currentSchemaVersion
         guard envelope.schemaVersion == expectedEnvelopeVersion else {
             throw ScenarioEvidenceImportError.schemaMismatch
         }
-        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+        if ScenarioHarnessCapabilities.usesReusableProtocol(definition) {
             let required = ScenarioHarnessCapabilities.required(for: definition)
             guard let integration = definition.integration,
                   envelope.integration == integration,
@@ -143,16 +151,32 @@ struct XCTestEvidenceImporter: Sendable {
             throw ScenarioEvidenceImportError.journalNotActive
         }
         try validateIdentity(envelope, definition: definition, journal: journal)
+        if let measurementImplementation {
+            guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+                  let testProduct = journal.invocation.testProduct,
+                  measurementImplementation.hasCompleteProvenance,
+                  measurementImplementation
+                    == XcodeTestExecutor.measurementImplementation(testProduct: testProduct) else {
+                throw ScenarioEvidenceImportError.identityMismatch(
+                    "observer or host evaluator executable provenance is unverified"
+                )
+            }
+        }
         guard !ledger.importedInvocationIDs.contains(envelope.invocation.id),
               !ledger.importedNonces.contains(envelope.invocation.nonce) else {
             throw ScenarioEvidenceImportError.replayedInvocation
         }
         guard envelope.testCount == 1 else { throw ScenarioEvidenceImportError.invalidTestCount }
         let results = supplementaryResults + envelope.results
-        try validateResults(results, definition: definition)
+        try validateResults(results, definition: definition, scope: scope)
         try validateArtifacts(results.flatMap(\.artifacts), root: artifactRoot, ledger: ledger)
 
-        let overall = ScenarioResultEvaluator.overall(definition: definition, laneResults: results)
+        // A coordinate import is evidence for one route attempt. Only the
+        // coordinator can qualify the complete selected run after combining
+        // independently bound invocations.
+        let overall: ScenarioOutcome = scope == nil
+            ? ScenarioResultEvaluator.overall(definition: definition, laneResults: results)
+            : .notObserved
         let executionStatus: ScenarioExecutionStatus = results.allSatisfy { $0.executionStatus == .completed }
             ? .completed
             : results.first(where: { $0.executionStatus != .completed })?.executionStatus ?? .invalidEvidence
@@ -175,10 +199,19 @@ struct XCTestEvidenceImporter: Sendable {
             fixture: definition.fixture,
             statedChangedDimensions: statedChangedDimensions
         )
-        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+        if ScenarioHarnessCapabilities.usesReusableProtocol(definition) {
             run.integration = envelope.integration
             run.runnerPackageVersion = envelope.runnerPackageVersion
             run.negotiatedCapabilities = envelope.negotiatedCapabilities?.sorted()
+        }
+        if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+            // This metadata comes from the validated frozen host contract, not
+            // the v2 consumer wire. Observer and environment provenance remain
+            // unknown until separately verified; a bundle hash is not enough.
+            run.scenarioSchemaVersion = definition.schemaVersion
+            run.testContractDigest = definition.testContractDigest
+            run.measurementImplementation = measurementImplementation
+            run.executedTestCount = envelope.testCount
         }
         ledger.record(envelope)
         return run
@@ -189,6 +222,19 @@ struct XCTestEvidenceImporter: Sendable {
         definition: ScenarioDefinition,
         journal: ScenarioExecutionJournal
     ) throws {
+        if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+            guard journal.scenarioID == definition.id,
+                  journal.scenarioVersion == definition.version,
+                  !journal.resultBundlePath.isEmpty,
+                  URL(filePath: journal.resultBundlePath).lastPathComponent
+                    == journal.invocation.resultBundleIdentity,
+                  journal.invocation.testIdentity.className == "IntentLabScenarioTests",
+                  journal.invocation.testIdentity.methodName == "testIntentLabScenario" else {
+                throw ScenarioEvidenceImportError.identityMismatch(
+                    "the journal does not bind this case, result bundle, and fixed test entry point"
+                )
+            }
+        }
         guard envelope.invocation.id == journal.invocation.id,
               envelope.invocation.nonce == journal.invocation.nonce,
               envelope.invocation.resultBundleIdentity == journal.invocation.resultBundleIdentity else {
@@ -198,13 +244,16 @@ struct XCTestEvidenceImporter: Sendable {
               envelope.invocation.scenarioDigest == journal.invocation.scenarioDigest else {
             throw ScenarioEvidenceImportError.identityMismatch("scenario digest differs")
         }
-        let expectedHarnessVersion = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+        let expectedHarnessVersion = ScenarioHarnessCapabilities.usesReusableProtocol(definition)
             ? ScenarioInvocationIdentity.reusableHarnessVersion : ScenarioInvocationIdentity.currentHarnessVersion
         guard envelope.invocation.testIdentity == journal.invocation.testIdentity,
               envelope.invocation.harnessVersion == expectedHarnessVersion else {
             throw ScenarioEvidenceImportError.identityMismatch("test entry point or harness version differs")
         }
-        guard envelope.invocation.destinationIdentifier == definition.target.destinationIdentifier,
+        let expectedDestination = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+            ? journal.invocation.destinationIdentifier : definition.target.destinationIdentifier
+        guard !expectedDestination.isEmpty,
+              envelope.invocation.destinationIdentifier == expectedDestination,
               envelope.invocation.destinationIdentifier == journal.invocation.destinationIdentifier else {
             throw ScenarioEvidenceImportError.identityMismatch("selected destination differs")
         }
@@ -226,17 +275,27 @@ struct XCTestEvidenceImporter: Sendable {
 
     private func validateResults(
         _ results: [ScenarioLaneResult],
-        definition: ScenarioDefinition
+        definition: ScenarioDefinition,
+        scope: ScenarioNativeExecutionScope?
     ) throws {
         guard !results.isEmpty, results.count <= limits.maximumLaneResults else {
             throw ScenarioEvidenceImportError.invalidResult("the result count is empty or exceeds the limit")
+        }
+        if let scope {
+            guard results.count == 1,
+                  results[0].lane == scope.lane,
+                  results[0].attempt == scope.attempt else {
+                throw ScenarioEvidenceImportError.invalidResult(
+                    "the scoped invocation must contain exactly its selected route and attempt"
+                )
+            }
         }
         let coordinates = results.map { "\($0.caseID.uuidString):\($0.lane.rawValue):\($0.attempt)" }
         guard Set(coordinates).count == coordinates.count else {
             throw ScenarioEvidenceImportError.invalidResult("duplicate case, lane, and attempt coordinates")
         }
         for result in results {
-            if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion,
+            if ScenarioHarnessCapabilities.usesReusableProtocol(definition),
                definition.coverage[result.lane] == .notApplicable {
                 throw ScenarioEvidenceImportError.invalidResult("a not-applicable lane supplied evidence")
             }
@@ -266,12 +325,14 @@ struct XCTestEvidenceImporter: Sendable {
                 definition: definition,
                 lane: result.lane,
                 observations: result.observations,
-                executionStatus: result.executionStatus
+                executionStatus: result.executionStatus,
+                beforeObservations: definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+                    ? result.beforeObservations : nil
             )
             if result.outcome == .passed, evaluated.0 != .passed {
                 throw ScenarioEvidenceImportError.invalidResult("a claimed pass conflicts with the captured observations")
             }
-            if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion,
+            if ScenarioHarnessCapabilities.usesReusableProtocol(definition),
                result.outcome == .passed,
                result.lane != .appFeature {
                 guard let claims = result.claims,
@@ -299,12 +360,14 @@ struct XCTestEvidenceImporter: Sendable {
                 }
             }
         }
-        for lane in ScenarioLane.allCases where definition.coverage[lane] == .required {
-            guard results.contains(where: { $0.lane == lane }) else {
-                throw ScenarioEvidenceImportError.invalidResult("required lane \(lane.rawValue) is missing")
+        if scope == nil {
+            for lane in ScenarioLane.allCases where definition.coverage[lane] == .required {
+                guard results.contains(where: { $0.lane == lane }) else {
+                    throw ScenarioEvidenceImportError.invalidResult("required lane \(lane.rawValue) is missing")
+                }
             }
         }
-        if definition.coverage.siri != .notApplicable {
+        if scope == nil && definition.coverage.siri != .notApplicable {
             let expected = definition.coverage.siriAttemptCount ?? 3
             let attempts = results.filter { $0.lane == .siri }.map(\.attempt).sorted()
             if definition.coverage.siri == .required,

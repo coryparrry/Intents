@@ -20,11 +20,25 @@ struct FoundationEvalsApp: App {
         let telemetry = TelemetryController(configuration: Self.telemetryConfiguration)
         let store = EvaluationStore(supportDirectory: Self.acceptanceStorageDirectory)
         let runtime = FoundationEvalsMCPRuntime(store: store)
+        #if DEBUG
+        // UI tests use isolated evidence storage and must not wait for or read
+        // the developer's real Keychain while opening the test app.
+        let testEnvironment = ProcessInfo.processInfo.environment
+        let isHostedTest = testEnvironment["XCTestConfigurationFilePath"] != nil
+            || testEnvironment["XCTestBundlePath"] != nil
+        let isolatedCredentialStore: MCPCredentialStore =
+            Self.acceptanceStorageDirectory != nil || isHostedTest
+            ? .init(load: { nil }, save: { _ in }, remove: {})
+            : .keychain
+        #else
+        let isolatedCredentialStore: MCPCredentialStore = .keychain
+        #endif
         let settings = MCPSettingsController(
             serverControl: MCPServerControl(
                 start: { configuration in try await runtime.start(configuration) },
                 stop: { await runtime.stop() }
-            )
+            ),
+            credentialStore: isolatedCredentialStore
         )
         runtime.settingsController = settings
         _telemetry = State(initialValue: telemetry)
