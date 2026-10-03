@@ -17,6 +17,7 @@ struct FoundationEvalsApp: App {
         startingUpdater: !ProductionNativeWorkerCommand.isRequested, updaterDelegate: nil, userDriverDelegate: nil
     )
     #endif
+    private let appControl: EvaluationAppControl
     private let mcpRuntime: FoundationEvalsMCPRuntime
 
     init() {
@@ -25,7 +26,9 @@ struct FoundationEvalsApp: App {
         do { storeDirectory = ProductionNativeWorkerCommand.isRequested ? try ProductionNativeWorkerCommand.prepareScratch() : Self.acceptanceStorageDirectory }
         catch { FileHandle.standardError.write(Data(("Native eval worker: \(error.localizedDescription)\n").utf8)); ProductionNativeWorkerCommand.finish(30) }
         let store = EvaluationStore(supportDirectory: storeDirectory)
-        let runtime = FoundationEvalsMCPRuntime(store: store)
+        let control = EvaluationAppControl(store: store)
+        appControl = control
+        let runtime = FoundationEvalsMCPRuntime(store: store, control: control)
         let settings = MCPSettingsController(
             serverControl: MCPServerControl(
                 start: { configuration in try await runtime.start(configuration) },
@@ -38,7 +41,7 @@ struct FoundationEvalsApp: App {
         _telemetry = State(initialValue: telemetry)
         telemetry.capture(.appOpened)
         _store = State(initialValue: store)
-        _runnerStore = State(initialValue: DeveloperRunnerStore(evaluationStore: store))
+        _runnerStore = State(initialValue: control.runners)
         _mcpSettings = State(initialValue: settings)
         mcpRuntime = runtime
         if ProductionNativeWorkerCommand.isRequested {
@@ -109,7 +112,7 @@ struct FoundationEvalsApp: App {
 
     var body: some Scene {
         WindowGroup(id: "evaluation-main", for: String.self) { _ in
-            ContentView(store: store)
+            ContentView(store: store, control: appControl)
                 .environment(runnerStore)
                 .task(id: mcpSettings.installationState) {
                     appDelegate.runtime = mcpRuntime

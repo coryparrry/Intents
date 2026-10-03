@@ -4,6 +4,7 @@ import Observation
 
 @MainActor @Observable
 final class ProductionWorkspaceStore {
+    var pane: ProductionPane = .datasets
     let storage: ProductionStorage?
     var datasets: [ProductionDataset] = []
     var jobs: [ProductionJob] = []
@@ -19,6 +20,7 @@ final class ProductionWorkspaceStore {
     var error: String?
     var isLoading = false
     var runningJobID: UUID?
+    private(set) var executionErrors: [UUID:String] = [:]
     @ObservationIgnored private let localWorkerID: String = {
         let key = "production-eval-worker-id"
         if let value = UserDefaults.standard.string(forKey: key) { return value }
@@ -92,26 +94,28 @@ final class ProductionWorkspaceStore {
             return try storage.importDataset(from: file, name: suite.name, version: suite.version)
         }
     }
-    func createJob(store: EvaluationStore, dataset: String, name: String, repetitions: Int, passRate: Double,
-                   timeout: Double, budgetHours: Double, baseline: UUID?, targets: [ProductionTarget],
-                   requiredCohortKey: String, requiredCohortValue: String, cohortPassRate: Double) throws {
+    func nativeConfiguration(store: EvaluationStore) throws -> ProductionJobConfiguration {
         let context = try store.productionSnapshot(), data = try ProductionCodec.encode(context)
         struct Scoring: Codable { var mode: ScoringMode; var criteria: String; var judge: EvaluationJudgeConfiguration; var features: EvaluationFeatureConfiguration }
         let scoring = Scoring(mode: context.suite.scoringMode, criteria: context.suite.criteria, judge: context.suite.judgeConfiguration, features: context.suite.features)
         var configuration = ProductionJobConfiguration(scoringRevision: ProductionCodec.digest(try ProductionCodec.encode(scoring)),
             executionRevision: ProductionCodec.digest(data), executionContext: data)
-        configuration.repetitions = repetitions
         if context.suite.modelConfiguration.provider == .customHTTP || context.suite.features.tools.contains(where: { $0.mode == .localHTTP }) { configuration.replaySafety = .sideEffects }
+        let policy = context.suite.releasePolicy
+        configuration.gate.maximumErrors = policy.maximumErrorCount
+        configuration.gate.criticalSourceIDs = policy.criticalCaseIDs.map(\.uuidString)
+        configuration.gate.maximumAverageMilliseconds = policy.maximumAverageLatencyMilliseconds
+        configuration.gate.requireBaseline = policy.requireApprovedBaseline
+        configuration.gate.maximumPassRateRegression = policy.maximumPassRateRegression
+        return configuration
+    }
+    func createJob(store: EvaluationStore, dataset: String, name: String, repetitions: Int, passRate: Double,
+                   timeout: Double, budgetHours: Double, baseline: UUID?, targets: [ProductionTarget],
+                   requiredCohortKey: String, requiredCohortValue: String, cohortPassRate: Double) throws {
+        var configuration = try nativeConfiguration(store: store)
+        configuration.repetitions = repetitions
         configuration.timeoutSeconds = timeout; configuration.maximumElapsedSeconds = budgetHours * 3600
         configuration.targets = targets; configuration.baselineJobID = baseline; configuration.gate.minimumPassRate = passRate/100
-        let policy = context.suite.releasePolicy
-        do {
-            configuration.gate.maximumErrors = policy.maximumErrorCount
-            configuration.gate.criticalSourceIDs = policy.criticalCaseIDs.map(\.uuidString)
-            configuration.gate.maximumAverageMilliseconds = policy.maximumAverageLatencyMilliseconds
-            configuration.gate.requireBaseline = policy.requireApprovedBaseline
-            configuration.gate.maximumPassRateRegression = policy.maximumPassRateRegression
-        }
         if !requiredCohortKey.isEmpty {
             configuration.gate.requiredCohorts[requiredCohortKey] = requiredCohortValue
             configuration.gate.cohortMinimumPassRates[requiredCohortKey + "=" + requiredCohortValue] = cohortPassRate/100
@@ -132,7 +136,13 @@ final class ProductionWorkspaceStore {
         if id == runningJobID && (paused == true || cancelled == true) { runTask?.cancel() }
     }
     func run(store: EvaluationStore, externalDisclosureApproved: Bool) {
-        guard let job = selectedJob, let storage, runTask == nil else { return }
+        guard let job = selectedJob else { return }
+        do { try start(job: job, store: store, externalDisclosureApproved: externalDisclosureApproved) }
+        catch { self.error = error.localizedDescription }
+    }
+    func interrupt(jobID: UUID) { if jobID == runningJobID { runTask?.cancel() } }
+    func start(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool) throws {
+        guard let storage, runTask == nil else { throw EvaluationStoreError.runBusy }
         do {
             let kind = (try JSONSerialization.jsonObject(with: job.configuration.executionContext) as? [String: Any])?["kind"] as? String
             let executor: ProductionExecutor
@@ -155,6 +165,7 @@ final class ProductionWorkspaceStore {
                 worker = .init(id: localWorkerID, name: "This Mac", platform: "macOS", operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
                     hardware: hardware, locale: Locale.current.identifier, model: context.reportedModel)
             } else { throw ProductionFailure.unavailable("Run this job with its configured command worker. The worker instructions are in the production eval guide.") }
+            executionErrors[job.id] = nil
             runningJobID = job.id
             runTask = Task {
                 defer { if let owner { store.endProductionExecution(owner) }; runningJobID = nil; runTask = nil }
@@ -163,10 +174,10 @@ final class ProductionWorkspaceStore {
                         try await ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker, execute: executor)
                     }
                     _ = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
-                } catch is CancellationError { } catch { self.error = error.localizedDescription }
+                } catch is CancellationError { } catch { self.error = error.localizedDescription; executionErrors[job.id] = error.localizedDescription }
                 await refresh()
             }
-        } catch { self.error = error.localizedDescription }
+        } catch { throw error }
     }
     func appendReview(action: ProductionReviewAction, reviewer: String, assignee: String, outcome: ProductionOutcome,
                       note: String, tags: String, verifiedOutput: String, verifiedCost: Double?) {

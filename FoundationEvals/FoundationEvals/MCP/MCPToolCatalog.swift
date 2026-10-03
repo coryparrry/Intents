@@ -92,6 +92,7 @@ struct MCPResourcePayload: Sendable {
 
 enum MCPToolCall: Sendable {
     case getState
+    case control(MCPControlCall)
     case listProjects
     case listReviewSamples(MCPReviewSamplesArguments)
     case proposeReview(MCPReviewProposalArguments)
@@ -472,7 +473,7 @@ enum MCPToolCatalog {
                 "confirm": boolean("Must be true.")
             ], required: ["runID", "confirm"], destructive: true, idempotent: true
         )
-    ] + EvaluationReviewMCP.definitions
+    ] + EvaluationReviewMCP.definitions + MCPControlTools.definitions
 
     static let resourceTemplates: [MCPJSONValue] = [
         .object([
@@ -495,6 +496,10 @@ enum MCPToolCatalog {
             throw MCPToolInputError.unknownTool
         }
         do {
+            if MCPControlTools.names.contains(name) {
+                try MCPControlSchema.validate(arguments, schema: definition.inputSchema)
+                return .control(.init(name: name, arguments: arguments))
+            }
             try rejectUndeclaredProperties(in: arguments, schema: definition.inputSchema)
             switch name {
             case "eval_get_state":

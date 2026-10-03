@@ -10,7 +10,12 @@ public enum ProductionCodec {
     public static func encode<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .custom { date, encoder in
-            var value = encoder.singleValueContainer(); try value.encode(Int64((date.timeIntervalSince1970*1000).rounded()))
+            var value = encoder.singleValueContainer()
+            let milliseconds = (date.timeIntervalSince1970*1000).rounded()
+            guard milliseconds.isFinite, let integer = Int64(exactly: milliseconds) else {
+                throw ProductionFailure.invalid("Date exceeds the representable Unix millisecond range.")
+            }
+            try value.encode(integer)
         }
         return try encoder.encode(value)
     }

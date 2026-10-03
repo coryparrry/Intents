@@ -29,7 +29,7 @@ extension ProductionStorage {
             let directory = jobDirectory(id)
             if FileManager.default.fileExists(atPath: directory.path) {
                 let existing = try loadJob(id)
-                guard existing.datasetRevision == datasetRevision, existing.configuration == configuration else {
+                guard existing.name == job.name, existing.datasetRevision == datasetRevision, existing.configuration == configuration else {
                     throw ProductionFailure.invalid("Job ID already belongs to a different frozen job.")
                 }
                 return existing
@@ -65,9 +65,17 @@ extension ProductionStorage {
     public func control(_ job: ProductionJob) throws -> ProductionControl {
         try ProductionCodec.read(ProductionControl.self, from: jobDirectory(job.id).appendingPathComponent("control.json"), maximumBytes: 1_000_000)
     }
-    public func setControl(jobID: UUID, paused: Bool? = nil, cancelled: Bool? = nil) throws {
+    public func controlRevision(_ job: ProductionJob) throws -> String {
+        let value = try control(job)
+        return Self.controlRevision(value)
+    }
+    public static func controlRevision(_ value: ProductionControl) -> String {
+        ProductionCodec.digest(Data("\(value.paused)/\(value.cancelled)".utf8))
+    }
+    public func setControl(jobID: UUID, paused: Bool? = nil, cancelled: Bool? = nil, expectedControlRevision: String? = nil) throws {
         try transaction {
             let job = try loadJob(jobID); var value = try control(job)
+            if let expectedControlRevision, try controlRevision(job) != expectedControlRevision { throw ProductionFailure.invalid("Control state changed. Reread pause/cancel state before changing it.") }
             if let paused { value.paused = paused }
             if let cancelled { value.cancelled = cancelled }
             try ProductionCodec.write(value, to: jobDirectory(jobID).appendingPathComponent("control.json"))

@@ -7,7 +7,7 @@ public struct ProductionCapturedContext: Codable, Sendable {
 
 extension ProductionStorage {
     /// Captured outputs are retained verbatim for review; inference is never re-run.
-    public func createCapturedJob(name: String, datasetRevision: String) throws -> ProductionJob {
+    public func createCapturedJob(name: String, datasetRevision: String, id: UUID = UUID()) throws -> ProductionJob {
         let context = try ProductionCodec.encode(ProductionCapturedContext())
         let config = ProductionJobConfiguration(scoringRevision: ProductionCodec.digest(Data("human-review-v1".utf8)),
             executionRevision: ProductionCodec.digest(context), executionContext: context)
@@ -15,7 +15,7 @@ extension ProductionStorage {
         for index in 0..<reader.dataset.count {
             guard try reader.example(at: index).capturedOutput != nil else { throw ProductionFailure.invalid("Every captured example needs its original output.") }
         }
-        return try createJob(name: name, datasetRevision: datasetRevision, configuration: config)
+        return try createJob(name: name, datasetRevision: datasetRevision, configuration: config, id: id)
     }
     public static func capturedResponse(_ request: ProductionRequest) throws -> ProductionResponse {
         let context = try ProductionCodec.decode(ProductionCapturedContext.self, request.configuration.executionContext)

@@ -256,8 +256,8 @@ struct MCPProtocolTests {
         let tools = try #require(responseJSON(first)["result"]?["tools"]?.arrayValue)
 
         #expect(first.body == second.body)
-        #expect(tools.count == 19)
-        #expect(tools.compactMap { $0["name"]?.stringValue } == [
+        #expect(tools.count == 19 + MCPControlTools.definitions.count)
+        #expect(tools.prefix(19).compactMap { $0["name"]?.stringValue } == [
             "eval_get_state",
             "eval_list_projects",
             "eval_check",

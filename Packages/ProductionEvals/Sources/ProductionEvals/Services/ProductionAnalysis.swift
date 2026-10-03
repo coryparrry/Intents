@@ -130,3 +130,13 @@ extension ProductionStorage {
                      issues: issues, baselinePassRate: baselineRate, reviewedCount: reviewed, samplingNotice: notice)
     }
 }
+
+extension ProductionStorage {
+    public func record(jobID: UUID, slot: Int) throws -> ProductionRecord {
+        let job = try loadJob(jobID)
+        guard (0..<job.plannedCount).contains(slot), let record = try chunk(job,index:slot/job.configuration.chunkSize).records[slot] else {
+            throw ProductionFailure.invalid("Completed result slot is unavailable.")
+        }
+        return record
+    }
+}

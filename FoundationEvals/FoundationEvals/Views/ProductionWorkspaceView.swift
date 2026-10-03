@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-private enum ProductionPane: String, WorkspacePane {
+enum ProductionPane: String, WorkspacePane {
     case datasets, jobs, review, reports, workers
     var id: Self { self }
     var title: String { rawValue.capitalized }
@@ -22,7 +22,10 @@ private enum ProductionPane: String, WorkspacePane {
 struct ProductionWorkspaceView: View {
     @Bindable var model: ProductionWorkspaceStore
     let store: EvaluationStore
-    @State private var pane: ProductionPane = .datasets
+    private var pane: ProductionPane {
+        get { model.pane }
+        nonmutating set { model.pane = newValue }
+    }
     @State private var importURL: URL?
     @State private var creatingJob = false
     @State private var search = ""
@@ -39,7 +42,7 @@ struct ProductionWorkspaceView: View {
                     if model.isLoading { ProgressView().controlSize(.small) }
                     Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }.buttonStyle(.bordered)
                 }
-                WorkspacePaneLayout(heading: "Batch workspace", selection: $pane) {
+                WorkspacePaneLayout(heading: "Batch workspace", selection: $model.pane) {
                     switch pane {
                     case .datasets: datasetPane
                     case .jobs: jobsPane

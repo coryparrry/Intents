@@ -13,13 +13,20 @@ public struct ProductionSchedule: Codable, Identifiable, Sendable {
     }
 }
 extension ProductionStorage {
-    public func saveSchedule(_ schedule: ProductionSchedule) throws {
+    public func saveSchedule(_ schedule: ProductionSchedule, expectedRevision: String? = nil) throws {
         _ = try loadJob(schedule.templateJobID)
         guard schedule.intervalSeconds.isFinite, (60...31_536_000).contains(schedule.intervalSeconds),
               (0...1_000).contains(schedule.remainingRuns), schedule.nextRun.timeIntervalSince1970.isFinite else {
             throw ProductionFailure.invalid("Schedules need a finite interval and at most 1,000 future runs.")
         }
-        try transaction { try ProductionCodec.write(schedule, to: root.appendingPathComponent("Schedules/\(schedule.id.uuidString).json")) }
+        try transaction {
+            let file=root.appendingPathComponent("Schedules/\(schedule.id.uuidString).json")
+            if let expectedRevision {
+                let current = FileManager.default.fileExists(atPath:file.path) ? try ProductionCodec.digest(ProductionCodec.encode(ProductionCodec.read(ProductionSchedule.self,from:file,maximumBytes:10000))) : "absent"
+                guard current == expectedRevision else { throw ProductionFailure.invalid("Schedule changed. Reread its revision before saving.") }
+            }
+            try ProductionCodec.write(schedule,to:file)
+        }
     }
     public func schedules() throws -> [ProductionSchedule] {
         try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("Schedules"), includingPropertiesForKeys: nil)

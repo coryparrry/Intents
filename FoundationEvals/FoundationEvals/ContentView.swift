@@ -7,13 +7,11 @@ struct ContentView: View {
     @Environment(DeveloperRunnerStore.self) private var runners
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
-    init(store: EvaluationStore) {
+    init(store: EvaluationStore, control: EvaluationAppControl? = nil) {
         self.store = store
-        _productionWorkspace = State(initialValue: ProductionWorkspaceStore(root: store.overviewStorageDirectory))
-        _scenarioCoordinator = State(initialValue: ScenarioCoordinator(
-            supportDirectory: store.overviewStorageDirectory,
-            evaluationStore: store
-        ))
+        let control = control ?? EvaluationAppControl(store: store)
+        _productionWorkspace = State(initialValue: control.production)
+        _scenarioCoordinator = State(initialValue: control.scenarios)
     }
 
     var body: some View {
