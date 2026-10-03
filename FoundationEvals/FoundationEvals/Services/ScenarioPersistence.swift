@@ -1,5 +1,10 @@
 import Foundation
 
+struct ScenarioSelectedDefinition: Codable, Equatable, Sendable {
+    var id: UUID
+    var version: Int
+}
+
 enum ScenarioPersistenceError: LocalizedError, Sendable {
     case conflictingDefinition
     case immutableRunExists
@@ -195,6 +200,22 @@ actor ScenarioPersistence {
         let url = rootDirectory.appending(path: "execution-configuration.json")
         guard fileManager.fileExists(atPath: url.path) else { return nil }
         return try Self.decoder.decode(XcodeTestConfiguration.self, from: Data(contentsOf: url))
+    }
+
+    func saveSelectedDefinition(id: UUID, version: Int) throws {
+        guard try loadDefinitions().contains(where: { $0.id == id && $0.version == version }) else {
+            throw ScenarioPersistenceError.invalidDefinition("selected scenario \(id.uuidString) v\(version)")
+        }
+        try prepare()
+        try Self.encoder.encode(ScenarioSelectedDefinition(id: id, version: version)).write(
+            to: rootDirectory.appending(path: "selected-definition.json"), options: .atomic
+        )
+    }
+
+    func loadSelectedDefinition() throws -> ScenarioSelectedDefinition? {
+        let url = rootDirectory.appending(path: "selected-definition.json")
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        return try Self.decoder.decode(ScenarioSelectedDefinition.self, from: Data(contentsOf: url))
     }
 
     func redactedSharingCopy(of run: ScenarioRun) -> ScenarioRun {

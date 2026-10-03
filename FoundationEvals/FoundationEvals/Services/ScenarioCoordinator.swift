@@ -12,9 +12,12 @@ final class ScenarioCoordinator {
     var selectedRunID: UUID?
     var configuration: XcodeTestConfiguration
     var projectTrusted = false
+    private(set) var selectedIntegration: ScenarioIntegrationIdentity?
     private(set) var connectionDiscovery: XcodeConnectionDiscovery?
     private(set) var discoveredDevices: [IntentLabDeviceDestination] = []
     private(set) var isDiscoveringConnection = false
+    private(set) var isVerifyingIntegration = false
+    private(set) var verifiedIntegrationSummary: String?
     var statedChangedDimensions: Set<String> = []
     private(set) var preflight: ScenarioPreflightReport?
     private(set) var isRunning = false
@@ -34,6 +37,7 @@ final class ScenarioCoordinator {
     private var cancellationRequested = false
     private var finalEvidenceCommitStarted = false
     private var executionTask: Task<ScenarioExecutorResult, Error>?
+    @ObservationIgnored private var scopedProjectURL: URL?
 
     init(supportDirectory: URL, evaluationStore: EvaluationStore) {
         let root = supportDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
@@ -90,16 +94,23 @@ final class ScenarioCoordinator {
             ledger = try await persistence.loadLedger()
             recoveryJournals = try await executor.reconcileInterruptedJournals()
             journals = try await persistence.loadJournals()
-            // Resume the last-run scenario at its latest version, even if it was renamed.
-            let latestDefinitions = ScenarioDefinition.latestVersions(in: definitions)
-            let lastRunDefinition = runs.lazy.compactMap { run in
-                latestDefinitions.first { $0.id == run.scenarioID }
-            }.first
-            let fallbackDefinition = latestDefinitions.max {
-                ($0.name, $0.id.uuidString) < ($1.name, $1.id.uuidString)
+            let selected = try await persistence.loadSelectedDefinition()
+            let latestRunDefinition = runs.first.flatMap { latestRun in
+                definitions
+                    .filter { $0.id == latestRun.scenarioID }
+                    .max { $0.version < $1.version }
             }
-            if let definition = lastRunDefinition ?? fallbackDefinition {
+            let latestVersion = definitions.map(\.version).max()
+            let latestVersionDefinition = latestVersion.flatMap { version in
+                definitions.last { $0.version == version }
+            }
+            let restored = selected.flatMap { saved in
+                definitions.first { $0.id == saved.id && $0.version == saved.version }
+            } ?? latestRunDefinition ?? latestVersionDefinition
+            if let definition = restored {
                 draft = definition
+                selectedIntegration = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+                    ? definition.integration : nil
                 parameterArrayDraftTexts = [:]
                 invalidParameterDraftIndices = []
                 applyTargetToConfiguration(definition.target)
@@ -125,17 +136,25 @@ final class ScenarioCoordinator {
             notice = XcodeConnectionDiscoveryError.invalidContainer.localizedDescription
             return
         }
+        scopedProjectURL?.stopAccessingSecurityScopedResource()
+        scopedProjectURL = url.startAccessingSecurityScopedResource() ? url : nil
         configuration.containerPath = url.standardizedFileURL.path
         configuration.isWorkspace = url.pathExtension == "xcworkspace"
         configuration.scheme = ""
+        configuration.configuration = "Debug"
+        configuration.configurationOverride = nil
         configuration.testTarget = ""
+        configuration.selectedTestProductID = nil
+        configuration.selectedApplicationProductID = nil
         configuration.testBundleIdentifier = ""
         configuration.harnessVersion = nil
         configuration.harnessCapabilities = nil
         configuration.applicationSigningConfigured = nil
         configuration.testSigningConfigured = nil
+        selectedIntegration = nil
         projectTrusted = false
         connectionDiscovery = nil
+        verifiedIntegrationSummary = nil
         invalidatePreflight()
     }
 
@@ -157,6 +176,7 @@ final class ScenarioCoordinator {
     }
 
     func approveBuildAndDiscover() async {
+        guard !isDiscoveringConnection else { return }
         guard !configuration.containerPath.isEmpty else {
             notice = XcodeConnectionDiscoveryError.invalidContainer.localizedDescription
             return
@@ -171,13 +191,39 @@ final class ScenarioCoordinator {
                 xcdevicePath: "/usr/bin/xcrun"
             )
             let buildConfiguration = configuration.configuration
+            let selectedScheme = configuration.scheme
+            let signingArguments = configuration.signingArguments
             let discovery = try await Task.detached {
-                try service.discoverProject(container: container, configuration: buildConfiguration)
+                try service.discoverProject(
+                    container: container, configuration: buildConfiguration,
+                    signingArguments: signingArguments
+                )
             }.value
-            guard configuration.containerPath == approvedContainerPath else { return }
+            guard configuration.containerPath == approvedContainerPath,
+                  configuration.configuration == buildConfiguration,
+                  configuration.scheme == selectedScheme,
+                  configuration.signingArguments == signingArguments else { return }
             connectionDiscovery = discovery
-            projectTrusted = true
             apply(discovery: discovery)
+            if configuration.configurationOverride == nil {
+                let schemeConfiguration = try testActionConfiguration(for: discovery)
+                if schemeConfiguration != configuration.configuration {
+                    configuration.configuration = schemeConfiguration
+                    let refreshed = try await Task.detached {
+                        try service.discoverProject(
+                            container: container, configuration: schemeConfiguration,
+                            signingArguments: signingArguments
+                        )
+                    }.value
+                    guard configuration.containerPath == approvedContainerPath,
+                          configuration.configuration == schemeConfiguration,
+                          configuration.configurationOverride == nil,
+                          configuration.signingArguments == signingArguments else { return }
+                    connectionDiscovery = refreshed
+                    apply(discovery: refreshed)
+                }
+            }
+            projectTrusted = true
             try await persistence.saveExecutionConfiguration(configuration)
             await refreshPreflight()
         } catch {
@@ -189,24 +235,112 @@ final class ScenarioCoordinator {
     }
 
     func selectScheme(_ scheme: String) {
+        guard configuration.scheme != scheme else { return }
         configuration.scheme = scheme
+        if configuration.configurationOverride == nil {
+            do {
+                configuration.configuration = try testActionConfiguration(for: connectionDiscovery)
+            } catch {
+                projectTrusted = false
+                notice = error.localizedDescription
+                invalidatePreflight()
+                return
+            }
+        }
+        projectTrusted = false
+        invalidatePreflight()
+    }
+
+    func selectBuildConfiguration(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        configuration.configurationOverride = trimmed.isEmpty ? nil : trimmed
+        configuration.configuration = trimmed.isEmpty
+            ? ((try? testActionConfiguration(for: connectionDiscovery)) ?? "Debug") : trimmed
+        projectTrusted = false
+        invalidatePreflight()
+    }
+
+    func selectDevelopmentTeam(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = trimmed.isEmpty ? nil : trimmed
+        guard configuration.developmentTeam != selected else { return }
+        configuration.developmentTeam = selected
+        configuration.applicationSigningConfigured = nil
+        configuration.testSigningConfigured = nil
+        projectTrusted = false
+        connectionDiscovery = nil
+        invalidatePreflight()
+    }
+
+    func setAllowsProvisioningUpdates(_ allowed: Bool) {
+        guard configuration.allowProvisioningUpdates != allowed else { return }
+        configuration.allowProvisioningUpdates = allowed
+        projectTrusted = false
+        connectionDiscovery = nil
         invalidatePreflight()
     }
 
     func selectApplication(_ product: XcodeDiscoveredProduct) {
+        if draft.target.bundleIdentifier != product.bundleIdentifier {
+            selectedIntegration = nil
+            if draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                draft.integration = nil
+            }
+        }
         draft.target.bundleIdentifier = product.bundleIdentifier
+        configuration.selectedApplicationProductID = product.id
         configuration.applicationSigningConfigured = product.signingConfigured
         draft.definitionDigest = ""
+        if !isDiscoveringConnection, configuration.configurationOverride == nil,
+           let discovery = connectionDiscovery {
+            do {
+                let selectedConfiguration = try testActionConfiguration(for: discovery)
+                if selectedConfiguration != configuration.configuration {
+                    configuration.configuration = selectedConfiguration
+                    let wasTrusted = projectTrusted
+                    projectTrusted = false
+                    invalidatePreflight()
+                    if wasTrusted { Task { await approveBuildAndDiscover() } }
+                    return
+                }
+            } catch {
+                projectTrusted = false
+                notice = error.localizedDescription
+            }
+        }
         invalidatePreflight()
     }
 
     func selectUITestBundle(_ product: XcodeDiscoveredProduct) {
         configuration.testTarget = product.targetName
+        configuration.selectedTestProductID = product.id
         configuration.testBundleIdentifier = product.bundleIdentifier
         configuration.harnessVersion = product.harnessVersion
         configuration.harnessCapabilities = product.harnessCapabilities
         configuration.testSigningConfigured = product.signingConfigured
         invalidatePreflight()
+    }
+
+    func verifyInstalledIntegration() async {
+        guard !isVerifyingIntegration else { return }
+        isVerifyingIntegration = true
+        defer { isVerifyingIntegration = false }
+        applyConfigurationToDraft()
+        do {
+            let definition = try draft.frozen()
+            let verified = try await executor.verifyConnection(
+                definition: definition,
+                configuration: configuration,
+                projectTrusted: projectTrusted
+            )
+            verifiedIntegrationSummary = "Compiled \(verified.receipt.integration.id) v\(verified.receipt.integration.version) with \(verified.receipt.capabilities.count) declared capabilities."
+            draft = definition
+            await refreshPreflight()
+        } catch {
+            verifiedIntegrationSummary = nil
+            notice = "Integration check failed: \(error.localizedDescription)"
+            invalidatePreflight()
+        }
     }
 
     func selectDevice(_ identifier: String) async {
@@ -250,6 +384,7 @@ final class ScenarioCoordinator {
         let frozen = draft
         let savedConfiguration = configuration
         try await persistence.saveDefinition(frozen)
+        try await persistence.saveSelectedDefinition(id: frozen.id, version: frozen.version)
         try await persistence.saveExecutionConfiguration(savedConfiguration)
         if let index = definitions.firstIndex(where: { $0.id == frozen.id && $0.version == frozen.version }) {
             definitions[index] = frozen
@@ -265,6 +400,77 @@ final class ScenarioCoordinator {
         parameterArrayDraftTexts = [:]
         invalidParameterDraftIndices = []
         selectedRunID = nil
+        invalidatePreflight()
+    }
+
+    /// Starts a separate v2 definition. Existing v1 definitions and their digests
+    /// stay untouched so old evidence retains its original interpretation.
+    func startReusableCheck() {
+        let selectedApp = connectionDiscovery?.applications.first {
+            $0.bundleIdentifier == draft.target.bundleIdentifier
+        } ?? connectionDiscovery?.applications.first
+        draft = .reusable(
+            name: "New intent check",
+            target: .init(
+                bundleIdentifier: selectedApp?.bundleIdentifier ?? draft.target.bundleIdentifier,
+                projectPath: configuration.containerPath,
+                scheme: configuration.scheme,
+                testTarget: configuration.testTarget,
+                destinationIdentifier: configuration.destinationIdentifier,
+                route: .appIntentDefinition
+            ),
+            goal: .init(requestText: "", languageCode: "en-GB", expectedBehavior: ""),
+            fixture: .init(
+                id: "", version: "", digest: "", isSynthetic: false,
+                preparationOperation: "none", cleanupOperation: "none"
+            ),
+            directControl: .init(
+                intentIdentifier: "", parameters: [], outputFields: [], linkedFeatureRunID: nil
+            ),
+            assertions: [],
+            coverage: .init(
+                appFeature: .notApplicable, intentIntegration: .required,
+                siri: .notApplicable, siriAttemptCount: 1
+            ),
+            safety: .init(
+                mutationPolicy: .readOnly, allowedActions: [],
+                permittedConfirmationSteps: [], deadlineSeconds: 60
+            ),
+            purpose: .exploratory,
+            checkMode: .basic,
+            requiredClaims: [.executionCompleted],
+            observationPlan: [],
+            integration: selectedIntegration ?? draft.integration
+                ?? .init(id: "pending-integration", version: "1", digest: "")
+        )
+        draft.projectID = evaluationStore.selectedProjectID
+        parameterArrayDraftTexts = [:]
+        invalidParameterDraftIndices = []
+        selectedRunID = nil
+        invalidatePreflight()
+    }
+
+    func recordInstalledIntegration(_ identity: ScenarioIntegrationIdentity, appBundleID: String,
+                                    projectPath: String, scheme: String, testTarget: String,
+                                    applicationProductID: String?, testProductID: String?) {
+        if configuration.scheme != scheme || configuration.testTarget != testTarget
+            || configuration.selectedApplicationProductID != applicationProductID
+            || configuration.selectedTestProductID != testProductID
+            || draft.target.projectPath != projectPath || draft.target.bundleIdentifier != appBundleID {
+            projectTrusted = false
+        }
+        selectedIntegration = identity
+        configuration.selectedApplicationProductID = applicationProductID
+        configuration.selectedTestProductID = testProductID
+        configuration.testTarget = testTarget
+        configuration.scheme = scheme
+        guard draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion else { return }
+        draft.integration = identity
+        draft.target.bundleIdentifier = appBundleID
+        draft.target.projectPath = projectPath
+        draft.target.scheme = scheme
+        draft.target.testTarget = testTarget
+        draft.definitionDigest = ""
         invalidatePreflight()
     }
 
@@ -285,6 +491,7 @@ final class ScenarioCoordinator {
     func invalidatePreflight() {
         preflightRevision += 1
         preflight = nil
+        verifiedIntegrationSummary = nil
     }
 
     func refreshPreflight() async {
@@ -533,23 +740,43 @@ final class ScenarioCoordinator {
         configuration.destinationIdentifier = target.destinationIdentifier
     }
 
+    private func testActionConfiguration(for discovery: XcodeConnectionDiscovery?) throws -> String {
+        guard let discovery, !configuration.scheme.isEmpty else { return "Debug" }
+        let selectedProjectPath = discovery.applications.first {
+            $0.id == configuration.selectedApplicationProductID
+        }?.projectPath
+        return try XcodeConnectionDiscoveryService.testActionBuildConfiguration(
+            container: URL(filePath: configuration.containerPath),
+            scheme: configuration.scheme,
+            preferredProjectPath: selectedProjectPath
+        ) ?? "Debug"
+    }
+
     private func apply(discovery: XcodeConnectionDiscovery) {
-        if let scheme = discovery.automaticallySelectedScheme {
-            configuration.scheme = scheme
-        } else if !discovery.schemes.contains(configuration.scheme) {
-            configuration.scheme = ""
+        if !discovery.schemes.contains(configuration.scheme) {
+            configuration.scheme = discovery.automaticallySelectedScheme ?? ""
         }
         if discovery.applications.count == 1, let application = discovery.applications.first {
             selectApplication(application)
-        } else if !discovery.applications.contains(where: { $0.bundleIdentifier == draft.target.bundleIdentifier }) {
+        } else if let application = discovery.applications.first(where: {
+            $0.id == configuration.selectedApplicationProductID
+        }) {
+            configuration.applicationSigningConfigured = application.signingConfigured
+        } else if !discovery.applications.contains(where: { $0.id == configuration.selectedApplicationProductID }) {
             draft.target.bundleIdentifier = ""
             draft.definitionDigest = ""
             configuration.applicationSigningConfigured = nil
+            configuration.selectedApplicationProductID = nil
         }
         if discovery.uiTestBundles.count == 1, let tests = discovery.uiTestBundles.first {
             selectUITestBundle(tests)
-        } else if !discovery.uiTestBundles.contains(where: { $0.targetName == configuration.testTarget }) {
+        } else if let tests = discovery.uiTestBundles.first(where: {
+            $0.id == configuration.selectedTestProductID
+        }) {
+            configuration.testSigningConfigured = tests.signingConfigured
+        } else if !discovery.uiTestBundles.contains(where: { $0.id == configuration.selectedTestProductID }) {
             configuration.testTarget = ""
+            configuration.selectedTestProductID = nil
             configuration.testBundleIdentifier = ""
             configuration.harnessVersion = nil
             configuration.harnessCapabilities = nil

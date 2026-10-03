@@ -96,6 +96,11 @@ struct ScenarioReportView: View {
                     Text(frozenDefinition?.name ?? "Scenario v\(run.scenarioVersion)").font(.title3.weight(.semibold))
                     Text(run.startedAt.formatted(date: .abbreviated, time: .standard))
                         .font(.caption).foregroundStyle(.secondary)
+                    if let definition = frozenDefinition,
+                       definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                        Text("\(definition.purpose == .exploratory ? "Exploratory" : "Release requirement") · \(definition.checkMode == .basic ? "Basic" : "Behaviour")")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 ScenarioOutcomeBadge(outcome: run.outcome)
@@ -132,7 +137,7 @@ struct ScenarioReportView: View {
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(results) { result in
-                        attemptCard(result, run: run)
+                        attemptCard(result, run: run, definition: definition)
                     }
                 }
                 .padding(.top, 8)
@@ -150,7 +155,7 @@ struct ScenarioReportView: View {
         .workspaceSurface(radius: 10)
     }
 
-    private func attemptCard(_ result: ScenarioLaneResult, run: ScenarioRun) -> some View {
+    private func attemptCard(_ result: ScenarioLaneResult, run: ScenarioRun, definition: ScenarioDefinition?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Attempt \(result.attempt)").font(.caption.weight(.semibold))
@@ -161,6 +166,16 @@ struct ScenarioReportView: View {
             if let diagnostic = result.diagnostic {
                 Text(diagnostic).font(.caption)
             }
+            if result.lane == .intentIntegration,
+               result.outcome == .passed,
+               definition?.schemaVersion == ScenarioDefinition.reusableSchemaVersion,
+               definition?.checkMode == .basic {
+                Text(definition?.requiredClaims?.contains(.returnedValueChecked) == true
+                    ? "Returned values matched. Application state was not checked."
+                    : "Execution passed. Application state was not checked.")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
             if let proposed = result.proposedCause {
                 Label("Hypothesis: \(proposed)", systemImage: "lightbulb")
                     .font(.caption).foregroundStyle(.secondary)
@@ -170,6 +185,10 @@ struct ScenarioReportView: View {
                     ForEach(result.observations.keys.sorted(), id: \.self) { key in
                         LabeledContent(key, value: display(result.observations[key]))
                             .font(.caption)
+                        if let source = result.observationSources?[key] {
+                            Text("Source: \(source)")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }

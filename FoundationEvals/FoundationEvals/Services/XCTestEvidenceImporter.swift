@@ -111,7 +111,32 @@ struct XCTestEvidenceImporter: Sendable {
     ) throws -> ScenarioRun {
         try ScenarioValidator.validate(definition)
         let envelope = try decodeEnvelope(from: data)
-        guard envelope.schemaVersion == ScenarioEvidenceEnvelope.currentSchemaVersion else {
+        let expectedEnvelopeVersion = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+            ? ScenarioEvidenceEnvelope.reusableSchemaVersion : ScenarioEvidenceEnvelope.currentSchemaVersion
+        guard envelope.schemaVersion == expectedEnvelopeVersion else {
+            throw ScenarioEvidenceImportError.schemaMismatch
+        }
+        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+            let required = ScenarioHarnessCapabilities.required(for: definition)
+            guard let integration = definition.integration,
+                  envelope.integration == integration,
+                  envelope.invocation.integration == integration,
+                  journal.invocation.integration == integration,
+                  envelope.invocation.requiredCapabilities == required.sorted(),
+                  journal.invocation.requiredCapabilities == required.sorted(),
+                  let packageVersion = envelope.runnerPackageVersion,
+                  !packageVersion.isEmpty, packageVersion.count <= 64,
+                  let negotiated = envelope.negotiatedCapabilities,
+                  Set(negotiated).count == negotiated.count,
+                  required.isSubset(of: Set(negotiated)) else {
+                throw ScenarioEvidenceImportError.identityMismatch(
+                    "integration declaration, runner package, or negotiated capabilities differ"
+                )
+            }
+        } else if envelope.integration != nil || envelope.runnerPackageVersion != nil
+                    || envelope.negotiatedCapabilities != nil
+                    || envelope.invocation.integration != nil
+                    || envelope.invocation.requiredCapabilities != nil {
             throw ScenarioEvidenceImportError.schemaMismatch
         }
         guard journal.phase == .running || journal.phase == .cancelling || journal.phase == .stopped else {
@@ -133,7 +158,7 @@ struct XCTestEvidenceImporter: Sendable {
             : results.first(where: { $0.executionStatus != .completed })?.executionStatus ?? .invalidEvidence
         let startedAt = results.map(\.startedAt).min() ?? envelope.invocation.issuedAt
         let completedAt = results.map(\.completedAt).max() ?? importedAt
-        let run = ScenarioRun(
+        var run = ScenarioRun(
             id: envelope.invocation.id,
             scenarioID: definition.id,
             scenarioVersion: definition.version,
@@ -150,6 +175,11 @@ struct XCTestEvidenceImporter: Sendable {
             fixture: definition.fixture,
             statedChangedDimensions: statedChangedDimensions
         )
+        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+            run.integration = envelope.integration
+            run.runnerPackageVersion = envelope.runnerPackageVersion
+            run.negotiatedCapabilities = envelope.negotiatedCapabilities?.sorted()
+        }
         ledger.record(envelope)
         return run
     }
@@ -168,8 +198,10 @@ struct XCTestEvidenceImporter: Sendable {
               envelope.invocation.scenarioDigest == journal.invocation.scenarioDigest else {
             throw ScenarioEvidenceImportError.identityMismatch("scenario digest differs")
         }
+        let expectedHarnessVersion = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+            ? ScenarioInvocationIdentity.reusableHarnessVersion : ScenarioInvocationIdentity.currentHarnessVersion
         guard envelope.invocation.testIdentity == journal.invocation.testIdentity,
-              envelope.invocation.harnessVersion == ScenarioInvocationIdentity.currentHarnessVersion else {
+              envelope.invocation.harnessVersion == expectedHarnessVersion else {
             throw ScenarioEvidenceImportError.identityMismatch("test entry point or harness version differs")
         }
         guard envelope.invocation.destinationIdentifier == definition.target.destinationIdentifier,
@@ -204,6 +236,10 @@ struct XCTestEvidenceImporter: Sendable {
             throw ScenarioEvidenceImportError.invalidResult("duplicate case, lane, and attempt coordinates")
         }
         for result in results {
+            if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion,
+               definition.coverage[result.lane] == .notApplicable {
+                throw ScenarioEvidenceImportError.invalidResult("a not-applicable lane supplied evidence")
+            }
             let assertionIDs = result.assertionResults.map(\.assertionID)
             guard Set(assertionIDs).count == assertionIDs.count else {
                 throw ScenarioEvidenceImportError.invalidResult("duplicate assertion IDs")
@@ -234,6 +270,33 @@ struct XCTestEvidenceImporter: Sendable {
             )
             if result.outcome == .passed, evaluated.0 != .passed {
                 throw ScenarioEvidenceImportError.invalidResult("a claimed pass conflicts with the captured observations")
+            }
+            if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion,
+               result.outcome == .passed,
+               result.lane != .appFeature {
+                guard let claims = result.claims,
+                      Set(claims).count == claims.count,
+                      claims.contains(.executionCompleted) else {
+                    throw ScenarioEvidenceImportError.invalidResult("a pass lacks distinct execution proof claims")
+                }
+                for claim in claims {
+                    if result.lane == .siri && claim == .executionCompleted { continue }
+                    guard ScenarioResultEvaluator.verifiedClaim(claim, definition: definition, result: result) else {
+                        throw ScenarioEvidenceImportError.invalidResult("a claimed pass lacks verified \(claim.rawValue) evidence")
+                    }
+                }
+                if result.lane == .intentIntegration {
+                    for claim in definition.requiredClaims ?? [] {
+                        guard ScenarioResultEvaluator.verifiedClaim(claim, definition: definition, result: result) else {
+                            throw ScenarioEvidenceImportError.invalidResult("a claimed pass lacks verified \(claim.rawValue) evidence")
+                        }
+                    }
+                } else if result.lane == .siri,
+                          !ScenarioResultEvaluator.verifiedClaim(
+                              .applicationStateChecked, definition: definition, result: result
+                          ) {
+                    throw ScenarioEvidenceImportError.invalidResult("a Siri pass lacks verified final-state evidence")
+                }
             }
         }
         for lane in ScenarioLane.allCases where definition.coverage[lane] == .required {

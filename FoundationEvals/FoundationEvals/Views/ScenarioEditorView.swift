@@ -29,6 +29,12 @@ struct ScenarioEditorView: View {
             subtitle: "Set the request and observable result. Saved wording stays the same on every run."
         ) {
             VStack(alignment: .leading, spacing: 10) {
+                if coordinator.draft.schemaVersion == ScenarioDefinition.currentSchemaVersion {
+                    Button("Create reusable check", systemImage: "plus.circle") {
+                        coordinator.startReusableCheck()
+                    }
+                    IntentLabHelp("Start a separate version 2 check for another app. Saved version 1 scenarios and their evidence stay as they were.")
+                }
                 labeledRow("Project", help: "Choose the project whose release report should include this scenario. Changing a saved scenario creates a new frozen version.") {
                     Picker("Project", selection: Binding(
                         get: { coordinator.draft.projectID?.uuidString ?? "" },
@@ -80,6 +86,9 @@ struct ScenarioEditorView: View {
                 labeledRow("Intent definition", help: "An App Intent is an action your app makes available to Siri and Shortcuts, such as opening a note. Enter its code identifier, for example OpenNoteIntent.") {
                     TextField("OpenNoteIntent", text: $coordinator.draft.directControl.intentIdentifier)
                 }
+                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                    ScenarioResultProjectionEditor(coordinator: coordinator)
+                }
                 labeledRow("Invocation route", help: "App Shortcut describes a shortcut your app exposes. App Intent definition describes the action directly. This records the intended route; it does not create a shortcut or change how this test invokes the action.") {
                     Picker("Invocation route", selection: $coordinator.draft.target.route) {
                         Text("App Shortcut").tag(ScenarioInvocationRoute.appShortcut)
@@ -115,6 +124,9 @@ struct ScenarioEditorView: View {
     private var evidenceSection: some View {
         IntentLabCard("What should this test check?", subtitle: "A lane is one part of the test. Checking the app, its intent, and Siri separately helps you find where a problem starts.") {
             VStack(alignment: .leading, spacing: 20) {
+                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                    ScenarioReusableChecksView(coordinator: coordinator)
+                }
                 requirementPickers
                 IntentLabHelp("Keep at least one lane Required so a pass means something was checked. Optional still collects a result. Not applicable skips that part. Start with Intent integration to check the action itself; also require Siri to test how it handles the request text.")
             }

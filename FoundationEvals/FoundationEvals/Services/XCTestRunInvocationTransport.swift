@@ -6,6 +6,7 @@ enum XCTestRunInvocationTransportError: LocalizedError, Sendable {
     case unsupportedLayout
     case targetMissing(String)
     case ambiguousTarget(String)
+    case targetOwnerMissing(String)
     case productPathMissing(String)
     case productPathEscapesRoot(String)
     case payloadTooLarge(Int)
@@ -22,6 +23,8 @@ enum XCTestRunInvocationTransportError: LocalizedError, Sendable {
             "The generated .xctestrun does not contain the \(target) UI-test target."
         case .ambiguousTarget(let target):
             "The generated .xctestrun contains more than one \(target) configuration."
+        case .targetOwnerMissing(let target):
+            "The generated .xctestrun does not identify the selected project owning \(target)."
         case .productPathMissing(let name):
             "The generated .xctestrun does not declare \(name)."
         case .productPathEscapesRoot(let path):
@@ -37,6 +40,7 @@ struct XCTestRunProductPaths: Equatable, Sendable {
     var appBundleURL: URL
     var testHostURL: URL
     var testBundleURL: URL
+    var targetProviderRelativePath: String? = nil
 }
 
 enum XCTestRunInvocationTransport {
@@ -44,9 +48,97 @@ enum XCTestRunInvocationTransport {
     static let invocationEnvironmentKey = "FOUNDATION_EVALS_INTENT_LAB_INVOCATION_B64"
     static let maximumPayloadBytes = 256 * 1_024
 
+    /// Explicit v2 device view: local paths, project settings, linked feature
+    /// references, user prose, and host safety decisions never enter the runner.
+    private struct DeviceScenarioV2: Encodable {
+        struct Target: Encodable { var bundleIdentifier: String }
+        struct Goal: Encodable { var requestText: String; var languageCode: String }
+        struct Fixture: Encodable {
+            var id: String
+            var version: String
+            var digest: String
+            var preparationOperation: String
+            var cleanupOperation: String
+        }
+        struct DirectControl: Encodable {
+            var intentIdentifier: String
+            var parameters: [ScenarioParameter]
+            var outputFields: [ScenarioOutputField]
+        }
+        struct Assertion: Encodable {
+            var id: UUID
+            var kind: ScenarioAssertionKind
+            var observationKey: String
+            var expectedValue: ScenarioValue?
+            var required: Bool
+            var applicableLanes: Set<ScenarioLane>?
+        }
+        struct Safety: Encodable { var deadlineSeconds: Double; var mutationPolicy: ScenarioMutationPolicy }
+
+        var schemaVersion: Int
+        var id: UUID
+        var version: Int
+        var definitionDigest: String
+        var target: Target
+        var goal: Goal
+        var fixture: Fixture
+        var directControl: DirectControl
+        var assertions: [Assertion]
+        var coverage: ScenarioCoverage
+        var safety: Safety
+        var purpose: ScenarioPurpose?
+        var checkMode: ScenarioCheckMode?
+        var requiredClaims: [ScenarioProofClaim]?
+        var observationPlan: [ScenarioPlannedObservation]?
+        var integration: ScenarioIntegrationIdentity?
+
+        init(_ definition: ScenarioDefinition) {
+            schemaVersion = definition.schemaVersion
+            id = definition.id
+            version = definition.version
+            definitionDigest = definition.definitionDigest
+            target = .init(bundleIdentifier: definition.target.bundleIdentifier)
+            goal = .init(requestText: definition.goal.requestText, languageCode: definition.goal.languageCode)
+            fixture = .init(
+                id: definition.fixture.id, version: definition.fixture.version, digest: definition.fixture.digest,
+                preparationOperation: definition.fixture.preparationOperation,
+                cleanupOperation: definition.fixture.cleanupOperation
+            )
+            directControl = .init(
+                intentIdentifier: definition.directControl.intentIdentifier,
+                parameters: definition.directControl.parameters,
+                outputFields: definition.directControl.outputFields
+            )
+            assertions = definition.assertions.map {
+                .init(id: $0.id, kind: $0.kind, observationKey: $0.observationKey,
+                      expectedValue: $0.expectedValue, required: $0.required,
+                      applicableLanes: $0.applicableLanes)
+            }
+            coverage = definition.coverage
+            safety = .init(deadlineSeconds: definition.safety.deadlineSeconds,
+                           mutationPolicy: definition.safety.mutationPolicy)
+            purpose = definition.purpose
+            checkMode = definition.checkMode
+            requiredClaims = definition.requiredClaims
+            observationPlan = definition.observationPlan
+            integration = definition.integration
+        }
+    }
+
+    static func scenarioPayload(for definition: ScenarioDefinition) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+            ? try encoder.encode(DeviceScenarioV2(definition))
+            : try encoder.encode(definition)
+    }
+
     static func resolveProducts(
         derivedData: URL,
         testTarget: String,
+        owningProjectURL: URL? = nil,
+        containerURL: URL? = nil,
         fileManager: FileManager = .default
     ) throws -> XCTestRunProductPaths {
         let products = derivedData.appending(path: "Build/Products", directoryHint: .isDirectory)
@@ -57,12 +149,20 @@ enum XCTestRunInvocationTransport {
         ).filter { $0.pathExtension == "xctestrun" }
 
         var matches: [XCTestRunProductPaths] = []
+        var sawNamedTarget = false
         for candidate in candidates {
-            guard let root = try propertyList(at: candidate),
-                  let target = try matchingTarget(in: root, named: testTarget, requireMatch: false) else {
+            guard let root = try propertyList(at: candidate) else { continue }
+            sawNamedTarget = sawNamedTarget || targets(in: root).contains { targetMatches($0, name: testTarget) }
+            guard let target = try matchingTarget(
+                in: root, named: testTarget, owningProjectURL: owningProjectURL,
+                containerURL: containerURL, requireMatch: false
+            ) else {
                 continue
             }
             matches.append(try productPaths(from: target, testRunURL: candidate))
+        }
+        if matches.isEmpty, owningProjectURL != nil, sawNamedTarget {
+            throw XCTestRunInvocationTransportError.targetOwnerMissing(testTarget)
         }
         guard !matches.isEmpty else { throw XCTestRunInvocationTransportError.testRunMissing }
         guard matches.count == 1 else { throw XCTestRunInvocationTransportError.ambiguousTestRuns }
@@ -82,7 +182,7 @@ enum XCTestRunInvocationTransport {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let scenarioData = try encoder.encode(definition)
+        let scenarioData = try scenarioPayload(for: definition)
         let invocationData = try encoder.encode(invocation)
         let payloadBytes = scenarioData.count + invocationData.count
         guard payloadBytes <= maximumPayloadBytes else {
@@ -92,7 +192,10 @@ enum XCTestRunInvocationTransport {
             scenarioEnvironmentKey: scenarioData.base64EncodedString(),
             invocationEnvironmentKey: invocationData.base64EncodedString(),
         ]
-        try updateMatchingTarget(in: &root, named: testTarget) { target in
+        try updateMatchingTarget(
+            in: &root, named: testTarget,
+            providerRelativePath: products.targetProviderRelativePath
+        ) { target in
             var environment = target["EnvironmentVariables"] as? [String: Any] ?? [:]
             injected.forEach { environment[$0.key] = $0.value }
             target["EnvironmentVariables"] = environment
@@ -137,7 +240,8 @@ enum XCTestRunInvocationTransport {
             sourceURL: testRunURL,
             appBundleURL: try resolved(path: appPath, testRoot: testRoot, testHost: testHost),
             testHostURL: testHost,
-            testBundleURL: try resolved(path: bundlePath, testRoot: testRoot, testHost: testHost)
+            testBundleURL: try resolved(path: bundlePath, testRoot: testRoot, testHost: testHost),
+            targetProviderRelativePath: target["BlueprintProviderRelativePath"] as? String
         )
     }
 
@@ -169,9 +273,14 @@ enum XCTestRunInvocationTransport {
     private static func matchingTarget(
         in root: [String: Any],
         named name: String,
+        owningProjectURL: URL? = nil,
+        containerURL: URL? = nil,
         requireMatch: Bool
     ) throws -> [String: Any]? {
-        let targets = targets(in: root).filter { targetMatches($0, name: name) }
+        let targets = targets(in: root).filter {
+            targetMatches($0, name: name)
+                && ownerMatches($0, owningProjectURL: owningProjectURL, containerURL: containerURL)
+        }
         if targets.isEmpty {
             if requireMatch { throw XCTestRunInvocationTransportError.targetMissing(name) }
             return nil
@@ -194,16 +303,34 @@ enum XCTestRunInvocationTransport {
         target["BlueprintName"] as? String == name || target["ProductModuleName"] as? String == name
     }
 
+    private static func ownerMatches(
+        _ target: [String: Any], owningProjectURL: URL?, containerURL: URL?
+    ) -> Bool {
+        guard let owningProjectURL else { return true }
+        guard let containerURL,
+              let relativePath = target["BlueprintProviderRelativePath"] as? String,
+              !relativePath.isEmpty else { return false }
+        let base = containerURL.deletingLastPathComponent().standardizedFileURL
+        let provider = URL(filePath: relativePath, relativeTo: base).standardizedFileURL
+        return provider.path == owningProjectURL.standardizedFileURL.path
+    }
+
     private static func updateMatchingTarget(
         in root: inout [String: Any],
         named name: String,
+        providerRelativePath: String? = nil,
         update: (inout [String: Any]) -> Void
     ) throws {
+        func matchesSelection(_ target: [String: Any]) -> Bool {
+            targetMatches(target, name: name)
+                && (providerRelativePath == nil
+                    || target["BlueprintProviderRelativePath"] as? String == providerRelativePath)
+        }
         if var configurations = root["TestConfigurations"] as? [[String: Any]] {
             var matches: [(Int, Int)] = []
             for configurationIndex in configurations.indices {
                 let testTargets = configurations[configurationIndex]["TestTargets"] as? [[String: Any]] ?? []
-                for targetIndex in testTargets.indices where targetMatches(testTargets[targetIndex], name: name) {
+                for targetIndex in testTargets.indices where matchesSelection(testTargets[targetIndex]) {
                     matches.append((configurationIndex, targetIndex))
                 }
             }
@@ -220,7 +347,7 @@ enum XCTestRunInvocationTransport {
         let matchingKeys = root.compactMap { key, value -> String? in
             guard key != "__xctestrun_metadata__",
                   let target = value as? [String: Any],
-                  targetMatches(target, name: name) else { return nil }
+                  matchesSelection(target) else { return nil }
             return key
         }
         guard !matchingKeys.isEmpty else { throw XCTestRunInvocationTransportError.targetMissing(name) }

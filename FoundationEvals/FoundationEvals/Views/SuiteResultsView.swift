@@ -37,23 +37,7 @@ struct SuiteResultsView: View {
 private struct RunTrendPanel: View {
     let runs: [EvaluationRun]
 
-    private struct Point: Identifiable {
-        let id: UUID
-        let label: String
-        let rate: Double
-        let color: Color
-    }
-
-    private var points: [Point] {
-        runs.prefix(12).reversed().enumerated().map { index, run in
-            Point(id: run.id, label: "\(index)", rate: (run.passRate ?? 0) * 100, color: color(for: run))
-        }
-    }
-
-    private var delta: Double? {
-        guard runs.count > 1, let latest = runs[0].passRate, let previous = runs[1].passRate else { return nil }
-        return (latest - previous) * 100
-    }
+    private var trend: RunTrendSummary { RunTrendSummary(runs: runs) }
 
     var body: some View {
         HStack(alignment: .center, spacing: 28) {
@@ -61,7 +45,7 @@ private struct RunTrendPanel: View {
                 Text("Latest pass rate").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
                 Text(runs[0].passRate.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—")
                     .font(.system(size: 34, weight: .semibold, design: .rounded)).monospacedDigit()
-                if let delta {
+                if let delta = trend.delta {
                     let rounded = Int(delta.rounded())
                     WorkspacePill(
                         rounded == 0 ? "No change" : "\(rounded > 0 ? "+" : "")\(rounded) pts vs previous",
@@ -69,29 +53,42 @@ private struct RunTrendPanel: View {
                         color: rounded > 0 ? WorkspaceStyle.success : rounded < 0 ? WorkspaceStyle.failure : .secondary
                     )
                 } else {
-                    Text("First saved run").font(.caption).foregroundStyle(.tertiary)
+                    Text(trend.comparisonCaption).font(.caption).foregroundStyle(.tertiary)
                 }
             }
             .frame(minWidth: 170, alignment: .leading)
             Divider().frame(height: 96)
             VStack(alignment: .leading, spacing: 8) {
-                Text("Pass rate · last \(points.count) run\(points.count == 1 ? "" : "s")")
+                Text(trend.title)
                     .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
-                Chart(points) { point in
-                    BarMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate), width: .ratio(0.6))
-                        .foregroundStyle(point.color.gradient)
-                        .cornerRadius(3)
-                }
-                .chartYScale(domain: 0...100)
-                .chartXAxis(.hidden)
-                .chartYAxis {
-                    AxisMarks(position: .trailing, values: [0, 50, 100]) { value in
-                        AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
-                        AxisValueLabel { Text("\(value.as(Int.self) ?? 0)%").font(.caption2) }
+                if trend.points.isEmpty {
+                    Text("No scored runs yet")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 86)
+                } else {
+                    Chart(trend.points) { point in
+                        if point.rate == 0 {
+                            PointMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate))
+                                .foregroundStyle(color(for: point.run))
+                                .symbolSize(55)
+                        } else {
+                            BarMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate), width: .ratio(0.6))
+                                .foregroundStyle(color(for: point.run).gradient)
+                                .cornerRadius(3)
+                        }
                     }
+                    .chartYScale(domain: 0...100)
+                    .chartXAxis(.hidden)
+                    .chartYAxis {
+                        AxisMarks(position: .trailing, values: [0, 50, 100]) { value in
+                            AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
+                            AxisValueLabel { Text("\(value.as(Int.self) ?? 0)%").font(.caption2) }
+                        }
+                    }
+                    .frame(height: 86)
+                    .accessibilityLabel("Pass rate trend")
                 }
-                .frame(height: 86)
-                .accessibilityLabel("Pass rate trend")
             }
             .frame(maxWidth: .infinity)
         }
@@ -103,6 +100,43 @@ private struct RunTrendPanel: View {
         if run.errorCount > 0 || run.cancelled || run.stoppedEarly { return WorkspaceStyle.warning }
         guard let rate = run.passRate else { return .gray }
         return rate >= 1 ? WorkspaceStyle.success : rate >= 0.5 ? .accentColor : WorkspaceStyle.failure
+    }
+}
+
+struct RunTrendSummary {
+    struct Point: Identifiable {
+        let run: EvaluationRun
+        let label: String
+        let rate: Double
+
+        var id: UUID { run.id }
+    }
+
+    let recentCount: Int
+    let points: [Point]
+    let delta: Double?
+    let comparisonCaption: String
+
+    init(runs: [EvaluationRun]) {
+        let recent = Array(runs.prefix(12))
+        recentCount = recent.count
+        points = recent.reversed().enumerated().compactMap { index, run in
+            guard let rate = run.passRate else { return nil }
+            return Point(run: run, label: "\(index)", rate: rate * 100)
+        }
+        if runs.count > 1, let latest = runs[0].passRate, let previous = runs[1].passRate {
+            delta = (latest - previous) * 100
+        } else {
+            delta = nil
+        }
+        comparisonCaption = runs.count == 1 ? "First saved run" : "No comparable scored run"
+    }
+
+    var title: String {
+        if points.count != recentCount {
+            return "Pass rate · \(points.count) scored of last \(recentCount) runs"
+        }
+        return "Pass rate · last \(recentCount) run\(recentCount == 1 ? "" : "s")"
     }
 }
 

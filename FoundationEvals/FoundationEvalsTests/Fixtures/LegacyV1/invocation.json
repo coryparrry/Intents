@@ -1,0 +1,24 @@
+{
+  "appProduct" : {
+    "bundleIdentifier" : "com.coryparry.IntentLabFixture",
+    "executableName" : "IntentLabFixture",
+    "sha256" : "golden-app-sha"
+  },
+  "destinationIdentifier" : "golden-physical-device",
+  "harnessVersion" : "intent-lab-v1",
+  "id" : "44444444-4444-4444-8444-444444444444",
+  "issuedAt" : "2023-11-14T22:13:20Z",
+  "nonce" : "golden-v1-nonce",
+  "resultBundleIdentity" : "Golden.xcresult",
+  "scenarioDigest" : "39c7be7efc7df732a4ea0dbdf5392f3f5763b32c80137af2d69b7e87d043b077",
+  "testIdentity" : {
+    "bundleIdentifier" : "com.example.IntentLabFixtureUITests",
+    "className" : "IntentLabScenarioTests",
+    "methodName" : "testIntentLabScenario"
+  },
+  "testProduct" : {
+    "bundleIdentifier" : "com.example.IntentLabFixtureUITests",
+    "executableName" : "IntentLabFixtureUITests",
+    "sha256" : "golden-test-sha"
+  }
+}

@@ -28,6 +28,8 @@ SWIFT_DEPENDENCIES = {
     "Services/ScenarioExecutionRecovery.swift": {"ScenarioContractsTests"},
     "Services/ScenarioPersistence.swift": {"ScenarioContractsTests"},
     "Services/ScenarioValidation.swift": {"ScenarioContractsTests"},
+    "Services/IntentLabProjectInstaller.swift": {"IntentLabProjectInstallerTests"},
+    "Services/OpenStepProjectDocument.swift": {"IntentLabProjectInstallerTests"},
     "Services/XCTestEvidenceImporter.swift": {"ScenarioContractsTests"},
     "Services/XCTestRunInvocationTransport.swift": {"ScenarioContractsTests"},
     "Services/XcodeConnectionDiscovery.swift": {"ScenarioContractsTests"},

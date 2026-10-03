@@ -51,8 +51,8 @@ struct AppleTestConnectionView: View {
 
     private var connectionCard: some View {
         IntentLabCard(
-            "Connect an iPhone",
-            subtitle: "Choose the app project and a paired iPhone. Intent Lab discovers the Xcode details for you."
+            "Connect an app",
+            subtitle: "Choose the app project and an available Mac or paired iPhone. Intent Lab discovers the Xcode details for you."
         ) {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 7) {
@@ -73,13 +73,22 @@ struct AppleTestConnectionView: View {
                     .disabled(coordinator.isDiscoveringConnection)
                 }
 
+                if selectedProjectName != nil {
+                    IntentLabSetupInstallerView(coordinator: coordinator)
+                }
+
                 connectionField(
-                    title: "Choose connected iPhone",
+                    title: "Choose run destination",
                     detail: selectedDeviceDetail
                 ) {
                     HStack(spacing: 8) {
-                        Picker("Connected iPhone", selection: $coordinator.configuration.destinationIdentifier) {
-                            Text("Choose iPhone").tag("")
+                        Picker("Run destination", selection: $coordinator.configuration.destinationIdentifier) {
+                            Text("Choose destination").tag("")
+                            if !coordinator.configuration.destinationIdentifier.isEmpty,
+                               selectedDeviceName == nil {
+                                Text("Saved destination unavailable")
+                                    .tag(coordinator.configuration.destinationIdentifier)
+                            }
                             ForEach(coordinator.discoveredDevices) { device in
                                 Text(device.available ? device.name : "\(device.name) — unavailable")
                                     .tag(device.identifier)
@@ -92,7 +101,7 @@ struct AppleTestConnectionView: View {
                             Task { await coordinator.refreshDevices() }
                         }
                         .labelStyle(.iconOnly)
-                        .help("Refresh connected iPhones")
+                        .help("Refresh available destinations")
                     }
                 }
 
@@ -109,9 +118,27 @@ struct AppleTestConnectionView: View {
                     .disabled(selectedProjectName == nil || coordinator.isDiscoveringConnection)
                 }
 
+                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                    connectionField(
+                        title: "Check installed support",
+                        detail: coordinator.verifiedIntegrationSummary
+                            ?? "Build the selected app and UI tests, then read the compiled integration receipt. This check does not run an app action."
+                    ) {
+                        Button(
+                            coordinator.isVerifyingIntegration ? "Checking…" : "Build and check support",
+                            systemImage: "checkmark.seal"
+                        ) {
+                            Task { await coordinator.verifyInstalledIntegration() }
+                        }
+                        .disabled(!coordinator.projectTrusted
+                                  || coordinator.configuration.destinationIdentifier.isEmpty
+                                  || coordinator.isVerifyingIntegration)
+                    }
+                }
+
                 connectionField(
                     title: "Run",
-                    detail: "Keep the iPhone unlocked and approve any intent or Siri access prompt on the device. Then use Run scenario in the toolbar."
+                    detail: runDetail
                 ) {
                     Image(systemName: coordinator.preflight?.isReady == true ? "play.circle.fill" : "play.circle")
                         .font(.title2)
@@ -142,16 +169,38 @@ struct AppleTestConnectionView: View {
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
                 }
-                advancedRow("Scheme", help: "The Xcode build configuration that includes the app and tests you want to run. Keep the discovered choice unless you use a different scheme.") {
+                advancedRow("Scheme", help: "The Xcode scheme that includes the app and UI tests you want to run. If you change it, approve the build and run connection again.") {
                     TextField("App scheme", text: Binding(
                         get: { coordinator.configuration.scheme },
-                        set: { coordinator.configuration.scheme = $0; coordinator.invalidatePreflight() }
+                        set: { coordinator.selectScheme($0) }
+                    ))
+                }
+                advancedRow("Build configuration", help: "The Xcode configuration used to build the app and UI tests. Intent Lab selects the scheme's Test configuration when available. If you change it, approve the build and run connection again.") {
+                    TextField("Debug", text: Binding(
+                        get: { coordinator.configuration.configuration },
+                        set: { coordinator.selectBuildConfiguration($0) }
+                    ))
+                }
+                advancedRow("Development team", help: "Optional Apple team ID for this build and run. This overrides Xcode's team selection for the command without changing project settings. Approve the connection again after editing it.") {
+                    TextField("Apple team ID", text: Binding(
+                        get: { coordinator.configuration.developmentTeam ?? "" },
+                        set: { coordinator.selectDevelopmentTeam($0) }
+                    ))
+                }
+                advancedRow("Provisioning updates", help: "When enabled, Xcode may create or update Apple development certificates, app IDs, and provisioning profiles for this build. Use only with an account permitted to manage signing.") {
+                    Toggle("Allow Xcode to update provisioning", isOn: Binding(
+                        get: { coordinator.configuration.allowProvisioningUpdates == true },
+                        set: { coordinator.setAllowsProvisioningUpdates($0) }
                     ))
                 }
                 advancedRow("UI-test target", help: "The group of automated interface tests containing Intent Lab’s test support. This is a test target, not the app target.") {
                     TextField("AppUITests", text: Binding(
                         get: { coordinator.configuration.testTarget },
-                        set: { coordinator.configuration.testTarget = $0; coordinator.invalidatePreflight() }
+                        set: {
+                            coordinator.configuration.testTarget = $0
+                            coordinator.configuration.selectedTestProductID = nil
+                            coordinator.invalidatePreflight()
+                        }
                     ))
                 }
                 advancedRow("Test bundle ID", help: "The unique identifier of the compiled UI-test bundle. Use the discovered value or copy it from the test target’s Xcode settings.") {
@@ -160,7 +209,7 @@ struct AppleTestConnectionView: View {
                         set: { coordinator.configuration.testBundleIdentifier = $0; coordinator.invalidatePreflight() }
                     ))
                 }
-                advancedRow("Device identifier", help: "The unique ID of the paired physical iPhone used for this run. Choosing a phone in Connection fills this in.") {
+                advancedRow("Destination identifier", help: "The unique ID of the Mac or paired iPhone used for this run. Choosing a destination in Connection fills this in.") {
                     TextField("000081…", text: Binding(
                         get: { coordinator.configuration.destinationIdentifier },
                         set: { coordinator.configuration.destinationIdentifier = $0; coordinator.invalidatePreflight() }
@@ -212,24 +261,32 @@ struct AppleTestConnectionView: View {
                 }
                 if discovery.applications.count > 1 {
                     Picker("Application", selection: Binding(
-                        get: { coordinator.draft.target.bundleIdentifier },
-                        set: { bundleIdentifier in
-                            guard let product = discovery.applications.first(where: { $0.bundleIdentifier == bundleIdentifier }) else { return }
+                        get: { coordinator.configuration.selectedApplicationProductID ?? "" },
+                        set: { identity in
+                            guard let product = discovery.applications.first(where: { $0.id == identity }) else { return }
                             coordinator.selectApplication(product)
                         }
                     )) {
                         Text("Choose application").tag("")
-                        ForEach(discovery.applications) { Text($0.targetName).tag($0.bundleIdentifier) }
+                        ForEach(discovery.applications) { product in
+                            Text(product.projectPath.map { "\(product.targetName) · \(URL(filePath: $0).lastPathComponent)" }
+                                 ?? product.targetName).tag(product.id)
+                        }
                     }
                 }
                 if discovery.uiTestBundles.count > 1 {
-                    Picker("UI-test target", selection: $coordinator.configuration.testTarget) {
+                    Picker("UI-test target", selection: Binding(
+                        get: { coordinator.configuration.selectedTestProductID ?? "" },
+                        set: { identity in
+                            guard let product = discovery.uiTestBundles.first(where: { $0.id == identity }) else { return }
+                            coordinator.selectUITestBundle(product)
+                        }
+                    )) {
                         Text("Choose UI-test target").tag("")
-                        ForEach(discovery.uiTestBundles) { Text($0.targetName).tag($0.targetName) }
-                    }
-                    .onChange(of: coordinator.configuration.testTarget) { _, targetName in
-                        guard let product = discovery.uiTestBundles.first(where: { $0.targetName == targetName }) else { return }
-                        coordinator.selectUITestBundle(product)
+                        ForEach(discovery.uiTestBundles) { product in
+                            Text(product.projectPath.map { "\(product.targetName) · \(URL(filePath: $0).lastPathComponent)" }
+                                 ?? product.targetName).tag(product.id)
+                        }
                     }
                 }
                 Button("Check connection", systemImage: "checklist") {
@@ -245,7 +302,7 @@ struct AppleTestConnectionView: View {
         if let report = coordinator.preflight {
             VStack(alignment: .leading, spacing: 8) {
                 Label(
-                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "iPhone")" : "Connection needs attention",
+                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "selected destination")" : "Connection needs attention",
                     systemImage: report.isReady ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
                 )
                 .foregroundStyle(report.isReady ? .green : .orange)
@@ -312,13 +369,25 @@ struct AppleTestConnectionView: View {
         return URL(filePath: coordinator.configuration.containerPath).lastPathComponent
     }
 
-    private var selectedDeviceName: String? {
-        coordinator.discoveredDevices.first { $0.identifier == coordinator.configuration.destinationIdentifier }?.name
+    private var selectedDevice: IntentLabDeviceDestination? {
+        coordinator.discoveredDevices.first { $0.identifier == coordinator.configuration.destinationIdentifier }
+    }
+
+    private var selectedDeviceName: String? { selectedDevice?.name }
+
+    private var runDetail: String {
+        guard let selectedDevice else {
+            return "Choose an available Mac or paired iPhone before running a scenario."
+        }
+        if selectedDevice.platform == .macOS {
+            return "Keep this Mac available and approve any intent or Siri access prompt. Then use Run scenario in the toolbar."
+        }
+        return "Keep the iPhone unlocked and approve any intent or Siri access prompt on the device. Then use Run scenario in the toolbar."
     }
 
     private var selectedDeviceDetail: String {
-        guard !coordinator.configuration.destinationIdentifier.isEmpty else { return "Select an available paired physical iPhone." }
-        return selectedDeviceName ?? "The saved iPhone is not currently available."
+        guard !coordinator.configuration.destinationIdentifier.isEmpty else { return "Select an available Mac or paired physical iPhone." }
+        return selectedDeviceName ?? "The saved destination is not currently available."
     }
 
     private var approvalDetail: String {
@@ -340,13 +409,13 @@ private enum IntentConnectionPage: String, WorkspacePane {
     }
     var subtitle: String {
         switch self {
-        case .connection: "App project & connected iPhone"
+        case .connection: "App project & run destination"
         case .advanced: "Xcode & device configuration"
         case .harness: "Required test support & evidence"
         }
     }
     var symbol: String {
-        switch self { case .connection: "iphone"; case .advanced: "slider.horizontal.3"; case .harness: "checkmark.shield" }
+        switch self { case .connection: "laptopcomputer.and.iphone"; case .advanced: "slider.horizontal.3"; case .harness: "checkmark.shield" }
     }
     var tint: Color {
         switch self { case .connection: .blue; case .advanced: .gray; case .harness: .green }

@@ -119,6 +119,7 @@ private struct SuiteRunButton: View {
     @Bindable var runners: DeveloperRunnerStore
     @Binding var showsRunDetails: Bool
     let reportError: (String) -> Void
+    @State private var showsRecoveryConfirmation = false
 
     private var activeRun: DeveloperRunStatus? {
         runners.executingRunID.flatMap { runners.status(for: $0) }
@@ -138,6 +139,18 @@ private struct SuiteRunButton: View {
                     .labelStyle(.iconOnly)
                     .help("Cancel the current run")
                     .disabled(!runners.canCancelRun(for: store))
+                }
+            } else if store.pendingCompletedRunsLoadError != nil {
+                Button("Preserve unreadable evidence…", systemImage: "archivebox") {
+                    showsRecoveryConfirmation = true
+                }
+                .confirmationDialog("Preserve unreadable recovery data?", isPresented: $showsRecoveryConfirmation) {
+                    Button("Preserve and allow new runs") {
+                        do { try store.preserveUnreadablePendingRuns() }
+                        catch { reportError(error.localizedDescription) }
+                    }
+                } message: {
+                    Text("The original file will be kept for inspection. Its contents cannot count as release evidence. You can then run a new check.")
                 }
             } else if store.hasUnsavedCompletedRun {
                 Button("Retry Save", systemImage: "arrow.clockwise") { store.retryPendingRunSave() }

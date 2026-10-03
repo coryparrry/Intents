@@ -11,6 +11,20 @@ enum ScenarioRecoveryFailure: String, Codable, Sendable {
 }
 
 enum ScenarioExecutionRecoveryPolicy {
+    static func acceptsFinalEvidence(
+        attachments: [ScenarioEvidenceAttachment],
+        runs: [ScenarioRun],
+        xctestExitCode: Int32
+    ) -> Bool {
+        !attachments.isEmpty && attachments.allSatisfy { !$0.isCheckpoint }
+            && !runs.isEmpty && runs.allSatisfy { run in
+                run.executionStatus == .completed
+                    && !run.laneResults.isEmpty
+                    && run.laneResults.allSatisfy { $0.executionStatus == .completed }
+            }
+            && xctestExitCode == 0
+    }
+
     static func requiresQuarantine(
         deviceTestLaunched: Bool,
         failure: ScenarioRecoveryFailure
