@@ -18,37 +18,46 @@ struct WorkbenchStatusBar: View {
         return DeveloperRunPresentation.providerLabel(for: run)
     }
 
+    private var activityColor: Color {
+        if store.isRunning { return .accentColor }
+        return store.hasUnsavedCompletedRun ? WorkspaceStyle.warning : WorkspaceStyle.success
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             if store.selection == .overview {
                 Image(systemName: "square.stack").accessibilityHidden(true)
                 Text("\(store.suiteRecords.filter { !$0.isArchived }.count) suites")
-                Text("·")
+                Text("·").foregroundStyle(.tertiary)
                 Text("Project overview")
             } else {
-            Text("\(caseCount) case\(caseCount == 1 ? "" : "s")")
-            Circle()
-                .fill(store.isRunning ? Color.accentColor : Color.secondary)
-                .frame(width: 5, height: 5)
-            Text(
-                store.isRunning
-                    ? "Evaluation in progress"
-                    : store.hasUnsavedCompletedRun
-                        ? "Run waiting to be saved"
-                        : "\(store.runs.count) saved runs"
-            )
+                if store.isRunning {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    WorkspaceStatusDot(color: activityColor, size: 6)
+                }
+                Text(
+                    store.isRunning
+                        ? "Evaluation in progress"
+                        : store.hasUnsavedCompletedRun
+                            ? "Run waiting to be saved"
+                            : "\(store.runs.count) saved runs"
+                )
+                Text("·").foregroundStyle(.tertiary)
+                Text("\(caseCount) case\(caseCount == 1 ? "" : "s")")
             }
             Spacer()
             if store.selection != .overview {
-                Text(provider)
-                Text("·")
+                WorkspaceMetaLabel(provider, symbol: "cpu")
+                Text("·").foregroundStyle(.tertiary)
             }
-            Text("Local workspace")
+            WorkspaceMetaLabel("Local workspace", symbol: "internaldrive")
         }
         .font(.caption)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 8)
+        .lineLimit(1)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
     }

@@ -9,7 +9,7 @@ struct AppleTestConnectionView: View {
     @State private var page: IntentConnectionPage = .connection
 
     var body: some View {
-        IntentLabEditorLayout(heading: "INTENT SETUP", selection: $page) {
+        WorkspacePaneLayout(heading: "Intent setup", selection: $page) {
             switch page {
             case .connection: connectionCard
             case .advanced: advancedConfiguration
@@ -173,7 +173,7 @@ struct AppleTestConnectionView: View {
                         .textSelection(.enabled)
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                        .workspaceInset(radius: 8)
                 }
             }
             .textFieldStyle(.roundedBorder)
@@ -237,7 +237,7 @@ struct AppleTestConnectionView: View {
                 }
             }
             .padding(14)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+            .workspaceInset(radius: 10)
         }
     }
 
@@ -332,7 +332,7 @@ struct AppleTestConnectionView: View {
     }
 }
 
-private enum IntentConnectionPage: String, IntentLabEditorPage {
+private enum IntentConnectionPage: String, WorkspacePane {
     case connection, advanced, harness
     var id: Self { self }
     var title: String {
@@ -347,5 +347,8 @@ private enum IntentConnectionPage: String, IntentLabEditorPage {
     }
     var symbol: String {
         switch self { case .connection: "iphone"; case .advanced: "slider.horizontal.3"; case .harness: "checkmark.shield" }
+    }
+    var tint: Color {
+        switch self { case .connection: .blue; case .advanced: .gray; case .harness: .green }
     }
 }

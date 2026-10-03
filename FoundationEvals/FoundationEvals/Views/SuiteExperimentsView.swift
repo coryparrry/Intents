@@ -6,14 +6,15 @@ struct SuiteExperimentsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Instruction experiments").font(.title3.weight(.semibold))
+            HStack(alignment: .top, spacing: 12) {
+                WorkspaceSymbolBadge(symbol: "flask", tint: .purple)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Instruction experiments").font(.headline)
                     Text("Compare a proposed instruction change against the same cases, model and scoring.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("New experiment", systemImage: "plus") { isCreatingExperiment = true }
+                Button("New Experiment", systemImage: "plus") { isCreatingExperiment = true }
                     .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
             }
             if store.suiteLocalState.experiments.isEmpty {
@@ -21,13 +22,15 @@ struct SuiteExperimentsView: View {
                     .font(.callout).foregroundStyle(.secondary)
                     .padding(18)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary.opacity(0.3), in: .rect(cornerRadius: 10))
+                    .workspaceInset(radius: 10)
             } else {
                 ForEach(store.suiteLocalState.experiments.reversed()) { experiment in
                     ExperimentRow(store: store, experiment: experiment)
                 }
             }
         }
+        .padding(20)
+        .workspaceSurface()
         .sheet(isPresented: $isCreatingExperiment) { InstructionExperimentEditor(store: store) }
     }
 }
@@ -53,7 +56,7 @@ private struct InstructionExperimentEditor: View {
                             .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
                     }
-                    .background(.quaternary.opacity(0.35), in: .rect(cornerRadius: 8))
+                    .workspaceInset(radius: 8)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Proposed instructions").font(.headline)
@@ -128,7 +131,7 @@ private struct ExperimentRow: View {
             }
         }
         .padding(10)
-        .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 8))
+        .workspaceInset(radius: 8)
     }
 }
 

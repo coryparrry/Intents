@@ -3,67 +3,71 @@ import SwiftUI
 import FoundationEvalsDeveloper
 #endif
 
-struct SuiteRunControls: View {
+/// Run destination and run controls, shown at the trailing edge of the suite toolbar.
+struct SuiteRunToolbar: ToolbarContent {
     @Bindable var store: EvaluationStore
     @Bindable var runners: DeveloperRunnerStore
-    let showRunDetails: () -> Void
-    @State private var showsDestination = false
-    @State private var showsDevices = false
-    @State private var error: String?
+    @Binding var showsRunDetails: Bool
+    @Binding var showsDevices: Bool
+    @Binding var error: String?
 
-    private var activeRun: DeveloperRunStatus? {
-        runners.executingRunID.flatMap { runners.status(for: $0) }
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            WorkspaceResetControl(store: store)
+        }
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+        ToolbarItem(placement: .primaryAction) {
+            SuiteRunDestinationButton(
+                store: store,
+                runners: runners,
+                showRunDetails: { showsRunDetails = true },
+                manageDevices: { showsDevices = true }
+            )
+        }
+        ToolbarItem(placement: .primaryAction) {
+            SuiteRunButton(store: store, runners: runners, showsRunDetails: $showsRunDetails) { error = $0 }
+        }
     }
-    private var busy: Bool { runners.isBusy(for: store) }
+}
+
+private struct SuiteRunDestinationButton: View {
+    let store: EvaluationStore
+    @Bindable var runners: DeveloperRunnerStore
+    let showRunDetails: () -> Void
+    let manageDevices: () -> Void
+    @State private var showsDestination = false
+
     private var runner: DeveloperRunnerSnapshot? { runners.selectedRunner }
     private var destinationName: String {
         runner?.identity.displayName ?? (runners.selectedRunnerID == nil ? "This Mac" : "Unavailable device")
     }
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
-            if store.isRunning || runners.executingRunID != nil {
-                HStack {
-                    ProgressView().controlSize(.small)
-                    Text("\(store.completedSamples) / \(max(store.totalSamples, activeRun?.totalSamples ?? 0))")
-                        .font(.caption.monospacedDigit())
-                    Button("Cancel", role: .cancel) {
-                        runners.cancelCurrentRun(for: store)
-                    }
-                    .disabled(!runners.canCancelRun(for: store))
-                }
-            } else if store.hasUnsavedCompletedRun {
-                Button("Retry save") { store.retryPendingRunSave() }.buttonStyle(.borderedProminent)
-            } else {
-                Button("Run suite", systemImage: "play.fill", action: run)
-                    .buttonStyle(.borderedProminent).controlSize(.large)
-                    .disabled(!runners.canStartRun(for: store))
-                    .help(runners.runIssue(for: store) ?? "Run the current suite")
-                    .accessibilityIdentifier("Run evaluation")
-            }
-            Button {
-                showsDestination = true
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: runner?.identity.platform.deviceSymbol ?? "desktopcomputer")
-                    Text(destinationName).lineLimit(1)
-                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
-                }
-                .font(.caption)
-            }
-            .buttonStyle(.plain).foregroundStyle(.secondary).disabled(busy)
-            .accessibilityLabel("Run destination")
-            .popover(isPresented: $showsDestination, arrowEdge: .trailing) { destination }
+        Button {
+            showsDestination = true
+        } label: {
+            Label(destinationName, systemImage: runner?.identity.platform.deviceSymbol ?? "desktopcomputer")
+                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
+                .frame(maxWidth: 170)
         }
-        .sheet(isPresented: $showsDevices) { DeveloperDevicesView(runners: runners) }
-        .alert("Could not start run", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-            Button("OK") { error = nil }
-        } message: { Text(error ?? "") }
+        .disabled(runners.isBusy(for: store))
+        .help("Choose where this suite runs")
+        .accessibilityLabel("Run destination")
+        .accessibilityValue(destinationName)
+        .popover(isPresented: $showsDestination, arrowEdge: .bottom) { destination }
     }
 
     private var destination: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Run destination").font(.headline)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
+                WorkspaceIconTile(symbol: "play.circle.fill", tint: .accentColor, size: 28)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Run destination").font(.headline)
+                    Text("Where each case is sent when you run the suite.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Picker("Device", selection: $runners.selectedRunnerID) {
                 Text("This Mac · built-in evaluator").tag(nil as UUID?)
                 if let id = runners.selectedRunnerID, runner == nil {
@@ -89,25 +93,107 @@ struct SuiteRunControls: View {
             } else {
                 Text("Uses the model and tools configured in this suite.")
                     .font(.caption).foregroundStyle(.secondary)
-                Button("Run details") { showsDestination = false; showRunDetails() }
             }
             Divider()
-            Button("Manage devices & apps", systemImage: "laptopcomputer.and.iphone") {
-                showsDestination = false
-                showsDevices = true
+            HStack {
+                Button("Manage Devices & Apps…", systemImage: "laptopcomputer.and.iphone") {
+                    showsDestination = false
+                    manageDevices()
+                }
+                Spacer()
+                if runners.selectedRunnerID == nil {
+                    Button("Run Details") { showsDestination = false; showRunDetails() }
+                }
             }
+            .controlSize(.small)
         }
-        .padding(22).frame(width: 365)
+        .padding(20).frame(width: 380)
         .onChange(of: runners.selectedRunnerID) { _, _ in
             runners.selectedFeatureID = runners.selectedRunner?.features.first?.id
+        }
+    }
+}
+
+private struct SuiteRunButton: View {
+    @Bindable var store: EvaluationStore
+    @Bindable var runners: DeveloperRunnerStore
+    @Binding var showsRunDetails: Bool
+    let reportError: (String) -> Void
+
+    private var activeRun: DeveloperRunStatus? {
+        runners.executingRunID.flatMap { runners.status(for: $0) }
+    }
+
+    var body: some View {
+        Group {
+            if store.isRunning || runners.executingRunID != nil {
+                HStack(spacing: 2) {
+                    RunToolbarProgress(
+                        completed: store.completedSamples,
+                        total: max(store.totalSamples, activeRun?.totalSamples ?? 0)
+                    )
+                    Button("Cancel", systemImage: "stop.fill", role: .cancel) {
+                        runners.cancelCurrentRun(for: store)
+                    }
+                    .labelStyle(.iconOnly)
+                    .help("Cancel the current run")
+                    .disabled(!runners.canCancelRun(for: store))
+                }
+            } else if store.hasUnsavedCompletedRun {
+                Button("Retry Save", systemImage: "arrow.clockwise") { store.retryPendingRunSave() }
+                    .labelStyle(.titleAndIcon)
+                    .buttonStyle(.borderedProminent)
+                    .tint(WorkspaceStyle.warning)
+            } else {
+                Button(action: run) {
+                    Label("Run", systemImage: "play.fill").labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!runners.canStartRun(for: store))
+                .help(runners.runIssue(for: store) ?? "Run the current suite (⌘↩)")
+                .accessibilityLabel("Run suite")
+                .accessibilityIdentifier("Run evaluation")
+            }
+        }
+        .popover(isPresented: $showsRunDetails, arrowEdge: .bottom) {
+            RunReadinessPanel(store: store).frame(width: 520)
         }
     }
 
     private func run() {
         do { try runners.startSelectedRun(for: store) }
-        catch { self.error = error.localizedDescription }
+        catch { reportError(error.localizedDescription) }
+    }
+}
+
+/// Live progress for the run in flight, pinned above the page content.
+struct SuiteRunActivityBanner: View {
+    let store: EvaluationStore
+    let runners: DeveloperRunnerStore
+
+    private var total: Int {
+        let active = runners.executingRunID.flatMap { runners.status(for: $0) }
+        return max(store.totalSamples, active?.totalSamples ?? 0)
     }
 
+    var body: some View {
+        HStack(spacing: 14) {
+            WorkspaceIconTile(symbol: "waveform", tint: .accentColor, size: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Collecting responses").font(.headline)
+                Text("\(store.completedSamples) of \(total) responses")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 20)
+            ProgressView(value: Double(store.completedSamples), total: Double(max(total, 1)))
+                .progressViewStyle(.linear)
+                .frame(maxWidth: 260)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 14)
+        .workspaceSurface()
+        .accessibilityElement(children: .contain)
+    }
 }
 
 extension DeveloperRunnerStore {
@@ -166,7 +252,7 @@ struct DeveloperExecutionSummary: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "laptopcomputer.and.iphone").foregroundStyle(Color.accentColor)
+            WorkspaceIconTile(symbol: "laptopcomputer.and.iphone", tint: .indigo, size: 28)
             VStack(alignment: .leading, spacing: 3) {
                 Text(execution.runnerName).font(.callout.weight(.semibold))
                 Text("\(execution.hardwareModel) · \(execution.operatingSystem)")
@@ -179,8 +265,8 @@ struct DeveloperExecutionSummary: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .textSelection(.enabled).padding(.horizontal, 20).padding(.vertical, 12)
-        .background(WorkspaceStyle.surface)
+        .textSelection(.enabled).padding(.horizontal, 18).padding(.vertical, 12)
+        .workspaceSurface()
         .accessibilityElement(children: .combine)
     }
 }

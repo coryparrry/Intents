@@ -68,7 +68,7 @@ private struct BuiltinToolCallsSection: View {
                     FeatureTraceValue(label: "Output", value: call.output ?? "No output recorded")
                 }
                 .padding(10)
-                .background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 8))
+                .workspaceInset(radius: 8)
             }
             Text("The framework transcript does not provide duration or outcome metadata for these built-in tools.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -91,7 +91,7 @@ private struct FeatureProfileEvents: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 8))
+        .workspaceInset(radius: 8)
     }
 }
 
@@ -141,7 +141,7 @@ private struct FeatureToolCallRow: View {
         .font(.caption)
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 8))
+        .workspaceInset(radius: 8)
         .accessibilityElement(children: .contain)
     }
 

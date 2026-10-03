@@ -18,50 +18,8 @@ struct SuiteCasesView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 22) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("TEST CASES").font(.system(size: 9, weight: .semibold)).tracking(1.2)
-                    Text(store.draftSuite.cases.count.formatted()).font(.caption)
-                    Spacer()
-                }
-                .foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
-                    TextField("Find a case", text: $search).textFieldStyle(.plain).font(.caption)
-                        .accessibilityIdentifier("Search cases")
-                }
-                .padding(9).background(WorkspaceStyle.surface, in: .rect(cornerRadius: 8))
-                VStack(spacing: 5) {
-                    ForEach(visibleCases) { evaluationCase in
-                        Button { selectedCaseID = evaluationCase.id } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(evaluationCase.name.isEmpty ? "Untitled case" : evaluationCase.name)
-                                    .font(.callout.weight(.medium)).lineLimit(2)
-                                    .foregroundStyle(selectedCaseID == evaluationCase.id ? Color.accentColor : .primary)
-                                Text(evaluationCase.prompt.isEmpty ? "Add a prompt…" : evaluationCase.prompt)
-                                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                            .background(selectedCaseID == evaluationCase.id ? Color.accentColor.opacity(0.08) : .clear,
-                                        in: .rect(cornerRadius: 9))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(evaluationCase.name.isEmpty ? "Untitled case" : evaluationCase.name)
-                        .accessibilityIdentifier("Select case \(evaluationCase.id)")
-                        .accessibilityAddTraits(selectedCaseID == evaluationCase.id ? .isSelected : [])
-                    }
-                    if visibleCases.isEmpty {
-                        Text("No matching cases").font(.caption).foregroundStyle(.secondary).padding(.vertical, 16)
-                    }
-                }
-                Button("Add Case", systemImage: "plus", action: addCase)
-                    .buttonStyle(.plain).font(.caption).foregroundStyle(Color.accentColor).disabled(isBusy)
-                Button("Import Cases", systemImage: "square.and.arrow.down") { isImportingCases = true }
-                    .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).disabled(isBusy)
-            }
-            .frame(width: 190)
+        HStack(alignment: .top, spacing: 20) {
+            caseList.frame(width: 250)
             if let index = selectedCaseIndex {
                 let caseID = store.draftSuite.cases[index].id
                 EvaluationCaseEditor(
@@ -99,6 +57,54 @@ struct SuiteCasesView: View {
         .sheet(isPresented: $isImportingCases) { CaseImportView(store: store) }
     }
 
+    private var caseList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            WorkspacePanelHeader("Cases", count: store.draftSuite.cases.count)
+            WorkspaceSearchField(prompt: "Find a case", text: $search, identifier: "Search cases")
+                .padding(.horizontal, 12).padding(.bottom, 10)
+            Divider()
+            VStack(spacing: 2) {
+                ForEach(visibleCases) { evaluationCase in
+                    let title = evaluationCase.name.isEmpty ? "Untitled case" : evaluationCase.name
+                    Button { selectedCaseID = evaluationCase.id } label: {
+                        SuiteCaseRow(
+                            title: title,
+                            prompt: evaluationCase.prompt,
+                            isSelected: selectedCaseID == evaluationCase.id
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(title)
+                    .accessibilityIdentifier("Select case \(evaluationCase.id)")
+                    .accessibilityAddTraits(selectedCaseID == evaluationCase.id ? .isSelected : [])
+                }
+                if visibleCases.isEmpty {
+                    Text("No matching cases")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity).padding(.vertical, 22)
+                }
+            }
+            .padding(6)
+            Divider()
+            HStack(spacing: 8) {
+                Button("Add Case", systemImage: "plus", action: addCase)
+                    .labelStyle(.titleAndIcon)
+                    .buttonStyle(.borderless)
+                    .fontWeight(.medium)
+                    .disabled(isBusy)
+                Spacer()
+                Button("Import Cases", systemImage: "square.and.arrow.down") { isImportingCases = true }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help("Import cases from a file")
+                    .disabled(isBusy)
+            }
+            .font(.callout)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+        }
+        .workspaceSurface()
+    }
+
     private func addCase() {
         let previousCount = store.draftSuite.cases.count
         search = ""
@@ -118,10 +124,10 @@ private struct EvaluationCaseEditor: View {
     @State private var isConfirmingDeletion = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
                 TextField("Case name", text: $evaluationCase.name)
-                    .font(.title3.weight(.semibold))
+                    .font(.title2.weight(.semibold))
                     .textFieldStyle(.plain)
                     .accessibilityLabel("Case name")
 
@@ -136,22 +142,16 @@ private struct EvaluationCaseEditor: View {
                 .help("Case actions")
             }
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text("Prompt")
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                 PromptTextEditor(
                     text: $prompt,
                     label: "Prompt for \(evaluationCase.name.isEmpty ? "untitled case" : evaluationCase.name)"
                 )
                     .id(evaluationCase.id)
-                    .frame(minHeight: 170)
-                    .padding(8)
-                    .background(.background, in: .rect(cornerRadius: 8))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.secondary.opacity(0.2))
-                    }
+                    .workspaceTextWell(minHeight: 170)
                 DisclosureGroup("Writing tools") {
                     PromptQuickActionsSection(prompt: $prompt, isDisabled: isDisabled)
                         .id(evaluationCase.id).padding(.top, 8)
@@ -161,14 +161,13 @@ private struct EvaluationCaseEditor: View {
             }
 
             if scoringMode != .review {
-                Divider().padding(.vertical, 4)
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(scoringMode.expectedLabel).font(.callout.weight(.semibold))
+                    Text(scoringMode.expectedLabel).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                     TextEditor(text: $evaluationCase.expected)
                         .accessibilityLabel(scoringMode.expectedLabel)
                         .accessibilityIdentifier("Scoring expected text")
-                        .font(.body).frame(minHeight: 90).padding(8)
-                        .background(WorkspaceStyle.canvas, in: .rect(cornerRadius: 8))
+                        .font(.body)
+                        .workspaceTextWell(minHeight: 90)
                     Text(scoringMode.expectedHelp).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -181,7 +180,7 @@ private struct EvaluationCaseEditor: View {
             )
 
         }
-        .padding(22)
+        .padding(24)
         .workspaceSurface()
         .disabled(isDisabled)
         .confirmationDialog(
@@ -208,5 +207,38 @@ private struct EvaluationCaseEditor: View {
             isConfirmingDeletion = true
         }
         .disabled(!canDelete)
+    }
+}
+
+private struct SuiteCaseRow: View {
+    let title: String
+    let prompt: String
+    let isSelected: Bool
+    @State private var isHovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.callout.weight(isSelected ? .semibold : .medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Text(prompt.isEmpty ? "Add a prompt…" : prompt)
+                .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(background, in: .rect(cornerRadius: WorkspaceStyle.controlRadius, style: .continuous))
+        .overlay(alignment: .leading) {
+            if isSelected {
+                Capsule().fill(Color.accentColor).frame(width: 3).padding(.vertical, 9)
+            }
+        }
+        .contentShape(.rect)
+        .onHover { isHovering = $0 }
+    }
+
+    private var background: Color {
+        if isSelected { return Color.accentColor.opacity(0.12) }
+        return isHovering ? Color.primary.opacity(0.04) : .clear
     }
 }

@@ -111,6 +111,11 @@ jobs:
           PY
       # The Xcode 27 hosted image is a macOS 27 ARM public-preview runner.
       # Compile the full scheme for UI-impacting changes, but execute only core tests.
+      - name: Enable UI snapshots
+        run: |
+          echo "TEST_RUNNER_INTENTS_SNAPSHOT_DIR=$RUNNER_TEMP/ui-snapshots" >> "$GITHUB_ENV"
+          defaults write com.coryparry.FoundationEvals SUEnableAutomaticChecks -bool false
+          defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
       - name: Build app and selected test bundles
         env:
           INCLUDE_UI: ${{ needs.changes.outputs.ui }}
@@ -134,3 +139,52 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO
+      - name: Run selected UI tests
+        if: ${{ needs.changes.outputs.ui == 'true' }}
+        timeout-minutes: 14
+        run: |
+          lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+          built="$RUNNER_TEMP/DerivedData/Build/Products/Debug/Intents.app"
+          echo "::group::App copies"
+          ls -la "$RUNNER_TEMP/DerivedData/Build/Products/Debug" || true
+          for run in "$RUNNER_TEMP"/DerivedData/Build/Products/*.xctestrun; do
+            echo "$run"; plutil -p "$run" | grep -E "UITargetAppPath|TestHostPath|BlueprintName" || true
+          done
+          mdfind "kMDItemCFBundleIdentifier == 'com.coryparry.FoundationEvals'" || true
+          "$lsregister" -dump | grep -E "^path:.*\.app" | grep -iE "intents|foundationevals" || true
+          for label in "Filter runs" "Search run history"; do
+            if grep -aq "$label" "$built/Contents/MacOS/Intents" "$built"/Contents/MacOS/*.dylib 2>/dev/null; then
+              echo "built binary contains: $label"
+            fi
+          done
+          plutil -p "$built/Contents/Info.plist" | grep -E "CFBundleVersion|CFBundleShortVersionString" || true
+          ls "$built/Contents/MacOS" || true
+          echo "::endgroup::"
+          xcodebuild test-without-building \
+            -project FoundationEvals/FoundationEvals.xcodeproj \
+            -scheme FoundationEvals \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/ui-tests.xcresult" \
+            -only-testing:FoundationEvalsUITests/FoundationEvalsUITests \
+            -only-testing:FoundationEvalsUITests/IntentLabGuidanceUITests \
+            -only-testing:FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration \
+            -only-testing:FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Export UI test attachments
+        if: ${{ always() && needs.changes.outputs.ui == 'true' }}
+        continue-on-error: true
+        run: |
+          mkdir -p "$RUNNER_TEMP/ui-snapshots/ui-tests"
+          if [[ -d "$RUNNER_TEMP/ui-tests.xcresult" ]]; then
+            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/ui-tests.xcresult" --output-path "$RUNNER_TEMP/ui-snapshots/ui-tests" || true
+          fi
+          cp -R /private/tmp/foundation-evals-ui-tests/Screenshots "$RUNNER_TEMP/ui-snapshots/ui-tests/" 2>/dev/null || true
+      - name: Upload UI snapshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ui-snapshots
+          path: ${{ runner.temp }}/ui-snapshots
+          if-no-files-found: warn

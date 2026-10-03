@@ -340,7 +340,7 @@ private struct TraceEvidenceBlock: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(.quaternary.opacity(0.30), in: .rect(cornerRadius: 6))
+                .workspaceInset(radius: 6)
             if text.count > 4_000 {
                 Button(expanded ? "Show less" : "Show all \(text.count.formatted()) characters") { expanded.toggle() }
                     .font(.caption).buttonStyle(.link)

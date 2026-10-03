@@ -7,7 +7,7 @@ struct ScenarioEditorView: View {
     @State private var page: ScenarioEditorPage = .outcome
 
     var body: some View {
-        IntentLabEditorLayout(heading: "SCENARIO", selection: $page) {
+        WorkspacePaneLayout(heading: "Scenario", selection: $page) {
             switch page {
             case .outcome: outcomeSection
             case .fixture: fixtureSection
@@ -186,7 +186,7 @@ struct ScenarioEditorView: View {
                     IntentLabHelp("Explain why this check matters. For Semantic review, write the criteria a reviewer should use.")
                 }
                 .padding(10)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                .workspaceInset(radius: 8)
             }
 
         }
@@ -309,7 +309,7 @@ struct ScenarioEditorView: View {
                         .disabled(suggestion.approved)
                     }
                     .padding(10)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    .workspaceInset(radius: 8)
                 }
             }
             .padding(.top, 6)
@@ -413,7 +413,7 @@ private struct ScenarioParameterEditor: View {
             valueEditor
         }
         .padding(10)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        .workspaceInset(radius: 8)
     }
 
     @ViewBuilder private var parameterControls: some View {
@@ -817,7 +817,7 @@ private enum ParameterEditorType: String, CaseIterable, Identifiable {
     }
 }
 
-private enum ScenarioEditorPage: String, IntentLabEditorPage {
+private enum ScenarioEditorPage: String, WorkspacePane {
     case outcome, fixture, evidence, parameters, assertions, settings
     var id: Self { self }
     var title: String {
@@ -848,6 +848,16 @@ private enum ScenarioEditorPage: String, IntentLabEditorPage {
         case .parameters: "curlybraces"
         case .assertions: "checklist"
         case .settings: "slider.horizontal.3"
+        }
+    }
+    var tint: Color {
+        switch self {
+        case .outcome: .blue
+        case .fixture: .brown
+        case .evidence: .green
+        case .parameters: .pink
+        case .assertions: .indigo
+        case .settings: .gray
         }
     }
 }

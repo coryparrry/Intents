@@ -76,14 +76,14 @@ final class WorkflowTraceUITests: XCTestCase {
                 app.descendants(matching: .any).matching(identifier: "Start from Scratch").firstMatch.click()
                 app.menuItems[title].click()
             }
-            choose("Clear All Runs and Traces")
+            choose("Clear This Suite’s Runs and Traces")
             let dialog = app.sheets.firstMatch
             XCTAssertTrue(dialog.waitForExistence(timeout: 3), app.debugDescription)
             dialog.buttons["Cancel"].click()
             XCTAssertTrue(app.popUpButtons["Trace case"].exists)
 
-            choose("Clear All Runs and Traces")
-            dialog.buttons["Clear All Runs and Traces"].click()
+            choose("Clear This Suite’s Runs and Traces")
+            dialog.buttons["Clear This Suite’s Runs and Traces"].click()
             XCTAssertTrue(app.textFields["Suite name"].waitForExistence(timeout: 3))
             XCTAssertFalse(app.popUpButtons["Trace case"].exists)
             let priorName = app.textFields["Suite name"].value as? String
@@ -484,7 +484,14 @@ private enum WorkflowTraceFixture {
             "results": [firstSample, legacySample, cancelledSample, overflowingSample]
         ]
         let data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: runs.appending(path: "trace-inspector-test-fixture.json"), options: .atomic)
+        let suite: [String: Any] = [
+            "id": "D0000000-0000-0000-0000-000000000002",
+            "name": runName
+        ]
+        try JSONSerialization.data(withJSONObject: suite).write(
+            to: directory.appending(path: "suite.json"), options: .atomic
+        )
+        try data.write(to: runs.appending(path: "D0000000-0000-0000-0000-000000000001.json"), options: .atomic)
     }
 
     private static var recordedSample: [String: Any] {

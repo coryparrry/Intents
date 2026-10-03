@@ -21,39 +21,32 @@ struct RunSidebarRow: View {
     }
 
     private var statusColor: Color {
-        if run.cancelled || run.stoppedEarly { return .orange }
-        if run.errorCount > 0 || run.failedCount > 0 { return .red }
-        if run.scoredCount > 0 { return .green }
+        if run.cancelled || run.stoppedEarly { return WorkspaceStyle.warning }
+        if run.errorCount > 0 || run.failedCount > 0 { return WorkspaceStyle.failure }
+        if run.scoredCount > 0 { return WorkspaceStyle.success }
         return .secondary
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
+        HStack(alignment: .center, spacing: 8) {
             Image(systemName: statusSymbol)
                 .foregroundStyle(statusColor)
                 .frame(width: 16)
-                .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(run.suiteName)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(run.suiteVersion)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-
+            VStack(alignment: .leading, spacing: 1) {
+                Text(run.startedAt, format: .dateTime.month(.abbreviated).day().hour().minute())
+                    .lineLimit(1)
                 HStack(spacing: 4) {
                     Text(statusSummary)
                     Text("·")
-                    Text(run.startedAt, format: .dateTime.month(.abbreviated).day().hour().minute().second())
+                    Text(run.suiteVersion)
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             }
         }
+        .padding(.vertical, 1)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(run.suiteName)
         .accessibilityValue("\(statusSummary), \(run.startedAt.formatted(date: .abbreviated, time: .standard))")
@@ -64,18 +57,16 @@ struct EmptyRunHistoryRow: View {
     let isSearching: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(
-                isSearching ? "No matching runs" : "No runs yet",
-                systemImage: isSearching ? "magnifyingglass" : "clock.arrow.circlepath"
-            )
+        VStack(alignment: .leading, spacing: 3) {
+            Text(isSearching ? "No matching runs" : "No runs yet")
                 .font(.callout.weight(.medium))
-            Text(isSearching ? "Try a different suite name or version." : "Completed runs and their local traces appear here.")
-                .font(.caption)
                 .foregroundStyle(.secondary)
+            Text(isSearching ? "Try a different suite name or version." : "Completed runs and their traces appear here.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 }

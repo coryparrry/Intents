@@ -10,26 +10,41 @@ struct WorkflowTraceView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("WORKFLOW TRACE")
-                            .font(.caption2.weight(.semibold)).tracking(1.2).foregroundStyle(.secondary)
-                        Text(run.suiteName).font(.title2.weight(.semibold)).lineLimit(1)
-                        Text("\(run.execution?.modelDisplayName ?? run.environment.model) · \(run.scoringMode.title)")
-                            .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Workflow trace")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(run.suiteName).font(.title2.weight(.bold)).lineLimit(1)
+                        WorkspaceFlowLayout(spacing: 14, lineSpacing: 4) {
+                            WorkspaceMetaLabel(run.execution?.modelDisplayName ?? run.environment.model, symbol: "cpu")
+                            WorkspaceMetaLabel(run.scoringMode.title, symbol: "checkmark.seal")
+                            WorkspaceMetaLabel(
+                                run.startedAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()),
+                                symbol: "calendar"
+                            )
+                            WorkspaceMetaLabel("\(run.results.count) / \(run.plannedResultCount) samples", symbol: "square.stack")
+                        }
+                        .font(.callout).foregroundStyle(.secondary)
                     }
-                    Spacer(minLength: 10)
-                    VStack(alignment: .trailing, spacing: 5) {
-                        Text(run.startedAt, format: .dateTime.month(.abbreviated).day().hour().minute())
-                        Text("\(run.results.count) / \(run.plannedResultCount) samples")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+                    if let sample {
+                        Picker("Case", selection: Binding(get: { sample.id }, set: { sampleID = $0 })) {
+                            ForEach(run.results) { result in
+                                Text("\(result.caseName) · repetition \(result.repetition)").tag(result.id)
+                            }
+                        }
+                        .accessibilityIdentifier("Trace case")
+                        .frame(minWidth: 180, maxWidth: 320)
                     }
-                    .font(.caption).foregroundStyle(.secondary)
                 }
                 if let sample {
-                    HStack(spacing: 24) {
+                    HStack(spacing: 10) {
                         TraceSummaryMetric(title: "Outcome", value: sample.status.rawValue.capitalized,
-                            color: sample.status == .passed ? .green : sample.status == .unscored ? .secondary : .red)
+                            color: sample.status == .passed ? WorkspaceStyle.success
+                                : sample.status == .unscored ? .secondary
+                                : sample.status == .error ? WorkspaceStyle.warning : WorkspaceStyle.failure)
                         TraceSummaryMetric(title: "Workflow", value: WorkflowTracePresentation.duration(
                             sample.workflowTrace?.spans.first(where: { $0.kind == .sample })?.durationMilliseconds))
                         TraceSummaryMetric(title: "Subject request", value: WorkflowTracePresentation.duration(sample.durationMilliseconds))
@@ -38,16 +53,10 @@ struct WorkflowTraceView: View {
                         TraceSummaryMetric(title: "First content", value: WorkflowTracePresentation.duration(sample.featureTrace?.firstContentMilliseconds))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    Picker("Case", selection: Binding(get: { sample.id }, set: { sampleID = $0 })) {
-                        ForEach(run.results) { result in
-                            Text("\(result.caseName) · repetition \(result.repetition)").tag(result.id)
-                        }
-                    }
-                    .accessibilityIdentifier("Trace case")
-                    .frame(maxWidth: 560)
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 24).padding(.vertical, 18)
+            .background(WorkspaceStyle.surface)
             Divider()
             if let sample {
                 WorkflowSampleInspector(result: sample, run: run)
@@ -65,10 +74,13 @@ private struct TraceSummaryMetric: View {
     let value: String
     var color: Color = .primary
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.callout.weight(.semibold)).monospacedDigit().foregroundStyle(color)
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(value).font(.body.weight(.semibold)).monospacedDigit().foregroundStyle(color).lineLimit(1)
         }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .workspaceInset()
         .accessibilityElement(children: .combine)
     }
 }

@@ -53,18 +53,18 @@ struct WorkspaceSidebar: View {
 
     var body: some View {
         SidebarNavigationList(selection: destination) {
-            Label("Overview", systemImage: "square.grid.2x2.fill")
-                .fontWeight(.medium)
-                .tag(WorkspaceDestination.overview)
-
-            Label("Intent Lab", systemImage: "waveform.badge.magnifyingglass")
-                .fontWeight(.medium)
-                .tag(WorkspaceDestination.intentLab)
+            Section {
+                Label("Overview", systemImage: "square.grid.2x2")
+                    .tag(WorkspaceDestination.overview)
+                Label("Intent Lab", systemImage: "waveform.badge.magnifyingglass")
+                    .tag(WorkspaceDestination.intentLab)
+            }
 
             Section("Suites") {
                 ForEach(store.suiteRecords.filter { $0.archivedAt == nil }) { suite in
                     Label(suite.id == store.selectedSuiteID ? store.draftSuite.name : suite.name,
                           systemImage: "checklist")
+                        .lineLimit(1)
                         .tag(WorkspaceDestination.suite(suite.id))
                         .contextMenu {
                             Button("Duplicate suite", systemImage: "plus.square.on.square") {
@@ -79,7 +79,7 @@ struct WorkspaceSidebar: View {
                 }
             }
 
-            Section("Run history · \(store.draftSuite.name)") {
+            Section("Runs · \(store.draftSuite.name)") {
                 if filteredRuns.isEmpty {
                     EmptyRunHistoryRow(isSearching: !runSearch.isEmpty)
                 } else {
@@ -96,50 +96,24 @@ struct WorkspaceSidebar: View {
                 }
             }
         }
-        .searchable(text: $runSearch, placement: .sidebar, prompt: "Search run history")
+        .searchable(text: $runSearch, placement: .sidebar, prompt: "Filter runs")
         .onChange(of: store.selectedSuiteID) { _, _ in runSearch = "" }
         .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                Label("INTENTS", systemImage: "square.stack.3d.up.fill")
-                    .font(.system(size: 9, weight: .bold)).tracking(1.2)
-                    .foregroundStyle(.secondary)
-            Menu {
-                ForEach(store.projects.filter { $0.archivedAt == nil }) { project in
-                    Button {
-                        perform {
-                            try store.switchProject(id: project.id)
-                            store.selection = .overview
-                        }
-                    } label: {
-                        if project.id == store.selectedProjectID {
-                            Label(project.name, systemImage: "checkmark")
-                        } else { Text(project.name) }
-                    }
-                }
-                Divider()
-                Button("New project…", systemImage: "folder.badge.plus") { isCreatingProject = true }
-                Button("Manage projects…", systemImage: "folder.badge.gearshape") { isManagingWorkspace = true }
-            } label: {
-                Label(store.selectedProject.name, systemImage: "folder")
-                    .font(.callout.weight(.semibold)).lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .menuStyle(.borderlessButton)
-            .disabled(isBusy)
-            .accessibilityLabel("Choose project")
-            }
-            .padding(.horizontal, 18).padding(.vertical, 18)
+            projectSwitcher
+                .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 8)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            HStack {
-                Button("New suite", systemImage: "plus") { isCreatingSuite = true }
-                    .buttonStyle(.borderless)
+            HStack(spacing: 8) {
+                Button { isCreatingSuite = true } label: {
+                    Label("New Suite", systemImage: "plus.circle.fill")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Create a new evaluation suite in this project")
                 Spacer()
-                Button("Manage projects", systemImage: "folder.badge.gearshape") { isManagingWorkspace = true }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
             }
-            .padding(14)
+            .padding(.horizontal, 16).padding(.vertical, 12)
             .disabled(isBusy)
         }
         .sheet(isPresented: $isCreatingSuite) { NewSuiteView(store: store) }
@@ -156,6 +130,46 @@ struct WorkspaceSidebar: View {
         } message: {
             Text("This removes the saved results and trace from this Mac. It cannot be undone.")
         }
+    }
+
+    private var projectSwitcher: some View {
+        Menu {
+            ForEach(store.projects.filter { $0.archivedAt == nil }) { project in
+                Button {
+                    perform {
+                        try store.switchProject(id: project.id)
+                        store.selection = .overview
+                    }
+                } label: {
+                    if project.id == store.selectedProjectID {
+                        Label(project.name, systemImage: "checkmark")
+                    } else { Text(project.name) }
+                }
+            }
+            Divider()
+            Button("New project…", systemImage: "folder.badge.plus") { isCreatingProject = true }
+            Button("Manage projects…", systemImage: "folder.badge.gearshape") { isManagingWorkspace = true }
+        } label: {
+            HStack(spacing: 9) {
+                WorkspaceIconTile(symbol: "square.stack.3d.up.fill", tint: .accentColor, size: 28)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Project").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                    Text(store.selectedProject.name)
+                        .font(.callout.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(Color.primary.opacity(0.05), in: .rect(cornerRadius: 9))
+            .contentShape(.rect)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .disabled(isBusy)
+        .accessibilityLabel("Choose project")
     }
 
     private func perform(_ action: () throws -> Void) {

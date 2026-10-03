@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum SuiteSetupPage: String, CaseIterable, Identifiable {
+enum SuiteSetupPage: String, WorkspacePane {
     case instructions, scoring, model, tools, output, profile, performance
     var id: Self { self }
     var title: String {
@@ -28,48 +28,24 @@ enum SuiteSetupPage: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .instructions: "text.alignleft"
-        case .scoring: "checkmark.seal"
+        case .scoring: "checkmark.seal.fill"
         case .model: "cpu"
-        case .tools: "wrench.and.screwdriver"
+        case .tools: "wrench.and.screwdriver.fill"
         case .output: "curlybraces"
         case .profile: "arrow.triangle.branch"
         case .performance: "gauge.with.dots.needle.50percent"
         }
     }
-}
-
-struct SuiteSetupNavigation: View {
-    @Binding var selection: SuiteSetupPage
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("SUITE SETUP")
-                .font(.system(size: 9, weight: .semibold)).tracking(1.3)
-                .foregroundStyle(.secondary).padding(.horizontal, 10).padding(.bottom, 9)
-            ForEach(SuiteSetupPage.allCases) { page in
-                Button { selection = page } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: page.symbol).frame(width: 17)
-                        Text(page.title)
-                        Spacer(minLength: 0)
-                        if page == selection {
-                            RoundedRectangle(cornerRadius: 2).fill(Color.accentColor).frame(width: 3, height: 15)
-                        }
-                    }
-                    .font(.callout.weight(page == selection ? .semibold : .regular))
-                    .foregroundStyle(page == selection ? Color.accentColor : .secondary)
-                    .padding(.horizontal, 10).padding(.vertical, 11)
-                    .background(page == selection ? Color.accentColor.opacity(0.07) : .clear,
-                                in: .rect(cornerRadius: 8))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(page == selection ? .isSelected : [])
-                .accessibilityHint(page.subtitle)
-                .accessibilityIdentifier("Setup \(page.rawValue)")
-            }
+    var tint: Color {
+        switch self {
+        case .instructions: .blue
+        case .scoring: .green
+        case .model: .purple
+        case .tools: .gray
+        case .output: .pink
+        case .profile: .teal
+        case .performance: .orange
         }
-        .frame(width: 175)
     }
 }
 
@@ -84,18 +60,18 @@ struct SuiteOptionalSection<Content: View>: View {
         DisclosureGroup(isExpanded: $isExpanded) {
             content.padding(.top, 16)
         } label: {
-            HStack(spacing: 11) {
-                Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 20)
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                WorkspaceSymbolBadge(symbol: symbol, tint: .secondary, size: 26)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.callout.weight(.semibold)).foregroundStyle(.primary)
                     Text(detail).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 3)
+            .padding(.vertical, 2)
         }
         .disclosureGroupStyle(.automatic)
-        .padding(18)
+        .padding(16)
         .workspaceSurface()
     }
 }

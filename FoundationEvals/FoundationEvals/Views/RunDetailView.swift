@@ -43,25 +43,7 @@ struct RunDetailView: View {
     @State private var showsWorkflow = true
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let execution = run.developerExecution {
-                DeveloperExecutionSummary(execution: execution)
-                Divider()
-            }
-            HStack {
-                Picker("Run view", selection: $showsWorkflow) {
-                    Text("Workflow trace").tag(true)
-                    Text("Report").tag(false)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 260)
-                .accessibilityIdentifier("Run view")
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            Divider()
+        Group {
             if showsWorkflow {
                 WorkflowTraceView(run: run)
                     .id(run.id)
@@ -69,15 +51,33 @@ struct RunDetailView: View {
                 report
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(WorkspaceStyle.canvas)
         .navigationTitle(run.suiteName)
         .toolbar {
-            Button("Export Run as JSON", systemImage: "square.and.arrow.up") {
-                do {
-                    exportDocument = try JSONDocument(run: run)
-                    isExporting = true
-                } catch {
-                    exportError = error.localizedDescription
+            ToolbarItem(placement: .principal) {
+                Picker("Run view", selection: $showsWorkflow) {
+                    Text("Workflow trace").tag(true)
+                    Text("Report").tag(false)
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("Run view")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                WorkspaceResetControl(store: store)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Export Run as JSON", systemImage: "square.and.arrow.up") {
+                    do {
+                        exportDocument = try JSONDocument(run: run)
+                        isExporting = true
+                    } catch {
+                        exportError = error.localizedDescription
+                    }
+                }
+                .help("Export this run as JSON")
             }
         }
         .fileExporter(
@@ -99,6 +99,9 @@ struct RunDetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 RunOverviewHeader(run: run)
+                if let execution = run.developerExecution {
+                    DeveloperExecutionSummary(execution: execution)
+                }
                 RunSummaryDashboard(run: run)
                 RunWorkflowPanel(store: store, run: run)
                 ResultsSection(run: run)
@@ -106,10 +109,8 @@ struct RunDetailView: View {
                 RunAnalysisSection(run: run, baselineRuns: baselineRuns)
                 RunConfigurationSection(run: run)
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .workspacePage()
         }
-        .background(Color.primary.opacity(0.025))
     }
 
     private func safeFilename(_ value: String) -> String {
@@ -122,25 +123,27 @@ private struct RunOverviewHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(run.suiteName)
-                    .font(.system(size: 26, weight: .semibold))
-                Spacer()
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(run.startedAt, format: .dateTime.weekday(.wide).day().month(.wide).hour().minute())
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(run.suiteName)
+                        .font(.system(size: 28, weight: .bold)).tracking(-0.3)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 16)
                 RunStatusBadge(run: run)
             }
-
-            HStack(spacing: 10) {
-                Text(run.suiteVersion)
-                Text("·")
-                Text(run.scoringMode.title)
-                Text("·")
-                Text(run.execution?.modelDisplayName ?? run.environment.model)
-                Text("·")
-                Text(scorerSummary)
-                Text("·")
-                Text(run.startedAt, format: .dateTime.year().month().day().hour().minute().second())
-                Text("·")
-                Text(run.totalDuration.formatted(.units(allowed: [.minutes, .seconds], width: .abbreviated)))
+            WorkspaceFlowLayout(spacing: 16, lineSpacing: 6) {
+                WorkspaceMetaLabel(run.suiteVersion, symbol: "tag")
+                WorkspaceMetaLabel(run.scoringMode.title, symbol: "checkmark.seal")
+                WorkspaceMetaLabel(run.execution?.modelDisplayName ?? run.environment.model, symbol: "cpu")
+                WorkspaceMetaLabel(scorerSummary, symbol: "person.badge.shield.checkmark")
+                WorkspaceMetaLabel(
+                    run.totalDuration.formatted(.units(allowed: [.minutes, .seconds], width: .abbreviated)),
+                    symbol: "timer"
+                )
             }
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -179,17 +182,18 @@ private struct RunStatusBadge: View {
     }
 
     private var color: Color {
-        if run.cancelled || run.stoppedEarly { return .orange }
-        return run.errorCount > 0 || run.failedCount > 0 ? .red : .green
+        if run.cancelled || run.stoppedEarly { return WorkspaceStyle.warning }
+        if run.errorCount > 0 { return WorkspaceStyle.warning }
+        return run.failedCount > 0 ? WorkspaceStyle.failure : WorkspaceStyle.success
     }
 
     var body: some View {
         Label(title, systemImage: symbol)
-            .font(.caption.weight(.medium))
+            .font(.callout.weight(.semibold))
             .foregroundStyle(color)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(color.opacity(0.09), in: .capsule)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(color.opacity(0.13), in: .capsule)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(title))
             .accessibilityIdentifier("Run status")
@@ -256,11 +260,7 @@ private struct RunConfigurationSection: View {
         }
         .font(.headline)
         .padding(18)
-        .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.secondary.opacity(0.14))
-        }
+        .workspaceSurface()
     }
 
     private func contextSummary(execution: EvaluationExecutionTrace) -> String {
@@ -314,11 +314,8 @@ private struct ResultsSection: View {
                     .font(.headline)
                     .accessibilityAddTraits(.isHeader)
                 Text(isFiltering ? "\(results.count) of \(run.results.count)" : "\(run.results.count)")
-                    .font(.caption.monospacedDigit())
+                    .font(.subheadline.weight(.medium).monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(.quaternary, in: .rect(cornerRadius: 4))
                 Spacer()
                 if !run.results.isEmpty {
                     Picker("Result filter", selection: $filter) {
@@ -327,8 +324,8 @@ private struct ResultsSection: View {
                         }
                     }
                     .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 110)
+                    .pickerStyle(.segmented)
+                    .fixedSize()
 
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
@@ -340,16 +337,18 @@ private struct ResultsSection: View {
                             Button("Clear filters", systemImage: "xmark.circle.fill") { clearFilters() }
                                 .labelStyle(.iconOnly)
                                 .buttonStyle(.plain)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.tertiary)
                                 .accessibilityIdentifier("Clear result filters")
                         }
                     }
-                    .padding(8)
-                    .frame(width: 220)
-                    .background(Color.primary.opacity(0.035), in: .rect(cornerRadius: 6))
+                    .font(.callout)
+                    .padding(.horizontal, 9).padding(.vertical, 6)
+                    .frame(width: 210)
+                    .workspaceInset(radius: 7)
                 }
             }
-            .padding(18)
+            .padding(.horizontal, 18).padding(.vertical, 14)
+            Divider()
 
             if run.results.isEmpty {
                 ContentUnavailableView(
@@ -428,12 +427,7 @@ private struct ResultsSection: View {
                 }
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 12))
-        .clipShape(.rect(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        }
+        .workspaceSurface()
         .onAppear { selectFirstResultIfNeeded() }
         .onChange(of: results.map(\.id)) { _, _ in
             selectFirstResultIfNeeded()
@@ -482,8 +476,9 @@ private struct ResultStatusLabel: View {
 
     private var statusColor: Color {
         switch result.status {
-        case .passed: .green
-        case .failed, .error: .red
+        case .passed: WorkspaceStyle.success
+        case .failed: WorkspaceStyle.failure
+        case .error: WorkspaceStyle.warning
         case .unscored: .secondary
         }
     }
@@ -652,8 +647,8 @@ private struct ResultCardHeader: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(statusColor)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(statusColor.opacity(0.09), in: .capsule)
+                .padding(.vertical, 3)
+                .background(statusColor.opacity(0.13), in: .capsule)
 
             if let score = result.score {
                 Text("\(score) / 4")
@@ -683,8 +678,9 @@ private struct ResultCardHeader: View {
 
     private var statusColor: Color {
         switch result.status {
-        case .passed: .green
-        case .failed, .error: .red
+        case .passed: WorkspaceStyle.success
+        case .failed: WorkspaceStyle.failure
+        case .error: WorkspaceStyle.warning
         case .unscored: .secondary
         }
     }
@@ -699,7 +695,7 @@ private struct ResponseTextBlock: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text("Response")
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 if !response.isEmpty {
@@ -714,6 +710,8 @@ private struct ResponseTextBlock: View {
             Text(response.isEmpty ? "No response was captured." : response)
                 .foregroundStyle(response.isEmpty ? .secondary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .workspaceInset()
         }
     }
 }
@@ -726,7 +724,7 @@ private struct ErrorBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
+                .foregroundStyle(WorkspaceStyle.failure)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.headline)
@@ -740,7 +738,7 @@ private struct ErrorBanner: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.08), in: .rect(cornerRadius: 9))
+        .background(WorkspaceStyle.failure.opacity(0.08), in: .rect(cornerRadius: WorkspaceStyle.controlRadius))
     }
 }
 
@@ -751,7 +749,7 @@ private struct LabeledText: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             Text(text)
                 .font(.body)

@@ -56,7 +56,7 @@ struct SpotlightSearchToolEditor: View {
             }
         }
         .padding(14)
-        .background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 11))
+        .workspaceInset(radius: 11)
     }
 }
 

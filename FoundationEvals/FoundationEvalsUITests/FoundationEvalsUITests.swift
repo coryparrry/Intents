@@ -18,14 +18,14 @@ final class FoundationEvalsUITests: XCTestCase {
         app.typeKey("2", modifierFlags: .command)
 
         XCTAssertTrue(app.staticTexts["Intent Lab"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Connect signed UI tests"].exists)
-        XCTAssertTrue(app.buttons["Run preflight"].exists)
+        XCTAssertTrue(app.staticTexts["Connect an iPhone"].exists)
+        XCTAssertTrue(app.buttons["Choose Project…"].exists)
 
-        app.buttons["Scenario"].click()
+        app.radioButtons["Scenario"].click()
         XCTAssertTrue(app.staticTexts["Define the expected outcome"].exists)
         XCTAssertTrue(app.buttons["Run scenario"].exists)
 
-        app.buttons["Results"].click()
+        app.radioButtons["Results"].click()
         XCTAssertTrue(app.staticTexts["No scenario evidence"].waitForExistence(timeout: 3))
         let title = app.staticTexts["Intent Lab page title"]
         XCTAssertGreaterThan(title.frame.minY - app.windows.firstMatch.frame.minY, 45,
@@ -38,7 +38,7 @@ final class FoundationEvalsUITests: XCTestCase {
         resultsAttachment.name = "Intent Lab results"
         resultsAttachment.lifetime = .keepAlways
         add(resultsAttachment)
-        app.buttons["Scenario"].click()
+        app.radioButtons["Scenario"].click()
 
         XCTAssertTrue(app.textFields["Scenario name"].isHittable)
         XCTAssertTrue(app.buttons["Run scenario"].isHittable)
@@ -65,8 +65,8 @@ final class FoundationEvalsUITests: XCTestCase {
         defer { app.terminate() }
         app.activate()
         app.typeKey("2", modifierFlags: .command)
-        app.buttons["Scenario"].click()
-        app.buttons["Parameters"].click()
+        app.radioButtons["Scenario"].click()
+        UITestStorage.selectPane("Parameters", heading: "Scenario", in: app)
 
         let names = app.textFields.matching(identifier: "Parameter name")
         XCTAssertEqual(names.count, 1)
@@ -108,7 +108,13 @@ final class FoundationEvalsUITests: XCTestCase {
         prompt.click()
         app.typeKey("a", modifierFlags: .command)
         app.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
-        XCTAssertFalse(app.buttons["Run evaluation"].isEnabled)
+        XCTAssertEqual(prompt.value as? String, "", "The edit must clear the case prompt")
+        // Prompt edits reach suite validation after the debounced save.
+        let runDisabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == false"),
+            object: app.buttons["Run evaluation"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [runDisabled], timeout: 3), .completed)
 
         app.menuBars.menuBarItems["Evaluation"].click()
         XCTAssertFalse(app.menuItems["Run Evaluation"].isEnabled)
@@ -151,7 +157,7 @@ final class FoundationEvalsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Add Case"].exists)
         XCTAssertTrue(app.buttons["Add Case"].isHittable)
-        XCTAssertTrue(app.buttons["Run destination"].exists)
+        XCTAssertTrue(app.buttons["This Mac"].exists)
 
         selectSetup("Instructions", in: app)
         XCTAssertTrue(app.textViews["Model instructions"].exists)
@@ -190,7 +196,7 @@ final class FoundationEvalsUITests: XCTestCase {
         for (mode, expectedCount) in [("Collect only", 0), ("Exact text", 1), ("Contains text", 1), ("AI rubric", 1)] {
             selectSetup("Scoring", in: app)
             app.radioButtons[mode].click()
-            app.buttons["Cases"].click()
+            app.radioButtons["Cases"].click()
             XCTAssertTrue(app.textViews["Case prompt"].exists)
             XCTAssertEqual(app.textViews.matching(identifier: "Scoring expected text").count, expectedCount)
         }
@@ -236,7 +242,7 @@ final class FoundationEvalsUITests: XCTestCase {
         app.menuItems["Show Suite Editor"].click()
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
 
-        app.buttons["Setup"].click()
+        app.radioButtons["Setup"].click()
 
         for title in ["Scoring", "Tools", "Structured output", "Session profile", "Performance"] {
             selectSetup(title, in: app)
@@ -277,13 +283,13 @@ final class FoundationEvalsUITests: XCTestCase {
         caseName.typeText("Selection regression case")
 
         selectSetup("Scoring", in: app)
-        app.buttons["Cases"].click()
+        app.radioButtons["Cases"].click()
         XCTAssertEqual(caseName.value as? String, "Selection regression case")
 
         app.buttons["Example"].click()
         XCTAssertEqual(caseName.value as? String, "Example")
         selectSetup("Scoring", in: app)
-        app.buttons["Cases"].click()
+        app.radioButtons["Cases"].click()
         XCTAssertEqual(caseName.value as? String, "Example")
 
     }
@@ -316,7 +322,7 @@ final class FoundationEvalsUITests: XCTestCase {
         name.typeText("Renamed case")
         XCTAssertEqual(search.value as? String, "", "Editing out of a search preserves the visible editor")
         selectSetup("Scoring", in: app)
-        app.buttons["Cases"].click()
+        app.radioButtons["Cases"].click()
         XCTAssertEqual(name.value as? String, "Renamed case")
 
         search.click()
@@ -331,14 +337,8 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     private func selectSetup(_ title: String, in app: XCUIApplication) {
-        app.buttons["Setup"].click()
-        let menu = app.popUpButtons["Suite setup"]
-        if menu.exists {
-            menu.click()
-            app.menuItems[title].click()
-        } else {
-            app.buttons[title].click()
-        }
+        app.radioButtons["Setup"].click()
+        UITestStorage.selectPane(title, heading: "Suite setup", in: app)
     }
 
     private func uiTestStorage(name: String) -> URL {

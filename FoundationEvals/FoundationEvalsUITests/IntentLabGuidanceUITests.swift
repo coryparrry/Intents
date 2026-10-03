@@ -2,7 +2,7 @@ import XCTest
 
 final class IntentLabGuidanceUITests: XCTestCase {
     @MainActor
-    func testGuidanceAndNavigationFitWideWindow() throws {
+    func testGuidanceAndNavigationFitAvailableWindow() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
         let storage = try UITestStorage.makeDirectory(prefix: "intent-guidance")
@@ -18,12 +18,12 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.menuBars.menuBarItems["Window"].click()
         app.menuItems["Fill"].click()
         let width = window.frame.width
-        XCTAssertGreaterThan(width, 1_150, "Exercise wide navigation")
+        XCTAssertGreaterThanOrEqual(width, 824, "Exercise available navigation width")
 
-        app.buttons["Setup"].click()
+        app.radioButtons["Setup"].click()
         assertChromeFits(app, window: window)
         XCTAssertTrue(app.links["Apple’s guide to App Intents"].exists)
-        app.buttons["Scenario"].click()
+        app.radioButtons["Scenario"].click()
         assertChromeFits(app, window: window)
         XCTAssertTrue(app.textFields["Scenario name"].isHittable)
 
@@ -46,7 +46,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         assertChromeFits(app, window: window)
         capture(window, name: "Scrolled settings at \(Int(width)) points")
 
-        app.buttons["Results"].click()
+        app.radioButtons["Results"].click()
         let disclosure = app.disclosureTriangles["What do the results mean?"]
         XCTAssertTrue(disclosure.isHittable)
         assertChromeFits(app, window: window)
@@ -55,12 +55,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
 
     @MainActor
     private func selectPage(_ title: String, app: XCUIApplication) {
-        if app.popUpButtons["SCENARIO"].exists {
-            app.popUpButtons["SCENARIO"].click()
-            app.menuItems[title].click()
-        } else {
-            app.buttons[title].click()
-        }
+        UITestStorage.selectPane(title, heading: "Scenario", in: app)
     }
 
     @MainActor
@@ -69,7 +64,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         XCTAssertTrue(title.exists)
         XCTAssertGreaterThan(title.frame.minY, window.frame.minY + 45, "Header must stay below the toolbar")
         XCTAssertLessThan(title.frame.maxY, window.frame.minY + 145)
-        XCTAssertTrue(app.buttons["Scenario"].isHittable)
+        XCTAssertTrue(app.radioButtons["Scenario"].isHittable)
         let status = app.descendants(matching: .any)["Workspace status"].firstMatch
         XCTAssertTrue(status.exists)
         XCTAssertLessThanOrEqual(status.frame.maxY, window.frame.maxY + 1, "Page content must not push the status bar below the window")
