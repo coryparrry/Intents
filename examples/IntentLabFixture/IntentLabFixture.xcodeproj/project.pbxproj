@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		075228154ACC0F9220E86F00 /* PresetPhoneIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED332FB067E43A9536340035 /* PresetPhoneIntegration.swift */; };
 		0ECCB4E8D03B71A8C3157B94 /* FixtureBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90FE06593FF47615D1DC8643 /* FixtureBridge.swift */; };
 		1EB8C22589D18CBE0F27D444 /* SiriProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7B48124753D279ABBA05CB7 /* SiriProbe.swift */; };
 		299983650FCBBEB5E2ABFA98 /* FixtureNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A99B9D3A34C1C80E9C78A6CA /* FixtureNotes.swift */; };
@@ -26,6 +27,7 @@
 		7FB1FE2D257AD435E5CAFD55 /* SiriActivationBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A0D24CF9569EC4BC128D678A /* SiriActivationBridge.m */; };
 		8713E97A9A8BB7CDD696063E /* IntentLabQueryObserverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FDF0D20E430625EBBBAF22A /* IntentLabQueryObserverTests.swift */; };
 		887B48AA5BAD09C747C49252 /* EvidenceAttachmentWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D727C2B05BB1C7204401999 /* EvidenceAttachmentWriter.swift */; };
+		89589BFA2FFE2EF1D1406E82 /* IntentLabPresetRetestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09F26A00E31866BBE82AB630 /* IntentLabPresetRetestTests.swift */; };
 		8B1596AEEEEA0B9EA6279981 /* IntentLabContracts in Frameworks */ = {isa = PBXBuildFile; productRef = 0689714EA3A84022CE7EF62C /* IntentLabContracts */; };
 		A28E8A945E482AC654C13F82 /* NoteIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DF62A784D195126D5BF79FF /* NoteIntents.swift */; };
 		A6FAC3D335AC6EA2EAF7BFCE /* IntentLabInvocation.json in Resources */ = {isa = PBXBuildFile; fileRef = 70FAA5D458FD5B159791FE24 /* IntentLabInvocation.json */; };
@@ -63,6 +65,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		09F26A00E31866BBE82AB630 /* IntentLabPresetRetestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabPresetRetestTests.swift; sourceTree = "<group>"; };
 		2D727C2B05BB1C7204401999 /* EvidenceAttachmentWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceAttachmentWriter.swift; sourceTree = "<group>"; };
 		478E16CADCFBF0D2426853A6 /* NotesLocalFeatureControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesLocalFeatureControlTests.swift; sourceTree = "<group>"; };
 		4DF62A784D195126D5BF79FF /* NoteIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteIntents.swift; sourceTree = "<group>"; };
@@ -89,6 +92,7 @@
 		D7B48124753D279ABBA05CB7 /* SiriProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiriProbe.swift; sourceTree = "<group>"; };
 		E54E14FAD1E3BAA2DE59DD5B /* IntentLabFixtureRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabFixtureRunner.swift; sourceTree = "<group>"; };
 		E64A43484EA1AA050108904A /* IntentLabIntegration.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = IntentLabIntegration.json; sourceTree = "<group>"; };
+		ED332FB067E43A9536340035 /* PresetPhoneIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetPhoneIntegration.swift; sourceTree = "<group>"; };
 		F021F2A5EE32391CBE2815DC /* IntentLabSiriScenarioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabSiriScenarioTests.swift; sourceTree = "<group>"; };
 		FAF40E2C9CC322498F15FDB3 /* SiriActivationBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SiriActivationBridge.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -128,6 +132,8 @@
 			isa = PBXGroup;
 			children = (
 				E64A43484EA1AA050108904A /* IntentLabIntegration.json */,
+				09F26A00E31866BBE82AB630 /* IntentLabPresetRetestTests.swift */,
+				ED332FB067E43A9536340035 /* PresetPhoneIntegration.swift */,
 			);
 			name = Siri;
 			path = UITests/Siri;
@@ -409,8 +415,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				89589BFA2FFE2EF1D1406E82 /* IntentLabPresetRetestTests.swift in Sources */,
 				ECF790FB1612CEEAD4843D5D /* IntentLabSiriScenarioTests.swift in Sources */,
 				6AECAF3F61EDDA8E361DFB91 /* NotesIntentLabIntegration.swift in Sources */,
+				075228154ACC0F9220E86F00 /* PresetPhoneIntegration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

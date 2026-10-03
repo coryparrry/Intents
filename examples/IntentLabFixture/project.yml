@@ -71,6 +71,8 @@ targets:
     sources:
       - path: UITests/NotesIntentLabIntegration.swift
       - path: UITests/IntentLabSiriScenarioTests.swift
+      - path: UITests/Siri/IntentLabPresetRetestTests.swift
+      - path: UITests/Siri/PresetPhoneIntegration.swift
       - path: UITests/Siri/IntentLabIntegration.json
         buildPhase: resources
     dependencies:
