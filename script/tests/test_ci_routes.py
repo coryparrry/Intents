@@ -96,6 +96,18 @@ class CoverageTests(unittest.TestCase):
                     [path], macos=("script.tests.test_update_signature",)
                 )
 
+    def test_shortcut_routing_test_runs_on_macos(self):
+        self.assert_selection(
+            ["script/tests/test_fixture_shortcut_routing.py"],
+            macos=("script.tests.test_fixture_shortcut_routing",),
+        )
+
+    def test_shortcut_metadata_validator_selects_its_regressions(self):
+        self.assert_selection(
+            ["script/check_fixture_shortcut_metadata.py"],
+            python=("script.tests.test_fixture_shortcut_metadata",),
+        )
+
     def test_installer_wrapper_includes_native_signature_verification(self):
         self.assert_selection(
             ["script/verify_installer.sh"],

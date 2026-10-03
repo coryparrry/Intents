@@ -91,10 +91,36 @@ struct SummarizeNoteIntent: AppIntent {
     }
 }
 
+// Give each fixed command its own indexed action. The generic intents stay
+// available for saved shortcuts and entity selection, and own the production work.
+struct OpenPackingNoteIntent: AppIntent {
+    static let title: LocalizedStringResource = "Open packing note"
+    static let description = IntentDescription("Opens the synthetic packing note without asking which note to use.")
+    static let openAppWhenRun = true
+
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        try await OpenNoteIntent(note: PackingNoteShortcut.note).perform()
+    }
+}
+
+struct SummarizePackingNoteIntent: AppIntent {
+    static let title: LocalizedStringResource = "Summarize packing note"
+    static let description = IntentDescription("Generates a summary of the synthetic packing note using the production summary service.")
+    static let openAppWhenRun = true
+
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        try await SummarizeNoteIntent(note: PackingNoteShortcut.note).perform()
+    }
+}
+
+private enum PackingNoteShortcut {
+    static var note: NoteEntity { NoteEntity(id: "packing-001", title: "Packing note") }
+}
+
 struct FixtureShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
-            intent: OpenNoteIntent(note: NoteEntity(id: "packing-001", title: "Packing note")),
+            intent: OpenPackingNoteIntent(),
             phrases: ["Open the packing note in \(.applicationName)"],
             shortTitle: "Open packing note",
             systemImageName: "note.text"
@@ -106,7 +132,7 @@ struct FixtureShortcuts: AppShortcutsProvider {
             systemImageName: "note.text"
         )
         AppShortcut(
-            intent: SummarizeNoteIntent(note: NoteEntity(id: "packing-001", title: "Packing note")),
+            intent: SummarizePackingNoteIntent(),
             phrases: ["Summarize the packing note in \(.applicationName)"],
             shortTitle: "Summarize packing note",
             systemImageName: "text.quote"
