@@ -1,0 +1,21 @@
+# Intents
+
+> Intents is a free, open-source native Mac workbench for Apple Foundation Models: repeatable evaluations, readable results, execution traces, and App Intent testing.
+
+Made by Cory Parry and released under the MIT licence. Requires macOS 27 or later and an Apple Intelligence-capable Apple silicon Mac, with Apple Intelligence enabled and its on-device model downloaded. Intent Lab is in beta. Remote providers and judges use their configured services. The website's recorded examples are demonstrations, not model benchmarks.
+
+## Product
+
+- [Product overview](https://intents-workbench.coryparry.chatgpt.site/index.html.md): Plain-text version of the showcase, including features, requirements, example provenance, and download links.
+- [Interactive showcase](https://intents-workbench.coryparry.chatgpt.site/): The visual website with code-rendered examples of the app.
+
+## Source and documentation
+
+- [Repository and getting started](https://github.com/coryparrry/Intents): Source code, current project documentation, and build instructions.
+- [Download](https://github.com/coryparrry/Intents/releases/latest): Latest published release and its release notes.
+- [Swift integration](https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md): Evaluate real Swift feature closures on a paired device.
+- [MIT licence](https://github.com/coryparrry/Intents/blob/main/LICENSE): Terms for using, modifying, and distributing the source.
+
+## Optional
+
+- [Issues and feedback](https://github.com/coryparrry/Intents/issues): Report a problem or contribute feedback.

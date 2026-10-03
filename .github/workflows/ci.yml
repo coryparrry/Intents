@@ -59,6 +59,15 @@ jobs:
         run: shellcheck script/*.sh
       - name: Check Python examples
         run: python3 -m compileall -q examples
+      - name: Check website
+        if: hashFiles('website/dist/app.js') != ''
+        working-directory: website
+        run: |
+          node --check dist/app.js
+          node --check dist/demo-data.mjs
+          node --check dist/demo-interactions.mjs
+          node scripts/inline-styles.mjs --check
+          node --test tests/*.test.mjs
       - name: Run selected script unit tests
         if: needs.changes.outputs.python_tests != '[]'
         env:
