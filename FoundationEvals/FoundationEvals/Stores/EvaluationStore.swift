@@ -62,6 +62,7 @@ final class EvaluationStore {
     private let runWriter: (Data, URL) throws -> Void
     private let pendingCompletedRunsWriter: (Data, URL) throws -> Void
     var overviewStorageDirectory: URL { supportDirectory }
+    @ObservationIgnored lazy var reviewDrafts = EvaluationReviewDraftStore(directory: supportDirectory.appending(path: "ReviewDrafts"))
     @ObservationIgnored private var pendingPromptEdits: [UUID: String] = [:]
     @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
     @ObservationIgnored private var draftSaveGeneration: UInt64 = 0
@@ -1025,6 +1026,44 @@ final class EvaluationStore {
         }
     }
 
+    // Review mutations share the suite-local atomic persistence and rollback path.
+    func updateReviewState(_ mutation: (inout EvaluationReviewState) throws -> Void) throws {
+        var candidate = suiteLocalState
+        try mutation(&candidate.review)
+        try commitReviewLocalState(candidate)
+    }
+
+    func commitReviewLocalState(_ candidate: EvaluationSuiteLocalState) throws {
+        let previous = suiteLocalState
+        suiteLocalState = candidate
+        do { try persistSuiteLocalState() }
+        catch { suiteLocalState = previous; throw error }
+    }
+
+    func promoteReviewToCase(reviewID: UUID, expected: String) throws -> UUID {
+        try requireWorkspaceWritable()
+        guard !isRunning, !isReassessing, !isProcessingFiles else {
+            throw EvaluationReviewError.invalid("Wait for the current operation to finish before adding a regression.")
+        }
+        guard let annotation = suiteLocalState.review.annotations.first(where: { $0.id == reviewID }),
+              let sample = reviewSamples.first(where: { $0.run.id == annotation.runID && $0.sample.id == annotation.sampleID }) else {
+            throw EvaluationReviewError.invalid("The reviewed source is no longer available.")
+        }
+        if let existing = draftSuite.cases.first(where: { $0.reviewSource?.reviewID == reviewID }) { return existing.id }
+        try validateReviewImageEvidence(sample.run)
+        applyPendingPromptEdits()
+        let regression = try EvaluationReviewWorkflow.regression(annotation: annotation, sample: sample,
+                                                                 suite: draftSuite, expected: expected)
+        var candidate = draftSuite
+        candidate.cases.append(regression)
+        try commitSuite(candidate)
+        draftSuite = candidate
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        isDraftSavePending = false
+        return regression.id
+    }
+
     func markJudgmentIncorrect(
         runID: UUID,
         assessmentID: UUID,
@@ -1073,8 +1112,12 @@ final class EvaluationStore {
         var candidateState = suiteLocalState
         candidateState.humanCorrections.append(correction)
         if collectAsJudgeCheck {
+            guard let caseID = run.results.first(where: { $0.id == sampleID })?.caseID else {
+                throw EvaluationStoreError.resourceNotFound("Reviewed source sample")
+            }
+            let partition = EvaluationReviewJudgePartitions.existing(caseID: caseID, state: candidateState, runs: runs)
             candidateState.reviewedJudgeExamples.append(.init(
-                id: UUID(), sourceRunID: runID, sourceAssessmentID: assessmentID,
+                partition: partition, id: UUID(), sourceRunID: runID, sourceAssessmentID: assessmentID,
                 sampleID: sampleID, expectedStatus: correctedStatus, reason: trimmed, createdAt: Date(),
                 scoringContract: assessment.scoringContract,
                 subjectEvidenceDigest: assessment.subjectEvidenceDigest ?? run.subjectEvidence?.digest
@@ -1093,6 +1136,7 @@ final class EvaluationStore {
     func runJudgeChecks(connectionID: UUID) {
         guard !isReassessing else { return }
         isReassessing = true
+        latestJudgeCheck = nil
         Task { [weak self] in
             guard let self else { return }
             defer { isReassessing = false }
@@ -1104,6 +1148,7 @@ final class EvaluationStore {
                               let assessment = run.assessments?.first(where: { $0.id == example.sourceAssessmentID }) else {
                             throw EvaluationStoreError.resourceNotFound("Reviewed judge example")
                         }
+                        try EvaluationReviewWorkflow.validateJudgeSource(example, run: run)
                         let context = try self.reassessmentContext(for: run, scoringSuite: self.suite)
                         guard example.subjectEvidenceDigest == nil
                                 || example.subjectEvidenceDigest == context.evidence.digest,
@@ -3483,6 +3528,14 @@ final class EvaluationStore {
             }
             return ImageEvaluationInput(label: "file-\(index + 1)", url: url)
         }
+    }
+
+    func validateReviewImageEvidence(_ run: EvaluationRun) throws {
+        guard let evidence = run.subjectEvidence, evidence.hasValidDigest else {
+            throw EvaluationReviewError.invalid("The historical source evidence is unavailable or changed.")
+        }
+        _ = try imageInputs(for: evidence, projectID: run.projectID ?? selectedProjectID,
+                            suiteID: run.suiteID, runID: run.id)
     }
 
     private func reassessmentContext(

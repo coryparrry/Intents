@@ -93,6 +93,8 @@ struct MCPResourcePayload: Sendable {
 enum MCPToolCall: Sendable {
     case getState
     case listProjects
+    case listReviewSamples(MCPReviewSamplesArguments)
+    case proposeReview(MCPReviewProposalArguments)
     case check(MCPCheckArguments)
     case releaseReport(MCPReleaseReportArguments)
     case projectReleaseReport(MCPProjectReleaseReportArguments)
@@ -470,7 +472,7 @@ enum MCPToolCatalog {
                 "confirm": boolean("Must be true.")
             ], required: ["runID", "confirm"], destructive: true, idempotent: true
         )
-    ]
+    ] + EvaluationReviewMCP.definitions
 
     static let resourceTemplates: [MCPJSONValue] = [
         .object([
@@ -503,6 +505,14 @@ enum MCPToolCatalog {
                 let object = try requireObject(arguments)
                 guard object.isEmpty else { throw MCPToolInputError.invalidArguments }
                 return .listProjects
+            case "eval_list_review_samples":
+                let value = try arguments.decode(MCPReviewSamplesArguments.self)
+                try EvaluationReviewMCP.validate(value)
+                return .listReviewSamples(value)
+            case "eval_propose_review":
+                let value = try arguments.decode(MCPReviewProposalArguments.self)
+                try EvaluationReviewMCP.validate(value)
+                return .proposeReview(value)
             case "eval_check":
                 return .check(try arguments.decode(MCPCheckArguments.self))
             case "eval_release_report":
