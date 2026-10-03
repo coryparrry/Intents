@@ -4,7 +4,17 @@ Intents' authenticated localhost connector now uses the same workspace, batch st
 
 ## Discover and inspect
 
-Read `eval_control_capabilities`, `eval_get_state` and `eval_workspace_state`. Tool discovery advertises typed arguments. `eval_workspace_state` returns the full selected native suite and its current revisions; full native JSON uses Foundation's date encoding. Production dataset, job, review and schedule JSON uses Unix milliseconds.
+The default catalog advertises **24 tools**: 20 common workspace/evaluation/batch controls and four discovery/invocation tools. Read `eval_get_state` and `eval_workspace_state` first. All 110 original operations remain available.
+
+For advanced work, search by task using `eval_find_actions` with `query`, optional `domain` and `limit` (default 5, maximum 10). Domains are `workspace`, `evaluations`, `production`, `reviews`, `judges`, `runners` and `intentLab`. Search returns short summaries and `nextOffset`; load one exact schema using `eval_describe_action`. Use the returned `invokeWith` entry point with the action name and its exact arguments:
+
+```json
+{"name":"eval_read_action","arguments":{"action":"eval_intent_state","arguments":{}}}
+```
+
+A mutation uses `eval_apply_action` with the original operation ID, revision and confirmation fields inside its nested `arguments`. Read invocation rejects mutations before execution. Both entry points delegate to the original typed parser and authority, so retries and approvals are unchanged.
+
+Names below identify original actions. If a name is absent from the default catalog, discover/describe it and use the indicated entry point. Existing direct calls remain supported for compatibility; reconnect/refresh tool discovery after updating the app. Search and invocation work with ordinary MCP clients and do not require dynamic tool-list support. `eval_workspace_state` returns the full selected native suite and its current revisions; full native JSON uses Foundation's date encoding. Production dataset, job, review and schedule JSON uses Unix milliseconds.
 
 New mutations take a caller-generated `operationID`. Retry the identical tool and arguments after a lost reply. The persisted receipt identifies duplicate results and rejects reuse with changed arguments. `eval_operation_status` distinguishes committed actions, dispatched work, completed/failed work and interrupted ownership. An interrupted operation is never automatically replayed: inspect its exact target before making a new decision. Retain the operation ID while polling. Large completion results use a private, bounded artifact; receipts advertise its size/digest and `eval_operation_result_read` downloads chunks.
 
@@ -40,4 +50,4 @@ Execution includes a complete requirement, a partial `diagnostic` with `lanesJSO
 
 ## Verification
 
-`script/verify_mcp_app_control.py` exercises an already-running isolated app with `MCP_AUTHORIZATION` set to its existing credential. It sends credentials only to a localhost `/mcp` endpoint, never logs them, processes 100 distinct synthetic original outputs and checks retries, revisions, export bytes, scheduling and approval denial. `--native` separately performs one real on-device response. It does not use real production data, external judges or physical Siri.
+`script/verify_mcp_app_control.py` exercises an already-running isolated app with `MCP_AUTHORIZATION` set to its existing credential. It sends credentials only to a localhost `/mcp` endpoint, never logs them, discovers only needed advanced schemas, measures default catalog bytes, validates read/write denial and processes 100 distinct synthetic original outputs and checks retries, revisions, export bytes, scheduling and approval denial. `--native` separately performs one real on-device response. It does not use real production data, external judges or physical Siri.

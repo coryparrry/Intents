@@ -31,3 +31,19 @@ API coverage means product workflows, not emulating window pixels or bootstrappi
 - Native UI inspection confirmed MCP-selected Batch runs / Reports, the correct project/suite and saved Apple response, using the existing layout/components/colors. All processes from the isolated test build were closed.
 - Remote PR #68 was independently moved onto replacement #70 (codex/eval-review-clean). Carried only the new MCP commit onto remote production head 91d5f469ea9644bee30fe11fe8fb0ef8664176f4, preserving the newer fixture/CI changes. The 374 app/project/core/package input hashes are identical before/after rebase.
 - Existing production-gate review findings on PR #68 remain a separate review scope; this work verifies control/transport/evidence behavior and does not claim production release qualification.
+
+## Slim default catalog follow-up
+
+Completed: preserve complete app control while reducing the upfront tool/schema load.
+
+- Advertise 20 common workspace/evaluation/batch operations plus four bounded discovery/invocation tools (24 total). Keep all 110 original operations registered and directly callable for compatibility.
+- Search returns short paginated action summaries; description returns one exact original schema. Read/write invocation validates the selected original schema and read-only classification before routing to the unchanged authority. Preserve original target IDs, receipts, revisions and consent. No dynamic tools/list changes or special host tool-search support are required.
+- Reject recursive discovery invocation, unknown actions, extra envelope fields and attempts to use read invocation for a mutation. Original operation IDs produce the same receipt through direct or discovered invocation.
+- Measure serialized catalog size against the prior 110-operation catalog; target at most half the upfront schema bytes. Test discovery coverage/pagination, invocation boundaries and retry identity, then exercise the authenticated HTTP batch workflow through discovered actions. Existing UI stays unchanged.
+- Reuse independent read-only reviewers for discovery/protocol and authority/compatibility scopes after the change is stable. Keep builds/tests sequential with two compile jobs.
+
+- Final catalog advertises 24 tools and retains all 110 canonical actions. Serialized schema payload is 16,274 versus 118,930 bytes (86.3% smaller). The compact suite configuration action is upfront; the large legacy replacement schema remains available on demand and directly callable.
+- Native verification passed 34 discovery/authority/protocol/transport tests plus 16 existing suite/provider/schema/report compatibility tests (50 total). Exact function filters require Swift Testing's parentheses; execution counts were checked to confirm the two schema/report tests ran.
+- Authenticated HTTP verification passed 217 checks, loaded 19 advanced schemas and made 30 discovered calls. It retained all 100 fixture outputs with exact slot/example/source identities, then completed one separate real Apple model response. Native screenshot/accessibility inspection confirmed the matching report; all isolated test-build processes were closed.
+- Independent reviewers cleared routing/authority and protocol/discovery scopes. Their verifier finding was fixed by comparing every retained output and identity, not only uniqueness. The first native run exposed a test expectation that treated a parser rejection as an authority payload; the retained failure trace and corrected test now verify rejection before mutation.
+- Final source identity and artifact hashes are recorded in Verification/MCP_CONTROL_VERIFICATION.md. Only two compatibility-test lookup changes followed live verification; app/core inputs and executable/debug-dylib hashes stayed identical. These results measure schema bytes and actual connector behavior, not autonomous model tool-selection accuracy or production release qualification.

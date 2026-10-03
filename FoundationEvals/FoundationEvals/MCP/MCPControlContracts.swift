@@ -73,7 +73,8 @@ enum MCPControlSchema {
       title: name.replacingOccurrences(of: "eval_", with: "").replacingOccurrences(
         of: "_", with: " "), description: description,
       inputSchema: .object([
-        "$schema": .string("https://json-schema.org/draft/2020-12/schema"), "type": .string("object"), "properties": .object(fields),
+        "$schema": .string("https://json-schema.org/draft/2020-12/schema"),
+        "type": .string("object"), "properties": .object(fields),
         "required": .array(required.map(MCPJSONValue.string)), "additionalProperties": .bool(false),
       ]),
       annotations: .init(
@@ -94,10 +95,16 @@ enum MCPControlSchema {
       {
         throw MCPToolInputError.invalidArguments
       }
-      guard values.keys.allSatisfy({ fields[$0] != nil }) else {
+      if case .integer(let max) = s["maxProperties"], values.count > max {
         throw MCPToolInputError.invalidArguments
       }
-      for (key, v) in values { try validate(v, schema: fields[key]!) }
+      let acceptsAdditional = s["additionalProperties"] == .bool(true)
+      guard acceptsAdditional || values.keys.allSatisfy({ fields[$0] != nil }) else {
+        throw MCPToolInputError.invalidArguments
+      }
+      for (key, v) in values {
+        if let field = fields[key] { try validate(v, schema: field) }
+      }
     case "string":
       guard let text = value.stringValue else { throw MCPToolInputError.invalidArguments }
       if case .integer(let limit) = s["maxLength"], text.utf8.count > limit {

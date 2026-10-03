@@ -23,7 +23,7 @@ import Testing
     ]
   }
   @Test func discoveryAndStrictSchemas() throws {
-    let definitions = MCPToolCatalog.definitions
+    let definitions = MCPToolCatalog.allDefinitions
     #expect(Set(definitions.map(\.name)).count == definitions.count)
     for name in [
       "eval_project_create", "eval_production_upload_begin", "eval_production_job_start",
@@ -71,6 +71,38 @@ import Testing
     #expect(try await call("eval_project_create", request, control: restarted).isError)
     request["operationID"] = .string(UUID().uuidString)
     #expect(try await call("eval_project_create", request, control: restarted).isError)
+  }
+  @Test func discoveredMutationSharesCanonicalReceiptAndAppState() async throws {
+    let (control, root) = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var request = try workspace(control)
+    request["name"] = .string("discovered project")
+    let envelope: [String: MCPJSONValue] = [
+      "action": .string("eval_project_create"), "arguments": .object(request),
+    ]
+    let originalCount = control.store.projects.count
+    #expect(throws: MCPToolInputError.self) {
+      try MCPToolCatalog.parse(name: "eval_read_action", arguments: .object(envelope))
+    }
+    #expect(control.store.projects.count == originalCount)
+    let first = try await call("eval_apply_action", envelope, control: control)
+    #expect(!first.isError)
+    #expect(control.store.projects.count == originalCount + 1)
+    let retry = try await call("eval_project_create", request, control: control)
+    #expect(!retry.isError)
+    #expect(retry.structuredContent.objectValue?["duplicate"] == .bool(true))
+    #expect(
+      first.structuredContent.objectValue?["createdProjectID"]
+        == retry.structuredContent.objectValue?["createdProjectID"])
+    #expect(control.store.projects.count == originalCount + 1)
+    request["name"] = .string("conflicting retry")
+    #expect(
+      try await call(
+        "eval_apply_action",
+        [
+          "action": .string("eval_project_create"), "arguments": .object(request),
+        ], control: control
+      ).isError)
   }
   @Test func confirmationsAndNavigationShareAppState() async throws {
     let (control, root) = try fixture()

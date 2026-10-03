@@ -92,6 +92,7 @@ struct MCPResourcePayload: Sendable {
 
 enum MCPToolCall: Sendable {
     case getState
+    case actionCatalog(MCPActionCatalogCall)
     case control(MCPControlCall)
     case listProjects
     case listReviewSamples(MCPReviewSamplesArguments)
@@ -337,7 +338,7 @@ struct MCPToolDefinition: Codable, Sendable {
 }
 
 enum MCPToolCatalog {
-    static let definitions: [MCPToolDefinition] = [
+    static let allDefinitions: [MCPToolDefinition] = [
         tool(
             "eval_get_state", "Get evaluation state",
             "Read the shared suite, Foundation Models feature configuration, revision, readiness, limits, capabilities, attachments, and active run.",
@@ -475,6 +476,9 @@ enum MCPToolCatalog {
         )
     ] + EvaluationReviewMCP.definitions + MCPControlTools.definitions
 
+    static let definitions = allDefinitions.filter { MCPActionDiscovery.coreNames.contains($0.name) }
+        + MCPActionDiscovery.definitions
+
     static let resourceTemplates: [MCPJSONValue] = [
         .object([
             "name": .string("evaluation_attachment"),
@@ -492,7 +496,10 @@ enum MCPToolCatalog {
     ]
 
     static func parse(name: String, arguments: MCPJSONValue) throws -> MCPToolCall {
-        guard let definition = definitions.first(where: { $0.name == name }) else {
+        if MCPActionDiscovery.names.contains(name) {
+            return try MCPActionDiscovery.parse(name: name, arguments: arguments)
+        }
+        guard let definition = allDefinitions.first(where: { $0.name == name }) else {
             throw MCPToolInputError.unknownTool
         }
         do {

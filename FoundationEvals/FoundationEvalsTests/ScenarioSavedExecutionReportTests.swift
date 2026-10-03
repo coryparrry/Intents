@@ -423,7 +423,7 @@ struct ScenarioSavedExecutionReportTests {
         if case .getScenarioExecutionReport(let arguments) = call { #expect(arguments.executionID == id) }
         else { Issue.record("Wrong tool routing") }
         let invalid: [MCPJSONValue] = [.object([:]), .object(["executionID": .string("bad")]), .object(["runID": .string(id.uuidString)])]
-        let descriptor = try #require(MCPToolCatalog.definitions.first { $0.name == "eval_get_scenario_execution_report" })
+        let descriptor = try #require(MCPToolCatalog.allDefinitions.first { $0.name == "eval_get_scenario_execution_report" })
         #expect(descriptor.annotations.readOnlyHint)
         #expect(!descriptor.annotations.destructiveHint)
         for arguments in invalid {

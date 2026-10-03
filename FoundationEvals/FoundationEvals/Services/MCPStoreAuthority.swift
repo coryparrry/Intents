@@ -14,6 +14,8 @@ enum MCPStoreAuthority {
     private static func handle(_ call: MCPToolCall, store: EvaluationStore, control: EvaluationAppControl) async -> MCPToolPayload {
         do {
             switch call {
+            case .actionCatalog(let request):
+                return MCPActionDiscovery.respond(request)
             case .control(let request):
                 return await control.mcp.execute(request)
             case .getState:

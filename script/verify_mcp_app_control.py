@@ -23,6 +23,9 @@ class Client:
         if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1","localhost","::1") or parsed.path != "/mcp":
             raise ValueError("Verification only sends credentials to a localhost /mcp endpoint")
         self.endpoint, self.token, self.sequence, self.checks = endpoint, token, 0, 0
+        self.advertised = None
+        self.action_definitions = {}
+        self.discovered_calls = 0
 
     def rpc(self, method, params):
         self.sequence += 1
@@ -39,7 +42,23 @@ class Client:
         return value["result"]
 
     def call(self, name, fields=None, failure=False):
-        value = self.rpc("tools/call", dict(name=name, arguments=fields or {}))
+        selected_name, arguments = name, fields or {}
+        if self.advertised is not None and name not in self.advertised:
+            if name not in self.action_definitions:
+                found = self.rpc("tools/call", dict(name="eval_find_actions", arguments=dict(query=name, limit=1)))
+                self.check(not found.get("isError"), "action search succeeds")
+                matches = found["structuredContent"]["actions"]
+                self.check(len(matches) == 1 and matches[0]["name"] == name, "focused action discovery")
+                self.check("inputSchema" not in matches[0], "search does not load schemas")
+                described = self.rpc("tools/call", dict(name="eval_describe_action", arguments=dict(action=name)))
+                self.check(not described.get("isError"), "exact schema discovery")
+                descriptor = described["structuredContent"]
+                self.check(descriptor["action"]["name"] == name, "original action schema identity")
+                self.action_definitions[name] = descriptor
+            selected_name = self.action_definitions[name]["invokeWith"]
+            arguments = dict(action=name, arguments=arguments)
+            self.discovered_calls += 1
+        value = self.rpc("tools/call", dict(name=selected_name, arguments=arguments))
         self.check(bool(value.get("isError", False)) == failure, name + " error expectation")
         return value.get("structuredContent", {})
 
@@ -94,9 +113,19 @@ def verify(client, native=False):
     tools = client.rpc("tools/list", {})["tools"]
     names = {tool["name"] for tool in tools}
     client.check(len(names) == len(tools), "unique tool discovery")
-    for name in ("eval_project_create", "eval_suite_configure", "eval_production_upload_begin", "eval_production_job_start", "eval_runner_select", "eval_intent_install_preview", "eval_intent_run"):
-        client.check(name in names, "workflow discovery: " + name)
-    client.check("eval_production_upload_begin" in init["instructions"], "batch instructions")
+    client.advertised = names
+    client.check(len(tools) == 24, "small default tool catalog")
+    for name in ("eval_project_create", "eval_production_job_start", "eval_operation_status", "eval_find_actions", "eval_describe_action", "eval_read_action", "eval_apply_action"):
+        client.check(name in names, "core discovery: " + name)
+    client.check("eval_intent_install_apply" not in names, "advanced device schemas deferred")
+    client.check("eval_find_actions" in init["instructions"], "on-demand discovery instructions")
+    discovery = client.call("eval_find_actions", dict(query="upload", domain="production", limit=3))
+    metrics = discovery["catalog"]
+    client.check(len(discovery["actions"]) <= 3 and metrics["actionCount"] == 110, "bounded full capability discovery")
+    client.check(metrics["defaultSchemaBytes"] * 2 < metrics["fullSchemaBytes"], "upfront schema size reduced by more than half")
+    client.call("eval_read_action", dict(action="eval_project_create", arguments={}), failure=True)
+    client.call("eval_apply_action", dict(action="eval_intent_state", arguments={}), failure=True)
+    client.call("eval_read_action", dict(action="eval_apply_action", arguments={}), failure=True)
     # Retry identity and stale revision through the actual HTTP connector.
     request = client.workspace(dict(name="MCP verification", operationID=str(uuid.uuid4())))
     first = client.call("eval_project_create", request)
@@ -129,7 +158,9 @@ def verify(client, native=False):
     job = client.wait_job(job_id, 100, operation)
     client.check(job["report"]["counts"]["unscored"] == 100, "captured outputs do not manufacture pass labels")
     rows = client.call("eval_production_results", dict(jobID=job_id, limit=100))["records"]
-    client.check(len({r["response"]["output"] for r in rows}) == 100, "100 distinct original outputs")
+    expected_rows = {(i, f"case-{i}", f"source-{i}", f"original-output-{i}") for i in range(100)}
+    actual_rows = {(r["slot"], r["exampleID"], r["sourceID"], r["response"]["output"]) for r in rows}
+    client.check(len(rows) == 100 and actual_rows == expected_rows, "all 100 original outputs and source identities retained exactly")
     detail = client.call("eval_production_result_get", dict(jobID=job_id, slot=99))
     client.check(detail["record"]["response"]["output"] == "original-output-99", "exact final output")
     client.write("eval_production_job_control", dict(jobID=job_id, expectedJobRevision=revision, expectedControlRevision=job["controlRevision"], paused=True))
@@ -186,7 +217,7 @@ def verify(client, native=False):
         real = client.wait_job(real_id,1,real_op)
         client.check(real["report"]["counts"]["passed"]==1,"real Apple response passes exact retained criterion")
         client.write("eval_workspace_navigate",client.workspace(dict(section="batchRuns",pane="reports",jobID=real_id)))
-    print(json.dumps(dict(checks=client.checks, tools=len(tools), capturedOutputs=100, realAppleResponses=1 if native else 0, capturedJobID=job_id, datasetRevision=dataset["revision"]),indent=2))
+    print(json.dumps(dict(checks=client.checks, tools=len(tools), actions=metrics["actionCount"], defaultSchemaBytes=metrics["defaultSchemaBytes"], fullSchemaBytes=metrics["fullSchemaBytes"], schemasLoadedOnDemand=len(client.action_definitions), discoveredCalls=client.discovered_calls, capturedOutputs=100, realAppleResponses=1 if native else 0, capturedJobID=job_id, datasetRevision=dataset["revision"]),indent=2))
 
 if __name__ == "__main__":
     parser=argparse.ArgumentParser(description=__doc__)
