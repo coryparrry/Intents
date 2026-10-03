@@ -1,6 +1,6 @@
 # Evaluation review and regression workflow
 
-Status: implemented and reviewed; targeted tests passed. Native UI acceptance awaits an unlocked Mac. Independent branch `codex/eval-review-workspace`, based on stack tip `078fa0c96abf60ebe67a436fa5a00f206b7f00e4`. Do not register it in the existing stack or merge it before that stack. Rebase onto main after the stack lands; review the feature diff against this recorded tip until then. Existing dirty work is excluded.
+Status: implemented and reviewed; targeted tests and native fixture flows passed, including direct sidebar navigation and the supported narrow layout. XCTest UI runner startup remains blocked; dark appearance and live Apple Intelligence qualification are unverified. Independent branch `codex/eval-review-workspace`, based on stack tip `078fa0c96abf60ebe67a436fa5a00f206b7f00e4`. Do not register it in the existing stack or merge it before that stack. Rebase onto main after the stack lands; review the feature diff against this recorded tip until then. Existing dirty work is excluded.
 
 ## Research and product intent
 
@@ -66,7 +66,7 @@ Existing instruction experiments and run comparisons are reused after promotion.
 
 ## Using the workflow
 
-Open a suite in the editor and choose **Review**. Samples shows captured outputs without the AI verdict; write a note, select a human verdict and optionally add comma-separated failure tags. Unconfirmed edits are retained as local drafts. **Save review** confirms the label. **Patterns** groups current confirmed failures and opens their source examples.
+Choose **Evaluations** in the main sidebar to open Review for the selected suite. **Traces** in the same sidebar lists its saved workflows and opens the existing trace/report viewer. The suite editor also retains its Review tab. Samples shows captured outputs without the AI verdict; write a note, select a human verdict and optionally add comma-separated failure tags. Unconfirmed edits are retained as local drafts. **Save review** confirms the label. **Patterns** groups current confirmed failures and opens their source examples.
 
 For a complete confirmed failure, **Create regression case** requires a correct expected response or verified reference. The case opens in the existing Cases editor and retains source provenance. Use the existing Compare/instruction-experiment workflow to evaluate a change against the suite. Promotion preserves the original conversation and assertions and checks historical subject settings and attachment bytes.
 

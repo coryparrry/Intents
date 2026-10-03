@@ -588,6 +588,8 @@ struct EvaluationRunOperation: Codable, Sendable {
 enum SidebarSelection: Hashable {
     case overview
     case intentLab
+    case evaluations
+    case traces
     case suite
     case run(UUID)
 }

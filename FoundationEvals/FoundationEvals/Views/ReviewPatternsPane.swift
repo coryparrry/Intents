@@ -20,7 +20,7 @@ struct ReviewPatternsPane: View {
                     HStack {
                         WorkspacePill(pattern.tag, color: WorkspaceStyle.failure)
                         Spacer()
-                        Text("\(pattern.samples.count) reviewed examples · \(pattern.caseCount) unique cases")
+                        Text("\(pattern.samples.count) reviewed \(pattern.samples.count == 1 ? "example" : "examples") · \(pattern.caseCount) unique \(pattern.caseCount == 1 ? "case" : "cases")")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     ForEach(pattern.samples.prefix(5)) { sample in

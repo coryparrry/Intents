@@ -76,7 +76,7 @@ struct ReviewSampleEditor: View {
                     ForEach(EvaluationReviewVerdict.allCases) { Text($0.title).tag($0).disabled($0 != .needsEvidence && !sample.sample.hasCompleteSubjectEvidenceForJudging) }
                 }.accessibilityIdentifier("Human verdict")
                 Text("What went right or wrong?").font(.subheadline)
-                TextEditor(text: $note).workspaceTextWell(minHeight: 104).accessibilityIdentifier("Review note")
+                TextEditor(text: $note).workspaceTextWell(minHeight: 104).accessibilityIdentifier("Review note").accessibilityLabel("Review note")
                 TextField("Failure tags, separated by commas", text: $tags).accessibilityIdentifier("Review tags")
                 if let draftError = store.reviewDrafts.error { Text(draftError).font(.caption).foregroundStyle(WorkspaceStyle.warning) }
                 Text("Use your own observable failure tags, such as wrong date or lost context. Up to six tags.")

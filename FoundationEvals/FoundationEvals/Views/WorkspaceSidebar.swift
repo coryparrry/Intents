@@ -3,6 +3,8 @@ import SwiftUI
 private enum WorkspaceDestination: Hashable {
     case overview
     case intentLab
+    case evaluations
+    case traces
     case suite(UUID)
     case run(UUID)
 }
@@ -30,6 +32,8 @@ struct WorkspaceSidebar: View {
                 switch store.selection {
                 case .overview: .overview
                 case .intentLab: .intentLab
+                case .evaluations: .evaluations
+                case .traces: .traces
                 case .suite: .suite(store.selectedSuiteID)
                 case .run(let id): .run(id)
                 }
@@ -40,6 +44,8 @@ struct WorkspaceSidebar: View {
                     switch selection {
                     case .overview: store.selection = .overview
                     case .intentLab: store.selection = .intentLab
+                    case .evaluations: store.selection = .evaluations
+                    case .traces: store.selection = .traces
                     case .suite(let id):
                         guard !isBusy || id == store.selectedSuiteID else { return }
                         if id != store.selectedSuiteID { try store.switchSuite(id: id) }
@@ -69,6 +75,12 @@ struct WorkspaceSidebar: View {
                 } icon: { WorkspaceIcon(symbol: "intent-lab", size: 18) }
                     .accessibilityElement(children: .combine)
                     .tag(WorkspaceDestination.intentLab)
+                Label { Text("Evaluations") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
+                    .accessibilityIdentifier("Sidebar evaluations")
+                    .tag(WorkspaceDestination.evaluations)
+                Label { Text("Traces") } icon: { WorkspaceIcon(symbol: "point.3.connected.trianglepath.dotted", size: 18) }
+                    .accessibilityIdentifier("Sidebar traces")
+                    .tag(WorkspaceDestination.traces)
             }
 
             Section("Suites") {

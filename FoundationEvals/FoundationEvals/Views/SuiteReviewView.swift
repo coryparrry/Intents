@@ -36,7 +36,6 @@ struct SuiteReviewView: View {
                 ReviewJudgeChecksPane(store: store)
             }
         }
-        .accessibilityIdentifier("Suite review")
     }
 }
 
