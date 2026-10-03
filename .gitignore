@@ -21,6 +21,8 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 # Keep only the public guides and release instructions.
 /docs/*
 !/docs/EVAL_REVIEW_SPEC.md
+!/docs/PRODUCTION_EVALS_SPEC.md
+!/docs/PRODUCTION_EVALS_GUIDE.md
 !/docs/coreai-provider.md
 !/docs/custom-provider-protocol.md
 !/docs/foundation-model-features.md

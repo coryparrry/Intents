@@ -2,12 +2,14 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var store: EvaluationStore
+    @State private var productionWorkspace: ProductionWorkspaceStore
     @State private var scenarioCoordinator: ScenarioCoordinator
     @Environment(DeveloperRunnerStore.self) private var runners
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     init(store: EvaluationStore) {
         self.store = store
+        _productionWorkspace = State(initialValue: ProductionWorkspaceStore(root: store.overviewStorageDirectory))
         _scenarioCoordinator = State(initialValue: ScenarioCoordinator(
             supportDirectory: store.overviewStorageDirectory,
             evaluationStore: store
@@ -62,6 +64,8 @@ struct ContentView: View {
             case .evaluations:
                 SuiteEditorView(store: store, initialPage: .review)
                     .disclosureGroupStyle(FullWidthDisclosureStyle())
+            case .batchRuns:
+                ProductionWorkspaceView(model: productionWorkspace, store: store)
             case .traces:
                 WorkspaceTracesView(store: store)
             case .suite:

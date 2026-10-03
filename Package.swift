@@ -62,8 +62,11 @@ let package = Package(
         .library(name: "IntentLabTesting", targets: ["IntentLabTesting"]),
         .library(name: "IntentLabCoreTesting", targets: ["IntentLabCoreTesting"]),
         .executable(name: "intents-evidence", targets: ["IntentsEvidenceCLI"]),
+        .executable(name: "intents-evals", targets: ["ProductionEvalsCLI"]),
     ],
+    dependencies: [.package(path: "Packages/ProductionEvals")],
     targets: [
+        .executableTarget(name: "ProductionEvalsCLI", dependencies: [.product(name: "ProductionEvals", package: "ProductionEvals")], path: "Sources/ProductionEvalsCLI"),
         .target(name: "IntentLabContracts", path: "Sources/IntentLabContracts"),
         .target(
             name: "IntentLabSiriBridge",
@@ -82,6 +85,7 @@ let package = Package(
         ),
         .target(
             name: "FoundationEvalsDeveloper",
+            dependencies: [.product(name: "ProductionEvals", package: "ProductionEvals")],
             path: "Sources/FoundationEvalsDeveloper"
         ),
         .executableTarget(
@@ -123,6 +127,8 @@ let package = Package(
                 "Models/WorkflowTracePresentation.swift",
                 "Resources",
                 "Services/TelemetryController.swift",
+                "Services/NativeProductionExecutor.swift",
+                "Services/ProductionNativeWorkerCommand.swift",
                 "Services/CoreAIModelLoader.swift",
                 "Services/EvaluationConversationRuntime.swift",
                 "Services/EvaluationCustomTool.swift",

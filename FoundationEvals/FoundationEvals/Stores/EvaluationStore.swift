@@ -4807,3 +4807,36 @@ private struct RevisionAttachment: Codable {
     var byteCount: Int
     var sha256: String
 }
+
+extension EvaluationStore {
+    func productionSnapshot() throws -> NativeProductionContext {
+        try requireIdle()
+        var snapshot = draftSuite
+        // Cases belong to the versioned dataset; retain only the execution/scoring contract here.
+        snapshot.cases = []; snapshot.repetitions = 1
+        let frozenImages = try zip(draftSuite.attachments.filter { $0.kind == .image }, imageInputs(for: draftSuite)).map { attachment, image in
+            let bytes = try Data(contentsOf: image.url)
+            guard bytes.count == attachment.byteCount, Self.sha256(bytes) == attachment.sha256 else {
+                throw EvaluationStoreError.persistence("Image evidence does not match its saved digest.")
+            }
+            return NativeProductionContext.Image(label: image.label, bytes: bytes)
+        }
+        let context = NativeProductionContext(suite: snapshot, images: frozenImages)
+        guard try ProductionCodec.encode(context).count <= 64_000_000 else {
+            throw ProductionFailure.invalid("Frozen execution setup exceeds 64 MB.")
+        }
+        return context
+    }
+    func beginProductionExecution(_ context: NativeProductionContext, externalDisclosureApproved: Bool) throws -> (UUID, EvaluationResolvedJudgeConnection?) {
+        try requireIdle()
+        if context.suite.judgeConfiguration.usesExternalConnection && !externalDisclosureApproved {
+            throw ProductionFailure.invalid("Approve disclosure of this dataset's prompts, outputs and references to the configured external judge before running.")
+        }
+        let judge = try resolvedJudge(for: context.suite)
+        let owner = UUID(); snapshotExecutionOwnerID = owner
+        return (owner, judge)
+    }
+    func endProductionExecution(_ owner: UUID) {
+        if snapshotExecutionOwnerID == owner { snapshotExecutionOwnerID = nil }
+    }
+}

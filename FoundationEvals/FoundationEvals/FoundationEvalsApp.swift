@@ -14,14 +14,17 @@ struct FoundationEvalsApp: App {
     // Debug builds must retain the exact executable being tested.
     #if !DEBUG
     private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
+        startingUpdater: !ProductionNativeWorkerCommand.isRequested, updaterDelegate: nil, userDriverDelegate: nil
     )
     #endif
     private let mcpRuntime: FoundationEvalsMCPRuntime
 
     init() {
         let telemetry = TelemetryController(configuration: Self.telemetryConfiguration)
-        let store = EvaluationStore(supportDirectory: Self.acceptanceStorageDirectory)
+        let storeDirectory: URL?
+        do { storeDirectory = ProductionNativeWorkerCommand.isRequested ? try ProductionNativeWorkerCommand.prepareScratch() : Self.acceptanceStorageDirectory }
+        catch { FileHandle.standardError.write(Data(("Native eval worker: \(error.localizedDescription)\n").utf8)); ProductionNativeWorkerCommand.finish(30) }
+        let store = EvaluationStore(supportDirectory: storeDirectory)
         let runtime = FoundationEvalsMCPRuntime(store: store)
         let settings = MCPSettingsController(
             serverControl: MCPServerControl(
@@ -29,7 +32,7 @@ struct FoundationEvalsApp: App {
                 stop: { await runtime.stop() }
             ),
             credentialStore: Self.launchCredentialStore,
-            existingCredentialOnly: Self.readOnlyMCPCredentialRequest
+            existingCredentialOnly: ProductionNativeWorkerCommand.isRequested || Self.readOnlyMCPCredentialRequest
         )
         runtime.settingsController = settings
         _telemetry = State(initialValue: telemetry)
@@ -38,9 +41,14 @@ struct FoundationEvalsApp: App {
         _runnerStore = State(initialValue: DeveloperRunnerStore(evaluationStore: store))
         _mcpSettings = State(initialValue: settings)
         mcpRuntime = runtime
+        if ProductionNativeWorkerCommand.isRequested {
+            NSApplication.shared.setActivationPolicy(.prohibited)
+            Task { await ProductionNativeWorkerCommand.run(store: store) }
+        }
     }
 
     private static var telemetryConfiguration: TelemetryConfiguration? {
+        if ProductionNativeWorkerCommand.isRequested { return nil }
         #if DEBUG
         // Hosted tests must not inherit a developer's saved telemetry consent.
         let environment = ProcessInfo.processInfo.environment
@@ -105,7 +113,7 @@ struct FoundationEvalsApp: App {
                 .environment(runnerStore)
                 .task(id: mcpSettings.installationState) {
                     appDelegate.runtime = mcpRuntime
-                    guard !ProcessInfo.processInfo.arguments.contains("--disable-mcp-autostart") else { return }
+                    guard !ProductionNativeWorkerCommand.isRequested, !ProcessInfo.processInfo.arguments.contains("--disable-mcp-autostart") else { return }
                     if Self.useExistingMCPCredential {
                         await mcpSettings.startServer()
                         return
