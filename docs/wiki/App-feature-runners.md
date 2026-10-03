@@ -42,3 +42,9 @@ If the device disconnects, read the error and connect again. If the feature vers
 Open the saved run's **Report** and **Workflow trace**. Read each response and the details of the app and device. You can compare this run with another run in **Compare**.
 
 An AI rubric for a remote feature needs an approved independent judge connection. A missing or failed assessment is not a pass. Use [Intent Lab](Intent-Lab.md) for a claim about App Intent invocation or Siri's result.
+
+Use [Review and judge checks](Review-and-judge-checks.md) to label the saved
+feature outputs, create verified regression cases, and check a judge against
+human decisions. [Production batches](Production-batches.md) require their own
+worker integration and frozen jobs; connecting a feature runner alone does not
+make it an unattended batch worker.

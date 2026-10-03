@@ -8,7 +8,7 @@ Intents requires **macOS 27 or later**. The default on-device model also require
 
 Other providers have different requirements. See [Models, scoring, and tools](Models-scoring-and-tools.md). Intent Lab and source builds require Xcode. A normal on-device suite does not require Xcode.
 
-1. Download the latest `Intents.dmg` from the project's release page.
+1. Download `Intents.dmg` from the [latest release](https://github.com/coryparrry/Intents/releases/latest).
 2. Open the disk image.
 3. Drag **Intents** to **Applications**.
 4. Eject the disk image.
@@ -43,3 +43,9 @@ For practice, use the prompt `Reply with only the capital of France` and the req
 - Overview can show **Changed** after you edit a suite. Run the suite again before you use its status as a current result.
 
 Read [Projects and suites](Projects-and-suites.md) for imports and references. Read [Runs and results](Runs-and-results.md) for traces, comparisons, and baselines.
+
+## Review the output before expanding the test
+
+Open **Review → Samples**, select the saved sample, and record a human verdict and note before revealing its AI judgment. Use **Create regression case** for a confirmed failure with a verified expected answer. Read [Review and judge checks](Review-and-judge-checks.md) for patterns and held-out judge validation.
+
+When you need a larger resumable job or want to label captured application outputs, use [Production batches](Production-batches.md). A small suite pass, a human review, and an approved release baseline are separate evidence decisions.

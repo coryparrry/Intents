@@ -1,5 +1,7 @@
 # Complete MCP control of Intents
 
+For current setup and operation, use the [MCP control guide](MCP_CONTROL_GUIDE.md). This document records the design and scope.
+
 Active work: extend the isolated production-evals branch and PR #68. Keep the original intents stack and dirty checkout unchanged.
 
 The MCP API must control the same domain services and observable stores as the app. The existing suite connector and new batch workflow must not form separate workspaces. UI layout and styling remain unchanged.

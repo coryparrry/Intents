@@ -1,5 +1,7 @@
 # Production evaluations
 
+For current setup and operation, use the [production guide](PRODUCTION_EVALS_GUIDE.md). This document records the design and scope.
+
 Status: implemented and locally qualified; physical fleet and customer production qualification remain operator-owned. Independent branch codex/production-eval-workspace starts at eval review commit 8d24fb5f1502481641c029d00722a17ac037af66. It remains outside gh-stack and merges only after the existing stack and review work land.
 
 ## Research and scope

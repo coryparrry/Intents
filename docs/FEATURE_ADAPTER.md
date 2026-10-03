@@ -43,3 +43,12 @@ requirements are checked locally. Missing approval, credentials, or a configured
 independent judge blocks the run before feature execution; judge failures remain
 unscored errors. Release checks fail closed rather than treating missing judgment
 as a pass.
+
+## Review saved feature results
+
+Use the [Review guide](EVAL_REVIEW_GUIDE.md) for human labels, confirmed failure
+patterns, regression cases, and held-out judge checks. Read [Runs and results](wiki/Runs-and-results.md)
+for the suite's selected assessment, baseline approval, and release requirements.
+[Production batches](PRODUCTION_EVALS_GUIDE.md) are a separate job/worker path
+with their own audit and exact-evidence baseline approval. The in-process adapter
+does not automatically become an unattended batch executable.

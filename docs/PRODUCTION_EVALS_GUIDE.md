@@ -1,5 +1,7 @@
 # Run production evaluations
 
+[User walkthrough](wiki/Production-batches.md) · [Suite Review](EVAL_REVIEW_GUIDE.md) · [MCP controls](MCP_CONTROL_GUIDE.md)
+
 Batch runs in the sidebar contains Datasets, Jobs, Review, Reports and Workers. The app retains its existing suite editor for instructions, models, tools, conversations and scoring. Freeze the current suite as a dataset, or import a reviewed JSONL file, then create a batch. The execution setup and dataset revision are immutable for that job. Resume starts only remaining requests. Suite changes apply to new jobs.
 
 ## Datasets and capture
@@ -16,7 +18,7 @@ Include `capturedOutput` and `feedback` to review actual outputs without regener
 
 ## CLI and unattended workers
 
-Build with `swift build -j 2 --product intents-evals`. The binary is `.build/debug/intents-evals`. Every invocation supplies an absolute store directory. It can share the app's `ProductionEvals` directory when all processes run as a trusted user on storage with coherent file locks and atomic rename. Multiple workers each need a unique ID. Object stores and eventually consistent mounts are unsupported.
+From the repository root, build with `swift build -j 2 --product intents-evals`. The binary is `.build/debug/intents-evals`. Every invocation supplies an absolute store directory. It can share the app's `ProductionEvals` directory when all processes run as a trusted user on storage with coherent file locks and atomic rename. Multiple workers each need a unique ID. Object stores and eventually consistent mounts are unsupported.
 
 ```sh
 intents-evals import --storage /evals --file /examples.jsonl --name Release --version v1
@@ -84,3 +86,13 @@ Reports hold the shared store transaction while reading costs, results, reviews 
 ## Saved external judge credentials
 
 API keys are bound in Keychain to the saved connection UUID, provider and exact endpoint URL. Imported or frozen metadata cannot redirect an existing credential. Earlier unbound keys are preserved but require explicit re-entry in judge settings before use. Endpoint or provider changes also require re-entry; model changes retain the endpoint binding. Do not put credentials in worker requests or exported evidence.
+
+## Check a local CLI build
+
+```sh
+swift test --package-path Packages/ProductionEvals -j 2
+swift build --product intents-evals -j 2
+python3 script/test_production_evals.py .build/debug/intents-evals
+```
+
+The package and process integration checks use fixtures and isolated storage. They do not certify a signed installer, customer traffic, physical devices, or live external judges. Report exit codes are 0 for qualifying evidence, 10 for policy failure, 20 for incomplete evidence, and 30 for execution errors.

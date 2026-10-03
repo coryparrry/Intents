@@ -2,7 +2,7 @@
 
 [Home](Home.md) · [Data and troubleshooting](Data-and-troubleshooting.md)
 
-Intents has a local MCP connector for Codex. Through this connector, Codex can edit suites, start runs, and read saved results and traces. Codex uses the same local workspace as the app.
+Intents has a local MCP connector for Codex. Through this connector, Codex can manage projects and suites, start runs, review saved evidence, control batches, and work with developer runners and Intent Lab. Codex uses the same local workspace as the app.
 
 ## Connect
 
@@ -26,7 +26,11 @@ The connector gives an agent its workflow guide when the connection starts. The 
 
 Ask the agent to cite saved run evidence in its result. For a baseline or release check, read the run in Intents. See [Runs and results](Runs-and-results.md).
 
-Intent Lab report tools only read saved reports. They cannot trust an Xcode project, run device tests, clear a device quarantine, or change a fixture. Do these tasks in Intents and the app's test environment.
+The saved-report tools remain read-only. Advanced Intent Lab actions also support authored requirements, project setup, reviewed installation previews, execution, reruns, and recovery through the same coordinator as the app. Discover their exact schema rather than assuming every client exposes them by default. Build trust, pairing, installation, evidence transfer, quarantine recovery, and other decisions still need the required operator approval and readiness checks. Physical Siri qualification requires actual device evidence.
+
+Read `eval_get_state` and `eval_workspace_state` first. The compact default catalog exposes common controls; `eval_find_actions` searches advanced operations and `eval_describe_action` loads one exact schema. Invoke reads through `eval_read_action` and mutations through `eval_apply_action`, using the revisions, confirmation fields, and caller-generated operation IDs required by that schema. Retry an identical operation ID and payload after a lost reply; inspect interrupted operations instead of automatically replaying them.
+
+See the [MCP control guide](https://github.com/coryparrry/Intents/blob/main/docs/MCP_CONTROL_GUIDE.md) for batch uploads, review proposals, safe retries, and runner/Intent Lab controls. Review agent suggestions in [Review](Review-and-judge-checks.md); a proposal alone is not a human judgment.
 
 For a stable execution, call `eval_get_scenario_execution_report` with its saved `executionID` UUID, or use `script/foundation-evals scenario-execution-report --execution-id <uuid>`. The report uses the same frozen requirement, retained assessment selection and frozen judge policy as the GUI and exported offline evidence checks. Missing or corrupt evidence cannot qualify. `eval_get_scenario_report` and `scenario-report --run-id` retain their existing child-run meaning.
 

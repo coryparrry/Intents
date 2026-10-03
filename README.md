@@ -14,11 +14,11 @@ Build an evaluation. Inspect the evidence. See what changed.
 ![MCP](https://img.shields.io/badge/Agent_Integration-MCP-7c3aed?style=flat-square)
 [![MIT License](https://img.shields.io/badge/License-MIT-16a34a?style=flat-square)](LICENSE)
 
-[Install](#install) · [First evaluation](#run-your-first-evaluation) · [User wiki](docs/wiki/Home.md) · [Models and tools](#models-and-tools) · [Connect an agent](#connect-an-agent) · [Build from source](#build-from-source)
+[Install](#install) · [First evaluation](#run-your-first-evaluation) · [Review outputs](docs/EVAL_REVIEW_GUIDE.md) · [Batch runs](docs/PRODUCTION_EVALS_GUIDE.md) · [User wiki](docs/wiki/Home.md) · [Models and tools](#models-and-tools) · [Connect an agent](#connect-an-agent) · [Build from source](#build-from-source)
 
 </div>
 
-Intents is a native macOS workbench for testing Apple's Foundation Models. Create repeatable suites, inspect responses and execution traces, and compare saved runs as you refine prompts, settings, and tools. Its built-in MCP server lets a coding agent use the same evaluation workflow, with every run available to review in the app.
+Intents is a native macOS workbench for testing Apple's Foundation Models. Create repeatable suites, inspect responses and execution traces, and compare saved runs as you refine prompts, settings, and tools. Review saved outputs, turn confirmed failures into regression cases, check a judge against held-out examples, and run resumable batches. Its authenticated MCP server lets a coding agent work with the same projects, suites, evidence, and batch store as the app.
 
 ## What you can do
 
@@ -27,10 +27,12 @@ Intents is a native macOS workbench for testing Apple's Foundation Models. Creat
 | **Repeatable evaluations** | Test cases with shared instructions, attachments, and multiple repetitions. |
 | **Flexible scoring** | Exact matches, required text, AI rubrics, or response collection without scoring. |
 | **Execution traces** | A nested workflow waterfall with measured native stages, tool activity, token usage and a selected-span inspector. [Trace details](docs/workflow-traces.md). |
+| **Human review and regression cases** | Review outputs with AI judgments initially hidden, tag confirmed failure patterns, and promote verified failures into new cases. [Review guide](docs/EVAL_REVIEW_GUIDE.md). |
+| **Judge checks** | Separate Development and Held-out examples; inspect false acceptance, false rejection, and unavailable evidence. |
 | **Production batches** | Immutable datasets, resumable jobs, unattended workers, captured-output review, cohort gates and audited evidence. [Production guide](docs/PRODUCTION_EVALS_GUIDE.md). |
 | **Saved comparisons** | Run history, baseline comparisons, and JSON reports. |
 | **Models and tools** | Apple's on-device model, compatible Core AI models, custom HTTP providers, and configurable tools. |
-| **Agent integration** | An included MCP server for managing suites, running evaluations, and inspecting results. |
+| **Agent integration** | Authenticated controls for the shared workspace, evaluations, batches, review, developer runners, and Intent Lab. [MCP guide](docs/MCP_CONTROL_GUIDE.md). |
 | **App feature runners** | A public Swift package for evaluating real app closures on a paired iPhone, iPad, or Mac. [Integration guide](docs/DEVELOPER_SWIFT_INTEGRATION.md). |
 | **Intent Lab** | Run frozen App Intent and recognised-text Siri scenarios from a developer-owned UI-test target, then inspect separately labelled evidence. [Setup guide](docs/wiki/Intent-Lab.md). |
 
@@ -41,7 +43,7 @@ Requirements:
 - macOS 27 or later
 - For the default on-device model: a Mac that supports Apple Intelligence, with Apple Intelligence enabled and the model downloaded
 
-1. Download and open the latest **Intents.dmg**.
+1. Download the installer from the [latest release](https://github.com/coryparrry/Intents/releases/latest) and open **Intents.dmg**.
 2. Drag **Intents** onto the **Applications** shortcut in the window.
 3. Eject the **Intents** disk, then open the app from **Applications** and check that the model is ready.
 
@@ -66,6 +68,12 @@ Xcode is needed to build from source or use Intent Lab. It is not needed for a n
 
 For AI rubrics, write one observable requirement per line and provide a verified reference answer for factual tasks. Inspect the judge's explanation alongside its score. Repetitions help reveal variation; a few runs do not establish statistical significance.
 
+## Review and improve a result
+
+Open **Review → Samples** after a saved run. Read the output before revealing its AI judgment, save a human verdict and note, and tag observable failures. **Patterns** groups confirmed failures; **Create regression case** requires a verified expected answer. **Judge checks** replays recorded outputs against human decisions in separate Development and Held-out groups. See the [Review guide](docs/EVAL_REVIEW_GUIDE.md).
+
+Human review, judge calibration, and baseline approval are separate decisions. Batch baselines require explicit approval of the current evidence; changed results, reviews, or controls invalidate it. Read the saved [release evidence](docs/wiki/Runs-and-results.md) before relying on a passing gate.
+
 ## Models and tools
 
 The default provider is Apple's on-device Foundation Model. You can also load a compatible [Core AI model](docs/coreai-provider.md) or connect a [custom local HTTP provider](docs/custom-provider-protocol.md).
@@ -82,7 +90,7 @@ For large batches, open **Batch runs** in the sidebar. Freeze the current suite 
 
 ## Connect an agent
 
-Intents includes an MCP server so an agent can manage suites and references, run evaluations, inspect traces, and compare saved results.
+Intents includes an authenticated MCP server for projects and suites, references, runs, review suggestions, batch jobs, developer runners, and Intent Lab. Changes appear in the same native workspace. The standalone Apple Foundation Evals plugin uses a separate store.
 
 To connect Codex:
 
@@ -90,7 +98,7 @@ To connect Codex:
 2. Choose **Connect to Codex**.
 3. Restart Codex and keep Intents open.
 
-The server provides an agent workflow guide during MCP initialization. Its HTTP endpoint is `http://127.0.0.1:17873/mcp` while the connector is running.
+The server provides an agent workflow guide during MCP initialization. Start with workspace state, then use `eval_find_actions` and `eval_describe_action` to load the exact schemas needed for advanced work. Mutations use revisions, confirmations where required, and operation IDs for safe retries. See the [MCP control guide](docs/MCP_CONTROL_GUIDE.md). Its HTTP endpoint is `http://127.0.0.1:17873/mcp` while the connector is running.
 
 The connector listens only on this Mac. Intents generates a bearer credential, stores it in the login Keychain, and configures Codex to send it. Connected authenticated local clients can read and change evaluation data; keep the managed configuration private.
 
@@ -112,7 +120,17 @@ Use Xcode 27 with its command-line tools selected. From the repository root:
 
 This creates and opens a development build at `dist/Intents.app`. Quit the app before rebuilding. You can also open `FoundationEvals/FoundationEvals.xcodeproj` directly in Xcode.
 
-Run the native tests on macOS 27 by opening the project in Xcode and choosing **Product > Test** with development signing configured. You can also use the command line:
+Run native tests on macOS 27 by opening the project in Xcode and choosing **Product > Test** with development signing configured.
+
+Run the isolated production package checks and build its CLI without launching the app:
+
+```sh
+swift test --package-path Packages/ProductionEvals -j 2
+swift build --product intents-evals -j 2
+python3 script/test_production_evals.py .build/debug/intents-evals
+```
+
+Run the app tests with:
 
 ```sh
 xcodebuild -project FoundationEvals/FoundationEvals.xcodeproj \

@@ -47,8 +47,11 @@ source synchronization and publication.
   Expanded-scale bar placement follows the native view. Some inspector end
   times are rounded from the recorded start plus duration; displayed timings
   are not intended as performance benchmarks.
-- Intent Lab: the real **PR54 physical read-only check** test fixture. These are
-  static examples, not live model execution, Siri calls, or device connections.
+- Intent Lab: historical evidence from the real **PR54 physical read-only check**
+  test fixture. The static demo predates suite Review and Batch runs; it does not
+  show their current controls. These examples are not live model execution, Siri
+  calls, or device connections. Use the [current user guide](../docs/wiki/Home.md)
+  for the merged workflows.
 - Reference direction: [Inspora](https://www.inspora.design/?category=Web), including
   its glassmorphism animation example: restrained depth, controlled transitions,
   clear typographic hierarchy. No third-party artwork was copied.
