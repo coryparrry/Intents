@@ -14,12 +14,13 @@ Overview shows each active suite's latest check against its current definition. 
 
 The sidebar **Runs** list belongs to the selected suite. Its filter accepts a suite name or version. The run context menu can delete a saved run. This deletes its results and trace from this Mac. The app cannot undo the deletion.
 
-The suite editor has four pages:
+The suite editor has five pages:
 
 | Page | Purpose |
 |---|---|
 | **Cases** | Edit, add, duplicate, delete, or import cases. |
 | **Results** | Read run history and the pass-rate chart. |
+| **Review** | Inspect saved outputs, record human reviews, find patterns, create regression cases, and check a judge. |
 | **Compare** | Compare saved runs and inspect experiments. A comparison needs two runs. |
 | **Setup** | Set instructions, scoring, the model, tools, output, the session profile, and performance. |
 
@@ -58,3 +59,9 @@ Intents accepts text, JSON, CSV, PDF, and image files. A suite can contain up to
 Use **Setup → Model → Context and tool limits** to choose how the model receives reference text. Direct inclusion puts text in the request. Lookup delivery lets the model request relevant text with a tool. The input ceiling and context policy can limit large requests.
 
 For image input, Intents cannot always count all input tokens. Read the saved admission and error details in the run. Before you import sensitive material, read [Data and privacy](Data-and-troubleshooting.md).
+
+## Freeze a suite for batch work
+
+[Batch runs](Production-batches.md) is a separate sidebar workspace. Freeze the selected suite as a dataset or import JSONL, then create a job with explicit limits. Dataset and execution revisions remain frozen; editing the suite changes only new jobs. Ordinary case imports still use the interactive suite limits.
+
+Use [Review](Review-and-judge-checks.md) to inspect the suite's saved samples and promote confirmed failures before creating your next batch.

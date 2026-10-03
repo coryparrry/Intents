@@ -1,5 +1,15 @@
 # Releases
 
+## Prepare the release source
+
+Before merging the version/changelog PR, merge the documentation update and confirm that the release branch includes it. **Release Me** packages and publishes automatically after that PR merges; documentation work must be in the source beforehand.
+
+- Check the [README](../README.md), [user wiki](wiki/Home.md), [Review guide](EVAL_REVIEW_GUIDE.md), [production guide](PRODUCTION_EVALS_GUIDE.md), and [MCP guide](MCP_CONTROL_GUIDE.md) against the selected source commit. Keep release notes aligned with user-visible changes.
+- Run relevant regression checks and confirm CI on the exact release source. For batches, use `swift test --package-path Packages/ProductionEvals -j 2`, build `intents-evals`, and run `python3 script/test_production_evals.py .build/debug/intents-evals`.
+- Inspect the native Review and Batch runs flows on an interactive Mac, including incomplete evidence, baseline approval, and credential-change messages. Check light/dark appearance and narrow windows. Record the source and what was actually observed.
+- Keep fixture, on-device, physical-device, live-service, and signed-installer evidence distinct. A development build, a passing gate, or a judge calibration report does not establish distribution or live Siri coverage.
+- After packaging, use installer verification for signing, notarization, source SHA, architecture, and update assets. Verify an upgrade from an older installed version before claiming automatic installation and relaunch work.
+
 ## Merge to release
 
 **Release Me** runs on every push to `main`, including PR merges. Release Please collects conventional commits into a version and changelog PR. Ordinary merges create or update that PR; merging the release PR automatically:
@@ -68,7 +78,7 @@ In **Settings → Environments → release → Environment secrets**, configure:
 | `NOTARY_KEY_ID` | Identifier of that API key. |
 | `NOTARY_ISSUER_ID` | Issuer identifier for that API key. |
 
-The existing `release` environment currently needs these six secrets before hosted packaging can run. The workflow reports missing secret names before contacting Apple. Credential values must never appear in source, issue comments, release notes, or command output. Adding local signing keys to GitHub is a separate setup action; adding this workflow does not transfer them.
+Hosted packaging requires these six secrets in the `release` environment. The workflow reports missing secret names before contacting Apple. Credential values must never appear in source, issue comments, release notes, or command output. Adding local signing keys to GitHub is a separate setup action; adding this workflow does not transfer them.
 
 Restrict the environment to the default branch and configure required reviewers if you want an additional approval before credentials become available. The workflow runs from the default branch and uses protected packaging scripts against the immutable release source SHA. Existing tags must resolve to that same commit. It uses the same hosted `xcode-27` runner as CI. Signing credentials are imported into a disposable keychain, and temporary key material is removed on exit.
 
@@ -83,8 +93,7 @@ The verifier checks source CI, checksum, Developer ID team, signatures, stapled 
 The app uses Sparkle 2.9.6, offers **Check for Updates…** in the app menu,
 and enables scheduled checks, automatic background downloads, and installation
 by default. Sparkle handles installation through its standard update flow;
-existing saved update preferences remain respected. End-to-end automatic installation and
-relaunch will be tested after release. The feed is
+existing saved update preferences remain respected. Verify end-to-end automatic installation and relaunch with the actual signed release artifact before claiming that path works. The feed is
 `https://github.com/coryparrry/Intents/releases/latest/download/appcast.xml`.
 Each stable release must include its generated `appcast.xml` and be marked as the
 latest release. Drafts and prereleases do not advance this feed. Publish the feed

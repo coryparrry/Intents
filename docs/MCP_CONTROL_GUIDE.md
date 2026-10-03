@@ -1,6 +1,6 @@
 # Control Intents through MCP
 
-Intents' authenticated localhost connector now uses the same workspace, batch store, developer runners and Intent Lab coordinator as the native UI. The connector must already be enabled and authenticated. The standalone Apple Foundation Evals plugin remains a separate product/store.
+Intents' authenticated localhost connector now uses the same workspace, batch store, developer runners and Intent Lab coordinator as the native UI. Follow the [connector setup guide](wiki/Codex-and-MCP.md) first. The connector must already be enabled and authenticated. The standalone Apple Foundation Evals plugin remains a separate product/store.
 
 ## Discover and inspect
 
@@ -53,3 +53,9 @@ Execution includes a complete requirement, a partial `diagnostic` with `lanesJSO
 `script/verify_mcp_app_control.py` exercises an already-running isolated app with `MCP_AUTHORIZATION` set to its existing credential. It sends credentials only to a localhost `/mcp` endpoint, never logs them, discovers only needed advanced schemas, measures default catalog bytes, validates read/write denial and processes 100 distinct synthetic original outputs and checks retries, revisions, export bytes, scheduling and approval denial. `--native` separately performs one real on-device response. It does not use real production data, external judges or physical Siri.
 
 Approve a completed baseline with `eval_production_baseline_approve` after reading its report. Supply the job revision, evidence revision, review note, confirmation and operation ID. Changed results, reviews or controls invalidate approval. This action is discovered on demand; the default catalog remains 24 tools.
+
+## Review evidence and credential changes
+
+Use the [Review guide](EVAL_REVIEW_GUIDE.md) for human labels, failure patterns, regression promotion, and Development/Held-out judge checks. Use the [production guide](PRODUCTION_EVALS_GUIDE.md) for original-output audits and current-evidence baseline approval. A committed operation receipt proves that a request was recorded; inspect its saved result before reporting a pass.
+
+Judge secrets are bound in Keychain to the saved connection ID, provider, and exact endpoint. Keys are resolved at execution time and never included in frozen context. Older unbound keys or endpoint/provider changes require explicit key re-entry in judge settings. Imported worker metadata cannot redirect an existing bound credential.
