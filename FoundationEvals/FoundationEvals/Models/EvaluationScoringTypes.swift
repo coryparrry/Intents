@@ -43,7 +43,7 @@ enum ScoringMode: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .exactMatch: "Example: Paris — the generated response must be exactly this text."
         case .containsExpected: "Example: Paris — this is literal text, not a regular expression."
-        case .modelJudge: "Give the judge a known-good answer when correctness can be verified. Use Exact text scoring for deterministic equality checks. The AI rubric checks every requirement, including when the response matches this reference."
+        case .modelJudge: "The reference answer guides the AI judge. Every rubric requirement still applies. Exact text scoring checks for a matching answer."
         case .review: ""
         }
     }

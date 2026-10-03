@@ -94,6 +94,7 @@ struct RunSummaryDashboard: View {
                 }
                 .chartYScale(domain: .automatic(includesZero: true))
                 .accessibilityLabel("Response latency in seconds by sample")
+                .help("Each sample is one attempt to answer a test case. This chart includes attempts that ended with an error.")
                 .frame(maxHeight: .infinity)
             }
         }

@@ -173,7 +173,7 @@ private struct WorkspaceRunRow: View {
                     WorkspaceRingSegment(count: run.errorCount, color: WorkspaceStyle.warning)
                 ], height: 5)
                 .frame(width: 120)
-                Text("\(run.passedCount) passed · \(run.failedCount) failed\(run.errorCount > 0 ? " · \(run.errorCount) errors" : "")")
+                Text("\(run.passedCount) passed · \(run.failedCount) failed\(run.errorCount > 0 ? " · \(run.errorCount) \(run.errorCount == 1 ? "error" : "errors")" : "")")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)

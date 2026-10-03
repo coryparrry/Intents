@@ -10,7 +10,7 @@ struct WorkspaceSuiteRow: View {
 
     private var detail: String {
         guard let summary else { return "Loading saved results…" }
-        var parts = ["\(summary.caseCount) \(summary.caseCount == 1 ? "case" : "cases")", "\(summary.repetitions)× repetitions"]
+        var parts = ["\(summary.caseCount) \(summary.caseCount == 1 ? "case" : "cases")", "\(summary.repetitions) \(summary.repetitions == 1 ? "attempt" : "attempts") per case"]
         if let checked = summary.lastCheckedAt {
             parts.append("checked " + checked.formatted(.relative(presentation: .named)))
         }
@@ -150,7 +150,7 @@ struct WorkspaceHealthPanel: View {
         .frame(width: 118, height: 118)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Suite health")
-        .accessibilityValue(isLoaded ? "\(passed) of \(total) suites passing" : "Loading")
+        .accessibilityValue(isLoaded ? "\(passed) of \(total) \(total == 1 ? "suite" : "suites") passing" : "Loading")
     }
 
     private static func shortTimestamp(_ date: Date) -> String {
@@ -217,7 +217,7 @@ struct WorkspaceActivityCard: View {
                 WorkspaceRingSegment(count: summary.failedCount, color: WorkspaceStyle.failure),
                 WorkspaceRingSegment(count: summary.errorCount, color: WorkspaceStyle.warning)
             ], height: 5)
-            Text("\(summary.passedCount) passed · \(summary.failedCount) failed · \(summary.errorCount) errors")
+            Text("\(summary.passedCount) passed · \(summary.failedCount) failed · \(summary.errorCount) \(summary.errorCount == 1 ? "error" : "errors")")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 18).padding(.vertical, 11)
