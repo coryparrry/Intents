@@ -4,38 +4,122 @@ struct ScenarioEditorView: View {
     @Bindable var coordinator: ScenarioCoordinator
     let projects: [EvaluationProject]
     @Environment(DeveloperRunnerStore.self) private var runnerStore
+    @State private var pendingTest: ScenarioDefinition?
+    @State private var confirmingDraftReplacement = false
 
-    @State private var page: ScenarioEditorPage = .outcome
 
     var body: some View {
-        WorkspacePaneLayout(heading: "Scenario", selection: $page) {
-            switch page {
-            case .outcome: outcomeSection
-            case .fixture: fixtureSection
-            case .evidence: evidenceSection
-            case .parameters: parametersSection
-            case .assertions: assertionsSection
-            case .settings: settingsSection
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Create a test").font(.title3.weight(.semibold))
+                    Text("Describe the request and the result you expect.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Menu("Saved tests") {
+                    ForEach(coordinator.definitions.indices, id: \.self) { index in
+                        let definition = coordinator.definitions[index]
+                        Button("\(definition.name) · v\(definition.version)") {
+                            requestTest(definition)
+                        }
+                    }
+                }
+                .disabled(coordinator.definitions.isEmpty || coordinator.isRunning || coordinator.isDiscoveringConnection || coordinator.isVerifyingIntegration)
+                Button("New test", systemImage: "plus") { requestTest(nil) }
+                    .disabled(coordinator.isRunning || coordinator.isDiscoveringConnection || coordinator.isVerifyingIntegration)
+                Button("Save test", systemImage: "square.and.arrow.down") {
+                    Task {
+                        do { try await coordinator.freezeAndSave() }
+                        catch { coordinator.notice = error.localizedDescription }
+                    }
+                }
+                .disabled(coordinator.isRunning || coordinator.isDiscoveringConnection || coordinator.isVerifyingIntegration)
+            }
+            outcomeSection
+            if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                ScenarioGuidedActionFeatureView(coordinator: coordinator, runnerStore: runnerStore)
+                if !coordinator.draft.directControl.parameters.isEmpty {
+                    parametersSection
+                }
+            } else {
+                DisclosureGroup("Inputs · \(coordinator.draft.directControl.parameters.count)") {
+                    parametersSection.padding(.top, 12)
+                }
+                DisclosureGroup("Result checks · \(coordinator.draft.assertions.count)") {
+                    assertionsSection.padding(.top, 12)
+                }
+            }
+            evidenceSection
+            if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                ScenarioGuidedExpectationView(coordinator: coordinator)
+            }
+            validationSummary
+            DisclosureGroup("Test data and advanced settings") {
+                VStack(spacing: 16) {
+                    fixtureSection
+                    settingsSection
+                }.padding(.top, 12)
             }
         }
         .textFieldStyle(.roundedBorder)
+        .confirmationDialog("Replace the current draft?", isPresented: $confirmingDraftReplacement) {
+            Button("Discard draft and continue", role: .destructive) { openPendingTest() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your unsaved edits will be lost. Previously saved tests and results are kept.")
+        }
         .onChange(of: coordinator.draft.safety.mutationPolicy) { _, policy in
             if policy == .syntheticMutation { coordinator.draft.coverage.siriAttemptCount = 1 }
         }
     }
 
+    private func requestTest(_ definition: ScenarioDefinition?) {
+        pendingTest = definition
+        if !coordinator.definitions.contains(coordinator.draft)
+            || !coordinator.invalidParameterDraftIndices.isEmpty {
+            confirmingDraftReplacement = true
+        } else {
+            openPendingTest()
+        }
+    }
+
+    private func openPendingTest() {
+        if let definition = pendingTest {
+            Task { await coordinator.selectSavedDefinition(id: definition.id, version: definition.version) }
+        } else {
+            coordinator.startStableCheck()
+        }
+    }
+
     private var outcomeSection: some View {
         IntentLabCard(
-            "Define the expected outcome",
-            subtitle: "Set the request and observable result. Saved wording stays the same on every run."
+            "What should happen?",
+            subtitle: "Use the same request and expected result each time you run this test."
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
-                    Button("Create developer check", systemImage: "plus.circle") {
-                        coordinator.startStableCheck()
-                    }
-                    IntentLabHelp("Create a repeatable check for this app. Its requirements stay the same when the app build changes.")
+                    Button("Create developer check", systemImage: "plus.circle") { requestTest(nil) }
+                    IntentLabHelp("Create a repeatable check whose requirements stay fixed when the app build changes.")
                 }
+                labeledRow("Test name", help: "Give this test a name you’ll recognize.") {
+                    TextField("Test name", text: $coordinator.draft.name)
+                }
+                labeledRow("Request", help: "The exact words to use when testing Siri.") {
+                    TextField("For example, open the packing note", text: $coordinator.draft.goal.requestText, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+                labeledRow("Expected result", help: "Describe a visible result. Add result checks below to verify it automatically.") {
+                    TextField("For example, the packing note opens", text: $coordinator.draft.goal.expectedBehavior, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+                if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                    labeledRow("App action", help: "The action’s code name from your app, for example OpenNoteIntent.") {
+                        TextField("OpenNoteIntent", text: $coordinator.draft.directControl.intentIdentifier)
+                    }
+                }
+                DisclosureGroup("App and language details") {
+                    VStack(alignment: .leading, spacing: 12) {
                 labeledRow("Project", help: "Choose the project whose release report should include this scenario. Changing a saved scenario creates a new frozen version.") {
                     Picker("Project", selection: Binding(
                         get: { coordinator.draft.projectID?.uuidString ?? "" },
@@ -51,33 +135,21 @@ struct ScenarioEditorView: View {
                     }
                     .labelsHidden()
                 }
-                labeledRow("Scenario name", help: "A label to help you find this test later, for example “Open the packing note”.") {
-                    TextField("Scenario name", text: $coordinator.draft.name)
-                }
                 labeledRow("App bundle ID", help: "The unique identifier of the app being tested, such as com.example.Notes. Setup can fill this in from your Xcode project.") {
                     TextField("com.example.App", text: $coordinator.draft.target.bundleIdentifier)
                 }
-                labeledRow("Approved request", help: "The exact words sent to Siri, for example “Open the packing note in My Notes”. They stay the same each time this saved scenario runs.") {
-                    TextField("What should Siri process?", text: $coordinator.draft.goal.requestText, axis: .vertical)
-                        .lineLimit(2...4)
-                }
-                labeledRow("Expected behavior", help: "Describe what success looks like, such as “The packing note opens”. Add checks in Assertions to verify it automatically.") {
-                    TextField("Describe only observable behavior", text: $coordinator.draft.goal.expectedBehavior, axis: .vertical)
-                        .lineLimit(2...5)
-                }
                 labeledRow("Language", help: "The language tag for this scenario, such as en-GB for British English. This does not change the iPhone’s Siri language.") {
                     TextField("en-GB", text: $coordinator.draft.goal.languageCode)
+                }
+                    }.padding(.top, 10)
                 }
             }
         }
     }
 
     private var fixtureSection: some View {
-        IntentLabCard("Intent and fixture", subtitle: "Choose the intent to invoke and the test data it uses.") {
+        IntentLabCard("Test data and integration", subtitle: "Choose the intent to invoke and the test data it uses.") {
             VStack(alignment: .leading, spacing: 10) {
-                if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
-                    ScenarioGuidedActionFeatureView(coordinator: coordinator, runnerStore: runnerStore)
-                }
                 labeledRow("Fixture ID", help: "A fixture is a known set of test data, such as a collection containing a packing note. Use the ID your app’s test support expects.") {
                     TextField("packing-notes", text: $coordinator.draft.fixture.id)
                 }
@@ -87,13 +159,8 @@ struct ScenarioEditorView: View {
                 labeledRow("Fixture digest", help: "A fingerprint for the prepared test data. Comparison is qualified only when the run proves the actual prepared contents match this digest.") {
                     TextField("Stable fixture digest", text: $coordinator.draft.fixture.digest)
                 }
-                if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
-                    labeledRow("Intent definition", help: "An App Intent is an action your app makes available to Siri and Shortcuts, such as opening a note.") {
-                        TextField("OpenNoteIntent", text: $coordinator.draft.directControl.intentIdentifier)
-                    }
-                    if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
-                        ScenarioResultProjectionEditor(coordinator: coordinator)
-                    }
+                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                    ScenarioResultProjectionEditor(coordinator: coordinator)
                 }
                 labeledRow("Invocation route", help: "App Shortcut describes a shortcut your app exposes. App Intent definition describes the action directly. This records the intended route; it does not create a shortcut or change how this test invokes the action.") {
                     Picker("Invocation route", selection: $coordinator.draft.target.route) {
@@ -106,10 +173,14 @@ struct ScenarioEditorView: View {
                     Toggle("Synthetic fixture", isOn: $coordinator.draft.fixture.isSynthetic)
                         .labelsHidden()
                 }
-                labeledRow("Fixture preparation", help: "The name of the intended preparation operation, for example resetFixture. Your test support must implement the reset; entering a name does not run that operation.") {
+                labeledRow("Fixture preparation", help: coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+                    ? "Choose a compiled preparation operation from the integration declaration. The runner calls it before each attempt; your test support must establish the fixture."
+                    : "The name of the intended preparation operation, for example resetFixture. Your test support must implement the reset; entering a name does not run that operation.") {
                     TextField("resetFixture", text: $coordinator.draft.fixture.preparationOperation)
                 }
-                labeledRow("Fixture cleanup", help: "The name of the intended cleanup operation, for example resetFixture. Your test support must restore the data; entering a name does not run that operation.") {
+                labeledRow("Fixture cleanup", help: coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+                    ? "Choose a compiled cleanup operation from the integration declaration. The runner calls it after each returned attempt; your test support must restore and verify the fixture. Interrupted tests may require recovery."
+                    : "The name of the intended cleanup operation, for example resetFixture. Your test support must restore the data; entering a name does not run that operation.") {
                     TextField("resetFixture", text: $coordinator.draft.fixture.cleanupOperation)
                 }
                 if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
@@ -130,34 +201,33 @@ struct ScenarioEditorView: View {
     }
 
     private var evidenceSection: some View {
-        IntentLabCard("What should this test check?", subtitle: "A lane is one part of the test. Checking the app, its intent, and Siri separately helps you find where a problem starts.") {
+        IntentLabCard("What should this test check?", subtitle: "Check the app’s action directly, through Siri, or against an existing app evaluation.") {
             VStack(alignment: .leading, spacing: 20) {
-                if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
-                    Text("Choose the routes to run. Add expected outcomes in the Assertions section.")
-                        .font(.callout).foregroundStyle(.secondary)
-                } else if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
                     ScenarioReusableChecksView(coordinator: coordinator)
                 }
                 requirementPickers
-                IntentLabHelp("Keep at least one lane Required so a pass means something was checked. Optional still collects a result. Not applicable skips that part. Start with Intent integration to check the action itself; also require Siri to test how it handles the request text.")
+                IntentLabHelp("Mark at least one part Required. Optional collects results without deciding the overall report result, but a failure can still fail the Xcode test. Not applicable skips that part.")
             }
 
         }
     }
 
     private var parametersSection: some View {
-        IntentLabCard("Declared parameters", subtitle: "Parameters are inputs the action needs, such as which note to open. Match the names and types declared by the app’s intent. If the action takes no inputs, leave this list empty.") {
+        IntentLabCard("Inputs", subtitle: coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion
+            ? "Set the values required by the action selected above. Names and types come from your app's declaration."
+            : "Parameters are inputs the action needs, such as which note to open. Match the names and types declared by the app’s intent. If the action takes no inputs, leave this list empty.") {
             if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
-            HStack {
-                Spacer()
-                Button("Add parameter", systemImage: "plus") {
-                    coordinator.draft.directControl.parameters.append(
-                        .init(name: "parameter", type: .primitive(.string), isOptional: false, presence: .missing)
-                    )
-                    coordinator.draft.definitionDigest = ""
+                HStack {
+                    Spacer()
+                    Button("Add parameter", systemImage: "plus") {
+                        coordinator.draft.directControl.parameters.append(
+                            .init(name: "parameter", type: .primitive(.string), isOptional: false, presence: .missing)
+                        )
+                        coordinator.draft.definitionDigest = ""
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
-            }
             }
             ForEach(Array(coordinator.draft.directControl.parameters.indices), id: \.self) { index in
                 ScenarioParameterEditor(coordinator: coordinator, index: index, parameter: $coordinator.draft.directControl.parameters[index]) {
@@ -178,13 +248,10 @@ struct ScenarioEditorView: View {
     }
 
     private var assertionsSection: some View {
-        IntentLabCard("Outcome assertions", subtitle: "An assertion is a check that compares what happened with what you expected. For example, check that the returned note ID matches the packing note’s ID.") {
-            if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
-                ScenarioGuidedExpectationView(coordinator: coordinator)
-            } else {
+        IntentLabCard("Result checks", subtitle: "An assertion is a check that compares what happened with what you expected. For example, check that the returned note ID matches the packing note’s ID.") {
             HStack {
                 Spacer()
-                Button("Add assertion", systemImage: "plus") {
+                Button("Add result check", systemImage: "plus") {
                     coordinator.draft.assertions.append(
                         .init(
                             kind: .returnedField,
@@ -216,7 +283,6 @@ struct ScenarioEditorView: View {
                 .padding(10)
                 .workspaceInset(radius: 8)
             }
-            }
 
         }
     }
@@ -229,7 +295,9 @@ struct ScenarioEditorView: View {
                         Text("Read-only").tag(ScenarioMutationPolicy.readOnly)
                         Text("Change test data").tag(ScenarioMutationPolicy.syntheticMutation)
                     }
-                    IntentLabHelp("Read-only is for actions that should leave data unchanged. Change test data requires a synthetic fixture and a list of allowed actions, and limits Siri to one attempt. These are declarations: the current runner does not enforce the action list. Use app-side safeguards for changes and cleanup.")
+                    IntentLabHelp(coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+                        ? "Read-only actions should leave data unchanged. Changing test data requires a synthetic fixture and limits Siri to one attempt. The runner calls declared preparation and cleanup operations, but your app must enforce allowed actions and verify its cleanup. Interrupted tests may require recovery."
+                        : "Read-only is for actions that should leave data unchanged. Change test data requires a synthetic fixture and a list of allowed actions, and limits Siri to one attempt. These are declarations: the current runner does not enforce the action list. Use app-side safeguards for changes and cleanup.")
                     Picker("Case set", selection: $coordinator.draft.caseSet) {
                         Text("Regression").tag(ScenarioCaseSet?.some(.regression))
                         Text("Holdout").tag(ScenarioCaseSet?.some(.holdout))
@@ -254,30 +322,18 @@ struct ScenarioEditorView: View {
                     text: statedChangedDimensions
                 )
                 IntentLabHelp("Comparison changes: usually leave empty. List only differences you intend to allow when comparing runs, using exact names such as appBuild or language. These differences will be treated as compatible.")
-                IntentLabHelp("Freeze and save keeps each version for repeatable runs. Saving changes to an existing version creates a new version automatically. You can also start one with New frozen version.")
-                HStack {
-                    Spacer()
-                    Button("New frozen version") { coordinator.duplicateAsNewVersion() }
-                    Button("Freeze and save") {
-                        Task {
-                            do { try await coordinator.freezeAndSave() } catch { coordinator.notice = error.localizedDescription }
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
+                IntentLabHelp("Saving keeps a fixed version for repeatable runs. Changes to a saved test create a new version automatically.")
+                Button("Start a new version") { coordinator.duplicateAsNewVersion() }
             }
 
-            validationSummary
             requestSuggestions
         }
     }
 
     @ViewBuilder private var requirementPickers: some View {
-        requirementPicker("App feature", explanation: coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion
-                          ? "Run the selected app feature afresh with this case's business inputs and fixture."
-                          : "Use the linked saved feature evaluation. Required needs a linked run.", selection: $coordinator.draft.coverage.appFeature)
-        requirementPicker("Intent integration", explanation: "Can the app’s action run directly with these inputs? This checks the intent without asking Siri to interpret a request.", selection: $coordinator.draft.coverage.intentIntegration)
-        requirementPicker("Siri", explanation: "Does Siri carry out the saved request on the connected iPhone? The test supplies recognized text, not microphone audio. Passing Intent integration alone does not prove Siri works.", selection: $coordinator.draft.coverage.siri)
+        requirementPicker("App evaluation", explanation: "Reuse an existing evaluation result. Requires a linked run in advanced settings.", selection: $coordinator.draft.coverage.appFeature)
+        requirementPicker("App action", explanation: "Run the app’s action directly with these inputs, without Siri.", selection: $coordinator.draft.coverage.intentIntegration)
+        requirementPicker("Siri", explanation: "Ask Siri to carry out the request on your iPhone using recognized text, not microphone audio.", selection: $coordinator.draft.coverage.siri)
     }
 
     @ViewBuilder private func assertionControls(assertion: Binding<ScenarioAssertion>) -> some View {
@@ -299,7 +355,7 @@ struct ScenarioEditorView: View {
         let issues = coordinator.currentValidationIssues
         return Group {
             if !issues.isEmpty {
-                DisclosureGroup("Definition checks · \(issues.count)") {
+                DisclosureGroup("Before you run · \(issues.count) items to review") {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(issues) { issue in
                             Label(issue.message, systemImage: issue.severity == .error ? "xmark.circle" : "exclamationmark.triangle")
@@ -321,7 +377,7 @@ struct ScenarioEditorView: View {
                     .foregroundStyle(.secondary)
                 Button(
                     coordinator.isGeneratingSuggestions ? "Generating…" : "Generate candidates",
-                    systemImage: "sparkles"
+                    systemImage: "text.bubble"
                 ) {
                     Task { await coordinator.generateSuggestions() }
                 }
@@ -369,7 +425,7 @@ struct ScenarioEditorView: View {
                 Text("Not applicable").tag(ScenarioLaneRequirement.notApplicable)
             }
             IntentLabHelp(explanation)
-            IntentLabHelp(IntentLabGuidance.requirement(selection.wrappedValue))
+
         }
     }
 
@@ -857,51 +913,6 @@ private enum ParameterEditorType: String, CaseIterable, Identifiable {
         case .enumeration: .enumeration(typeIdentifier: "Enum", allowedCases: ["case"])
         case .entity: .entity(typeIdentifier: "Entity")
         case .array: .array(element: .primitive(.string))
-        }
-    }
-}
-
-private enum ScenarioEditorPage: String, WorkspacePane {
-    case outcome, fixture, evidence, parameters, assertions, settings
-    var id: Self { self }
-    var title: String {
-        switch self {
-        case .outcome: "Outcome"
-        case .fixture: "Intent & fixture"
-        case .evidence: "Evidence"
-        case .parameters: "Parameters"
-        case .assertions: "Assertions"
-        case .settings: "Run settings"
-        }
-    }
-    var subtitle: String {
-        switch self {
-        case .outcome: "Request & expected behavior"
-        case .fixture: "Intent definition & test data"
-        case .evidence: "Required results for this scenario"
-        case .parameters: "Inputs passed to the intent"
-        case .assertions: "Observable results & expectations"
-        case .settings: "Safety, repetitions & saved versions"
-        }
-    }
-    var symbol: String {
-        switch self {
-        case .outcome: "text.alignleft"
-        case .fixture: "shippingbox"
-        case .evidence: "checkmark.shield"
-        case .parameters: "curlybraces"
-        case .assertions: "checklist"
-        case .settings: "slider.horizontal.3"
-        }
-    }
-    var tint: Color {
-        switch self {
-        case .outcome: .blue
-        case .fixture: .brown
-        case .evidence: .green
-        case .parameters: .pink
-        case .assertions: .indigo
-        case .settings: .gray
         }
     }
 }

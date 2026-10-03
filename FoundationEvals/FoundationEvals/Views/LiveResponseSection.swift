@@ -6,7 +6,7 @@ struct LiveResponseSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                WorkspaceSymbolBadge(symbol: "waveform", tint: .accentColor, size: 26)
+                WorkspaceIcon(symbol: "waveform", size: 26)
                 Text("Live response")
                     .font(.headline)
                 Spacer()

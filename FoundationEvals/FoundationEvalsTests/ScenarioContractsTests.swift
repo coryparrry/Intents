@@ -202,6 +202,7 @@ struct ScenarioContractsTests {
         ]
         try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
             .write(to: source)
+        let checkedTestRun = try Data(contentsOf: source)
         let paths = try XCTestRunInvocationTransport.resolveProducts(
             derivedData: root.appending(path: "DerivedData"),
             testTarget: "FixtureUITests"
@@ -218,6 +219,14 @@ struct ScenarioContractsTests {
             definition: definition,
             invocation: boundInvocation
         )
+        let nextOutput = try XCTestRunInvocationTransport.materialize(
+            products: paths,
+            testTarget: "FixtureUITests",
+            definition: definition,
+            invocation: invocation(for: definition)
+        )
+        #expect(output != nextOutput)
+        #expect(try Data(contentsOf: source) == checkedTestRun)
         #expect(
             output.deletingLastPathComponent().standardizedFileURL
                 == source.deletingLastPathComponent().standardizedFileURL
@@ -669,6 +678,7 @@ struct ScenarioContractsTests {
             artifactRoot: temporaryDirectory(), ledger: &ledger
         )
         run.xctestExitCode = 0
+        run.acceptanceStatus = .accepted
         #expect(ScenarioReleaseCheckEvaluator.report(definition: definition, run: run).outcome == .passed)
         #expect(!ScenarioResultEvaluator.verifiedClaim(
             .applicationStateChecked, definition: definition, result: run.laneResults[0]
@@ -723,6 +733,50 @@ struct ScenarioContractsTests {
         try expectRejected(envelope, definition: definition,
             journal: journal(for: definition, invocation: invocation, phase: .stopped),
             root: temporaryDirectory(), importer: XCTestEvidenceImporter())
+    }
+
+    @Test func semanticRubricAloneCannotDeclareApplicationStateProof() throws {
+        var definition = try reusableBasicScenario()
+        definition.purpose = .releaseRequirement
+        definition.checkMode = .behaviour
+        definition.requiredClaims = [.executionCompleted, .applicationStateChecked]
+        definition.goal.expectedBehavior = "The stored task is complete."
+        definition.coverage.siri = .required
+        definition.assertions = [.init(
+            kind: .semanticRubric, observationKey: "taskState",
+            explanation: "The task appears complete.", applicableLanes: [.intentIntegration, .siri]
+        )]
+        definition.observationPlan = [.init(id: "taskState", source: .entityQuery, operationID: "queryTask")]
+
+        let semanticOnlyErrors = ScenarioValidator.issues(in: definition, requireFrozenDigest: false)
+            .filter { $0.severity == .error }
+        #expect(semanticOnlyErrors.contains { $0.path == "requiredClaims" })
+        #expect(semanticOnlyErrors.contains { $0.path == "coverage.siri" })
+
+        definition.assertions.append(.init(
+            kind: .stateTransition, observationKey: "taskState", expectedValue: .boolean(true),
+            explanation: "The stored task is complete.", applicableLanes: [.intentIntegration, .siri]
+        ))
+        let stateProofErrors = ScenarioValidator.issues(in: definition, requireFrozenDigest: false)
+            .filter { $0.severity == .error }
+        #expect(!stateProofErrors.contains { $0.path == "requiredClaims" || $0.path == "coverage.siri" })
+    }
+
+    @Test func reusableMutationRequiresRealCleanupOperation() throws {
+        var definition = try reusableBasicScenario()
+        definition.safety.mutationPolicy = .syntheticMutation
+        definition.fixture = .init(
+            id: "task-fixture", version: "1", digest: String(repeating: "a", count: 64),
+            isSynthetic: true, preparationOperation: "prepareFixture", cleanupOperation: "none"
+        )
+        definition.coverage.siriAttemptCount = 1
+
+        let uncleanable = ScenarioValidator.issues(in: definition, requireFrozenDigest: false)
+        #expect(uncleanable.contains { $0.severity == .error && $0.path == "fixture.cleanupOperation" })
+
+        definition.fixture.cleanupOperation = "restoreFixture"
+        let cleanable = ScenarioValidator.issues(in: definition, requireFrozenDigest: false)
+        #expect(!cleanable.contains { $0.severity == .error && $0.path == "fixture.cleanupOperation" })
     }
 
     @Test func reusableVersionsAndInvalidProjectionPathsFailClosed() throws {
@@ -808,6 +862,40 @@ struct ScenarioContractsTests {
         #expect(path.map { $0["kind"] as? String } == ["property", "index"])
         #expect((object["integration"] as? [String: Any])?["digest"] as? String == definition.integration?.digest)
         let safety = try #require(object["safety"] as? [String: Any])
+        #expect(safety["mutationPolicy"] as? String == "readOnly")
+        #expect(safety["allowedActions"] == nil)
+    }
+
+    @Test func reusableXCTestRunCarriesFrozenReadOnlyPolicy() throws {
+        let root = try temporaryDirectory()
+        let productsDirectory = root.appending(path: "Build/Products", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: productsDirectory, withIntermediateDirectories: true)
+        let source = productsDirectory.appending(path: "Tasks_iphoneos.xctestrun")
+        let plist: [String: Any] = ["TasksUITests": [
+            "BlueprintName": "TasksUITests",
+            "UITargetAppPath": "__TESTROOT__/Debug-iphoneos/Tasks.app",
+            "TestHostPath": "__TESTROOT__/Debug-iphoneos/TasksUITests-Runner.app",
+            "TestBundlePath": "__TESTHOST__/PlugIns/TasksUITests.xctest",
+        ]]
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: source)
+        let definition = try reusableBasicScenario()
+        #expect(definition.safety.mutationPolicy == .readOnly)
+        let products = try XCTestRunInvocationTransport.resolveProducts(
+            derivedData: root, testTarget: "TasksUITests"
+        )
+        let output = try XCTestRunInvocationTransport.materialize(
+            products: products, testTarget: "TasksUITests",
+            definition: definition, invocation: reusableInvocation(for: definition)
+        )
+        let stored = try #require(PropertyListSerialization.propertyList(
+            from: Data(contentsOf: output), options: [], format: nil
+        ) as? [String: Any])
+        let target = try #require(stored["TasksUITests"] as? [String: Any])
+        let environment = try #require(target["EnvironmentVariables"] as? [String: String])
+        let encoded = try #require(environment[XCTestRunInvocationTransport.scenarioEnvironmentKey])
+        let payload = try #require(Data(base64Encoded: encoded))
+        let transported = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        let safety = try #require(transported["safety"] as? [String: Any])
         #expect(safety["mutationPolicy"] as? String == "readOnly")
         #expect(safety["allowedActions"] == nil)
     }
@@ -1424,7 +1512,7 @@ struct ScenarioContractsTests {
         #expect(report.dimensions.contains { $0.name == "siriConfigurationSource" && !$0.compatible })
     }
 
-    @Test func stableAbsoluteReleaseDoesNotBorrowOldRequirementComparison() throws {
+    @Test func stableAbsoluteReleaseDoesNotBorrowOldRequirementComparison() async throws {
         var definition = try stableScenario()
         definition.version = 2
         definition.assertions[0].applicableLanes = [.appFeature, .intentIntegration]
@@ -1467,9 +1555,15 @@ struct ScenarioContractsTests {
         let comparison = ScenarioComparison.compare(baseline: baseline, candidate: candidate)
         #expect(!comparison.isDirectlyComparable)
         #expect(comparison.summary.contains("Requirements changed"))
-        let release = ScenarioReleaseCheckEvaluator.report(definition: definition, run: candidate,
+        let persistence = ScenarioPersistence(rootDirectory: try temporaryDirectory())
+        var executionJournal = journal(for: definition, invocation: candidate.invocation, phase: .stopped)
+        executionJournal.evidenceAccepted = true
+        try await persistence.saveJournal(executionJournal)
+        let stored = try await persistence.saveRun(candidate, artifactRoot: nil)
+        let accepted = try await persistence.acceptRun(stored, journal: executionJournal)
+        let release = ScenarioReleaseCheckEvaluator.report(definition: definition, run: accepted,
                                                            comparison: comparison)
-        #expect(release.outcome == .passed)
+        #expect(release.outcome == .passed, "\(release.failures)")
         #expect(release.summary.contains("Requirements changed"))
     }
 
@@ -1493,6 +1587,13 @@ struct ScenarioContractsTests {
         reusable = try reusable.frozen()
         let reusablePaths = Set(ScenarioValidator.issues(in: reusable).map(\.path))
         #expect(reusablePaths.contains("directControl.linkedFeatureRunID"))
+    }
+
+    @Test func stableCheckRejectsMissingRequiredActionInputBeforeRun() throws {
+        var definition = try stableScenario()
+        definition.directControl.parameters[0].presence = .missing
+        let paths = Set(ScenarioValidator.issues(in: definition, requireFrozenDigest: false).map(\.path))
+        #expect(paths.contains("directControl.parameters[0].presence"))
     }
 
     @Test func stableContractRejectsChangedRequirementsAndMeasurement() throws {
@@ -2157,6 +2258,33 @@ struct ScenarioContractsTests {
             persistence: persistence
         )
         #expect(try await nextLaunch.reconcileInterruptedJournals().isEmpty)
+    }
+
+    @Test func corruptJournalBlocksRecoveryAndNextDeviceAttempt() async throws {
+        let root = try temporaryDirectory()
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        let interrupted = journal(for: definition, invocation: invocation, phase: .running)
+        try await persistence.saveJournal(interrupted)
+        let corruptURL = root.appending(path: "Journals/\(UUID().uuidString).json")
+        try Data("{corrupt".utf8).write(to: corruptURL)
+
+        let relaunched = XcodeTestExecutor(
+            workDirectory: root.appending(path: "Executor"), persistence: persistence
+        )
+        await #expect(throws: ScenarioPersistenceError.self) {
+            _ = try await relaunched.reconcileInterruptedJournals()
+        }
+        await #expect(throws: ScenarioPersistenceError.self) {
+            try await relaunched.persistPreparingJournal(interrupted)
+        }
+        #expect(await relaunched.reservation(for: invocation.destinationIdentifier) == nil)
+
+        try FileManager.default.removeItem(at: corruptURL)
+        let recovered = try await relaunched.reconcileInterruptedJournals()
+        #expect(recovered.map(\.id) == [interrupted.id])
+        #expect(await relaunched.reservation(for: invocation.destinationIdentifier) != nil)
     }
 
     @Test func inSessionCancellationQuarantinesAndCanBeExplicitlyCleared() async throws {

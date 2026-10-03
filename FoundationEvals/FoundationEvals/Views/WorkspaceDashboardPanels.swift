@@ -21,7 +21,7 @@ struct WorkspaceSuiteRow: View {
         HStack(spacing: 0) {
             Button(action: open) {
                 HStack(spacing: 12) {
-                    WorkspaceIconTile(symbol: "checklist", tint: .accentColor, size: 32)
+                    WorkspaceIcon(symbol: "checklist", size: 32, presentation: .header)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(summary?.name ?? name).font(.body.weight(.semibold))
                             .foregroundStyle(.primary).lineLimit(1)

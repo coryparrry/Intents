@@ -251,7 +251,9 @@ enum XcodeTestDeadlineBudget {
             : (scope == nil && definition.coverage.siri != .notApplicable
                 ? (definition.coverage.siriAttemptCount ?? 3) : 0)
         let fixtureCount = (includesDirectLane ? 1 : 0) + siriAttemptCount
-        let directLaneSeconds = includesDirectLane ? scenarioWaitSeconds : 0
+        // Baseline observation, direct intent execution, and post-intent
+        // observation each have their own bounded wait in the device runner.
+        let directLaneSeconds = includesDirectLane ? 3 * scenarioWaitSeconds : 0
         let siriSeconds = Double(siriAttemptCount) * (siriActivationWaitSeconds + scenarioWaitSeconds)
         let fixtureSeconds = Double(fixtureCount) * fixtureStartupAndInspectionSeconds
 
@@ -352,7 +354,8 @@ actor XcodeTestExecutor {
     }
 
     func persistPreparingJournal(_ journal: ScenarioExecutionJournal) async throws {
-        // Corrupt prior journals may hide an unresolved attempt.
+        // A malformed prior journal may describe an unresolved device attempt.
+        // Do not reserve or launch another attempt until recovery can read every record.
         _ = try await persistence.loadJournals()
         let destination = journal.invocation.destinationIdentifier
         let reservation = ScenarioDeviceReservation.reserved(invocationID: journal.id)
@@ -407,6 +410,9 @@ actor XcodeTestExecutor {
                 && [.preparing, .running, .cancelling, .recoveryRequired].contains(journal.phase) {
             journal.phase = .stopped
             journal.recoveryReason = nil
+            // Explicit readiness confirmation does not accept pending evidence.
+            // Record a rejected state when a crash preceded validation.
+            journal.evidenceAccepted = journal.evidenceAccepted ?? false
             journal.updatedAt = Date()
             try await persistence.saveJournal(journal)
         }
@@ -464,14 +470,20 @@ actor XcodeTestExecutor {
                 ? "Build and run IntentLabScenarioTests/testIntentLabConnection to verify the \(expectedHarnessVersion) consumer and selected products."
                 : "Add INTENT_LAB_HARNESS_VERSION=\(expectedHarnessVersion) to the UI-test target, then include IntentLabScenarioTests/testIntentLabScenario."
         )
-        let destination = physicalDestination(configuration.destinationIdentifier)
+        let destination = physicalDestination(
+            configuration.destinationIdentifier,
+            requiresSiri: definition.coverage.siri != .notApplicable
+        )
+        let macConnectionVerified = isReusable && destination.platform == .macOS && connection != nil
         check("signing", "Signing and test execution",
-              Self.signingReady(configuration: configuration,
-                                destinationPlatform: destination.platform,
-                                reusableConnectionVerified: isReusable && connection != nil),
-              destination.platform == .macOS
-                ? "Set a development team, or complete the Mac connection test to verify local test execution."
-                : "Set a development team for both the app and UI-test targets in Xcode Signing & Capabilities.")
+              Self.signingReady(
+                  configuration: configuration,
+                  destinationPlatform: destination.platform,
+                  reusableConnectionVerified: isReusable && connection != nil
+              ),
+              macConnectionVerified
+                  ? "The selected Mac app and UI-test target completed the connection test."
+                  : "Select a development team for both targets, or complete the Mac connection test to verify local test execution.")
         if isReusable {
             for capability in ScenarioHarnessCapabilities.required(for: definition).sorted() {
                 check("capability.\(capability)", capability,
@@ -587,7 +599,10 @@ actor XcodeTestExecutor {
                 )
             }
         }
-        let destination = physicalDestination(configuration.destinationIdentifier)
+        let destination = physicalDestination(
+            configuration.destinationIdentifier,
+            requiresSiri: definition.coverage.siri != .notApplicable
+        )
         guard destination.ready else { throw XcodeTestExecutorError.deviceUnavailable(destination.detail) }
         guard definition.coverage.siri == .notApplicable || destination.platform != .macOS else {
             throw XcodeTestExecutorError.deviceUnavailable("Siri UI automation requires an iOS destination.")
@@ -1131,8 +1146,14 @@ actor XcodeTestExecutor {
             scope: scope
         )
         guard report.isReady else { throw XcodeTestExecutorError.preflight(report.checks) }
-        let selectedConnection = ScenarioHarnessCapabilities.usesReusableProtocol(definition)
+        let usesReusableProtocol = ScenarioHarnessCapabilities.usesReusableProtocol(definition)
+        let selectedConnection = usesReusableProtocol
             ? currentConnection(definition: definition, configuration: configuration) : nil
+        guard !usesReusableProtocol || selectedConnection != nil else {
+            throw XcodeTestExecutorError.resourceMismatch(
+                "The checked app or integration changed before the run. Check the connection again."
+            )
+        }
 
         let invocationID = UUID()
         let invocationDirectory = workDirectory.appending(path: invocationID.uuidString, directoryHint: .isDirectory)
@@ -1382,7 +1403,10 @@ actor XcodeTestExecutor {
         }
     }
 
-    private func physicalDestination(_ identifier: String) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?) {
+    private func physicalDestination(
+        _ identifier: String,
+        requiresSiri: Bool = false
+    ) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?) {
         let requested = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requested.isEmpty else {
             return (false, "Choose an available Mac or paired physical iPhone.", nil)
@@ -1393,18 +1417,22 @@ actor XcodeTestExecutor {
         } catch {
             return (false, "Xcode device discovery failed: \(error.localizedDescription)", nil)
         }
-        return Self.destinationStatus(identifier: requested, devices: devices)
+        return Self.destinationStatus(identifier: requested, devices: devices, requiresSiri: requiresSiri)
     }
 
     static func destinationStatus(
         identifier: String,
-        devices: [IntentLabDeviceDestination]
+        devices: [IntentLabDeviceDestination],
+        requiresSiri: Bool = false
     ) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?) {
         guard let device = devices.first(where: { $0.identifier == identifier }) else {
             return (false, "Xcode did not report the selected destination as available.", nil)
         }
         guard device.available else {
             return (false, "\(device.name) is unavailable in Xcode.", device.platform)
+        }
+        guard !requiresSiri || device.platform == .iOS else {
+            return (false, "Siri checks require an available physical iPhone; select one before checking the connection or running this test.", device.platform)
         }
         let detail = device.platform == .macOS
             ? "\(device.name) is available as the local Mac test destination."

@@ -358,7 +358,7 @@ extension WorkflowTraceNode {
         return switch kind {
         case .sample: "point.3.connected.trianglepath.dotted"
         case .preparation: "text.alignleft"
-        case .generation: "sparkles"
+        case .generation: "text.bubble"
         case .scoring: "checkmark.seal"
         case .judge: "scale.3d"
         case .tool: "wrench.and.screwdriver"

@@ -80,7 +80,8 @@ final class ScenarioCoordinator {
     private var activeFeatureRunID: UUID?
     @ObservationIgnored private var scopedProjectURL: URL?
 
-    init(supportDirectory: URL, evaluationStore: EvaluationStore) {
+    init(supportDirectory: URL, evaluationStore: EvaluationStore,
+         initialConnectionDiscovery: XcodeConnectionDiscovery? = nil) {
         let root = supportDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
         rootDirectory = root
         let persistence = ScenarioPersistence(rootDirectory: root)
@@ -88,6 +89,7 @@ final class ScenarioCoordinator {
         collectionStore = ScenarioCollectionStore(rootDirectory: root)
         assessmentStore = ScenarioAssessmentStore(directory: root.appending(path: "Assessments"))
         self.evaluationStore = evaluationStore
+        connectionDiscovery = initialConnectionDiscovery
         executor = XcodeTestExecutor(
             workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory),
             persistence: persistence
@@ -214,7 +216,7 @@ final class ScenarioCoordinator {
             } ?? latestRunDefinition ?? latestVersionDefinition
             if let definition = restored {
                 draft = definition
-                selectedIntegration = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+                selectedIntegration = definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion
                     ? definition.integration : nil
                 parameterArrayDraftTexts = [:]
                 invalidParameterDraftIndices = []
@@ -234,6 +236,91 @@ final class ScenarioCoordinator {
         } catch {
             notice = "Intent Lab storage could not be loaded: \(error.localizedDescription)"
         }
+    }
+
+    func selectSavedDefinition(id: UUID, version: Int) async {
+        guard !isRunning else {
+            notice = "Wait for the current test to finish before switching saved tests."
+            return
+        }
+        guard let definition = definitions.first(where: { $0.id == id && $0.version == version }) else {
+            notice = "The saved test could not be found."
+            return
+        }
+
+        let target = definition.target
+        let currentContainer = URL(filePath: configuration.containerPath).standardizedFileURL.path
+        let targetContainer = URL(filePath: target.projectPath).standardizedFileURL.path
+        let projectChanged = currentContainer != targetContainer
+        let targetChanged = projectChanged
+            || draft.target.bundleIdentifier != target.bundleIdentifier
+            || draft.target.scheme != target.scheme
+            || draft.target.testTarget != target.testTarget
+            || configuration.scheme != target.scheme
+            || configuration.testTarget != target.testTarget
+
+        if projectChanged {
+            selectContainer(URL(filePath: target.projectPath))
+        } else if targetChanged {
+            clearSelectedProductConfiguration()
+            declarationCatalog = nil
+        }
+
+        draft = definition
+        selectedIntegration = definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion
+            ? definition.integration : nil
+        parameterArrayDraftTexts = [:]
+        invalidParameterDraftIndices = []
+        selectedRunID = nil
+        applyTargetToConfiguration(target)
+
+        if targetChanged && !projectChanged {
+            let applications = connectionDiscovery?.applications.filter {
+                $0.bundleIdentifier == target.bundleIdentifier
+            } ?? []
+            let testBundles = connectionDiscovery?.uiTestBundles.filter {
+                $0.targetName == target.testTarget
+            } ?? []
+            if let discovery = connectionDiscovery,
+               discovery.schemes.contains(target.scheme),
+               applications.count == 1, testBundles.count == 1,
+               let application = applications.first, let tests = testBundles.first {
+                configuration.selectedApplicationProductID = application.id
+                configuration.applicationSigningConfigured = application.signingConfigured
+                configuration.selectedTestProductID = tests.id
+                configuration.testBundleIdentifier = tests.bundleIdentifier
+                configuration.harnessVersion = tests.harnessVersion
+                configuration.harnessCapabilities = tests.harnessCapabilities
+                configuration.testSigningConfigured = tests.signingConfigured
+            } else {
+                projectTrusted = false
+                notice = "The saved test uses a different app or test target. Connect this project again to check its build."
+            }
+        }
+
+        let selectedProductsMatch = connectionDiscovery.map { discovery in
+            discovery.applications.contains {
+                $0.id == configuration.selectedApplicationProductID
+                    && $0.bundleIdentifier == target.bundleIdentifier
+            } && discovery.uiTestBundles.contains {
+                $0.id == configuration.selectedTestProductID
+                    && $0.targetName == target.testTarget
+                    && $0.bundleIdentifier == configuration.testBundleIdentifier
+            }
+        } ?? false
+        if !selectedProductsMatch {
+            clearSelectedProductConfiguration()
+            if !projectChanged && targetChanged { projectTrusted = false }
+        }
+        invalidatePreflight()
+
+        do {
+            try await persistence.saveSelectedDefinition(id: id, version: version)
+            try await persistence.saveExecutionConfiguration(configuration)
+        } catch {
+            notice = "The saved test is open, but its selection could not be saved: \(error.localizedDescription)"
+        }
+        if projectTrusted { await refreshPreflight() }
     }
 
     func selectContainer(_ url: URL) {
@@ -264,15 +351,32 @@ final class ScenarioCoordinator {
         invalidatePreflight()
     }
 
+    private func clearSelectedProductConfiguration() {
+        configuration.selectedApplicationProductID = nil
+        configuration.selectedTestProductID = nil
+        configuration.testBundleIdentifier = ""
+        configuration.harnessVersion = nil
+        configuration.harnessCapabilities = nil
+        configuration.applicationSigningConfigured = nil
+        configuration.testSigningConfigured = nil
+    }
+
     func refreshDevices() async {
         do {
             let service = XcodeConnectionDiscoveryService(
                 xcodebuildPath: configuration.xcodebuildPath,
                 xcdevicePath: "/usr/bin/xcrun"
             )
-            discoveredDevices = try await Task.detached {
+            let devices = try await Task.detached {
                 try service.discoverDevices()
             }.value
+            discoveredDevices = devices
+            if let destinationIdentifier = Self.soleAvailableDestinationIdentifier(
+                in: devices,
+                savedDestinationIdentifier: configuration.destinationIdentifier
+            ) {
+                await selectDevice(destinationIdentifier)
+            }
         } catch {
             discoveredDevices = []
             if recoveryJournals.isEmpty {
@@ -389,7 +493,8 @@ final class ScenarioCoordinator {
     func selectApplication(_ product: XcodeDiscoveredProduct) {
         if draft.target.bundleIdentifier != product.bundleIdentifier {
             selectedIntegration = nil
-            if draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+            declarationCatalog = nil
+            if draft.schemaVersion >= ScenarioDefinition.reusableSchemaVersion {
                 draft.integration = nil
             }
         }
@@ -433,6 +538,8 @@ final class ScenarioCoordinator {
         isVerifyingIntegration = true
         defer { isVerifyingIntegration = false }
         applyConfigurationToDraft()
+        let checkedDraft = draft
+        let checkedConfiguration = configuration
         do {
             let definition = try draft.frozen()
             let verified = try await executor.verifyConnection(
@@ -440,6 +547,13 @@ final class ScenarioCoordinator {
                 configuration: configuration,
                 projectTrusted: projectTrusted
             )
+            guard draft == checkedDraft, configuration == checkedConfiguration else {
+                declarationCatalog = nil
+                verifiedIntegrationSummary = nil
+                notice = "The test or connection changed while support was being checked. Check support again."
+                invalidatePreflight()
+                return
+            }
             let data = try Data(contentsOf: verified.testBundleURL.appending(path: "IntentLabIntegration.json"))
             let catalog = try ScenarioIntegrationCatalog.decodeVerified(data, identity: verified.receipt.integration)
             guard catalog.targetBundleIdentifier == verified.receipt.targetBundleIdentifier else {
@@ -534,13 +648,30 @@ final class ScenarioCoordinator {
     /// Starts a separate v2 definition. Existing v1 definitions and their digests
     /// stay untouched so old evidence retains its original interpretation.
     func startReusableCheck() {
-        let selectedApp = connectionDiscovery?.applications.first {
-            $0.bundleIdentifier == draft.target.bundleIdentifier
-        } ?? connectionDiscovery?.applications.first
+        let selectedApp = Self.selectedReusableApplication(
+            in: connectionDiscovery,
+            selectedProductID: configuration.selectedApplicationProductID
+        )
+        let targetBundleIdentifier: String
+        if let selectedApp {
+            configuration.selectedApplicationProductID = selectedApp.id
+            configuration.applicationSigningConfigured = selectedApp.signingConfigured
+            targetBundleIdentifier = selectedApp.bundleIdentifier
+        } else if connectionDiscovery != nil {
+            // Discovery exists, so an old bundle ID is not enough to identify one
+            // product when this project has multiple app targets.
+            configuration.selectedApplicationProductID = nil
+            configuration.applicationSigningConfigured = nil
+            targetBundleIdentifier = ""
+        } else {
+            // Keep a saved target while discovery is not available yet. A newly
+            // selected project clears its product identity in selectContainer.
+            targetBundleIdentifier = draft.target.bundleIdentifier
+        }
         draft = .reusable(
             name: "New intent check",
             target: .init(
-                bundleIdentifier: selectedApp?.bundleIdentifier ?? draft.target.bundleIdentifier,
+                bundleIdentifier: targetBundleIdentifier,
                 projectPath: configuration.containerPath,
                 scheme: configuration.scheme,
                 testTarget: configuration.testTarget,
@@ -576,6 +707,29 @@ final class ScenarioCoordinator {
         invalidParameterDraftIndices = []
         selectedRunID = nil
         invalidatePreflight()
+    }
+
+    static func selectedReusableApplication(
+        in discovery: XcodeConnectionDiscovery?,
+        selectedProductID: String?
+    ) -> XcodeDiscoveredProduct? {
+        guard let discovery else { return nil }
+        if let selectedProductID,
+           let selected = discovery.applications.first(where: { $0.id == selectedProductID }) {
+            return selected
+        }
+        guard discovery.applications.count == 1 else { return nil }
+        return discovery.applications.first
+    }
+
+    static func soleAvailableDestinationIdentifier(
+        in devices: [IntentLabDeviceDestination],
+        savedDestinationIdentifier: String
+    ) -> String? {
+        guard savedDestinationIdentifier.isEmpty else { return nil }
+        let available = devices.filter(\.available)
+        guard available.count == 1 else { return nil }
+        return available[0].identifier
     }
 
     func startStableCheck() {
@@ -654,6 +808,13 @@ final class ScenarioCoordinator {
     func recordInstalledIntegration(_ identity: ScenarioIntegrationIdentity, appBundleID: String,
                                     projectPath: String, scheme: String, testTarget: String,
                                     applicationProductID: String?, testProductID: String?) {
+        let products = Self.installedProducts(
+            in: connectionDiscovery,
+            appBundleID: appBundleID,
+            applicationProductID: applicationProductID,
+            testTarget: testTarget,
+            testProductID: testProductID
+        )
         if configuration.scheme != scheme || configuration.testTarget != testTarget
             || configuration.selectedApplicationProductID != applicationProductID
             || configuration.selectedTestProductID != testProductID
@@ -666,6 +827,11 @@ final class ScenarioCoordinator {
         configuration.selectedTestProductID = testProductID
         configuration.testTarget = testTarget
         configuration.scheme = scheme
+        configuration.applicationSigningConfigured = products.application?.signingConfigured
+        configuration.testBundleIdentifier = products.tests?.bundleIdentifier ?? ""
+        configuration.harnessVersion = products.tests?.harnessVersion
+        configuration.harnessCapabilities = products.tests?.harnessCapabilities
+        configuration.testSigningConfigured = products.tests?.signingConfigured
         guard draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion
                 || draft.schemaVersion == ScenarioDefinition.stableSchemaVersion else { return }
         draft.integration = identity
@@ -677,6 +843,20 @@ final class ScenarioCoordinator {
         }
         draft.definitionDigest = ""
         invalidatePreflight()
+    }
+
+    static func installedProducts(
+        in discovery: XcodeConnectionDiscovery?, appBundleID: String,
+        applicationProductID: String?, testTarget: String, testProductID: String?
+    ) -> (application: XcodeDiscoveredProduct?, tests: XcodeDiscoveredProduct?) {
+        guard let discovery else { return (nil, nil) }
+        let application = discovery.applications.first {
+            $0.id == applicationProductID && $0.bundleIdentifier == appBundleID
+        }
+        let tests = discovery.uiTestBundles.first {
+            $0.id == testProductID && $0.targetName == testTarget
+        }
+        return (application, tests)
     }
 
     func assignProject(id: UUID) {
@@ -821,12 +1001,27 @@ final class ScenarioCoordinator {
                 )
             }
             try await persistence.saveLedger(ledger)
-            let canReleaseDevice = !cancellationRequested && Self.canReleaseDevice(
-                processExitCode: result.processExitCode,
+            let accepted = !cancellationRequested
+                && ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
                 attachments: result.evidenceAttachments,
-                importedRuns: imported, definition: definition
+                runs: imported, xctestExitCode: result.processExitCode, definition: definition
             )
-            try await executor.finishEvidenceValidation(journal: result.journal, accepted: canReleaseDevice)
+                && Self.canReleaseDevice(
+                    processExitCode: result.processExitCode,
+                    attachments: result.evidenceAttachments,
+                    importedRuns: imported, definition: definition
+                )
+            try await executor.finishEvidenceValidation(
+                journal: result.journal,
+                accepted: accepted
+            )
+            if accepted {
+                for index in imported.indices {
+                    imported[index] = try await persistence.acceptRun(
+                        imported[index], journal: result.journal
+                    )
+                }
+            }
             pendingJournal = nil
             recoveryJournals = try await executor.currentRecoveryJournals()
             journals = try await persistence.loadJournals()
@@ -1073,20 +1268,35 @@ final class ScenarioCoordinator {
             merged.importedArtifactIDs.formUnion(pending.ledger.importedArtifactIDs)
             try await persistence.saveLedger(merged)
             ledger = merged
-            if let journal = try await persistence.loadJournals().first(where: { $0.id == saved.id }) {
-                try await executor.finishEvidenceValidation(journal: journal, accepted: pending.evidenceValidationPassed == true
-                    && pending.deviceReadinessProven == true
-                    && ScenarioExecutionRecoveryPolicy.hasBoundJournal(run: saved, journals: [journal]))
+            guard pending.evidenceValidationPassed == true,
+                  let journal = try await persistence.loadJournals().first(where: { $0.id == saved.id }),
+                  ScenarioExecutionRecoveryPolicy.hasBoundJournal(run: saved, journals: [journal]) else {
+                throw ScenarioPersistenceError.acceptanceNotReady
             }
+            // A rejected journal becomes stopped after explicit device recovery.
+            // Preserve that confirmation when the immutable stage still says unready.
+            let readinessConfirmed = journal.phase == .stopped
+                && journal.evidenceAccepted != nil && journal.recoveryReason == nil
+            guard pending.deviceReadinessProven == true || readinessConfirmed else {
+                throw ScenarioPersistenceError.acceptanceNotReady
+            }
+            if journal.evidenceAccepted != true {
+                try await executor.finishEvidenceValidation(journal: journal, accepted: true)
+            }
+            guard let validated = try await persistence.loadJournals().first(where: { $0.id == saved.id }),
+                  validated.evidenceAccepted == true else {
+                throw ScenarioPersistenceError.acceptanceNotReady
+            }
+            let acceptedRun = try await persistence.acceptRun(saved, journal: validated)
             progress.records[index] = .init(
                 coordinate: progress.records[index].coordinate,
-                state: saved.laneResults[0].executionStatus == .completed
+                state: acceptedRun.laneResults[0].executionStatus == .completed
                     ? .completed : .failedToExecute,
-                evidenceRunID: saved.id,
-                evidenceLaneResultID: saved.laneResults[0].id,
-                detail: saved.laneResults[0].diagnostic,
-                laneResult: saved.laneResults[0],
-                evidenceDigest: try Self.evidenceDigest(saved)
+                evidenceRunID: acceptedRun.id,
+                evidenceLaneResultID: acceptedRun.laneResults[0].id,
+                detail: acceptedRun.laneResults[0].diagnostic,
+                laneResult: acceptedRun.laneResults[0],
+                evidenceDigest: try Self.evidenceDigest(acceptedRun)
             )
             try await checkpoint(plan: plan, records: progress.records)
             let record = try await persistence.finalizeExecutionRecord(plan: plan, records: progress.records)
@@ -1094,7 +1304,7 @@ final class ScenarioCoordinator {
             executionRecords.removeAll { $0.id == record.id }
             executionRecords.insert(record, at: 0)
             selectedExecutionID = record.id
-            runs.insert(saved, at: 0)
+            runs.insert(acceptedRun, at: 0)
             recoveryJournals = try await executor.currentRecoveryJournals()
             notice = "Saved the native evidence without rerunning the app. Confirm device readiness before another route."
             return record
@@ -2331,9 +2541,7 @@ final class ScenarioCoordinator {
     }
 
     private func apply(discovery: XcodeConnectionDiscovery) {
-        if !discovery.schemes.contains(configuration.scheme) {
-            configuration.scheme = discovery.automaticallySelectedScheme ?? ""
-        }
+        configuration.scheme = Self.schemeAfterDiscovery(configuration.scheme, in: discovery)
         if discovery.applications.count == 1, let application = discovery.applications.first {
             selectApplication(application)
         } else if let application = discovery.applications.first(where: {
@@ -2360,6 +2568,13 @@ final class ScenarioCoordinator {
             configuration.harnessCapabilities = nil
             configuration.testSigningConfigured = nil
         }
+    }
+
+    static func schemeAfterDiscovery(_ selectedScheme: String, in discovery: XcodeConnectionDiscovery) -> String {
+        if !selectedScheme.isEmpty && discovery.schemes.contains(selectedScheme) {
+            return selectedScheme
+        }
+        return discovery.automaticallySelectedScheme ?? ""
     }
 
     private func linkedFeatureRun(for definition: ScenarioDefinition) -> EvaluationRun? {

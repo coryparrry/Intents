@@ -36,7 +36,9 @@ struct ScenarioReusableChecksView: View {
                 Toggle("Require returned value check", isOn: claimBinding(.returnedValueChecked))
                 IntentLabHelp("Choose a returned result observation and add a required Returned field assertion when this is on.")
             }
-            observationPlanControls
+            DisclosureGroup("Where to read results") {
+                observationPlanControls.padding(.top, 8)
+            }
         }
         .padding(12)
         .workspaceInset(radius: 10)
@@ -77,8 +79,7 @@ struct ScenarioReusableChecksView: View {
                         Text("UI element").tag(ScenarioPlannedObservationSource.uiElement)
                         Text("Test-only intent").tag(ScenarioPlannedObservationSource.testOnlyIntent)
                     }
-                    if observation.wrappedValue.source != .intentResult,
-                       observation.wrappedValue.source != .uiElement {
+                    if observation.wrappedValue.source != .intentResult {
                         TextField("Compiled operation ID", text: optionalText(observation.operationID))
                     }
                     TextField("Stable selector or property", text: optionalText(observation.selector))
@@ -88,6 +89,10 @@ struct ScenarioReusableChecksView: View {
             }
             IntentLabHelp("Select the source that actually reads the outcome. A query or test hook must be implemented by the app's integration; naming one here does not verify it.")
         }
+    }
+
+    static func newObservation(index: Int) -> ScenarioPlannedObservation {
+        .init(id: "observation-\(index)", source: .uiElement, operationID: nil, selector: nil)
     }
 
     private func claimBinding(_ claim: ScenarioProofClaim) -> Binding<Bool> {
@@ -111,10 +116,6 @@ struct ScenarioReusableChecksView: View {
                 coordinator.draft.definitionDigest = ""
             }
         )
-    }
-
-    static func newObservation(index: Int) -> ScenarioPlannedObservation {
-        .init(id: "observation-\(index)", source: .uiElement, operationID: nil, selector: nil)
     }
 
     private func optionalText(_ value: Binding<String?>) -> Binding<String> {

@@ -151,7 +151,8 @@ private struct WorkspaceRunRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            WorkspaceIconTile(symbol: state.symbol, tint: state.color == .secondary ? .gray : state.color, size: 30)
+            WorkspaceIcon(symbol: state.symbol, size: 30)
+                .foregroundStyle(state.color)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(run.startedAt, format: .dateTime.month(.abbreviated).day().hour().minute())

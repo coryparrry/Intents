@@ -127,6 +127,12 @@ enum ScenarioValidator {
         if !definition.fixture.isSynthetic, definition.safety.mutationPolicy == .syntheticMutation {
             error("safety.mutationPolicy", "Mutation scenarios must use a declared synthetic fixture.")
         }
+        if isReusable, definition.safety.mutationPolicy == .syntheticMutation,
+           ["", "none", "noop", "readOnly"].contains(
+               definition.fixture.cleanupOperation.trimmingCharacters(in: .whitespacesAndNewlines)
+           ) {
+            error("fixture.cleanupOperation", "Mutation scenarios need a compiled cleanup operation that restores and verifies the synthetic fixture.")
+        }
 
         if definition.directControl.intentIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             error("directControl.intentIdentifier", "Declare the App Intent definition identifier.")
@@ -173,7 +179,9 @@ enum ScenarioValidator {
             }
             switch parameter.presence {
             case .missing:
-                break
+                if isStable && !parameter.isOptional {
+                    error("\(path).presence", "Enter a value for this required app action input before saving or running the test.")
+                }
             case .value(.null):
                 if !parameter.isOptional {
                     error("\(path).presence", "Explicit null is valid only for an optional parameter; use missing to keep an intent default.")
@@ -295,25 +303,31 @@ enum ScenarioValidator {
                 }
             }
             let claims = definition.requiredClaims ?? []
+            func hasRequiredStateProof(for lane: ScenarioLane) -> Bool {
+                definition.assertions.contains { assertion in
+                    assertion.required && assertion.applies(to: lane)
+                        && assertion.kind != .semanticRubric
+                        && assertion.kind != .returnedField
+                        && assertion.expectedValue != nil
+                        && plan.contains {
+                            $0.id == assertion.observationKey && $0.source.checksApplicationState
+                        }
+                }
+            }
             if claims.contains(.returnedValueChecked),
                !definition.assertions.contains(where: { $0.required && $0.kind == .returnedField }) {
                 error("requiredClaims", "A returned-value claim needs a required returned-value assertion.")
             }
-            if claims.contains(.applicationStateChecked),
-               !definition.assertions.contains(where: { assertion in
-                   assertion.required && plan.contains {
-                       $0.id == assertion.observationKey && $0.source.checksApplicationState
-                   }
-               }) {
-                error("requiredClaims", "An application-state claim needs a required state assertion.")
+            let hasClaimStateProof = isStable
+                ? ScenarioLane.allCases.contains { lane in
+                    definition.coverage[lane] == .required && hasRequiredStateProof(for: lane)
+                }
+                : hasRequiredStateProof(for: .intentIntegration)
+            if claims.contains(.applicationStateChecked), !hasClaimStateProof {
+                error("requiredClaims", "An application-state claim needs a required deterministic state assertion in the direct intent lane.")
             }
-            if definition.coverage.siri != .notApplicable,
-               !definition.assertions.contains(where: { assertion in
-                   assertion.required && assertion.applies(to: .siri) && plan.contains {
-                       $0.id == assertion.observationKey && $0.source.checksApplicationState
-                   }
-               }) {
-                error("coverage.siri", "Siri checks need a required final-state observation; a submitted request cannot pass alone.")
+            if definition.coverage.siri != .notApplicable, !hasRequiredStateProof(for: .siri) {
+                error("coverage.siri", "Siri checks need a required deterministic final-state assertion; a submitted request cannot pass alone.")
             }
         }
 
@@ -490,8 +504,11 @@ enum ScenarioResultEvaluator {
     static func overall(definition: ScenarioDefinition, laneResults: [ScenarioLaneResult]) -> ScenarioOutcome {
         let requiredLanes = ScenarioLane.allCases.filter { definition.coverage[$0] == .required }
         guard !requiredLanes.isEmpty else { return .needsReview }
-        if definition.schemaVersion == ScenarioDefinition.currentSchemaVersion
-            || definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+        if definition.schemaVersion == ScenarioDefinition.currentSchemaVersion,
+           !definition.assertions.contains(where: { assertion in
+               assertion.required && requiredLanes.contains(where: assertion.applies(to:))
+           }) { return .needsReview }
+        if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
            !requiredLanes.allSatisfy({ lane in
                definition.assertions.contains { $0.required && $0.applies(to: lane) }
            }) { return .needsReview }

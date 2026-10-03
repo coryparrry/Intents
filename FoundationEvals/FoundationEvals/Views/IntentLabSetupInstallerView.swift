@@ -4,6 +4,11 @@ import UniformTypeIdentifiers
 
 /// Static inspection and a file preview run before project build approval.
 struct IntentLabSetupInstallerView: View {
+    private enum SupportMode: String, CaseIterable {
+        case direct = "App Intent"
+        case siri = "Siri"
+    }
+
     @Bindable var coordinator: ScenarioCoordinator
     @State private var projectPaths: [String] = []
     @State private var projectPath = ""
@@ -14,7 +19,7 @@ struct IntentLabSetupInstallerView: View {
     @State private var appBundleID = ""
     @State private var intentIdentifier = ""
     @State private var declaredReadOnly = false
-    @State private var usesAppOwnedAdapter = false
+    @State private var supportMode: SupportMode = .direct
     @State private var packageSource = "https://github.com/coryparrry/Intents.git"
     @State private var packageRevision = ""
     @State private var choosingLocalPackage = false
@@ -28,7 +33,7 @@ struct IntentLabSetupInstallerView: View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Install Intent Lab test support", systemImage: "shippingbox.and.arrow.backward")
                 .font(.callout.weight(.semibold))
-            IntentLabHelp("Inspect the project and review every proposed file before applying. The package is linked only to a UI-test target. Building and running still require separate approval below.")
+            IntentLabHelp("Inspect the project and review every proposed file before applying. The package is linked only to a UI-test target. Building and running require separate approval in Connect app.")
             if projectPaths.count > 1 {
                 Picker("Owning project", selection: $projectPath) {
                     Text("Choose project").tag("")
@@ -61,44 +66,36 @@ struct IntentLabSetupInstallerView: View {
                 .buttonStyle(.borderless)
                 TextField("Application bundle ID", text: $appBundleID)
                     .textContentType(.none)
-                Toggle("Use my app's test adapter", isOn: $usesAppOwnedAdapter)
-                    .accessibilityIdentifier("Use app-owned test adapter")
-                if usesAppOwnedAdapter {
-                    IntentLabHelp("Use this path after your UI-test target implements the generated adapter's real preparation, outcome observation, and completion checks. Choose its bundled declaration, then approve the build and check the compiled integration.")
+                TextField("Known App Intent identifier", text: $intentIdentifier)
+                Toggle("This action is read-only", isOn: $declaredReadOnly)
+                IntentLabHelp("The generated Basic integration does not prepare an isolated dataset. Confirm this only for an action that does not mutate app or external state. For a mutating intent, add an isolated test configuration and app-owned preparation/observation adapter before running it.")
+                Picker("Test route", selection: $supportMode) {
+                    ForEach(SupportMode.allCases, id: \.self) { mode in Text(mode.rawValue).tag(mode) }
+                }
+                .pickerStyle(.segmented)
+                TextField("Package Git URL or local development path", text: $packageSource)
+                Button("Choose local package checkout…", systemImage: "folder") {
+                    choosingLocalPackage = true
+                }
+                if packageSource.hasPrefix("https://") {
+                    TextField("Exact published Git revision (40 hex characters)", text: $packageRevision)
+                }
+                IntentLabHelp("For a reusable installation, enter an exact published package revision. A local checkout is for development and will not work after that checkout moves or disappears.")
+                IntentLabHelp(supportMode == .direct
+                    ? "The generated entry point supports Basic direct checks. Behaviour checks require your app's own observation adapter."
+                    : "Siri support uses the XCTest-only package. Add a typed app-owned UI observer with a stable selector to the declaration, then implement preparation, observation, and completion in the adapter. Preview will give manual setup steps until that observer exists. The scaffold does not invent app results.")
+                HStack {
                     Button("Choose installed integration declaration…", systemImage: "checkmark.seal") {
                         choosingInstalledDeclaration = true
                     }
                     .disabled(uiTestTargetID.isEmpty || appBundleID.isEmpty || scheme.isEmpty)
-                } else {
-                    TextField("Known App Intent identifier", text: $intentIdentifier)
-                    Toggle("This action is read-only", isOn: $declaredReadOnly)
-                    IntentLabHelp("The generated Basic integration does not prepare an isolated dataset. Confirm this only for an action that does not mutate app or external state. For a mutating intent, implement the app-owned adapter first.")
-                    TextField("Package Git URL or local development path", text: $packageSource)
-                    Button("Choose local package checkout…", systemImage: "folder") {
-                        choosingLocalPackage = true
-                    }
-                    if packageSource.hasPrefix("https://") {
-                        TextField("Exact published Git revision (40 hex characters)", text: $packageRevision)
-                        if packageSource == IntentLabPackageRevisionManifest.packageURL.absoluteString,
-                           packageRevision.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            if let revision = IntentLabPackageRevisionManifest.verifiedRevision {
-                                Text("Built-in pinned revision: \(revision)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                            } else {
-                                Text("A verified default revision is not available yet. Enter an exact published revision.")
-                                    .font(.caption).foregroundStyle(.orange)
-                            }
-                        }
-                    }
-                    IntentLabHelp("The official package uses the shown pinned revision by default. Enter another exact published revision only when needed. A local checkout is for development and will not work after it moves.")
-                    IntentLabHelp("The generated entry point supports Basic direct checks. Behaviour and Siri checks require your app's own observation and completion adapter before the connection can qualify for those routes.")
-                    HStack {
-                        Button("Preview support changes") { preview() }
-                        if let plan, plan.supported {
-                            Button("Apply reviewed changes") { apply(plan) }
-                                .disabled(plan.changes.isEmpty)
-                        }
+                }
+                IntentLabHelp("For an app-owned adapter, choose the actual JSON bundled with the selected UI-test target. This also supports mutating intents after you add isolated test preparation. A compiled connection check is still required.")
+                HStack {
+                    Button("Preview support changes") { preview() }
+                    if let plan, plan.supported {
+                        Button("Apply reviewed changes") { apply(plan) }
+                            .disabled(plan.changes.isEmpty)
                     }
                 }
             }
@@ -124,9 +121,9 @@ struct IntentLabSetupInstallerView: View {
             plan = nil; declaredReadOnly = false; coordinator.invalidatePreflight()
         }
         .onChange(of: declaredReadOnly) { _, _ in plan = nil }
-        .onChange(of: usesAppOwnedAdapter) { _, _ in plan = nil }
         .onChange(of: packageSource) { _, _ in plan = nil }
         .onChange(of: packageRevision) { _, _ in plan = nil }
+        .onChange(of: supportMode) { _, _ in plan = nil; coordinator.invalidatePreflight() }
         .fileImporter(isPresented: $choosingLocalPackage, allowedContentTypes: [.folder]) { result in
             do {
                 let url = try result.get()
@@ -292,7 +289,8 @@ struct IntentLabSetupInstallerView: View {
                     .uiTestTargets.first { $0.name == reviewedPlan.targetName }
                 let productID = installedTarget.map { "\(projectPath)#\($0.id)" }
                 let applicationProductID = "\(projectPath)#\(appTargetID)"
-                if coordinator.draft.schemaVersion != ScenarioDefinition.reusableSchemaVersion {
+                if coordinator.draft.schemaVersion != ScenarioDefinition.reusableSchemaVersion
+                    && coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
                     coordinator.startReusableCheck()
                 }
                 coordinator.recordInstalledIntegration(
@@ -323,11 +321,8 @@ struct IntentLabSetupInstallerView: View {
             targetBundleIdentifier: appBundleID,
             testTargetName: target.name
         )
-        if declaration.hasFixtureContentObserver {
-            if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
-                coordinator.startStableCheck()
-            }
-        } else if coordinator.draft.schemaVersion != ScenarioDefinition.reusableSchemaVersion {
+        if coordinator.draft.schemaVersion != ScenarioDefinition.reusableSchemaVersion
+            && coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
             coordinator.startReusableCheck()
         }
         coordinator.recordInstalledIntegration(
@@ -339,9 +334,7 @@ struct IntentLabSetupInstallerView: View {
             applicationProductID: "\(projectPath)#\(appTargetID)",
             testProductID: "\(projectPath)#\(target.id)"
         )
-        status = declaration.hasFixtureContentObserver
-            ? "Actual declaration selected. Approve the build, then check its compiled receipt before running."
-            : "Read-only Basic declaration selected. It can capture direct checks; add an app-owned fixture observer to qualify a stable multi-route check."
+        status = "Actual declaration selected. Approve the build, then check its compiled receipt before running."
     }
 
     private func makeRequest() throws -> IntentLabInstallationRequest {
@@ -373,8 +366,8 @@ struct IntentLabSetupInstallerView: View {
             uiTestTargetID: uiTestTargetID.isEmpty ? nil : uiTestTargetID,
             packageURL: packageURL,
             packageRevision: packageSource.hasPrefix("https://") ? packageRevision : nil,
-            packageProduct: "IntentLabTesting",
-            consumerSource: Self.consumerSource,
+            packageProduct: supportMode == .siri ? "IntentLabCoreTesting" : "IntentLabTesting",
+            consumerSource: supportMode == .siri ? Self.siriConsumerSource : Self.consumerSource,
             declarationData: try declarationData()
         )
     }
@@ -395,8 +388,10 @@ struct IntentLabSetupInstallerView: View {
                 return ["id": field.name, "type": try jsonObject(field.type),
                         "path": try jsonObject(path)]
             } : []
-        var capabilities = ["environment-payload", "direct-intent-execution"]
-        if !projections.isEmpty { capabilities.append("direct-intent-output") }
+        var capabilities = supportMode == .siri
+            ? ["environment-payload", "preparation", "siri", "siri-completion", "accessible-result", "invocation-correlation"]
+            : ["environment-payload", "direct-intent-execution"]
+        if supportMode == .direct && !projections.isEmpty { capabilities.append("direct-intent-output") }
         let declaration: [String: Any] = [
             "schemaVersion": 1,
             "id": "\(appBundleID).intentlab",
@@ -407,7 +402,7 @@ struct IntentLabSetupInstallerView: View {
             "targetIdentity": targetName,
             "supportedHarnessProtocols": ["intent-lab-v2"],
             "actions": [["id": intentIdentifier, "parameters": parameters]],
-            "resultProjections": projections,
+            "resultProjections": supportMode == .siri ? [] : projections,
             "preparationOperations": ["none"],
             "observers": [],
             "isolation": ["kind": "readOnly"],
@@ -433,6 +428,23 @@ struct IntentLabSetupInstallerView: View {
 
             func testIntentLabConnection() throws {
                 try IntentLabScenarioRunner.checkConnection(testCase: self, integration: IntentLabBasicIntegration())
+            }
+        }
+        """
+
+    private static let siriConsumerSource = """
+        import XCTest
+        import IntentLabCoreTesting
+
+        @available(macOS 27.0, iOS 27.0, *)
+        @MainActor
+        final class IntentLabScenarioTests: XCTestCase {
+            func testIntentLabScenario() throws {
+                try IntentLabSiriScenarioRunner.run(testCase: self, integration: IntentLabAppAdapter())
+            }
+
+            func testIntentLabConnection() throws {
+                try IntentLabSiriScenarioRunner.checkConnection(testCase: self, integration: IntentLabAppAdapter())
             }
         }
         """

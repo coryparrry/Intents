@@ -64,7 +64,8 @@ struct SuiteCasesView: View {
                 .padding(.horizontal, 12).padding(.bottom, 10)
             Divider()
             VStack(spacing: 2) {
-                ForEach(visibleCases) { evaluationCase in
+                ForEach(Array(visibleCases.enumerated()), id: \.element.id) { entry in
+                    let evaluationCase = entry.element
                     let title = evaluationCase.name.isEmpty ? "Untitled case" : evaluationCase.name
                     Button { selectedCaseID = evaluationCase.id } label: {
                         SuiteCaseRow(
@@ -74,7 +75,7 @@ struct SuiteCasesView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(title)
+                    .accessibilityLabel(caseAccessibilityLabel(title: title, prompt: evaluationCase.prompt, position: entry.offset + 1))
                     .accessibilityIdentifier("Select case \(evaluationCase.id)")
                     .accessibilityAddTraits(selectedCaseID == evaluationCase.id ? .isSelected : [])
                 }
@@ -103,6 +104,13 @@ struct SuiteCasesView: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
         .workspaceSurface()
+    }
+
+    private func caseAccessibilityLabel(title: String, prompt: String, position: Int) -> String {
+        let excerpt = prompt.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return excerpt.isEmpty
+            ? "Case \(position): \(title)"
+            : "Case \(position): \(title). \(String(excerpt.prefix(80)))"
     }
 
     private func addCase() {

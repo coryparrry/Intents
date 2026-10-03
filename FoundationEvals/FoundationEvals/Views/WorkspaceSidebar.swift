@@ -54,16 +54,28 @@ struct WorkspaceSidebar: View {
     var body: some View {
         SidebarNavigationList(selection: destination) {
             Section {
-                Label("Overview", systemImage: "square.grid.2x2")
+                Label { Text("Overview") } icon: { WorkspaceIcon(symbol: "square.grid.2x2", size: 18) }
                     .tag(WorkspaceDestination.overview)
-                Label("Intent Lab", systemImage: "waveform.badge.magnifyingglass")
+                Label {
+                    HStack(spacing: 6) {
+                        Text("Intent Lab")
+                        Text("Beta")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.primary.opacity(0.06), in: Capsule())
+                    }
+                } icon: { WorkspaceIcon(symbol: "intent-lab", size: 18) }
+                    .accessibilityElement(children: .combine)
                     .tag(WorkspaceDestination.intentLab)
             }
 
             Section("Suites") {
                 ForEach(store.suiteRecords.filter { $0.archivedAt == nil }) { suite in
-                    Label(suite.id == store.selectedSuiteID ? store.draftSuite.name : suite.name,
-                          systemImage: "checklist")
+                    Label {
+                        Text(suite.id == store.selectedSuiteID ? store.draftSuite.name : suite.name)
+                    } icon: { WorkspaceIcon(symbol: "checklist", size: 18) }
                         .lineLimit(1)
                         .tag(WorkspaceDestination.suite(suite.id))
                         .contextMenu {
@@ -151,7 +163,7 @@ struct WorkspaceSidebar: View {
             Button("Manage projects…", systemImage: "folder.badge.gearshape") { isManagingWorkspace = true }
         } label: {
             HStack(spacing: 9) {
-                WorkspaceIconTile(symbol: "square.stack.3d.up.fill", tint: .accentColor, size: 28)
+                WorkspaceIcon(symbol: "square.stack.3d.up.fill", size: 28, presentation: .header)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Project").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
                     Text(store.selectedProject.name)

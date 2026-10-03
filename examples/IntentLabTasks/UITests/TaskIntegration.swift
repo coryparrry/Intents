@@ -8,6 +8,7 @@ import XCTest
 final class TaskIntegration: IntentLabIntegration {
     static let testingBundleIdentifier = "com.example.IntentLabTasks.integration-tests"
     static let preparationOperation = "prepare-task-fixture"
+    static let cleanupOperation = "cleanup-task-fixture"
     static let capabilities: Set<String> = [
         "environment-payload",
         "direct-intent-execution",
@@ -20,12 +21,15 @@ final class TaskIntegration: IntentLabIntegration {
     ]
 
     private let faultMode: String
+    private let forceCleanupFailure: Bool
+    private(set) var completedCleanups = 0
     private var activeBundleIdentifier: String?
     private var activeContext: String?
     private var baselineReceiptByContext: [String: String] = [:]
 
-    init(faultMode: String = "none") {
+    init(faultMode: String = "none", forceCleanupFailure: Bool = false) {
         self.faultMode = faultMode
+        self.forceCleanupFailure = forceCleanupFailure
     }
 
     var supportedCapabilities: Set<String> { Self.capabilities }
@@ -64,6 +68,28 @@ final class TaskIntegration: IntentLabIntegration {
         // own declaration-backed baseline observation after prepare returns.
         baselineReceiptByContext[context] = ""
         return application
+    }
+
+    func cleanup(bundleIdentifier: String, context: String, operationID: String) throws {
+        guard operationID == Self.cleanupOperation else {
+            throw IntentLabIntegrationError.unsupportedCleanup(operationID)
+        }
+        if forceCleanupFailure { throw TaskIntegrationError.forcedCleanupFailure }
+        // Re-seed through the consumer's test-only launch path, then verify
+        // persisted state through the independent entity query.
+        let application = try prepare(
+            bundleIdentifier: bundleIdentifier,
+            context: context,
+            operationID: Self.preparationOperation
+        )
+        defer { application.terminate() }
+        let state = try readTaskObservations()
+        guard state["task-001.isComplete"] == .boolean(false),
+              state["task-002.isComplete"] == .boolean(false),
+              state["actionReceiptID"] == .string("") else {
+            throw TaskIntegrationError.invalidCleanedDataset
+        }
+        completedCleanups += 1
     }
 
     func observe(application: XCUIApplication) throws -> [String: IntentLabValue] {
@@ -138,6 +164,8 @@ private enum TaskIntegrationError: LocalizedError {
     case emptyContext
     case appDidNotLaunch
     case invalidPreparedDataset
+    case invalidCleanedDataset
+    case forcedCleanupFailure
     case notPrepared
     case missingDeclaration
     case missingObservation(String)
@@ -149,6 +177,8 @@ private enum TaskIntegrationError: LocalizedError {
         case .emptyContext: "Task preparation requires a fresh invocation context."
         case .appDidNotLaunch: "The isolated task app did not reach its task list."
         case .invalidPreparedDataset: "Task preparation did not restore both expected incomplete records."
+        case .invalidCleanedDataset: "Task cleanup did not restore the persisted incomplete records and empty receipt."
+        case .forcedCleanupFailure: "The injected task fixture cleanup failure fired."
         case .notPrepared: "Prepare the task integration before querying app state."
         case .missingDeclaration: "The UI-test bundle is missing IntentLabIntegration.json."
         case .missingObservation(let key): "Task query did not return required observation \(key)."

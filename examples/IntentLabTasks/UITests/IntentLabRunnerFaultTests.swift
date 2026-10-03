@@ -68,9 +68,10 @@ final class IntentLabRunnerFaultTests: XCTestCase {
 
     func testCorrectPersistentMutationQualifiesForRelease() throws {
         let (scenario, invocation) = try makeBehaviourScenario()
+        let integration = TaskIntegration()
         let evidence = try IntentLabScenarioRunner.run(
             testCase: self,
-            integration: TaskIntegration(),
+            integration: integration,
             scenario: scenario,
             invocation: invocation
         )
@@ -79,7 +80,24 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         XCTAssertEqual(result.observations["task-001.isComplete"], .boolean(true))
         XCTAssertEqual(result.observations["task-002.isComplete"], .boolean(false))
         XCTAssertEqual(result.outcome, .passed)
+        XCTAssertEqual(integration.completedCleanups, 1)
         XCTAssertTrue(qualifiesForRelease(scenario: scenario, lane: result))
+    }
+
+    func testCleanupFailureInvalidatesOtherwisePassingDirectEvidence() throws {
+        let (scenario, invocation) = try makeBehaviourScenario()
+        let evidence = try IntentLabScenarioRunner.run(
+            testCase: self,
+            integration: TaskIntegration(forceCleanupFailure: true),
+            scenario: scenario,
+            invocation: invocation
+        )
+
+        let result = try XCTUnwrap(evidence.results.first { $0.lane == .intentIntegration })
+        XCTAssertEqual(result.executionStatus, .invalidEvidence)
+        XCTAssertEqual(result.outcome, .notObserved)
+        XCTAssertTrue(result.diagnostic?.contains("cleanup failed") ?? false)
+        XCTAssertFalse(qualifiesForRelease(scenario: scenario, lane: result))
     }
 
     func testDirectBasicCheckVerifiesIntentOutputWithoutClaimingPersistence() throws {
@@ -163,7 +181,7 @@ final class IntentLabRunnerFaultTests: XCTestCase {
             "definitionDigest": definitionDigest,
             "target": ["bundleIdentifier": targetBundleIdentifier],
             "goal": ["requestText": "Complete Buy milk in Intent Lab Tasks", "languageCode": "en"],
-            "fixture": ["id": "task-fixture", "version": "1", "digest": String(repeating: "d", count: 64), "preparationOperation": TaskIntegration.preparationOperation, "cleanupOperation": "prepare-task-fixture"],
+            "fixture": ["id": "task-fixture", "version": "1", "digest": String(repeating: "d", count: 64), "preparationOperation": TaskIntegration.preparationOperation, "cleanupOperation": TaskIntegration.cleanupOperation],
             "directControl": [
                 "intentIdentifier": "CompleteTaskIntent",
                 "parameters": [[

@@ -14,7 +14,7 @@ struct IntentLabView: View {
                 switch section {
                 case .setup:
                     ScrollView {
-                        AppleTestConnectionView(coordinator: coordinator).workspacePage()
+                        AppleTestConnectionView(coordinator: coordinator, onContinue: { section = .scenario }).workspacePage()
                     }
                     .frame(minHeight: 0, maxHeight: .infinity)
                 case .scenario:
@@ -25,12 +25,13 @@ struct IntentLabView: View {
                 case .collections:
                     ScenarioCollectionView(coordinator: coordinator)
                 case .results:
-                    ScenarioReportView(coordinator: coordinator, store: store)
+                    ScenarioReportView(coordinator: coordinator, store: store, onSetup: { section = .setup })
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
         }
         .background(WorkspaceStyle.canvas)
+        .disclosureGroupStyle(IntentLabDisclosureStyle())
         .navigationTitle("Intent Lab")
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -48,12 +49,12 @@ struct IntentLabView: View {
                         .labelStyle(.titleAndIcon)
                         .help("Cancel the running scenario")
                 } else {
-                    Button { Task { await coordinator.run() } } label: {
-                        Label("Run scenario", systemImage: "play.fill").labelStyle(.titleAndIcon)
+                    Button { section = .results; Task { await coordinator.run() } } label: {
+                        Label("Run test", systemImage: "play.fill").labelStyle(.titleAndIcon)
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(coordinator.preflight?.isReady != true)
-                    .help(coordinator.preflight?.isReady == true ? "Run the saved scenario" : "Finish setup to run a scenario")
+                    .help(coordinator.preflight?.isReady == true ? "Save and run this test" : "Finish setup to run a test")
                 }
             }
         }
@@ -76,8 +77,8 @@ struct IntentLabView: View {
 }
 
 private enum IntentLabSection: String, CaseIterable, Identifiable {
-    case setup = "Setup"
-    case scenario = "Scenario"
+    case setup = "Connect app"
+    case scenario = "Create test"
     case collections = "Collections"
     case results = "Results"
 
@@ -89,12 +90,12 @@ private struct IntentLabHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            WorkspaceIconTile(symbol: "waveform.badge.magnifyingglass", tint: .indigo, size: 40)
+            WorkspaceIcon(symbol: "intent-lab", size: 40, presentation: .header)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Intent Lab")
                     .font(.system(size: 22, weight: .bold)).tracking(-0.2)
                     .accessibilityIdentifier("Intent Lab page title")
-                Text("Check an app feature, App Intent, or Siri request, then inspect each route and retest the same requirement after a fix.")
+                Text("Connect your app, choose an action, and check that it works.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -183,6 +184,29 @@ struct ScenarioOutcomeBadge: View {
         case .failed: WorkspaceStyle.failure
         case .needsReview: WorkspaceStyle.warning
         case .notObserved, .notApplicable: .secondary
+        }
+    }
+}
+
+/// Makes the full heading a keyboard-accessible toggle, with a clear expanded state.
+private struct IntentLabDisclosureStyle: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { configuration.isExpanded.toggle() } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        .frame(width: 12)
+                        .accessibilityHidden(true)
+                    configuration.label
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
+            if configuration.isExpanded { configuration.content }
         }
     }
 }

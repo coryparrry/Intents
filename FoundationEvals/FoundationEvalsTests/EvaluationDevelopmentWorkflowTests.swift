@@ -94,6 +94,98 @@ struct EvaluationDevelopmentWorkflowTests {
     }
 
     @MainActor
+    @Test func failedSuiteSwitchRestoresPendingCompletedRunsBeforeRetry() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let failRunWrites = true
+        let producer = EvaluationStore(
+            supportDirectory: directory,
+            runWriter: { data, url in
+                if failRunWrites { throw CocoaError(.fileWriteNoPermission) }
+                try data.write(to: url, options: .atomic)
+            }
+        )
+        let projectID = producer.selectedProjectID
+        let sourceSuiteID = producer.selectedSuiteID
+        let destinationSuiteID = try producer.createSuite(name: "Pending destination")
+        producer.draftSuite.scoringMode = .exactMatch
+        producer.draftSuite.cases = [EvaluationCase(name: "Feature", prompt: "ready", expected: "READY")]
+        #expect(producer.saveSuite())
+
+        let runID = UUID()
+        await #expect(throws: EvaluationStoreError.self) {
+            try await producer.runFeatureAdapter(
+                id: runID,
+                expectedRevision: producer.suiteRevision,
+                adapter: ClosureFeatureAdapter(displayName: "Saved response") { _ in "READY" }
+            )
+        }
+        let destinationDirectory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: projectID, suiteID: destinationSuiteID
+        )
+        let pendingMarkerURL = destinationDirectory.appending(path: "pending-completed-runs.json")
+        let destinationRunURL = destinationDirectory
+            .appending(path: "Runs", directoryHint: .isDirectory)
+            .appending(path: "\(runID.uuidString).json")
+        #expect(FileManager.default.fileExists(atPath: pendingMarkerURL.path))
+        #expect(try Data(contentsOf: pendingMarkerURL).isEmpty == false)
+        #expect(!FileManager.default.fileExists(atPath: destinationRunURL.path))
+
+        var catalogWithSourceSelected = producer.workspace
+        catalogWithSourceSelected.selectedProjectID = projectID
+        let projectIndex = try #require(catalogWithSourceSelected.projects.firstIndex { $0.id == projectID })
+        catalogWithSourceSelected.projects[projectIndex].selectedSuiteID = sourceSuiteID
+        try EvaluationWorkspacePersistence.save(catalogWithSourceSelected, in: directory)
+
+        let catalogURL = directory.appending(path: EvaluationWorkspacePersistence.catalogFilename)
+        var failNextCatalogWrite = false
+        var catalogBeforeFailure: Data?
+        let store = EvaluationStore(
+            supportDirectory: directory,
+            suiteLocalStateWriter: { data, url in
+                if failNextCatalogWrite {
+                    failNextCatalogWrite = false
+                    catalogBeforeFailure = try Data(contentsOf: catalogURL)
+                    try FileManager.default.removeItem(at: catalogURL)
+                    try FileManager.default.createDirectory(at: catalogURL, withIntermediateDirectories: true)
+                }
+                try data.write(to: url, options: .atomic)
+            }
+        )
+        #expect(store.selectedSuiteID == sourceSuiteID)
+        #expect(!store.hasUnsavedCompletedRun)
+        let sourceDirectory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: projectID, suiteID: sourceSuiteID
+        )
+        let sourceRunURL = sourceDirectory
+            .appending(path: "Runs", directoryHint: .isDirectory)
+            .appending(path: "\(runID.uuidString).json")
+        failNextCatalogWrite = true
+        #expect(throws: EvaluationStoreError.self) {
+            try store.switchSuite(id: destinationSuiteID)
+        }
+        #expect(store.selectedSuiteID == sourceSuiteID)
+        #expect(!store.hasUnsavedCompletedRun)
+        store.retryPendingRunSave()
+        #expect(!store.hasUnsavedCompletedRun)
+        #expect(!FileManager.default.fileExists(atPath: sourceRunURL.path))
+        #expect(!FileManager.default.fileExists(atPath: destinationRunURL.path))
+        #expect(FileManager.default.fileExists(atPath: pendingMarkerURL.path))
+
+        let originalCatalogData = try #require(catalogBeforeFailure)
+        try FileManager.default.removeItem(at: catalogURL)
+        try originalCatalogData.write(to: catalogURL, options: .atomic)
+        try store.switchSuite(id: destinationSuiteID)
+        #expect(store.hasUnsavedCompletedRun)
+        store.retryPendingRunSave()
+
+        #expect(!store.hasUnsavedCompletedRun)
+        #expect(FileManager.default.fileExists(atPath: destinationRunURL.path))
+        #expect(!FileManager.default.fileExists(atPath: pendingMarkerURL.path))
+        #expect(!FileManager.default.fileExists(atPath: sourceRunURL.path))
+    }
+
+    @MainActor
     @Test func failedArchiveProjectSwitchLeavesTheCurrentProjectActive() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

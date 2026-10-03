@@ -62,39 +62,6 @@ extension View {
     }
 }
 
-/// A rounded, colour-filled symbol tile in the style of System Settings.
-struct WorkspaceIconTile: View {
-    let symbol: String
-    var tint: Color = .accentColor
-    var size: CGFloat = 22
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: size * 0.5, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(tint.gradient, in: .rect(cornerRadius: size * 0.27))
-            .accessibilityHidden(true)
-    }
-}
-
-/// A soft, tinted symbol badge for section headings.
-struct WorkspaceSymbolBadge: View {
-    let symbol: String
-    var tint: Color = .accentColor
-    var size: CGFloat = 28
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: size * 0.46, weight: .semibold))
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(tint)
-            .frame(width: size, height: size)
-            .background(tint.opacity(0.12), in: .rect(cornerRadius: size * 0.27))
-            .accessibilityHidden(true)
-    }
-}
-
 struct WorkspacePill: View {
     let title: String
     let symbol: String?

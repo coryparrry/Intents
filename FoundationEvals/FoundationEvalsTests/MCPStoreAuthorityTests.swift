@@ -4,6 +4,37 @@ import Testing
 
 struct MCPStoreAuthorityTests {
     @MainActor
+    @Test func scenarioRunPaginationRejectsMalformedCursorAndLimit() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let authority = MCPStoreAuthority.make(store: store)
+
+        for cursor in ["bad", "-1", "1"] {
+            let response = await authority.call(.listScenarioRuns(.init(
+                scenarioID: nil, cursor: cursor, limit: 20
+            )))
+            #expect(response.isError)
+            #expect(response.structuredContent.objectValue?["error"]?.objectValue?["code"] == .string("invalid_cursor"))
+        }
+        for limit in [0, 51] {
+            let response = await authority.call(.listScenarioRuns(.init(
+                scenarioID: nil, cursor: nil, limit: limit
+            )))
+            #expect(response.isError)
+            #expect(throws: MCPToolInputError.self) {
+                try MCPToolCatalog.parse(name: "eval_list_scenario_runs", arguments: .object([
+                    "limit": .integer(Int64(limit))
+                ]))
+            }
+        }
+        let valid = await authority.call(.listScenarioRuns(.init(
+            scenarioID: nil, cursor: "0", limit: 50
+        )))
+        #expect(!valid.isError)
+    }
+
+    @MainActor
     @Test func coordinatorVersionsEditedDefinitionsAndInvalidatesPreflight() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

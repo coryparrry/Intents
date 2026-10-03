@@ -4,16 +4,30 @@ import UniformTypeIdentifiers
 struct AppleTestConnectionView: View {
     @Bindable var coordinator: ScenarioCoordinator
     @State private var showingProjectImporter = false
-    @State private var showingBuildApproval = false
+    @State private var showingConnectionApproval = false
 
-    @State private var page: IntentConnectionPage = .connection
+    var onContinue: () -> Void = {}
 
     var body: some View {
-        WorkspacePaneLayout(heading: "Intent setup", selection: $page) {
-            switch page {
-            case .connection: connectionCard
-            case .advanced: advancedConfiguration
-            case .harness: harnessGuidance
+        VStack(alignment: .leading, spacing: 20) {
+            connectionCard
+            if selectedProjectName != nil {
+                DisclosureGroup("Add or update test support") {
+                    IntentLabSetupInstallerView(coordinator: coordinator)
+                        .padding(.top, 12)
+                }
+            }
+            DisclosureGroup("Technical details") {
+                VStack(spacing: 16) {
+                    advancedConfiguration
+                    harnessGuidance
+                }.padding(.top, 12)
+            }
+            DisclosureGroup("About App Intents") {
+                VStack(alignment: .leading, spacing: 8) {
+                    IntentLabHelp("An intent is an action your app exposes to Shortcuts and Siri, such as opening a note. Tests give the action inputs and check what happened. Your app needs Intent Lab test support before it can run here.")
+                    Link("Apple’s guide to App Intents", destination: URL(string: "https://developer.apple.com/documentation/appintents")!)
+                }.padding(.top, 8)
             }
         }
         .fileImporter(
@@ -24,9 +38,10 @@ struct AppleTestConnectionView: View {
             do {
                 let url = try result.get().first
                 guard let url else { return }
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 coordinator.selectContainer(url)
+                if ["xcodeproj", "xcworkspace"].contains(url.pathExtension.lowercased()) {
+                    showingConnectionApproval = true
+                }
             } catch {
                 coordinator.notice = error.localizedDescription
             }
@@ -34,15 +49,15 @@ struct AppleTestConnectionView: View {
         .fileDialogMessage("Choose the app's Xcode project or workspace.")
         .fileDialogConfirmationLabel("Choose Project")
         .confirmationDialog(
-            "Allow Xcode to build this project?",
-            isPresented: $showingBuildApproval
+            "Connect this app?",
+            isPresented: $showingConnectionApproval
         ) {
-            Button("Approve and Inspect") {
+            Button("Connect app") {
                 Task { await coordinator.approveBuildAndDiscover() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Xcode builds can execute project scripts and resolve package dependencies. Approval lasts for this app session and is not restored after relaunch.")
+            Text("We’ll ask Xcode to find your app and test settings. Connecting also allows Xcode to run this project’s build scripts and resolve dependencies when needed. Approval lasts until you quit Intents.")
         }
         .onChange(of: coordinator.configuration.destinationIdentifier) { _, identifier in
             Task { await coordinator.selectDevice(identifier) }
@@ -55,32 +70,33 @@ struct AppleTestConnectionView: View {
             subtitle: "Choose the app project and an available Mac or paired iPhone. Intent Lab discovers the Xcode details for you."
         ) {
             VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("New to App Intents?").font(.callout.weight(.semibold))
-                    IntentLabHelp("Think of an intent as one action, such as ‘open a note’. A parameter tells it which note. An entity is an item from your app, like that note. An App Shortcut makes an intent available as a ready-made shortcut with phrases people can use.")
-                    IntentLabHelp("Start by connecting your app below. In Scenario, describe a request and the result you expect, then add checks for that result. Running requires an app with App Intents and Intent Lab test support; choosing a project does not add these for you.")
-                    Link("Apple’s guide to App Intents", destination: URL(string: "https://developer.apple.com/documentation/appintents")!)
-                        .font(.caption)
-                }
-
                 connectionField(
-                    title: "Choose Xcode project",
+                    title: "App project",
                     detail: selectedProjectName ?? "Select the app's .xcodeproj or .xcworkspace."
                 ) {
-                    Button(selectedProjectName == nil ? "Choose Project…" : "Change…", systemImage: "folder") {
-                        showingProjectImporter = true
+                    HStack(spacing: 12) {
+                        Button(selectedProjectName == nil ? "Choose Project…" : "Change…", systemImage: "folder") {
+                            showingProjectImporter = true
+                        }
+                        .disabled(coordinator.isDiscoveringConnection || coordinator.isVerifyingIntegration || coordinator.isRunning)
+                        if coordinator.isDiscoveringConnection {
+                            ProgressView().controlSize(.small)
+                            Text("Finding app and test settings…").foregroundStyle(.secondary)
+                        } else if coordinator.projectTrusted {
+                            Label("Project connected", systemImage: "checkmark.circle")
+                                .foregroundStyle(.secondary)
+                        } else if selectedProjectName != nil {
+                            Button("Connect app…") { showingConnectionApproval = true }
+                                .help("Allow this saved project to connect for the current session")
+                        }
                     }
-                    .disabled(coordinator.isDiscoveringConnection)
-                }
 
-                if selectedProjectName != nil {
-                    IntentLabSetupInstallerView(coordinator: coordinator)
                 }
 
                 DeveloperConnectionBanner()
 
                 connectionField(
-                    title: "Choose run destination",
+                    title: "Run on",
                     detail: selectedDeviceDetail
                 ) {
                     HStack(spacing: 8) {
@@ -107,20 +123,8 @@ struct AppleTestConnectionView: View {
                     }
                 }
 
-                connectionField(
-                    title: "Approve Build and Run",
-                    detail: approvalDetail
-                ) {
-                    Button(
-                        coordinator.isDiscoveringConnection ? "Inspecting…" : "Approve Build and Run",
-                        systemImage: "checkmark.shield"
-                    ) {
-                        showingBuildApproval = true
-                    }
-                    .disabled(selectedProjectName == nil || coordinator.isDiscoveringConnection)
-                }
-
-                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+                    || coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
                     connectionField(
                         title: "Check installed support",
                         detail: coordinator.verifiedIntegrationSummary
@@ -138,16 +142,6 @@ struct AppleTestConnectionView: View {
                     }
                 }
 
-                connectionField(
-                    title: "Run",
-                    detail: runDetail
-                ) {
-                    Image(systemName: coordinator.preflight?.isReady == true ? "play.circle.fill" : "play.circle")
-                        .font(.title2)
-                        .foregroundStyle(coordinator.preflight?.isReady == true ? Color.accentColor : .secondary)
-                        .accessibilityLabel(coordinator.preflight?.isReady == true ? "Ready to run" : "Complete setup before running")
-                }
-
                 if let discovery = coordinator.connectionDiscovery {
                     discoveredChoices(discovery)
                 }
@@ -155,6 +149,14 @@ struct AppleTestConnectionView: View {
                 connectionStatus
 
                 recoveryControls
+
+                HStack {
+                    Text("Next, describe the action you want to test.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Create test", systemImage: "arrow.right", action: onContinue)
+                        .buttonStyle(.borderedProminent)
+                }
             }
         }
     }
@@ -211,7 +213,7 @@ struct AppleTestConnectionView: View {
                         set: { coordinator.configuration.testBundleIdentifier = $0; coordinator.invalidatePreflight() }
                     ))
                 }
-                advancedRow("Destination identifier", help: "The unique ID of the Mac or paired iPhone used for this run. Choosing a destination in Connection fills this in.") {
+                advancedRow("Destination identifier", help: "The unique ID of the Mac or paired iPhone used for this run. Choosing a device in Connect app fills this in.") {
                     TextField("000081…", text: Binding(
                         get: { coordinator.configuration.destinationIdentifier },
                         set: { coordinator.configuration.destinationIdentifier = $0; coordinator.invalidatePreflight() }
@@ -304,17 +306,20 @@ struct AppleTestConnectionView: View {
         if let report = coordinator.preflight {
             VStack(alignment: .leading, spacing: 8) {
                 Label(
-                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "selected destination")" : "Connection needs attention",
+                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "selected destination")" : "Finish setup before running",
                     systemImage: report.isReady ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
                 )
                 .foregroundStyle(report.isReady ? .green : .orange)
                 .font(.callout.weight(.semibold))
                 if !report.isReady {
-                    ForEach(report.checks.filter { $0.state != .ready }) { check in
-                        Text("• \(check.detail)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    DisclosureGroup("See what needs attention") {
+                        ForEach(report.checks.filter { $0.state != .ready }) { check in
+                            Text(check.detail)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
+
                 }
             }
             .padding(12)
@@ -377,49 +382,13 @@ struct AppleTestConnectionView: View {
 
     private var selectedDeviceName: String? { selectedDevice?.name }
 
-    private var runDetail: String {
-        guard let selectedDevice else {
-            return "Choose an available Mac or paired iPhone before running a scenario."
-        }
-        if selectedDevice.platform == .macOS {
-            return "Keep this Mac available and approve any intent or Siri access prompt. Then use Run scenario in the toolbar."
-        }
-        return "Keep the iPhone unlocked and approve any intent or Siri access prompt on the device. Then use Run scenario in the toolbar."
-    }
-
     private var selectedDeviceDetail: String {
         guard !coordinator.configuration.destinationIdentifier.isEmpty else { return "Select an available Mac or paired physical iPhone." }
         return selectedDeviceName ?? "The saved destination is not currently available."
     }
 
-    private var approvalDetail: String {
-        if coordinator.projectTrusted { return "Approved for this app session; discovered settings are shown below." }
-        return "Required because Xcode builds can execute project scripts."
-    }
-
     private var commandPreview: String {
         let kind = coordinator.configuration.isWorkspace ? "-workspace" : "-project"
         return "xcodebuild \(kind) \"\(coordinator.configuration.containerPath)\" -scheme \"\(coordinator.configuration.scheme)\" -destination \"id=\(coordinator.configuration.destinationIdentifier)\" build-for-testing"
-    }
-}
-
-private enum IntentConnectionPage: String, WorkspacePane {
-    case connection, advanced, harness
-    var id: Self { self }
-    var title: String {
-        switch self { case .connection: "Connection"; case .advanced: "Advanced"; case .harness: "Test support" }
-    }
-    var subtitle: String {
-        switch self {
-        case .connection: "App project & run destination"
-        case .advanced: "Xcode & device configuration"
-        case .harness: "Required test support & evidence"
-        }
-    }
-    var symbol: String {
-        switch self { case .connection: "laptopcomputer.and.iphone"; case .advanced: "slider.horizontal.3"; case .harness: "checkmark.shield" }
-    }
-    var tint: Color {
-        switch self { case .connection: .blue; case .advanced: .gray; case .harness: .green }
     }
 }

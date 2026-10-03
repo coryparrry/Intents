@@ -4,10 +4,9 @@ protocol WorkspacePane: CaseIterable, Identifiable, Hashable {
     var title: String { get }
     var subtitle: String { get }
     var symbol: String { get }
-    var tint: Color { get }
 }
 
-/// A System Settings–style pane list beside the selected pane, collapsing to a menu when narrow.
+/// Section navigation beside the selected pane, collapsing to a menu when narrow.
 struct WorkspacePaneLayout<Page: WorkspacePane, Content: View>: View {
     let heading: String
     @Binding var selection: Page
@@ -26,13 +25,12 @@ struct WorkspacePaneLayout<Page: WorkspacePane, Content: View>: View {
                 Picker(heading, selection: $selection) {
                     ForEach(Array(Page.allCases)) { page in Text(page.title).tag(page) }
                 }
-                .pickerStyle(.menu)
+                .pickerStyle(.menu).fixedSize()
                 .accessibilityIdentifier(heading)
-                .fixedSize()
             }
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 12) {
-                    WorkspaceIconTile(symbol: selection.symbol, tint: selection.tint, size: 34)
+                    WorkspaceIcon(symbol: selection.symbol, size: 34, presentation: .header)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(selection.title).font(.title2.weight(.semibold))
                         Text(selection.subtitle).font(.callout).foregroundStyle(.secondary)
@@ -52,7 +50,7 @@ struct WorkspacePaneLayout<Page: WorkspacePane, Content: View>: View {
                 .padding(.horizontal, 8).padding(.bottom, 6)
             ForEach(Array(Page.allCases)) { page in
                 Button { selection = page } label: {
-                    WorkspacePaneRow(title: page.title, symbol: page.symbol, tint: page.tint,
+                    WorkspacePaneRow(title: page.title, symbol: page.symbol,
                                      isSelected: page == selection)
                 }
                 .buttonStyle(.plain)
@@ -66,13 +64,13 @@ struct WorkspacePaneLayout<Page: WorkspacePane, Content: View>: View {
 private struct WorkspacePaneRow: View {
     let title: String
     let symbol: String
-    let tint: Color
     let isSelected: Bool
     @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 10) {
-            WorkspaceIconTile(symbol: symbol, tint: tint, size: 22)
+            WorkspaceIcon(symbol: symbol, size: 22)
+                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
             Text(title)
                 .font(.callout.weight(isSelected ? .semibold : .regular))
                 .foregroundStyle(.primary)

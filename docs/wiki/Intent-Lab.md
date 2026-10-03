@@ -56,6 +56,8 @@ A local package checkout is for development. The integration can stop working if
 
 The generated entry point handles basic, read-only, direct checks through the reusable v2 path. It does not claim v3 fixture provenance or qualify a stable multi-route comparison. Setup also generates `IntentLabAppAdapter.swift` as a starting point for behavior and Siri checks. Its preparation and observation methods throw until you implement app-owned operations, and it declares no capabilities; it cannot manufacture a passing business observation. Replace `IntentLabBasicIntegration()` in the entry point only after the adapter reads real app state, exposes a `summarySourceContentDigest` or `intentlab.fixtureDigest` observer, and checks attempt completion. Selecting an installed declaration with that observer opens the stable v3 path. A data-changing action also needs isolated data and app-side enforcement. If an installed declaration advertises state or Siri support while the entry point still uses Basic, setup supplies manual steps instead of claiming the connection works.
 
+For a v2 mutating check, declare a compiled `cleanupOperations` allowlist and implement cleanup to restore the isolated fixture and verify its postcondition after each returned attempt. A cleanup error invalidates the attempt's evidence. The runner skips cleanup after an unresolved timeout, so the device remains quarantined until host recovery.
+
 ## Create a test
 
 1. Open **Create test** and select **New test**.

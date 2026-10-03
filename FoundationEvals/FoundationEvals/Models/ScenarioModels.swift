@@ -132,7 +132,6 @@ struct ScenarioSubjectImplementation: Codable, Equatable, Sendable {
     var promptDigest: String?
     var modelRevision: String?
 }
-
 enum ScenarioPrimitiveType: String, Codable, CaseIterable, Sendable {
     case string
     case boolean
@@ -934,6 +933,11 @@ struct ScenarioEvidenceEnvelope: Codable, Equatable, Sendable {
     var negotiatedCapabilities: [String]? = nil
 }
 
+enum ScenarioRunAcceptanceStatus: String, Codable, Sendable {
+    case pending
+    case accepted
+}
+
 struct ScenarioRun: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var scenarioID: UUID
@@ -958,6 +962,8 @@ struct ScenarioRun: Codable, Equatable, Identifiable, Sendable {
     var integration: ScenarioIntegrationIdentity? = nil
     var runnerPackageVersion: String? = nil
     var negotiatedCapabilities: [String]? = nil
+    /// Derived from a durable receipt when loading; absent on archived version 1 runs.
+    var acceptanceStatus: ScenarioRunAcceptanceStatus? = nil
     /// v3 execution provenance; absent on immutable legacy evidence.
     var scenarioSchemaVersion: Int? = nil
     var testContractDigest: String? = nil

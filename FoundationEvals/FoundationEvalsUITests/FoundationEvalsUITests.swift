@@ -21,27 +21,27 @@ final class FoundationEvalsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Connect an app"].exists)
         XCTAssertTrue(app.buttons["Choose Project…"].exists)
 
-        app.radioButtons["Scenario"].click()
-        XCTAssertTrue(app.staticTexts["Define the expected outcome"].exists)
-        XCTAssertTrue(app.buttons["Run scenario"].exists)
+        app.radioButtons["Create test"].click()
+        XCTAssertTrue(app.staticTexts["What should happen?"].exists)
+        XCTAssertTrue(app.buttons["Run test"].exists)
 
         app.radioButtons["Results"].click()
-        XCTAssertTrue(app.staticTexts["No scenario evidence"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["No results yet"].waitForExistence(timeout: 3))
         let title = app.staticTexts["Intent Lab page title"]
         XCTAssertGreaterThan(title.frame.minY - app.windows.firstMatch.frame.minY, 45,
                              "The page header must remain below the window toolbar")
         XCTAssertLessThan(title.frame.minY - app.windows.firstMatch.frame.minY, 120,
                           "Results must keep the page header at the top of the window")
-        XCTAssertLessThan(app.staticTexts["No scenario evidence"].frame.minY - title.frame.minY, 180,
+        XCTAssertLessThan(app.staticTexts["No results yet"].frame.minY - title.frame.minY, 180,
                           "The empty state must sit directly beneath page navigation")
         let resultsAttachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         resultsAttachment.name = "Intent Lab results"
         resultsAttachment.lifetime = .keepAlways
         add(resultsAttachment)
-        app.radioButtons["Scenario"].click()
+        app.radioButtons["Create test"].click()
 
-        XCTAssertTrue(app.textFields["Scenario name"].isHittable)
-        XCTAssertTrue(app.buttons["Run scenario"].isHittable)
+        XCTAssertTrue(app.textFields["Test name"].isHittable)
+        XCTAssertTrue(app.buttons["Run test"].isHittable)
 
         let screenshot = app.windows.firstMatch.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
@@ -65,8 +65,10 @@ final class FoundationEvalsUITests: XCTestCase {
         defer { app.terminate() }
         app.activate()
         app.typeKey("2", modifierFlags: .command)
-        app.radioButtons["Scenario"].click()
-        UITestStorage.selectPane("Parameters", heading: "Scenario", in: app)
+        app.radioButtons["Create test"].click()
+        let inputs = app.disclosureTriangles.matching(NSPredicate(format: "label BEGINSWITH %@", "Inputs ·")).firstMatch
+        for _ in 0..<12 where !inputs.isHittable { app.scrollViews.element(boundBy: app.scrollViews.count - 1).swipeUp() }
+        inputs.click()
 
         let names = app.textFields.matching(identifier: "Parameter name")
         XCTAssertEqual(names.count, 1)
@@ -286,12 +288,42 @@ final class FoundationEvalsUITests: XCTestCase {
         app.radioButtons["Cases"].click()
         XCTAssertEqual(caseName.value as? String, "Selection regression case")
 
-        app.buttons["Example"].click()
+        app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "Select case ", "Example"
+        )).firstMatch.click()
         XCTAssertEqual(caseName.value as? String, "Example")
         selectSetup("Scoring", in: app)
         app.radioButtons["Cases"].click()
         XCTAssertEqual(caseName.value as? String, "Example")
 
+    }
+
+    @MainActor
+    func testSameNamedCasesHaveDistinctAccessibilityLabels() throws {
+        let app = XCUIApplication()
+        let storageName = UUID().uuidString
+        let storage = uiTestStorage(name: storageName)
+        defer { try? FileManager.default.removeItem(at: storage) }
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
+        app.launch()
+        defer { app.terminate() }
+        app.activate()
+        app.menuBars.menuBarItems["Evaluation"].click()
+        app.menuItems["Show Suite Editor"].click()
+        XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 5))
+
+        app.buttons["Add Case"].click()
+        let name = app.textFields["Case name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 2))
+        name.click()
+        app.typeKey("a", modifierFlags: .command)
+        name.typeText("Example")
+
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "Select case "))
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertTrue(rows.element(boundBy: 0).label.contains("Example"))
+        XCTAssertTrue(rows.element(boundBy: 1).label.contains("Example"))
+        XCTAssertNotEqual(rows.element(boundBy: 0).label, rows.element(boundBy: 1).label)
     }
 
     @MainActor
@@ -338,7 +370,13 @@ final class FoundationEvalsUITests: XCTestCase {
     @MainActor
     private func selectSetup(_ title: String, in app: XCUIApplication) {
         app.radioButtons["Setup"].click()
-        UITestStorage.selectPane(title, heading: "Suite setup", in: app)
+        let menu = app.popUpButtons["Suite setup"]
+        if menu.exists {
+            menu.click()
+            app.menuItems[title].click()
+        } else {
+            app.buttons[title].click()
+        }
     }
 
     private func uiTestStorage(name: String) -> URL {

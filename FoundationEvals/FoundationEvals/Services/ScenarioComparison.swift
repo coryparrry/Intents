@@ -367,6 +367,9 @@ enum ScenarioReleaseCheckEvaluator {
             failures.append("The scenario has no required observable outcome assertion in a required lane.")
         }
         if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion {
+            if run.acceptanceStatus != .accepted {
+                failures.append("The saved run has no verified durable acceptance receipt for its execution journal.")
+            }
             if run.integration != definition.integration
                 || run.runnerPackageVersion?.isEmpty != false
                 || !ScenarioHarnessCapabilities.required(for: definition).isSubset(

@@ -26,6 +26,7 @@
     }
   ],
   "preparationOperations": ["prepare-task-fixture"],
+  "cleanupOperations": ["cleanup-task-fixture"],
   "queryOperations": [
     {
       "id": "tasks-by-stable-id",

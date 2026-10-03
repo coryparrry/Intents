@@ -11,6 +11,8 @@ public protocol IntentLabIntegration: IntentLabSiriIntegration {
     var supportedCapabilities: Set<String> { get }
     /// Prepare an isolated dataset and launch the application for one attempt.
     func prepare(bundleIdentifier: String, context: String, operationID: String) throws -> XCUIApplication
+    /// Restore the isolated fixture after an attempt and verify its reset state.
+    func cleanup(bundleIdentifier: String, context: String, operationID: String) throws
     /// Read application state independently of the scenario's expected values.
     func observe(application: XCUIApplication) throws -> [String: IntentLabValue]
     /// Merge application observations with typed declaration-backed queries.
@@ -21,6 +23,12 @@ public protocol IntentLabIntegration: IntentLabSiriIntegration {
 
 @available(macOS 27.0, iOS 27.0, *)
 public extension IntentLabIntegration {
+    func cleanup(bundleIdentifier: String, context: String, operationID: String) throws {
+        guard ["", "none", "noop", "readOnly"].contains(operationID) else {
+            throw IntentLabIntegrationError.unsupportedCleanup(operationID)
+        }
+    }
+
     /// Merge consumer observations with declaration-backed generic queries.
     func observe(
         application: XCUIApplication,
@@ -47,10 +55,13 @@ public extension IntentLabIntegration {
 
 public enum IntentLabIntegrationError: LocalizedError {
     case unsupportedPreparation(String)
+    case unsupportedCleanup(String)
     public var errorDescription: String? {
         switch self {
         case .unsupportedPreparation(let operation):
             "The integration does not provide preparation operation \(operation)."
+        case .unsupportedCleanup(let operation):
+            "The integration does not provide cleanup operation \(operation)."
         }
     }
 }
