@@ -233,6 +233,13 @@ records that initial assessment separately from subject execution. A missing or
 failed judge never becomes a pass. The run can be compared, reassessed, or
 approved as a baseline in the same way as a local run.
 
+Use the [Review guide](EVAL_REVIEW_GUIDE.md) to label saved outputs and turn
+confirmed failures into regression cases. [Runs and results](wiki/Runs-and-results.md)
+explains suite assessments and release requirements. The [in-process adapter](FEATURE_ADAPTER.md)
+is a separate integration path. [Production batches](PRODUCTION_EVALS_GUIDE.md)
+use a separate frozen job, audit, and exact-evidence baseline approval; configuring
+a connected feature runner does not automatically create a batch worker.
+
 Cancellation propagates from the desktop task to the in-flight device request.
 Feature closures still need to cooperate by calling `Task.checkCancellation()`
 or `context.checkCancellation()` at useful boundaries. Desktop timeout sends a

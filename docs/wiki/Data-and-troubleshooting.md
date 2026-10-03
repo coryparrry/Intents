@@ -4,7 +4,7 @@
 
 ## Where Intents saves data
 
-Intents saves projects, suites, imported files, and run history under `~/Library/Application Support/FoundationEvals/`. The app does not encrypt these files itself. A run can include prompts, responses, references, tool arguments, tool outputs, transcripts, and traces.
+Intents saves projects, suites, imported files, and run history under `~/Library/Application Support/FoundationEvals/`. The batch store is in the `ProductionEvals/` subdirectory. Suite human reviews, judge-check state, drafts, and batch audits are also local. The app does not encrypt these files itself. A run can include prompts, responses, references, tool arguments, tool outputs, transcripts, and traces.
 
 **Export Run as JSON** saves a copy of one run. Read the file before you share it. Intent Lab keeps artifacts and screenshots local by default. Its redacted sharing copy omits them.
 
@@ -68,3 +68,19 @@ Make sure that you use a paired physical iPhone. Read the Siri language, shortcu
 Read [Connect Codex through MCP](Codex-and-MCP.md). Keep Intents open. Restart Codex after setup. A manual client must send the generated credential.
 
 Keep the saved run, the app or model version, and the Intent Lab report. If the JSON export helps reproduce a result, keep it. Treat absent evidence as absent.
+
+### A review shows Source changed
+
+The saved annotation no longer matches its source evidence. Reinspect the sample in [Review](Review-and-judge-checks.md) and save a current review. Stale evidence cannot support a confirmed pattern or a regression promotion.
+
+### A batch cannot be created or qualified
+
+Read the error or the **Reports** issues in [Batch runs](Production-batches.md). Imported examples need explicit mappings for required critical cases. A required baseline needs approval of its current saved evidence; changed reviews or controls invalidate it. Missing, unscored, or uncertain responses, and missing required cost or latency evidence, cannot qualify just because other responses passed.
+
+### An external judge needs its key again
+
+Re-enter the key in judge settings if it predates endpoint binding or if you changed the provider or endpoint. The app preserves older unbound keys but will not use them automatically. Do not copy keys into worker settings, frozen jobs, or reports.
+
+### A scheduled batch has not started
+
+Schedules need the running app or an explicitly polling worker. They do not install a background daemon. Inspect the schedule, job state, worker target, and required approval before starting work again.

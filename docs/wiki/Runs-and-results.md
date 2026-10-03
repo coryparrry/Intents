@@ -66,3 +66,9 @@ If you edit a suite after its latest run, run it again. Then use the new result 
 ## Delete evidence
 
 Use a run's sidebar context menu to delete its results and trace. The suite toolbar's **Start from Scratch** menu offers more reset choices. These choices can reset the suite, clear its runs and traces, or do both. The app asks for confirmation. It cannot undo these actions. Export evidence that you need before you delete it.
+
+## Keep human review and batch evidence separate
+
+The suite's [Review page](Review-and-judge-checks.md) stores human labels against the recorded source without replacing automated scores. Its Patterns and Judge checks panes help improve cases and evaluate a judge. Baseline approval and a release report still use their selected saved assessment and policy.
+
+[Batch runs](Production-batches.md) has its own dataset, result audit, report, and baseline approval. Approve the current eligible evidence in **Reports → Approve as baseline…**. Changing results, reviews, or controls invalidates that approval. Paused or cancelled baselines do not qualify another batch. Missing required critical-source mappings block job creation; missing or uncertain report evidence blocks qualification.

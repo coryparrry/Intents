@@ -1,5 +1,7 @@
 # Evaluation review and regression workflow
 
+For current setup and operation, use the [Review guide](EVAL_REVIEW_GUIDE.md). This document records the design and scope.
+
 Status: implemented and reviewed; targeted tests and native fixture flows passed, including direct sidebar navigation and the supported narrow layout. XCTest UI runner startup remains blocked; dark appearance and live Apple Intelligence qualification are unverified. Independent branch `codex/eval-review-workspace`, based on stack tip `078fa0c96abf60ebe67a436fa5a00f206b7f00e4`. Do not register it in the existing stack or merge it before that stack. Rebase onto main after the stack lands; review the feature diff against this recorded tip until then. Existing dirty work is excluded.
 
 ## Research and product intent
