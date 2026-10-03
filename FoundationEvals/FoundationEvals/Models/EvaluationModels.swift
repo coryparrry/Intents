@@ -7,6 +7,7 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
     var expected: String
     var conversation = EvaluationConversationConfiguration()
     var fieldAssertions: [EvaluationFieldAssertion]? = nil
+    var reviewSource: EvaluationRegressionSource? = nil
 
     init(
         id: UUID = UUID(),
@@ -25,7 +26,7 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, prompt, expected, conversation, fieldAssertions
+        case id, name, prompt, expected, conversation, fieldAssertions, reviewSource
     }
 
     init(from decoder: Decoder) throws {
@@ -37,6 +38,7 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
         conversation = try container.decodeIfPresent(EvaluationConversationConfiguration.self, forKey: .conversation)
             ?? EvaluationConversationConfiguration()
         fieldAssertions = try container.decodeIfPresent([EvaluationFieldAssertion].self, forKey: .fieldAssertions)
+        reviewSource = try container.decodeIfPresent(EvaluationRegressionSource.self, forKey: .reviewSource)
     }
 }
 

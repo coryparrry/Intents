@@ -50,6 +50,7 @@ private enum RubricTemplate: String, CaseIterable, Identifiable {
 private enum SuiteEditorPage: String, CaseIterable, Identifiable {
     case cases
     case results
+    case review
     case compare
     case configure
 
@@ -59,6 +60,7 @@ private enum SuiteEditorPage: String, CaseIterable, Identifiable {
         switch self {
         case .cases: "Cases"
         case .results: "Results"
+        case .review: "Review"
         case .compare: "Compare"
         case .configure: "Setup"
         }
@@ -168,6 +170,11 @@ struct SuiteEditorView: View {
             SuiteCasesView(store: store, selectedCaseID: $selectedCaseID)
         case .results:
             SuiteResultsView(store: store)
+        case .review:
+            SuiteReviewView(store: store, showCases: { id in
+                selectedCaseID = id; selectedPage = .cases
+            }, showCompare: { selectedPage = .compare })
+                .id(store.selectedSuiteID)
         case .compare:
             SuiteCompareView(store: store)
         case .configure:
