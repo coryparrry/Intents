@@ -35,7 +35,8 @@ enum ScenarioValidator {
             issues.append(.init(severity: .warning, path: path, message: message))
         }
 
-        let isReusable = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion
+        let isStable = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+        let isReusable = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion || isStable
         if definition.schemaVersion != ScenarioDefinition.currentSchemaVersion && !isReusable {
             error("schemaVersion", "Unsupported scenario schema version \(definition.schemaVersion).")
         }
@@ -72,7 +73,7 @@ enum ScenarioValidator {
             if definition.purpose == .releaseRequirement, definition.assertions.isEmpty {
                 error("assertions", "A release requirement needs an observable assertion.")
             }
-            if definition.coverage.intentIntegration != .required {
+            if !isStable && definition.coverage.intentIntegration != .required {
                 error("coverage.intentIntegration", "Version 2 checks require the direct intent lane.")
             }
         } else if definition.schemaVersion == ScenarioDefinition.currentSchemaVersion,
@@ -93,16 +94,16 @@ enum ScenarioValidator {
         if bundle.isEmpty || !bundle.contains(".") {
             error("target.bundleIdentifier", "Enter the application bundle identifier used by the signed test.")
         }
-        if definition.target.projectPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !isStable && definition.target.projectPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             error("target.projectPath", "Choose the developer-owned Xcode project or workspace.")
         }
-        if definition.target.scheme.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !isStable && definition.target.scheme.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             error("target.scheme", "Choose the app scheme to build.")
         }
-        if definition.target.testTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !isStable && definition.target.testTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             error("target.testTarget", "Choose the UI-test target containing testIntentLabScenario.")
         }
-        if definition.target.destinationIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !isStable && definition.target.destinationIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             error("target.destinationIdentifier", "Choose an enrolled physical device.")
         }
 
@@ -133,14 +134,28 @@ enum ScenarioValidator {
             error("directControl.intentIdentifier", "Use a bounded App Intent identifier without path syntax.")
         }
         if definition.coverage.appFeature == .required {
-            if definition.directControl.linkedFeatureRunID == nil {
-                error("directControl.linkedFeatureRunID", "Link a feature run for required App Feature coverage.")
-            }
-            if definition.directControl.linkedFeatureID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                error("directControl.linkedFeatureID", "Declare the expected feature ID for the linked run.")
-            }
-            if definition.directControl.linkedFeatureSubjectDigest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                error("directControl.linkedFeatureSubjectDigest", "Declare the linked run's subject-evidence digest.")
+            if isStable {
+                if let binding = definition.featureBinding {
+                    if binding.featureID.isEmpty || binding.interfaceDigest.isEmpty {
+                        error("featureBinding", "Choose a declared feature and its stable input/output interface.")
+                    }
+                    let names = binding.inputMapping.map(\.featureInputName)
+                    if Set(names).count != names.count {
+                        error("featureBinding.inputMapping", "Each feature input can be mapped once.")
+                    }
+                } else {
+                    error("featureBinding", "Choose a declared feature before requiring App feature coverage.")
+                }
+            } else {
+                if definition.directControl.linkedFeatureRunID == nil {
+                    error("directControl.linkedFeatureRunID", "Link a feature run for required App Feature coverage.")
+                }
+                if definition.directControl.linkedFeatureID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    error("directControl.linkedFeatureID", "Declare the expected feature ID for the linked run.")
+                }
+                if definition.directControl.linkedFeatureSubjectDigest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    error("directControl.linkedFeatureSubjectDigest", "Declare the linked run's subject-evidence digest.")
+                }
             }
         }
         let parameterNames = definition.directControl.parameters.map(\.name)
@@ -209,7 +224,7 @@ enum ScenarioValidator {
                 }
             }
         }
-        if definition.assertions.isEmpty && !isReusable {
+        if definition.assertions.isEmpty && (!isReusable || isStable) {
             error("assertions", "Add at least one observable outcome assertion.")
         }
         if Set(definition.assertions.map(\.id)).count != definition.assertions.count {
@@ -226,7 +241,7 @@ enum ScenarioValidator {
                 error("assertions[\(index)].applicableLanes", "Choose at least one evidence lane or leave lane scope unset.")
             }
         }
-        if !isReusable {
+        if !isReusable || isStable {
             for lane in ScenarioLane.allCases where definition.coverage[lane] == .required {
                 if !definition.assertions.contains(where: { $0.required && $0.applies(to: lane) }) {
                     error("coverage.\(lane.rawValue)", "The required \(lane.title) lane needs a required observable outcome assertion.")
@@ -407,7 +422,8 @@ enum ScenarioResultEvaluator {
     ) -> (ScenarioOutcome, [ScenarioAssertionResult]) {
         guard executionStatus == .completed else { return (.notObserved, []) }
         let assertions = definition.assertions.filter { $0.applies(to: lane) }
-        if definition.schemaVersion == ScenarioDefinition.currentSchemaVersion,
+        if definition.schemaVersion == ScenarioDefinition.currentSchemaVersion
+            || definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
            definition.coverage[lane] == .required,
            !assertions.contains(where: \.required) {
             return (.needsReview, [])
@@ -455,7 +471,8 @@ enum ScenarioResultEvaluator {
     static func overall(definition: ScenarioDefinition, laneResults: [ScenarioLaneResult]) -> ScenarioOutcome {
         let requiredLanes = ScenarioLane.allCases.filter { definition.coverage[$0] == .required }
         guard !requiredLanes.isEmpty else { return .needsReview }
-        if definition.schemaVersion == ScenarioDefinition.currentSchemaVersion,
+        if definition.schemaVersion == ScenarioDefinition.currentSchemaVersion
+            || definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
            !requiredLanes.allSatisfy({ lane in
                definition.assertions.contains { $0.required && $0.applies(to: lane) }
            }) { return .needsReview }
@@ -469,19 +486,21 @@ enum ScenarioResultEvaluator {
         }
         if requiredResults.contains(where: { $0.outcome == .needsReview }) { return .needsReview }
         if !requiredResults.allSatisfy({ $0.outcome == .passed }) { return .notObserved }
-        if definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+        if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion {
             let direct = requiredResults.filter { $0.lane == .intentIntegration }
+            let completionRoutes = direct.isEmpty && definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+                ? requiredResults : direct
             let claims = definition.requiredClaims ?? []
             if claims.contains(.executionCompleted),
-               (direct.isEmpty || !direct.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
+               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.returnedValueChecked),
-               !direct.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) }) {
+               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.applicationStateChecked),
-               !direct.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) }) {
+               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if definition.coverage.siri != .notApplicable,
@@ -497,9 +516,20 @@ enum ScenarioResultEvaluator {
         definition: ScenarioDefinition,
         result: ScenarioLaneResult
     ) -> Bool {
-        guard result.executionStatus == .completed, result.outcome == .passed,
-              result.claims?.contains(claim) == true else { return false }
-        if claim == .executionCompleted { return result.lane == .intentIntegration }
+        guard result.executionStatus == .completed, result.outcome == .passed else { return false }
+        if claim == .executionCompleted,
+           definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+           result.lane == .appFeature {
+            guard case .integer(let count) = result.observations["feature.resultCount"], count > 0 else { return false }
+            return result.observations["feature.runID"] != nil
+                && result.observationSources?["feature.resultCount"] == .applicationInstrumentation
+        }
+        guard result.claims?.contains(claim) == true else { return false }
+        if claim == .executionCompleted {
+            if result.lane == .intentIntegration { return true }
+            return definition.schemaVersion == ScenarioDefinition.stableSchemaVersion && result.lane == .siri
+                && verifiedClaim(.applicationStateChecked, definition: definition, result: result)
+        }
         let plan = definition.observationPlan ?? []
         return definition.assertions.contains { assertion in
             guard assertion.required, assertion.applies(to: result.lane),

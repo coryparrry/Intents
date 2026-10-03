@@ -77,6 +77,62 @@ struct ScenarioIntegrationIdentity: Codable, Equatable, Sendable {
     var digest: String
 }
 
+/// A v3 check binds a logical feature interface. A feature run belongs to
+/// ScenarioRun, so a fresh execution cannot silently rewrite requirements.
+struct ScenarioFeatureBinding: Codable, Equatable, Sendable {
+    var featureID: String
+    var interfaceDigest: String
+    var inputMapping: [ScenarioFeatureInputMapping]
+    var outputProjections: [ScenarioOutputField]
+}
+
+struct ScenarioFeatureInputMapping: Codable, Equatable, Sendable {
+    var featureInputName: String
+    var value: ScenarioValue
+}
+
+/// Exact observer/evaluator code identity, independent of a test bundle's hash.
+struct ScenarioMeasurementImplementation: Codable, Equatable, Sendable {
+    var observerID: String
+    var observerDigest: String
+    var evaluatorID: String
+    var evaluatorDigest: String
+
+    var hasCompleteProvenance: Bool {
+        [observerID, observerDigest, evaluatorID, evaluatorDigest].allSatisfy {
+            !$0.isEmpty && $0.lowercased() != "unknown"
+        }
+    }
+}
+
+struct ScenarioEnvironmentIdentity: Codable, Equatable, Sendable {
+    var profileID: String
+    var profileDigest: String
+
+    var hasCompleteProvenance: Bool {
+        [profileID, profileDigest].allSatisfy { !$0.isEmpty && $0.lowercased() != "unknown" }
+    }
+}
+
+/// Local execution resolution. A changed checkout or destination is recorded
+/// here and in each execution, never in the stable v3 test contract.
+struct ScenarioExecutionProfile: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var projectPath: String
+    var scheme: String
+    var testTarget: String
+    var destinationIdentifier: String
+    var signingSelection: String?
+    var trustedConnectionID: UUID?
+    var buildConfiguration: String?
+}
+
+struct ScenarioSubjectImplementation: Codable, Equatable, Sendable {
+    var sourceRevision: String?
+    var promptDigest: String?
+    var modelRevision: String?
+}
+
 enum ScenarioPrimitiveType: String, Codable, CaseIterable, Sendable {
     case string
     case boolean
@@ -96,6 +152,40 @@ struct ScenarioDateValue: Codable, Equatable, Sendable {
     var source: String
     var timeZoneIdentifier: String
     var resolvedInstant: Date
+    private(set) var persistedInstant: Date? = nil
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.source == rhs.source && lhs.timeZoneIdentifier == rhs.timeZoneIdentifier && lhs.resolvedInstant == rhs.resolvedInstant
+    }
+    enum CodingKeys: String, CodingKey { case source, timeZoneIdentifier, resolvedInstant, resolvedInstantBits }
+    init(source: String, timeZoneIdentifier: String, resolvedInstant: Date) {
+        self.source = source; self.timeZoneIdentifier = timeZoneIdentifier; self.resolvedInstant = resolvedInstant
+    }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        source = try values.decode(String.self, forKey: .source)
+        timeZoneIdentifier = try values.decode(String.self, forKey: .timeZoneIdentifier)
+        resolvedInstant = try values.decode(Date.self, forKey: .resolvedInstant)
+        persistedInstant = resolvedInstant
+        if let text = try values.decodeIfPresent(String.self, forKey: .resolvedInstantBits) {
+            guard let bits = UInt64(text, radix: 16), Double(bitPattern: bits).isFinite else {
+                throw DecodingError.dataCorruptedError(forKey: .resolvedInstantBits, in: values, debugDescription: "Invalid exact date instant.")
+            }
+            resolvedInstant = Date(timeIntervalSince1970: Double(bitPattern: bits))
+        }
+    }
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(source, forKey: .source)
+        try values.encode(timeZoneIdentifier, forKey: .timeZoneIdentifier)
+        try values.encode(resolvedInstant, forKey: .resolvedInstant)
+        if encoder.userInfo[.omitPreciseScenarioDates] as? Bool != true {
+            try values.encode(String(resolvedInstant.timeIntervalSince1970.bitPattern, radix: 16), forKey: .resolvedInstantBits)
+        }
+    }
+}
+
+private extension CodingUserInfoKey {
+    static let omitPreciseScenarioDates = CodingUserInfoKey(rawValue: "omitPreciseScenarioDates")!
 }
 
 struct ScenarioEnumValue: Codable, Equatable, Sendable {
@@ -118,6 +208,26 @@ indirect enum ScenarioValue: Codable, Equatable, Sendable {
     case enumeration(ScenarioEnumValue)
     case entity(ScenarioEntityReference)
     case array([ScenarioValue])
+
+    var hasBoundLegacyDatePrecision: Bool {
+        switch self {
+        case .date(let date): return date.persistedInstant == nil || date.persistedInstant == date.resolvedInstant
+        case .array(let values): return values.allSatisfy(\.hasBoundLegacyDatePrecision)
+        default: return true
+        }
+    }
+
+    var containsFractionalDate: Bool {
+        switch self {
+        case .date(let date):
+            let seconds = date.resolvedInstant.timeIntervalSince1970
+            return seconds != seconds.rounded(.towardZero)
+        case .array(let values):
+            return values.contains(where: \.containsFractionalDate)
+        default:
+            return false
+        }
+    }
 }
 
 enum ScenarioParameterPresence: Codable, Equatable, Sendable {
@@ -306,6 +416,7 @@ struct ScenarioSafety: Codable, Equatable, Sendable {
 struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
     static let currentSchemaVersion = 1
     static let reusableSchemaVersion = 2
+    static let stableSchemaVersion = 3
 
     var schemaVersion = currentSchemaVersion
     var id: UUID
@@ -327,6 +438,9 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
     var requiredClaims: [ScenarioProofClaim]? = nil
     var observationPlan: [ScenarioPlannedObservation]? = nil
     var integration: ScenarioIntegrationIdentity? = nil
+    /// v3 only. Unlike definitionDigest, this excludes authoring and execution identity.
+    var testContractDigest: String? = nil
+    var featureBinding: ScenarioFeatureBinding? = nil
 
     init(
         schemaVersion: Int = currentSchemaVersion,
@@ -408,7 +522,13 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
     func calculatedDigest() throws -> String {
         var copy = self
         copy.definitionDigest = ""
+        if schemaVersion == Self.stableSchemaVersion {
+            return try ScenarioV3Canonical.digest(copy)
+        }
         let encoder = JSONEncoder()
+        // Keep historical whole-second digests, but bind exact metadata whenever
+        // ISO8601 alone would discard an authored instant's fractional seconds.
+        encoder.userInfo[.omitPreciseScenarioDates] = !hasFractionalDates
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         var data = try encoder.encode(copy)
@@ -435,13 +555,36 @@ struct ScenarioDefinition: Codable, Equatable, Identifiable, Sendable {
 
     func frozen() throws -> Self {
         var copy = self
-        copy.definitionDigest = try calculatedDigest()
+        if schemaVersion == Self.stableSchemaVersion {
+            guard directControl.linkedFeatureRunID == nil && directControl.linkedFeatureSubjectDigest.isEmpty else {
+                throw ScenarioV3ContractError.executionBoundDefinition
+            }
+            copy.testContractDigest = try copy.calculatedTestContractDigest()
+        }
+        copy.definitionDigest = try copy.calculatedDigest()
         return copy
     }
 
     var hasValidDigest: Bool {
         guard !definitionDigest.isEmpty else { return false }
-        return (try? calculatedDigest()) == definitionDigest
+        guard (try? calculatedDigest()) == definitionDigest else { return false }
+        if schemaVersion == Self.stableSchemaVersion {
+            return (try? calculatedTestContractDigest()) == testContractDigest
+        }
+        // Fractional dates are bound by exact metadata in calculatedDigest().
+        // Whole-second definitions retain their historical digest and guard.
+        if hasFractionalDates { return true }
+        return directControl.parameters.allSatisfy { parameter in
+            if case .value(let value) = parameter.presence { return value.hasBoundLegacyDatePrecision }
+            return true
+        } && assertions.allSatisfy { $0.expectedValue?.hasBoundLegacyDatePrecision != false }
+    }
+
+    private var hasFractionalDates: Bool {
+        directControl.parameters.contains { parameter in
+            if case .value(let value) = parameter.presence { return value.containsFractionalDate }
+            return false
+        } || assertions.contains { $0.expectedValue?.containsFractionalDate == true }
     }
 }
 
@@ -450,6 +593,136 @@ extension ScenarioDefinition {
         Dictionary(grouping: definitions, by: \.id).values
             .compactMap { $0.max(by: { $0.version < $1.version }) }
             .sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+}
+
+extension ScenarioDefinition {
+    /// v3's stable measurement contract. Authoring names/paths and linked run
+    /// identifiers are intentionally absent; request text and fixture bytes are not.
+    func calculatedTestContractDigest() throws -> String {
+        guard schemaVersion == Self.stableSchemaVersion else {
+            throw ScenarioV3ContractError.unsupportedSchemaVersion(schemaVersion)
+        }
+        return try ScenarioV3Canonical.digest(ScenarioV3Contract(definition: self))
+    }
+}
+
+enum ScenarioV3ContractError: Error, Equatable {
+    case unsupportedSchemaVersion(Int)
+    case executionBoundDefinition
+}
+
+private struct ScenarioV3Contract: Encodable {
+    struct Target: Encodable {
+        var bundleIdentifier: String
+        var route: ScenarioInvocationRoute
+    }
+    struct Action: Encodable {
+        var intentIdentifier: String
+        var parameters: [ScenarioParameter]
+        var outputFields: [OutputField]
+    }
+    struct OutputField: Encodable {
+        var name: String
+        var type: ScenarioValueType
+        var path: [ScenarioProjectionPathComponent]?
+        init(_ field: ScenarioOutputField) {
+            name = field.name
+            type = field.type
+            path = field.path
+        }
+    }
+    struct Binding: Encodable {
+        var featureID: String
+        var interfaceDigest: String
+        var inputMapping: [ScenarioFeatureInputMapping]
+        var outputProjections: [OutputField]
+        init?(_ binding: ScenarioFeatureBinding?) {
+            guard let binding else { return nil }
+            featureID = binding.featureID
+            interfaceDigest = binding.interfaceDigest
+            inputMapping = binding.inputMapping
+            outputProjections = binding.outputProjections.map(OutputField.init)
+        }
+    }
+    struct Assertion: Encodable {
+        var kind: ScenarioAssertionKind
+        var observationKey: String
+        var expectedValue: ScenarioValue?
+        var explanation: String
+        var required: Bool
+        var applicableLanes: [ScenarioLane]?
+        init(_ assertion: ScenarioAssertion) {
+            kind = assertion.kind
+            observationKey = assertion.observationKey
+            expectedValue = assertion.expectedValue
+            explanation = assertion.explanation
+            required = assertion.required
+            applicableLanes = assertion.applicableLanes?.sorted { $0.rawValue < $1.rawValue }
+        }
+    }
+    var target: Target
+    var goal: ScenarioUserGoal
+    var fixture: ScenarioFixture
+    var action: Action
+    var featureBinding: Binding?
+    var assertions: [Assertion]
+    var coverage: ScenarioCoverage
+    var safety: ScenarioSafety
+    var purpose: ScenarioPurpose?
+    var checkMode: ScenarioCheckMode?
+    var requiredClaims: [ScenarioProofClaim]?
+    var observationPlan: [ScenarioPlannedObservation]?
+    var integration: ScenarioIntegrationIdentity?
+
+    init(definition: ScenarioDefinition) {
+        target = .init(bundleIdentifier: definition.target.bundleIdentifier, route: definition.target.route)
+        goal = definition.goal
+        fixture = definition.fixture
+        action = .init(intentIdentifier: definition.directControl.intentIdentifier,
+                       parameters: definition.directControl.parameters,
+                       outputFields: definition.directControl.outputFields.map(OutputField.init))
+        featureBinding = Binding(definition.featureBinding)
+        assertions = definition.assertions.map(Assertion.init)
+        coverage = definition.coverage
+        safety = definition.safety
+        purpose = definition.purpose
+        checkMode = definition.checkMode
+        requiredClaims = definition.requiredClaims
+        observationPlan = definition.observationPlan
+        integration = definition.integration
+    }
+}
+
+private enum ScenarioV3Canonical {
+    /// Sorted UTF-8 JSON object keys, original string bytes and ordered arrays.
+    /// Codable enum cases tag value types and parameter presence. Date instants
+    /// use the exact binary64 seconds bit pattern, avoiding formatter rounding.
+    static func digest<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.userInfo[.omitPreciseScenarioDates] = true
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode("binary64:" + String(date.timeIntervalSince1970.bitPattern, radix: 16))
+        }
+        var data = try encoder.encode(value)
+        if value is ScenarioDefinition {
+            // Existing Set-backed assertion lanes have no deterministic order.
+            guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw EncodingError.invalidValue(value, .init(codingPath: [], debugDescription: "Expected object"))
+            }
+            if var assertions = object["assertions"] as? [[String: Any]] {
+                for index in assertions.indices {
+                    if let lanes = assertions[index]["applicableLanes"] as? [String] {
+                        assertions[index]["applicableLanes"] = lanes.sorted()
+                    }
+                }
+                object["assertions"] = assertions
+            }
+            data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+        }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -681,6 +954,12 @@ struct ScenarioRun: Codable, Equatable, Identifiable, Sendable {
     var integration: ScenarioIntegrationIdentity? = nil
     var runnerPackageVersion: String? = nil
     var negotiatedCapabilities: [String]? = nil
+    /// v3 execution provenance; absent on immutable legacy evidence.
+    var scenarioSchemaVersion: Int? = nil
+    var testContractDigest: String? = nil
+    var measurementImplementation: ScenarioMeasurementImplementation? = nil
+    var comparisonEnvironmentIdentity: ScenarioEnvironmentIdentity? = nil
+    var subjectImplementation: ScenarioSubjectImplementation? = nil
 }
 
 struct ScenarioResponseAssessment: Codable, Equatable, Identifiable, Sendable {
