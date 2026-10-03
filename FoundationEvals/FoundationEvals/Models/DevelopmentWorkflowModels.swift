@@ -366,6 +366,8 @@ struct EvaluationHumanCorrection: Identifiable, Codable, Sendable {
 }
 
 struct EvaluationReviewedJudgeExample: Identifiable, Codable, Sendable {
+    var partition: EvaluationJudgeCheckPartition? = nil
+    var reviewSource: EvaluationRegressionSource? = nil
     var id: UUID
     var sourceRunID: UUID
     var sourceAssessmentID: UUID
@@ -501,6 +503,20 @@ struct EvaluationSuiteLocalState: Codable, Sendable {
     var humanCorrections: [EvaluationHumanCorrection] = []
     var reviewedJudgeExamples: [EvaluationReviewedJudgeExample] = []
     var experiments: [EvaluationExperiment] = []
+    var review = EvaluationReviewState()
+
+    private enum CodingKeys: String, CodingKey {
+        case baselineApprovals, humanCorrections, reviewedJudgeExamples, experiments, review
+    }
+    init() {}
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        baselineApprovals = try values.decode([EvaluationBaselineApproval].self, forKey: .baselineApprovals)
+        humanCorrections = try values.decode([EvaluationHumanCorrection].self, forKey: .humanCorrections)
+        reviewedJudgeExamples = try values.decode([EvaluationReviewedJudgeExample].self, forKey: .reviewedJudgeExamples)
+        experiments = try values.decode([EvaluationExperiment].self, forKey: .experiments)
+        review = try values.decodeIfPresent(EvaluationReviewState.self, forKey: .review) ?? .init()
+    }
 }
 
 // MARK: - Repository and experiment evidence

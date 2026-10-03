@@ -17,6 +17,10 @@ enum MCPStoreAuthority {
                 return try state(store)
             case .listProjects:
                 return listProjects(store)
+            case .listReviewSamples(let arguments):
+                return try EvaluationReviewMCP.list(arguments, store: store)
+            case .proposeReview(let arguments):
+                return try EvaluationReviewMCP.propose(arguments, store: store)
             case .check(let arguments):
                 if let existing = store.runStatus(id: arguments.runID) {
                     guard existing.projectID == arguments.projectID,

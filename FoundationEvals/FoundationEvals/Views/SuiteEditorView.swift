@@ -47,9 +47,10 @@ private enum RubricTemplate: String, CaseIterable, Identifiable {
     }
 }
 
-private enum SuiteEditorPage: String, CaseIterable, Identifiable {
+enum SuiteEditorPage: String, CaseIterable, Identifiable {
     case cases
     case results
+    case review
     case compare
     case configure
 
@@ -59,6 +60,7 @@ private enum SuiteEditorPage: String, CaseIterable, Identifiable {
         switch self {
         case .cases: "Cases"
         case .results: "Results"
+        case .review: "Review"
         case .compare: "Compare"
         case .configure: "Setup"
         }
@@ -80,13 +82,20 @@ struct SuiteEditorView: View {
     @Environment(DeveloperRunnerStore.self) private var runners
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var store: EvaluationStore
-    @State private var selectedPage = SuiteEditorPage.cases
+    let initialPage: SuiteEditorPage
+    @State private var selectedPage: SuiteEditorPage
     @State private var configurationPage = SuiteSetupPage.instructions
     @State private var selectedCaseID: UUID?
     @State private var showsRunDetails = false
     @State private var showsDevices = false
     @State private var runError: String?
     @FocusState private var isEditorFocused: Bool
+
+    init(store: EvaluationStore, initialPage: SuiteEditorPage = .cases) {
+        self.store = store
+        self.initialPage = initialPage
+        _selectedPage = State(initialValue: initialPage)
+    }
 
     private var isRunActive: Bool { store.isRunning || runners.executingRunID != nil }
 
@@ -120,7 +129,7 @@ struct SuiteEditorView: View {
         .defaultFocus($isEditorFocused, true)
         .background {
             SuiteEditorSelectionObserver(
-                store: store, selectedPage: $selectedPage, selectedCaseID: $selectedCaseID
+                store: store, initialPage: initialPage, selectedPage: $selectedPage, selectedCaseID: $selectedCaseID
             )
         }
         .navigationTitle(store.draftSuite.name)
@@ -168,6 +177,11 @@ struct SuiteEditorView: View {
             SuiteCasesView(store: store, selectedCaseID: $selectedCaseID)
         case .results:
             SuiteResultsView(store: store)
+        case .review:
+            SuiteReviewView(store: store, showCases: { id in
+                selectedCaseID = id; selectedPage = .cases
+            }, showCompare: { selectedPage = .compare })
+                .id(store.selectedSuiteID)
         case .compare:
             SuiteCompareView(store: store)
         case .configure:
@@ -208,6 +222,7 @@ struct SuiteEditorView: View {
 
 private struct SuiteEditorSelectionObserver: View {
     let store: EvaluationStore
+    let initialPage: SuiteEditorPage
     @Binding var selectedPage: SuiteEditorPage
     @Binding var selectedCaseID: UUID?
 
@@ -216,7 +231,7 @@ private struct SuiteEditorSelectionObserver: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .onAppear { selectFirstCaseIfNeeded() }
-            .onChange(of: store.draftSuite.id) { _, _ in selectedPage = .cases }
+            .onChange(of: store.draftSuite.id) { _, _ in selectedPage = initialPage }
             .onChange(of: store.draftSuite.cases.map(\.id)) { _, _ in
                 selectFirstCaseIfNeeded()
             }

@@ -1,0 +1,392 @@
+{
+  "run" : {
+    "attachments" : [
+
+    ],
+    "cancelled" : false,
+    "completedAt" : "1970-01-01T00:00:02Z",
+    "criteria" : "The response is factually correct or consistent with the supplied reference answer.\nThe response directly answers the prompt without irrelevant material.\nThe response follows every requested format, tone, and length constraint.",
+    "environment" : {
+      "locale" : "en_GB",
+      "model" : "Apple on-device",
+      "modelContextSize" : 4096,
+      "operatingSystem" : "macOS 27"
+    },
+    "id" : "E26F537B-80DA-45B4-AA61-C9660043489F",
+    "instructions" : "Answer accurately and concisely.",
+    "plannedCases" : [
+      {
+        "conversation" : {
+          "historyPolicy" : "keepAll",
+          "retainedTurnCount" : 2,
+          "setupTurns" : [
+
+          ]
+        },
+        "expected" : "Friday",
+        "id" : "CE941352-3879-4E38-BD1B-7FF7699466DC",
+        "name" : "Meeting date",
+        "prompt" : "Move the meeting to Friday"
+      }
+    ],
+    "repetitions" : 1,
+    "results" : [
+      {
+        "caseID" : "CE941352-3879-4E38-BD1B-7FF7699466DC",
+        "caseName" : "Meeting date",
+        "durationMilliseconds" : 1,
+        "expected" : "Friday",
+        "id" : "5F7789A8-67E5-4FA8-825E-E1CA91DBC886",
+        "prompt" : "Move the meeting to Friday",
+        "repetition" : 1,
+        "response" : "incorrect",
+        "status" : "unscored",
+        "usage" : {
+          "cachedInputTokens" : 0,
+          "inputTokens" : 0,
+          "outputTokens" : 0,
+          "reasoningTokens" : 0
+        }
+      }
+    ],
+    "scoringMode" : "modelJudge",
+    "startedAt" : "1970-01-01T00:00:01Z",
+    "subjectEvidence" : {
+      "attachments" : [
+
+      ],
+      "cases" : [
+        {
+          "conversation" : {
+            "historyPolicy" : "keepAll",
+            "retainedTurnCount" : 2,
+            "setupTurns" : [
+
+            ]
+          },
+          "expected" : "Friday",
+          "id" : "CE941352-3879-4E38-BD1B-7FF7699466DC",
+          "name" : "Meeting date",
+          "prompt" : "Move the meeting to Friday"
+        }
+      ],
+      "digest" : "887ab8b23a549c0c594dd03705655be2c882dc8e5797768c04859ebf429f5ab9",
+      "instructions" : "Answer accurately and concisely."
+    },
+    "suiteDefinition" : {
+      "cases" : [
+        {
+          "conversation" : {
+            "historyPolicy" : "keepAll",
+            "retainedTurnCount" : 2,
+            "setupTurns" : [
+
+            ]
+          },
+          "expected" : "Friday",
+          "id" : "CE941352-3879-4E38-BD1B-7FF7699466DC",
+          "name" : "Meeting date",
+          "prompt" : "Move the meeting to Friday"
+        }
+      ],
+      "criteria" : "The response is factually correct or consistent with the supplied reference answer.\nThe response directly answers the prompt without irrelevant material.\nThe response follows every requested format, tone, and length constraint.",
+      "features" : {
+        "outputFields" : [
+
+        ],
+        "outputRepresentNilExplicitlyInGeneratedContent" : false,
+        "outputSchemaDefinitions" : [
+
+        ],
+        "prewarm" : false,
+        "profile" : {
+          "afterToolCustomReasoning" : "",
+          "afterToolInstructions" : "",
+          "afterToolProbabilityThreshold" : 0.9,
+          "afterToolReasoningLevel" : "automatic",
+          "afterToolSamplingMode" : "automatic",
+          "afterToolSeed" : 42,
+          "afterToolSeedEnabled" : false,
+          "afterToolTemperature" : 0.7,
+          "afterToolTemperatureEnabled" : false,
+          "afterToolTopK" : 40,
+          "afterToolTranscriptErrorPolicy" : "automatic",
+          "enabled" : false,
+          "name" : "Tool workflow",
+          "requireToolFirst" : false
+        },
+        "spotlightSearch" : {
+          "contactIdentity" : {
+            "alternateNames" : [
+
+            ],
+            "displayName" : "",
+            "emailAddresses" : [
+
+            ],
+            "enabled" : false,
+            "phoneNumbers" : [
+
+            ]
+          },
+          "coreSpotlightSource" : {
+            "allowMail" : false,
+            "enabled" : false,
+            "fetchedAttributes" : {
+              "customAttributeNames" : [
+
+              ],
+              "presets" : [
+                "title",
+                "contentDescription",
+                "contentType"
+              ]
+            },
+            "maximumResults" : 8
+          },
+          "enabled" : false,
+          "fileSource" : {
+            "enabled" : true,
+            "fetchedAttributes" : {
+              "customAttributeNames" : [
+
+              ],
+              "presets" : [
+                "title",
+                "contentDescription",
+                "contentType",
+                "contentModificationDate"
+              ]
+            },
+            "folderPath" : "",
+            "maximumResults" : 8
+          },
+          "guidance" : {
+            "dynamicProfile" : {
+              "attributes" : {
+                "customAttributeNames" : [
+
+                ],
+                "presets" : [
+
+                ]
+              },
+              "contentType" : "unused",
+              "dates" : "unused",
+              "numericMatch" : "unused",
+              "people" : "unused",
+              "similarityMatch" : "unused",
+              "textMatch" : "allowed"
+            },
+            "focusedDomain" : "documents",
+            "mode" : "focused",
+            "outputFormat" : "compact"
+          },
+          "maximumResponseSize" : 1024,
+          "pipeline" : {
+            "deduplicateItems" : false
+          }
+        },
+        "streamResponse" : false,
+        "tools" : [
+
+        ]
+      },
+      "formatVersion" : 1,
+      "id" : "7761E5A1-6B70-4FEB-93AF-206C167EC385",
+      "instructions" : "Answer accurately and concisely.",
+      "judgeConfiguration" : {
+        "includeReferenceAttachments" : true,
+        "mode" : "sameModel"
+      },
+      "modelConfiguration" : {
+        "contextPolicy" : "fitReferences",
+        "maximumResponseTokens" : 1024,
+        "maximumToolCalls" : 2,
+        "probabilityThreshold" : 0.9,
+        "provider" : "onDevice",
+        "reasoningLevel" : "automatic",
+        "referenceMode" : "inline",
+        "samplingMode" : "automatic",
+        "seed" : 42,
+        "seedEnabled" : false,
+        "temperature" : 0.7,
+        "temperatureEnabled" : false,
+        "topK" : 40
+      },
+      "name" : "Review example",
+      "releasePolicy" : {
+        "criticalCaseIDs" : [
+
+        ],
+        "maximumErrorCount" : 0,
+        "maximumPassRateRegression" : 0,
+        "requireApprovedBaseline" : false,
+        "required" : false
+      },
+      "repetitions" : 1,
+      "scoringMode" : "modelJudge",
+      "version" : "v1"
+    },
+    "suiteID" : "7761E5A1-6B70-4FEB-93AF-206C167EC385",
+    "suiteName" : "Review example",
+    "suiteVersion" : "v1"
+  },
+  "suite" : {
+    "attachments" : [
+
+    ],
+    "cases" : [
+      {
+        "conversation" : {
+          "historyPolicy" : "keepAll",
+          "retainedTurnCount" : 2,
+          "setupTurns" : [
+
+          ]
+        },
+        "expected" : "Friday",
+        "id" : "CE941352-3879-4E38-BD1B-7FF7699466DC",
+        "name" : "Meeting date",
+        "prompt" : "Move the meeting to Friday"
+      }
+    ],
+    "criteria" : "The response is factually correct or consistent with the supplied reference answer.\nThe response directly answers the prompt without irrelevant material.\nThe response follows every requested format, tone, and length constraint.",
+    "features" : {
+      "outputFields" : [
+
+      ],
+      "outputRepresentNilExplicitlyInGeneratedContent" : false,
+      "outputSchemaDefinitions" : [
+
+      ],
+      "prewarm" : false,
+      "profile" : {
+        "afterToolCustomReasoning" : "",
+        "afterToolInstructions" : "",
+        "afterToolProbabilityThreshold" : 0.9,
+        "afterToolReasoningLevel" : "automatic",
+        "afterToolSamplingMode" : "automatic",
+        "afterToolSeed" : 42,
+        "afterToolSeedEnabled" : false,
+        "afterToolTemperature" : 0.7,
+        "afterToolTemperatureEnabled" : false,
+        "afterToolTopK" : 40,
+        "afterToolTranscriptErrorPolicy" : "automatic",
+        "enabled" : false,
+        "name" : "Tool workflow",
+        "requireToolFirst" : false
+      },
+      "spotlightSearch" : {
+        "contactIdentity" : {
+          "alternateNames" : [
+
+          ],
+          "displayName" : "",
+          "emailAddresses" : [
+
+          ],
+          "enabled" : false,
+          "phoneNumbers" : [
+
+          ]
+        },
+        "coreSpotlightSource" : {
+          "allowMail" : false,
+          "enabled" : false,
+          "fetchedAttributes" : {
+            "customAttributeNames" : [
+
+            ],
+            "presets" : [
+              "title",
+              "contentDescription",
+              "contentType"
+            ]
+          },
+          "maximumResults" : 8
+        },
+        "enabled" : false,
+        "fileSource" : {
+          "enabled" : true,
+          "fetchedAttributes" : {
+            "customAttributeNames" : [
+
+            ],
+            "presets" : [
+              "title",
+              "contentDescription",
+              "contentType",
+              "contentModificationDate"
+            ]
+          },
+          "folderPath" : "",
+          "maximumResults" : 8
+        },
+        "guidance" : {
+          "dynamicProfile" : {
+            "attributes" : {
+              "customAttributeNames" : [
+
+              ],
+              "presets" : [
+
+              ]
+            },
+            "contentType" : "unused",
+            "dates" : "unused",
+            "numericMatch" : "unused",
+            "people" : "unused",
+            "similarityMatch" : "unused",
+            "textMatch" : "allowed"
+          },
+          "focusedDomain" : "documents",
+          "mode" : "focused",
+          "outputFormat" : "compact"
+        },
+        "maximumResponseSize" : 1024,
+        "pipeline" : {
+          "deduplicateItems" : false
+        }
+      },
+      "streamResponse" : false,
+      "tools" : [
+
+      ]
+    },
+    "id" : "7761E5A1-6B70-4FEB-93AF-206C167EC385",
+    "instructions" : "Answer accurately and concisely.",
+    "judgeConfiguration" : {
+      "includeReferenceAttachments" : true,
+      "mode" : "sameModel"
+    },
+    "modelConfiguration" : {
+      "contextPolicy" : "fitReferences",
+      "maximumResponseTokens" : 1024,
+      "maximumToolCalls" : 2,
+      "probabilityThreshold" : 0.9,
+      "provider" : "onDevice",
+      "reasoningLevel" : "automatic",
+      "referenceMode" : "inline",
+      "samplingMode" : "automatic",
+      "seed" : 42,
+      "seedEnabled" : false,
+      "temperature" : 0.7,
+      "temperatureEnabled" : false,
+      "topK" : 40
+    },
+    "name" : "Review example",
+    "releasePolicy" : {
+      "criticalCaseIDs" : [
+
+      ],
+      "maximumErrorCount" : 0,
+      "maximumPassRateRegression" : 0,
+      "requireApprovedBaseline" : false,
+      "required" : false
+    },
+    "repetitions" : 1,
+    "scoringMode" : "modelJudge",
+    "version" : "v1"
+  }
+}

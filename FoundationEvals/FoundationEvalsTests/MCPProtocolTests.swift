@@ -256,7 +256,7 @@ struct MCPProtocolTests {
         let tools = try #require(responseJSON(first)["result"]?["tools"]?.arrayValue)
 
         #expect(first.body == second.body)
-        #expect(tools.count == 17)
+        #expect(tools.count == 19)
         #expect(tools.compactMap { $0["name"]?.stringValue } == [
             "eval_get_state",
             "eval_list_projects",
@@ -274,7 +274,9 @@ struct MCPProtocolTests {
             "eval_get_scenario_report",
             "eval_get_scenario_execution_report",
             "eval_cancel_run",
-            "eval_delete_run"
+            "eval_delete_run",
+            "eval_list_review_samples",
+            "eval_propose_review"
         ])
         #expect(tools.allSatisfy {
             $0["inputSchema"]?["$schema"] == .string("https://json-schema.org/draft/2020-12/schema")
