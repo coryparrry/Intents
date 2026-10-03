@@ -56,13 +56,17 @@ SWIFT_DEPENDENCIES = {
     "Views/Components/RunToolbarProgress.swift": {"RunToolbarProgressTests"},
 }
 SWIFT_SUITES = set().union(*SWIFT_DEPENDENCIES.values())
-MACOS_TESTS = {"script.tests.test_update_signature"}
+MACOS_TESTS = {
+    "script.tests.test_update_signature",
+    "script.tests.test_fixture_shortcut_routing",
+}
 RELEASE_VALIDATION = {
     "script.tests.test_release_validation",
     "script.tests.test_update_feed",
     "script.tests.test_release_dispatch",
 }
 PYTHON_DEPENDENCIES = {
+    "script/check_fixture_shortcut_metadata.py": {"script.tests.test_fixture_shortcut_metadata"},
     "script/release_pr.py": {"script.tests.test_release_pr"},
     "script/release_notes.py": {"script.tests.test_release_notes"},
     "script/wait_release_ci.sh": {"script.tests.test_wait_release_ci"},
@@ -156,7 +160,7 @@ def coverage(paths, root=ROOT):
                 native = True
             reasons.add("Release/tooling changes select their dependent script tests.")
         elif path == "script/verify_update_signature.swift":
-            macos.update(MACOS_TESTS)
+            macos.add("script.tests.test_update_signature")
             reasons.add(
                 "Signature verification runs on macOS, where CryptoKit is available."
             )
