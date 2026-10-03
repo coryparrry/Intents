@@ -36,6 +36,10 @@ the real business input/output interface. The adapter scaffold must remain
 fail-closed until those app operations exist. An app-owned feature may need to
 be introduced for this exercise; the existing App Intent is a navigation
 action and must not be presented as if it already returns AI identification.
+After the participant selects routes and starts a run, Intent Lab must invoke
+each route and capture its result. Do not ask the participant to tap the app's
+feature button or speak a Siri phrase to stand in for an automated route.
+Device unlock and trust or consent prompts remain device security prerequisites.
 
 ## Observe and record
 
@@ -56,6 +60,10 @@ it does not substitute for package, native, CLI, or fixture verification.
 
 ## Current status
 
-Prepared from the existing FlipBook source. No independent participant or
-FlipBook test account/device session was available to this implementation
-run, so AD-01 remains unverified. No FlipBook files were changed.
+Prepared from the existing FlipBook source. On 2026-09-28 the repository owner
+and paired iPhone became available, but this does not satisfy the independent
+participant criterion. FlipBook service eligibility has not been verified, and
+the installed Xcode 27.0 AppIntentsTesting bundle could not load on the iOS
+27.2 device because its referenced AppIntentsServices symbol is absent. Use a
+compatible Xcode/device runtime before asking the participant to start the
+timed exercise. AD-01 remains unverified. No FlipBook files were changed.
