@@ -3,6 +3,15 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioExecutionPlanTests {
+    @Test func staleGlobalRunnerSelectionUsesOnlyMatchingAppRunner() {
+        let matching = UUID()
+        let otherApp = UUID()
+        #expect(ScenarioRunnerSelection.chosenID(candidateIDs: [matching], selectedID: otherApp) == matching)
+        #expect(ScenarioRunnerSelection.chosenID(candidateIDs: [matching], selectedID: matching) == matching)
+        #expect(ScenarioRunnerSelection.chosenID(candidateIDs: [matching, UUID()], selectedID: otherApp) == nil)
+        #expect(ScenarioRunnerSelection.chosenID(candidateIDs: [], selectedID: otherApp) == nil)
+    }
+
     @Test func featureRecoveryCannotAttributeNewCodeToCapturedMeasurement() {
         let captured = ScenarioMeasurementImplementation(observerID: "host", observerDigest: "old", evaluatorID: "host", evaluatorDigest: "old")
         var changed = captured

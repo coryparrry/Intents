@@ -3,6 +3,7 @@ import SwiftUI
 struct ScenarioEditorView: View {
     @Bindable var coordinator: ScenarioCoordinator
     let projects: [EvaluationProject]
+    @Environment(DeveloperRunnerStore.self) private var runnerStore
 
     @State private var page: ScenarioEditorPage = .outcome
 
@@ -29,11 +30,11 @@ struct ScenarioEditorView: View {
             subtitle: "Set the request and observable result. Saved wording stays the same on every run."
         ) {
             VStack(alignment: .leading, spacing: 10) {
-                if coordinator.draft.schemaVersion == ScenarioDefinition.currentSchemaVersion {
-                    Button("Create reusable check", systemImage: "plus.circle") {
-                        coordinator.startReusableCheck()
+                if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                    Button("Create developer check", systemImage: "plus.circle") {
+                        coordinator.startStableCheck()
                     }
-                    IntentLabHelp("Start a separate version 2 check for another app. Saved version 1 scenarios and their evidence stay as they were.")
+                    IntentLabHelp("Create a repeatable check for this app. Its requirements stay the same when the app build changes.")
                 }
                 labeledRow("Project", help: "Choose the project whose release report should include this scenario. Changing a saved scenario creates a new frozen version.") {
                     Picker("Project", selection: Binding(
@@ -74,20 +75,25 @@ struct ScenarioEditorView: View {
     private var fixtureSection: some View {
         IntentLabCard("Intent and fixture", subtitle: "Choose the intent to invoke and the test data it uses.") {
             VStack(alignment: .leading, spacing: 10) {
+                if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                    ScenarioGuidedActionFeatureView(coordinator: coordinator, runnerStore: runnerStore)
+                }
                 labeledRow("Fixture ID", help: "A fixture is a known set of test data, such as a collection containing a packing note. Use the ID your app’s test support expects.") {
                     TextField("packing-notes", text: $coordinator.draft.fixture.id)
                 }
                 labeledRow("Fixture version", help: "The version of that test data. Change it when the prepared data changes.") {
                     TextField("1", text: $coordinator.draft.fixture.version)
                 }
-                labeledRow("Fixture digest", help: "A fingerprint identifying this version of the test data for comparisons. Copy it from your test setup; Intent Lab does not calculate or verify the data’s contents here.") {
+                labeledRow("Fixture digest", help: "A fingerprint for the prepared test data. Comparison is qualified only when the run proves the actual prepared contents match this digest.") {
                     TextField("Stable fixture digest", text: $coordinator.draft.fixture.digest)
                 }
-                labeledRow("Intent definition", help: "An App Intent is an action your app makes available to Siri and Shortcuts, such as opening a note. Enter its code identifier, for example OpenNoteIntent.") {
-                    TextField("OpenNoteIntent", text: $coordinator.draft.directControl.intentIdentifier)
-                }
-                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
-                    ScenarioResultProjectionEditor(coordinator: coordinator)
+                if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                    labeledRow("Intent definition", help: "An App Intent is an action your app makes available to Siri and Shortcuts, such as opening a note.") {
+                        TextField("OpenNoteIntent", text: $coordinator.draft.directControl.intentIdentifier)
+                    }
+                    if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                        ScenarioResultProjectionEditor(coordinator: coordinator)
+                    }
                 }
                 labeledRow("Invocation route", help: "App Shortcut describes a shortcut your app exposes. App Intent definition describes the action directly. This records the intended route; it does not create a shortcut or change how this test invokes the action.") {
                     Picker("Invocation route", selection: $coordinator.draft.target.route) {
@@ -106,14 +112,16 @@ struct ScenarioEditorView: View {
                 labeledRow("Fixture cleanup", help: "The name of the intended cleanup operation, for example resetFixture. Your test support must restore the data; entering a name does not run that operation.") {
                     TextField("resetFixture", text: $coordinator.draft.fixture.cleanupOperation)
                 }
-                labeledRow("Linked feature run", help: "Optional: paste the UUID of a saved app-feature test run to reuse its evidence. Leave empty if you are not linking one.") {
-                    TextField("Optional feature run UUID", text: linkedFeatureRunID)
-                }
-                labeledRow("Feature ID", help: "When App feature is Required, enter the feature ID recorded by the linked evaluation run. This prevents evidence from a different feature being accepted.") {
-                    TextField("Feature ID from the evaluation", text: $coordinator.draft.directControl.linkedFeatureID)
-                }
-                labeledRow("Feature evidence digest", help: "When App feature is Required, enter the subject-evidence digest from the linked evaluation run. This is separate from the fixture digest above.") {
-                    TextField("Digest from the evaluation", text: $coordinator.draft.directControl.linkedFeatureSubjectDigest)
+                if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                    labeledRow("Linked feature run", help: "Optional saved app-feature evidence for a legacy check.") {
+                        TextField("Optional feature run UUID", text: linkedFeatureRunID)
+                    }
+                    labeledRow("Feature ID", help: "The feature ID recorded by the linked evaluation run.") {
+                        TextField("Feature ID from the evaluation", text: $coordinator.draft.directControl.linkedFeatureID)
+                    }
+                    labeledRow("Feature evidence digest", help: "The subject-evidence digest from the linked evaluation run.") {
+                        TextField("Digest from the evaluation", text: $coordinator.draft.directControl.linkedFeatureSubjectDigest)
+                    }
                 }
             }
             .textFieldStyle(.roundedBorder)
@@ -124,7 +132,10 @@ struct ScenarioEditorView: View {
     private var evidenceSection: some View {
         IntentLabCard("What should this test check?", subtitle: "A lane is one part of the test. Checking the app, its intent, and Siri separately helps you find where a problem starts.") {
             VStack(alignment: .leading, spacing: 20) {
-                if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
+                if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                    Text("Choose the routes to run. Add expected outcomes in the Assertions section.")
+                        .font(.callout).foregroundStyle(.secondary)
+                } else if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion {
                     ScenarioReusableChecksView(coordinator: coordinator)
                 }
                 requirementPickers
@@ -136,6 +147,7 @@ struct ScenarioEditorView: View {
 
     private var parametersSection: some View {
         IntentLabCard("Declared parameters", subtitle: "Parameters are inputs the action needs, such as which note to open. Match the names and types declared by the app’s intent. If the action takes no inputs, leave this list empty.") {
+            if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
             HStack {
                 Spacer()
                 Button("Add parameter", systemImage: "plus") {
@@ -145,6 +157,7 @@ struct ScenarioEditorView: View {
                     coordinator.draft.definitionDigest = ""
                 }
                 .buttonStyle(.borderless)
+            }
             }
             ForEach(Array(coordinator.draft.directControl.parameters.indices), id: \.self) { index in
                 ScenarioParameterEditor(coordinator: coordinator, index: index, parameter: $coordinator.draft.directControl.parameters[index]) {
@@ -166,6 +179,9 @@ struct ScenarioEditorView: View {
 
     private var assertionsSection: some View {
         IntentLabCard("Outcome assertions", subtitle: "An assertion is a check that compares what happened with what you expected. For example, check that the returned note ID matches the packing note’s ID.") {
+            if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                ScenarioGuidedExpectationView(coordinator: coordinator)
+            } else {
             HStack {
                 Spacer()
                 Button("Add assertion", systemImage: "plus") {
@@ -199,6 +215,7 @@ struct ScenarioEditorView: View {
                 }
                 .padding(10)
                 .workspaceInset(radius: 8)
+            }
             }
 
         }
@@ -256,7 +273,9 @@ struct ScenarioEditorView: View {
     }
 
     @ViewBuilder private var requirementPickers: some View {
-        requirementPicker("App feature", explanation: "Did the underlying app feature pass a saved evaluation? This uses the Linked feature run from Intent & fixture; it does not run that evaluation again. Required needs a linked run.", selection: $coordinator.draft.coverage.appFeature)
+        requirementPicker("App feature", explanation: coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion
+                          ? "Run the selected app feature afresh with this case's business inputs and fixture."
+                          : "Use the linked saved feature evaluation. Required needs a linked run.", selection: $coordinator.draft.coverage.appFeature)
         requirementPicker("Intent integration", explanation: "Can the app’s action run directly with these inputs? This checks the intent without asking Siri to interpret a request.", selection: $coordinator.draft.coverage.intentIntegration)
         requirementPicker("Siri", explanation: "Does Siri carry out the saved request on the connected iPhone? The test supplies recognized text, not microphone audio. Passing Intent integration alone does not prove Siri works.", selection: $coordinator.draft.coverage.siri)
     }
@@ -429,21 +448,28 @@ private struct ScenarioParameterEditor: View {
     }
 
     @ViewBuilder private var parameterControls: some View {
-        TextField("Parameter name", text: $parameter.name)
-        Picker("Type", selection: typeSelection) {
-            ForEach(ParameterEditorType.allCases) { type in Text(type.title).tag(type) }
+        if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+            Text(parameter.name).font(.callout.weight(.medium))
+            Text(typeSelection.wrappedValue.title).font(.caption).foregroundStyle(.secondary)
+        } else {
+            TextField("Parameter name", text: $parameter.name)
+            Picker("Type", selection: typeSelection) {
+                ForEach(ParameterEditorType.allCases) { type in Text(type.title).tag(type) }
+            }
+            .accessibilityIdentifier("Parameter type")
+            Toggle("Optional", isOn: $parameter.isOptional)
         }
-        .accessibilityIdentifier("Parameter type")
-        Toggle("Optional", isOn: $parameter.isOptional)
         Picker("Presence", selection: presenceSelection) {
             Text("Missing").tag(ParameterPresenceChoice.missing)
             Text("Set value").tag(ParameterPresenceChoice.value)
-            Text("Explicit null").tag(ParameterPresenceChoice.null)
+            if parameter.isOptional { Text("Explicit null").tag(ParameterPresenceChoice.null) }
         }
         .accessibilityIdentifier("Parameter presence")
-        Button("Remove", systemImage: "trash", role: .destructive, action: remove)
-            .labelStyle(.iconOnly)
-            .accessibilityIdentifier("Remove parameter")
+        if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+            Button("Remove", systemImage: "trash", role: .destructive, action: remove)
+                .labelStyle(.iconOnly)
+                .accessibilityIdentifier("Remove parameter")
+        }
     }
 
     @ViewBuilder private var valueEditor: some View {
@@ -470,26 +496,32 @@ private struct ScenarioParameterEditor: View {
                 DatePicker("Resolved instant", selection: dateValue)
             case .enumeration:
                 HStack {
-                    TextField("Enum type identifier", text: enumTypeIdentifier)
-                    TextField("Allowed cases, comma separated", text: enumAllowedCases)
+                    if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                        TextField("Enum type identifier", text: enumTypeIdentifier)
+                        TextField("Allowed cases, comma separated", text: enumAllowedCases)
+                    }
                     Picker("Enum case", selection: enumValue) {
                         ForEach(enumCases, id: \.self) { Text($0).tag($0) }
                     }
                 }
             case .entity:
                 HStack {
-                    TextField("Entity type identifier", text: entityTypeIdentifier)
+                    if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                        TextField("Entity type identifier", text: entityTypeIdentifier)
+                    }
                     TextField("Stable entity identifier", text: entityValue)
                 }
             case .array:
                 VStack(alignment: .leading, spacing: 6) {
-                    Picker("Array item type", selection: arrayElementSelection) {
-                        Text("String").tag(ParameterEditorType.string)
-                        Text("Boolean").tag(ParameterEditorType.boolean)
-                        Text("Integer").tag(ParameterEditorType.integer)
-                        Text("Number").tag(ParameterEditorType.number)
+                    if coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion {
+                        Picker("Array item type", selection: arrayElementSelection) {
+                            Text("String").tag(ParameterEditorType.string)
+                            Text("Boolean").tag(ParameterEditorType.boolean)
+                            Text("Integer").tag(ParameterEditorType.integer)
+                            Text("Number").tag(ParameterEditorType.number)
+                        }
+                        .accessibilityIdentifier("Array item type")
                     }
-                    .accessibilityIdentifier("Array item type")
                     TextField("Comma-separated values", text: arrayValues)
                     if coordinator.invalidParameterDraftIndices.contains(index) {
                         Text("Finish each item before saving or running this scenario.")
@@ -706,7 +738,7 @@ enum ScenarioArrayInput {
 
 private enum ParameterPresenceChoice: Hashable { case missing, value, null }
 
-private struct ScenarioExpectedValueEditor: View {
+struct ScenarioExpectedValueEditor: View {
     @Binding var value: ScenarioValue?
 
     var body: some View {

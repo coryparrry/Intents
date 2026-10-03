@@ -27,7 +27,7 @@ enum IntentLabGuidance {
         case .stateTransition:
             "State change compares a reported state with your expected value, such as a task being complete. Your test support must capture the relevant state."
         case .noMutation:
-            "No mutation compares your test support’s unchanged-data observation with the expected value. Intent Lab does not independently check all app data for changes."
+            "No mutation checks the selected state before and after the action and also checks its approved final value. Your app's test support must capture that state; other app data is not inspected."
         case .semanticRubric:
             "Semantic review judges meaning or quality using your written criteria. It needs review and cannot prove an exact match by itself."
         }
@@ -36,7 +36,7 @@ enum IntentLabGuidance {
     static func requirement(_ requirement: ScenarioLaneRequirement) -> String {
         switch requirement {
         case .required: "Required: this result must pass for the whole scenario to pass."
-        case .optional: "Optional: collect this result without counting it toward the overall outcome. A failure can still make the Xcode test fail."
+        case .optional: "Optional: collect and display this result without counting it toward the frozen required outcome."
         case .notApplicable: "Not applicable: skip this part because it does not apply to this scenario."
         }
     }

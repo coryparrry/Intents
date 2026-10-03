@@ -1,5 +1,12 @@
 import Foundation
 
+enum ScenarioRunnerSelection {
+    static func chosenID(candidateIDs: [UUID], selectedID: UUID?) -> UUID? {
+        if let selectedID, candidateIDs.contains(selectedID) { return selectedID }
+        return candidateIDs.count == 1 ? candidateIDs[0] : nil
+    }
+}
+
 /// Compares a complete frozen v3 execution. Callers supply saved, immutable
 /// records; no latest-run lookup or mutable UI selection enters this decision.
 /// The caller first validates each child journal, artifact and trusted

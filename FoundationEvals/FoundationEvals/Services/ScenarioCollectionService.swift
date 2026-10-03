@@ -2,6 +2,16 @@ import CryptoKit
 import Foundation
 
 enum ScenarioCollectionService {
+    static func membershipMatchesLatest(_ collection: ScenarioCollection, selectedIDs: Set<UUID>, definitions: [ScenarioDefinition]) -> Bool {
+        guard selectedIDs == Set(collection.members.map(\.caseID)) else { return false }
+        let latest = Dictionary(uniqueKeysWithValues: ScenarioDefinition.latestVersions(in: definitions).map { ($0.id, $0) })
+        return collection.members.allSatisfy { member in
+            guard let definition = latest[member.caseID] else { return false }
+            return member.version == definition.version && member.definitionDigest == definition.definitionDigest
+                && member.testContractDigest == definition.testContractDigest
+        }
+    }
+
     static func member(_ definition: ScenarioDefinition) throws -> ScenarioCollectionMember {
         try .init(definition: definition)
     }

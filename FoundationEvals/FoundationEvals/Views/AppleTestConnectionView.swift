@@ -77,6 +77,8 @@ struct AppleTestConnectionView: View {
                     IntentLabSetupInstallerView(coordinator: coordinator)
                 }
 
+                DeveloperConnectionBanner()
+
                 connectionField(
                     title: "Choose run destination",
                     detail: selectedDeviceDetail

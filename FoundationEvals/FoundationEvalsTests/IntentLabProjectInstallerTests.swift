@@ -3,6 +3,21 @@ import Testing
 @testable import FoundationEvals
 
 struct IntentLabProjectInstallerTests {
+    @Test func generatedBasicDeclarationCannotClaimStableFixtureProof() throws {
+        let basic = try IntentLabProjectInstaller.validateDeclaration(
+            Fixture.declarationData,
+            targetBundleIdentifier: "com.example.Consumer", testTargetName: "UITests"
+        )
+        #expect(!basic.hasFixtureContentObserver)
+        var declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        declaration["observers"] = [["id": "summarySourceContentDigest"]]
+        let owned = try IntentLabProjectInstaller.validateDeclaration(
+            JSONSerialization.data(withJSONObject: declaration),
+            targetBundleIdentifier: "com.example.Consumer", testTargetName: "UITests"
+        )
+        #expect(owned.hasFixtureContentObserver)
+    }
+
     private struct Fixture {
         static let declarationData = Data("""
         {"schemaVersion":1,"id":"consumer-test","version":"1","targetBundleIdentifier":"com.example.Consumer","projectIdentity":"Consumer","targetIdentity":"UITests","supportedHarnessProtocols":["intent-lab-v2"],"actions":[],"resultProjections":[],"preparationOperations":[],"observers":[],"isolation":{"kind":"readOnly"},"capabilities":["direct-intent-execution","environment-payload"]}
@@ -114,12 +129,18 @@ struct IntentLabProjectInstallerTests {
         let original = try Data(contentsOf: fixture.project.appending(path: "project.pbxproj"))
         let preview = try installer.preview(request)
         #expect(preview.supported)
-        #expect(preview.changes.count == 4)
+        #expect(preview.changes.count == 5)
         #expect(preview.changes.first { $0.url.lastPathComponent == "IntentLabScenarioTests.swift" }?.previous == nil)
         #expect(preview.changes.first { $0.url.lastPathComponent == "IntentLabIntegration.json" }?.previous == nil)
+        let adapter = try #require(preview.changes.first { $0.url.lastPathComponent == "IntentLabAppAdapter.swift" })
+        let scaffold = String(decoding: adapter.proposed, as: UTF8.self)
+        #expect(scaffold.contains("throw IntentLabIntegrationError.unsupportedPreparation"))
+        #expect(scaffold.contains("throw IntentLabAppAdapterError.unimplementedObservation"))
+        #expect(!scaffold.contains("expectedValue"))
+        #expect(!scaffold.contains("return [:]"))
         #expect(preview.changes.allSatisfy { $0.afterDigest != $0.beforeDigest })
         let receipt = try installer.apply(preview)
-        #expect(receipt.changedFiles.count == 4)
+        #expect(receipt.changedFiles.count == 5)
         let verification = try installer.verify(request)
         #expect(verification.installed, "Missing: \(verification.missing)")
         #expect(try installer.preview(request).changes.isEmpty)
@@ -129,6 +150,10 @@ struct IntentLabProjectInstallerTests {
         let plist = try PropertyListSerialization.propertyList(from: installed, format: nil) as! [String: Any]
         let objects = plist["objects"] as! [String: [String: Any]]
         let target = objects[fixture.uiTestID]!
+        let productNames = (target["packageProductDependencies"] as? [String] ?? [])
+            .compactMap { objects[$0]?["productName"] as? String }
+        #expect(productNames.contains("IntentLabTesting"))
+        #expect(productNames.contains("IntentLabContracts"))
         let listID = target["buildConfigurationList"] as! String
         let configIDs = objects[listID]!["buildConfigurations"] as! [String]
         for configID in configIDs {
@@ -503,13 +528,15 @@ struct IntentLabProjectInstallerTests {
         #expect(plan.changes.isEmpty)
         #expect(plan.manualSteps.first?.contains("generator-managed") == true)
         #expect(plan.packageSourceDescription.contains("local package"))
-        #expect(plan.manualFiles.count == 3)
+        #expect(plan.manualFiles.count == 4)
         let export = fixture.root.appending(path: "Review")
         let files = try installer.exportManualFiles(plan, to: export)
-        #expect(files.count == 3)
+        #expect(files.count == 4)
+        let adapter = try String(contentsOf: export.appending(path: "IntentLabAppAdapter.swift"), encoding: .utf8)
+        #expect(adapter.contains("throw IntentLabAppAdapterError.unimplementedObservation"))
         #expect(try Data(contentsOf: export.appending(path: "IntentLabIntegration.json"))
             == Fixture.declarationData)
-        #expect(try installer.exportManualFiles(plan, to: export).count == 3)
+        #expect(try installer.exportManualFiles(plan, to: export).count == 4)
         let edited = Data("developer edit".utf8)
         let declaration = export.appending(path: "IntentLabIntegration.json")
         try edited.write(to: declaration)
@@ -545,6 +572,69 @@ struct IntentLabProjectInstallerTests {
         let root = try PropertyListSerialization.propertyList(from: document.data, format: nil) as! [String: Any]
         let objects = root["objects"] as! [String: [String: Any]]
         #expect(objects.values.filter { $0["repositoryURL"] as? String == remote.absoluteString }.count == 1)
+    }
+
+    @Test func officialPackageUsesPinnedDefaultAndStillAllowsExplicitRevision() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let official = IntentLabPackageRevisionManifest.packageURL
+        let automatic = IntentLabInstallationRequest(
+            projectURL: fixture.project, scheme: "FoundationEvals",
+            applicationTargetID: fixture.applicationID, uiTestTargetID: fixture.uiTestID,
+            packageURL: official, packageProduct: IntentLabPackageRevisionManifest.product,
+            consumerSource: "import XCTest\n", declarationData: Fixture.declarationData)
+        if let verified = IntentLabPackageRevisionManifest.verifiedRevision {
+            #expect(automatic.packageRevision == verified)
+            #expect(verified.count == 40)
+            #expect(try IntentLabProjectInstaller().preview(automatic).supported)
+        } else {
+            #expect(automatic.packageRevision == nil)
+            let preview = try IntentLabProjectInstaller().preview(automatic)
+            #expect(!preview.supported)
+            #expect(preview.manualSteps.first?.contains("no verified default package revision") == true)
+        }
+
+        let custom = IntentLabInstallationRequest(
+            projectURL: fixture.project, scheme: "FoundationEvals",
+            applicationTargetID: fixture.applicationID, uiTestTargetID: fixture.uiTestID,
+            packageURL: official, packageRevision: String(repeating: "b", count: 40),
+            packageProduct: IntentLabPackageRevisionManifest.product,
+            consumerSource: "import XCTest\n", declarationData: Fixture.declarationData)
+        #expect(custom.packageRevision == String(repeating: "b", count: 40))
+    }
+
+    @Test func basicEntryPointCannotAdvertiseAppStateOrSiriSupport() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        var declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        declaration["capabilities"] = ["environment-payload", "direct-intent-execution", "siri", "accessible-result"]
+        let request = IntentLabInstallationRequest(
+            projectURL: fixture.project, scheme: "FoundationEvals",
+            applicationTargetID: fixture.applicationID, uiTestTargetID: fixture.uiTestID,
+            packageURL: fixture.package, packageProduct: "IntentLabTesting",
+            consumerSource: "IntentLabBasicIntegration()",
+            declarationData: try JSONSerialization.data(withJSONObject: declaration))
+        let plan = try IntentLabProjectInstaller().preview(request)
+        #expect(!plan.supported)
+        #expect(plan.changes.isEmpty)
+        #expect(plan.manualSteps.first?.contains("cannot prove app state") == true)
+        #expect(plan.manualFiles.contains { $0.filename == "IntentLabAppAdapter.swift" })
+    }
+
+    @Test func editedAppAdapterIsNeverReplacedByScaffold() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let installer = IntentLabProjectInstaller()
+        let request = fixture.request()
+        let initial = try installer.preview(request)
+        let adapter = try #require(initial.changes.first { $0.url.lastPathComponent == "IntentLabAppAdapter.swift" }?.url)
+        _ = try installer.apply(initial)
+        let edit = Data("// Developer-owned app observer implementation\n".utf8)
+        try edit.write(to: adapter)
+        let second = try installer.preview(request)
+        #expect(second.supported)
+        #expect(second.changes.allSatisfy { $0.url != adapter })
+        #expect(try Data(contentsOf: adapter) == edit)
     }
 
     @Test func staticInspectionDoesNotRunProjectCode() throws {
@@ -606,7 +696,8 @@ struct IntentLabProjectInstallerTests {
         defer { fixture.cleanup() }
         let preview = try IntentLabProjectInstaller().previewRemoval(fixture.request())
         #expect(!preview.automated)
-        #expect(preview.filesToReview.count == 4)
+        #expect(preview.filesToReview.count == 5)
+        #expect(preview.filesToReview.contains { $0.lastPathComponent == "IntentLabAppAdapter.swift" })
         #expect(preview.steps.contains { $0.contains("preserving edited adapters") })
     }
 

@@ -6,6 +6,9 @@ struct IntentLabFixtureApp: App {
     @State private var runner = IntentLabFixtureRunner()
 
     init() {
+        if !CommandLine.arguments.contains("-intent-lab-context") {
+            FixtureState.begin(context: "app-\(UUID().uuidString)")
+        }
         #if INTENT_LAB_TEST_SUPPORT
         if CommandLine.arguments.contains("-intent-lab-reset") {
             // Siri activation can outlast the phone’s normal auto-lock interval.
@@ -44,6 +47,13 @@ struct ContentView: View {
     @AppStorage(FixtureState.mutationCountKey) private var mutationCount = 0
     @AppStorage(FixtureState.observedContextKey) private var observedContext = "none"
     @AppStorage(FixtureState.eventKey) private var lastEvent = "none"
+    @AppStorage(FixtureState.summaryReceiptKey) private var summaryReceiptData = Data()
+    @State private var summarizingNoteID: String?
+    @State private var summaryError: String?
+
+    private var summaryReceipt: FixtureSummaryReceipt? {
+        try? JSONDecoder().decode(FixtureSummaryReceipt.self, from: summaryReceiptData)
+    }
 
     var body: some View {
         NavigationStack {
@@ -51,11 +61,37 @@ struct ContentView: View {
                 VStack(alignment: .leading) {
                     Text(note.title).font(.headline)
                     Text(note.body).foregroundStyle(.secondary)
+                    Button("Summarize \(note.title)") {
+                        Task { await summarize(note) }
+                    }
+                    .disabled(summarizingNoteID != nil)
                 }
             }
             .navigationTitle("Synthetic notes")
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
+                    if let summarizingNoteID {
+                        ProgressView("Summarizing \(summarizingNoteID)…")
+                    }
+                    if let summaryError {
+                        Text(summaryError).foregroundStyle(.red)
+                            .accessibilityIdentifier("intent-lab-summary-error")
+                    }
+                    if let summaryReceipt {
+                        Text(summaryReceipt.summary)
+                            .textSelection(.enabled)
+                            .accessibilityIdentifier("intent-lab-visible-summary")
+                        Text(summaryReceipt.noteID).accessibilityIdentifier("intent-lab-summary-source-note-id")
+                        Text(summaryReceipt.sourceContentDigest).accessibilityIdentifier("intent-lab-summary-source-digest")
+                        Text(summaryReceipt.context).accessibilityIdentifier("intent-lab-summary-context")
+                        Text(summaryReceipt.completionID).accessibilityIdentifier("intent-lab-summary-completion-id")
+                        if let caseID = summaryReceipt.subjectCaseID {
+                            Text(caseID.uuidString).accessibilityIdentifier("intent-lab-summary-case-id")
+                        }
+                        if let attemptID = summaryReceipt.subjectAttemptID {
+                            Text(attemptID.uuidString).accessibilityIdentifier("intent-lab-summary-attempt-id")
+                        }
+                    }
                     Text(selectedNoteID).accessibilityIdentifier("intent-lab-selected-note-id")
                     Text(String(mutationCount)).accessibilityIdentifier("intent-lab-mutation-count")
                     Text(observedContext).accessibilityIdentifier("intent-lab-observed-context")
@@ -66,6 +102,20 @@ struct ContentView: View {
                 .padding()
                 .background(.ultraThinMaterial)
             }
+        }
+    }
+
+    @MainActor
+    private func summarize(_ note: FixtureNote) async {
+        summarizingNoteID = note.id
+        summaryError = nil
+        FixtureState.beginSummaryAttempt(noteID: note.id)
+        defer { summarizingNoteID = nil }
+        do {
+            let summary = try await SummaryService.summarize(note)
+            try FixtureState.publishSummary(summary, for: note, route: "AppUI")
+        } catch {
+            summaryError = error.localizedDescription
         }
     }
 }

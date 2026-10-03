@@ -1814,8 +1814,10 @@ final class ScenarioCoordinator {
                   runner.identity.buildProvenance?.buildID == appDigest else { return false }
             return runner.features.contains(where: matches)
         }
-        let selected = frozenRunnerID ?? developerRunnerStore.selectedRunnerID
-        let matchingRunners = selected.map { id in candidates.filter { $0.id == id } } ?? candidates
+        let selectedID = frozenRunnerID ?? ScenarioRunnerSelection.chosenID(
+            candidateIDs: candidates.map(\.id), selectedID: developerRunnerStore.selectedRunnerID
+        )
+        let matchingRunners = candidates.filter { $0.id == selectedID }
         guard matchingRunners.count == 1,
               let runner = matchingRunners.first,
               let feature = runner.features.first(where: matches) else {

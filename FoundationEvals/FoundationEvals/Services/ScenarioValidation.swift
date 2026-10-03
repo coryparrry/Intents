@@ -258,6 +258,7 @@ enum ScenarioValidator {
                     error("observationPlan[\(index)].id", "An observation needs a bounded stable ID.")
                 }
                 if observation.source != .intentResult && observation.source != .uiElement,
+                   !(observation.id == "feature.response" && observation.source == .testOnlyIntent && definition.featureBinding != nil),
                    observation.operationID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
                     error("observationPlan[\(index)].operationID", "State observers need a compiled operation ID.")
                 }
@@ -280,7 +281,10 @@ enum ScenarioValidator {
                     error("assertions[\(index)].observationKey", "The assertion needs a declared observation.")
                     continue
                 }
-                if assertion.kind == .returnedField && observation.source != .intentResult {
+                let featureResponse = assertion.observationKey == "feature.response"
+                    && assertion.applicableLanes == [.appFeature] && observation.source == .testOnlyIntent
+                    && definition.featureBinding != nil
+                if assertion.kind == .returnedField && observation.source != .intentResult && !featureResponse {
                     error("assertions[\(index)].kind", "Returned-value assertions must use an intent result observation.")
                 }
                 if assertion.kind != .returnedField && !observation.source.checksApplicationState {

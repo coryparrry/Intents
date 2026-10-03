@@ -4,6 +4,27 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioExpectationAuthoringTests {
+    @Test func guidedExpectedValuesMatchDeclaredTypes() throws {
+        let types: [ScenarioValueType] = [
+            .primitive(.string), .primitive(.boolean), .primitive(.integer),
+            .primitive(.number), .primitive(.date),
+            .enumeration(typeIdentifier: "Priority", allowedCases: ["high", "low"]),
+            .array(element: .primitive(.integer)),
+            .array(element: .enumeration(typeIdentifier: "Priority", allowedCases: ["high", "low"]))
+        ]
+        for type in types {
+            let value = try #require(ScenarioDeclaredExpectedValues.initial(for: type))
+            #expect(ScenarioValidator.validate(value: value, as: type).isEmpty)
+        }
+        let entityType = ScenarioValueType.entity(typeIdentifier: "Note")
+        let blankEntity = try #require(ScenarioDeclaredExpectedValues.initial(for: entityType))
+        #expect(!ScenarioValidator.validate(value: blankEntity, as: entityType).isEmpty)
+        let resolvedEntity = ScenarioValue.entity(.init(typeIdentifier: "Note", identifier: "packing-001"))
+        #expect(ScenarioValidator.validate(value: resolvedEntity, as: entityType).isEmpty)
+        #expect(ScenarioValidator.validate(value: .array([resolvedEntity]),
+                                           as: .array(element: entityType)).isEmpty)
+    }
+
     @Test func returnedCheckCreatesAndRemovesDependentWiringTogether() throws {
         let catalog = sampleCatalog()
         var definition = ScenarioDefinition.starter()
@@ -91,6 +112,8 @@ struct ScenarioExpectationAuthoringTests {
         let check = try #require(authored.assertions.first)
         #expect(check.applicableLanes == [.appFeature])
         #expect(check.observationKey == "feature.response")
+        #expect(authored.observationPlan?.contains { $0.id == "feature.response" && $0.source == .testOnlyIntent } == true)
+        #expect(!ScenarioValidator.issues(in: authored, requireFrozenDigest: false).contains { $0.path.hasPrefix("observationPlan") || $0.path.hasPrefix("assertions") })
         let failed = ScenarioResultEvaluator.evaluate(
             definition: authored, lane: .appFeature,
             observations: ["feature.response": .string("Actual summary")],
