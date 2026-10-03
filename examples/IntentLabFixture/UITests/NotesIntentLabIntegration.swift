@@ -1,23 +1,56 @@
 import Foundation
 import IntentLabContracts
+#if INTENT_LAB_SIRI_ONLY
+import IntentLabCoreTesting
+typealias NotesTestingIntegration = IntentLabSiriIntegration
+#else
 import IntentLabTesting
+typealias NotesTestingIntegration = IntentLabIntegration
+#endif
 import XCTest
 
 @available(iOS 27.0, *)
 @MainActor
-struct NotesIntentLabIntegration: IntentLabIntegration {
+struct NotesIntentLabIntegration: NotesTestingIntegration {
     var supportedCapabilities: Set<String> {
+        #if INTENT_LAB_SIRI_ONLY
+        ["environment-payload", "preparation", "accessible-result", "siri",
+         "siri-completion", "invocation-correlation"]
+        #else
         ["environment-payload", "direct-intent-execution", "direct-intent-output",
          "preparation", "accessible-result", "siri", "siri-completion", "invocation-correlation"]
+        #endif
     }
     func prepare(bundleIdentifier: String, context: String, operationID: String) throws -> XCUIApplication {
         guard ["", "reset", "resetNotes", "resetFixture"].contains(operationID) else {
-            throw IntentLabIntegrationError.unsupportedPreparation(operationID)
+            throw NotesIntegrationError.unsupportedPreparation(operationID)
         }
         let application = XCUIApplication(bundleIdentifier: bundleIdentifier)
         application.launchArguments = ["-intent-lab-reset", "-intent-lab-context", context]
         application.launch()
         return application
+    }
+
+    func cleanup(bundleIdentifier: String, context: String, operationID: String) throws {
+        guard ["", "reset", "resetNotes", "resetFixture"].contains(operationID) else {
+            throw NotesIntegrationError.unsupportedCleanup(operationID)
+        }
+        let application = try prepare(
+            bundleIdentifier: bundleIdentifier,
+            context: context,
+            operationID: operationID
+        )
+        defer { application.terminate() }
+        let observations = try observe(application: application)
+        try Self.verifyReset(observations)
+    }
+
+    static func verifyReset(_ observations: [String: IntentLabValue]) throws {
+        guard observations["selectedNoteID"] == .string("none"),
+              observations["noteStoreMutationCount"] == .integer(0),
+              observations["applicationEvent"] == .string("none") else {
+            throw NotesIntegrationError.resetNotObserved
+        }
     }
 
     func observe(application: XCUIApplication) throws -> [String: IntentLabValue] {
@@ -76,4 +109,21 @@ struct NotesIntentLabIntegration: IntentLabIntegration {
     }
 
     func source(for observationKey: String) -> String { "accessibleUI" }
+}
+
+private enum NotesIntegrationError: LocalizedError {
+    case unsupportedPreparation(String)
+    case unsupportedCleanup(String)
+    case resetNotObserved
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedPreparation(let operation):
+            "The Notes fixture does not provide preparation operation \(operation)."
+        case .unsupportedCleanup(let operation):
+            "The Notes fixture does not provide cleanup operation \(operation)."
+        case .resetNotObserved:
+            "The synthetic note fixture did not return to its empty baseline."
+        }
+    }
 }

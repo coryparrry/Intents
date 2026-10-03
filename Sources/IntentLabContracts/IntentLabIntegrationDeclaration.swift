@@ -12,6 +12,9 @@ public struct IntentLabIntegrationDeclaration: Codable {
     public var actions: [Action]
     public var resultProjections: [Projection]
     public var preparationOperations: [String]
+    /// Consumer-compiled cleanup operations. Omission is accepted for older declarations,
+    /// but a v2 scenario can only request a listed operation.
+    public var cleanupOperations: [String]?
     public var observers: [Observer]
     public var queryOperations: [QueryOperation]?
     public var isolation: Isolation
@@ -51,6 +54,20 @@ public struct IntentLabIntegrationDeclaration: Codable {
         public var input: IntentLabValue?
     }
 
+    /// Old read-only declarations did not include cleanupOperations. They may
+    /// continue to request a no-op, but never an undeclared mutating operation.
+    public func allowsCleanupOperation(
+        _ operationID: String,
+        requiresMutationCleanup: Bool = false
+    ) -> Bool {
+        let noOps = ["", "none", "noop", "readOnly"]
+        if requiresMutationCleanup {
+            guard !noOps.contains(operationID), let cleanupOperations else { return false }
+            return cleanupOperations.contains(operationID)
+        }
+        return (cleanupOperations ?? noOps).contains(operationID)
+    }
+
     public func validate() throws {
         let operations = queryOperations ?? []
         guard schemaVersion == 1, !id.isEmpty, !version.isEmpty,
@@ -71,6 +88,8 @@ public struct IntentLabIntegrationDeclaration: Codable {
                   operations.contains(where: { $0.id == observer.operationID && $0.source == observer.source })
               }),
               Set(resultProjections.map(\.id)).count == resultProjections.count,
+              Set(preparationOperations).count == preparationOperations.count,
+              Set(cleanupOperations ?? []).count == (cleanupOperations ?? []).count,
               Set(capabilities).count == capabilities.count else {
             throw IntentLabDeclarationError.invalid
         }

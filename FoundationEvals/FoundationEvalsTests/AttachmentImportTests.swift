@@ -72,8 +72,7 @@ struct AttachmentImportTests {
         try imageData().write(to: imageURL)
         try Data("batch reference".utf8).write(to: textURL)
         try Data([0xFF]).write(to: badURL)
-        store.importFiles([imageURL, textURL, badURL])
-        try await waitForImport(store)
+        try await importFilesAndWait([imageURL, textURL, badURL], into: store)
         #expect(store.notice?.contains("Could not import") == true)
         #expect(store.suite.attachments.isEmpty)
         let attachmentDirectory = EvaluationWorkspacePersistence.suiteDirectory(
@@ -83,8 +82,7 @@ struct AttachmentImportTests {
         ).appending(path: "Attachments")
         #expect(try FileManager.default.contentsOfDirectory(atPath: attachmentDirectory.path).isEmpty)
         store.notice = nil
-        store.importFiles([imageURL, textURL])
-        try await waitForImport(store)
+        try await importFilesAndWait([imageURL, textURL], into: store)
         #expect(store.notice == nil)
         #expect(Set(store.suite.attachments.map(\.name)) == ["good.png", "good.txt"])
         #expect(EvaluationStore(supportDirectory: directory.appending(path: "store")).suite.attachments.count == 2)
@@ -95,16 +93,16 @@ struct AttachmentImportTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = EvaluationStore(supportDirectory: directory.appending(path: "store"))
 
-        store.importFiles([try #require(URL(string: "https://example.invalid/reference.txt"))])
-        try await waitForImport(store)
+        try await importFilesAndWait(
+            [try #require(URL(string: "https://example.invalid/reference.txt"))], into: store
+        )
         #expect(store.notice?.contains("regular local files") == true)
         #expect(store.suite.attachments.isEmpty)
 
         let folder = directory.appending(path: "folder.txt", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         store.notice = nil
-        store.importFiles([folder])
-        try await waitForImport(store)
+        try await importFilesAndWait([folder], into: store)
         #expect(store.notice?.contains("regular local files") == true)
         #expect(store.suite.attachments.isEmpty)
     }
@@ -400,12 +398,10 @@ struct AttachmentImportTests {
         } catch {}
     }
 
-    private func waitForImport(_ store: EvaluationStore) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
-        while store.isProcessingFiles, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        try #require(!store.isProcessingFiles, "File import did not complete within ten seconds.")
+    private func importFilesAndWait(_ urls: [URL], into store: EvaluationStore) async throws {
+        let importTask = try #require(store.importFiles(urls), "File import was not started.")
+        await importTask.value
+        try #require(!store.isProcessingFiles, "File import task completed without clearing processing state.")
     }
 
     private func temporaryDirectory() -> URL {

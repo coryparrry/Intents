@@ -127,8 +127,12 @@ enum ScenarioHarnessCapabilities {
         guard usesReusableProtocol(definition) else {
             return ["environment-payload", "fixture-reset", "invocation-correlation", "accessible-result", "direct-intent-output"]
         }
-        var capabilities: Set<String> = ["environment-payload", "direct-intent-execution"]
-        if !definition.directControl.outputFields.isEmpty { capabilities.insert("direct-intent-output") }
+        let includesDirectLane = definition.coverage.intentIntegration != .notApplicable
+        var capabilities: Set<String> = ["environment-payload"]
+        if includesDirectLane {
+            capabilities.insert("direct-intent-execution")
+            if !definition.directControl.outputFields.isEmpty { capabilities.insert("direct-intent-output") }
+        }
         let noOpOperations: Set<String> = ["", "none", "noop", "readOnly"]
         if definition.safety.mutationPolicy == .syntheticMutation
             || !noOpOperations.contains(definition.fixture.preparationOperation)
@@ -140,7 +144,8 @@ enum ScenarioHarnessCapabilities {
         }
         for observation in definition.observationPlan ?? [] {
             switch observation.source {
-            case .intentResult: capabilities.insert("direct-intent-output")
+            case .intentResult:
+                if includesDirectLane { capabilities.insert("direct-intent-output") }
             case .entityQuery: capabilities.insert("entity-query")
             case .valueQuery: capabilities.insert("value-query")
             case .uiElement: capabilities.insert("accessible-result")

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppIntents
 import FoundationEvalsDeveloper
 
 @main
@@ -6,6 +7,7 @@ struct IntentLabFixtureApp: App {
     @State private var runner = IntentLabFixtureRunner()
 
     init() {
+        FixtureShortcuts.updateAppShortcutParameters()
         if !CommandLine.arguments.contains("-intent-lab-context") {
             FixtureState.begin(context: "app-\(UUID().uuidString)")
         }

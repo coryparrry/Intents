@@ -28,7 +28,7 @@ enum SiriProbe {
         expectedContext: String,
         safety: IntentLabSafety,
         testCase: XCTestCase,
-        integration: any IntentLabIntegration,
+        integration: any IntentLabSiriIntegration,
         declaration: IntentLabIntegrationDeclaration?
     ) throws -> [String: IntentLabValue] {
         #if os(macOS)
@@ -119,7 +119,7 @@ enum SiriProbe {
         osMajor: Int,
         observations: [String: IntentLabValue]?,
         expectedContext: String,
-        integration: any IntentLabIntegration
+        integration: any IntentLabSiriIntegration
     ) -> Bool {
         guard osMajor == 27, description == "Timed out waiting for Siri to activate",
               !expectedContext.isEmpty,
@@ -172,7 +172,7 @@ enum SiriProbe {
     static func correlatedCompletion(
         observations: [String: IntentLabValue],
         expectedContext: String,
-        integration: any IntentLabIntegration
+        integration: any IntentLabSiriIntegration
     ) -> [String: IntentLabValue]? {
         observations["invocationContext"] == .string(expectedContext)
             && integration.completed(observations: observations, context: expectedContext) ? observations : nil
@@ -199,7 +199,7 @@ private final class SiriChoiceHandler {
     private var lastDiagnostic = ""
     private let application: XCUIApplication
     private let applicationName: String
-    private let integration: any IntentLabIntegration
+    private let integration: any IntentLabSiriIntegration
     private let declaration: IntentLabIntegrationDeclaration?
     var timer: Timer?
 
@@ -208,7 +208,7 @@ private final class SiriChoiceHandler {
         timer = nil
     }
 
-    init(request: String, application: XCUIApplication, expectedContext: String, integration: any IntentLabIntegration, declaration: IntentLabIntegrationDeclaration?) {
+    init(request: String, application: XCUIApplication, expectedContext: String, integration: any IntentLabSiriIntegration, declaration: IntentLabIntegrationDeclaration?) {
         self.expectedContext = expectedContext
         self.request = request
         self.application = application

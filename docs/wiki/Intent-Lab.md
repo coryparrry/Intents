@@ -132,6 +132,6 @@ If you intend a comparison difference, enter it in this section. **Regression** 
 | **Not observed** | The run did not capture enough evidence. |
 | **Not applicable** | The app skipped this part. |
 
-A green `xcodebuild test` result means that the capture method finished. It does not mean that the release requirement passed. The requirement fails if required evidence is absent, the run is incomplete, or the frozen definition changed. It also fails if a comparison difference is unstated. A direct App Intent pass cannot replace Siri evidence.
+A green `xcodebuild test` result alone does not establish that the release requirement passed. The checked-in Siri-only fixture now fails its XCTest method for failed or unobserved final route evidence, but a captured semantic response still needs separate assessment. The requirement fails if required evidence is absent, the run is incomplete, or the frozen definition changed. It also fails if a comparison difference is unstated. A direct App Intent pass cannot replace Siri evidence.
 
 Intents keeps saved runs and artifacts locally. Read screenshots and responses before you share them.

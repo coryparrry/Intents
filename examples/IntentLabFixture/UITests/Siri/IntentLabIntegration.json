@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "intent-lab-notes-fixture",
+  "id": "intent-lab-notes-fixture-siri",
   "version": "2",
   "targetBundleIdentifier": "com.coryparry.IntentLabFixture",
   "projectIdentity": "IntentLabFixture.xcodeproj",
-  "targetIdentity": "IntentLabFixtureV2UITests",
+  "targetIdentity": "IntentLabFixtureSiriUITests",
   "supportedHarnessProtocols": [
     "intent-lab-v1",
     "intent-lab-v2"
@@ -15,7 +15,11 @@
       "parameters": [
         {
           "name": "note",
-          "type": { "entity": { "typeIdentifier": "NoteEntity" } },
+          "type": {
+            "entity": {
+              "typeIdentifier": "NoteEntity"
+            }
+          },
           "required": true
         }
       ]
@@ -25,7 +29,11 @@
       "parameters": [
         {
           "name": "note",
-          "type": { "entity": { "typeIdentifier": "NoteEntity" } },
+          "type": {
+            "entity": {
+              "typeIdentifier": "NoteEntity"
+            }
+          },
           "required": true
         }
       ]
@@ -34,13 +42,31 @@
   "resultProjections": [
     {
       "id": "openedNoteID",
-      "type": { "primitive": { "_0": "string" } },
-      "path": [{ "kind": "property", "name": "value" }]
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      },
+      "path": [
+        {
+          "kind": "property",
+          "name": "value"
+        }
+      ]
     },
     {
       "id": "generatedSummary",
-      "type": { "primitive": { "_0": "string" } },
-      "path": [{ "kind": "property", "name": "value" }]
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      },
+      "path": [
+        {
+          "kind": "property",
+          "name": "value"
+        }
+      ]
     }
   ],
   "preparationOperations": [
@@ -110,43 +136,71 @@
       "id": "visibleSummary",
       "source": "uiElement",
       "selector": "intent-lab-visible-summary",
-      "type": { "primitive": { "_0": "string" } }
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
     },
     {
       "id": "summarySourceNoteID",
       "source": "uiElement",
       "selector": "intent-lab-summary-source-note-id",
-      "type": { "primitive": { "_0": "string" } }
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
     },
     {
       "id": "summarySourceContentDigest",
       "source": "uiElement",
       "selector": "intent-lab-summary-source-digest",
-      "type": { "primitive": { "_0": "string" } }
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
     },
     {
       "id": "summaryContext",
       "source": "uiElement",
       "selector": "intent-lab-summary-context",
-      "type": { "primitive": { "_0": "string" } }
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
     },
     {
       "id": "summaryCompletionID",
       "source": "uiElement",
       "selector": "intent-lab-summary-completion-id",
-      "type": { "primitive": { "_0": "string" } }
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
     },
     {
       "id": "summaryCaseID",
       "source": "uiElement",
       "selector": "intent-lab-summary-case-id",
-      "type": { "primitive": { "_0": "string" } }
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
     },
     {
       "id": "summaryAttemptID",
       "source": "uiElement",
       "selector": "intent-lab-summary-attempt-id",
-      "type": { "primitive": { "_0": "string" } }
+      "type": {
+        "primitive": {
+          "_0": "string"
+        }
+      }
     }
   ],
   "isolation": {
@@ -155,12 +209,11 @@
   },
   "capabilities": [
     "environment-payload",
-    "direct-intent-execution",
-    "direct-intent-output",
     "preparation",
     "accessible-result",
     "siri",
     "siri-completion",
     "invocation-correlation"
-  ]
+  ],
+  "queryOperations": []
 }
