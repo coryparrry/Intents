@@ -121,7 +121,9 @@ final class ProductionWorkspaceStore {
             configuration.gate.cohortMinimumPassRates[requiredCohortKey + "=" + requiredCohortValue] = cohortPassRate/100
         }
         let frozen = configuration
-        perform({ try $0.createJob(name: name, datasetRevision: dataset, configuration: frozen) }, completed: { self.select($0.id) })
+        perform({ storage in
+            return try storage.createJob(name: name, datasetRevision: dataset, configuration: frozen, resolveCriticalCaseIDs: true)
+        }, completed: { self.select($0.id) })
     }
     func duplicateJob() {
         guard let job = selectedJob else { return }
@@ -134,6 +136,25 @@ final class ProductionWorkspaceStore {
         guard let id = selectedJobID else { return }
         perform({ try $0.setControl(jobID: id, paused: paused, cancelled: cancelled) }, completed: { _ in completed() })
         if id == runningJobID && (paused == true || cancelled == true) { runTask?.cancel() }
+    }
+    @discardableResult
+    func resume(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool) -> Task<Void, Never> {
+        Task {
+            do {
+                guard let storage else { throw ProductionFailure.unavailable("Production storage is unavailable.") }
+                try await Task.detached(priority: .utility) {
+                    let current = try storage.loadJob(job.id)
+                    guard current.revision == job.revision else { throw ProductionFailure.integrity("Frozen job changed before resume.") }
+                    try storage.setControl(jobID: job.id, paused: false)
+                }.value
+                try start(job: job, store: store, externalDisclosureApproved: externalDisclosureApproved)
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+    func approveBaseline(_ report: ProductionReport, note: String) {
+        guard let evidence = report.evidenceRevision else { return }
+        perform { try $0.approveBaseline(jobID: report.job.id, expectedJobRevision: report.job.revision,
+                                       expectedEvidenceRevision: evidence, note: note) }
     }
     func run(store: EvaluationStore, externalDisclosureApproved: Bool) {
         guard let job = selectedJob else { return }

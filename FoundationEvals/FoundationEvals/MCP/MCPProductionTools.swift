@@ -97,8 +97,13 @@ enum MCPProductionTools {
         job.merging(["externalDisclosureApproved": s.boolean]) { a, _ in a },
         ["jobID", "expectedJobRevision"]),
       write(
+        "baseline_approve",
+        "Approve complete eligible baseline evidence after operator review. Approval binds the frozen job and exact report evidence; later reviews/cancellation invalidate it.",
+        job.merging(["expectedEvidenceRevision": s.text(64), "note": s.text(4000), "confirm": s.boolean]) { a, _ in a },
+        ["jobID", "expectedJobRevision", "expectedEvidenceRevision", "note", "confirm"]),
+      write(
         "job_control",
-        "Pause, cancel or clear pause/cancel flags on an explicit job. Cancelling retains evidence.",
+        "Pause, resume or permanently cancel an explicit job. Cancelling retains evidence; clone to run again.",
         job.merging([
           "paused": s.boolean, "cancelled": s.boolean, "expectedControlRevision": s.text(64),
         ]) { a, _ in a }, ["jobID", "expectedJobRevision", "expectedControlRevision"]),

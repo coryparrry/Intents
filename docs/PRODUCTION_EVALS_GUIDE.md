@@ -66,3 +66,21 @@ intents-evals worker --storage /evals --worker-id mac-a --native --poll
 Scheduling requires a live polling worker or explicit `tick`. Nothing installs a daemon or provisions machines. In CI, run the matching worker then run report and propagate its exit code. Shared filesystem coordination is trusted local collaboration, with append-only reviewer attribution; it does not authenticate names or provide hosted permissions.
 
 Repeat batch or `clone --job JOB_UUID --name NAME` creates a fresh job with the same frozen setup. Pause/cancel retains checkpoints. Cancellation is permanent for the job; create another job to repeat the experiment. `export --job JOB_UUID --output /new-evidence-directory` saves dataset, job/chunks, report and complete review history. Exports can include sensitive source content: keep them private until separately reviewed. Export does not delete evidence. Capture file limits and bounded dataset/job sizes provide retention boundaries; permanent deletion is an explicit operator task.
+
+## Baseline approval and critical cases
+
+A policy requiring an approved baseline now requires an explicit approval of the exact saved job and evidence. Use **Approve as baseline…** in Reports, the on-demand MCP action `eval_production_baseline_approve`, or:
+
+```sh
+intents-evals approve-baseline --storage STORE --job UUID --revision JOB_REVISION --evidence EVIDENCE_REVISION --note "Reviewed saved results" --confirm
+```
+
+Read both revisions from the report. Only complete, scored, eligible evidence can be approved. A first baseline can be approved without its own predecessor baseline. Cancellation is permanent; clone the job to run again. Paused or cancelled baselines cannot qualify another job. Reviews and control changes invalidate prior approval, even if pause is later reversed. Approval history is included in evidence exports.
+
+Critical suite case UUIDs map to imported example IDs, source IDs, or the explicit JSONL field `metadata.suiteCaseID`. One case may cover multiple sources; each must pass every trial. Job creation rejects missing mappings before publishing a job.
+
+Reports hold the shared store transaction while reading costs, results, reviews and baseline evidence. This gives a coherent report while briefly blocking worker writes. The dataset reader verifies dataset files once per report; corruption checks remain active.
+
+## Saved external judge credentials
+
+API keys are bound in Keychain to the saved connection UUID, provider and exact endpoint URL. Imported or frozen metadata cannot redirect an existing credential. Earlier unbound keys are preserved but require explicit re-entry in judge settings before use. Endpoint or provider changes also require re-entry; model changes retain the endpoint binding. Do not put credentials in worker requests or exported evidence.

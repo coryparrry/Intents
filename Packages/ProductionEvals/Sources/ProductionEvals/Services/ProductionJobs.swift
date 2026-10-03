@@ -2,8 +2,15 @@ import Foundation
 
 extension ProductionStorage {
     public func createJob(name: String, datasetRevision: String, configuration: ProductionJobConfiguration,
-                          id: UUID = UUID()) throws -> ProductionJob {
-        let dataset = try loadDataset(datasetRevision, verifyFiles: true)
+                          id: UUID = UUID(), resolveCriticalCaseIDs: Bool = false) throws -> ProductionJob {
+        let reader = try ProductionDatasetReader(storage: self, revision: datasetRevision)
+        let dataset = reader.dataset
+        var configuration = configuration
+        if resolveCriticalCaseIDs {
+            configuration.gate.criticalSourceIDs = try resolveCriticalSources(configuration.gate.criticalSourceIDs, reader: reader)
+        } else {
+            try validateCriticalSources(configuration.gate.criticalSourceIDs, reader: reader)
+        }
         try Self.validate(configuration)
         let total = dataset.count * configuration.repetitions * configuration.targets.count
         guard !name.isEmpty, name.count <= 200, total <= 10_000_000 else {
@@ -76,8 +83,11 @@ extension ProductionStorage {
         try transaction {
             let job = try loadJob(jobID); var value = try control(job)
             if let expectedControlRevision, try controlRevision(job) != expectedControlRevision { throw ProductionFailure.invalid("Control state changed. Reread pause/cancel state before changing it.") }
+            let changesEvidence = paused.map { $0 != value.paused } == true || cancelled.map { $0 != value.cancelled } == true
             if let paused { value.paused = paused }
+            if value.cancelled && cancelled == false { throw ProductionFailure.invalid("Cancellation is permanent. Clone this job to run again.") }
             if let cancelled { value.cancelled = cancelled }
+            if changesEvidence { value.evidenceMutationID = UUID() }
             try ProductionCodec.write(value, to: jobDirectory(jobID).appendingPathComponent("control.json"))
         }
     }

@@ -197,6 +197,8 @@ public struct ProductionChunk: Codable, Sendable {
 }
 public struct ProductionControl: Codable, Sendable {
     public var paused: Bool = false
+    /// Control changes invalidate prior baseline approval even after restoring the prior values.
+    public var evidenceMutationID: UUID? = nil
     public var cancelled: Bool = false
     public var startedAt: Date?
     public var reportedCost: Double = 0

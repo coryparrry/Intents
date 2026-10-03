@@ -22,6 +22,56 @@ import Testing
       "expectedWorkspaceRevision": .string(try MCPWorkspaceControl.revision(control.store)),
     ]
   }
+  @Test func resumeStartsClickedJobAfterSelectionChanges() async throws {
+    let (control, root) = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = try #require(control.production.storage)
+    let file = root.appendingPathComponent("input.jsonl")
+    var bytes = try ProductionCodec.encode(ProductionExample(id: "a", prompt: "Input", capturedOutput: "Original")); bytes.append(10)
+    try bytes.write(to: file)
+    let dataset = try storage.importDataset(from: file, name: "Fixture", version: "v1")
+    let a = try storage.createCapturedJob(name: "Clicked", datasetRevision: dataset.revision)
+    let b = try storage.createCapturedJob(name: "Other", datasetRevision: dataset.revision)
+    try storage.setControl(jobID: a.id, paused: true)
+    control.production.jobs = [a,b]; control.production.selectedJobID = a.id
+    let resume = control.production.resume(job: a, store: control.store, externalDisclosureApproved: false)
+    // The async continuation has not started while the main actor changes selection.
+    control.production.selectedJobID = b.id
+    await resume.value
+    let deadline = Date().addingTimeInterval(10)
+    while control.production.runningJobID != nil && Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(control.production.error == nil && control.production.runningJobID == nil)
+    #expect(try storage.report(jobID: a.id).completed == 1)
+    #expect(try storage.report(jobID: b.id).completed == 0)
+    #expect(control.production.selectedJobID == b.id)
+  }
+  @Test func baselineApprovalRequiresConfirmationAndExactEvidenceAndReplaysReceipt() async throws {
+    let (control, root) = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = try #require(control.production.storage)
+    let file = root.appendingPathComponent("input.jsonl")
+    var bytes = try ProductionCodec.encode(ProductionExample(id: "a", prompt: "Input", capturedOutput: "Original")); bytes.append(10)
+    try bytes.write(to: file)
+    let dataset = try storage.importDataset(from: file, name: "Fixture", version: "v1")
+    let job = try storage.createCapturedJob(name: "Baseline", datasetRevision: dataset.revision)
+    let worker = ProductionWorker(id: "fixture", name: "Fixture", platform: "macOS", operatingSystem: "26", hardware: "Fixture", locale: "en_GB", model: "fixture")
+    _ = try await ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker) { try ProductionStorage.capturedResponse($0) }
+    let record = try storage.record(jobID: job.id, slot: 0)
+    try storage.appendReview(jobID: job.id, slot: 0, event: .init(requestID: record.response.requestID, reviewer: "Reviewer", outcome: .passed, note: "Inspected output"))
+    let report = try storage.report(jobID: job.id)
+    var request: [String:MCPJSONValue] = ["jobID": .string(job.id.uuidString), "expectedJobRevision": .string(job.revision),
+      "expectedEvidenceRevision": .string(try #require(report.evidenceRevision)), "note": .string("Reviewed exact evidence"),
+      "operationID": .string(UUID().uuidString), "confirm": .bool(false)]
+    #expect(try await call("eval_production_baseline_approve", request, control: control).isError)
+    request["confirm"] = .bool(true); request["operationID"] = .string(UUID().uuidString)
+    let approved = try await call("eval_production_baseline_approve", request, control: control)
+    #expect(!approved.isError)
+    #expect(try storage.report(jobID: job.id).baselineApproval != nil)
+    let replay = try await call("eval_production_baseline_approve", request, control: control)
+    #expect(!replay.isError && replay.structuredContent.objectValue?["duplicate"] == .bool(true))
+    request["operationID"] = .string(UUID().uuidString); request["expectedEvidenceRevision"] = .string(String(repeating: "0", count: 64))
+    #expect(try await call("eval_production_baseline_approve", request, control: control).isError)
+  }
   @Test func discoveryAndStrictSchemas() throws {
     let definitions = MCPToolCatalog.allDefinitions
     #expect(Set(definitions.map(\.name)).count == definitions.count)

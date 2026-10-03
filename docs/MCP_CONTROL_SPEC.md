@@ -47,3 +47,15 @@ Completed: preserve complete app control while reducing the upfront tool/schema 
 - Authenticated HTTP verification passed 217 checks, loaded 19 advanced schemas and made 30 discovered calls. It retained all 100 fixture outputs with exact slot/example/source identities, then completed one separate real Apple model response. Native screenshot/accessibility inspection confirmed the matching report; all isolated test-build processes were closed.
 - Independent reviewers cleared routing/authority and protocol/discovery scopes. Their verifier finding was fixed by comparing every retained output and identity, not only uniqueness. The first native run exposed a test expectation that treated a parser rejection as an authority payload; the retained failure trace and corrected test now verify rejection before mutation.
 - Final source identity and artifact hashes are recorded in Verification/MCP_CONTROL_VERIFICATION.md. Only two compatibility-test lookup changes followed live verification; app/core inputs and executable/debug-dylib hashes stayed identical. These results measure schema bytes and actual connector behavior, not autonomous model tool-selection accuracy or production release qualification.
+
+## Pre-merge findings repair (complete)
+
+Active scope: fix the seven findings recorded against ee38e7a57399b4d9c19be512b4483df07893821c. Preserve the current UI components/layout/colors and unrelated checkout work.
+
+- Bind judge credentials to saved connection ID/provider/endpoint; reject altered worker metadata and unbound legacy credentials until explicitly re-entered. Preserve rollback bytes.
+- Add explicit production baseline approval bound to the frozen job and complete evidence revision, available through UI, CLI and on-demand MCP. Reject cancelled, changed or ineligible baselines.
+- Use a coherent report transaction and one verified dataset reader; count reconciled results as reviewed.
+- Resolve critical case IDs to dataset source IDs using exact IDs or metadata.suiteCaseID, and reject missing mappings before saving a job.
+- Capture the clicked job and disclosure decision through asynchronous resume. Add failure-path and interaction regressions, recheck the original fixture failures, inspect the actual native UI, and independently review stable fixes. Keep builds/tests sequential with two compile jobs.
+
+Completed all seven fixes and regression checks. See Verification/MCP_CONTROL_VERIFICATION.md for exact commands, source/artifact identity and evidence boundaries.

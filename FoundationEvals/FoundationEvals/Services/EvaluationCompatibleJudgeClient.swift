@@ -23,9 +23,34 @@ struct EvaluationCompatibleJudgeResult: Sendable {
     var cost: EvaluationCost
 }
 
+enum EvaluationJudgeCredentialBinding {
+    private struct Value: Codable {
+        var version: Int
+        var connectionID: UUID
+        var provider: String
+        var baseURL: String
+        var secret: String
+    }
+    static func encode(_ secret: String, for connection: EvaluationJudgeConnection) throws -> Data {
+        try JSONEncoder.sorted.encode(Value(version: 1, connectionID: connection.id,
+            provider: connection.kind.rawValue, baseURL: connection.baseURL, secret: secret))
+    }
+    static func decode(_ bytes: Data, for connection: EvaluationJudgeConnection) throws -> String {
+        guard let value = try? JSONDecoder().decode(Value.self, from: bytes),
+              value.version == 1, value.connectionID == connection.id,
+              value.provider == connection.kind.rawValue, value.baseURL == connection.baseURL,
+              !value.secret.isEmpty else { throw EvaluationCompatibleJudgeError.credentialBindingRequired }
+        return value.secret
+    }
+}
+
 enum EvaluationJudgeCredentialStore {
     private static let service = "com.coryparry.FoundationEvals.judge-connections"
-    static func load(connectionID: UUID) throws -> String? {
+    static func load(connection: EvaluationJudgeConnection) throws -> String? {
+        guard let bytes = try snapshot(connectionID: connection.id) else { return nil }
+        return try EvaluationJudgeCredentialBinding.decode(bytes, for: connection)
+    }
+    static func snapshot(connectionID: UUID) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -36,26 +61,29 @@ enum EvaluationJudgeCredentialStore {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = result as? Data,
-              let value = String(data: data, encoding: .utf8) else {
+        guard status == errSecSuccess, let data = result as? Data else {
             throw EvaluationCompatibleJudgeError.keychain(status)
         }
-        return value
+        return data
     }
-    static func save(_ secret: String?, connectionID: UUID) throws {
+    static func save(_ secret: String, connection: EvaluationJudgeConnection) throws {
+        let bytes = secret.isEmpty ? nil : try EvaluationJudgeCredentialBinding.encode(secret, for: connection)
+        try restore(bytes, connectionID: connection.id)
+    }
+    // Preserve exact bound or legacy bytes during persistence rollback; never resolve them as a key here.
+    static func restore(_ bytes: Data?, connectionID: UUID) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: connectionID.uuidString
         ]
-        guard let secret, !secret.isEmpty else {
+        guard let valueData = bytes else {
             let status = SecItemDelete(query as CFDictionary)
             guard status == errSecSuccess || status == errSecItemNotFound else {
                 throw EvaluationCompatibleJudgeError.keychain(status)
             }
             return
         }
-        let valueData = Data(secret.utf8)
         let updateStatus = SecItemUpdate(query as CFDictionary, [kSecValueData as String: valueData] as CFDictionary)
         if updateStatus == errSecSuccess { return }
         guard updateStatus == errSecItemNotFound else { throw EvaluationCompatibleJudgeError.keychain(updateStatus) }
@@ -550,6 +578,7 @@ enum EvaluationCompatibleJudgeError: LocalizedError, Sendable {
     case disclosureNotApproved
     case capabilityMismatch(String)
     case keychain(OSStatus)
+    case credentialBindingRequired
     case invalidResponse
     case http(status: Int, detail: String?)
     case responseTooLarge
@@ -560,6 +589,7 @@ enum EvaluationCompatibleJudgeError: LocalizedError, Sendable {
         case .invalidConfiguration(let message): message
         case .disclosureNotApproved: "Approve the external evidence disclosure for this suite before judging."
         case .capabilityMismatch(let message): message
+        case .credentialBindingRequired: "Re-enter the API key for this judge connection to bind it to the saved provider and endpoint. The previous key is preserved."
         case .keychain(let status): "The judge credential could not be read or saved (Keychain status \(status))."
         case .invalidResponse: "The judge endpoint returned a non-HTTP response."
         case .http(let status, let detail):

@@ -31,7 +31,7 @@ extension ProductionStorage {
             throw ProductionFailure.invalid("Choose a new absolute export directory.")
         }
         try transaction {
-            let report = try makeReport(jobID: id, includeBaseline: true, lockReads: false)
+            let report = try makeReport(jobID: id, includeBaseline: true)
             let job = try loadJob(id)
             let staging = destination.deletingLastPathComponent().appendingPathComponent(".eval-export-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: staging) }

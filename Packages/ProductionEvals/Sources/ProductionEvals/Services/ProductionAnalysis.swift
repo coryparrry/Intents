@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 private struct RateAccumulator {
     var rate = ProductionRate()
@@ -34,19 +35,26 @@ extension ProductionStorage {
         return result
     }
     public func report(jobID: UUID, includeBaseline: Bool = true) throws -> ProductionReport {
-        try makeReport(jobID: jobID, includeBaseline: includeBaseline, lockReads: true)
+        try transaction { try makeReport(jobID: jobID, includeBaseline: includeBaseline) }
     }
-    func makeReport(jobID: UUID, includeBaseline: Bool, lockReads: Bool) throws -> ProductionReport {
-        let job = try loadJob(jobID), dataset = try loadDataset(job.datasetRevision, verifyFiles: true), control = try (lockReads ? transaction { try auditedCostControl(job) } : auditedCostControl(job))
+    // Caller holds the transaction for control, results, reviews and baseline evidence.
+    func makeReport(jobID: UUID, includeBaseline: Bool) throws -> ProductionReport {
+        let job = try loadJob(jobID)
+        let reader = try ProductionDatasetReader(storage: self, revision: job.datasetRevision)
+        let dataset = reader.dataset, control = try auditedCostControl(job)
         var total = RateAccumulator(), groups: [String: RateAccumulator] = [:], histogram: [Int: Int] = [:]
         var unavailableLatency = 0
         var latencySum = 0.0
         var cost = 0.0, missingCost = 0, completed = 0, reviewed = 0, latencyCount = 0
         var critical: [String: Bool] = [:], required: [String: Bool] = [:]
-        let reader = try ProductionDatasetReader(storage: self, revision: job.datasetRevision)
+        var evidenceHash = SHA256()
+        evidenceHash.update(data: Data(job.revision.utf8))
+        evidenceHash.update(data: try ProductionCodec.encode(control))
+        var hasActiveLease = false
         for i in 0..<chunkCount(job) {
             let chunk = try chunk(job, index: i)
-            for record in chunk.records.values {
+            hasActiveLease = hasActiveLease || (chunk.lease.map { $0.expiresAt > Date() } ?? false)
+            for record in chunk.records.values.sorted(by: { $0.slot < $1.slot }) {
                 let request = try request(job, slot: record.slot, reader: reader)
                 try validateResponse(record.response, requestID: request.requestID)
                 guard record.sourceID == request.example.sourceID, record.exampleID == request.example.id,
@@ -55,10 +63,12 @@ extension ProductionStorage {
                       job.configuration.targets[record.targetIndex].matches(record.worker) else {
                     throw ProductionFailure.integrity("Result provenance does not match its frozen input/target.")
                 }
-                let review = try (lockReads ? review(jobID: job.id, requestID: record.response.requestID) : readReview(jobID: job.id, requestID: record.response.requestID))
+                let review = try readReview(jobID: job.id, requestID: record.response.requestID)
+                evidenceHash.update(data: try ProductionCodec.encode(record))
+                evidenceHash.update(data: try ProductionCodec.encode(review.events))
                 let response = review.response ?? record.response, outcome = review.outcome ?? response.outcome
                 try validateResponse(response, requestID: request.requestID)
-                if review.outcome != nil { reviewed += 1 }
+                if review.outcome != nil || review.response != nil { reviewed += 1 }
                 completed += 1; total.add(record, outcome: outcome)
                 var dimensions = record.metadata.filter { entry in ["task", "locale", "language", "coverage", "sampling"].contains(entry.key)
                     || job.configuration.gate.requiredCohorts[entry.key] != nil
@@ -108,26 +118,38 @@ extension ProductionStorage {
         }
         if job.configuration.maximumCost != nil { cost = control.reportedCost }
         if let maximum = job.configuration.maximumCost, missingCost > 0 || cost > maximum || !control.costReservations.isEmpty { issues.append("Cost evidence is missing or exceeds the budget."); exit = 20 }
+        let eligible = exit == 0 && counts.errors == 0 && !hasActiveLease && !control.paused && !control.cancelled
+        let evidenceRevision = evidenceHash.finalize().map { String(format: "%02x", $0) }.joined()
+        let approval = try readBaselineApproval(job)
+        let currentApproval = eligible && approval?.evidenceRevision == evidenceRevision ? approval : nil
         var baselineRate: Double?
         if includeBaseline, let baselineID = job.configuration.baselineJobID {
-            let baseline = try makeReport(jobID: baselineID, includeBaseline: false, lockReads: lockReads)
+            let baseline = try makeReport(jobID: baselineID, includeBaseline: false)
             guard baseline.job.datasetRevision == job.datasetRevision, baseline.job.configuration.scoringRevision == job.configuration.scoringRevision,
                   baseline.job.configuration.targets == job.configuration.targets, baseline.job.configuration.repetitions == job.configuration.repetitions,
-                  baseline.completed == baseline.planned, baseline.counts.unscored == 0, baseline.counts.uncertain == 0, baseline.counts.errors == 0 else {
-                throw ProductionFailure.integrity("Baseline evidence is incomplete or incompatible.")
+                  baseline.job.id != job.id else {
+                throw ProductionFailure.integrity("Baseline evidence is incompatible.")
             }
-            baselineRate = baseline.counts.passRate
-            baselineCohorts = baseline.cohorts.compactMapValues(\.passRate)
-            if let before = baselineRate, let after = counts.passRate, before-after > job.configuration.gate.maximumPassRateRegression {
-                issues.append("Pass rate regressed beyond the approved limit."); if exit == 0 { exit = 10 }
+            if baseline.phase != "completed" || baseline.completed != baseline.planned
+                || baseline.counts.unscored > 0 || baseline.counts.uncertain > 0 || baseline.counts.errors > 0 {
+                issues.append("Baseline evidence is incomplete, paused or cancelled."); exit = 20
+            } else if job.configuration.gate.requireBaseline && baseline.baselineApproval == nil {
+                issues.append("An explicit approval of the current baseline evidence is required."); exit = 20
+            } else {
+                baselineRate = baseline.counts.passRate
+                baselineCohorts = baseline.cohorts.compactMapValues(\.passRate)
+                if let before = baselineRate, let after = counts.passRate, before-after > job.configuration.gate.maximumPassRateRegression {
+                    issues.append("Pass rate regressed beyond the approved limit."); if exit == 0 { exit = 10 }
+                }
             }
-        } else if job.configuration.gate.requireBaseline { issues.append("An approved compatible baseline is required."); exit = 20 }
+        } else if includeBaseline && job.configuration.gate.requireBaseline { issues.append("An approved compatible baseline is required."); exit = 20 }
         let phase = control.cancelled ? "cancelled" : control.paused ? "paused" : completed == job.plannedCount ? "completed" : "pending"
         let notice = dataset.sampling == .random ? "Random-source sampling; representativeness depends on the supplied sampling frame."
             : "Curated/targeted examples measure this dataset, not the production failure rate."
         return .init(job: job, dataset: dataset, completed: completed, planned: job.plannedCount, counts: counts, cohorts: cohorts,
                      averageMilliseconds: average, baselineCohortPassRates: baselineCohorts, p95UpperMilliseconds: p95, reportedCost: cost, missingCostCount: missingCost, phase: phase, exitCode: exit,
-                     issues: issues, baselinePassRate: baselineRate, reviewedCount: reviewed, samplingNotice: notice)
+                     issues: issues, baselinePassRate: baselineRate, reviewedCount: reviewed, samplingNotice: notice,
+                     evidenceRevision: evidenceRevision, baselineEligible: eligible, baselineApproval: currentApproval)
     }
 }
 

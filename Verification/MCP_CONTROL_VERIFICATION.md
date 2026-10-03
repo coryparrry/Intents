@@ -1,6 +1,6 @@
 # MCP app-control verification
 
-Latest verification: 3 October 2026. The default catalog now contains 24 tools, with all 110 original actions available on demand. This extends PR #68's production workspace with shared native app controls. The original working checkout was not edited.
+Latest verification: 3 October 2026. The default catalog contains 24 tools, with 111 actions available on demand (the original 110 plus explicit baseline approval). This extends PR #68's production workspace with shared native app controls. The original working checkout was not edited.
 
 The initial 110-tool verification below is retained as historical evidence.
 
@@ -79,3 +79,32 @@ This remains a local unsigned-development Debug artifact. The scripted driver kn
 The connector must already be enabled/authenticated. Product/domain operations are exposed; MCP does not automate window pixels, bootstrap its own access, launch arbitrary command workers or fabricate operator approval/device trust. Physical pairing, Siri/device execution, external judges, installer execution against a real consumer app and real production traffic were not exercised in this live run. They retain existing consent, trust, readiness and review safeguards.
 
 Existing PR #68 production release-gate review findings remain open in their own review scope. These MCP checks establish controls, transport, retained evidence and a small real Apple model response; they do not qualify all underlying production gates or a distributed release.
+
+## Pre-merge fixes verification (latest)
+
+All seven findings from the review of `ee38e7a` are repaired: connection-bound judge credentials; explicit evidence-bound baseline approval; one report transaction across control/cost/results/reviews/baseline; critical case-to-source mapping at native job creation with frozen source identities preserved for clones; Resume captures the clicked job and disclosure choice; reconciled responses count as reviewed; one verified dataset reader per report. Two independent source reviewers found no remaining material issues after correcting error-bearing baseline eligibility and overlapping source/example IDs during cloning.
+
+- **28 core tests passed** in three suites on the final source, including ten-thousand-example resume, baseline approval/invalidation/cancellation/error eligibility, imported critical mapping, cross-namespace clones, concurrent cost reports and reconciliation. Log: `/private/tmp/intents-pr68-fix-core-complete.log`.
+- **76 native tests passed** in 10 suites on the final app/core source, including credential binding, MCP confirmation/stale-evidence/retry receipts, Resume selection changes, discovery, transport, feature/provider compatibility, judge criteria, and the exact saved-report schema selector. Log: `/private/tmp/intents-pr68-fix-native-final.log`.
+- **49 CLI integration assertions passed** against the final CLI binary: baseline confirmation/invalidation, real custom worker subprocesses, bounded resume, capture, review, export, timeout and backend isolation. Log: `/private/tmp/intents-pr68-fix-cli-integration.log`.
+- **228 authenticated HTTP checks passed**, with 24 default tools / 111 canonical actions, 16,274 / 119,862 schema bytes, 20 advanced schemas loaded on demand, and 31 discovered calls. All 100 synthetic captured identity/output tuples matched exactly and remained unscored. A separate real Apple on-device response passed; explicit baseline approval persisted. Log: `/private/tmp/intents-pr68-fix-live.log`. Captured job: `e17d5713-4865-4477-9335-0a205d407cc9`. Dataset: `803d65db115a492de9024efeb90fe0c77bb185086468547f5a3f698b5f2c55d5`.
+- **Deterministic cross-process cost race passed.** LLDB stopped the report after reading controls while holding its transaction. A concurrent worker blocked. The earlier snapshot reported completed=0/cost=0/exit=20; after release, the worker's report showed completed=1/cost=2/exit=20 under budget=1. No stale passing gate. Logs: `/private/tmp/intents-pr68-fix-cost-race.log` and `/private/tmp/intents-pr68-fix-race-worker.log`.
+- **Native UI inspected and exercised.** Screenshot/accessibility inspection showed the existing Reports layout and bordered approval control. Approval required a note, persisted the displayed evidence, then disabled its button and showed the approval status. Authenticated MCP confirmed the same note and evidence revision. Pausing/resuming invalidated the previous approval before native reapproval. Jobs controls were inspected. PID 38888 was bound to the exact Debug executable and isolated storage arguments before credential use. The app was closed afterward. Evidence: `/private/tmp/intents-pr68-fix-ui-evidence.json`.
+
+The 380-input app/project/core/package/test/CLI manifest is `/private/tmp/intents-pr68-fix-verified-source.json`, SHA256 `5e4ffcbc50030bbe33dc444de553afd49ad8c190901412d3ed32b489e0977566`. Debug executable SHA256 `a5053256ced6b91d536c44fc5bcec7c1c9f629567e6324f41f99f2435a4bb41b`; debug dylib SHA256 `2599216c2a4840648ca7f20f06b98fd16c233daa0b0d0e59aaf6b0e54a94305b`. This is an unsigned local development artifact.
+
+Failure evidence is retained: the first core approval test showed pause/resume could restore a previous evidence hash (`/private/tmp/intents-pr68-fix-core.log`); a durable control mutation ID now prevents that. An intermediate compile exposed a missing mutation field (`/private/tmp/intents-pr68-fix-core-targeted.log`), corrected before passing rechecks. Initial native selectors included nonexistent saved-report/judge suite names; the final run uses selectors verified from declarations and explicitly contains the saved-report test.
+
+Credential tests exercise the binding codec with fixture secrets; actual Keychain persistence rollback was source-reviewed, without touching real judge keys. Full report scans serialize worker writes while holding the shared lock. These checks establish local behavior, without qualifying distribution, every MCP host, or autonomous action selection. Original checkout and operator data were preserved. No merge was performed.
+
+Final commands (sequential builds, two compile jobs):
+
+```sh
+swift test --package-path Packages/ProductionEvals --scratch-path /private/tmp/intents-mcp-core-tests -j 2
+swift build -j 2 --product intents-evals --scratch-path /private/tmp/intents-pr68-fix-cli-build
+python3 script/test_production_evals.py /private/tmp/intents-pr68-fix-cli-build/debug/intents-evals
+xcodebuild -project FoundationEvals/FoundationEvals.xcodeproj -scheme FoundationEvals -destination 'platform=macOS' -derivedDataPath /private/tmp/intents-mcp-control-build -clonedSourcePackagesDirPath /private/tmp/IntentsReviewFixes-DD64/SourcePackages -jobs 2 OTHER_SWIFT_FLAGS='$(inherited) -j2' CODE_SIGNING_ALLOWED=NO -only-testing:FoundationEvalsTests/JudgeCredentialBindingTests -only-testing:FoundationEvalsTests/MCPActionDiscoveryTests -only-testing:FoundationEvalsTests/MCPAppControlTests -only-testing:FoundationEvalsTests/MCPProtocolTests -only-testing:FoundationEvalsTests/MCPTransportRegressionTests -only-testing:FoundationEvalsTests/MCPFeatureTests -only-testing:FoundationEvalsTests/MCPProviderConfigurationTests -only-testing:FoundationEvalsTests/EvaluationJudgeTests '-only-testing:FoundationEvalsTests/SchemaCustomizationTests/mcpCatalogPublishesRecursiveSchemaCustomizationKeys()' '-only-testing:FoundationEvalsTests/ScenarioSavedExecutionReportTests/toolRequiresStableExecutionIDAndIsReadOnly()' test
+python3 script/verify_mcp_app_control.py --native
+python3 -m py_compile script/test_production_evals.py script/verify_mcp_app_control.py
+git diff --check
+```

@@ -4,7 +4,7 @@ Intents' authenticated localhost connector now uses the same workspace, batch st
 
 ## Discover and inspect
 
-The default catalog advertises **24 tools**: 20 common workspace/evaluation/batch controls and four discovery/invocation tools. Read `eval_get_state` and `eval_workspace_state` first. All 110 original operations remain available.
+The default catalog advertises **24 tools**: 20 common workspace/evaluation/batch controls and four discovery/invocation tools. Read `eval_get_state` and `eval_workspace_state` first. All 110 original operations remain available, plus the on-demand `eval_production_baseline_approve` action (111 total).
 
 For advanced work, search by task using `eval_find_actions` with `query`, optional `domain` and `limit` (default 5, maximum 10). Domains are `workspace`, `evaluations`, `production`, `reviews`, `judges`, `runners` and `intentLab`. Search returns short summaries and `nextOffset`; load one exact schema using `eval_describe_action`. Use the returned `invokeWith` entry point with the action name and its exact arguments:
 
@@ -51,3 +51,5 @@ Execution includes a complete requirement, a partial `diagnostic` with `lanesJSO
 ## Verification
 
 `script/verify_mcp_app_control.py` exercises an already-running isolated app with `MCP_AUTHORIZATION` set to its existing credential. It sends credentials only to a localhost `/mcp` endpoint, never logs them, discovers only needed advanced schemas, measures default catalog bytes, validates read/write denial and processes 100 distinct synthetic original outputs and checks retries, revisions, export bytes, scheduling and approval denial. `--native` separately performs one real on-device response. It does not use real production data, external judges or physical Siri.
+
+Approve a completed baseline with `eval_production_baseline_approve` after reading its report. Supply the job revision, evidence revision, review note, confirmation and operation ID. Changed results, reviews or controls invalidate approval. This action is discovered on demand; the default catalog remains 24 tools.

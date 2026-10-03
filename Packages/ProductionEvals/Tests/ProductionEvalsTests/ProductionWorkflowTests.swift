@@ -30,6 +30,109 @@ private actor Calls {
 }
 
 @Suite(.serialized) struct ProductionWorkflowTests {
+
+    @Test func baselineApprovalRequiresEligibleUnchangedEvidence() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input")])
+        var config = try fixture.job(dataset).configuration
+        config.gate.requireBaseline = true
+        let baseline = try fixture.storage.createJob(name: "Baseline", datasetRevision: dataset.revision, configuration: config)
+        #expect(throws: ProductionFailure.self) {
+            try fixture.storage.approveBaseline(jobID: baseline.id, expectedJobRevision: baseline.revision, expectedEvidenceRevision: "stale", note: "reviewed")
+        }
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: baseline.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: .passed, cost: 0) }
+        // A first baseline can be approved without manufacturing a predecessor comparison.
+        let before = try fixture.storage.report(jobID: baseline.id)
+        #expect(before.exitCode == 20 && before.baselineEligible == true && before.baselineApproval == nil)
+        config.baselineJobID = baseline.id
+        let candidate = try fixture.storage.createJob(name: "Candidate", datasetRevision: dataset.revision, configuration: config)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: candidate.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: .passed, cost: 0) }
+        #expect(try fixture.storage.report(jobID: candidate.id).exitCode == 20)
+        let approval = try fixture.storage.approveBaseline(jobID: baseline.id, expectedJobRevision: baseline.revision, expectedEvidenceRevision: #require(before.evidenceRevision), note: "Reviewed exact saved results")
+        #expect(try fixture.storage.report(jobID: candidate.id).exitCode == 0)
+        let export = fixture.directory.appendingPathComponent("baseline-export")
+        try fixture.storage.exportJob(baseline.id, to: export)
+        #expect(FileManager.default.fileExists(atPath: export.appendingPathComponent("Job/baseline-approvals.jsonl").path))
+        let record = try fixture.storage.record(jobID: baseline.id, slot: 0)
+        try fixture.storage.appendReview(jobID: baseline.id, slot: 0, event: .init(requestID: record.response.requestID, reviewer: "Reviewer", outcome: .passed, note: "Confirmed result"))
+        let changed = try fixture.storage.report(jobID: baseline.id)
+        #expect(changed.baselineApproval == nil && changed.evidenceRevision != approval.evidenceRevision)
+        #expect(try fixture.storage.report(jobID: candidate.id).exitCode == 20)
+        #expect(throws: ProductionFailure.self) {
+            try fixture.storage.approveBaseline(jobID: baseline.id, expectedJobRevision: baseline.revision, expectedEvidenceRevision: approval.evidenceRevision, note: "Stale approval")
+        }
+        _ = try fixture.storage.approveBaseline(jobID: baseline.id, expectedJobRevision: baseline.revision, expectedEvidenceRevision: #require(changed.evidenceRevision), note: "Reviewed updated evidence")
+        try fixture.storage.setControl(jobID: baseline.id, paused: true)
+        #expect(try fixture.storage.report(jobID: candidate.id).exitCode == 20)
+        try fixture.storage.setControl(jobID: baseline.id, paused: false)
+        #expect(try fixture.storage.report(jobID: candidate.id).exitCode == 20)
+        let resumed = try fixture.storage.report(jobID: baseline.id)
+        _ = try fixture.storage.approveBaseline(jobID: baseline.id, expectedJobRevision: baseline.revision, expectedEvidenceRevision: #require(resumed.evidenceRevision), note: "Reviewed resumed evidence")
+        try fixture.storage.setControl(jobID: baseline.id, cancelled: true)
+        #expect(try fixture.storage.report(jobID: candidate.id).exitCode == 20)
+        #expect(throws: ProductionFailure.self) { try fixture.storage.setControl(jobID: baseline.id, cancelled: false) }
+        #expect(try fixture.storage.report(jobID: baseline.id).phase == "cancelled")
+    }
+    @Test func errorEvidenceCannotBeApprovedEvenWhenJobPolicyAllowsErrors() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "one"), .init(id: "b", prompt: "two")])
+        var config = try fixture.job(dataset).configuration
+        config.gate.maximumErrors = 1; config.gate.minimumPassRate = 0
+        let job = try fixture.storage.createJob(name: "Allowed error", datasetRevision: dataset.revision, configuration: config)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: $0.slot == 0 ? .passed : .error, cost: 0) }
+        let report = try fixture.storage.report(jobID: job.id)
+        #expect(report.exitCode == 0 && report.baselineEligible == false)
+        #expect(throws: ProductionFailure.self) {
+            try fixture.storage.approveBaseline(jobID: job.id, expectedJobRevision: job.revision, expectedEvidenceRevision: #require(report.evidenceRevision), note: "Incomplete scoring")
+        }
+    }
+    @Test func criticalCasesTranslateToImportedSourcesBeforeJobPublication() async throws {
+        let fixture = try Fixture(), caseID = UUID().uuidString
+        let dataset = try fixture.dataset([
+            .init(id: caseID, sourceID: "customer-a", prompt: "one"),
+            .init(id: "capture-b", sourceID: "customer-b", prompt: "two", metadata: ["suiteCaseID": caseID]),
+            .init(id: "capture-c", sourceID: "customer-c", prompt: "three")
+        ])
+        var config = try fixture.job(dataset).configuration
+        config.gate.criticalSourceIDs = [caseID, "customer-c"]
+        let job = try fixture.storage.createJob(name: "Mapped", datasetRevision: dataset.revision, configuration: config, resolveCriticalCaseIDs: true)
+        #expect(job.configuration.gate.criticalSourceIDs == ["customer-a", "customer-b", "customer-c"])
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: .passed, cost: 0) }
+        #expect(try fixture.storage.report(jobID: job.id).exitCode == 0)
+        config.gate.criticalSourceIDs = [UUID().uuidString]
+        let count = try fixture.storage.jobs().count
+        #expect(throws: ProductionFailure.self) { try fixture.storage.createJob(name: "Unmapped", datasetRevision: dataset.revision, configuration: config) }
+        #expect(try fixture.storage.jobs().count == count)
+    }
+    @Test func cloningDoesNotReinterpretFrozenSourceIDsAsExampleIDs() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([
+            .init(id: "native-case", sourceID: "customer-a", prompt: "one"),
+            .init(id: "customer-a", sourceID: "customer-b", prompt: "two")
+        ])
+        var config = try fixture.job(dataset).configuration; config.gate.minimumPassRate = 0
+        config.gate.criticalSourceIDs = ["native-case"]
+        let original = try fixture.storage.createJob(name: "Mapped", datasetRevision: dataset.revision, configuration: config, resolveCriticalCaseIDs: true)
+        let clone = try fixture.storage.createJob(name: "Clone", datasetRevision: dataset.revision, configuration: original.configuration)
+        #expect(original.configuration.gate.criticalSourceIDs == ["customer-a"])
+        #expect(clone.configuration.gate.criticalSourceIDs == original.configuration.gate.criticalSourceIDs)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: clone.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: $0.slot == 0 ? .passed : .failed, cost: 0) }
+        #expect(try fixture.storage.report(jobID: clone.id).exitCode == 0)
+    }
+    @Test func concurrentReportsNeverCombineCompletedResultsWithOldCost() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input")])
+        var config = try fixture.job(dataset).configuration
+        config.maximumCost = 1; config.maximumCostPerAttempt = 1
+        let job = try fixture.storage.createJob(name: "Cost snapshot", datasetRevision: dataset.revision, configuration: config)
+        let storage = fixture.storage, worker = fixture.worker
+        async let run = ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker) { .init(requestID: $0.requestID, outcome: .passed, cost: 2) }
+        for _ in 0..<50 {
+            let report = try await Task.detached { try storage.report(jobID: job.id) }.value
+            #expect(report.exitCode == 20)
+            if report.completed == 1 { #expect(report.reportedCost == 2) }
+        }
+        _ = try await run
+        let finished = try storage.report(jobID: job.id)
+        #expect(finished.completed == 1 && finished.reportedCost == 2 && finished.exitCode == 20)
+    }
+
     @Test func immutableDatasetsRejectLeakageAndCorruption() throws {
         let fixture = try Fixture(), a = ProductionExample(id: "a", sourceID: "source", prompt: "input", expected: "output")
         #expect(throws: ProductionFailure.self) { try fixture.dataset([a,a]) }
@@ -136,6 +239,7 @@ private actor Calls {
         try fixture.storage.appendReview(jobID: job.id, slot: 0, event: .init(requestID: id, reviewer: "A", action: .reconcile, note: "Confirmed persisted app state and outstanding charge", reconciledResponse: .init(requestID: id, outcome: .passed, output: "verified", cost: 0.5)))
         let report = try fixture.storage.report(jobID: job.id)
         #expect(report.exitCode == 0 && report.missingCostCount == 0 && report.reportedCost == 0.5)
+        #expect(report.reviewedCount == 1)
         #expect(try fixture.storage.records(jobID: job.id, offset: 0, limit: 1).first?.response.outcome == .needsEvidence)
         #expect(throws: ProductionFailure.self) { try fixture.storage.appendReview(jobID: job.id, slot: 0, event: .init(requestID: id, reviewer: "A", action: .reconcile, note: "again", reconciledResponse: .init(requestID: id, outcome: .passed, cost: 0.5))) }
     }

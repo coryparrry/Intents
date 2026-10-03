@@ -259,7 +259,7 @@ struct MCPProtocolTests {
         #expect(tools.count == 24)
         #expect(tools.compactMap { $0["name"]?.stringValue } == MCPToolCatalog.definitions.map(\.name))
         #expect(!tools.contains { $0["name"] == .string("eval_intent_install_apply") })
-        #expect(MCPToolCatalog.allDefinitions.count == 110)
+        #expect(MCPToolCatalog.allDefinitions.count == 111)
         #expect(tools.allSatisfy {
             $0["inputSchema"]?["$schema"] == .string("https://json-schema.org/draft/2020-12/schema")
         })

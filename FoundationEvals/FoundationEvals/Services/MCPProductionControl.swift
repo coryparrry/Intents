@@ -68,8 +68,8 @@ import Foundation
           }
           let frozen = config
           job = try await Task.detached(priority: .utility) {
-            try storage.createJob(
-              name: name, datasetRevision: revision, configuration: frozen, id: id)
+            return try storage.createJob(
+              name: name, datasetRevision: revision, configuration: frozen, id: id, resolveCriticalCaseIDs: true)
           }.value
         }
         control.production.select(job.id)
@@ -245,6 +245,11 @@ import Foundation
         name: call.text("name"), datasetRevision: source.datasetRevision,
         configuration: source.configuration, id: call.id("newJobID"))
       return ["jobID": .string(clone.id.uuidString), "jobRevision": .string(clone.revision)]
+    case "eval_production_baseline_approve":
+      let value = try job()
+      try MCPControlService.confirm(call)
+      return ["approval": try encode(storage.approveBaseline(jobID: value.id, expectedJobRevision: value.revision,
+        expectedEvidenceRevision: call.text("expectedEvidenceRevision"), note: call.text("note")))]
     case "eval_production_job_control":
       let value = try job()
       guard

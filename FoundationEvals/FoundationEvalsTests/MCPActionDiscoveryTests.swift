@@ -22,12 +22,12 @@ struct MCPActionDiscoveryTests {
 
   @Test func smallDefaultCatalogRetainsEveryOriginalAction() throws {
     #expect(MCPToolCatalog.definitions.count == 24)
-    #expect(MCPToolCatalog.allDefinitions.count == 110)
+    #expect(MCPToolCatalog.allDefinitions.count == 111)
     #expect(Set(MCPToolCatalog.definitions.map(\.name)).count == 24)
     #expect(!MCPToolCatalog.definitions.contains { $0.name == "eval_intent_install_apply" })
     let compact = try MCPJSONValue.encode(MCPToolCatalog.definitions).jsonText().utf8.count
     let full = try MCPJSONValue.encode(MCPToolCatalog.allDefinitions).jsonText().utf8.count
-    print("MCP catalog: 24 default tools / 110 actions; schema bytes \(compact) / \(full)")
+    print("MCP catalog: 24 default tools / 111 actions; schema bytes \(compact) / \(full)")
     #expect(compact * 2 < full)
     #expect(
       MCPActionDiscovery.coreNames.isSubset(of: Set(MCPToolCatalog.allDefinitions.map(\.name))))
@@ -50,7 +50,7 @@ struct MCPActionDiscoveryTests {
       #expect(next > offset)
       offset = Int(next)
     } while offset < 10000
-    #expect(names.count == 110)
+    #expect(names.count == 111)
     #expect(Set(names) == Set(MCPToolCatalog.allDefinitions.map(\.name)))
     let empty = try response("eval_find_actions", ["query": .string("no_such_capability_zzzz")])
     #expect(try page(empty).isEmpty)

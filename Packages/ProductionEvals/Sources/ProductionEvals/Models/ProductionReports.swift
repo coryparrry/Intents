@@ -33,6 +33,9 @@ public struct ProductionReport: Codable, Sendable {
     public var baselinePassRate: Double?
     public var reviewedCount: Int
     public var samplingNotice: String
+    public var evidenceRevision: String? = nil
+    public var baselineEligible: Bool? = nil
+    public var baselineApproval: ProductionBaselineApproval? = nil
 }
 
 public enum ProductionReviewAction: String, Codable, Sendable { case assign, label, adjudicate, reconcile }

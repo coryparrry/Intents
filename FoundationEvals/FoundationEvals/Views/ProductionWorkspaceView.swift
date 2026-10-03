@@ -142,7 +142,7 @@ struct ProductionWorkspaceView: View {
                     if job.configuration.replaySafety == .sideEffects { Text("This batch can call app tools or a custom service. Interrupted actions need verified reconciliation before retrying.").font(.callout).foregroundStyle(.secondary) }
                     HStack {
                         Button(model.report?.phase == "paused" ? "Resume on this Mac" : "Run on this Mac", systemImage: "play.fill") {
-                            model.setControl(paused: false) { model.run(store: store, externalDisclosureApproved: approvedDisclosure) }
+                            model.resume(job: job, store: store, externalDisclosureApproved: approvedDisclosure)
                         }.buttonStyle(.borderedProminent).disabled(model.runningJobID != nil || model.report?.phase == "cancelled" || model.report?.phase == "completed")
                         Button("Pause", systemImage: "pause") { model.setControl(paused: true) }.buttonStyle(.bordered).disabled(model.report?.phase == "completed" || model.report?.phase == "cancelled")
                         Button("Cancel…", role: .destructive) { cancelling = true }.buttonStyle(.bordered).disabled(model.report?.phase == "cancelled")

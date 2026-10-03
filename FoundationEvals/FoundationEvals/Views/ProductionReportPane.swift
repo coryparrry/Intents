@@ -3,6 +3,8 @@ import SwiftUI
 struct ProductionReportPane: View {
     @Bindable var model: ProductionWorkspaceStore
     @State private var search = ""
+    @State private var approvalReport: ProductionReport?
+    @State private var approvalNote = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let report = model.report {
@@ -17,7 +19,15 @@ struct ProductionReportPane: View {
                     Text("P95 latency \(report.p95UpperMilliseconds.map { String(format: "%.0f ms (upper estimate)", $0) } ?? "Unavailable") · Reported cost $\(String(format: "%.4f", report.reportedCost)) · \(report.missingCostCount) costs unavailable").font(.caption).foregroundStyle(.secondary)
                     if let before = report.baselinePassRate { Text("Baseline \(rate(before)) · Change \(String(format: "%+.1f", ((report.counts.passRate ?? 0)-before)*100)) percentage points").font(.callout) }
                     ForEach(report.issues, id: \.self) { Text($0).font(.callout).foregroundStyle(.secondary) }
-                    Button("Export evidence…") { model.export() }.buttonStyle(.bordered)
+                    HStack {
+                        Button("Export evidence…") { model.export() }.buttonStyle(.bordered)
+                        Button("Approve as baseline…", systemImage: "checkmark.seal") {
+                            approvalNote = ""; approvalReport = report
+                        }.buttonStyle(.bordered).disabled(report.baselineEligible != true || report.baselineApproval != nil || model.runningJobID != nil)
+                    }
+                    if let approval = report.baselineApproval {
+                        Text("Baseline approved \(approval.approvedAt.formatted()) · \(approval.note)").font(.caption).foregroundStyle(.secondary)
+                    }
                 }.padding(18).workspaceSurface()
                 VStack(alignment: .leading, spacing: 0) {
                     WorkspacePanelHeader("Cohorts", count: report.cohorts.count)
@@ -40,6 +50,16 @@ struct ProductionReportPane: View {
                     if report.cohorts.count > 100 { Text("Showing up to 100 matching cohorts. Search to narrow the list; exports contain every cohort.").font(.caption).foregroundStyle(.secondary).padding(18) }
                 }.workspaceSurface()
             } else { WorkspaceEmptyState(symbol: "chart.bar", title: "Select a batch", detail: "Choose a saved batch in Jobs to inspect its release gates and cohort results.").workspaceSurface() }
+        }
+        .alert("Approve this evidence as a baseline?", isPresented: Binding(get: { approvalReport != nil }, set: { if !$0 { approvalReport = nil } })) {
+            TextField("Review note", text: $approvalNote)
+            Button("Cancel", role: .cancel) { approvalReport = nil }
+            Button("Approve baseline") {
+                if let frozen = approvalReport { model.approveBaseline(frozen, note: approvalNote) }
+                approvalReport = nil
+            }.disabled(approvalNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        } message: {
+            Text("Approval applies to this batch's saved results and review history. Further reviews or control changes require approval again.")
         }
     }
     private func rate(_ value: Double?) -> String { value.map { String(format: "%.1f%%", $0*100) } ?? "Unscored" }

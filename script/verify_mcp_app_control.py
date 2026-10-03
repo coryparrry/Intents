@@ -121,7 +121,7 @@ def verify(client, native=False):
     client.check("eval_find_actions" in init["instructions"], "on-demand discovery instructions")
     discovery = client.call("eval_find_actions", dict(query="upload", domain="production", limit=3))
     metrics = discovery["catalog"]
-    client.check(len(discovery["actions"]) <= 3 and metrics["actionCount"] == 110, "bounded full capability discovery")
+    client.check(len(discovery["actions"]) <= 3 and metrics["actionCount"] == 111, "bounded full capability discovery")
     client.check(metrics["defaultSchemaBytes"] * 2 < metrics["fullSchemaBytes"], "upfront schema size reduced by more than half")
     client.call("eval_read_action", dict(action="eval_project_create", arguments={}), failure=True)
     client.call("eval_apply_action", dict(action="eval_intent_state", arguments={}), failure=True)
@@ -216,6 +216,11 @@ def verify(client, native=False):
         client.call("eval_production_job_start",dict(jobID=real_id,expectedJobRevision=frozen["jobRevision"],operationID=real_op))
         real = client.wait_job(real_id,1,real_op)
         client.check(real["report"]["counts"]["passed"]==1,"real Apple response passes exact retained criterion")
+        report = real["report"]
+        approval_fields = dict(jobID=real_id, expectedJobRevision=frozen["jobRevision"], expectedEvidenceRevision=report["evidenceRevision"], note="Reviewed retained Apple smoke evidence", confirm=True)
+        approval = client.write("eval_production_baseline_approve", approval_fields)
+        refreshed = client.call("eval_production_job_get", dict(jobID=real_id))
+        client.check(refreshed["report"]["baselineApproval"]["id"] == approval["approval"]["id"], "explicit baseline approval persists exact evidence")
         client.write("eval_workspace_navigate",client.workspace(dict(section="batchRuns",pane="reports",jobID=real_id)))
     print(json.dumps(dict(checks=client.checks, tools=len(tools), actions=metrics["actionCount"], defaultSchemaBytes=metrics["defaultSchemaBytes"], fullSchemaBytes=metrics["fullSchemaBytes"], schemasLoadedOnDemand=len(client.action_definitions), discoveredCalls=client.discovered_calls, capturedOutputs=100, realAppleResponses=1 if native else 0, capturedJobID=job_id, datasetRevision=dataset["revision"]),indent=2))
 

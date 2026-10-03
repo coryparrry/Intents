@@ -16,7 +16,7 @@ struct Options {
     init(_ arguments: [String]) throws {
         guard let command = arguments.first else { throw ProductionFailure.invalid(Self.help) }
         self.command = command; var result: [String:String] = [:]; var i = 1
-        let flags: Set<String> = ["confirm-redacted", "production-data", "native", "captured", "poll", "json", "paused"]
+        let flags: Set<String> = ["confirm-redacted", "production-data", "native", "captured", "poll", "json", "paused", "confirm"]
         while i < arguments.count {
             let key = arguments[i]
             guard key.hasPrefix("--"), result[String(key.dropFirst(2))] == nil else { throw ProductionFailure.invalid("Invalid or duplicate argument: \(key)") }
@@ -33,6 +33,7 @@ struct Options {
             "job": ["dataset","name","native","captured","instructions","scoring","executor","settings","repetitions","attempts","timeout","budget-seconds","safety","max-cost","cost-per-attempt","targets","policy","baseline"],
             "worker": ["worker-id","native","captured","executor","descriptor","job","poll","limit"],
             "report": ["job","output"], "export": ["job","output"], "results": ["job","offset","limit"],
+            "approve-baseline": ["job", "revision", "evidence", "note", "confirm"],
             "pause": ["job"], "resume": ["job"], "cancel": ["job"],
             "review": ["job","slot","reviewer","verdict","note"], "adjudicate": ["job","slot","reviewer","verdict","note"],
             "assign": ["job","slot","reviewer","assignee","note"], "reconcile": ["job","slot","reviewer","result","note"],
@@ -63,6 +64,7 @@ struct Options {
       export --job UUID --output /new-evidence-directory
       report --job UUID [--output /report.json]   (exit 0 pass, 10 regression, 20 incomplete, 30 execution error)
       results --job UUID [--offset N --limit N]
+      approve-baseline --job UUID --revision JOB_REVISION --evidence EVIDENCE_REVISION --note TEXT --confirm
       pause | resume | cancel --job UUID
       review --job UUID --slot N --reviewer NAME --verdict passed|failed|needsEvidence --note TEXT
       assign --job UUID --slot N --reviewer NAME --assignee NAME --note TEXT
@@ -96,6 +98,10 @@ struct ProductionEvalsCLI {
             let source = try storage.loadJob(options.uuid("job")); var configuration = source.configuration
             if options.values["baseline"] != nil { configuration.baselineJobID = try options.uuid("baseline") }
             try printJSON(storage.createJob(name: options.required("name"), datasetRevision: source.datasetRevision, configuration: configuration))
+        case "approve-baseline":
+            guard options.values["confirm"] != nil else { throw ProductionFailure.invalid("Baseline approval requires --confirm after reviewing the exact report.") }
+            try printJSON(storage.approveBaseline(jobID: options.uuid("job"), expectedJobRevision: options.required("revision"),
+                expectedEvidenceRevision: options.required("evidence"), note: options.required("note")))
         case "export": try storage.exportJob(options.uuid("job"), to: options.url("output"))
         case "job":
             if options.values["captured"] != nil {

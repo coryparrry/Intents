@@ -196,6 +196,7 @@ let package = Package(
                 "FoundationEvalsTests.swift",
                 "ImageToolTests.swift",
                 "MCPAppControlTests.swift",
+                "JudgeCredentialBindingTests.swift",
                 "MCPActionDiscoveryTests.swift",
                 "MCPFeatureTests.swift",
                 "MCPProtocolTests.swift",
