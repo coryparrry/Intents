@@ -71,8 +71,23 @@ struct EvaluationDeveloperFeatureAdapter: EvaluationFeatureAdapter {
             usage: .init(
                 inputTokens: output.usage.inputTokens,
                 outputTokens: output.usage.outputTokens
+            ),
+            structuredEvidence: .init(
+                encodedValue: output.encodedValue,
+                encodedValueTypeName: output.encodedValueTypeName,
+                metadata: boundedMetadata(output.metadata)
             )
         )
+    }
+
+    private func boundedMetadata(_ metadata: [String: String]) -> [String: String] {
+        var bounded: [String: String] = [:]
+        for (key, value) in metadata.sorted(by: { $0.key < $1.key }).prefix(64) {
+            let boundedKey = String(key.prefix(256))
+            guard bounded[boundedKey] == nil else { continue }
+            bounded[boundedKey] = String(value.prefix(4_096))
+        }
+        return bounded
     }
 }
 

@@ -4,6 +4,284 @@ import Testing
 
 struct MCPStoreAuthorityTests {
     @MainActor
+    @Test func coordinatorVersionsEditedDefinitionsAndInvalidatesPreflight() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let coordinator = ScenarioCoordinator(supportDirectory: store.overviewStorageDirectory, evaluationStore: store)
+        coordinator.configuration.containerPath = coordinator.draft.target.projectPath
+        coordinator.configuration.destinationIdentifier = "physical-device-1"
+        let saved = try await coordinator.freezeAndSave()
+        #expect(saved.projectID == store.selectedProjectID)
+
+        coordinator.draft.goal.requestText = "A revised approved request"
+        let revised = try await coordinator.freezeAndSave()
+        #expect(revised.id == saved.id)
+        #expect(revised.version == saved.version + 1)
+        #expect(revised.definitionDigest != saved.definitionDigest)
+        #expect((try await coordinator.freezeAndSave()).version == revised.version)
+
+        await coordinator.refreshPreflight()
+        #expect(coordinator.preflight != nil)
+        coordinator.configuration.testBundleIdentifier = "changed.test.bundle"
+        coordinator.invalidatePreflight()
+        #expect(coordinator.preflight == nil)
+
+        coordinator.invalidParameterDraftIndices.insert(0)
+        await #expect(throws: ScenarioValidationError.self) {
+            _ = try await coordinator.freezeAndSave()
+        }
+    }
+
+    @MainActor
+    @Test func corruptScenarioDefinitionMakesProjectReportIncomplete() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let intentLabDirectory = store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
+        let persistence = ScenarioPersistence(rootDirectory: intentLabDirectory)
+        var definition = ScenarioDefinition.starter(projectID: store.selectedProjectID)
+        definition.target.destinationIdentifier = "physical-device-1"
+        definition = try definition.frozen()
+        try await persistence.saveDefinition(definition)
+        let path = intentLabDirectory.appending(path: "Definitions/\(definition.id.uuidString)/v\(definition.version)-\(definition.definitionDigest).json")
+        try Data("{corrupt".utf8).write(to: path, options: .atomic)
+
+        let result = await MCPStoreAuthority.make(store: store).call(
+            .projectReleaseReport(.init(projectID: store.selectedProjectID))
+        )
+        #expect(!result.isError)
+        let output = try result.structuredContent.jsonText()
+        let payload = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        let report = payload?["report"] as? [String: Any]
+        #expect(report?["outcome"] as? Int == Int(EvaluationReleaseCheckExit.incompleteOrIncompatibleEvidence.rawValue))
+        #expect(output.contains("definition storage could not be verified"))
+    }
+
+    @MainActor
+    @Test func unassignedSavedScenarioCannotVanishFromProjectGate() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let persistence = ScenarioPersistence(
+            rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
+        )
+        var definition = ScenarioDefinition.starter()
+        definition.target.destinationIdentifier = "physical-device-1"
+        definition = try definition.frozen()
+        try await persistence.saveDefinition(definition)
+
+        let result = await MCPStoreAuthority.make(store: store).call(
+            .projectReleaseReport(.init(projectID: store.selectedProjectID))
+        )
+        #expect(!result.isError)
+        let output = try result.structuredContent.jsonText()
+        let payload = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        let report = payload?["report"] as? [String: Any]
+        #expect(report?["outcome"] as? Int == Int(EvaluationReleaseCheckExit.incompleteOrIncompatibleEvidence.rawValue))
+        #expect(output.contains("no project assignment"))
+    }
+
+    @MainActor
+    @Test func orphanedSavedScenarioRunCannotVanishFromProjectGate() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let persistence = ScenarioPersistence(
+            rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
+        )
+        var definition = ScenarioDefinition.starter(projectID: store.selectedProjectID)
+        definition.target.destinationIdentifier = "physical-device-1"
+        definition = try definition.frozen()
+        let now = Date()
+        let invocation = ScenarioInvocationIdentity(
+            id: UUID(), nonce: UUID().uuidString, issuedAt: now,
+            testIdentity: .init(bundleIdentifier: "dev.example.Tests", className: "Tests", methodName: "testScenario"),
+            harnessVersion: ScenarioInvocationIdentity.currentHarnessVersion,
+            destinationIdentifier: "physical-device-1",
+            scenarioDigest: definition.definitionDigest,
+            resultBundleIdentity: UUID().uuidString,
+            appProduct: nil, testProduct: nil
+        )
+        let run = ScenarioRun(
+            id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
+            scenarioDigest: definition.definitionDigest, invocation: invocation,
+            startedAt: now, completedAt: now,
+            environment: .init(
+                xcodeVersion: "27", sdkVersion: "27", deviceModel: "iPhone",
+                operatingSystem: "iOS 27", languageCode: "en", regionCode: "GB",
+                timeZoneIdentifier: "Europe/London", executedAt: now
+            ),
+            executionStatus: .completed, outcome: .passed, laneResults: [],
+            linkedFeatureRunID: nil, importedAt: now
+        )
+        _ = try await persistence.saveRun(run, artifactRoot: nil)
+
+        let result = await MCPStoreAuthority.make(store: store).call(
+            .projectReleaseReport(.init(projectID: store.selectedProjectID))
+        )
+        #expect(!result.isError)
+        let output = try result.structuredContent.jsonText()
+        #expect(output.contains("saved Intent Lab run(s) have no matching definition"))
+        let payload = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        let report = payload?["report"] as? [String: Any]
+        #expect(report?["outcome"] as? Int == Int(EvaluationReleaseCheckExit.incompleteOrIncompatibleEvidence.rawValue))
+        try await persistence.saveDefinition(definition)
+        let restoredDefinitionReport = await MCPStoreAuthority.make(store: store).call(
+            .projectReleaseReport(.init(projectID: store.selectedProjectID))
+        )
+        #expect(!restoredDefinitionReport.isError)
+        let restoredOutput = try restoredDefinitionReport.structuredContent.jsonText()
+        #expect(restoredOutput.contains("execution journal has not accepted"))
+    }
+
+    @MainActor
+    @Test func featureLinkRejectsCrossProjectAndPartiallyScoredRuns() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let evaluationCase = EvaluationCase(name: "Feature", prompt: "Fixture", expected: "Response")
+        var run = makeRun(case: evaluationCase, resultCount: 2, plannedCount: 2)
+        run.results[0].status = .passed
+        let digest = try EvaluationSubjectEvidenceSnapshot.digest(
+            instructions: "", cases: [evaluationCase], attachments: []
+        )
+        run.subjectEvidence = .init(instructions: "", cases: [evaluationCase], attachments: [], digest: digest)
+        run.developerExecution = .init(
+            runnerID: UUID(), runnerName: "Fixture", platform: "macOS", operatingSystem: "macOS 27",
+            hardwareModel: "Mac", appBundleIdentifier: "com.coryparry.IntentLabFixture", appVersion: "1",
+            featureID: "fixture.feature", featureVersion: "1", protocolMajorVersion: 1, protocolMinorVersion: 0
+        )
+        var definition = ScenarioDefinition.starter(projectID: store.selectedProjectID)
+        definition.directControl.linkedFeatureRunID = run.id
+        definition.directControl.linkedFeatureID = "fixture.feature"
+        definition.directControl.linkedFeatureSubjectDigest = digest
+        run.projectID = UUID()
+        #expect(!ScenarioFeatureEvidence.isEligible(run, for: definition))
+        run.projectID = store.selectedProjectID
+        #expect(!ScenarioFeatureEvidence.isEligible(run, for: definition))
+        run.results[1].status = .passed
+        #expect(ScenarioFeatureEvidence.isEligible(run, for: definition))
+        run.results[1].repetition = 1
+        #expect(!ScenarioFeatureEvidence.isEligible(run, for: definition))
+        run.results[1].repetition = 2
+        run.developerExecution?.featureID = "different.feature"
+        #expect(!ScenarioFeatureEvidence.isEligible(run, for: definition))
+    }
+
+    @MainActor
+    @Test func scenarioReportRedactsSensitiveObservationsAndScreenshots() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let persistence = ScenarioPersistence(
+            rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
+        )
+        var definition = ScenarioDefinition.starter()
+        definition.target.destinationIdentifier = "physical-device-1"
+        definition = try definition.frozen()
+        try await persistence.saveDefinition(definition)
+        let app = ScenarioProductIdentity(
+            bundleIdentifier: definition.target.bundleIdentifier,
+            executableName: "Fixture",
+            sha256: "app-sha"
+        )
+        let test = ScenarioProductIdentity(
+            bundleIdentifier: "dev.example.FixtureUITests",
+            executableName: "FixtureUITests",
+            sha256: "test-sha"
+        )
+        let invocation = ScenarioInvocationIdentity(
+            id: UUID(), nonce: UUID().uuidString, issuedAt: .now,
+            testIdentity: .init(
+                bundleIdentifier: test.bundleIdentifier,
+                className: "IntentLabScenarioTests",
+                methodName: "testIntentLabScenario"
+            ),
+            harnessVersion: ScenarioInvocationIdentity.currentHarnessVersion,
+            destinationIdentifier: definition.target.destinationIdentifier,
+            scenarioDigest: definition.definitionDigest,
+            resultBundleIdentity: UUID().uuidString,
+            appProduct: app,
+            testProduct: test
+        )
+        let now = Date()
+        let run = ScenarioRun(
+            id: invocation.id,
+            scenarioID: definition.id,
+            scenarioVersion: definition.version,
+            scenarioDigest: definition.definitionDigest,
+            invocation: invocation,
+            startedAt: now,
+            completedAt: now,
+            environment: .init(
+                xcodeVersion: "27", sdkVersion: "27", deviceModel: "iPhone",
+                operatingSystem: "iOS 27", languageCode: "en", regionCode: "GB",
+                timeZoneIdentifier: "Europe/London", executedAt: now
+            ),
+            executionStatus: .completed,
+            outcome: .passed,
+            laneResults: [.init(
+                caseID: definition.id,
+                attempt: 1,
+                lane: .intentIntegration,
+                executionStatus: .completed,
+                outcome: .passed,
+                startedAt: now,
+                completedAt: now,
+                observations: [
+                    "selectedNoteID": .string("packing-001"),
+                    "accountEmail": .string("secret@example.com"),
+                    "feature.encodedValue": .string("ZW5jb2RlZC1wcml2YXRlLWV2aWRlbmNl"),
+                    "feature.metadata.note": .string("private-feature-metadata"),
+                ],
+                assertionResults: [.init(
+                    assertionID: definition.assertions[0].id,
+                    passed: false,
+                    observedValue: .string("assertion-secret@example.com"),
+                    message: "Captured assertion-secret@example.com"
+                )],
+                diagnostic: "Device diagnostic diagnostic-secret@example.com",
+                proposedCause: "Device cause cause-secret@example.com",
+                artifacts: [.init(
+                    kind: .screenshot,
+                    filename: "private-screen.png",
+                    relativePath: "private-screen.png",
+                    contentType: "image/png",
+                    byteCount: 10,
+                    sha256: "screenshot-sha"
+                )]
+            )],
+            linkedFeatureRunID: nil,
+            importedAt: now,
+            responseAssessments: [.init(
+                assertionID: definition.assertions[0].id,
+                lane: .intentIntegration,
+                attempt: 1,
+                passed: false,
+                explanation: "Assessment quoted assessment-secret@example.com",
+                assessorIdentity: "test",
+                rubric: "Do not expose rubric-secret@example.com"
+            )]
+        )
+        _ = try await persistence.saveRun(run, artifactRoot: nil)
+
+        let payload = await MCPStoreAuthority.make(store: store).call(.getScenarioReport(.init(runID: run.id)))
+        let text = try payload.structuredContent.jsonText()
+
+        #expect(text.contains("packing-001"))
+        #expect(!text.contains("secret@example.com"))
+        #expect(!text.contains("assertion-secret@example.com"))
+        #expect(!text.contains("assessment-secret@example.com"))
+        #expect(!text.contains("rubric-secret@example.com"))
+        #expect(!text.contains("diagnostic-secret@example.com"))
+        #expect(!text.contains("cause-secret@example.com"))
+        #expect(!text.contains("private-screen.png"))
+        #expect(!text.contains("ZW5jb2RlZC1wcml2YXRlLWV2aWRlbmNl"))
+        #expect(!text.contains("private-feature-metadata"))
+    }
+
+    @MainActor
     @Test func stateUsesOneAuthoritativeSuiteWhileTheUIDraftIsInvalid() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

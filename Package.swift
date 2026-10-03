@@ -1,15 +1,24 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// This package deliberately exposes only deterministic production logic that can run on
-// GitHub's macOS 26 hosted runner. The macOS 27 app remains an independent Xcode target.
+// This package deliberately exposes deterministic production logic for focused CI tests.
+// GitHub's xcode-27 hosted runner provides macOS 27; the app remains an independent Xcode target.
 let portableProductionSources = [
     "MCP/Installer/CodexMCPInstaller.swift",
     "Models/EvaluationFieldAssertion.swift",
     "Models/EvaluationScoringTypes.swift",
+    "Models/ScenarioModels.swift",
     "Models/WorkflowTimelineInterval.swift",
     "Services/EvaluationFieldAssertions.swift",
     "Services/MetricScorer.swift",
+    "Services/ScenarioComparison.swift",
+    "Services/ScenarioExecutionRecovery.swift",
+    "Services/ScenarioPersistence.swift",
+    "Services/ScenarioValidation.swift",
+    "Services/XCTestEvidenceImporter.swift",
+    "Services/XCTestRunInvocationTransport.swift",
+    "Services/XcodeConnectionDiscovery.swift",
+    "Services/XcodeTestExecutor.swift",
 ]
 
 let portableTestSources = [
@@ -20,6 +29,7 @@ let portableTestSources = [
     "NavigationInteractionTests.swift",
     "TimelineRenderingTests.swift",
     "RunToolbarProgressTests.swift",
+    "ScenarioContractsTests.swift",
 ]
 
 let package = Package(

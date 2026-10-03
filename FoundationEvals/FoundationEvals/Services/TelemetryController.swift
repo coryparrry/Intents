@@ -29,11 +29,11 @@ final class TelemetryController {
     var isConfigured: Bool { configuration != nil }
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let configuration: TelemetryConfiguration?
-    @ObservationIgnored private let makeClient: @MainActor (TelemetryConfiguration) -> any TelemetryClient
+    @ObservationIgnored private let makeClient: @MainActor @Sendable (TelemetryConfiguration) -> any TelemetryClient
     @ObservationIgnored private var client: (any TelemetryClient)?
 
     init(defaults: UserDefaults = .standard, configuration: TelemetryConfiguration? = .bundled,
-         makeClient: @escaping @MainActor (TelemetryConfiguration) -> any TelemetryClient = { PostHogTelemetryClient(configuration: $0) }) {
+         makeClient: @escaping @MainActor @Sendable (TelemetryConfiguration) -> any TelemetryClient = { PostHogTelemetryClient(configuration: $0) }) {
         self.defaults = defaults
         self.configuration = configuration
         self.makeClient = makeClient

@@ -63,7 +63,7 @@ import Testing
         let defaults = defaults()
         defaults.set(true, forKey: TelemetryController.consentKey)
         var creations = 0
-        let factory: (TelemetryConfiguration) -> any TelemetryClient = { _ in
+        let factory: @MainActor @Sendable (TelemetryConfiguration) -> any TelemetryClient = { _ in
             creations += 1
             return RecordingTelemetryClient()
         }

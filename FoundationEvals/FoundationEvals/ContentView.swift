@@ -2,16 +2,29 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var store: EvaluationStore
+    @State private var scenarioCoordinator: ScenarioCoordinator
     @Environment(DeveloperRunnerStore.self) private var runners
     @State private var showsDevices = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
+    init(store: EvaluationStore) {
+        self.store = store
+        _scenarioCoordinator = State(initialValue: ScenarioCoordinator(
+            supportDirectory: store.overviewStorageDirectory,
+            evaluationStore: store
+        ))
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            workspaceNavigation
-            WorkbenchStatusBar(store: store)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("Workspace status")
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                workspaceNavigation
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                WorkbenchStatusBar(store: store)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("Workspace status")
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
         }
         .frame(minWidth: 1_000, minHeight: 700)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -60,6 +73,8 @@ struct ContentView: View {
             switch store.selection {
             case .overview:
                 WorkspaceOverviewView(store: store)
+            case .intentLab:
+                IntentLabView(coordinator: scenarioCoordinator, projects: store.projects)
             case .suite:
                 SuiteEditorView(store: store)
                     .disclosureGroupStyle(FullWidthDisclosureStyle())

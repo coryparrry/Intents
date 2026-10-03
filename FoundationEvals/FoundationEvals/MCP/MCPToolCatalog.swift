@@ -102,6 +102,8 @@ enum MCPToolCall: Sendable {
     case startRun(MCPStartRunArguments)
     case getRun(MCPGetRunArguments)
     case listRuns(MCPListRunsArguments)
+    case listScenarioRuns(MCPListScenarioRunsArguments)
+    case getScenarioReport(MCPGetScenarioReportArguments)
     case analyzeRun(MCPAnalyzeRunArguments)
     case cancelRun(MCPCancelRunArguments)
     case deleteRun(MCPDeleteRunArguments)
@@ -292,6 +294,16 @@ struct MCPListRunsArguments: Codable, Sendable {
     var status: String?
 }
 
+struct MCPListScenarioRunsArguments: Codable, Sendable {
+    var scenarioID: UUID?
+    var cursor: String?
+    var limit: Int?
+}
+
+struct MCPGetScenarioReportArguments: Codable, Sendable {
+    var runID: UUID
+}
+
 struct MCPCancelRunArguments: Codable, Sendable {
     var runID: UUID
 }
@@ -419,6 +431,22 @@ enum MCPToolCatalog {
             ], required: ["runID"], readOnly: true
         ),
         tool(
+            "eval_list_scenario_runs", "List Intent Lab scenario runs",
+            "Read immutable Intent Lab run summaries. This tool never builds a project, controls a device, or starts a scenario.",
+            properties: [
+                "scenarioID": uuid("Optional frozen scenario UUID filter."),
+                "cursor": string("Opaque cursor returned by this tool."),
+                "limit": integer("Maximum summaries to return.", minimum: 1, maximum: 50)
+            ], required: [], readOnly: true
+        ),
+        tool(
+            "eval_get_scenario_report", "Get Intent Lab scenario report",
+            "Read a saved scenario run, its lane evidence, diagnostic classification, and fail-closed release check. Artifact paths remain local metadata.",
+            properties: [
+                "runID": uuid("Saved Intent Lab run UUID.")
+            ], required: ["runID"], readOnly: true
+        ),
+        tool(
             "eval_cancel_run", "Cancel evaluation run",
             "Request cooperative cancellation of the identified active run; poll eval_get_run for its terminal state.",
             properties: ["runID": uuid("Run UUID.")], required: ["runID"], idempotent: true
@@ -504,6 +532,10 @@ enum MCPToolCatalog {
                 return .listRuns(value)
             case "eval_analyze_run":
                 return .analyzeRun(try arguments.decode(MCPAnalyzeRunArguments.self))
+            case "eval_list_scenario_runs":
+                return .listScenarioRuns(try arguments.decode(MCPListScenarioRunsArguments.self))
+            case "eval_get_scenario_report":
+                return .getScenarioReport(try arguments.decode(MCPGetScenarioReportArguments.self))
             case "eval_cancel_run":
                 return .cancelRun(try arguments.decode(MCPCancelRunArguments.self))
             case "eval_delete_run":

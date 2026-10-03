@@ -2,6 +2,7 @@ import SwiftUI
 
 private enum WorkspaceDestination: Hashable {
     case overview
+    case intentLab
     case suite(UUID)
     case run(UUID)
 }
@@ -28,6 +29,7 @@ struct WorkspaceSidebar: View {
             get: {
                 switch store.selection {
                 case .overview: .overview
+                case .intentLab: .intentLab
                 case .suite: .suite(store.selectedSuiteID)
                 case .run(let id): .run(id)
                 }
@@ -37,6 +39,7 @@ struct WorkspaceSidebar: View {
                 do {
                     switch selection {
                     case .overview: store.selection = .overview
+                    case .intentLab: store.selection = .intentLab
                     case .suite(let id):
                         guard !isBusy || id == store.selectedSuiteID else { return }
                         if id != store.selectedSuiteID { try store.switchSuite(id: id) }
@@ -53,6 +56,10 @@ struct WorkspaceSidebar: View {
             Label("Overview", systemImage: "square.grid.2x2.fill")
                 .fontWeight(.medium)
                 .tag(WorkspaceDestination.overview)
+
+            Label("Intent Lab", systemImage: "waveform.badge.magnifyingglass")
+                .fontWeight(.medium)
+                .tag(WorkspaceDestination.intentLab)
 
             Section("Suites") {
                 ForEach(store.suiteRecords.filter { $0.archivedAt == nil }) { suite in

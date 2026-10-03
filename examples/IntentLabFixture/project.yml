@@ -1,0 +1,61 @@
+name: IntentLabFixture
+options:
+  bundleIdPrefix: com.example
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: "27.0"
+    SWIFT_VERSION: "6.0"
+packages:
+  FoundationEvalsDeveloper:
+    path: ../..
+targets:
+  IntentLabFixture:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    dependencies:
+      - package: FoundationEvalsDeveloper
+        product: FoundationEvalsDeveloper
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coryparry.IntentLabFixture
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Intent Lab Fixture
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) INTENT_LAB_TEST_SUPPORT"
+  IntentLabFixtureUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+      - path: ../../Integration/AppIntentsTesting
+        excludes:
+          - README.md
+    resources:
+      - UITests/Generated
+    dependencies:
+      - target: IntentLabFixture
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coryparry.IntentLabFixtureUITests
+        SWIFT_OBJC_BRIDGING_HEADER: ../../Integration/AppIntentsTesting/SiriActivationBridge.h
+        INTENT_LAB_HARNESS_VERSION: intent-lab-v1
+        INTENT_LAB_HARNESS_CAPABILITIES: environment-payload fixture-reset invocation-correlation accessible-result direct-intent-output
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+schemes:
+  IntentLabFixture:
+    build:
+      targets:
+        IntentLabFixture: all
+        IntentLabFixtureUITests: [test]
+    test:
+      targets:
+        - IntentLabFixtureUITests

@@ -286,6 +286,15 @@ struct EvaluationSampleTiming: Codable, Sendable {
     var scoringMilliseconds: Double?
 }
 
+/// Optional typed evidence returned by a developer-owned feature runner. Keeping this
+/// payload additive preserves older saved evaluations while allowing scenario reports
+/// to link the exact production value and metadata that an App Intent consumed.
+struct EvaluationStructuredFeatureEvidence: Codable, Sendable {
+    var encodedValue: Data?
+    var encodedValueTypeName: String?
+    var metadata: [String: String]
+}
+
 struct EvaluationSampleResult: Identifiable, Codable, Sendable {
     var id = UUID()
     var caseID: UUID
@@ -318,6 +327,7 @@ struct EvaluationSampleResult: Identifiable, Codable, Sendable {
     var refusal: EvaluationRefusalTrace? = nil
     var imageInputTokenCountAvailable: Bool? = nil
     var workflowTrace: EvaluationWorkflowTrace? = nil
+    var structuredFeatureEvidence: EvaluationStructuredFeatureEvidence? = nil
 
     var hasCompleteSubjectEvidenceForJudging: Bool {
         errorCategory == nil
@@ -575,6 +585,7 @@ struct EvaluationRunOperation: Codable, Sendable {
 
 enum SidebarSelection: Hashable {
     case overview
+    case intentLab
     case suite
     case run(UUID)
 }

@@ -94,6 +94,12 @@ struct FoundationEvalsApp: App {
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
+                Button("Show Intent Lab") {
+                    store.selection = .intentLab
+                    openWindow(id: "evaluation-main", value: "main")
+                }
+                .keyboardShortcut("2", modifiers: [.command])
+
                 Button("Add Test Case") {
                     store.selection = .suite
                     store.addCase()

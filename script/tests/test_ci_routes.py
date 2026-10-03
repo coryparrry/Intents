@@ -126,6 +126,20 @@ class CoverageTests(unittest.TestCase):
             swift=("WorkflowTimelineIntervalTests", "TimelineRenderingTests"),
         )
 
+    def test_scenario_execution_dependencies_select_contract_tests(self):
+        for source in (
+            "ScenarioExecutionRecovery.swift",
+            "XCTestRunInvocationTransport.swift",
+            "XcodeConnectionDiscovery.swift",
+            "XcodeTestExecutor.swift",
+        ):
+            with self.subTest(source=source):
+                self.assert_selection(
+                    [routes.APP + "Services/" + source],
+                    native=True,
+                    swift=("ScenarioContractsTests",),
+                )
+
     def test_sidebar_and_toolbar_do_not_rerun_scoring_or_installer_tests(self):
         for source, suite in (
             ("FullWidthDisclosureStyle.swift", "NavigationInteractionTests"),

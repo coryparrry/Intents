@@ -309,6 +309,9 @@ enum EvaluationReleaseCheckEvaluator {
         let suites = report.suites.map { item in
             "- \(item.suiteName) (`\(item.suiteID.uuidString)`): \(item.report.outcome.rawValue) — \(item.report.summary)"
         }.joined(separator: "\n")
+        let scenarios = (report.scenarios ?? []).map { item in
+            "- `\(item.scenarioID.uuidString)`: \(item.outcome.rawValue) — \(item.summary)"
+        }.joined(separator: "\n")
         return """
         # \(heading)
 
@@ -320,7 +323,33 @@ enum EvaluationReleaseCheckEvaluator {
         ## Required suites
 
         \(suites.isEmpty ? "- None configured" : suites)
+
+        ## Required Intent Lab scenarios
+
+        \(scenarios.isEmpty ? "- None configured" : scenarios)
         """
+    }
+
+    static func integratingScenarios(
+        _ report: EvaluationProjectReleaseCheckReport,
+        scenarios: [ScenarioReleaseCheckReport]
+    ) -> EvaluationProjectReleaseCheckReport {
+        var combined = report
+        combined.scenarios = scenarios
+        if scenarios.contains(where: { $0.outcome == .incompleteOrIncompatibleEvidence }) {
+            combined.outcome = .incompleteOrIncompatibleEvidence
+        } else if scenarios.contains(where: { $0.outcome == .failed }),
+                  combined.outcome == .passed {
+            combined.outcome = .regression
+        }
+        if !scenarios.isEmpty {
+            let failed = scenarios.count { $0.outcome != .passed }
+            combined.summary += failed == 0
+                ? " All \(scenarios.count) required Intent Lab scenarios passed."
+                : " \(failed) of \(scenarios.count) required Intent Lab scenarios did not pass."
+        }
+        combined.generatedAt = Date()
+        return combined
     }
 
     static func projectReport(

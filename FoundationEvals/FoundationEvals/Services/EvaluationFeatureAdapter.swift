@@ -33,6 +33,7 @@ struct EvaluationFeatureInput: Sendable {
 struct EvaluationFeatureOutput: Sendable {
     var response: String
     var usage = EvaluationUsage()
+    var structuredEvidence: EvaluationStructuredFeatureEvidence? = nil
 }
 
 struct EvaluationFeatureAdapterTermination: Sendable {
@@ -98,7 +99,8 @@ actor EvaluationFeatureAdapterRunner {
                         rationale: score.rationale,
                         usage: output.usage,
                         duration: milliseconds(since: clock),
-                        fieldAssertionResults: assertionResults
+                        fieldAssertionResults: assertionResults,
+                        structuredFeatureEvidence: output.structuredEvidence
                     )
                 } catch is CancellationError {
                     cancelled = true
@@ -192,7 +194,8 @@ actor EvaluationFeatureAdapterRunner {
         duration: Double,
         errorCategory: String? = nil,
         errorMessage: String? = nil,
-        fieldAssertionResults: [EvaluationFieldAssertionResult] = []
+        fieldAssertionResults: [EvaluationFieldAssertionResult] = [],
+        structuredFeatureEvidence: EvaluationStructuredFeatureEvidence? = nil
     ) -> EvaluationSampleResult {
         EvaluationSampleResult(
             caseID: evaluationCase.id,
@@ -213,7 +216,8 @@ actor EvaluationFeatureAdapterRunner {
             errorMessage: errorMessage,
             judgeErrorCategory: nil,
             judgeErrorMessage: nil,
-            fieldAssertionResults: fieldAssertionResults.isEmpty ? nil : fieldAssertionResults
+            fieldAssertionResults: fieldAssertionResults.isEmpty ? nil : fieldAssertionResults,
+            structuredFeatureEvidence: structuredFeatureEvidence
         )
     }
 

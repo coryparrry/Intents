@@ -1652,44 +1652,6 @@ final class EvaluationStore {
         }
     }
 
-    func linkSelectedSuiteDefinition(filename: String) throws {
-        try requireIdle()
-        guard let repository = selectedProject.repository else {
-            throw EvaluationStoreError.resourceConflict("Link the project to a repository first.")
-        }
-        let relativePath = repository.definitionsDirectory + "/" + filename
-        guard EvaluationWorkspacePersistence.safeRelativePath(relativePath) else {
-            throw EvaluationWorkspaceError.invalidRepositoryPath
-        }
-        let url = URL(filePath: repository.rootPath, directoryHint: .isDirectory).appending(path: relativePath)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let definition = EvaluationSuiteDefinition(suite: suite)
-        let revision = try EvaluationWorkspacePersistence.definitionRevision(definition)
-        if FileManager.default.fileExists(atPath: url.path) {
-            let existing = try CanonicalJSON.decode(EvaluationSuiteDefinition.self, from: Data(contentsOf: url))
-            guard existing == definition else {
-                throw EvaluationStoreError.resourceConflict("A repository definition already exists at \(relativePath). Import or rename it explicitly.")
-            }
-            try updateSelectedSuiteRecord { record in
-                record.repositoryDefinitionPath = relativePath
-                record.lastRepositoryRevision = revision
-                record.updatedAt = Date()
-            }
-            return
-        }
-        try CanonicalJSON.data(for: definition).write(to: url, options: .atomic)
-        do {
-            try updateSelectedSuiteRecord { record in
-                record.repositoryDefinitionPath = relativePath
-                record.lastRepositoryRevision = revision
-                record.updatedAt = Date()
-            }
-        } catch {
-            try? FileManager.default.removeItem(at: url)
-            throw error
-        }
-    }
-
     private func applyingRepositoryChanges(to localSuite: EvaluationSuite) throws -> EvaluationSuite {
         guard let url = EvaluationWorkspacePersistence.repositoryDefinitionURL(
             project: selectedProject, suite: selectedSuiteRecord

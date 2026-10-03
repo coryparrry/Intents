@@ -593,4 +593,5 @@ struct EvaluationProjectReleaseCheckReport: Codable, Sendable {
     var summary: String
     var suites: [EvaluationProjectReleaseSuiteReport]
     var generatedAt: Date
+    var scenarios: [ScenarioReleaseCheckReport]? = nil
 }
