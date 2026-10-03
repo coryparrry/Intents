@@ -256,28 +256,10 @@ struct MCPProtocolTests {
         let tools = try #require(responseJSON(first)["result"]?["tools"]?.arrayValue)
 
         #expect(first.body == second.body)
-        #expect(tools.count == 19)
-        #expect(tools.compactMap { $0["name"]?.stringValue } == [
-            "eval_get_state",
-            "eval_list_projects",
-            "eval_check",
-            "eval_release_report",
-            "eval_project_release_report",
-            "eval_replace_suite",
-            "eval_upload_attachment",
-            "eval_remove_attachment",
-            "eval_start_run",
-            "eval_get_run",
-            "eval_list_runs",
-            "eval_analyze_run",
-            "eval_list_scenario_runs",
-            "eval_get_scenario_report",
-            "eval_get_scenario_execution_report",
-            "eval_cancel_run",
-            "eval_delete_run",
-            "eval_list_review_samples",
-            "eval_propose_review"
-        ])
+        #expect(tools.count == 24)
+        #expect(tools.compactMap { $0["name"]?.stringValue } == MCPToolCatalog.definitions.map(\.name))
+        #expect(!tools.contains { $0["name"] == .string("eval_intent_install_apply") })
+        #expect(MCPToolCatalog.allDefinitions.count == 111)
         #expect(tools.allSatisfy {
             $0["inputSchema"]?["$schema"] == .string("https://json-schema.org/draft/2020-12/schema")
         })

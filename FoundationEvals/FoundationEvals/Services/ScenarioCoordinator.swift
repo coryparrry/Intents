@@ -1750,8 +1750,9 @@ final class ScenarioCoordinator {
         }
     }
 
+    @discardableResult
     func selectAssessment(_ assessmentID: UUID, coordinateID: UUID,
-                          assertionID: UUID) async {
+                          assertionID: UUID) async -> Bool {
         do {
             let context = try selectedAssessmentContext(coordinateID: coordinateID,
                                                         assertionID: assertionID)
@@ -1779,10 +1780,12 @@ final class ScenarioCoordinator {
             _ = try await sealSelectedAssessments(record: context.record,
                                                   definition: context.definition)
             await reloadSelectedAssessmentOverlay(expectedExecutionID: context.record.id)
-        } catch { notice = error.localizedDescription }
+            return true
+        } catch { notice = error.localizedDescription;return false }
     }
 
-    func retryAssessmentSelectionSave() async {
+    @discardableResult
+    func retryAssessmentSelectionSave() async -> Bool {
         guard let record = selectedExecutionRecord,
               let plan = selectedExecutionPlan,
               let definition = definitions.first(where: {
@@ -1790,13 +1793,14 @@ final class ScenarioCoordinator {
                     && $0.definitionDigest == plan.definitionDigest
               }) else {
             notice = "Select a saved execution before retrying assessment selection."
-            return
+            return false
         }
         do {
             _ = try await sealSelectedAssessments(record: record, definition: definition)
             await reloadSelectedAssessmentOverlay(expectedExecutionID: record.id)
             notice = "Assessment selection was saved without running the app."
-        } catch { notice = error.localizedDescription }
+            return true
+        } catch { notice = error.localizedDescription;return false }
     }
 
     private func selectedAssessmentContext(

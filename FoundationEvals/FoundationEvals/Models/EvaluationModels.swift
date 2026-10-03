@@ -589,6 +589,7 @@ enum SidebarSelection: Hashable {
     case overview
     case intentLab
     case evaluations
+    case batchRuns
     case traces
     case suite
     case run(UUID)

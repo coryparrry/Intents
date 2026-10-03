@@ -4,6 +4,7 @@ private enum WorkspaceDestination: Hashable {
     case overview
     case intentLab
     case evaluations
+    case batchRuns
     case traces
     case suite(UUID)
     case run(UUID)
@@ -33,6 +34,7 @@ struct WorkspaceSidebar: View {
                 case .overview: .overview
                 case .intentLab: .intentLab
                 case .evaluations: .evaluations
+                case .batchRuns: .batchRuns
                 case .traces: .traces
                 case .suite: .suite(store.selectedSuiteID)
                 case .run(let id): .run(id)
@@ -45,6 +47,7 @@ struct WorkspaceSidebar: View {
                     case .overview: store.selection = .overview
                     case .intentLab: store.selection = .intentLab
                     case .evaluations: store.selection = .evaluations
+                    case .batchRuns: store.selection = .batchRuns
                     case .traces: store.selection = .traces
                     case .suite(let id):
                         guard !isBusy || id == store.selectedSuiteID else { return }
@@ -78,6 +81,9 @@ struct WorkspaceSidebar: View {
                 Label { Text("Evaluations") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
                     .accessibilityIdentifier("Sidebar evaluations")
                     .tag(WorkspaceDestination.evaluations)
+                Label { Text("Batch runs") } icon: { WorkspaceIcon(symbol: "play.rectangle", size: 18) }
+                    .accessibilityIdentifier("Sidebar batch runs")
+                    .tag(WorkspaceDestination.batchRuns)
                 Label { Text("Traces") } icon: { WorkspaceIcon(symbol: "point.3.connected.trianglepath.dotted", size: 18) }
                     .accessibilityIdentifier("Sidebar traces")
                     .tag(WorkspaceDestination.traces)

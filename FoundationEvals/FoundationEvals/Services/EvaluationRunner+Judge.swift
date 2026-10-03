@@ -257,7 +257,7 @@ extension EvaluationRunner {
                 return "judgeHTTPFailure"
             case .responseTooLarge: return "invalidJudgeOutput"
             case .invalidConfiguration: return "invalidJudgeConfiguration"
-            case .keychain: return "judgeCredentialUnavailable"
+            case .keychain, .credentialBindingRequired: return "judgeCredentialUnavailable"
             case .invalidResponse: return "judgeNetworkFailure"
             }
         }

@@ -3,16 +3,21 @@ import UniformTypeIdentifiers
 
 @MainActor
 enum MCPStoreAuthority {
-    static func make(store: EvaluationStore) -> MCPAuthority {
-        MCPAuthority(
-            call: { call in await handle(call, store: store) },
+    static func make(store: EvaluationStore, control: EvaluationAppControl? = nil) -> MCPAuthority {
+        let control = control ?? EvaluationAppControl(store: store)
+        return MCPAuthority(
+            call: { call in await handle(call, store: store, control: control) },
             readResource: { request in await read(request, store: store) }
         )
     }
 
-    private static func handle(_ call: MCPToolCall, store: EvaluationStore) async -> MCPToolPayload {
+    private static func handle(_ call: MCPToolCall, store: EvaluationStore, control: EvaluationAppControl) async -> MCPToolPayload {
         do {
             switch call {
+            case .actionCatalog(let request):
+                return MCPActionDiscovery.respond(request)
+            case .control(let request):
+                return await control.mcp.execute(request)
             case .getState:
                 return try state(store)
             case .listProjects:
@@ -378,6 +383,7 @@ enum MCPStoreAuthority {
         let toolCallFamilies = suite.hasConfiguredTools ? 1 : 0
         let active = try store.activeRun.map { try operationJSON(store.runStatus(id: $0.id)!) } ?? .null
         return readPayload([
+            "workspaceRevision": .string(try MCPWorkspaceControl.revision(store)),
             "revision": .string(try store.currentSuiteRevision()),
             "suite": suiteJSON(suite),
             "attachments": .array(suite.attachments.map(attachmentMetadata)),

@@ -90,7 +90,7 @@ struct ScenarioVariationDraft: Codable, Equatable, Identifiable, Sendable {
     var unsupportedReason: String? = nil
 }
 
-struct ScenarioApprovedVariation: Sendable {
+struct ScenarioApprovedVariation: Codable, Sendable {
     var draft: ScenarioVariationDraft
     var reviewedDefinition: ScenarioDefinition
 }

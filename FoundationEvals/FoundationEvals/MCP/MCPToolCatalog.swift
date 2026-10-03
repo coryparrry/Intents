@@ -92,6 +92,8 @@ struct MCPResourcePayload: Sendable {
 
 enum MCPToolCall: Sendable {
     case getState
+    case actionCatalog(MCPActionCatalogCall)
+    case control(MCPControlCall)
     case listProjects
     case listReviewSamples(MCPReviewSamplesArguments)
     case proposeReview(MCPReviewProposalArguments)
@@ -336,7 +338,7 @@ struct MCPToolDefinition: Codable, Sendable {
 }
 
 enum MCPToolCatalog {
-    static let definitions: [MCPToolDefinition] = [
+    static let allDefinitions: [MCPToolDefinition] = [
         tool(
             "eval_get_state", "Get evaluation state",
             "Read the shared suite, Foundation Models feature configuration, revision, readiness, limits, capabilities, attachments, and active run.",
@@ -472,7 +474,10 @@ enum MCPToolCatalog {
                 "confirm": boolean("Must be true.")
             ], required: ["runID", "confirm"], destructive: true, idempotent: true
         )
-    ] + EvaluationReviewMCP.definitions
+    ] + EvaluationReviewMCP.definitions + MCPControlTools.definitions
+
+    static let definitions = allDefinitions.filter { MCPActionDiscovery.coreNames.contains($0.name) }
+        + MCPActionDiscovery.definitions
 
     static let resourceTemplates: [MCPJSONValue] = [
         .object([
@@ -491,10 +496,17 @@ enum MCPToolCatalog {
     ]
 
     static func parse(name: String, arguments: MCPJSONValue) throws -> MCPToolCall {
-        guard let definition = definitions.first(where: { $0.name == name }) else {
+        if MCPActionDiscovery.names.contains(name) {
+            return try MCPActionDiscovery.parse(name: name, arguments: arguments)
+        }
+        guard let definition = allDefinitions.first(where: { $0.name == name }) else {
             throw MCPToolInputError.unknownTool
         }
         do {
+            if MCPControlTools.names.contains(name) {
+                try MCPControlSchema.validate(arguments, schema: definition.inputSchema)
+                return .control(.init(name: name, arguments: arguments))
+            }
             try rejectUndeclaredProperties(in: arguments, schema: definition.inputSchema)
             switch name {
             case "eval_get_state":

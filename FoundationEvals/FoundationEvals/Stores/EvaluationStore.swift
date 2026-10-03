@@ -863,14 +863,14 @@ final class EvaluationStore {
             storedConnection.lastCheckedAt = nil
             storedConnection.lastCheckMessage = nil
         }
-        let previousSecret: String?
+        let previousSecret: Data?
         if apiKey != nil || connection.requiresAPIKey {
-            previousSecret = try EvaluationJudgeCredentialStore.load(connectionID: connection.id)
+            previousSecret = try EvaluationJudgeCredentialStore.snapshot(connectionID: connection.id)
         } else {
             previousSecret = nil
         }
         if connection.requiresAPIKey {
-            let effectiveSecret = apiKey ?? previousSecret
+            let effectiveSecret = try apiKey ?? EvaluationJudgeCredentialStore.load(connection: connection)
             guard effectiveSecret?.isEmpty == false else {
                 throw EvaluationStoreError.invalidSuite("Enter an API key for this judge connection.")
             }
@@ -885,11 +885,11 @@ final class EvaluationStore {
         try persistJudgeConnections(updatedConnections)
         do {
             if let apiKey {
-                try EvaluationJudgeCredentialStore.save(apiKey, connectionID: connection.id)
+                try EvaluationJudgeCredentialStore.save(apiKey, connection: storedConnection)
             }
         } catch {
             try? persistJudgeConnections(previousConnections)
-            try? EvaluationJudgeCredentialStore.save(previousSecret, connectionID: connection.id)
+            try? EvaluationJudgeCredentialStore.restore(previousSecret, connectionID: connection.id)
             throw error
         }
         judgeConnections = updatedConnections
@@ -911,14 +911,14 @@ final class EvaluationStore {
             throw EvaluationStoreError.resourceConflict("Choose another judge for every suite before deleting this connection.")
         }
         let previousConnections = judgeConnections
-        let previousSecret = try EvaluationJudgeCredentialStore.load(connectionID: id)
+        let previousSecret = try EvaluationJudgeCredentialStore.snapshot(connectionID: id)
         let updatedConnections = judgeConnections.filter { $0.id != id }
         try persistJudgeConnections(updatedConnections)
         do {
-            try EvaluationJudgeCredentialStore.save(nil, connectionID: id)
+            try EvaluationJudgeCredentialStore.restore(nil, connectionID: id)
         } catch {
             try? persistJudgeConnections(previousConnections)
-            try? EvaluationJudgeCredentialStore.save(previousSecret, connectionID: id)
+            try? EvaluationJudgeCredentialStore.restore(previousSecret, connectionID: id)
             throw error
         }
         judgeConnections = updatedConnections
@@ -932,7 +932,7 @@ final class EvaluationStore {
         do {
             let resolved = EvaluationResolvedJudgeConnection(
                 connection: connection,
-                apiKey: try EvaluationJudgeCredentialStore.load(connectionID: id)
+                apiKey: try EvaluationJudgeCredentialStore.load(connection: connection)
             )
             let result = try await EvaluationCompatibleJudgeClient().checkConnection(resolved)
             if let index = judgeConnections.firstIndex(where: { $0.id == id }) {
@@ -4348,7 +4348,7 @@ final class EvaluationStore {
         guard let connection = judgeConnections.first(where: { $0.id == connectionID }) else {
             throw EvaluationStoreError.resourceNotFound("Judge connection")
         }
-        let apiKey = try EvaluationJudgeCredentialStore.load(connectionID: connectionID)
+        let apiKey = try EvaluationJudgeCredentialStore.load(connection: connection)
         if connection.requiresAPIKey, apiKey?.isEmpty != false {
             throw EvaluationStoreError.resourceConflict("The selected judge connection has no API key in Keychain.")
         }
@@ -4806,4 +4806,37 @@ private struct RevisionAttachment: Codable {
     var kind: EvaluationAttachmentKind
     var byteCount: Int
     var sha256: String
+}
+
+extension EvaluationStore {
+    func productionSnapshot() throws -> NativeProductionContext {
+        try requireIdle()
+        var snapshot = draftSuite
+        // Cases belong to the versioned dataset; retain only the execution/scoring contract here.
+        snapshot.cases = []; snapshot.repetitions = 1
+        let frozenImages = try zip(draftSuite.attachments.filter { $0.kind == .image }, imageInputs(for: draftSuite)).map { attachment, image in
+            let bytes = try Data(contentsOf: image.url)
+            guard bytes.count == attachment.byteCount, Self.sha256(bytes) == attachment.sha256 else {
+                throw EvaluationStoreError.persistence("Image evidence does not match its saved digest.")
+            }
+            return NativeProductionContext.Image(label: image.label, bytes: bytes)
+        }
+        let context = NativeProductionContext(suite: snapshot, images: frozenImages)
+        guard try ProductionCodec.encode(context).count <= 64_000_000 else {
+            throw ProductionFailure.invalid("Frozen execution setup exceeds 64 MB.")
+        }
+        return context
+    }
+    func beginProductionExecution(_ context: NativeProductionContext, externalDisclosureApproved: Bool) throws -> (UUID, EvaluationResolvedJudgeConnection?) {
+        try requireIdle()
+        if context.suite.judgeConfiguration.usesExternalConnection && !externalDisclosureApproved {
+            throw ProductionFailure.invalid("Approve disclosure of this dataset's prompts, outputs and references to the configured external judge before running.")
+        }
+        let judge = try resolvedJudge(for: context.suite)
+        let owner = UUID(); snapshotExecutionOwnerID = owner
+        return (owner, judge)
+    }
+    func endProductionExecution(_ owner: UUID) {
+        if snapshotExecutionOwnerID == owner { snapshotExecutionOwnerID = nil }
+    }
 }

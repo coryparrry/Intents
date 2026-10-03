@@ -1,6 +1,6 @@
 import Foundation
 
-struct EvaluationJudgeCheckResult: Identifiable, Sendable {
+struct EvaluationJudgeCheckResult: Identifiable, Codable, Sendable {
     var id: UUID { example.id }
     var example: EvaluationReviewedJudgeExample
     var actualStatus: EvaluationResultStatus
@@ -8,7 +8,7 @@ struct EvaluationJudgeCheckResult: Identifiable, Sendable {
     var errorMessage: String?
 }
 
-struct EvaluationJudgeCheckReport: Sendable {
+struct EvaluationJudgeCheckReport: Codable, Sendable {
     var connectionID: UUID
     var results: [EvaluationJudgeCheckResult]
     var passed: Bool { !results.isEmpty && results.allSatisfy(\.passed) }

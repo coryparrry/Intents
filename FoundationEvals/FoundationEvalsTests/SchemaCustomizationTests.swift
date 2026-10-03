@@ -396,7 +396,7 @@ struct SchemaCustomizationTests {
 
     @Test func mcpCatalogPublishesRecursiveSchemaCustomizationKeys() throws {
         let replaceTool = try #require(
-            MCPToolCatalog.definitions.first { $0.name == "eval_replace_suite" }
+            MCPToolCatalog.allDefinitions.first { $0.name == "eval_replace_suite" }
         )
         let rootProperties = try #require(replaceTool.inputSchema.objectValue?["properties"]?.objectValue)
         let suite = try #require(rootProperties["suite"]?.objectValue)

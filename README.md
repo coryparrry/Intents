@@ -27,6 +27,7 @@ Intents is a native macOS workbench for testing Apple's Foundation Models. Creat
 | **Repeatable evaluations** | Test cases with shared instructions, attachments, and multiple repetitions. |
 | **Flexible scoring** | Exact matches, required text, AI rubrics, or response collection without scoring. |
 | **Execution traces** | A nested workflow waterfall with measured native stages, tool activity, token usage and a selected-span inspector. [Trace details](docs/workflow-traces.md). |
+| **Production batches** | Immutable datasets, resumable jobs, unattended workers, captured-output review, cohort gates and audited evidence. [Production guide](docs/PRODUCTION_EVALS_GUIDE.md). |
 | **Saved comparisons** | Run history, baseline comparisons, and JSON reports. |
 | **Models and tools** | Apple's on-device model, compatible Core AI models, custom HTTP providers, and configurable tools. |
 | **Agent integration** | An included MCP server for managing suites, running evaluations, and inspecting results. |
@@ -76,6 +77,8 @@ To evaluate the production Swift feature inside another app, add the
 The [developer integration guide](docs/DEVELOPER_SWIFT_INTEGRATION.md) covers typed
 closures, `@Generable` results and tools, iPhone/iPad/Mac setup, trust, cancellation,
 saved run evidence, and the boundary with Apple's development-only Evaluations framework.
+
+For large batches, open **Batch runs** in the sidebar. Freeze the current suite or import JSONL, create a batch, and run it on a matching Mac. The [production guide](docs/PRODUCTION_EVALS_GUIDE.md) covers `intents-evals`, unattended native workers, target matrices, schedules and opt-in capture.
 
 ## Connect an agent
 

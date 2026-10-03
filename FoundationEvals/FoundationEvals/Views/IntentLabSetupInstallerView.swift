@@ -367,7 +367,7 @@ struct IntentLabSetupInstallerView: View {
             packageURL: packageURL,
             packageRevision: packageSource.hasPrefix("https://") ? packageRevision : nil,
             packageProduct: supportMode == .siri ? "IntentLabCoreTesting" : "IntentLabTesting",
-            consumerSource: supportMode == .siri ? Self.siriConsumerSource : Self.consumerSource,
+            consumerSource: supportMode == .siri ? IntentLabConsumerTemplates.siri : IntentLabConsumerTemplates.basic,
             declarationData: try declarationData()
         )
     }
@@ -414,40 +414,6 @@ struct IntentLabSetupInstallerView: View {
     private func jsonObject<Value: Encodable>(_ value: Value) throws -> Any {
         try JSONSerialization.jsonObject(with: JSONEncoder().encode(value))
     }
-
-    private static let consumerSource = """
-        import XCTest
-        import IntentLabTesting
-
-        @available(macOS 27.0, iOS 27.0, *)
-        @MainActor
-        final class IntentLabScenarioTests: XCTestCase {
-            func testIntentLabScenario() throws {
-                try IntentLabScenarioRunner.run(testCase: self, integration: IntentLabBasicIntegration())
-            }
-
-            func testIntentLabConnection() throws {
-                try IntentLabScenarioRunner.checkConnection(testCase: self, integration: IntentLabBasicIntegration())
-            }
-        }
-        """
-
-    private static let siriConsumerSource = """
-        import XCTest
-        import IntentLabCoreTesting
-
-        @available(macOS 27.0, iOS 27.0, *)
-        @MainActor
-        final class IntentLabScenarioTests: XCTestCase {
-            func testIntentLabScenario() throws {
-                try IntentLabSiriScenarioRunner.run(testCase: self, integration: IntentLabAppAdapter())
-            }
-
-            func testIntentLabConnection() throws {
-                try IntentLabSiriScenarioRunner.checkConnection(testCase: self, integration: IntentLabAppAdapter())
-            }
-        }
-        """
 
     private var selectedWorkspaceURL: URL? {
         let containerPath = coordinator.configuration.containerPath

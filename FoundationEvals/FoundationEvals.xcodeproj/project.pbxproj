@@ -66,6 +66,11 @@
 			path = FoundationEvalsUITests;
 			sourceTree = "<group>";
 		};
+		DE0000000000000000000001 /* ProductionEvals */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../Packages/ProductionEvals/Sources/ProductionEvals;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -95,6 +100,7 @@
 			isa = PBXGroup;
 			children = (
 				DA0000000000000000000030 /* FoundationEvalsDeveloper */,
+				DE0000000000000000000001 /* ProductionEvals */,
 				AFC28B48304733170023273E /* FoundationEvals */,
 				AFC28B563047331D0023273E /* FoundationEvalsTests */,
 				AFC28B603047331D0023273E /* FoundationEvalsUITests */,
@@ -141,6 +147,7 @@
 			buildRules = (
 			);
 			fileSystemSynchronizedGroups = (
+				DE0000000000000000000001 /* ProductionEvals */,
 				AFC28B48304733170023273E /* FoundationEvals */,
 			);
 			name = FoundationEvals;

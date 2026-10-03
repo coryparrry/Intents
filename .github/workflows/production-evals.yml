@@ -1,0 +1,37 @@
+name: Production eval fixtures
+on:
+  pull_request:
+    paths:
+      - 'Packages/ProductionEvals/**'
+      - 'Sources/ProductionEvalsCLI/**'
+      - 'Sources/FoundationEvalsDeveloper/DeveloperProductionCapture.swift'
+      - 'script/test_production_evals.py'
+      - 'Package.swift'
+      - '.github/workflows/production-evals.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Packages/ProductionEvals/**'
+      - 'Sources/ProductionEvalsCLI/**'
+      - 'script/test_production_evals.py'
+      - 'Package.swift'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: production-evals-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  fixtures:
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify datasets, recovery and 10000-response capacity
+        run: swift test --package-path Packages/ProductionEvals -j 2
+      - name: Build standalone CLI
+        run: swift build -j 2 --product intents-evals
+      - name: Verify real worker protocol and release exits
+        run: python3 script/test_production_evals.py .build/debug/intents-evals
