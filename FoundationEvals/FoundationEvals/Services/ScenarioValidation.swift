@@ -24,6 +24,26 @@ enum ScenarioValidationError: LocalizedError, Sendable {
 }
 
 enum ScenarioValidator {
+    /// The local Feature response and every declared projection must come from
+    /// the compiled test-only Intent, with the type frozen by the feature binding.
+    static func validLocalFeatureObservations(
+        _ result: ScenarioLaneResult,
+        binding: ScenarioFeatureBinding
+    ) -> Bool {
+        guard result.lane == .appFeature,
+              case .string? = result.observations["feature.response"],
+              result.observationSources?["feature.response"] == .testOnlyIntent else {
+            return false
+        }
+        return binding.outputProjections.allSatisfy { projection in
+            guard let value = result.observations[projection.name],
+                  result.observationSources?[projection.name] == .testOnlyIntent else {
+                return false
+            }
+            return validate(value: value, as: projection.type).isEmpty
+        }
+    }
+
     static func issues(in definition: ScenarioDefinition, requireFrozenDigest: Bool = true) -> [ScenarioValidationIssue] {
         var issues: [ScenarioValidationIssue] = []
 
@@ -37,6 +57,60 @@ enum ScenarioValidator {
 
         let isStable = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
         let isReusable = definition.schemaVersion == ScenarioDefinition.reusableSchemaVersion || isStable
+        if let actionRequirements = definition.actionRequirements {
+            if definition.actionPolicyVersion != 1 {
+                error("actionPolicyVersion", "Strict action evidence requires supported policy version 1.")
+            }
+            if !isStable {
+                error("actionRequirements", "Strict action requirements need a stable version 3 check.")
+            }
+            if actionRequirements.count != Set(actionRequirements.map(\.lane)).count
+                || Set(actionRequirements.map(\.lane))
+                    != Set(ScenarioLane.allCases.filter { definition.coverage[$0] != .notApplicable }) {
+                error("actionRequirements", "Declare one action requirement for every selected route.")
+            }
+            for (index, requirement) in actionRequirements.enumerated() {
+                let path = "actionRequirements[\(index)]"
+                if requirement.allowedExecutionCount != 1 {
+                    error(path, "This policy supports exactly one top-level action per route.")
+                }
+                if !validIdentifier(requirement.operationID) {
+                    error("\(path).operationID", "Use the exact bounded registered operation identifier.")
+                }
+                if requirement.lane == .appFeature {
+                    if requirement.kind != .productionService {
+                        error("\(path).kind", "Feature control must verify a production service operation.")
+                    }
+                } else if requirement.kind != .productionIntent
+                    || requirement.operationID != definition.directControl.intentIdentifier {
+                    error(path, "Direct and Siri routes must verify the declared production App Intent.")
+                }
+                if requirement.resolvedParameters.count > 16
+                    || requirement.resolvedParameters.keys.contains(where: { !validIdentifier($0) }) {
+                    error("\(path).resolvedParameters", "Use at most sixteen bounded resolved parameter names.")
+                }
+                if isStable {
+                    let expected: [String: ScenarioValue]
+                    if requirement.lane == .appFeature {
+                        expected = Dictionary(
+                            (definition.featureBinding?.inputMapping ?? []).map {
+                                ($0.featureInputName, $0.value)
+                            }, uniquingKeysWith: { first, _ in first })
+                    } else {
+                        expected = Dictionary(
+                            definition.directControl.parameters.compactMap { parameter in
+                                guard case .value(let value) = parameter.presence else { return nil }
+                                return (parameter.name, value)
+                            }, uniquingKeysWith: { first, _ in first })
+                    }
+                    if requirement.resolvedParameters != expected {
+                        error("\(path).resolvedParameters", "Expected parameters must match the explicitly entered route inputs.")
+                    }
+                }
+            }
+        } else if definition.actionPolicyVersion != nil {
+            error("actionPolicyVersion", "An action policy needs frozen route requirements.")
+        }
         if definition.schemaVersion != ScenarioDefinition.currentSchemaVersion && !isReusable {
             error("schemaVersion", "Unsupported scenario schema version \(definition.schemaVersion).")
         }
@@ -266,7 +340,8 @@ enum ScenarioValidator {
                     error("observationPlan[\(index)].id", "An observation needs a bounded stable ID.")
                 }
                 if observation.source != .intentResult && observation.source != .uiElement,
-                   !(observation.id == "feature.response" && observation.source == .testOnlyIntent && definition.featureBinding != nil),
+                   !(observation.id == "feature.response" && observation.source == .testOnlyIntent
+                     && definition.featureBinding != nil),
                    observation.operationID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
                     error("observationPlan[\(index)].operationID", "State observers need a compiled operation ID.")
                 }
@@ -283,6 +358,16 @@ enum ScenarioValidator {
                    !definition.directControl.outputFields.contains(where: { $0.name == observation.id }) {
                     error("observationPlan[\(index)].id", "An intent result observation needs a matching output projection.")
                 }
+                if observation.id == "feature.response",
+                   (definition.featureBinding == nil || observation.source != .testOnlyIntent) {
+                    error("observationPlan[\(index)].source", "App Feature responses need a declared test-only Intent source.")
+                }
+                if observation.id == "feature.response", definition.actionPolicyVersion != nil,
+                   let featureAction = definition.actionRequirements?.first(where: {
+                       $0.lane == .appFeature && $0.kind == .productionService
+                   }), observation.operationID != featureAction.operationID {
+                    error("observationPlan[\(index)].operationID", "The Feature response source must match the selected declared control.")
+                }
             }
             for (index, assertion) in definition.assertions.enumerated() {
                 guard let observation = plan.first(where: { $0.id == assertion.observationKey }) else {
@@ -290,15 +375,20 @@ enum ScenarioValidator {
                     continue
                 }
                 let featureResponse = assertion.observationKey == "feature.response"
-                    && assertion.applicableLanes == [.appFeature] && observation.source == .testOnlyIntent
+                    && assertion.applies(to: .appFeature)
+                    && !assertion.applies(to: .intentIntegration)
+                    && !assertion.applies(to: .siri)
+                    && observation.source == .testOnlyIntent
                     && definition.featureBinding != nil
-                if assertion.kind == .returnedField && observation.source != .intentResult && !featureResponse {
+                if assertion.kind == .returnedField && observation.source != .intentResult
+                    && !featureResponse {
                     error("assertions[\(index)].kind", "Returned-value assertions must use an intent result observation.")
                 }
                 if assertion.kind != .returnedField && !observation.source.checksApplicationState {
                     error("assertions[\(index)].kind", "Application-state assertions need an independent state observer.")
                 }
-                if definition.checkMode == .basic && assertion.kind != .returnedField {
+                if definition.checkMode == .basic && assertion.kind != .returnedField
+                    && !(featureResponse && assertion.kind == .semanticRubric) {
                     error("assertions[\(index)].kind", "Basic checks can assert returned values only.")
                 }
             }
@@ -432,12 +522,86 @@ enum ScenarioValidator {
 }
 
 enum ScenarioResultEvaluator {
+    static func actionObservationIsConsistent(_ result: ScenarioLaneResult) -> Bool {
+        guard let receipts = result.actionReceipts else { return false }
+        guard receipts.count <= 16,
+              case .string(let rawJSON) = result.observations["intentlab.actionReceipts"],
+              rawJSON.utf8.count <= 65_536,
+              let transport = result.observationSources?["intentlab.actionReceipts"],
+              transport == .accessibleUI || transport == .testOnlyIntent || transport == .entityQuery,
+              receipts.allSatisfy({ $0.observationTransport == transport }) else { return false }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let raw = try? decoder.decode([ScenarioActionReceipt].self, from: Data(rawJSON.utf8)) else {
+            return false
+        }
+        return raw == receipts
+    }
+
+    static func actionVerdict(
+        definition: ScenarioDefinition, lane: ScenarioLane, attempt: Int,
+        invocation: ScenarioInvocationIdentity?, receipts: [ScenarioActionReceipt]?
+    ) -> (ScenarioOutcome, ScenarioActionFailureReason?) {
+        guard let requirements = definition.actionRequirements else { return (.passed, nil) }
+        guard let requirement = requirements.first(where: { $0.lane == lane }) else {
+            return (.notObserved, .missingActionEvidence)
+        }
+        guard let invocation, let receipts, !receipts.isEmpty else {
+            return (.notObserved, .missingActionEvidence)
+        }
+        let context: String
+        switch lane {
+        case .appFeature: context = "feature-\(invocation.id.uuidString)"
+        case .intentIntegration: context = "intent-\(invocation.id.uuidString)"
+        case .siri: context = "siri-\(invocation.id.uuidString)-\(attempt)"
+        }
+        guard receipts.count <= 16, receipts.allSatisfy({
+            $0.attemptContext == context && $0.lane == lane && $0.attempt == attempt
+        }) else { return (.notObserved, .staleActionEvidence) }
+        let topLevel = receipts.filter(\.isTopLevel)
+        guard !topLevel.isEmpty else { return (.notObserved, .missingActionEvidence) }
+        guard Set(receipts.map(\.executionID)).count == receipts.count,
+              Set(receipts.map(\.sequence)).count == receipts.count,
+              receipts.allSatisfy({
+                  $0.sequence > 0 && $0.completedAt >= $0.startedAt
+                      && !$0.operationID.isEmpty && ($0.kind != .testSupport || !$0.isTopLevel)
+                      && ($0.terminalStatus != .succeeded || $0.operationError == nil)
+                      && ($0.terminalStatus != .failed || $0.operationError?.isEmpty == false)
+              }) else { return (.notObserved, .invalidActionEvidence) }
+        guard topLevel.count == requirement.allowedExecutionCount else {
+            return (.failed, .unexpectedExecution)
+        }
+        guard Set(receipts.map(\.appSessionID)).count == 1 else {
+            return (.notObserved, .invalidActionEvidence)
+        }
+        guard topLevel.allSatisfy({
+            $0.kind == requirement.kind && $0.operationID == requirement.operationID
+        }) else { return (.failed, .wrongAction) }
+        guard topLevel.allSatisfy({ $0.resolvedParameters == requirement.resolvedParameters }) else {
+            return (.failed, .wrongParameter)
+        }
+        guard topLevel.allSatisfy({ $0.terminalStatus == .succeeded }) else {
+            return (.failed, .operationError)
+        }
+        return (.passed, nil)
+    }
+
+    static func failureReason(
+        action: (ScenarioOutcome, ScenarioActionFailureReason?),
+        deterministicFailure: Bool
+    ) -> ScenarioActionFailureReason? {
+        action.1 ?? (action.0 == .passed && deterministicFailure ? .wrongOutcome : nil)
+    }
+
     static func evaluate(
         definition: ScenarioDefinition,
         lane: ScenarioLane,
         observations: [String: ScenarioValue],
         executionStatus: ScenarioExecutionStatus,
-        beforeObservations: [String: ScenarioValue]? = nil
+        beforeObservations: [String: ScenarioValue]? = nil,
+        actionReceipts: [ScenarioActionReceipt]? = nil,
+        invocation: ScenarioInvocationIdentity? = nil,
+        attempt: Int = 1
     ) -> (ScenarioOutcome, [ScenarioAssertionResult]) {
         guard executionStatus == .completed else { return (.notObserved, []) }
         let assertions = definition.assertions.filter { $0.applies(to: lane) }
@@ -495,8 +659,14 @@ enum ScenarioResultEvaluator {
                 assertion.required && assertion.kind == .noMutation
                     && beforeObservations?[assertion.observationKey] == nil
             }
+        let action = actionVerdict(
+            definition: definition, lane: lane, attempt: attempt,
+            invocation: invocation, receipts: actionReceipts
+        )
         if missingRequiredBaseline { return (.notObserved, results) }
+        if action.0 == .failed { return (.failed, results) }
         if failedRequired || missingRequiredSemantic { return (.failed, results) }
+        if action.0 == .notObserved { return (.notObserved, results) }
         if !requiredSemantic.isEmpty { return (.needsReview, results) }
         return (.passed, results)
     }
@@ -524,19 +694,19 @@ enum ScenarioResultEvaluator {
         if !requiredResults.allSatisfy({ $0.outcome == .passed }) { return .notObserved }
         if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion {
             let direct = requiredResults.filter { $0.lane == .intentIntegration }
-            let completionRoutes = direct.isEmpty && definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
-                ? requiredResults : direct
+            let completionRoutes = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion ? requiredResults : direct
+            let claimRoutes = direct.isEmpty && definition.schemaVersion == ScenarioDefinition.stableSchemaVersion ? requiredResults : direct
             let claims = definition.requiredClaims ?? []
             if claims.contains(.executionCompleted),
                (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.returnedValueChecked),
-               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) })) {
+               (claimRoutes.isEmpty || !claimRoutes.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.applicationStateChecked),
-               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) })) {
+               (claimRoutes.isEmpty || !claimRoutes.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if definition.coverage.siri != .notApplicable,
@@ -553,18 +723,31 @@ enum ScenarioResultEvaluator {
         result: ScenarioLaneResult
     ) -> Bool {
         guard result.executionStatus == .completed, result.outcome == .passed else { return false }
-        if claim == .executionCompleted,
-           definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
-           result.lane == .appFeature {
+        if claim == .executionCompleted, result.lane == .appFeature,
+           definition.schemaVersion == ScenarioDefinition.stableSchemaVersion, definition.actionPolicyVersion == nil {
             guard case .integer(let count) = result.observations["feature.resultCount"], count > 0 else { return false }
-            return result.observations["feature.runID"] != nil
-                && result.observationSources?["feature.resultCount"] == .applicationInstrumentation
+            return result.observations["feature.runID"] != nil && result.observationSources?["feature.resultCount"] == .applicationInstrumentation
         }
         guard result.claims?.contains(claim) == true else { return false }
         if claim == .executionCompleted {
             if result.lane == .intentIntegration { return true }
-            return definition.schemaVersion == ScenarioDefinition.stableSchemaVersion && result.lane == .siri
-                && verifiedClaim(.applicationStateChecked, definition: definition, result: result)
+            // Invocation freshness is checked by import/qualification against the
+            // native journal. Siri completion also needs the observed typed action.
+            guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+                  (result.lane == .siri || result.lane == .appFeature), definition.actionPolicyVersion == 1,
+                  result.cleanupVerified == true, result.actionFailureReason == nil,
+                  let requirement = definition.actionRequirements?.first(where: { $0.lane == result.lane }),
+                  requirement.kind == (result.lane == .siri ? .productionIntent : .productionService),
+                  let receipts = result.actionReceipts,
+                  actionObservationIsConsistent(result) else { return false }
+            let topLevel = receipts.filter(\.isTopLevel)
+            return !topLevel.isEmpty && topLevel.count == requirement.allowedExecutionCount
+                && receipts.allSatisfy({ $0.lane == result.lane && $0.attempt == result.attempt })
+                && topLevel.allSatisfy({
+                    $0.kind == requirement.kind && $0.operationID == requirement.operationID
+                        && $0.resolvedParameters == requirement.resolvedParameters
+                        && $0.terminalStatus == .succeeded && $0.operationError == nil
+                })
         }
         let plan = definition.observationPlan ?? []
         return definition.assertions.contains { assertion in
@@ -591,7 +774,9 @@ enum ScenarioResultEvaluator {
             switch claim {
             case .executionCompleted: return false
             case .returnedValueChecked: return assertion.kind == .returnedField
-                && observation.source == .intentResult
+                && (observation.source == .intentResult
+                    || (result.lane == .appFeature && assertion.observationKey == "feature.response"
+                        && observation.source == .testOnlyIntent))
             case .applicationStateChecked: return assertion.kind != .returnedField
                 && observation.source.checksApplicationState
             }

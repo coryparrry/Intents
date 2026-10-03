@@ -48,17 +48,17 @@ struct AppleTestConnectionView: View {
         }
         .fileDialogMessage("Choose the app's Xcode project or workspace.")
         .fileDialogConfirmationLabel("Choose Project")
-        .confirmationDialog(
+        .workspaceAlert(
             "Connect this app?",
-            isPresented: $showingConnectionApproval
-        ) {
-            Button("Connect app") {
-                Task { await coordinator.approveBuildAndDiscover() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("We’ll ask Xcode to find your app and test settings. Connecting also allows Xcode to run this project’s build scripts and resolve dependencies when needed. Approval lasts until you quit Intents.")
-        }
+            message: "We’ll ask Xcode to find your app and test settings. Connecting also allows Xcode to run this project’s build scripts and resolve dependencies when needed. Approval lasts until you quit Intents.",
+            isPresented: $showingConnectionApproval,
+            buttons: [
+                WorkspaceAlertButton("Cancel", isCancel: true),
+                WorkspaceAlertButton("Connect app") {
+                    Task { await coordinator.approveBuildAndDiscover() }
+                }
+            ]
+        )
         .onChange(of: coordinator.configuration.destinationIdentifier) { _, identifier in
             Task { await coordinator.selectDevice(identifier) }
         }
@@ -67,7 +67,7 @@ struct AppleTestConnectionView: View {
     private var connectionCard: some View {
         IntentLabCard(
             "Connect an app",
-            subtitle: "Choose the app project and an available Mac or paired iPhone. Intent Lab discovers the Xcode details for you."
+            subtitle: "Choose the app project and an available Mac, paired iPhone, or iPhone simulator. Intent Lab discovers the Xcode details for you."
         ) {
             VStack(alignment: .leading, spacing: 20) {
                 connectionField(
@@ -213,7 +213,7 @@ struct AppleTestConnectionView: View {
                         set: { coordinator.configuration.testBundleIdentifier = $0; coordinator.invalidatePreflight() }
                     ))
                 }
-                advancedRow("Destination identifier", help: "The unique ID of the Mac or paired iPhone used for this run. Choosing a device in Connect app fills this in.") {
+                advancedRow("Destination identifier", help: "The unique ID of the Mac, paired iPhone, or simulator used for this run. Choosing a destination in Connect app fills this in.") {
                     TextField("000081…", text: Binding(
                         get: { coordinator.configuration.destinationIdentifier },
                         set: { coordinator.configuration.destinationIdentifier = $0; coordinator.invalidatePreflight() }
@@ -304,10 +304,14 @@ struct AppleTestConnectionView: View {
 
     @ViewBuilder private var connectionStatus: some View {
         if let report = coordinator.preflight {
+            let anyRouteReady = coordinator.routeReadiness.values.contains { $0.state == .ready }
             VStack(alignment: .leading, spacing: 8) {
                 Label(
-                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "selected destination")" : "Finish setup before running",
-                    systemImage: report.isReady ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
+                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "selected destination")"
+                        : (anyRouteReady ? "Some routes are ready on \(selectedDeviceName ?? "selected destination")"
+                            : "Finish setup before running"),
+                    systemImage: report.isReady || anyRouteReady
+                        ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
                 )
                 .foregroundStyle(report.isReady ? .green : .orange)
                 .font(.callout.weight(.semibold))
@@ -321,10 +325,49 @@ struct AppleTestConnectionView: View {
                     }
 
                 }
+                ForEach(ScenarioLane.allCases.filter {
+                    coordinator.draft.coverage[$0] != .notApplicable
+                }) { lane in
+                    if let readiness = coordinator.routeReadiness[lane] {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(lane.title).font(.caption.weight(.semibold))
+                                .frame(width: 130, alignment: .leading)
+                            Text(readiness.backendName ?? defaultBackendName(for: lane))
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text(routeStatus(readiness.state)).font(.caption)
+                                .foregroundStyle(readiness.state == .ready ? Color.green : Color.orange)
+                            Spacer(minLength: 8)
+                        }
+                        Text(readiness.detail)
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if let operation = readiness.supportOperationID {
+                            Text("Readiness support: \(operation)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background((report.isReady ? Color.green : Color.orange).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func routeStatus(_ state: ScenarioRouteReadinessState) -> String {
+        switch state {
+        case .ready: "Ready on selected app and device"
+        case .setupRequired: "Setup required"
+        case .environmentBlocked: "Environment blocked"
+        case .notYetVerified: "Not yet verified"
+        }
+    }
+
+    private func defaultBackendName(for lane: ScenarioLane) -> String {
+        switch lane {
+        case .appFeature: coordinator.featureBackend.provenanceLabel
+        case .intentIntegration: "AppIntentsTesting"
+        case .siri: "CoreTesting Siri driver"
         }
     }
 
@@ -383,12 +426,20 @@ struct AppleTestConnectionView: View {
     private var selectedDeviceName: String? { selectedDevice?.name }
 
     private var selectedDeviceDetail: String {
-        guard !coordinator.configuration.destinationIdentifier.isEmpty else { return "Select an available Mac or paired physical iPhone." }
+        guard !coordinator.configuration.destinationIdentifier.isEmpty else { return "Select an available Mac, paired iPhone, or iPhone simulator." }
         return selectedDeviceName ?? "The saved destination is not currently available."
     }
 
     private var commandPreview: String {
-        let kind = coordinator.configuration.isWorkspace ? "-workspace" : "-project"
-        return "xcodebuild \(kind) \"\(coordinator.configuration.containerPath)\" -scheme \"\(coordinator.configuration.scheme)\" -destination \"id=\(coordinator.configuration.destinationIdentifier)\" build-for-testing"
+        let configuration = coordinator.configuration
+        let arguments = [
+            configuration.isWorkspace ? "-workspace" : "-project", configuration.containerPath,
+            "-scheme", configuration.scheme,
+            "-configuration", configuration.configuration,
+            "-destination", "id=\(configuration.destinationIdentifier)"
+        ] + configuration.signingArguments + ["build-for-testing"]
+        return "xcodebuild " + arguments.map { argument in
+            "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        }.joined(separator: " ")
     }
 }

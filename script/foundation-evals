@@ -84,12 +84,17 @@ struct Options {
     Usage:
       foundation-evals check --project <id|name|repository-path> --suite <id|name> [options]
       foundation-evals scenario-report --run-id <uuid> [--endpoint <url>]
+      foundation-evals scenario-execution-report --execution-id <uuid> [--endpoint <url>]
 
     check options:
       --project <id|name|repository-path>
       --suite <id|name>
       --run-id <uuid>       Reuse a stable run ID after an uncertain response.
       --timeout <seconds>   Overall wait limit (default: 1800).
+
+    scenario-execution-report options:
+      --execution-id <uuid> Saved stable execution record to qualify (read-only).
+      Returns 0 for qualified evidence, 10 for required failures, 20 for incomplete evidence.
 
     scenario-report options:
       --run-id <uuid>       Saved Intent Lab scenario run to report.
@@ -101,10 +106,11 @@ struct Options {
 
 struct ScenarioReportOptions {
     var runID: UUID
+    var stableExecution = false
     var endpoint = URL(string: "http://127.0.0.1:17873/mcp")!
 
     init(arguments: [String]) throws {
-        guard arguments.first == "scenario-report" else {
+        guard ["scenario-report", "scenario-execution-report"].contains(arguments.first ?? "") else {
             throw CLIError.usage(Options.help)
         }
         var values: [String: String] = [:]
@@ -120,8 +126,10 @@ struct ScenarioReportOptions {
             values[option] = arguments[index + 1]
             index += 2
         }
-        guard let value = values["--run-id"], let id = UUID(uuidString: value) else {
-            throw CLIError.usage("scenario-report requires --run-id with a UUID.\n\n\(Options.help)")
+        stableExecution = arguments.first == "scenario-execution-report"
+        let idOption = stableExecution ? "--execution-id" : "--run-id"
+        guard let value = values[idOption], let id = UUID(uuidString: value) else {
+            throw CLIError.usage("\(arguments[0]) requires \(idOption) with a UUID.\n\n\(Options.help)")
         }
         runID = id
         if let value = values["--endpoint"] {
@@ -133,7 +141,7 @@ struct ScenarioReportOptions {
             }
             endpoint = url
         }
-        let known = Set(["--run-id", "--endpoint"])
+        let known = Set([idOption, "--endpoint"])
         if let unknown = values.keys.first(where: { !known.contains($0) }) {
             throw CLIError.usage("Unknown option '\(unknown)'.\n\n\(Options.help)")
         }
@@ -322,6 +330,18 @@ func runCheck(_ options: Options) throws -> Int32 {
 func runScenarioReport(_ options: ScenarioReportOptions) throws -> Int32 {
     let client = try MCPClient(endpoint: options.endpoint)
     try client.initialize()
+    if options.stableExecution {
+        let report = try client.call(tool: "eval_get_scenario_execution_report", arguments: ["executionID": options.runID.uuidString])
+        guard let qualification = report["qualification"] as? [String: Any],
+              let incomplete = qualification["incompleteEvidence"] as? [String],
+              let failures = qualification["requiredFailures"] as? [String] else {
+            throw CLIError.protocolFailure("The app returned no saved execution qualification.")
+        }
+        let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+        print(String(decoding: data, as: UTF8.self))
+        let release = qualification["report"] as? [String: Any]
+        return !incomplete.isEmpty ? 20 : !failures.isEmpty ? 10 : release?["outcome"] as? String == "passed" ? 0 : 20
+    }
     let report = try client.call(tool: "eval_get_scenario_report", arguments: [
         "runID": options.runID.uuidString
     ])
@@ -355,7 +375,7 @@ func run() throws -> Int32 {
             return 0
         }
         return try runCheck(Options(arguments: arguments))
-    case "scenario-report":
+    case "scenario-report", "scenario-execution-report":
         if arguments.dropFirst().elementsEqual(["--help"]) || arguments.dropFirst().elementsEqual(["-h"]) {
             print(Options.help)
             return 0

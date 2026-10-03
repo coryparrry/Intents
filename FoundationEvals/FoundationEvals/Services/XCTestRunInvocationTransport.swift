@@ -95,6 +95,9 @@ enum XCTestRunInvocationTransport {
         var observationPlan: [ScenarioPlannedObservation]?
         var integration: ScenarioIntegrationIdentity?
         var executionScope: ScenarioNativeExecutionScope?
+        var featureBinding: ScenarioFeatureBinding?
+        var actionRequirements: [ScenarioActionRequirement]?
+        var actionPolicyVersion: Int?
 
         init(_ definition: ScenarioDefinition, scope: ScenarioNativeExecutionScope?) {
             // The installed consumer supports wire schema 2. The invocation
@@ -126,17 +129,25 @@ enum XCTestRunInvocationTransport {
             purpose = definition.purpose
             checkMode = definition.checkMode
             requiredClaims = definition.requiredClaims
-            observationPlan = definition.observationPlan
+            // The Feature response is produced by the local Feature driver. A
+            // Direct or Siri child has no Feature binding or transport for it.
+            observationPlan = scope?.lane == .appFeature
+                ? definition.observationPlan
+                : definition.observationPlan?.filter { $0.id != "feature.response" }
             integration = definition.integration
             executionScope = scope
+            featureBinding = scope?.lane == .appFeature ? definition.featureBinding : nil
+            actionRequirements = definition.actionRequirements
+            actionPolicyVersion = definition.actionPolicyVersion
         }
     }
 
     static func scenarioPayload(
         for definition: ScenarioDefinition,
-        scope: ScenarioNativeExecutionScope? = nil
+        scope: ScenarioNativeExecutionScope? = nil,
+        featureBackend: ScenarioFeatureBackend = .connectedRunner
     ) throws -> Data {
-        if let scope, !scope.isValid(for: definition) {
+        if let scope, !scope.isValid(for: definition, featureBackend: featureBackend) {
             throw XCTestRunInvocationTransportError.invalidExecutionScope
         }
         let encoder = JSONEncoder()
@@ -188,15 +199,23 @@ enum XCTestRunInvocationTransport {
         definition: ScenarioDefinition,
         invocation: ScenarioInvocationIdentity,
         scope: ScenarioNativeExecutionScope? = nil,
+        featureBackend: ScenarioFeatureBackend = .connectedRunner,
+        buildEnvironment: [String: String] = [:],
         fileManager: FileManager = .default
     ) throws -> URL {
+        guard invocation.featureBackend == (scope?.lane == .appFeature
+            ? featureBackend : nil) else {
+            throw XCTestRunInvocationTransportError.invalidExecutionScope
+        }
         guard var root = try propertyList(at: products.sourceURL) else {
             throw XCTestRunInvocationTransportError.unsupportedLayout
         }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let scenarioData = try scenarioPayload(for: definition, scope: scope)
+        let scenarioData = try scenarioPayload(
+            for: definition, scope: scope, featureBackend: featureBackend
+        )
         let invocationData = try encoder.encode(invocation)
         let payloadBytes = scenarioData.count + invocationData.count
         guard payloadBytes <= maximumPayloadBytes else {
@@ -212,6 +231,11 @@ enum XCTestRunInvocationTransport {
         ) { target in
             var environment = target["EnvironmentVariables"] as? [String: Any] ?? [:]
             injected.forEach { environment[$0.key] = $0.value }
+            for key in ["XCODE_VERSION_ACTUAL", "SDK_VERSION"] {
+                if let value = buildEnvironment[key], !value.isEmpty {
+                    environment[key] = value
+                }
+            }
             target["EnvironmentVariables"] = environment
         }
 

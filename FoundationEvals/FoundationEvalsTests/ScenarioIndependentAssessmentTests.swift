@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import FoundationEvals
@@ -330,6 +331,164 @@ struct ScenarioIndependentAssessmentTests {
         await #expect(throws: ScenarioAssessmentStoreError.self) {
             _ = try await reloaded.featureHistory(
                 for: changed, laneResultID: lane.id, definition: definition
+            )
+        }
+    }
+
+    @Test func localFeatureAssessmentRequiresAcceptedNativeChildAndCheckedBuild() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "local-feature-assessments-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var definition = ScenarioDefinition.starter(projectID: UUID())
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.coverage = .init(appFeature: .required, intentIntegration: .notApplicable,
+                                    siri: .notApplicable, siriAttemptCount: 1)
+        definition.goal.requestText = "Summarize the packing note."
+        definition.featureBinding = .init(featureID: "summarize-note",
+                                           interfaceDigest: String(repeating: "a", count: 64),
+                                           inputMapping: [], outputProjections: [])
+        let assertion = ScenarioAssertion(
+            kind: .semanticRubric, observationKey: "feature.response",
+            expectedValue: .string("The blue charger is on the list."),
+            explanation: "The summary covers the requested note.",
+            applicableLanes: [.appFeature]
+        )
+        definition.assertions = [assertion]
+        definition = try definition.frozen()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let coordinate = ScenarioPlannedCoordinate(
+            id: UUID(), caseID: definition.id, lane: .appFeature,
+            repetition: 1, required: true
+        )
+        let plan = ScenarioExecutionPlan(
+            id: UUID(), definitionID: definition.id, definitionVersion: definition.version,
+            definitionDigest: definition.definitionDigest,
+            testContractDigest: try #require(definition.testContractDigest),
+            profile: .init(id: UUID(), projectPath: "/Example.xcodeproj", scheme: "Example",
+                           testTarget: "ExampleTests", destinationIdentifier: "device",
+                           signingSelection: nil, featureBackend: .projectLocalTestControl),
+            appProductDigest: "checked-app", testProductDigest: "checked-tests",
+            fixtureContractDigest: definition.fixture.digest,
+            coordinates: [coordinate], comparisonPolicy: nil, createdAt: now
+        )
+        let runID = UUID()
+        let invocation = ScenarioInvocationIdentity(
+            id: runID, nonce: "local-feature-nonce", issuedAt: now,
+            testIdentity: .init(bundleIdentifier: "example.tests", className: "IntentLab",
+                                methodName: "testIntentLabScenario"),
+            harnessVersion: ScenarioInvocationIdentity.reusableHarnessVersion,
+            destinationIdentifier: "device", scenarioDigest: definition.definitionDigest,
+            resultBundleIdentity: "result-bundle",
+            appProduct: .init(bundleIdentifier: definition.target.bundleIdentifier,
+                              executableName: "Example", sha256: "checked-app"),
+            testProduct: .init(bundleIdentifier: "example.tests", executableName: "ExampleTests",
+                               sha256: "checked-tests"), featureBackend: .projectLocalTestControl
+        )
+        let lane = ScenarioLaneResult(
+            caseID: definition.id, attempt: 1, lane: .appFeature,
+            executionStatus: .completed, outcome: .needsReview,
+            startedAt: now, completedAt: now,
+            observations: ["feature.response": .string("The blue charger is on the list.")],
+            observationSources: ["feature.response": .testOnlyIntent]
+        )
+        let environment = ScenarioEnvironment(
+            xcodeVersion: "27", sdkVersion: "27", deviceModel: "test",
+            operatingSystem: "test", operatingSystemBuild: nil,
+            languageCode: "en-GB", regionCode: "GB", timeZoneIdentifier: "UTC",
+            siriConfiguration: nil, siriConfigurationSource: nil, executedAt: now
+        )
+        var run = ScenarioRun(
+            id: runID, scenarioID: definition.id, scenarioVersion: definition.version,
+            scenarioDigest: definition.definitionDigest, invocation: invocation,
+            startedAt: now, completedAt: now, environment: environment,
+            executionStatus: .completed, outcome: .needsReview, laneResults: [lane],
+            linkedFeatureRunID: nil, importedAt: now,
+            xctestExitCode: 0, fixture: definition.fixture,
+            acceptanceStatus: .accepted,
+            scenarioSchemaVersion: ScenarioDefinition.stableSchemaVersion,
+            testContractDigest: definition.testContractDigest, executedTestCount: 1
+        )
+        var pending = run
+        pending.acceptanceStatus = .pending
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        let digest = SHA256.hash(data: try encoder.encode(pending))
+            .map { String(format: "%02x", $0) }.joined()
+        let row = ScenarioExecutionCoordinateRecord(
+            coordinate: coordinate, state: .completed,
+            evidenceRunID: runID, evidenceLaneResultID: lane.id,
+            detail: nil, laneResult: lane, evidenceDigest: digest
+        )
+        let record = ScenarioExecutionRecord(
+            id: plan.id, planID: plan.id, records: [row], completedAt: now,
+            evidenceDigest: String(repeating: "a", count: 64)
+        )
+        var journal = ScenarioExecutionJournal(
+            phase: .stopped, invocation: invocation,
+            scenarioID: definition.id, scenarioVersion: definition.version,
+            resultBundlePath: "result", derivedDataPath: "derived", buildLogPath: "build",
+            intendedExecutable: "xcodebuild", intendedArguments: [],
+            processIdentifier: nil, processStartedAt: nil, updatedAt: now,
+            recoveryReason: nil, evidenceAccepted: true,
+            scope: .init(lane: .appFeature, attempt: 1)
+        )
+        let evidence = ScenarioFeatureAssessmentEvidence(plan: plan, run: run, journal: journal)
+        let store = ScenarioAssessmentStore(directory: directory)
+        let assessment = try await store.reassessSavedFeatureOutput(
+            coordinateID: coordinate.id, assertionID: assertion.id,
+            executionRecord: record, definition: definition,
+            judgeConfiguration: .init(), resolvedJudge: nil,
+            nativeEvidence: evidence
+        )
+        #expect(assessment.sample?.status == .unscored)
+        let history = try await store.featureHistory(
+            for: record, laneResultID: lane.id, definition: definition,
+            nativeEvidence: evidence
+        )
+        #expect(history.selected(for: lane.id, assertionID: assertion.id)?.id == assessment.id)
+        let selected = try await store.sealSelection(
+            executionRecord: record, runs: [run], definition: definition,
+            plan: plan, journals: [journal]
+        )
+        #expect(selected.assessments.count == 1)
+        let retained = try await store.retainedArtifacts(
+            for: selected, executionRecord: record, runs: [run],
+            definition: definition, plan: plan, journals: [journal]
+        )
+        #expect(retained.count == 1)
+        await #expect(throws: ScenarioAssessmentStoreError.self) {
+            _ = try await store.featureHistory(
+                for: record, laneResultID: lane.id, definition: definition
+            )
+        }
+        var wrongPlan = plan
+        wrongPlan.appProductDigest = "wrong-build"
+        await #expect(throws: ScenarioAssessmentStoreError.self) {
+            _ = try await store.featureHistory(
+                for: record, laneResultID: lane.id, definition: definition,
+                nativeEvidence: .init(plan: wrongPlan, run: run, journal: journal)
+            )
+        }
+        var wrongBackend = plan
+        wrongBackend.profile.featureBackend = .connectedRunner
+        await #expect(throws: ScenarioAssessmentStoreError.self) {
+            _ = try await store.featureHistory(
+                for: record, laneResultID: lane.id, definition: definition,
+                nativeEvidence: .init(plan: wrongBackend, run: run, journal: journal)
+            )
+        }
+        journal.evidenceAccepted = false
+        await #expect(throws: ScenarioAssessmentStoreError.self) {
+            _ = try await store.featureHistory(
+                for: record, laneResultID: lane.id, definition: definition,
+                nativeEvidence: .init(plan: plan, run: run, journal: journal)
+            )
+        }
+        run.laneResults[0].observations["feature.response"] = .string("Changed")
+        await #expect(throws: ScenarioAssessmentStoreError.self) {
+            _ = try await store.featureHistory(
+                for: record, laneResultID: lane.id, definition: definition,
+                nativeEvidence: .init(plan: plan, run: run, journal: evidence.journal)
             )
         }
     }

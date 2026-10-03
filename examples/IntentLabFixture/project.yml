@@ -1,6 +1,10 @@
 name: IntentLabFixture
 options:
   bundleIdPrefix: com.example
+configs:
+  Debug: debug
+  Release: release
+  IntentLabTesting: debug
 settings:
   base:
     IPHONEOS_DEPLOYMENT_TARGET: "27.0"
@@ -17,6 +21,8 @@ targets:
     dependencies:
       - package: FoundationEvalsDeveloper
         product: FoundationEvalsDeveloper
+      - package: FoundationEvalsDeveloper
+        product: IntentLabContracts
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.coryparry.IntentLabFixture
@@ -29,6 +35,10 @@ targets:
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) INTENT_LAB_TEST_SUPPORT"
+        IntentLabTesting:
+          PRODUCT_BUNDLE_IDENTIFIER: com.coryparry.IntentLabFixture.integration-tests
+          INFOPLIST_KEY_CFBundleDisplayName: Intent Lab Fixture Test
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) INTENT_LAB_TESTING INTENT_LAB_TEST_SUPPORT"
   IntentLabFixtureV2UITests:
     type: bundle.ui-testing
     platform: iOS
@@ -39,6 +49,7 @@ targets:
           - Siri
     resources:
       - UITests/Generated
+      - UITests/IntentLabIntegration.json
     dependencies:
       - target: IntentLabFixture
       - package: FoundationEvalsDeveloper
@@ -48,8 +59,9 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.coryparry.IntentLabFixtureV2UITests
+        TEST_TARGET_NAME: IntentLabFixture
         INTENT_LAB_HARNESS_VERSION: intent-lab-v2
-        INTENT_LAB_HARNESS_CAPABILITIES: environment-payload direct-intent-execution direct-intent-output preparation accessible-result siri siri-completion invocation-correlation
+        INTENT_LAB_HARNESS_CAPABILITIES: environment-payload direct-intent-execution direct-intent-output preparation accessible-result siri siri-completion invocation-correlation test-only-intent local-feature-controls
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
@@ -59,6 +71,8 @@ targets:
     sources:
       - path: UITests/NotesIntentLabIntegration.swift
       - path: UITests/IntentLabSiriScenarioTests.swift
+      - path: UITests/Siri/IntentLabPresetRetestTests.swift
+      - path: UITests/Siri/PresetPhoneIntegration.swift
       - path: UITests/Siri/IntentLabIntegration.json
         buildPhase: resources
     dependencies:
@@ -111,6 +125,7 @@ schemes:
         IntentLabFixture: all
         IntentLabFixtureV2UITests: [test]
     test:
+      config: IntentLabTesting
       targets:
         - IntentLabFixtureV2UITests
   IntentLabFixtureSiri:

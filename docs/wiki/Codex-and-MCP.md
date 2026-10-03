@@ -28,6 +28,10 @@ Ask the agent to cite saved run evidence in its result. For a baseline or releas
 
 Intent Lab report tools only read saved reports. They cannot trust an Xcode project, run device tests, clear a device quarantine, or change a fixture. Do these tasks in Intents and the app's test environment.
 
+For a stable execution, call `eval_get_scenario_execution_report` with its saved `executionID` UUID, or use `script/foundation-evals scenario-execution-report --execution-id <uuid>`. The report uses the same frozen requirement, retained assessment selection and frozen judge policy as the GUI and exported offline evidence checks. Missing or corrupt evidence cannot qualify. `eval_get_scenario_report` and `scenario-report --run-id` retain their existing child-run meaning.
+
+For Debug verification with a separate store, launch the app with `--evaluation-storage <absolute-path> --mcp-use-existing-credential`. This explicit mode reads an already-existing local connector credential and starts the localhost transport without requiring an installed Codex entry. It cannot create or remove credentials, install or update Codex settings, or copy credential-bearing configuration. Missing or invalid credentials leave the connector stopped. Hosted tests and ordinary isolated launches cannot read the user's credential. `--disable-mcp-autostart` still prevents automatic startup.
+
 ## Solve connection problems
 
 | Symptom | Action |

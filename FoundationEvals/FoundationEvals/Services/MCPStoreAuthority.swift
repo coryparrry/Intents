@@ -200,6 +200,14 @@ enum MCPStoreAuthority {
                 return try await listScenarioRuns(arguments, store: store)
             case .getScenarioReport(let arguments):
                 return try await getScenarioReport(arguments, store: store)
+            case .getScenarioExecutionReport(let arguments):
+                let root = store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
+                let decision = try await ScenarioSavedExecutionReportService(rootDirectory: root)
+                    .qualification(executionID: arguments.executionID)
+                return readPayload([
+                    "executionID": .string(arguments.executionID.uuidString),
+                    "qualification": try json(decision)
+                ])
             case .cancelRun(let arguments):
                 let previous = store.runStatus(id: arguments.runID)
                 let operation = try store.cancelRun(id: arguments.runID)

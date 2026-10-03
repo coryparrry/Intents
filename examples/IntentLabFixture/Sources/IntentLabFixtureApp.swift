@@ -8,21 +8,34 @@ struct IntentLabFixtureApp: App {
 
     init() {
         FixtureShortcuts.updateAppShortcutParameters()
-        if !CommandLine.arguments.contains("-intent-lab-context") {
-            FixtureState.begin(context: "app-\(UUID().uuidString)")
-        }
         #if INTENT_LAB_TEST_SUPPORT
-        if CommandLine.arguments.contains("-intent-lab-reset") {
+        let contextArgument = argument(after: "-intent-lab-context")
+        let operationID = argument(after: "-intent-lab-operation") ?? "resetFixture"
+        if CommandLine.arguments.contains("-intent-lab-cleanup") {
+            if let contextArgument {
+                _ = try? FixtureTestSupport.cleanup(operationID: operationID, context: contextArgument)
+            }
+        } else if CommandLine.arguments.contains("-intent-lab-reset") {
             // Siri activation can outlast the phone’s normal auto-lock interval.
             // Keep only this test fixture awake for its lifetime.
             UIApplication.shared.isIdleTimerDisabled = true
-            FixtureState.reset()
+            if let contextArgument {
+                _ = try? FixtureTestSupport.prepare(operationID: operationID, context: contextArgument)
+            }
+        } else if let contextArgument {
+            FixtureState.begin(context: contextArgument)
+        } else {
+            FixtureState.begin(context: "app-\(UUID().uuidString)")
         }
-        if let index = CommandLine.arguments.firstIndex(of: "-intent-lab-context"),
-           CommandLine.arguments.indices.contains(index + 1) {
-            FixtureState.begin(context: CommandLine.arguments[index + 1])
-        }
+        #else
+        FixtureState.begin(context: "app-\(UUID().uuidString)")
         #endif
+    }
+
+    private func argument(after flag: String) -> String? {
+        guard let index = CommandLine.arguments.firstIndex(of: flag),
+              CommandLine.arguments.indices.contains(index + 1) else { return nil }
+        return CommandLine.arguments[index + 1]
     }
 
     var body: some Scene {
@@ -50,11 +63,22 @@ struct ContentView: View {
     @AppStorage(FixtureState.observedContextKey) private var observedContext = "none"
     @AppStorage(FixtureState.eventKey) private var lastEvent = "none"
     @AppStorage(FixtureState.summaryReceiptKey) private var summaryReceiptData = Data()
+    @AppStorage(FixtureState.actionReceiptsKey) private var actionReceiptData = Data()
     @State private var summarizingNoteID: String?
     @State private var summaryError: String?
 
     private var summaryReceipt: FixtureSummaryReceipt? {
         try? JSONDecoder().decode(FixtureSummaryReceipt.self, from: summaryReceiptData)
+    }
+
+    private var actionReceiptsJSON: String {
+        FixtureState.actionReceiptsJSON(from: actionReceiptData)
+    }
+
+    private var preparedFixtureDigestsJSON: String {
+        let digests = FixtureTestSupport.snapshot().fixtureDigests
+        guard let data = try? JSONEncoder().encode(digests) else { return "[]" }
+        return String(decoding: data, as: UTF8.self)
     }
 
     var body: some View {
@@ -95,9 +119,26 @@ struct ContentView: View {
                         }
                     }
                     Text(selectedNoteID).accessibilityIdentifier("intent-lab-selected-note-id")
+                    Text(preparedFixtureDigestsJSON)
+                        .accessibilityIdentifier("intent-lab-fixture-digests")
+                    if let selectedNote = FixtureNotes.note(id: selectedNoteID) {
+                        Text(FixtureNotes.contentDigest(selectedNote))
+                            .accessibilityIdentifier("intent-lab-fixture-digest")
+                    }
                     Text(String(mutationCount)).accessibilityIdentifier("intent-lab-mutation-count")
                     Text(observedContext).accessibilityIdentifier("intent-lab-observed-context")
                     Text(lastEvent).accessibilityIdentifier("intent-lab-last-event")
+                    Text("Action receipts")
+                        .accessibilityLabel(actionReceiptsJSON)
+                        .accessibilityIdentifier("intentlab.actionReceipts")
+                        .font(.system(size: 1))
+                        .frame(width: 1, height: 1)
+                        .opacity(0.01)
+                    Text(FixtureTestSupport.snapshotJSON())
+                        .accessibilityIdentifier("intentlab.fixtureSnapshot")
+                        .font(.system(size: 1))
+                        .frame(width: 1, height: 1)
+                        .opacity(0.01)
                 }
                 .font(.caption.monospaced())
                 .frame(maxWidth: .infinity, alignment: .leading)

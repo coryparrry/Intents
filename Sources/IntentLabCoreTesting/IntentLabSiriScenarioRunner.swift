@@ -14,6 +14,18 @@ public enum IntentLabSiriScenarioRunner {
         try IntentLabScenarioEngine.checkConnection(testCase: testCase, integration: integration)
     }
 
+    /// Probes only UI preparation and independent observations. The Siri-only
+    /// runner remains usable without linking AppIntentsTesting.
+    public static func testIntentLabReadiness(
+        testCase: XCTestCase,
+        integration: any IntentLabSiriIntegration
+    ) throws {
+        try IntentLabScenarioEngine.testIntentLabReadiness(
+            testCase: testCase,
+            integration: integration
+        )
+    }
+
     @discardableResult
     public static func run(
         testCase: XCTestCase,

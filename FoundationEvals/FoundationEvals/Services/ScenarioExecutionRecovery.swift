@@ -15,6 +15,15 @@ enum ScenarioExecutionRecoveryPolicy {
         captured == nil || captured == current
     }
 
+    static func canPromoteCapturedNativeEvidence(run: ScenarioRun, journal: ScenarioExecutionJournal, validationPassed: Bool?) -> Bool {
+        guard validationPassed == true, hasBoundJournal(run: run, journals: [journal]) else { return false }
+        if journal.phase == .running || journal.phase == .stopped { return true }
+        return journal.phase == .recoveryRequired && [
+            "The desktop stopped before device-side termination and fixture readiness were established.",
+            "Device execution or fixture readiness has not been proven after evidence capture."
+        ].contains(journal.recoveryReason ?? "")
+    }
+
     static func hasBoundJournal(run: ScenarioRun, journals: [ScenarioExecutionJournal]) -> Bool {
         journals.contains { journal in
             journal.id == run.id
@@ -31,7 +40,29 @@ enum ScenarioExecutionRecoveryPolicy {
         }
     }
 
-    static func hasTerminalBusinessFailure(_ run: ScenarioRun, definition: ScenarioDefinition?) -> Bool {
+    static func hasTerminalBusinessFailure(_ run: ScenarioRun) -> Bool {
+        guard run.executionStatus == .completed, run.outcome == .failed,
+              run.laneResults.count == 1 else { return false }
+        let lane = run.laneResults[0]
+        guard lane.executionStatus == .completed, lane.outcome == .failed else { return false }
+        switch lane.actionFailureReason {
+        case .some(.wrongAction), .some(.wrongParameter), .some(.wrongOutcome),
+             .some(.unexpectedExecution), .some(.operationError):
+            return true
+        case .some(.missingActionEvidence), .some(.staleActionEvidence),
+             .some(.invalidActionEvidence), .none:
+            return false
+        }
+    }
+
+    static func shouldPreserveTerminalBusinessFailure(
+        _ run: ScenarioRun,
+        attachment: ScenarioEvidenceAttachment, definition: ScenarioDefinition? = nil
+    ) -> Bool {
+        !attachment.isCheckpoint && (hasTerminalBusinessFailure(run) || hasObservedAssertionFailure(run, definition: definition))
+    }
+
+    static func hasObservedAssertionFailure(_ run: ScenarioRun, definition: ScenarioDefinition?) -> Bool {
         guard let definition, run.executionStatus == .completed, run.outcome == .failed,
               run.laneResults.contains(where: { $0.outcome == .failed }) else { return false }
         return run.laneResults.allSatisfy { lane in
@@ -47,20 +78,22 @@ enum ScenarioExecutionRecoveryPolicy {
         }
     }
 
-    static func shouldPreserveTerminalBusinessFailure(_ run: ScenarioRun, attachment: ScenarioEvidenceAttachment, definition: ScenarioDefinition? = nil) -> Bool {
-        !attachment.isCheckpoint && hasTerminalBusinessFailure(run, definition: definition)
-    }
-
     static func acceptsFinalEvidence(
         attachments: [ScenarioEvidenceAttachment], runs: [ScenarioRun], xctestExitCode: Int32,
         definition: ScenarioDefinition? = nil
     ) -> Bool {
-        !attachments.isEmpty && attachments.allSatisfy { !$0.isCheckpoint }
-            && !runs.isEmpty && runs.allSatisfy { run in
-                run.executionStatus == .completed && !run.laneResults.isEmpty
+        let hasFinalEnvelope = !attachments.isEmpty && attachments.allSatisfy { !$0.isCheckpoint }
+        let hasCompletedRuns = !runs.isEmpty && runs.allSatisfy { run in
+                run.executionStatus == .completed
+                    && !run.laneResults.isEmpty
                     && run.laneResults.allSatisfy { $0.executionStatus == .completed }
             }
-            && (xctestExitCode == 0 || runs.allSatisfy { hasTerminalBusinessFailure($0, definition: definition) })
+        guard hasFinalEnvelope, hasCompletedRuns else { return false }
+        // The XCTest process status is independent of an imported business
+        // result. A completed failure can be retained for display, but a
+        // nonzero process status never qualifies as complete evidence.
+        guard xctestExitCode == 0 else { return false }
+        return runs.allSatisfy { $0.xctestExitCode == xctestExitCode }
     }
 
     static func requiresQuarantine(

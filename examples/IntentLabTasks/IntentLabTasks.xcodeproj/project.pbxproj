@@ -12,7 +12,11 @@
 		397A607191764AE4354ACDBD /* IntentLabContracts in Frameworks */ = {isa = PBXBuildFile; productRef = 8379A16C7F99F16C8F3599F0 /* IntentLabContracts */; };
 		57466216B7C779B2A7B3A3B8 /* IntentLabTesting in Frameworks */ = {isa = PBXBuildFile; productRef = DB6A42445F417C9EBBB14E87 /* IntentLabTesting */; };
 		590664DCD33F62F579640A65 /* IntentLabTasksScenarioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0FF818B6F466CAFACA76ED /* IntentLabTasksScenarioTests.swift */; };
+		A8E86190C29341DAB387DC01 /* IntentLabReadinessTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E86190C29341DAB387DC00 /* IntentLabReadinessTestSupport.swift */; };
+		769E70580F6EB2010501FDA0 /* IntentLabContracts in Frameworks */ = {isa = PBXBuildFile; productRef = E3557C36FC5B8BC38FFE9261 /* IntentLabContracts */; };
+		889D4570EE27429C043FFB7F /* TaskFeatureTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D41A77BDC4CF331CAD243E6B /* TaskFeatureTestSupport.swift */; };
 		92D65BE682A45548975DD9A3 /* TaskIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 770630D9A05245C8B2CDFF55 /* TaskIntegration.swift */; };
+		9E77798A25C233F3DF55B2CA /* IntentLabFeatureTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69563DC6D54EC1A68AB0FB6D /* IntentLabFeatureTestSupport.swift */; };
 		9E7FADF31FBFD11C1F5F173E /* IntentLabTasksApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB91EEA011ADF8DB88CDF188 /* IntentLabTasksApp.swift */; };
 		BD2F6525375B63278861E916 /* TaskIntentFaultTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21384F0C93EAA8807FB70DEE /* TaskIntentFaultTests.swift */; };
 		F43730B0B6C8464930CECCFF /* IntentLabIntegration.json in Resources */ = {isa = PBXBuildFile; fileRef = 9FDE9CF9EC51C504354F6E29 /* IntentLabIntegration.json */; };
@@ -34,6 +38,8 @@
 		076C1650CB39F5A62191F8BA /* TaskIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIntents.swift; sourceTree = "<group>"; };
 		21384F0C93EAA8807FB70DEE /* TaskIntentFaultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIntentFaultTests.swift; sourceTree = "<group>"; };
 		2F35C8EF90A965D04C7ECCF4 /* IntentLabRunnerFaultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabRunnerFaultTests.swift; sourceTree = "<group>"; };
+		69563DC6D54EC1A68AB0FB6D /* IntentLabFeatureTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabFeatureTestSupport.swift; sourceTree = "<group>"; };
+		A8E86190C29341DAB387DC00 /* IntentLabReadinessTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabReadinessTestSupport.swift; sourceTree = "<group>"; };
 		770630D9A05245C8B2CDFF55 /* TaskIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIntegration.swift; sourceTree = "<group>"; };
 		9FDE9CF9EC51C504354F6E29 /* IntentLabIntegration.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = IntentLabIntegration.json; sourceTree = "<group>"; };
 		A303EFF08E4F43B8C2E163F2 /* IntentLabTasks.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = IntentLabTasks.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -41,11 +47,20 @@
 		B79D460B755EBAB9C53152FB /* Intents */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Intents; path = ../..; sourceTree = SOURCE_ROOT; };
 		C1DB79678D0A163B95E71035 /* IntentLabTasksUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = IntentLabTasksUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C3CEBF6F01C7FBF7A2C63A5A /* TaskRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRecord.swift; sourceTree = "<group>"; };
+		D41A77BDC4CF331CAD243E6B /* TaskFeatureTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskFeatureTestSupport.swift; sourceTree = "<group>"; };
 		DB91EEA011ADF8DB88CDF188 /* IntentLabTasksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentLabTasksApp.swift; sourceTree = "<group>"; };
 		EC2D5547A8F9DF8635C77D0E /* TaskRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRepository.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		B9FD759521C68439999B275B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				769E70580F6EB2010501FDA0 /* IntentLabContracts in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D6246B6AF43A94E505A65E01 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -62,6 +77,9 @@
 			isa = PBXGroup;
 			children = (
 				DB91EEA011ADF8DB88CDF188 /* IntentLabTasksApp.swift */,
+				69563DC6D54EC1A68AB0FB6D /* IntentLabFeatureTestSupport.swift */,
+				A8E86190C29341DAB387DC00 /* IntentLabReadinessTestSupport.swift */,
+				D41A77BDC4CF331CAD243E6B /* TaskFeatureTestSupport.swift */,
 				076C1650CB39F5A62191F8BA /* TaskIntents.swift */,
 				C3CEBF6F01C7FBF7A2C63A5A /* TaskRecord.swift */,
 				EC2D5547A8F9DF8635C77D0E /* TaskRepository.swift */,
@@ -138,6 +156,7 @@
 			buildConfigurationList = 76B83404045461894E5BB091 /* Build configuration list for PBXNativeTarget "IntentLabTasks" */;
 			buildPhases = (
 				82EE3AF6C63FF275A76B35E1 /* Sources */,
+				B9FD759521C68439999B275B /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -145,6 +164,7 @@
 			);
 			name = IntentLabTasks;
 			packageProductDependencies = (
+				E3557C36FC5B8BC38FFE9261 /* IntentLabContracts */,
 			);
 			productName = IntentLabTasks;
 			productReference = A303EFF08E4F43B8C2E163F2 /* IntentLabTasks.app */;
@@ -220,7 +240,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9E77798A25C233F3DF55B2CA /* IntentLabFeatureTestSupport.swift in Sources */,
 				9E7FADF31FBFD11C1F5F173E /* IntentLabTasksApp.swift in Sources */,
+				A8E86190C29341DAB387DC01 /* IntentLabReadinessTestSupport.swift in Sources */,
+				889D4570EE27429C043FFB7F /* TaskFeatureTestSupport.swift in Sources */,
 				05E4469F7B7A5B5014CBD3F1 /* TaskIntents.swift in Sources */,
 				FFF70D6666F68D88535EF88D /* TaskRecord.swift in Sources */,
 				274ECDD9B5EAA1BB2FA50213 /* TaskRepository.swift in Sources */,
@@ -437,7 +460,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.example.IntentLabTasks.integration-tests";
 				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) INTENT_LAB_TESTING";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) INTENT_LAB_TESTING INTENT_LAB_TEST_SUPPORT";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = IntentLabTesting;
@@ -514,6 +537,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.IntentLabTasks;
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) INTENT_LAB_TEST_SUPPORT";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -588,6 +612,10 @@
 		DB6A42445F417C9EBBB14E87 /* IntentLabTesting */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = IntentLabTesting;
+		};
+		E3557C36FC5B8BC38FFE9261 /* IntentLabContracts */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = IntentLabContracts;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

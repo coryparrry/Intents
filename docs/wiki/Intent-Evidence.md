@@ -35,6 +35,8 @@ Keep the complete frozen definition produced by Intents, including its calculate
 
 Include semanticPolicy only when the check uses semantic assertions. Both digests are externally reviewed pins: the checker recomputes the raw output, reference, rubric and source binding, then checks the full retained assessment, its saved sample and criterion trace under those pinned scoring and judge policies. A selected status without its matching immutable assessment cannot pass. Missing or unscored selections cannot pass.
 
+New policies frozen in the app also carry `frozenAt`, a Unix timestamp chosen before assessment. The checker requires the retained assessment to have started at or after that time. Retrying the policy save keeps its original timestamp. Older externally reviewed policies without this field keep their existing behavior.
+
 Obtain the expected source label and checked app executable SHA-256 from the reviewed checkout or trusted native execution job. A clean, single-repository checkout whose checked source files are tracked is frozen as `git:<commit SHA>` when the connection build is verified. A dirty, multi-repository, untracked-source or non-Git checkout is frozen as `inputs-sha256:<checked build-input digest>`; it must be pinned from a trusted native job, and must never be presented as a Git commit. Existing v3 plans without the newer source label export with this explicit digest fallback. The bundle's own source label and checksums establish consistency only; they are not hardware attestation or proof that the producer built that revision. CI should consume bundles from its trusted native job or an approved artifact source. The externally supplied app digest must match every frozen plan in the bundle.
 
 ## Check and compare

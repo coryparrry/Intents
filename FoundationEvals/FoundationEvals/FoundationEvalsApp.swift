@@ -11,9 +11,12 @@ struct FoundationEvalsApp: App {
     @State private var runnerStore: DeveloperRunnerStore
     @State private var telemetry: TelemetryController
     @State private var mcpSettings: MCPSettingsController
+    // Debug builds must retain the exact executable being tested.
+    #if !DEBUG
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
     )
+    #endif
     private let mcpRuntime: FoundationEvalsMCPRuntime
 
     init() {
@@ -25,7 +28,8 @@ struct FoundationEvalsApp: App {
                 start: { configuration in try await runtime.start(configuration) },
                 stop: { await runtime.stop() }
             ),
-            credentialStore: Self.launchCredentialStore
+            credentialStore: Self.launchCredentialStore,
+            existingCredentialOnly: Self.readOnlyMCPCredentialRequest
         )
         runtime.settingsController = settings
         _telemetry = State(initialValue: telemetry)
@@ -49,19 +53,32 @@ struct FoundationEvalsApp: App {
 
     private static var launchCredentialStore: MCPCredentialStore {
         #if DEBUG
-        let environment = ProcessInfo.processInfo.environment
-        if environment["XCTestConfigurationFilePath"] != nil
-            || environment["XCTestBundlePath"] != nil
-            || acceptanceStorageDirectory != nil {
-            // Isolated verification must neither read nor modify the user's MCP credential.
-            return .init(
-                load: { nil },
-                save: { _ in throw CocoaError(.featureUnsupported) },
-                remove: { throw CocoaError(.featureUnsupported) }
-            )
-        }
-        #endif
+        return MCPDebugLaunchConfiguration.credentialStore(
+            arguments: ProcessInfo.processInfo.arguments, environment: ProcessInfo.processInfo.environment,
+            isolatedStorage: acceptanceStorageDirectory, existing: .keychain
+        )
+        #else
         return .keychain
+        #endif
+    }
+
+    private static var readOnlyMCPCredentialRequest: Bool {
+        #if DEBUG
+        return MCPDebugLaunchConfiguration.requestsExistingCredential(arguments: ProcessInfo.processInfo.arguments)
+        #else
+        return false
+        #endif
+    }
+
+    private static var useExistingMCPCredential: Bool {
+        #if DEBUG
+        return MCPDebugLaunchConfiguration.usesExistingCredential(
+            arguments: ProcessInfo.processInfo.arguments, environment: ProcessInfo.processInfo.environment,
+            isolatedStorage: acceptanceStorageDirectory
+        )
+        #else
+        return false
+        #endif
     }
 
     private static var acceptanceStorageDirectory: URL? {
@@ -89,6 +106,10 @@ struct FoundationEvalsApp: App {
                 .task(id: mcpSettings.installationState) {
                     appDelegate.runtime = mcpRuntime
                     guard !ProcessInfo.processInfo.arguments.contains("--disable-mcp-autostart") else { return }
+                    if Self.useExistingMCPCredential {
+                        await mcpSettings.startServer()
+                        return
+                    }
                     guard mcpSettings.installationState == .installed else { return }
                     await mcpSettings.startServer()
                 }
@@ -101,9 +122,11 @@ struct FoundationEvalsApp: App {
             CommandGroup(replacing: .newItem) { }
             // AppKit's Services scanner blocks accessibility menu inspection on a lower-QoS thread.
             CommandGroup(replacing: .systemServices) { }
+            #if !DEBUG
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updaterController.updater)
             }
+            #endif
 
             CommandMenu("Evaluation") {
                 Button("Show Suite Editor") {

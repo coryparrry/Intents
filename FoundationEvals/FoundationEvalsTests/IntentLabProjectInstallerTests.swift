@@ -22,6 +22,12 @@ struct IntentLabProjectInstallerTests {
         static let declarationData = Data("""
         {"schemaVersion":1,"id":"consumer-test","version":"1","targetBundleIdentifier":"com.example.Consumer","projectIdentity":"Consumer","targetIdentity":"UITests","supportedHarnessProtocols":["intent-lab-v2"],"actions":[],"resultProjections":[],"preparationOperations":[],"observers":[],"isolation":{"kind":"readOnly"},"capabilities":["direct-intent-execution","environment-payload"]}
         """.utf8)
+        static let localFeatureDeclarationData = Data("""
+        {"schemaVersion":1,"id":"consumer-test","version":"1","targetBundleIdentifier":"com.example.Consumer","projectIdentity":"Consumer","targetIdentity":"UITests","supportedHarnessProtocols":["intent-lab-v2"],"actions":[],"resultProjections":[],"preparationOperations":[],"observers":[],"localFeatureControls":[{"featureID":"sample.feature","interfaceDigest":"0000000000000000000000000000000000000000000000000000000000000000","operationID":"performSample","testIntentIdentifier":"IntentLabInvokeFeatureIntent","parameters":[],"outputProjections":[]}],"isolation":{"kind":"readOnly"},"capabilities":["local-feature-controls","test-only-intent"]}
+        """.utf8)
+        static let readinessDeclarationData = Data("""
+        {"schemaVersion":1,"id":"consumer-test","version":"1","targetBundleIdentifier":"com.example.Consumer","projectIdentity":"Consumer","targetIdentity":"UITests","supportedHarnessProtocols":["intent-lab-v2"],"actions":[],"resultProjections":[],"preparationOperations":[],"observers":[],"readinessControl":{"operationID":"intentLabReadiness","testIntentIdentifier":"IntentLabReadinessIntent","response":{"id":"readiness.ready","type":{"primitive":{"_0":"boolean"}},"path":[{"kind":"property","name":"value"},{"kind":"property","name":"ready"}]}},"isolation":{"kind":"readOnly"},"capabilities":["test-only-intent"]}
+        """.utf8)
         let root: URL
         let project: URL
         let package: URL
@@ -50,13 +56,15 @@ struct IntentLabProjectInstallerTests {
         }
 
         func request(existingTarget: Bool = true, workspaceURL: URL? = nil,
+                     packageProduct: String = "IntentLabTesting",
+                     declarationData: Data = Self.declarationData,
                      consumerSource: String = "import XCTest\nfinal class IntentLabScenarioTests: XCTestCase {}\n") -> IntentLabInstallationRequest {
             .init(projectURL: project, workspaceURL: workspaceURL,
                   scheme: "FoundationEvals", applicationTargetID: applicationID,
                   uiTestTargetID: existingTarget ? uiTestID : nil, packageURL: package,
-                  packageProduct: "IntentLabTesting",
+                  packageProduct: packageProduct,
                   consumerSource: consumerSource,
-                  declarationData: Self.declarationData)
+                  declarationData: declarationData)
         }
 
         func cleanup() { try? FileManager.default.removeItem(at: root) }
@@ -211,6 +219,131 @@ struct IntentLabProjectInstallerTests {
         #expect(scaffold.contains("import IntentLabCoreTesting"))
         #expect(scaffold.contains("IntentLabSiriIntegration"))
         #expect(!scaffold.contains("import IntentLabTesting"))
+    }
+
+    @Test func localFeatureSupportIsAddedOnlyToTheAppTargetDebugBuild() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let request = fixture.request(
+            declarationData: Fixture.localFeatureDeclarationData,
+            consumerSource: "import IntentLabTesting\nimport XCTest\nfinal class IntentLabScenarioTests: XCTestCase {}\n"
+        )
+        let installer = IntentLabProjectInstaller()
+        let plan = try installer.preview(request)
+        #expect(plan.supported)
+        let supportChange = try #require(plan.changes.first {
+            $0.url.lastPathComponent == "IntentLabFeatureTestSupport.swift"
+        })
+        let supportSource = String(decoding: supportChange.proposed, as: UTF8.self)
+        #expect(supportSource.contains("#if DEBUG && INTENT_LAB_TEST_SUPPORT"))
+        #expect(supportSource.contains("static func install(_ support: any IntentLabFeatureTestSupport)"))
+        #expect(supportSource.contains("IntentLabInvokeFeatureIntent"))
+        #expect(supportSource.contains("productionService receipt"))
+        #expect(!supportSource.contains("import IntentLabTesting"))
+
+        let projectChange = try #require(plan.changes.first { $0.url.lastPathComponent == "project.pbxproj" })
+        let root = try PropertyListSerialization.propertyList(from: projectChange.proposed, format: nil) as! [String: Any]
+        let objects = root["objects"] as! [String: [String: Any]]
+        let app = try #require(objects[fixture.applicationID])
+        let appProducts = (app["packageProductDependencies"] as? [String] ?? [])
+            .compactMap { objects[$0]?["productName"] as? String }
+        #expect(appProducts.contains("IntentLabContracts"))
+        #expect(!appProducts.contains("IntentLabTesting"))
+        let listID = try #require(app["buildConfigurationList"] as? String)
+        let configIDs = try #require(objects[listID]?["buildConfigurations"] as? [String])
+        for configID in configIDs {
+            let config = try #require(objects[configID])
+            let settings = try #require(config["buildSettings"] as? [String: Any])
+            let name = config["name"] as? String ?? ""
+            let conditions = settings["SWIFT_ACTIVE_COMPILATION_CONDITIONS"] as? String ?? ""
+            if name.localizedCaseInsensitiveContains("debug") {
+                #expect(conditions.contains("INTENT_LAB_TEST_SUPPORT"))
+                #expect(conditions.contains("DEBUG"))
+            } else {
+                #expect(!conditions.contains("INTENT_LAB_TEST_SUPPORT"))
+            }
+        }
+
+        _ = try installer.apply(plan)
+        #expect(try installer.verify(request).installed)
+        #expect(try installer.preview(request).changes.isEmpty)
+    }
+
+    @Test func localFeatureCoreTestingRequestExportsAppScaffoldForManualSetup() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let plan = try IntentLabProjectInstaller().preview(fixture.request(
+            packageProduct: "IntentLabCoreTesting",
+            declarationData: Fixture.localFeatureDeclarationData
+        ))
+        #expect(!plan.supported)
+        #expect(plan.manualFiles.contains { $0.filename == "IntentLabFeatureTestSupport.swift" })
+        #expect(plan.manualFiles.first { $0.filename == "IntentLabManualSetup.md" }
+            .map { String(decoding: $0.data, as: UTF8.self).contains("only in Debug") } == true)
+    }
+
+    @Test func declaredReadinessInstallsOnlyTheHarmlessDebugAppIntent() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let request = fixture.request(
+            declarationData: Fixture.readinessDeclarationData,
+            consumerSource: "import IntentLabTesting\nimport XCTest\nfinal class IntentLabScenarioTests: XCTestCase {}\n"
+        )
+        let installer = IntentLabProjectInstaller()
+        let plan = try installer.preview(request)
+        #expect(plan.supported)
+        let readinessFile = try #require(plan.changes.first {
+            $0.url.lastPathComponent == "IntentLabReadinessTestSupport.swift"
+        })
+        let source = String(decoding: readinessFile.proposed, as: UTF8.self)
+        #expect(source.contains("#if DEBUG && INTENT_LAB_TEST_SUPPORT"))
+        #expect(source.contains("struct IntentLabReadinessIntent: AppIntent"))
+        #expect(source.contains("IntentLabReadinessTestResult(ready: true, context: context)"))
+        #expect(source.contains("isDiscoverable = false"))
+        #expect(!source.contains("IntentLabInvokeFeatureIntent"))
+        #expect(!source.contains("businessInput"))
+        #expect(!source.contains("IntentLabTestIntentTransport"))
+
+        let projectChange = try #require(plan.changes.first { $0.url.lastPathComponent == "project.pbxproj" })
+        let root = try PropertyListSerialization.propertyList(from: projectChange.proposed, format: nil) as! [String: Any]
+        let objects = root["objects"] as! [String: [String: Any]]
+        let app = try #require(objects[fixture.applicationID])
+        let appProducts = (app["packageProductDependencies"] as? [String] ?? [])
+            .compactMap { objects[$0]?["productName"] as? String }
+        #expect(!appProducts.contains("IntentLabTesting"))
+        let listID = try #require(app["buildConfigurationList"] as? String)
+        let configIDs = try #require(objects[listID]?["buildConfigurations"] as? [String])
+        for configID in configIDs {
+            let config = try #require(objects[configID])
+            let settings = try #require(config["buildSettings"] as? [String: Any])
+            let name = config["name"] as? String ?? ""
+            let conditions = settings["SWIFT_ACTIVE_COMPILATION_CONDITIONS"] as? String ?? ""
+            #expect(conditions.contains("INTENT_LAB_TEST_SUPPORT") == name.localizedCaseInsensitiveContains("debug"))
+        }
+
+        _ = try installer.apply(plan)
+        #expect(try installer.verify(request).installed)
+        #expect(try installer.preview(request).changes.isEmpty)
+    }
+
+    @Test func readinessInstallerRejectsFeatureIntentRedirection() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        var declaration = try #require(
+            JSONSerialization.jsonObject(with: Fixture.readinessDeclarationData) as? [String: Any]
+        )
+        var control = try #require(declaration["readinessControl"] as? [String: Any])
+        control["testIntentIdentifier"] = "IntentLabInvokeFeatureIntent"
+        declaration["readinessControl"] = control
+        let request = fixture.request(
+            declarationData: try JSONSerialization.data(withJSONObject: declaration),
+            consumerSource: "import IntentLabTesting\nimport XCTest\nfinal class IntentLabScenarioTests: XCTestCase {}\n"
+        )
+
+        let plan = try IntentLabProjectInstaller().preview(request)
+        #expect(!plan.supported)
+        #expect(plan.manualSteps.first?.contains("fixed harmless IntentLabReadinessIntent") == true)
+        #expect(plan.manualFiles.contains { $0.filename == "IntentLabReadinessTestSupport.swift" })
     }
 
     @Test func coreTestingRequiresSiriSourceContractAndRejectsDirectCapabilities() throws {

@@ -4,6 +4,24 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioExecutionComparisonTests {
+    @Test func reportIncludesProjectLocalFeatureNativeChild() throws {
+        let caseID = UUID()
+        var snapshot = try snapshot(caseID: caseID, build: hash("a"), featureOutcome: .passed)
+        let featureID = try #require(snapshot.record.records.first {
+            $0.coordinate.lane == .appFeature
+        }?.evidenceRunID)
+        let directID = try #require(snapshot.record.records.first {
+            $0.coordinate.lane == .intentIntegration
+        }?.evidenceRunID)
+        #expect(ScenarioExecutionComparison.nativeChildRunIDs(
+            plan: snapshot.plan, record: snapshot.record
+        ) == [directID])
+        snapshot.plan.profile.featureBackend = .projectLocalTestControl
+        #expect(ScenarioExecutionComparison.nativeChildRunIDs(
+            plan: snapshot.plan, record: snapshot.record
+        ) == [featureID, directID])
+    }
+
     @Test func freshChildIDsAndChangedBuildRemainComparable() throws {
         let caseID = UUID()
         let baseline = try snapshot(caseID: caseID, build: hash("a"), featureOutcome: .failed)
@@ -39,7 +57,7 @@ struct ScenarioExecutionComparisonTests {
             candidate: changedProfile, policy: policy).isDirectlyComparable)
     }
 
-    @Test func completedFailedAssertionCanBeRetestedAfterNonzeroXCTestExit() throws {
+    @Test func nonzeroXCTestExitCannotClaimDirectlyComparableEvidence() throws {
         let caseID = UUID()
         var baseline = try snapshot(caseID: caseID, build: hash("a"), featureOutcome: .failed)
         let candidate = try snapshot(caseID: caseID, build: hash("b"), featureOutcome: .passed,
@@ -57,8 +75,23 @@ struct ScenarioExecutionComparisonTests {
             baseline: baseline, candidate: candidate,
             policy: .init(mode: .compareAppChanges, baselineRunID: baseline.plan.id)
         )
-        #expect(report.isDirectlyComparable)
-        #expect(report.lanes.first { $0.lane == .intentIntegration }?.baselinePassed == 0)
+        #expect(!report.isDirectlyComparable)
+        #expect(report.qualificationIssues?.contains(where: {
+            $0.contains("Baseline native child evidence lacks an accepted zero-exit result")
+        }) == true)
+        baseline.runs[0].xctestExitCode = 0
+        baseline.runs[0].acceptanceStatus = .pending
+        let pending = ScenarioExecutionComparison.compare(
+            baseline: baseline, candidate: candidate,
+            policy: .init(mode: .compareAppChanges, baselineRunID: baseline.plan.id)
+        )
+        #expect(!pending.isDirectlyComparable)
+        baseline.runs[0].acceptanceStatus = .accepted
+        let accepted = ScenarioExecutionComparison.compare(
+            baseline: baseline, candidate: candidate,
+            policy: .init(mode: .compareAppChanges, baselineRunID: baseline.plan.id)
+        )
+        #expect(accepted.isDirectlyComparable)
     }
 
     @Test func changedRequirementsIncompleteRecordsAndBadProvenanceCannotClaimFix() throws {
@@ -508,6 +541,7 @@ struct ScenarioExecutionComparisonTests {
         run.fixture = .init(id: "fixture", version: "1", digest: plan.fixtureContractDigest,
                             isSynthetic: true, preparationOperation: "prepare", cleanupOperation: "cleanup")
         run.xctestExitCode = 0
+        run.acceptanceStatus = .accepted
         run.executedTestCount = 1
         run.measurementImplementation = measurement
         run.comparisonEnvironmentIdentity = .init(profileID: "iphone-en", profileDigest: hash("9"))

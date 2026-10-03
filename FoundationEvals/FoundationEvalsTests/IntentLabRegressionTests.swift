@@ -4,6 +4,26 @@ import Darwin
 @testable import FoundationEvals
 
 struct IntentLabRegressionTests {
+    @Test func failedCapturesSkipVerboseDiagnosticsAndKeepSelectedResultBundle() throws {
+        let configuration = XcodeTestConfiguration(
+            containerPath: "/tmp/Fixture.xcodeproj", isWorkspace: false, scheme: "Fixture",
+            testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: "sim-1", generatedResourceDirectory: "/tmp"
+        )
+        for method in ["testIntentLabConnection", "testIntentLabReadiness", "testIntentLabScenario"] {
+            let arguments = XcodeTestExecutor.testExecutionArguments(
+                configuration: configuration, testRunURL: URL(filePath: "/tmp/selected.xctestrun"),
+                resultBundleURL: URL(filePath: "/tmp/retained.xcresult"),
+                testIdentifier: "IntentLabScenarioTests/\(method)"
+            )
+            #expect(arguments.contains("-collect-test-diagnostics"))
+            let index = try #require(arguments.firstIndex(of: "-collect-test-diagnostics"))
+            #expect(arguments[index + 1] == "never")
+            #expect(arguments.contains("/tmp/retained.xcresult"))
+            #expect(arguments.contains("-only-testing:FixtureUITests/IntentLabScenarioTests/\(method)"))
+        }
+    }
+
     @Test func testProcessDeadlineIncludesDirectLaneButOmitsNotApplicableSiri() {
         let definition = deadlineDefinition(
             directLane: true,
@@ -37,6 +57,46 @@ struct IntentLabRegressionTests {
         #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 480)
     }
 
+    @Test func scopedFeatureDeadlineIncludesItsConfiguredWaitsAndFixtureOverhead() {
+        let definition = deadlineDefinition(
+            directLane: true, siriLane: true, siriAttemptCount: 3, deadlineSeconds: 300
+        )
+        let scope = ScenarioNativeExecutionScope(lane: .appFeature, attempt: 1)
+
+        #expect(XcodeTestDeadlineBudget.seconds(for: definition, scope: scope) == 975)
+        #expect(XcodeTestDeadlineBudget.seconds(for: definition, scope: scope)
+                > definition.safety.deadlineSeconds)
+    }
+
+    @Test func scopedFeatureDeadlineUsesNondefaultBoundsEvenWithoutResetOperations() {
+        var definition = deadlineDefinition(
+            directLane: false, siriLane: false, siriAttemptCount: 3, deadlineSeconds: 1
+        )
+        definition.fixture.preparationOperation = ""
+        definition.fixture.cleanupOperation = ""
+        let scope = ScenarioNativeExecutionScope(lane: .appFeature, attempt: 1)
+        for wait in [1.0, 30.0, 900.0] {
+            definition.safety.deadlineSeconds = wait
+            #expect(XcodeTestDeadlineBudget.seconds(for: definition, scope: scope) == 75 + 3 * wait)
+        }
+    }
+
+    @Test func scopedDirectAndSiriDeadlinesKeepTheirOwnWaitsAndAttemptCounts() {
+        let definition = deadlineDefinition(
+            directLane: true, siriLane: true, siriAttemptCount: 3, deadlineSeconds: 300
+        )
+        #expect(XcodeTestDeadlineBudget.seconds(
+            for: definition, scope: .init(lane: .intentIntegration, attempt: 1)
+        ) == 975)
+        for attempt in 1...3 {
+            #expect(XcodeTestDeadlineBudget.seconds(
+                for: definition, scope: .init(lane: .siri, attempt: attempt)
+            ) == 435)
+        }
+        #expect(XcodeTestDeadlineBudget.seconds(for: definition) == 2100)
+    }
+
+    @MainActor
     @Test func siriCoverageRequiresPhysicalIPhoneButDirectChecksAllowMac() {
         let mac = IntentLabDeviceDestination(
             identifier: "mac-1", name: "Mac", operatingSystemVersion: "27.0",
@@ -46,7 +106,11 @@ struct IntentLabRegressionTests {
             identifier: "phone-1", name: "iPhone", operatingSystemVersion: "27.0",
             available: true, platform: .iOS
         )
-        let devices = [mac, phone]
+        let simulator = IntentLabDeviceDestination(
+            identifier: "sim-1", name: "iPhone Simulator", operatingSystemVersion: "27.0",
+            available: true, platform: .iOSSimulator
+        )
+        let devices = [mac, phone, simulator]
 
         #expect(XcodeTestExecutor.destinationStatus(identifier: mac.identifier, devices: devices).ready)
         let rejected = XcodeTestExecutor.destinationStatus(
@@ -57,6 +121,91 @@ struct IntentLabRegressionTests {
         #expect(XcodeTestExecutor.destinationStatus(
             identifier: phone.identifier, devices: devices, requiresSiri: true
         ).ready)
+        #expect(XcodeTestExecutor.destinationStatus(
+            identifier: simulator.identifier, devices: devices
+        ).ready)
+        #expect(!XcodeTestExecutor.destinationStatus(
+            identifier: simulator.identifier, devices: devices, requiresSiri: true
+        ).ready)
+        #expect(ScenarioCoordinator.availablePlatform(for: simulator.identifier, in: devices) == .iOSSimulator)
+        #expect(ScenarioCoordinator.availablePlatform(for: phone.identifier, in: devices) == .iOS)
+        #expect(ScenarioCoordinator.availablePlatform(for: "stale-id", in: devices) == nil)
+    }
+
+    @Test func simulatorSigningRequiresSelectedSimulatorAndVerifiedAdHocProducts() {
+        var configuration = XcodeTestConfiguration(
+            containerPath: "/tmp/Fixture.xcodeproj", isWorkspace: false, scheme: "Fixture",
+            testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: "sim-1", generatedResourceDirectory: "/tmp"
+        )
+        configuration.destinationPlatform = .iOSSimulator
+        #expect(configuration.signingArguments == [
+            "CODE_SIGN_IDENTITY=-", "CODE_SIGNING_ALLOWED=YES", "DEVELOPMENT_TEAM="
+        ])
+        #expect(XcodeTestExecutor.signingDestinationMatchesSelection(
+            configuration: configuration, destinationPlatform: .iOSSimulator
+        ))
+        #expect(!XcodeTestExecutor.signingDestinationMatchesSelection(
+            configuration: configuration, destinationPlatform: .iOS
+        ))
+        #expect(!XcodeTestExecutor.signingDestinationMatchesSelection(
+            configuration: configuration, destinationPlatform: nil
+        ))
+        #expect(XcodeTestExecutor.signingReady(
+            configuration: configuration, destinationPlatform: .iOSSimulator,
+            reusableConnectionVerified: true
+        ))
+        #expect(!XcodeTestExecutor.signingReady(
+            configuration: configuration, destinationPlatform: .iOS,
+            reusableConnectionVerified: true
+        ))
+        #expect(XcodeTestExecutor.signingAcceptedForReadiness(
+            configuration: configuration, runtimePlatform: .iOSSimulator,
+            appTeam: nil, hostTeam: nil, testTeam: nil, adHocSignaturesValid: true
+        ))
+        #expect(!XcodeTestExecutor.signingAcceptedForReadiness(
+            configuration: configuration, runtimePlatform: .iOS,
+            appTeam: nil, hostTeam: nil, testTeam: nil, adHocSignaturesValid: true
+        ))
+        #expect(!XcodeTestExecutor.signingAcceptedForReadiness(
+            configuration: configuration, runtimePlatform: .iOSSimulator,
+            appTeam: nil, hostTeam: nil, testTeam: nil, adHocSignaturesValid: false
+        ))
+
+        configuration.destinationIdentifier = "phone-1"
+        configuration.destinationPlatform = .iOS
+        #expect(configuration.signingArguments.isEmpty)
+        #expect(!XcodeTestExecutor.signingAcceptedForReadiness(
+            configuration: configuration, runtimePlatform: .iOS,
+            appTeam: nil, hostTeam: nil, testTeam: nil, adHocSignaturesValid: true
+        ))
+    }
+
+    @Test func simulatorRuntimeProfileUsesOnlyTheBootedSelectedDevice() {
+        let listing = Data("""
+        {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[
+          {"udid":"sim-1","state":"Booted"},
+          {"udid":"sim-2","state":"Shutdown"}
+        ],"com.apple.CoreSimulator.SimRuntime.iOS-26-4":[
+          {"udid":"sim-3","state":"Booted"}
+        ]}}
+        """.utf8)
+        let selected = IntentLabDeviceDestination(
+            identifier: "sim-1", name: "Simulator", operatingSystemVersion: nil,
+            available: true, platform: .iOSSimulator
+        )
+        #expect(XcodeTestExecutor.destinationOSVersion(
+            for: selected, simulatorListing: listing
+        ) == "27.0")
+        var reported = selected
+        reported.operatingSystemVersion = "27.1"
+        #expect(XcodeTestExecutor.destinationOSVersion(
+            for: reported, simulatorListing: listing
+        ) == "27.1")
+        #expect(XcodeTestExecutor.simulatorOSVersion(identifier: "sim-1", listing: listing) == "27.0")
+        #expect(XcodeTestExecutor.simulatorOSVersion(identifier: "sim-2", listing: listing) == nil)
+        #expect(XcodeTestExecutor.simulatorOSVersion(identifier: "missing", listing: listing) == nil)
+        #expect(XcodeTestExecutor.simulatorOSVersion(identifier: "sim-1", listing: Data("{}".utf8)) == nil)
     }
 
     @Test func connectionFingerprintChangesWithSourceAndResourceEdits() throws {
@@ -69,13 +218,42 @@ struct IntentLabRegressionTests {
         for directory in [project, app, tests] {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
-        try Data("project".utf8).write(to: project.appending(path: "project.pbxproj"))
         let source = root.appending(path: "Sources/NoteIntent.swift")
         let resource = root.appending(path: "Resources/NoteTemplate.json")
         for file in [source, resource] {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data("original".utf8).write(to: file)
         }
+        let projectObjects: [String: [String: Any]] = [
+            "PROJECT": ["isa": "PBXProject", "mainGroup": "ROOT", "targets": ["APP_TARGET"]],
+            "ROOT": ["isa": "PBXGroup", "children": ["SOURCES_GROUP", "RESOURCES_GROUP"]],
+            "SOURCES_GROUP": [
+                "isa": "PBXGroup", "path": "Sources", "sourceTree": "<group>", "children": ["SOURCE"]
+            ],
+            "SOURCE": ["isa": "PBXFileReference", "path": "NoteIntent.swift", "sourceTree": "<group>"],
+            "RESOURCES_GROUP": [
+                "isa": "PBXGroup", "path": "Resources", "sourceTree": "<group>", "children": ["RESOURCE"]
+            ],
+            "RESOURCE": ["isa": "PBXFileReference", "path": "NoteTemplate.json", "sourceTree": "<group>"],
+            "SOURCE_BUILD_FILE": ["isa": "PBXBuildFile", "fileRef": "SOURCE"],
+            "RESOURCE_BUILD_FILE": ["isa": "PBXBuildFile", "fileRef": "RESOURCE"],
+            "SOURCES_PHASE": [
+                "isa": "PBXSourcesBuildPhase", "files": ["SOURCE_BUILD_FILE"],
+                "buildActionMask": 2_147_483_647, "runOnlyForDeploymentPostprocessing": 0,
+            ],
+            "RESOURCES_PHASE": [
+                "isa": "PBXResourcesBuildPhase", "files": ["RESOURCE_BUILD_FILE"],
+                "buildActionMask": 2_147_483_647, "runOnlyForDeploymentPostprocessing": 0,
+            ],
+            "APP_TARGET": [
+                "isa": "PBXNativeTarget", "name": "Fixture", "productName": "Fixture",
+                "productType": "com.apple.product-type.application",
+                "buildPhases": ["SOURCES_PHASE", "RESOURCES_PHASE"],
+            ],
+        ]
+        try PropertyListSerialization.data(
+            fromPropertyList: ["objects": projectObjects], format: .xml, options: 0
+        ).write(to: project.appending(path: "project.pbxproj"))
         let testRun = products.appending(path: "Fixture.xctestrun")
         try Data("run".utf8).write(to: testRun)
         let paths = XCTestRunProductPaths(
@@ -905,6 +1083,7 @@ struct IntentLabRegressionTests {
         var complete = run
         complete.executionStatus = .completed
         complete.outcome = .passed
+        complete.xctestExitCode = 0
         complete.laneResults[0].executionStatus = .completed
         complete.laneResults[0].outcome = .passed
         #expect(ScenarioCoordinator.canReleaseDevice(

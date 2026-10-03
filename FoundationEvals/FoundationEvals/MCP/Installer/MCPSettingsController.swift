@@ -49,6 +49,18 @@ enum CodexMCPInstallationState: Equatable, Sendable {
     }
 }
 
+enum MCPSettingsAccessError: LocalizedError {
+    case missingExistingCredential
+    case configurationReadOnly
+
+    var errorDescription: String? {
+        switch self {
+        case .missingExistingCredential: "No existing local MCP credential is available; the isolated connector was not started."
+        case .configurationReadOnly: "This isolated connector can use an existing credential only; Codex configuration changes are disabled."
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class MCPSettingsController {
@@ -59,6 +71,8 @@ final class MCPSettingsController {
     private let installer: CodexMCPInstaller
     private let credentialStore: MCPCredentialStore
     private let userDefaults: UserDefaults
+    private let existingCredentialOnly: Bool
+    private let configurationDirectory: URL
     private var needsFixedPortMigration: Bool
     private var runningConfiguration: CodexMCPConfiguration?
 
@@ -72,12 +86,21 @@ final class MCPSettingsController {
         serverControl: MCPServerControl,
         userDefaults: UserDefaults = .standard,
         installer: CodexMCPInstaller = CodexMCPInstaller(),
-        credentialStore: MCPCredentialStore = .keychain
+        credentialStore: MCPCredentialStore = .keychain,
+        existingCredentialOnly: Bool = false,
+        configurationDirectory: URL? = nil
     ) {
         self.serverControl = serverControl
         self.userDefaults = userDefaults
         self.installer = installer
         self.credentialStore = credentialStore
+        self.existingCredentialOnly = existingCredentialOnly
+        self.configurationDirectory = configurationDirectory ?? FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: ".codex", directoryHint: .isDirectory)
+        if existingCredentialOnly {
+            needsFixedPortMigration = false
+            return
+        }
         let legacyPort = userDefaults.integer(forKey: Self.legacyPortKey)
         needsFixedPortMigration = (1_024...65_535).contains(legacyPort)
             && legacyPort != CodexMCPConfiguration.defaultPort
@@ -106,6 +129,7 @@ final class MCPSettingsController {
     }
 
     func installOrUpdateCodex() async {
+        guard !existingCredentialOnly else { notice = MCPSettingsAccessError.configurationReadOnly.localizedDescription; return }
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
@@ -137,6 +161,7 @@ final class MCPSettingsController {
     }
 
     func removeFromCodex() async {
+        guard !existingCredentialOnly else { notice = MCPSettingsAccessError.configurationReadOnly.localizedDescription; return }
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
@@ -164,6 +189,7 @@ final class MCPSettingsController {
     }
 
     func copyManualConfiguration() async {
+        guard !existingCredentialOnly else { notice = MCPSettingsAccessError.configurationReadOnly.localizedDescription; return }
         do {
             copyToPasteboard(try currentConfiguration().manualSnippet)
             notice = "Codex configuration copied."
@@ -184,6 +210,7 @@ final class MCPSettingsController {
     }
 
     func refreshInstallationState() {
+        guard !existingCredentialOnly else { return }
         do {
             let detectedState: CodexMCPInstallationState
             if try installer.isInstalled(in: codexConfigurationDirectory) {
@@ -206,10 +233,16 @@ final class MCPSettingsController {
     }
 
     private func currentConfiguration() throws -> CodexMCPConfiguration {
-        try CodexMCPConfiguration(
-            port: CodexMCPConfiguration.defaultPort,
-            credential: credentialStore.loadOrCreate()
-        )
+        let credential: String
+        if existingCredentialOnly {
+            guard let existing = try credentialStore.load() else {
+                throw MCPSettingsAccessError.missingExistingCredential
+            }
+            credential = existing
+        } else {
+            credential = try credentialStore.loadOrCreate()
+        }
+        return try CodexMCPConfiguration(port: CodexMCPConfiguration.defaultPort, credential: credential)
     }
 
     private func startServer(using configuration: CodexMCPConfiguration) async throws {
@@ -238,8 +271,7 @@ final class MCPSettingsController {
     }
 
     private var codexConfigurationDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: ".codex", directoryHint: .isDirectory)
+        configurationDirectory
     }
 
     private func copyToPasteboard(_ value: String) {
@@ -253,6 +285,8 @@ final class MCPSettingsController {
         case let error as CodexMCPInstallerError:
             error.localizedDescription
         case let error as MCPServerError:
+            error.localizedDescription
+        case let error as MCPSettingsAccessError:
             error.localizedDescription
         case let error as MCPCredentialError:
             error.localizedDescription

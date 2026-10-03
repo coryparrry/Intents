@@ -123,6 +123,10 @@ struct ScenarioCollectionBatchManifest: Codable, Equatable, Identifiable, Sendab
     var coordinates: [ScenarioPlannedCoordinate]
     var createdAt: Date
     var manifestDigest: String
+    /// Nil only for historical manifests, which used the connected runner.
+    var featureBackend: ScenarioFeatureBackend? = nil
+
+    var selectedFeatureBackend: ScenarioFeatureBackend { featureBackend ?? .connectedRunner }
 
     var isFullPopulation: Bool { scope == .full }
 

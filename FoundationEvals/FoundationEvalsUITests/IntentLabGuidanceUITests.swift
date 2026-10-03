@@ -75,6 +75,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.radioButtons["Results"].click()
         XCTAssertTrue(app.staticTexts["No results yet"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.disclosureTriangles["What do the results mean?"].isHittable)
+        capture(window, name: "Results")
         app.buttons["Connect app"].click()
         XCTAssertTrue(app.buttons["Choose Project…"].isHittable, "Empty results link returns to setup")
         assertChromeFits(app, window: window)
@@ -123,7 +124,9 @@ final class IntentLabGuidanceUITests: XCTestCase {
         }
 
         XCTAssertTrue(app.popUpButtons["Declared app action"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.popUpButtons["Feature control backend"].exists)
         XCTAssertTrue(app.popUpButtons["Declared app feature"].exists)
+        assertRunCheckMenuOffersCompleteCheckWithoutDiagnostic(app)
         XCTAssertFalse(app.textFields["OpenNoteIntent"].exists, "Stable checks select the compiled action")
         XCTAssertTrue(app.staticTexts["Rebuild and check support to choose an observable result."].exists)
         XCTAssertFalse(app.textFields["Optional feature run UUID"].exists)
@@ -143,6 +146,15 @@ final class IntentLabGuidanceUITests: XCTestCase {
         defer { app.terminate() }
         app.activate()
         app.typeKey("2", modifierFlags: .command)
+        // A fresh workspace opens the legacy sample. Create the stable check
+        // whose run choices must survive cancelling project approval.
+        app.radioButtons["Create test"].click()
+        app.buttons["New test"].click()
+        let discardDraft = app.sheets.buttons["Discard draft and continue"].firstMatch
+        XCTAssertTrue(discardDraft.waitForExistence(timeout: 3))
+        discardDraft.click()
+        XCTAssertTrue(app.descendants(matching: .any)["Run check"].firstMatch.waitForExistence(timeout: 5))
+        app.radioButtons["Connect app"].click()
         XCTAssertTrue(app.buttons["Choose Project…"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Check project…"].exists)
         app.buttons["Choose Project…"].click()
@@ -157,10 +169,104 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.buttons["OKButton"].click()
         let connect = app.sheets.buttons["Connect app"].firstMatch
         XCTAssertTrue(connect.waitForExistence(timeout: 5), "Choosing the file should offer connection immediately")
+        assertSheetContainsText(app, title: "Connect this app?",
+                                message: "Approval lasts until you quit Intents.")
+        XCTAssertTrue(connect.isHittable)
+        XCTAssertTrue(app.sheets.buttons["Cancel"].firstMatch.isHittable)
         app.sheets.buttons["Cancel"].firstMatch.click()
-        XCTAssertTrue(app.buttons["Connect app…"].waitForExistence(timeout: 3))
+        let reopen = app.buttons["Connect app…"]
+        XCTAssertTrue(reopen.waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["Project connected"].exists)
-        XCTAssertFalse(app.buttons["Run test"].isEnabled)
+        reopen.click()
+        XCTAssertTrue(app.sheets.buttons["Connect app"].firstMatch.waitForExistence(timeout: 3))
+        assertSheetContainsText(app, title: "Connect this app?",
+                                message: "Approval lasts until you quit Intents.")
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(reopen.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Project connected"].exists)
+        assertRunCheckMenuOffersCompleteCheckWithoutDiagnostic(app)
+    }
+
+    @MainActor
+    func testInvalidProjectNoticeHasContentAndDismissesWithReturn() throws {
+        continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "intent-project-notice")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let invalidProject = storage.appendingPathComponent("Not a project.txt")
+        try Data("Not an Xcode project".utf8).write(to: invalidProject)
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launch()
+        defer { app.terminate() }
+        app.activate()
+        app.typeKey("2", modifierFlags: .command)
+        let chooseProject = app.buttons["Choose Project…"]
+        XCTAssertTrue(chooseProject.waitForExistence(timeout: 5))
+        chooseProject.click()
+        XCTAssertTrue(app.sheets["open-panel"].waitForExistence(timeout: 3))
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let path = app.textFields["PathTextField"]
+        XCTAssertTrue(path.waitForExistence(timeout: 3))
+        path.click()
+        path.typeKey("a", modifierFlags: .command)
+        path.typeText(invalidProject.path)
+        app.typeKey(.return, modifierFlags: [])
+        app.buttons["OKButton"].click()
+        let ok = app.sheets.buttons["OK"].firstMatch
+        XCTAssertTrue(ok.waitForExistence(timeout: 5))
+        assertSheetContainsText(app, title: "Intent Lab",
+                                message: "Choose an existing .xcodeproj or .xcworkspace.")
+        XCTAssertTrue(ok.isHittable)
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(chooseProject.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.sheets.buttons["OK"].firstMatch.exists)
+    }
+
+    @MainActor
+    private func assertSheetContainsText(
+        _ app: XCUIApplication, title: String, message: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        // macOS accessibility may expose SwiftUI text on a containing element's
+        // string value rather than a separate static-text label.
+        let content = NSPredicate { _, _ in
+            let texts = app.sheets.descendants(matching: .any).allElementsBoundByIndex.flatMap { element in
+                [element.label, element.value as? String].compactMap { $0 }
+            }
+            return texts.contains { $0.hasPrefix(title) }
+                && texts.contains { $0.contains(message) }
+        }
+        let ready = XCTNSPredicateExpectation(predicate: content, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
+                       "Expected sheet title and message.\n" + app.debugDescription,
+                       file: file, line: line)
+    }
+
+    @MainActor
+    private func assertRunCheckMenuOffersCompleteCheckWithoutDiagnostic(
+        _ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let runCheck = app.descendants(matching: .any)["Run check"].firstMatch
+        guard runCheck.waitForExistence(timeout: 5) else {
+            XCTFail("The Run check menu must remain available", file: file, line: line)
+            return
+        }
+        XCTAssertTrue(runCheck.isHittable, file: file, line: line)
+        runCheck.click()
+        defer { app.typeKey(.escape, modifierFlags: []) }
+
+        let completeCheck = app.menuItems["Verify complete requirement"]
+        guard completeCheck.waitForExistence(timeout: 3) else {
+            XCTFail("Run check must offer a complete requirement check", file: file, line: line)
+            return
+        }
+        XCTAssertTrue(completeCheck.isEnabled, file: file, line: line)
+        let diagnostic = app.menuItems["Check this fix"]
+        guard diagnostic.exists else {
+            XCTFail("Run check must offer the partial diagnostic", file: file, line: line)
+            return
+        }
+        XCTAssertFalse(diagnostic.isEnabled, "A diagnostic requires selected lanes", file: file, line: line)
     }
 
     @MainActor

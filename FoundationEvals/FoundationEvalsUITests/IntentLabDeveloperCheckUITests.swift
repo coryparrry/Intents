@@ -12,23 +12,24 @@ final class IntentLabDeveloperCheckUITests: XCTestCase {
         defer { app.terminate() }
         app.activate()
         app.typeKey("2", modifierFlags: .command)
-        app.radioButtons["Scenario"].click()
-
-        let create = app.buttons["Create developer check"]
+        app.radioButtons["Create test"].click()
+        let create = app.buttons["New test"]
         XCTAssertTrue(create.waitForExistence(timeout: 10), app.debugDescription)
         create.click()
-        UITestStorage.selectPane("Intent & fixture", heading: "Scenario", in: app)
+        if app.sheets.buttons["Discard draft and continue"].waitForExistence(timeout: 2) {
+            app.sheets.buttons["Discard draft and continue"].click()
+        }
 
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(
             format: "label CONTAINS %@", "Rebuild and check support to load the app's actions"
         )).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.popUpButtons["Feature control backend"].exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(
-            format: "label CONTAINS %@", "Connect the app's developer runner"
+            format: "label CONTAINS %@", "project-local Feature control"
         )).firstMatch.exists)
         XCTAssertFalse(app.textFields["Optional feature run UUID"].exists)
         XCTAssertFalse(app.textFields["Feature ID from the evaluation"].exists)
 
-        UITestStorage.selectPane("Assertions", heading: "Scenario", in: app)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(
             format: "label CONTAINS %@", "Rebuild and check support to choose an observable result"
         )).firstMatch.waitForExistence(timeout: 5))

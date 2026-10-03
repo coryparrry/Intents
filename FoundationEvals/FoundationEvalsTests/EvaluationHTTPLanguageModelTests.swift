@@ -260,14 +260,14 @@ struct EvaluationHTTPLanguageModelTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func delayedLoopbackFixturePublishesBeforeSDKStreamCompletion() async throws {
-        let fixture = try RunningCustomModelFixture(streamDelay: 0.4)
-        defer { fixture.stop() }
+    func gatedLoopbackFixturePublishesBeforeSDKStreamCompletion() async throws {
+        let fixture = try RunningCustomModelFixture(streamDelay: 0.05, gateTextStream: true)
 
         let caseID = UUID()
         let recorder = HTTPPartialResponseRecorder()
+        let completionRecorder = HTTPResponseCompletionRecorder()
         var configuration = EvaluationCustomProviderConfiguration()
-        configuration.endpoint = "http://127.0.0.1:\(fixture.port)/text"
+        configuration.endpoint = "http://127.0.0.1:\(fixture.port)/text-gated"
         let model = EvaluationHTTPLanguageModel(
             configuration: configuration,
             liveResponseObserver: EvaluationHTTPLiveResponseObserver { update in
@@ -280,25 +280,49 @@ struct EvaluationHTTPLanguageModelTests {
         suite.modelConfiguration.customProvider = configuration
         suite.features.streamResponse = true
 
-        let started = ContinuousClock.now
-        let response = try await EvaluationFeatureResponse.generate(
-            session: session,
-            prompt: Prompt { "Return the fixture response." },
-            suite: suite,
-            metadata: [
-                "evalCaseID": caseID.uuidString,
-                "repetition": 1
-            ]
-        )
-        let completedMilliseconds = started.milliseconds(to: .now)
-        let updates = await recorder.updates
-        let firstContentMilliseconds = try #require(response.firstContentMilliseconds)
+        let responseTask = Task {
+            do {
+                let response = try await EvaluationFeatureResponse.generate(
+                    session: session,
+                    prompt: Prompt { "Return the fixture response." },
+                    suite: suite,
+                    metadata: [
+                        "evalCaseID": caseID.uuidString,
+                        "repetition": 1
+                    ]
+                )
+                await completionRecorder.recordCompletion()
+                return response
+            } catch {
+                await completionRecorder.recordCompletion()
+                throw error
+            }
+        }
+        defer {
+            responseTask.cancel()
+            fixture.stop()
+        }
 
-        #expect(response.content == "Deterministic fixture stream.")
-        #expect(updates.first?.caseID == caseID)
-        #expect(updates.first?.content == "Deterministic ")
-        #expect(updates.last?.content == response.content)
-        #expect(completedMilliseconds - firstContentMilliseconds > 500)
+        do {
+            let firstUpdate = try await recorder.firstUpdate(timeout: .seconds(10))
+            #expect(firstUpdate.caseID == caseID)
+            #expect(firstUpdate.content == "Deterministic ")
+            #expect(!(await completionRecorder.didComplete))
+
+            try await fixture.releaseTextStream()
+            let response = try await responseTask.value
+            let updates = await recorder.updates
+
+            #expect(await completionRecorder.didComplete)
+            #expect(response.content == "Deterministic fixture stream.")
+            #expect(response.firstContentMilliseconds != nil)
+            #expect(updates.first?.caseID == caseID)
+            #expect(updates.first?.content == "Deterministic ")
+            #expect(updates.last?.content == response.content)
+        } catch {
+            try? await fixture.releaseTextStream()
+            throw error
+        }
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -467,6 +491,31 @@ private actor HTTPPartialResponseRecorder {
     func record(_ update: EvaluationHTTPLiveResponseUpdate) {
         updates.append(update)
     }
+
+    func firstUpdate(timeout: Duration) async throws -> EvaluationHTTPLiveResponseUpdate {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            if let update = updates.first { return update }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        throw HTTPPartialResponseRecorderError.firstUpdateTimedOut
+    }
+}
+
+private actor HTTPResponseCompletionRecorder {
+    private(set) var didComplete = false
+
+    func recordCompletion() {
+        didComplete = true
+    }
+}
+
+private enum HTTPPartialResponseRecorderError: LocalizedError {
+    case firstUpdateTimedOut
+
+    var errorDescription: String? {
+        "The gated custom model fixture did not publish its first response chunk in time."
+    }
 }
 
 private actor RunnerLiveResponseRecorder {
@@ -481,7 +530,7 @@ private final class RunningCustomModelFixture {
     let port: Int
     private let process: Process
 
-    init(streamDelay: Double) throws {
+    init(streamDelay: Double, gateTextStream: Bool = false) throws {
         let sourceFile = URL(fileURLWithPath: #filePath)
         let repository = sourceFile
             .deletingLastPathComponent()
@@ -497,6 +546,9 @@ private final class RunningCustomModelFixture {
             "--port", "0",
             "--stream-delay", String(streamDelay)
         ]
+        if gateTextStream {
+            process.arguments?.append("--gate-text-stream")
+        }
         process.standardOutput = output
         process.standardError = errors
         try process.run()
@@ -528,6 +580,23 @@ private final class RunningCustomModelFixture {
         guard process.isRunning else { return }
         process.terminate()
         process.waitUntilExit()
+    }
+
+    func releaseTextStream() async throws {
+        guard let url = URL(string: "http://127.0.0.1:\(port)/release-text-stream") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 5
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.connectionProxyDictionary = [:]
+        let session = URLSession(configuration: sessionConfiguration)
+        defer { session.invalidateAndCancel() }
+        let (_, response) = try await session.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 204 else {
+            throw URLError(.badServerResponse)
+        }
     }
 }
 

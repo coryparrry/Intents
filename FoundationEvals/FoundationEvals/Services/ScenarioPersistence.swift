@@ -6,11 +6,17 @@ struct ScenarioSelectedDefinition: Codable, Equatable, Sendable {
     var version: Int
 }
 
+private struct ScenarioRecoveryFinalization: Codable {
+    var priorRecordDigest: String
+    var record: ScenarioExecutionRecord
+}
+
 private struct ScenarioAcceptanceReceipt: Codable {
     var runID: UUID
     var scenarioID: UUID
     var invocationID: UUID
     var runDigest: String
+    var scope: ScenarioNativeExecutionScope?
 }
 
 struct ScenarioPendingNativeSave: Codable, Sendable {
@@ -19,8 +25,19 @@ struct ScenarioPendingNativeSave: Codable, Sendable {
     var run: ScenarioRun
     var artifactRootPath: String
     var ledger: ScenarioImportLedger
+    /// Captured after the native process returned, before any history write.
+    /// Nil in older pending records does not authorize promotion.
     var evidenceValidationPassed: Bool? = nil
     var deviceReadinessProven: Bool? = nil
+}
+
+struct ScenarioPendingOrdinarySave: Codable, Sendable {
+    var invocationID: UUID
+    var runs: [ScenarioRun]
+    var artifactRootPath: String
+    var ledger: ScenarioImportLedger
+    var evidenceValidationPassed: Bool
+    var deviceReadinessProven: Bool
 }
 
 enum ScenarioPersistenceError: LocalizedError, Sendable {
@@ -32,6 +49,7 @@ enum ScenarioPersistenceError: LocalizedError, Sendable {
     case invalidJournal(String)
     case acceptanceNotReady
     case conflictingAcceptanceReceipt
+    case conflictingPendingSave
     case immutablePlanExists
     case immutableExecutionRecordExists
 
@@ -50,9 +68,11 @@ enum ScenarioPersistenceError: LocalizedError, Sendable {
         case .invalidJournal(let name):
             "The execution journal \(name) is unreadable or has inconsistent identity. Repair it before device recovery can continue."
         case .acceptanceNotReady:
-            "The run cannot be accepted until its execution journal is durably validated."
+            "The run cannot be accepted until its execution journal and import ledger are durably validated."
         case .conflictingAcceptanceReceipt:
-            "A different acceptance receipt already exists for this saved run."
+            "A different immutable acceptance receipt already exists for this run."
+        case .conflictingPendingSave:
+            "A different pending evidence save already exists for this invocation."
         case .immutablePlanExists:
             "A different frozen execution plan already exists for this run."
         case .immutableExecutionRecordExists:
@@ -78,6 +98,7 @@ actor ScenarioPersistence {
         try fileManager.createDirectory(at: recordsDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: progressDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: pendingNativeDirectory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: pendingOrdinaryDirectory, withIntermediateDirectories: true)
     }
 
     func savePlan(_ plan: ScenarioExecutionPlan) throws {
@@ -158,16 +179,15 @@ actor ScenarioPersistence {
         for plan in plans where !completed.contains(plan.id) {
             let records = try loadProgress(planID: plan.id)?.records
                 ?? plan.coordinates.map(ScenarioExecutionCoordinateRecord.unstarted)
-            // A feature action may be complete but waiting for its history
-            // write. Keep that coordinate editable by the save-only recovery
-            // path; sealing a terminal record here would force a redispatch.
+            // A connected Feature action may be awaiting its history write.
+            // Any native child, including a local Feature control, may also
+            // have a durable pending save. Keep both on their save-only paths.
             if records.contains(where: {
                 $0.coordinate.lane == .appFeature
                     && $0.state == .recoveryRequired
                     && $0.evidenceRunID != nil
             }) || records.contains(where: {
-                $0.coordinate.lane != .appFeature
-                    && $0.state == .recoveryRequired
+                $0.state == .recoveryRequired
                     && (try? loadPendingNativeSave(planID: plan.id, coordinateID: $0.id)) != nil
             }) { continue }
             let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
@@ -180,12 +200,48 @@ actor ScenarioPersistence {
     /// Retry finalization after progress was committed, including a failed
     /// cleanup after the immutable record was already written.
     func finalizeExecutionRecord(plan: ScenarioExecutionPlan, records: [ScenarioExecutionCoordinateRecord]) throws -> ScenarioExecutionRecord {
-        if let existing = try loadExecutionRecords().first(where: { $0.planID == plan.id }) {
-            guard try Self.encoder.encode(existing.records) == Self.encoder.encode(records) else { throw ScenarioPersistenceError.immutableExecutionRecordExists }
-            return existing
-        }
         guard !records.contains(where: { $0.state == .recoveryRequired }) else {
             throw ScenarioPersistenceError.invalidRun("Evidence still requires recovery.")
+        }
+        if let existing = try loadExecutionRecords().first(where: { $0.planID == plan.id }) {
+            let ordered = records.sorted { $0.id.uuidString < $1.id.uuidString }
+            if try Self.encoder.encode(existing.records) == Self.encoder.encode(ordered) { return existing }
+            // Older builds sealed unfinished progress. Preserve that immutable
+            // record and append a finalization bound to accepted staged evidence.
+            guard existing.records.count == records.count, existing.selectedAssessments?.isEmpty != false else {
+                throw ScenarioPersistenceError.immutableExecutionRecordExists
+            }
+            var recoveredCoordinate = false
+            for previous in existing.records {
+                guard let next = records.first(where: { $0.id == previous.id }), next.coordinate == previous.coordinate else {
+                    throw ScenarioPersistenceError.immutableExecutionRecordExists
+                }
+                if try Self.encoder.encode(previous) == Self.encoder.encode(next) { continue }
+                guard previous.state == .recoveryRequired,
+                      let pending = try loadPendingNativeSave(planID: plan.id, coordinateID: previous.id),
+                      pending.evidenceValidationPassed == true,
+                      let saved = try loadRuns(scenarioID: plan.definitionID).first(where: { $0.id == pending.run.id }),
+                      saved.acceptanceStatus == .accepted,
+                      try savedRunMatchesCaptured(saved, captured: pending.run),
+                      saved.laneResults.count == 1,
+                      next.evidenceRunID == saved.id, next.evidenceLaneResultID == saved.laneResults[0].id,
+                      let lane = next.laneResult,
+                      try Self.encoder.encode(lane) == Self.encoder.encode(saved.laneResults[0]),
+                      next.state == (lane.executionStatus == .completed ? .completed : .failedToExecute) else {
+                    throw ScenarioPersistenceError.immutableExecutionRecordExists
+                }
+                recoveredCoordinate = true
+            }
+            guard recoveredCoordinate else { throw ScenarioPersistenceError.immutableExecutionRecordExists }
+            let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
+            let directory = rootDirectory.appending(path: "RecoveryFinalizations", directoryHint: .isDirectory)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            let temporary = directory.appending(path: ".\(UUID().uuidString).stage")
+            defer { try? fileManager.removeItem(at: temporary) }
+            try Self.encoder.encode(ScenarioRecoveryFinalization(priorRecordDigest: existing.evidenceDigest, record: record))
+                .write(to: temporary, options: .atomic)
+            try fileManager.linkItem(at: temporary, to: directory.appending(path: "\(plan.id.uuidString).json"))
+            return record
         }
         let record = try ScenarioExecutionRecord.make(plan: plan, records: records)
         try saveExecutionRecord(record)
@@ -219,10 +275,24 @@ actor ScenarioPersistence {
 
     func loadExecutionRecords() throws -> [ScenarioExecutionRecord] {
         guard fileManager.fileExists(atPath: recordsDirectory.path) else { return [] }
-        return try fileManager.contentsOfDirectory(at: recordsDirectory, includingPropertiesForKeys: nil)
+        let originals = try fileManager.contentsOfDirectory(at: recordsDirectory, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }
             .map { try Self.decoder.decode(ScenarioExecutionRecord.self, from: Data(contentsOf: $0)) }
-            .sorted { $0.completedAt > $1.completedAt }
+        return try originals.map { prior in
+            let url = rootDirectory.appending(path: "RecoveryFinalizations/\(prior.planID.uuidString).json")
+            guard fileManager.fileExists(atPath: url.path) else { return prior }
+            let finalization = try Self.decoder.decode(ScenarioRecoveryFinalization.self, from: Data(contentsOf: url))
+            let record = finalization.record
+            guard prior.records.contains(where: { $0.state == .recoveryRequired }),
+                  finalization.priorRecordDigest == prior.evidenceDigest,
+                  record.id == prior.id, record.planID == prior.planID,
+                  let plan = try loadPlan(id: record.planID),
+                  try ScenarioExecutionRecord.make(plan: plan, records: record.records,
+                    selectedAssessments: record.selectedAssessments ?? [], completedAt: record.completedAt).evidenceDigest == record.evidenceDigest else {
+                throw ScenarioPersistenceError.invalidRun("recovery finalization")
+            }
+            return record
+        }.sorted { $0.completedAt > $1.completedAt }
     }
 
     func savePendingNativeSave(_ pending: ScenarioPendingNativeSave) throws {
@@ -235,14 +305,42 @@ actor ScenarioPersistence {
               !pending.artifactRootPath.isEmpty else {
             throw ScenarioPersistenceError.invalidRun("pending native child")
         }
-        try Self.encoder.encode(pending).write(
-            to: pendingNativeURL(planID: pending.planID, coordinateID: pending.coordinateID),
-            options: .atomic
+        let destination = pendingNativeStageURL(planID: pending.planID, coordinateID: pending.coordinateID)
+        let data = try Self.encoder.encode(pending)
+        let legacy = pendingNativeURL(planID: pending.planID, coordinateID: pending.coordinateID)
+        if fileManager.fileExists(atPath: legacy.path) {
+            guard try Data(contentsOf: legacy) == data else {
+                throw ScenarioPersistenceError.conflictingPendingSave
+            }
+            return
+        }
+        if fileManager.fileExists(atPath: destination.path) {
+            guard try Data(contentsOf: destination.appending(path: "pending.json")) == data else {
+                throw ScenarioPersistenceError.conflictingPendingSave
+            }
+            return
+        }
+        let staging = pendingNativeDirectory.appending(
+            path: ".\(pending.planID.uuidString)-\(pending.coordinateID.uuidString)-\(UUID().uuidString).stage",
+            directoryHint: .isDirectory
         )
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+        do {
+            try copyPendingArtifacts(pending.run.laneResults.flatMap(\.artifacts),
+                                     from: URL(filePath: pending.artifactRootPath), to: staging)
+            try data.write(to: staging.appending(path: "pending.json"), options: .atomic)
+            try fileManager.moveItem(at: staging, to: destination)
+        } catch {
+            try? fileManager.removeItem(at: staging)
+            throw error
+        }
     }
 
     func loadPendingNativeSave(planID: UUID, coordinateID: UUID) throws -> ScenarioPendingNativeSave? {
-        let url = pendingNativeURL(planID: planID, coordinateID: coordinateID)
+        let stage = pendingNativeStageURL(planID: planID, coordinateID: coordinateID)
+        let url = fileManager.fileExists(atPath: stage.path)
+            ? stage.appending(path: "pending.json")
+            : pendingNativeURL(planID: planID, coordinateID: coordinateID)
         guard fileManager.fileExists(atPath: url.path) else { return nil }
         let pending = try Self.decoder.decode(ScenarioPendingNativeSave.self, from: Data(contentsOf: url))
         guard pending.planID == planID, pending.coordinateID == coordinateID else {
@@ -254,10 +352,228 @@ actor ScenarioPersistence {
     func clearPendingNativeSave(planID: UUID, coordinateID: UUID) throws {
         let url = pendingNativeURL(planID: planID, coordinateID: coordinateID)
         if fileManager.fileExists(atPath: url.path) { try fileManager.removeItem(at: url) }
+        let stage = pendingNativeStageURL(planID: planID, coordinateID: coordinateID)
+        if fileManager.fileExists(atPath: stage.path) { try fileManager.removeItem(at: stage) }
+    }
+
+    /// Save from retained bytes; a retry must never trust a changed raw run.
+    func commitPendingNativeSave(_ pending: ScenarioPendingNativeSave) throws -> ScenarioRun {
+        guard let staged = try loadPendingNativeSave(planID: pending.planID, coordinateID: pending.coordinateID),
+              try Self.encoder.encode(staged) == Self.encoder.encode(pending) else {
+            throw ScenarioPersistenceError.invalidRun("pending native child")
+        }
+        let stage = pendingNativeStageURL(planID: pending.planID, coordinateID: pending.coordinateID)
+        let artifactRoot = fileManager.fileExists(atPath: stage.path)
+            ? stage : URL(filePath: pending.artifactRootPath)
+        try verifyPendingArtifacts(pending.run.laneResults.flatMap(\.artifacts), at: artifactRoot)
+        if let existing = try loadRuns(scenarioID: pending.run.scenarioID)
+            .first(where: { $0.id == pending.run.id }) {
+            guard try savedRunMatchesCaptured(existing, captured: pending.run) else {
+                throw ScenarioPersistenceError.invalidRun("saved native evidence differs from its staged child")
+            }
+            return existing
+        }
+        return try saveRun(pending.run, artifactRoot: artifactRoot)
+    }
+
+    private func pendingNativeStageURL(planID: UUID, coordinateID: UUID) -> URL {
+        pendingNativeDirectory.appending(path: "\(planID.uuidString)-\(coordinateID.uuidString)",
+                                         directoryHint: .isDirectory)
     }
 
     private func pendingNativeURL(planID: UUID, coordinateID: UUID) -> URL {
         pendingNativeDirectory.appending(path: "\(planID.uuidString)-\(coordinateID.uuidString).json")
+    }
+
+    func savePendingOrdinarySave(_ pending: ScenarioPendingOrdinarySave) throws {
+        try prepare()
+        guard !pending.runs.isEmpty,
+              !pending.artifactRootPath.isEmpty,
+              pending.runs.allSatisfy({
+                  $0.id == pending.invocationID && $0.invocation.id == pending.invocationID
+              }),
+              pending.ledger.importedInvocationIDs.contains(pending.invocationID),
+              pending.runs.allSatisfy({ pending.ledger.importedNonces.contains($0.invocation.nonce) }),
+              Set(pending.runs.flatMap(\.laneResults).flatMap(\.artifacts).map(\.id))
+                  .isSubset(of: pending.ledger.importedArtifactIDs) else {
+            throw ScenarioPersistenceError.invalidRun("pending ordinary evidence")
+        }
+        let url = pendingOrdinaryURL(pending.invocationID)
+        let data = try Self.encoder.encode(pending)
+        if fileManager.fileExists(atPath: url.path) {
+            guard try Data(contentsOf: url.appending(path: "pending.json")) == data else {
+                throw ScenarioPersistenceError.conflictingPendingSave
+            }
+            return
+        }
+        let staging = pendingOrdinaryDirectory.appending(
+            path: ".\(pending.invocationID.uuidString)-\(UUID().uuidString).stage",
+            directoryHint: .isDirectory
+        )
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+        do {
+            let sourceRoot = URL(filePath: pending.artifactRootPath).standardizedFileURL
+            for artifact in pending.runs.flatMap(\.laneResults).flatMap(\.artifacts) {
+                let source = sourceRoot.appending(path: artifact.relativePath).standardizedFileURL
+                let destination = staging.appending(path: artifact.relativePath).standardizedFileURL
+                guard source.path.hasPrefix(sourceRoot.path + "/"),
+                      destination.path.hasPrefix(staging.path + "/"),
+                      fileManager.fileExists(atPath: source.path) else {
+                    throw ScenarioPersistenceError.missingArtifact(artifact.filename)
+                }
+                if !fileManager.fileExists(atPath: destination.path) {
+                    try fileManager.createDirectory(at: destination.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+                    try fileManager.copyItem(at: source, to: destination)
+                }
+            }
+            try data.write(to: staging.appending(path: "pending.json"), options: .atomic)
+            try fileManager.moveItem(at: staging, to: url)
+        } catch {
+            try? fileManager.removeItem(at: staging)
+            throw error
+        }
+    }
+
+    func loadPendingOrdinarySave(invocationID: UUID) throws -> ScenarioPendingOrdinarySave? {
+        let url = pendingOrdinaryURL(invocationID)
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        let pending = try Self.decoder.decode(
+            ScenarioPendingOrdinarySave.self, from: Data(contentsOf: url.appending(path: "pending.json"))
+        )
+        guard pending.invocationID == invocationID,
+              !pending.runs.isEmpty,
+              pending.runs.allSatisfy({ $0.id == invocationID && $0.invocation.id == invocationID }) else {
+            throw ScenarioPersistenceError.invalidRun("pending ordinary evidence")
+        }
+        return pending
+    }
+
+    func loadPendingOrdinarySaves() throws -> [ScenarioPendingOrdinarySave] {
+        guard fileManager.fileExists(atPath: pendingOrdinaryDirectory.path) else { return [] }
+        return try fileManager.contentsOfDirectory(at: pendingOrdinaryDirectory, includingPropertiesForKeys: nil)
+            .filter { !$0.lastPathComponent.hasPrefix(".") }
+            .map { url in
+                guard let id = UUID(uuidString: url.lastPathComponent),
+                      let pending = try loadPendingOrdinarySave(invocationID: id) else {
+                    throw ScenarioPersistenceError.invalidRun("pending ordinary evidence")
+                }
+                return pending
+            }
+    }
+
+    /// Save captured bytes and ledger membership without executing XCTest again.
+    func commitPendingOrdinarySave(_ pending: ScenarioPendingOrdinarySave) throws -> [ScenarioRun] {
+        guard let staged = try loadPendingOrdinarySave(invocationID: pending.invocationID),
+              try Self.encoder.encode(staged) == Self.encoder.encode(pending) else {
+            throw ScenarioPersistenceError.invalidRun("pending ordinary evidence")
+        }
+        var savedRuns: [ScenarioRun] = []
+        let artifactRoot = pendingOrdinaryURL(pending.invocationID)
+        try verifyPendingArtifacts(pending.runs.flatMap(\.laneResults).flatMap(\.artifacts),
+                                   at: artifactRoot)
+        for run in pending.runs {
+            if let existing = try loadRuns(scenarioID: run.scenarioID).first(where: { $0.id == run.id }) {
+                guard try savedRunMatchesCaptured(existing, captured: run) else {
+                    throw ScenarioPersistenceError.invalidRun("saved ordinary evidence differs from its staged run")
+                }
+                savedRuns.append(existing)
+            } else {
+                savedRuns.append(try saveRun(run, artifactRoot: artifactRoot))
+            }
+        }
+        var merged = try loadLedger()
+        merged.importedInvocationIDs.formUnion(pending.ledger.importedInvocationIDs)
+        merged.importedNonces.formUnion(pending.ledger.importedNonces)
+        merged.importedArtifactIDs.formUnion(pending.ledger.importedArtifactIDs)
+        try saveLedger(merged)
+        return savedRuns
+    }
+
+    private func copyPendingArtifacts(_ artifacts: [ScenarioArtifactReference],
+                                      from sourceRoot: URL, to staging: URL) throws {
+        let sourceRoot = sourceRoot.standardizedFileURL
+        for artifact in artifacts {
+            let source = sourceRoot.appending(path: artifact.relativePath).standardizedFileURL
+            let destination = staging.appending(path: artifact.relativePath).standardizedFileURL
+            guard source.path.hasPrefix(sourceRoot.path + "/"),
+                  destination.path.hasPrefix(staging.path + "/"),
+                  fileManager.fileExists(atPath: source.path) else {
+                throw ScenarioPersistenceError.missingArtifact(artifact.filename)
+            }
+            if !fileManager.fileExists(atPath: destination.path) {
+                try fileManager.createDirectory(at: destination.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+                try fileManager.copyItem(at: source, to: destination)
+            }
+        }
+    }
+
+    private func verifyPendingArtifacts(_ artifacts: [ScenarioArtifactReference], at root: URL) throws {
+        let root = root.standardizedFileURL
+        for artifact in artifacts {
+            let url = root.appending(path: artifact.relativePath).standardizedFileURL
+            guard url.path.hasPrefix(root.path + "/"),
+                  let bytes = try? Data(contentsOf: url),
+                  bytes.count == artifact.byteCount,
+                  Self.digest(bytes) == artifact.sha256 else {
+                throw ScenarioPersistenceError.missingArtifact(artifact.filename)
+            }
+        }
+    }
+
+    private func savedRunMatchesCaptured(_ saved: ScenarioRun, captured: ScenarioRun) throws -> Bool {
+        try verifyStoredRunArtifacts(saved)
+        var expected = captured
+        expected.acceptanceStatus = saved.acceptanceStatus
+        for laneIndex in expected.laneResults.indices {
+            for artifactIndex in expected.laneResults[laneIndex].artifacts.indices {
+                let artifact = expected.laneResults[laneIndex].artifacts[artifactIndex]
+                if laneIndex < saved.laneResults.count,
+                   artifactIndex < saved.laneResults[laneIndex].artifacts.count,
+                   artifact.relativePath == saved.laneResults[laneIndex].artifacts[artifactIndex].relativePath,
+                   isCanonicalStoredArtifactPath(artifact.relativePath, id: artifact.id) {
+                    continue
+                }
+                let filename = URL(filePath: artifact.relativePath).lastPathComponent
+                expected.laneResults[laneIndex].artifacts[artifactIndex].relativePath =
+                    "Artifacts/\(artifact.id.uuidString)-\(filename)"
+            }
+        }
+        let durableExpected = try Self.decoder.decode(ScenarioRun.self, from: Self.encoder.encode(expected))
+        return durableExpected == saved
+    }
+
+    private func verifyStoredRunArtifacts(_ run: ScenarioRun) throws {
+        let root = runFileURL(run).deletingLastPathComponent().standardizedFileURL
+        for artifact in run.laneResults.flatMap(\.artifacts) {
+            guard isCanonicalStoredArtifactPath(artifact.relativePath, id: artifact.id) else {
+                throw ScenarioPersistenceError.invalidRun("noncanonical saved artifact path")
+            }
+            let url = root.appending(path: artifact.relativePath).standardizedFileURL
+            guard url.path.hasPrefix(root.path + "/"),
+                  let bytes = try? Data(contentsOf: url),
+                  bytes.count == artifact.byteCount,
+                  Self.digest(bytes) == artifact.sha256 else {
+                throw ScenarioPersistenceError.missingArtifact(artifact.filename)
+            }
+        }
+    }
+
+    private func isCanonicalStoredArtifactPath(_ path: String, id: UUID) -> Bool {
+        let prefix = "Artifacts/\(id.uuidString)-"
+        guard path.hasPrefix(prefix) else { return false }
+        let suffix = path.dropFirst(prefix.count)
+        return !suffix.isEmpty && !suffix.contains("/") && suffix != "." && suffix != ".."
+    }
+
+    func clearPendingOrdinarySave(invocationID: UUID) throws {
+        let url = pendingOrdinaryURL(invocationID)
+        if fileManager.fileExists(atPath: url.path) { try fileManager.removeItem(at: url) }
+    }
+
+    private func pendingOrdinaryURL(_ invocationID: UUID) -> URL {
+        pendingOrdinaryDirectory.appending(path: invocationID.uuidString, directoryHint: .isDirectory)
     }
 
     func saveDefinition(_ definition: ScenarioDefinition) throws {
@@ -358,30 +674,40 @@ actor ScenarioPersistence {
         let runURL = runFileURL(run)
         let persisted = try loadRun(at: runURL)
         // ISO-8601 storage rounds Date to whole seconds. Compare the same durable
-        // representation while still checking every invocation identity field.
+        // representation for the caller's journal, imported envelope and saved files.
         let storedInvocation = try Self.decoder.decode(
             ScenarioInvocationIdentity.self, from: Self.encoder.encode(run.invocation)
         )
-        guard journal.phase == .stopped,
+        let journalInvocation = try Self.decoder.decode(
+            ScenarioInvocationIdentity.self, from: Self.encoder.encode(journal.invocation)
+        )
+        guard [.stopped, .recoveryRequired].contains(journal.phase),
+              journal.evidenceAccepted == true,
               journal.id == run.invocation.id,
               journal.scenarioID == run.scenarioID,
               journal.scenarioVersion == run.scenarioVersion,
-              journal.invocation == run.invocation,
+              journalInvocation == storedInvocation,
               persisted.id == run.id,
               persisted.scenarioVersion == run.scenarioVersion,
               persisted.scenarioDigest == run.scenarioDigest,
               persisted.invocation == storedInvocation,
-              persistedJournal.phase == .stopped,
+              try savedRunMatchesCaptured(persisted, captured: run),
+              [.stopped, .recoveryRequired].contains(persistedJournal.phase),
+              persistedJournal.phase == journal.phase,
+              persistedJournal.evidenceAccepted == true,
               persistedJournal.scenarioID == persisted.scenarioID,
               persistedJournal.scenarioVersion == persisted.scenarioVersion,
-              persistedJournal.invocation == persisted.invocation else {
+              persistedJournal.invocation == persisted.invocation,
+              persistedJournal.scope == journal.scope,
+              try ledgerContains(persisted) else {
             throw ScenarioPersistenceError.acceptanceNotReady
         }
         let receipt = ScenarioAcceptanceReceipt(
             runID: run.id,
             scenarioID: run.scenarioID,
             invocationID: journal.id,
-            runDigest: Self.digest(try Data(contentsOf: runURL))
+            runDigest: Self.digest(try Data(contentsOf: runURL)),
+            scope: persistedJournal.scope
         )
         // Foundation rejects .atomic combined with .withoutOverwriting. Stage an
         // atomic file in this directory, then create the final name with a hard
@@ -404,6 +730,7 @@ actor ScenarioPersistence {
         do {
             try fileManager.linkItem(at: temporaryReceipt, to: destination)
         } catch {
+            // Another persistence instance may have published the same receipt.
             guard fileManager.fileExists(atPath: destination.path),
                   try Data(contentsOf: destination) == receiptData else { throw error }
         }
@@ -517,9 +844,11 @@ actor ScenarioPersistence {
         for laneIndex in copy.laneResults.indices {
             copy.laneResults[laneIndex].observations = copy.laneResults[laneIndex].observations.filter { key, _ in
                 !sensitiveKeys.contains { key.localizedCaseInsensitiveContains($0) }
+                    && !key.localizedCaseInsensitiveContains("actionReceipts")
                     && !key.hasPrefix("feature.encodedValue")
                     && !key.hasPrefix("feature.metadata.")
             }
+            copy.laneResults[laneIndex].actionReceipts = nil
             copy.laneResults[laneIndex].observationSources = copy.laneResults[laneIndex]
                 .observationSources?.filter { copy.laneResults[laneIndex].observations[$0.key] != nil }
             for assertionIndex in copy.laneResults[laneIndex].assertionResults.indices {
@@ -565,6 +894,10 @@ actor ScenarioPersistence {
         rootDirectory.appending(path: "PendingNativeSaves", directoryHint: .isDirectory)
     }
 
+    private var pendingOrdinaryDirectory: URL {
+        rootDirectory.appending(path: "PendingOrdinarySaves", directoryHint: .isDirectory)
+    }
+
     private func definitionURL(_ definition: ScenarioDefinition) -> URL {
         definitionsDirectory
             .appending(path: definition.id.uuidString, directoryHint: .isDirectory)
@@ -605,10 +938,13 @@ actor ScenarioPersistence {
                receipt.invocationID == run.invocation.id,
                receipt.runDigest == Self.digest(bytes),
                let journal = try? loadJournal(at: journalURL(receipt.invocationID)),
-               journal.phase == .stopped,
+               receipt.scope == journal.scope,
+               [.stopped, .recoveryRequired].contains(journal.phase),
+               journal.evidenceAccepted == true,
                journal.scenarioID == run.scenarioID,
                journal.scenarioVersion == run.scenarioVersion,
-               journal.invocation == run.invocation {
+               journal.invocation == run.invocation,
+               (try? ledgerContains(run)) == true {
                 run.acceptanceStatus = .accepted
             }
             return run
@@ -624,6 +960,14 @@ actor ScenarioPersistence {
 
     private func receiptURL(_ run: ScenarioRun) -> URL {
         runFileURL(run).deletingLastPathComponent().appending(path: "acceptance.json")
+    }
+
+    private func ledgerContains(_ run: ScenarioRun) throws -> Bool {
+        let ledger = try loadLedger()
+        return ledger.importedInvocationIDs.contains(run.invocation.id)
+            && ledger.importedNonces.contains(run.invocation.nonce)
+            && Set(run.laneResults.flatMap(\.artifacts).map(\.id))
+                .isSubset(of: ledger.importedArtifactIDs)
     }
 
     private static func digest(_ data: Data) -> String {

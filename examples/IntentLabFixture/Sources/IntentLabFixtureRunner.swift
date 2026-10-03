@@ -50,7 +50,10 @@ final class IntentLabFixtureRunner {
                 )
             }
             FixtureState.beginSummaryAttempt(noteID: note.id)
-            let summary = try await SummaryService.summarize(note)
+            let summary = try await SummaryService.summarize(
+                note,
+                resolvedParameters: ["prompt": .string(input.prompt)]
+            )
             try context.checkCancellation()
             let receipt = try FixtureState.publishSummary(summary, for: note, route: "AppFeature")
             return IntentLabSummaryOutput(
@@ -87,7 +90,10 @@ final class IntentLabFixtureRunner {
                 )
             }
             FixtureState.beginSummaryAttempt(noteID: note.id)
-            let summary = try await SummaryService.summarize(note)
+            let summary = try await SummaryService.summarize(
+                note,
+                resolvedParameters: ["noteID": .string(note.id)]
+            )
             try context.checkCancellation()
             let receipt = try FixtureState.publishSummary(
                 summary, for: note, route: "AppFeature",

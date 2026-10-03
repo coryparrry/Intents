@@ -49,6 +49,15 @@ struct ScenarioIntegrationCatalog: Codable, Sendable {
         var selector: String?
     }
 
+    struct FeatureControl: Codable, Sendable {
+        var featureID: String
+        var interfaceDigest: String
+        var operationID: String
+        var testIntentIdentifier: String
+        var parameters: [Action.Parameter]
+        var outputProjections: [Projection]
+    }
+
     var schemaVersion: Int
     var id: String
     var version: String
@@ -58,6 +67,41 @@ struct ScenarioIntegrationCatalog: Codable, Sendable {
     var observers: [Observer]
     var preparationOperations: [String]
     var capabilities: [String]
+    var localFeatureControls: [FeatureControl]? = nil
+
+    func localFeatureControl(for definition: ScenarioDefinition) -> FeatureControl? {
+        guard let binding = definition.featureBinding,
+              let operationID = definition.actionRequirements?.first(where: {
+                  $0.lane == .appFeature && $0.kind == .productionService
+              })?.operationID,
+              capabilities.contains("local-feature-controls") else { return nil }
+        let matches = (localFeatureControls ?? []).filter {
+            $0.featureID == binding.featureID
+                && $0.interfaceDigest == binding.interfaceDigest
+                && $0.operationID == operationID
+        }
+        guard matches.count == 1, let control = matches.first,
+              !control.testIntentIdentifier.isEmpty,
+              Set(control.parameters.map(\.name)).count == control.parameters.count,
+              Set(control.outputProjections.map(\.id)).count == control.outputProjections.count,
+              Set(binding.inputMapping.map(\.featureInputName)).count == binding.inputMapping.count,
+              control.parameters.filter(\.required).allSatisfy({ parameter in
+                  binding.inputMapping.contains { $0.featureInputName == parameter.name }
+              }),
+              binding.inputMapping.allSatisfy({ input in
+                  control.parameters.contains { parameter in
+                      parameter.name == input.featureInputName
+                          && ScenarioValidator.validate(value: input.value, as: parameter.type).isEmpty
+                  }
+              }),
+              binding.outputProjections.count == control.outputProjections.count,
+              binding.outputProjections.allSatisfy({ field in
+                  control.outputProjections.contains {
+                      $0.id == field.name && $0.type == field.type && $0.path == field.path
+                  }
+              }) else { return nil }
+        return control
+    }
 
     static func decodeVerified(_ data: Data, identity: ScenarioIntegrationIdentity) throws -> Self {
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -71,6 +115,11 @@ struct ScenarioIntegrationCatalog: Codable, Sendable {
               Set(catalog.actions.map(\.id)).count == catalog.actions.count,
               Set(catalog.resultProjections.map(\.id)).count == catalog.resultProjections.count,
               Set(catalog.observers.map(\.id)).count == catalog.observers.count,
+              (catalog.localFeatureControls ?? []).isEmpty
+                  || catalog.capabilities.contains("local-feature-controls"),
+              Set((catalog.localFeatureControls ?? []).map {
+                  "\($0.featureID):\($0.operationID)"
+              }).count == (catalog.localFeatureControls ?? []).count,
               catalog.actions.allSatisfy({ !$0.id.isEmpty && Set($0.parameters.map(\.name)).count == $0.parameters.count }) else {
             throw ScenarioAuthoringError.invalidDeclaration
         }
@@ -89,6 +138,7 @@ enum ScenarioAuthoringError: LocalizedError {
     case duplicateCheck
     case missingCheck
     case missingFeature
+    case missingLocalFeatureControl
 
     var errorDescription: String? {
         switch self {
@@ -102,6 +152,7 @@ enum ScenarioAuthoringError: LocalizedError {
         case .duplicateCheck: "This observation already has a check. Edit that check instead."
         case .missingCheck: "The selected check is no longer in this scenario."
         case .missingFeature: "Choose a connected App Feature before checking its response."
+        case .missingLocalFeatureControl: "The checked app has no matching local Feature control. Rebuild and check support."
         }
     }
 }
@@ -109,6 +160,88 @@ enum ScenarioAuthoringError: LocalizedError {
 /// Works on a copy and returns a whole new definition. A failed operation
 /// cannot leave an assertion without its projection/observation/claim.
 enum ScenarioExpectationAuthoring {
+    static func withDeclaredIntentActionRequirements(
+        _ definition: ScenarioDefinition,
+        catalog: ScenarioIntegrationCatalog
+    ) throws -> ScenarioDefinition {
+        guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+              catalog.actions.contains(where: { $0.id == definition.directControl.intentIdentifier }) else {
+            throw ScenarioAuthoringError.missingAction
+        }
+        let parameters = Dictionary(uniqueKeysWithValues: definition.directControl.parameters.compactMap {
+            parameter -> (String, ScenarioValue)? in
+            guard case .value(let value) = parameter.presence else { return nil }
+            return (parameter.name, value)
+        })
+        var requirements = (definition.actionRequirements ?? []).filter {
+            $0.lane == .appFeature && definition.coverage.appFeature != .notApplicable
+        }
+        for lane in [ScenarioLane.intentIntegration, .siri]
+        where definition.coverage[lane] != .notApplicable {
+            requirements.append(.init(
+                lane: lane, kind: .productionIntent,
+                operationID: definition.directControl.intentIdentifier,
+                resolvedParameters: parameters
+            ))
+        }
+        var copy = definition
+        if copy.actionRequirements != requirements || copy.actionPolicyVersion != 1 {
+            copy.actionRequirements = requirements
+            copy.actionPolicyVersion = 1
+            copy.definitionDigest = ""
+            copy.testContractDigest = nil
+        }
+        return copy
+    }
+
+    static func selectingLocalFeatureControl(
+        featureID: String,
+        operationID: String,
+        inputMapping: [ScenarioFeatureInputMapping],
+        in definition: ScenarioDefinition,
+        catalog: ScenarioIntegrationCatalog
+    ) throws -> ScenarioDefinition {
+        guard catalog.capabilities.contains("local-feature-controls"),
+              let control = (catalog.localFeatureControls ?? []).first(where: {
+                  $0.featureID == featureID && $0.operationID == operationID
+              }),
+              !control.testIntentIdentifier.isEmpty,
+              Set(inputMapping.map(\.featureInputName)).count == inputMapping.count,
+              inputMapping.allSatisfy({ input in
+                  control.parameters.contains { $0.name == input.featureInputName }
+              }) else { throw ScenarioAuthoringError.missingLocalFeatureControl }
+        let binding = ScenarioFeatureBinding(
+            featureID: control.featureID,
+            interfaceDigest: control.interfaceDigest,
+            inputMapping: inputMapping,
+            outputProjections: control.outputProjections.map {
+                .init(name: $0.id, type: $0.type, path: $0.path)
+            }
+        )
+        var copy = definition
+        copy.featureBinding = binding
+        copy.coverage.appFeature = .required
+        var requirements = copy.actionRequirements ?? []
+        requirements.removeAll { $0.lane == .appFeature }
+        requirements.append(.init(
+            lane: .appFeature, kind: .productionService, operationID: operationID,
+            resolvedParameters: Dictionary(uniqueKeysWithValues: inputMapping.map {
+                ($0.featureInputName, $0.value)
+            })
+        ))
+        copy.actionRequirements = requirements
+        copy.actionPolicyVersion = 1
+        if var observations = copy.observationPlan,
+           let index = observations.firstIndex(where: { $0.id == "feature.response" }) {
+            observations[index].source = .testOnlyIntent
+            observations[index].operationID = operationID
+            copy.observationPlan = observations
+        }
+        copy.definitionDigest = ""
+        copy.testContractDigest = nil
+        return copy
+    }
+
     static func addingFeatureResponseCheck(
         expected: ScenarioValue,
         semantic: Bool,
@@ -125,8 +258,14 @@ enum ScenarioExpectationAuthoring {
         }
         var copy = definition
         var observations = copy.observationPlan ?? []
-        guard !observations.contains(where: { $0.id == "feature.response" }) else { throw ScenarioAuthoringError.duplicateCheck }
-        observations.append(.init(id: "feature.response", source: .testOnlyIntent, operationID: nil, selector: nil))
+        guard !observations.contains(where: { $0.id == "feature.response" }) else {
+            throw ScenarioAuthoringError.duplicateCheck
+        }
+        let operationID = copy.actionRequirements?.first(where: {
+            $0.lane == .appFeature && $0.kind == .productionService
+        })?.operationID
+        observations.append(.init(id: "feature.response", source: .testOnlyIntent,
+                                  operationID: operationID, selector: nil))
         copy.observationPlan = observations
         copy.assertions.append(.init(
             kind: semantic ? .semanticRubric : .returnedField,
@@ -134,6 +273,11 @@ enum ScenarioExpectationAuthoring {
             explanation: semantic ? rubric : "Check the captured App Feature response.",
             applicableLanes: [.appFeature]
         ))
+        if !semantic {
+            var claims = copy.requiredClaims ?? [.executionCompleted]
+            if !claims.contains(.returnedValueChecked) { claims.append(.returnedValueChecked) }
+            copy.requiredClaims = claims
+        }
         copy.definitionDigest = ""
         copy.testContractDigest = nil
         return copy

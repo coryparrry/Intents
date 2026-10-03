@@ -384,6 +384,7 @@ enum ScenarioReleaseCheckEvaluator {
                 failures.append("The required proof claims are not supported by verified observations.")
             }
         }
+        var actionFailure = false
         for lane in ScenarioLane.allCases where definition.coverage[lane] == .required {
             if !definition.assertions.contains(where: { $0.required && $0.applies(to: lane) }) {
                 failures.append("The required \(lane.title) lane has no required observable outcome assertion.")
@@ -393,6 +394,21 @@ enum ScenarioReleaseCheckEvaluator {
                 failures.append("The required \(lane.title) lane is missing.")
             } else if results.contains(where: { $0.executionStatus != .completed || $0.outcome != .passed }) {
                 failures.append("The required \(lane.title) lane is incomplete or failed.")
+            }
+            if definition.actionRequirements != nil {
+                for result in results {
+                    if result.cleanupVerified != true {
+                        failures.append("The \(lane.title) route has no verified fixture cleanup/readiness result.")
+                    }
+                    let action = ScenarioResultEvaluator.actionVerdict(
+                        definition: definition, lane: lane, attempt: result.attempt,
+                        invocation: run.invocation, receipts: result.actionReceipts
+                    )
+                    if action.0 == .failed { actionFailure = true }
+                    if action.0 != .passed || !ScenarioResultEvaluator.actionObservationIsConsistent(result) {
+                        failures.append("The \(lane.title) route failed action verification: \(action.1?.rawValue ?? "invalidActionEvidence").")
+                    }
+                }
             }
         }
         let requiredAssertionMissingOrFailed = run.laneResults.contains { laneResult in
@@ -406,7 +422,7 @@ enum ScenarioReleaseCheckEvaluator {
             }
         }
         if requiredAssertionMissingOrFailed {
-            failures.append("One or more required observable outcome assertions are missing or failed.")
+            failures.append("One or more required observable outcome assertions are missing or failed: wrongOutcome.")
         }
         if definition.schemaVersion < ScenarioDefinition.stableSchemaVersion,
            comparison?.isDirectlyComparable == false {
@@ -415,7 +431,7 @@ enum ScenarioReleaseCheckEvaluator {
         let outcome: ScenarioReleaseCheckOutcome
         if failures.isEmpty {
             outcome = .passed
-        } else if run.outcome == .failed {
+        } else if run.outcome == .failed || actionFailure {
             outcome = .failed
         } else {
             outcome = .incompleteOrIncompatibleEvidence
@@ -444,7 +460,16 @@ enum ScenarioReleaseCheckEvaluator {
     }
 
     static func acceptedJournal(for run: ScenarioRun, in journals: [ScenarioExecutionJournal]) -> Bool {
-        journals.contains { journal in
+        journals.contains { $0.phase == .stopped && evidenceAcceptedJournal($0, for: run) }
+    }
+
+    /// Evidence acceptance and device readiness are separate. A retained failed
+    /// action can be reported while cleanup still leaves the device quarantined.
+    static func evidenceAcceptedJournal(for run: ScenarioRun, in journals: [ScenarioExecutionJournal]) -> Bool {
+        journals.contains { evidenceAcceptedJournal($0, for: run) }
+    }
+
+    private static func evidenceAcceptedJournal(_ journal: ScenarioExecutionJournal, for run: ScenarioRun) -> Bool {
             journal.id == run.id &&
             journal.invocation.nonce == run.invocation.nonce &&
             journal.invocation.testIdentity == run.invocation.testIdentity &&
@@ -456,7 +481,6 @@ enum ScenarioReleaseCheckEvaluator {
             journal.invocation.testProduct == run.invocation.testProduct &&
             journal.scenarioID == run.scenarioID &&
             journal.scenarioVersion == run.scenarioVersion &&
-            journal.phase == .stopped && journal.evidenceAccepted == true
-        }
+            journal.evidenceAccepted == true
     }
 }

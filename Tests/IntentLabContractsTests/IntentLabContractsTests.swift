@@ -145,6 +145,68 @@ final class IntentLabContractsTests: XCTestCase {
         ).passed)
     }
 
+    func testActionVerifierRejectsWrongActionSameStateAndStaleReceipts() {
+        let context = "siri-\(UUID().uuidString)-1"
+        let requirement = IntentLabActionRequirement(
+            lane: .siri, kind: .productionIntent, operationID: "SummarizeNoteIntent",
+            resolvedParameters: ["noteID": .string("packing-001")]
+        )
+        let now = Date()
+        let observed = IntentLabActionReceipt(
+            executionID: UUID(), appSessionID: UUID(), attemptContext: context,
+            lane: .siri, attempt: 1, kind: .productionIntent,
+            operationID: "OpenNoteIntent",
+            resolvedParameters: ["noteID": .string("packing-001")],
+            terminalStatus: .succeeded, operationError: nil,
+            sequence: 1, startedAt: now, completedAt: now,
+            observationTransport: "accessibleUI"
+        )
+        func verdict(_ receipts: [IntentLabActionReceipt]?) -> (IntentLabOutcome, IntentLabActionFailureReason?) {
+            IntentLabAssertionEvaluator.actionVerdict(
+                requirement: requirement, receipts: receipts,
+                lane: .siri, attempt: 1, context: context
+            )
+        }
+        XCTAssertEqual(verdict([observed]).1, .wrongAction)
+        XCTAssertEqual(verdict([observed]).0, .failed)
+        XCTAssertEqual(verdict(nil).1, .missingActionEvidence)
+        var stale = observed
+        stale.operationID = requirement.operationID
+        stale.attemptContext = "siri-old-attempt-1"
+        XCTAssertEqual(verdict([stale]).1, .staleActionEvidence)
+        var wrongParameter = observed
+        wrongParameter.operationID = requirement.operationID
+        wrongParameter.resolvedParameters = ["noteID": .string("packing-002")]
+        XCTAssertEqual(verdict([wrongParameter]).1, .wrongParameter)
+        var correct = observed
+        correct.operationID = requirement.operationID
+        XCTAssertEqual(verdict([correct]).0, .passed)
+        var inconsistent = correct
+        inconsistent.operationError = "A real operation error"
+        XCTAssertEqual(verdict([inconsistent]).1, .invalidActionEvidence)
+        var missingError = correct
+        missingError.terminalStatus = .failed
+        XCTAssertEqual(verdict([missingError]).1, .invalidActionEvidence)
+        var nested = correct
+        nested.executionID = UUID()
+        nested.kind = .testSupport
+        nested.operationID = "ReadSnapshot"
+        nested.isTopLevel = false
+        nested.appSessionID = UUID()
+        nested.sequence = 2
+        XCTAssertEqual(verdict([correct, nested]).1, .invalidActionEvidence)
+        nested.appSessionID = correct.appSessionID
+        nested.sequence = correct.sequence
+        XCTAssertEqual(verdict([correct, nested]).1, .invalidActionEvidence)
+        var replay = correct
+        replay.sequence = 2
+        XCTAssertEqual(verdict([correct, replay]).1, .invalidActionEvidence)
+        var extra = observed
+        extra.executionID = UUID()
+        extra.sequence = 2
+        XCTAssertEqual(verdict([correct, extra]).1, .unexpectedExecution)
+    }
+
     func testScopedEvidenceRetainsBeforeObservationAndDecodesLegacyLane() throws {
         let lane = IntentLabLaneResult(
             caseID: UUID(), attempt: 1, lane: .intentIntegration,
@@ -284,6 +346,157 @@ final class IntentLabContractsTests: XCTestCase {
         let declaration = try JSONDecoder.intentLab.decode(IntentLabIntegrationDeclaration.self, from: data)
         XCTAssertNoThrow(try declaration.validate())
         XCTAssertEqual(declaration.actions.map(\.id), ["StartIntent"])
+        XCTAssertNil(declaration.localFeatureControls)
+        XCTAssertNil(declaration.readinessControl)
+        XCTAssertThrowsError(try declaration.localFeatureControl(
+            featureID: "notes", interfaceDigest: String(repeating: "a", count: 64),
+            operationID: "create"
+        )) { error in
+            guard case IntentLabDeclarationError.localFeatureControlNotDeclared = error else {
+                return XCTFail("Expected a missing local feature control, got \(error)")
+            }
+        }
+        XCTAssertThrowsError(try declaration.declaredReadinessControl()) { error in
+            guard case IntentLabDeclarationError.readinessControlNotDeclared = error else {
+                return XCTFail("Expected a missing readiness control, got \(error)")
+            }
+        }
+    }
+
+    func testReadinessControlIsExplicitTypedAndCannotRedirectToAFeatureIntent() throws {
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: declarationData()) as? [String: Any])
+        json["capabilities"] = ["test-only-intent"]
+        json["readinessControl"] = try readinessControlJSON()
+        let bytes = try JSONSerialization.data(withJSONObject: json)
+        let declaration = try JSONDecoder.intentLab.decode(IntentLabIntegrationDeclaration.self, from: bytes)
+        try declaration.validate()
+        let control = try declaration.declaredReadinessControl()
+        XCTAssertEqual(control.operationID, "intentLabReadiness")
+        XCTAssertEqual(control.testIntentIdentifier, "IntentLabReadinessIntent")
+        XCTAssertEqual(control.response.id, "readiness.ready")
+        XCTAssertEqual(control.response.type, .primitive(.boolean))
+
+        var redirected = json
+        var invalidControl = try XCTUnwrap(redirected["readinessControl"] as? [String: Any])
+        invalidControl["testIntentIdentifier"] = "IntentLabInvokeFeatureIntent"
+        redirected["readinessControl"] = invalidControl
+        XCTAssertThrowsError(try JSONDecoder.intentLab.decode(
+            IntentLabIntegrationDeclaration.self,
+            from: JSONSerialization.data(withJSONObject: redirected)
+        ).validate())
+
+        var untyped = json
+        var untypedControl = try XCTUnwrap(untyped["readinessControl"] as? [String: Any])
+        var response = try XCTUnwrap(untypedControl["response"] as? [String: Any])
+        response["type"] = ["primitive": ["_0": "string"]]
+        untypedControl["response"] = response
+        untyped["readinessControl"] = untypedControl
+        XCTAssertThrowsError(try JSONDecoder.intentLab.decode(
+            IntentLabIntegrationDeclaration.self,
+            from: JSONSerialization.data(withJSONObject: untyped)
+        ).validate())
+
+        var missingCapability = json
+        missingCapability["capabilities"] = ["direct-intent-execution"]
+        XCTAssertThrowsError(try JSONDecoder.intentLab.decode(
+            IntentLabIntegrationDeclaration.self,
+            from: JSONSerialization.data(withJSONObject: missingCapability)
+        ).validate())
+    }
+
+    func testLocalFeatureControlNegotiatesExactTypedContract() throws {
+        let declaration = try decodeFeatureDeclaration()
+        XCTAssertNoThrow(try declaration.validate())
+        let expectedDigest = try XCTUnwrap(featureControlJSON()["interfaceDigest"] as? String)
+        XCTAssertEqual(expectedDigest, "6fefab137a5684642fdc14a0bcb2a6ede5544666cdb6b1db6fd415d41dfd1c26")
+        let selected = try declaration.localFeatureControl(
+            featureID: "intent-lab.summarize-note", interfaceDigest: expectedDigest,
+            operationID: "summarizeNote"
+        )
+        XCTAssertEqual(selected.testIntentIdentifier, "IntentLabInvokeFeatureIntent")
+        XCTAssertEqual(selected.parameters.map(\.name), ["prompt"])
+        XCTAssertTrue(selected.outputProjections.isEmpty)
+        XCTAssertThrowsError(try declaration.localFeatureControl(
+            featureID: "intent-lab.summarize-note", interfaceDigest: String(repeating: "b", count: 64),
+            operationID: "summarizeNote"
+        )) { error in
+            guard case IntentLabDeclarationError.mismatchedIdentity = error else {
+                return XCTFail("Expected interface drift to fail negotiation, got \(error)")
+            }
+        }
+    }
+
+    func testLocalFeatureDeclarationRejectsAmbiguousOrUntypedControls() throws {
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: featureDeclarationData()) as? [String: Any])
+        var duplicate = json
+        duplicate["localFeatureControls"] = [featureControlJSON(), featureControlJSON()]
+        XCTAssertThrowsError(try JSONDecoder.intentLab.decode(
+            IntentLabIntegrationDeclaration.self,
+            from: JSONSerialization.data(withJSONObject: duplicate)
+        ).validate())
+
+        var missingCapability = json
+        missingCapability["capabilities"] = ["direct-intent-execution"]
+        XCTAssertThrowsError(try JSONDecoder.intentLab.decode(
+            IntentLabIntegrationDeclaration.self,
+            from: JSONSerialization.data(withJSONObject: missingCapability)
+        ).validate())
+
+        for reservedID in ["feature.response", "intentlab.actionReceipts"] {
+            var reservedProjection = json
+            let projections = [IntentLabIntegrationDeclaration.Projection(
+                id: reservedID,
+                type: .primitive(.string),
+                path: [
+                    .init(kind: .property, name: "value"),
+                    .init(kind: .property, name: "response"),
+                ]
+            )]
+            let featureID = "intent-lab.summarize-note"
+            let operationID = "summarizeNote"
+            let testIntentIdentifier = "IntentLabInvokeFeatureIntent"
+            let parameters = [IntentLabIntegrationDeclaration.Parameter(
+                name: "prompt", type: .primitive(.string), required: true
+            )]
+            let control = IntentLabIntegrationDeclaration.FeatureControl(
+                featureID: featureID,
+                interfaceDigest: try IntentLabIntegrationDeclaration.FeatureControl.calculateInterfaceDigest(
+                    featureID: featureID, operationID: operationID,
+                    testIntentIdentifier: testIntentIdentifier,
+                    parameters: parameters, outputProjections: projections
+                ),
+                operationID: operationID,
+                testIntentIdentifier: testIntentIdentifier,
+                parameters: parameters,
+                outputProjections: projections
+            )
+            reservedProjection["localFeatureControls"] = [
+                try JSONSerialization.jsonObject(with: JSONEncoder.intentLab.encode(control))
+            ]
+            XCTAssertThrowsError(try JSONDecoder.intentLab.decode(
+                IntentLabIntegrationDeclaration.self,
+                from: JSONSerialization.data(withJSONObject: reservedProjection)
+            ).validate())
+        }
+    }
+
+    func testLocalFeatureInputRoundTripsWithTypedValues() throws {
+        let input = IntentLabLocalFeatureInput(
+            featureID: "notes",
+            interfaceDigest: String(repeating: "a", count: 64),
+            parameters: [IntentLabParameter(
+                name: "title", type: .primitive(.string), isOptional: false,
+                presence: .value(.string("Trip"))
+            )]
+        )
+        let encoded = try JSONEncoder.intentLab.encode(input)
+        let decoded = try JSONDecoder.intentLab.decode(IntentLabLocalFeatureInput.self, from: encoded)
+        XCTAssertEqual(decoded.featureID, input.featureID)
+        XCTAssertEqual(decoded.interfaceDigest, input.interfaceDigest)
+        XCTAssertEqual(decoded.parameters.first?.name, "title")
+        guard case .some(.value(.string("Trip"))) = decoded.parameters.first?.presence else {
+            return XCTFail("The local feature payload lost the typed string value.")
+        }
     }
 
     func testTypedObservationRejectsWrongValue() {
@@ -346,6 +559,86 @@ final class IntentLabContractsTests: XCTestCase {
             json["integration"] = ["id": "example-integration", "version": "1", "digest": String(repeating: "a", count: 64)]
         }
         return try JSONDecoder.intentLab.decode(IntentLabScenario.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    private func decodeFeatureDeclaration() throws -> IntentLabIntegrationDeclaration {
+        try JSONDecoder.intentLab.decode(IntentLabIntegrationDeclaration.self, from: featureDeclarationData())
+    }
+
+    private func declarationData() throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 1,
+            "id": "readiness-app",
+            "version": "1",
+            "targetBundleIdentifier": "com.example.App",
+            "projectIdentity": "App.xcodeproj",
+            "targetIdentity": "AppUITests",
+            "supportedHarnessProtocols": ["intent-lab-v2"],
+            "actions": [],
+            "resultProjections": [],
+            "preparationOperations": [],
+            "observers": [],
+            "isolation": ["kind": "readOnly"],
+            "capabilities": ["direct-intent-execution"],
+        ])
+    }
+
+    private func readinessControlJSON() throws -> [String: Any] {
+        let control = IntentLabIntegrationDeclaration.ReadinessControl(
+            operationID: "intentLabReadiness",
+            testIntentIdentifier: "IntentLabReadinessIntent",
+            response: .init(
+                id: "readiness.ready",
+                type: .primitive(.boolean),
+                path: [
+                    .init(kind: .property, name: "value"),
+                    .init(kind: .property, name: "ready"),
+                ]
+            )
+        )
+        return try JSONSerialization.jsonObject(with: JSONEncoder.intentLab.encode(control)) as! [String: Any]
+    }
+
+    private func featureDeclarationData() -> Data {
+        try! JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 1,
+            "id": "feature-app",
+            "version": "1",
+            "targetBundleIdentifier": "com.example.App",
+            "projectIdentity": "App.xcodeproj",
+            "targetIdentity": "AppUITests",
+            "supportedHarnessProtocols": ["intent-lab-v2"],
+            "actions": [],
+            "resultProjections": [],
+            "preparationOperations": [],
+            "observers": [],
+            "isolation": ["kind": "readOnly"],
+            "capabilities": ["local-feature-controls", "test-only-intent"],
+            "localFeatureControls": [featureControlJSON()],
+        ])
+    }
+
+    private func featureControlJSON() -> [String: Any] {
+        let featureID = "intent-lab.summarize-note"
+        let operationID = "summarizeNote"
+        let testIntentIdentifier = "IntentLabInvokeFeatureIntent"
+        let parameters = [IntentLabIntegrationDeclaration.Parameter(
+            name: "prompt", type: .primitive(.string), required: true
+        )]
+        let outputProjections: [IntentLabIntegrationDeclaration.Projection] = []
+        let control = IntentLabIntegrationDeclaration.FeatureControl(
+            featureID: featureID,
+            interfaceDigest: try! IntentLabIntegrationDeclaration.FeatureControl.calculateInterfaceDigest(
+                featureID: featureID, operationID: operationID,
+                testIntentIdentifier: testIntentIdentifier,
+                parameters: parameters, outputProjections: outputProjections
+            ),
+            operationID: operationID,
+            testIntentIdentifier: testIntentIdentifier,
+            parameters: parameters,
+            outputProjections: outputProjections
+        )
+        return try! JSONSerialization.jsonObject(with: JSONEncoder.intentLab.encode(control)) as! [String: Any]
     }
 }
 

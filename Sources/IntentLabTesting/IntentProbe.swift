@@ -27,6 +27,35 @@ public enum IntentProbe {
         return observations
     }
 
+    static func invokeTestIntent(
+        bundleIdentifier: String,
+        intentIdentifier: String,
+        parameters: [IntentLabParameter],
+        outputProjections: [IntentLabIntegrationDeclaration.Projection]
+    ) async throws -> [String: IntentLabValue] {
+        let definitions = IntentDefinitions(bundleIdentifier: bundleIdentifier)
+        let definition = definitions.intents[intentIdentifier]
+        var intent = definition.makeIntent()
+        for parameter in parameters {
+            try set(parameter, on: &intent, definitions: definitions)
+        }
+        let result = try await intent.run()
+
+        var observations: [String: IntentLabValue] = [:]
+        for projection in outputProjections {
+            let field = IntentLabOutputField(
+                name: projection.id,
+                type: projection.type,
+                path: projection.path
+            )
+            guard observations[field.name] == nil else {
+                throw IntentProbeError.invalidValue(field.name)
+            }
+            observations[field.name] = try project(field, from: result, schemaVersion: 2)
+        }
+        return observations
+    }
+
     private static func project(
         _ field: IntentLabOutputField,
         from result: ResolvedIntentResult,

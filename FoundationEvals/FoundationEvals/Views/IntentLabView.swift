@@ -6,6 +6,7 @@ struct IntentLabView: View {
     let projects: [EvaluationProject]
     @Environment(DeveloperRunnerStore.self) private var runnerStore
     @State private var section: IntentLabSection = .setup
+    @State private var diagnosticLanes: Set<ScenarioLane> = []
 
     var body: some View {
         GeometryReader { geometry in
@@ -19,7 +20,10 @@ struct IntentLabView: View {
                     .frame(minHeight: 0, maxHeight: .infinity)
                 case .scenario:
                     ScrollView {
-                        ScenarioEditorView(coordinator: coordinator, projects: projects).workspacePage()
+                        ScenarioEditorView(
+                            coordinator: coordinator, projects: projects,
+                            diagnosticLanes: $diagnosticLanes
+                        ).workspacePage()
                     }
                     .frame(minHeight: 0, maxHeight: .infinity)
                 case .collections:
@@ -49,12 +53,29 @@ struct IntentLabView: View {
                         .labelStyle(.titleAndIcon)
                         .help("Cancel the running scenario")
                 } else {
-                    Button { section = .results; Task { await coordinator.run() } } label: {
-                        Label("Run test", systemImage: "play.fill").labelStyle(.titleAndIcon)
+                    if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                        Menu {
+                            Button("Verify complete requirement", systemImage: "checkmark.seal") {
+                                section = .results
+                                Task { await coordinator.run() }
+                            }
+                            .disabled(!coordinator.hasLoaded)
+                            Button("Check this fix", systemImage: "play.circle") {
+                                section = .results
+                                Task { await coordinator.checkThisFix(on: diagnosticLanes) }
+                            }
+                            .disabled(diagnosticLanes.isEmpty || !coordinator.hasLoaded)
+                        } label: {
+                            Label("Run check", systemImage: "play.circle")
+                        }
+                        .help("Choose a complete requirement check or a partial diagnostic")
+                    } else {
+                        Button { section = .results; Task { await coordinator.run() } } label: {
+                            Label("Run test", systemImage: "play.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(coordinator.preflight?.isReady != true)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(coordinator.preflight?.isReady != true)
-                    .help(coordinator.preflight?.isReady == true ? "Save and run this test" : "Finish setup to run a test")
                 }
             }
         }
@@ -62,17 +83,19 @@ struct IntentLabView: View {
             coordinator.bindRunnerStore(runnerStore)
             await coordinator.load()
         }
-        .alert(
+        .onChange(of: coordinator.draft.id) { _, _ in diagnosticLanes.removeAll() }
+        .onChange(of: coordinator.draft.coverage) { _, coverage in
+            diagnosticLanes = diagnosticLanes.filter { coverage[$0] != .notApplicable }
+        }
+        .workspaceAlert(
             "Intent Lab",
+            message: coordinator.notice ?? "",
             isPresented: Binding(
                 get: { coordinator.notice != nil },
                 set: { if !$0 { coordinator.notice = nil } }
-            )
-        ) {
-            Button("OK") { coordinator.notice = nil }
-        } message: {
-            Text(coordinator.notice ?? "")
-        }
+            ),
+            buttons: [WorkspaceAlertButton("OK")]
+        )
     }
 }
 
@@ -119,8 +142,11 @@ private struct IntentLabReadiness: View {
         if coordinator.isRunning {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("Running on device").font(.callout).foregroundStyle(.secondary)
+                Text(coordinator.executionStage ?? "Running on device")
+                    .font(.callout).foregroundStyle(.secondary)
             }
+        } else if coordinator.routeReadiness.values.contains(where: { $0.state == .ready }) {
+            WorkspacePill("Route ready", symbol: "checkmark.circle.fill", color: WorkspaceStyle.success)
         } else if coordinator.preflight?.isReady == true {
             WorkspacePill("Ready to run", symbol: "checkmark.circle.fill", color: WorkspaceStyle.success)
         } else {

@@ -590,11 +590,8 @@ struct EvaluationCompatibleJudgeClientTests {
     }
 
     private func waitForCompletionRequests(_ count: Int, fixture: CompatibleJudgeFixture) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-        while fixture.completionRequestCount < count, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        try #require(fixture.completionRequestCount >= count, "Judge fixture did not receive a request.")
+        let received = await fixture.waitForCompletionRequests(count, timeout: .seconds(20))
+        try #require(received, "Judge fixture did not receive a request.")
     }
 }
 
@@ -631,6 +628,8 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
     private let ready = DispatchSemaphore(value: 0)
     private let lock = NSLock()
     private let mode: Mode
+    private let completionRequestEvents: AsyncStream<Int>
+    private let completionRequestEventContinuation: AsyncStream<Int>.Continuation
     private var requestCount = 0
     private var completionRequests: [String] = []
     private var stalledConnections: [NWConnection] = []
@@ -647,7 +646,37 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
         oversizedConnectionClosed.wait(timeout: .now() + 5) == .success
     }
 
+    func waitForCompletionRequests(_ count: Int, timeout: Duration) async -> Bool {
+        guard completionRequestCount < count else { return true }
+        let events = completionRequestEvents
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                for await observedCount in events where observedCount >= count {
+                    return true
+                }
+                return false
+            }
+            group.addTask {
+                do {
+                    try await Task.sleep(for: timeout)
+                    return false
+                } catch {
+                    return false
+                }
+            }
+            let observed = await group.next() ?? false
+            group.cancelAll()
+            return observed || completionRequestCount >= count
+        }
+    }
+
     init(mode: Mode) throws {
+        let requestEvents = AsyncStream<Int>.makeStream(
+            of: Int.self,
+            bufferingPolicy: .bufferingNewest(8)
+        )
+        completionRequestEvents = requestEvents.stream
+        completionRequestEventContinuation = requestEvents.continuation
         self.mode = mode
         listener = try NWListener(using: .tcp, on: .any)
         listener.stateUpdateHandler = { [weak self] state in
@@ -714,10 +743,12 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
         if first.contains("/models") {
             body = Data(#"{"data":[{"id":"judge-fixture","supported_parameters":["response_format"],"architecture":{"input_modalities":["text"]}}]}"#.utf8)
         } else {
-            lock.withLock {
+            let observedCount = lock.withLock {
                 requestCount += 1
                 completionRequests.append(String(decoding: request, as: UTF8.self))
+                return requestCount
             }
+            completionRequestEventContinuation.yield(observedCount)
             switch mode {
             case .status(let status):
                 let error = #"{"error":{"message":"Model Not Exist"}}"#

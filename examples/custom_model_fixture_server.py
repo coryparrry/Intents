@@ -26,6 +26,7 @@ ROUTES = {
     "/generate",
     "/tokenize",
     "/text",
+    "/text-gated",
     "/guided",
     "/guided/simple",
     "/guided/stream",
@@ -62,10 +63,13 @@ class FixtureServer(ThreadingHTTPServer):
         self,
         server_address: tuple[str, int],
         request_log: Path | None = None,
+        gate_text_stream: bool = False,
     ) -> None:
         super().__init__(server_address, FixtureHandler)
         self.request_log = request_log
         self.request_log_lock = threading.Lock()
+        self.gate_text_stream = gate_text_stream
+        self.release_text_stream = threading.Event()
 
     def record_protocol_request(self, request: dict[str, Any]) -> None:
         if self.request_log is None:
@@ -84,9 +88,21 @@ class FixtureServer(ThreadingHTTPServer):
 class FixtureHandler(BaseHTTPRequestHandler):
     server_version = "FoundationEvalsFixture/2"
 
+    def do_GET(self) -> None:
+        if self.path != "/release-text-stream" or not self.server.gate_text_stream:
+            self.send_error(404, "Unknown fixture route")
+            return
+        self.server.release_text_stream.set()
+        self.send_response(204)
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
     def do_POST(self) -> None:
         if self.path not in ROUTES:
             self.send_error(404, "Unknown fixture route")
+            return
+        if self.path == "/text-gated" and not self.server.gate_text_stream:
+            self.send_error(404, "Gated text stream is disabled")
             return
 
         request = self.read_request(require_protocol=self.path != "/tool/execute")
@@ -245,9 +261,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.emit_response("Deterministic reasoning response.", token_count=4)
             self.emit_usage(output_tokens=13, reasoning_tokens=9)
             return
-        self.serve_text()
+        self.serve_text(gated=scenario == "text-gated")
 
-    def serve_text(self) -> None:
+    def serve_text(self, gated: bool = False) -> None:
         chunks = [
             ("Deterministic ", 2),
             ("fixture ", 1),
@@ -255,6 +271,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
         ]
         for index, (content, token_count) in enumerate(chunks):
             if index:
+                if index == 1 and gated:
+                    if not self.server.release_text_stream.wait(timeout=30):
+                        return
                 time.sleep(STREAM_DELAY_SECONDS)
             self.emit_response(content, token_count=token_count)
         self.emit_usage(output_tokens=4)
@@ -456,6 +475,11 @@ def parse_arguments() -> argparse.Namespace:
             "disabled by default"
         ),
     )
+    parser.add_argument(
+        "--gate-text-stream",
+        action="store_true",
+        help="Hold the text stream after its first chunk until released over HTTP",
+    )
     return parser.parse_args()
 
 
@@ -468,7 +492,11 @@ if __name__ == "__main__":
     STREAM_DELAY_SECONDS = arguments.stream_delay
     TIMEOUT_DELAY_SECONDS = arguments.timeout_delay
     CANCEL_DELAY_SECONDS = arguments.cancel_delay
-    server = FixtureServer((HOST, arguments.port), request_log=arguments.request_log)
+    server = FixtureServer(
+        (HOST, arguments.port),
+        request_log=arguments.request_log,
+        gate_text_stream=arguments.gate_text_stream,
+    )
     bound_port = server.server_address[1]
     print(
         f"Intents protocol fixture listening on http://{HOST}:{bound_port}",

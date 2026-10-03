@@ -3,6 +3,190 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioV3HarnessBridgeTests {
+    @Test func localControlAuthoringAllowsPartialInputsButOnlyCompleteBindingDispatches() throws {
+        let catalog = ScenarioIntegrationCatalog(
+            schemaVersion: 1, id: "notes", version: "1.0",
+            targetBundleIdentifier: "com.coryparry.IntentLabFixture",
+            actions: [.init(id: "OpenNoteIntent", parameters: [])],
+            resultProjections: [], observers: [], preparationOperations: ["resetPackingNotes"],
+            capabilities: ["local-feature-controls", "test-only-intent"],
+            localFeatureControls: [.init(
+                featureID: "summarize-note", interfaceDigest: String(repeating: "a", count: 64),
+                operationID: "SummarizeNoteService", testIntentIdentifier: "InvokeFeatureTestIntent",
+                parameters: [.init(name: "noteID", type: .primitive(.string), required: true)],
+                outputProjections: [.init(
+                    id: "summary", type: .primitive(.string),
+                    path: [.init(kind: .property, name: "summary")]
+                )]
+            )]
+        )
+        let direct = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(
+            stableScenario(), catalog: catalog
+        )
+        let partial = try ScenarioExpectationAuthoring.selectingLocalFeatureControl(
+            featureID: "summarize-note", operationID: "SummarizeNoteService",
+            inputMapping: [], in: direct, catalog: catalog
+        )
+        #expect(partial.featureBinding?.featureID == "summarize-note")
+        #expect(catalog.localFeatureControl(for: partial) == nil)
+        let complete = try ScenarioExpectationAuthoring.selectingLocalFeatureControl(
+            featureID: "summarize-note", operationID: "SummarizeNoteService",
+            inputMapping: [.init(featureInputName: "noteID", value: .string("packing-001"))],
+            in: direct, catalog: catalog
+        )
+        #expect(catalog.localFeatureControl(for: complete)?.testIntentIdentifier
+            == "InvokeFeatureTestIntent")
+        #expect(complete.actionRequirements?.count == 2)
+        #expect(complete.actionRequirements?.first(where: { $0.lane == .appFeature })?
+            .resolvedParameters == ["noteID": .string("packing-001")])
+    }
+
+    @Test func strictActionPolicyRejectsStaleEnteredParametersButPreservesLegacyV3() throws {
+        let legacy = try stableScenario()
+        #expect(legacy.actionRequirements == nil)
+        try ScenarioValidator.validate(legacy)
+
+        var strict = legacy
+        strict.actionPolicyVersion = 1
+        strict.actionRequirements = [.init(
+            lane: .intentIntegration, kind: .productionIntent,
+            operationID: strict.directControl.intentIdentifier,
+            resolvedParameters: ["note": .string("another-note")]
+        )]
+        strict = try strict.frozen()
+        #expect(ScenarioValidator.issues(in: strict).contains {
+            $0.severity == .error && $0.path.contains("resolvedParameters")
+        })
+        strict.actionRequirements?[0].resolvedParameters = [
+            "note": .entity(.init(typeIdentifier: "NoteEntity", identifier: "packing-001"))
+        ]
+        strict = try strict.frozen()
+        try ScenarioValidator.validate(strict)
+    }
+
+    @Test func featureScopeRequiresExplicitLocalBackendAndCarriesFrozenBinding() throws {
+        var definition = try stableScenario()
+        definition.coverage.appFeature = .required
+        definition.featureBinding = .init(
+            featureID: "summarize-note", interfaceDigest: String(repeating: "a", count: 64),
+            inputMapping: [.init(featureInputName: "noteID", value: .string("packing-001"))],
+            outputProjections: [.init(name: "summary", type: .primitive(.string),
+                                      path: [.init(kind: .property, name: "summary")])]
+        )
+        definition.actionRequirements = [.init(
+            lane: .appFeature, kind: .productionService,
+            operationID: "SummarizeNoteService", resolvedParameters: ["noteID": .string("packing-001")]
+        )]
+        definition.actionPolicyVersion = 1
+        definition = try definition.frozen()
+        let scope = ScenarioNativeExecutionScope(lane: .appFeature, attempt: 1)
+        #expect(!scope.isValid(for: definition))
+        #expect(scope.isValid(for: definition, featureBackend: .projectLocalTestControl))
+        #expect(!ScenarioHarnessCapabilities.required(for: definition).contains("local-feature-controls"))
+        #expect(ScenarioHarnessCapabilities.required(
+            for: definition, scope: scope, featureBackend: .projectLocalTestControl
+        ).contains("local-feature-controls"))
+        #expect(throws: XCTestRunInvocationTransportError.self) {
+            _ = try XCTestRunInvocationTransport.scenarioPayload(for: definition, scope: scope)
+        }
+        let data = try XCTestRunInvocationTransport.scenarioPayload(
+            for: definition, scope: scope, featureBackend: .projectLocalTestControl
+        )
+        let wire = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let binding = try #require(wire["featureBinding"] as? [String: Any])
+        let selected = try #require(wire["executionScope"] as? [String: Any])
+        #expect(binding["featureID"] as? String == "summarize-note")
+        #expect(binding["interfaceDigest"] as? String == String(repeating: "a", count: 64))
+        #expect(selected["lane"] as? String == "appFeature")
+        #expect(wire["featureBackend"] == nil)
+        #expect(wire["target"] != nil)
+    }
+
+    @Test func scopedChildrenKeepFrozenContractWithoutForeignFeatureObservation() throws {
+        var definition = try stableScenario()
+        definition.coverage.appFeature = .required
+        definition.coverage.siri = .required
+        definition.checkMode = .behaviour
+        definition.requiredClaims = [
+            .executionCompleted, .returnedValueChecked, .applicationStateChecked
+        ]
+        definition.featureBinding = .init(
+            featureID: "summarize-note", interfaceDigest: String(repeating: "a", count: 64),
+            inputMapping: [.init(featureInputName: "noteID", value: .string("packing-001"))],
+            outputProjections: [.init(
+                name: "summary", type: .primitive(.string),
+                path: [.init(kind: .property, name: "summary")]
+            )]
+        )
+        definition.observationPlan?.append(.init(
+            id: "selectedNoteState", source: .uiElement,
+            operationID: nil, selector: "selectedNoteState"
+        ))
+        definition.observationPlan?.append(.init(
+            id: "feature.response", source: .testOnlyIntent,
+            operationID: "SummarizeNoteService", selector: nil
+        ))
+        definition.assertions.append(.init(
+            kind: .entityIdentifier, observationKey: "selectedNoteState",
+            expectedValue: .string("packing-001"), explanation: "Selected note state is visible.",
+            applicableLanes: [.appFeature, .intentIntegration, .siri]
+        ))
+        definition.assertions.append(.init(
+            kind: .returnedField, observationKey: "feature.response",
+            expectedValue: .string("Packing summary"), explanation: "Feature response is captured.",
+            applicableLanes: [.appFeature]
+        ))
+        let intentParameters = Dictionary(
+            definition.directControl.parameters.compactMap { parameter -> (String, ScenarioValue)? in
+                guard case .value(let value) = parameter.presence else { return nil }
+                return (parameter.name, value)
+            }, uniquingKeysWith: { first, _ in first }
+        )
+        definition.actionPolicyVersion = 1
+        definition.actionRequirements = [
+            .init(lane: .appFeature, kind: .productionService,
+                  operationID: "SummarizeNoteService",
+                  resolvedParameters: ["noteID": .string("packing-001")]),
+            .init(lane: .intentIntegration, kind: .productionIntent,
+                  operationID: definition.directControl.intentIdentifier,
+                  resolvedParameters: intentParameters),
+            .init(lane: .siri, kind: .productionIntent,
+                  operationID: definition.directControl.intentIdentifier,
+                  resolvedParameters: intentParameters),
+        ]
+        definition = try definition.frozen()
+        try ScenarioValidator.validate(definition)
+
+        for lane in [ScenarioLane.intentIntegration, .siri, .appFeature] {
+            let data = try XCTestRunInvocationTransport.scenarioPayload(
+                for: definition,
+                scope: .init(lane: lane, attempt: 1),
+                featureBackend: .projectLocalTestControl
+            )
+            let wire = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let observations = try #require(wire["observationPlan"] as? [[String: Any]])
+            let assertionWire = try #require(wire["assertions"] as? [[String: Any]])
+            let requirementWire = try #require(wire["actionRequirements"] as? [[String: Any]])
+            let coverage = try #require(wire["coverage"] as? [String: Any])
+            #expect(wire["definitionDigest"] as? String == definition.definitionDigest)
+            #expect(assertionWire.count == definition.assertions.count)
+            #expect(Set(requirementWire.compactMap { $0["lane"] as? String })
+                == Set(["appFeature", "intentIntegration", "siri"]))
+            let featureAssertion = try #require(assertionWire.first {
+                $0["observationKey"] as? String == "feature.response"
+            })
+            #expect(Set(featureAssertion["applicableLanes"] as? [String] ?? []) == ["appFeature"])
+            #expect(coverage["appFeature"] as? String == "required")
+            #expect(coverage["intentIntegration"] as? String == "required")
+            #expect(coverage["siri"] as? String == "required")
+            let observationIDs = observations.compactMap { $0["id"] as? String }
+            #expect(observationIDs.contains("selectedNoteID"))
+            #expect(observationIDs.contains("selectedNoteState"))
+            #expect(observationIDs.contains("feature.response") == (lane == .appFeature))
+            #expect((wire["featureBinding"] is [String: Any]) == (lane == .appFeature))
+        }
+    }
+
     @Test func reusableCapabilitiesFollowPlannedNativeRoutes() throws {
         var siriOnly = try stableScenario()
         siriOnly.coverage.intentIntegration = .notApplicable
@@ -105,6 +289,73 @@ struct ScenarioV3HarnessBridgeTests {
         )
         #expect(release.outcome != .passed)
         #expect(release.failures.contains { $0.contains("measurement or qualified environment provenance") })
+    }
+
+    @Test func importerRejectsClaimedPassWithWrongAppActionAndRetainsHonestFailure() throws {
+        var definition = try stableScenario()
+        definition.actionPolicyVersion = 1
+        definition.actionRequirements = [.init(
+            lane: .intentIntegration, kind: .productionIntent,
+            operationID: definition.directControl.intentIdentifier,
+            resolvedParameters: ["note": .entity(.init(
+                typeIdentifier: "NoteEntity", identifier: "packing-001"
+            ))]
+        )]
+        definition = try definition.frozen()
+        try ScenarioValidator.validate(definition)
+        let invocation = boundInvocation(for: definition)
+        let journal = executionJournal(for: definition, invocation: invocation)
+        var envelope = evidence(for: definition, invocation: invocation)
+        let now = Date()
+        let wrong = ScenarioActionReceipt(
+            executionID: UUID(), appSessionID: UUID(),
+            attemptContext: "intent-\(invocation.id.uuidString)",
+            lane: .intentIntegration, attempt: 1, kind: .productionIntent,
+            operationID: "AnotherIntent", resolvedParameters: [:],
+            terminalStatus: .succeeded, operationError: nil,
+            sequence: 1, startedAt: now, completedAt: now,
+            observationTransport: .accessibleUI
+        )
+        envelope.results[0].actionReceipts = [wrong]
+        let receiptEncoder = JSONEncoder()
+        receiptEncoder.dateEncodingStrategy = .iso8601
+        envelope.results[0].observations["intentlab.actionReceipts"] = .string(
+            String(decoding: try receiptEncoder.encode([wrong]), as: UTF8.self)
+        )
+        envelope.results[0].observationSources?["intentlab.actionReceipts"] = .accessibleUI
+        var ledger = ScenarioImportLedger()
+        #expect(throws: ScenarioEvidenceImportError.self) {
+            _ = try XCTestEvidenceImporter().importEvidence(
+                data: try encode(envelope), definition: definition, journal: journal,
+                artifactRoot: FileManager.default.temporaryDirectory, ledger: &ledger
+            )
+        }
+        #expect(ledger == ScenarioImportLedger())
+
+        envelope.results[0].outcome = .failed
+        envelope.results[0].actionFailureReason = .wrongAction
+        let retained = try XCTestEvidenceImporter().importEvidence(
+            data: try encode(envelope), definition: definition, journal: journal,
+            artifactRoot: FileManager.default.temporaryDirectory, ledger: &ledger
+        )
+        #expect(retained.executionStatus == .completed)
+        #expect(retained.laneResults[0].outcome == .failed)
+        #expect(retained.laneResults[0].actionFailureReason == .wrongAction)
+
+        var rawOnly = envelope
+        rawOnly.results[0].actionReceipts = nil
+        rawOnly.results[0].actionFailureReason = nil
+        rawOnly.results[0].outcome = .notObserved
+        var independentLedger = ScenarioImportLedger()
+        let derived = try XCTestEvidenceImporter().importEvidence(
+            data: try encode(rawOnly), definition: definition, journal: journal,
+            artifactRoot: FileManager.default.temporaryDirectory,
+            ledger: &independentLedger
+        )
+        #expect(derived.laneResults[0].outcome == .failed)
+        #expect(derived.laneResults[0].actionFailureReason == .wrongAction)
+        #expect(derived.laneResults[0].actionReceipts?.map(\.executionID) == [wrong.executionID])
+        #expect(derived.laneResults[0].actionReceipts?.map(\.operationID) == ["AnotherIntent"])
     }
 
     @Test func stableImportRejectsOtherDestinationAndMissingProductProvenance() throws {
