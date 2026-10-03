@@ -169,6 +169,7 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/ui-tests.xcresult" \
             -only-testing:FoundationEvalsUITests/FoundationEvalsUITests \
             -only-testing:FoundationEvalsUITests/IntentLabGuidanceUITests \
+            -only-testing:FoundationEvalsUITests/SimplificationUITests \
             -only-testing:FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration \
             -only-testing:FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence \
             CODE_SIGNING_ALLOWED=NO

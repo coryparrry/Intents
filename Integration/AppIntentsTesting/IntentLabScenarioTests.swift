@@ -579,10 +579,3 @@ final class IntentLabScenarioTests: XCTestCase {
         )
     }
 }
-
-private extension IntentLabValue {
-    var stringValue: String? {
-        if case .string(let value) = self { return value }
-        return nil
-    }
-}

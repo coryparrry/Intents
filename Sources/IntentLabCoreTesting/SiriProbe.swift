@@ -179,10 +179,6 @@ enum SiriProbe {
         return choice
     }
 
-    static func completionReady(promptIsVisible: Bool, observedContext: String?, expectedContext: String) -> Bool {
-        !promptIsVisible && observedContext == expectedContext
-    }
-
     static func waitTimeout(for safety: IntentLabSafety) -> TimeInterval {
         safety.deadlineSeconds
     }
@@ -328,7 +324,6 @@ enum SiriProbeError: LocalizedError {
     case unsupportedPlatform
     case permissionRequired
     case missingRequest
-    case fixtureUnavailable
     case outcomeNotObserved
     case invocationNotCorrelated
     var errorDescription: String? {
@@ -337,7 +332,6 @@ enum SiriProbeError: LocalizedError {
         case .unsupportedPlatform: "Siri UI automation requires an iOS destination."
         case .permissionRequired: "Siri permission or confirmation blocked this attempt. Approve the prompt on the device, then rerun. Remaining attempts were not started."
         case .missingRequest: "The approved Siri request is empty."
-        case .fixtureUnavailable: "The synthetic fixture did not expose its baseline observation."
         case .outcomeNotObserved: "Siri did not establish the declared visible outcome before the deadline."
         case .invocationNotCorrelated: "The application outcome was not correlated to this scenario attempt."
         }

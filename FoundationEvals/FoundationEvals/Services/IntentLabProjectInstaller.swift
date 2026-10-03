@@ -385,12 +385,38 @@ struct IntentLabProjectInstaller: Sendable {
     /// a parsed or generated JSON object because edits and byte order are significant.
     static func validateDeclaration(_ data: Data, targetBundleIdentifier: String,
                                     testTargetName: String) throws -> IntentLabValidatedDeclaration {
+        guard let shape = declarationShape(data),
+              shape.declaration["targetBundleIdentifier"] as? String == targetBundleIdentifier,
+              shape.declaration["targetIdentity"] as? String == testTargetName else {
+            throw IntentLabProjectInstallerError.unsupported(
+                "Choose a schema v1 declaration for this app and UI-test target with intent-lab-v2 support and complete capabilities."
+            )
+        }
+        let fixtureObserverIDs: Set<String> = ["intentlab.fixtureDigest", "summarySourceContentDigest"]
+        let hasFixtureContentObserver = shape.observers.contains {
+            guard let observerID = $0["id"] as? String else { return false }
+            return fixtureObserverIDs.contains(observerID)
+        }
+        return .init(id: shape.id, version: shape.version, targetBundleIdentifier: targetBundleIdentifier,
+                     targetIdentity: testTargetName, capabilities: shape.capabilities,
+                     hasFixtureContentObserver: hasFixtureContentObserver, digest: digest(data))
+    }
+
+    /// Only the common declaration shape lives here. Each entry point retains its
+    /// own selected-target or nonempty-identity policy and diagnostic.
+    private struct DeclarationShape {
+        let declaration: [String: Any]
+        let id: String
+        let version: String
+        let observers: [[String: Any]]
+        let capabilities: [String]
+    }
+
+    private static func declarationShape(_ data: Data) -> DeclarationShape? {
         guard let declaration = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               declaration["schemaVersion"] as? Int == 1,
               let id = declaration["id"] as? String, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let version = declaration["version"] as? String, !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              declaration["targetBundleIdentifier"] as? String == targetBundleIdentifier,
-              declaration["targetIdentity"] as? String == testTargetName,
               let projectIdentity = declaration["projectIdentity"] as? String,
               !projectIdentity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               (declaration["supportedHarnessProtocols"] as? [String])?.contains("intent-lab-v2") == true,
@@ -402,19 +428,9 @@ struct IntentLabProjectInstaller: Sendable {
               let capabilities = declaration["capabilities"] as? [String],
               !capabilities.isEmpty,
               capabilities.allSatisfy({ !$0.isEmpty && !$0.contains(where: \.isWhitespace) }),
-              Set(capabilities).count == capabilities.count else {
-            throw IntentLabProjectInstallerError.unsupported(
-                "Choose a schema v1 declaration for this app and UI-test target with intent-lab-v2 support and complete capabilities."
-            )
-        }
-        let fixtureObserverIDs: Set<String> = ["intentlab.fixtureDigest", "summarySourceContentDigest"]
-        let hasFixtureContentObserver = observers.contains {
-            guard let observerID = $0["id"] as? String else { return false }
-            return fixtureObserverIDs.contains(observerID)
-        }
-        return .init(id: id, version: version, targetBundleIdentifier: targetBundleIdentifier,
-                     targetIdentity: testTargetName, capabilities: capabilities,
-                     hasFixtureContentObserver: hasFixtureContentObserver, digest: digest(data))
+              Set(capabilities).count == capabilities.count else { return nil }
+        return .init(declaration: declaration, id: id, version: version,
+                     observers: observers, capabilities: capabilities)
     }
 
     /// The receipt matcher resolves workspace identities relative to the workspace's
@@ -423,11 +439,7 @@ struct IntentLabProjectInstaller: Sendable {
         let project = projectURL.standardizedFileURL.resolvingSymlinksInPath()
         guard let workspaceURL else { return project.lastPathComponent }
         let base = workspaceURL.standardizedFileURL.resolvingSymlinksInPath().deletingLastPathComponent()
-        let targetParts = project.pathComponents
-        let baseParts = base.pathComponents
-        let shared = zip(targetParts, baseParts).prefix { $0 == $1 }.count
-        return (Array(repeating: "..", count: baseParts.count - shared)
-            + targetParts.dropFirst(shared)).joined(separator: "/")
+        return relative(project, to: base)
     }
 
     private struct JournalEntry: Codable {
@@ -547,25 +559,15 @@ struct IntentLabProjectInstaller: Sendable {
             return manual(project, request: request, "The selected Xcode project has no project.pbxproj file.")
         }
         var document = try OpenStepProjectDocument(existing)
-        guard let declaration = try? JSONSerialization.jsonObject(with: request.declarationData) as? [String: Any],
-              declaration["schemaVersion"] as? Int == 1,
-              ["id", "version", "targetBundleIdentifier", "projectIdentity", "targetIdentity"]
-                .allSatisfy({ key in
-                    guard let value = declaration[key] as? String else { return false }
-                    return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                }),
-              (declaration["supportedHarnessProtocols"] as? [String])?.contains("intent-lab-v2") == true,
-              declaration["actions"] is [[String: Any]],
-              declaration["resultProjections"] is [[String: Any]],
-              declaration["preparationOperations"] is [String],
-              declaration["observers"] is [[String: Any]],
-              declaration["isolation"] is [String: Any],
-              let declaredCapabilities = declaration["capabilities"] as? [String],
-              !declaredCapabilities.isEmpty,
-              declaredCapabilities.allSatisfy({ !$0.isEmpty && !$0.contains(where: { $0.isWhitespace }) }),
-              Set(declaredCapabilities).count == declaredCapabilities.count else {
+        guard let shape = Self.declarationShape(request.declarationData),
+              ["targetBundleIdentifier", "targetIdentity"].allSatisfy({ key in
+                  guard let value = shape.declaration[key] as? String else { return false }
+                  return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              }) else {
             return manual(project, request: request, "The integration declaration needs schema v1 identity, intent-lab-v2 support, action and observation lists, isolation, and unique capabilities before setup can advertise build support.")
         }
+        let declaration = shape.declaration
+        let declaredCapabilities = shape.capabilities
         let hasLocalFeatureControls = (declaration["localFeatureControls"] as? [[String: Any]])?.isEmpty == false
         let hasReadinessKey = declaration["readinessControl"] != nil
         let readinessControl = declaration["readinessControl"] as? [String: Any]
@@ -767,7 +769,7 @@ struct IntentLabProjectInstaller: Sendable {
                                 declaredCapabilities: declaredCapabilities)
             try attachSources(to: &document, project: project, targetID: targetID,
                               targetName: targetName, mainGroup: mainGroup)
-            nextScheme = try scheme(existing: schemeData, project: project, scheme: request.scheme,
+            nextScheme = try scheme(existing: schemeData, project: project,
                                     appID: request.applicationTargetID, appName: appName,
                                     appProductName: appProductName,
                                     targetID: targetID, targetName: targetName,
@@ -1196,7 +1198,7 @@ struct IntentLabProjectInstaller: Sendable {
         return String(decoding: data, as: UTF8.self).dropFirst().dropLast().description
     }
 
-    private func relative(_ target: URL, to base: URL) -> String {
+    private static func relative(_ target: URL, to base: URL) -> String {
         let targetParts = target.standardizedFileURL.pathComponents
         let baseParts = base.standardizedFileURL.pathComponents
         let shared = zip(targetParts, baseParts).prefix { $0 == $1 }.count
@@ -1209,7 +1211,7 @@ struct IntentLabProjectInstaller: Sendable {
         let root = try PropertyListSerialization.propertyList(from: doc.data, format: nil) as! [String: Any]
         let objects = root["objects"] as! [String: [String: Any]]
         let packagePath = packageURL.isFileURL
-            ? relative(packageURL, to: project.deletingLastPathComponent()) : nil
+            ? Self.relative(packageURL, to: project.deletingLastPathComponent()) : nil
         let matchingReference = objects.first { _, object in
             if let packagePath {
                 return object["isa"] as? String == "XCLocalSwiftPackageReference"
@@ -1581,7 +1583,7 @@ struct IntentLabProjectInstaller: Sendable {
         )
     }
 
-    private func scheme(existing: Data?, project: URL, scheme: String, appID: String,
+    private func scheme(existing: Data?, project: URL, appID: String,
                         appName: String, appProductName: String,
                         targetID: String, targetName: String, schemeContainer: URL) throws -> Data {
         let xml: XMLDocument
@@ -1596,7 +1598,7 @@ struct IntentLabProjectInstaller: Sendable {
             $0.attribute(forName: "BlueprintIdentifier")?.stringValue == appID
         }
         let existingContainer = appReference?.attribute(forName: "ReferencedContainer")?.stringValue
-        let referenceContainer = existingContainer ?? "container:\(relative(project, to: schemeContainer))"
+        let referenceContainer = existingContainer ?? "container:\(Self.relative(project, to: schemeContainer))"
         let buildAction = root.elements(forName: "BuildAction").first ?? XMLElement(name: "BuildAction")
         if buildAction.parent == nil { root.addChild(buildAction) }
         let buildEntries = buildAction.elements(forName: "BuildActionEntries").first ?? XMLElement(name: "BuildActionEntries")
@@ -1612,7 +1614,7 @@ struct IntentLabProjectInstaller: Sendable {
                 let enabled = id == appID || attribute == "buildForTesting"
                 entry.addAttribute(XMLNode.attribute(withName: attribute, stringValue: enabled ? "YES" : "NO") as! XMLNode)
             }
-            entry.addChild(buildableReference(project: project, id: id, name: name,
+            entry.addChild(buildableReference(id: id, name: name,
                                               productName: productName, referenceContainer: referenceContainer))
             buildEntries.addChild(entry)
         }
@@ -1628,7 +1630,7 @@ struct IntentLabProjectInstaller: Sendable {
         if !existingIDs.contains(targetID) {
             let ref = XMLElement(name: "TestableReference")
             ref.addAttribute(XMLNode.attribute(withName: "skipped", stringValue: "NO") as! XMLNode)
-            ref.addChild(buildableReference(project: project, id: targetID, name: targetName,
+            ref.addChild(buildableReference(id: targetID, name: targetName,
                                             productName: "\(targetName).xctest",
                                             referenceContainer: referenceContainer))
             testables.addChild(ref)
@@ -1636,7 +1638,7 @@ struct IntentLabProjectInstaller: Sendable {
         return xml.xmlData(options: [.nodePrettyPrint])
     }
 
-    private func buildableReference(project: URL, id: String, name: String,
+    private func buildableReference(id: String, name: String,
                                     productName: String, referenceContainer: String) -> XMLElement {
         let buildable = XMLElement(name: "BuildableReference")
         for (key, value) in [("BuildableIdentifier", "primary"), ("BlueprintIdentifier", id),

@@ -1256,48 +1256,6 @@ final class ScenarioCoordinator {
         }
     }
 
-    /// Runs an already frozen batch case through the same admission and executor.
-    /// A collection supplies its own plan ID and coordinate IDs; neither the
-    /// selected suite nor the selected scenario is used as an execution input.
-    @discardableResult
-    func runFrozenExecution(
-        plan: ScenarioExecutionPlan,
-        definition: ScenarioDefinition,
-        configuration runConfiguration: XcodeTestConfiguration,
-        trusted: Bool
-    ) async -> ScenarioExecutionRecord? {
-        guard hasLoaded, !isRunning else {
-            notice = "Load Intent Lab and finish the current execution before running this batch case."
-            return nil
-        }
-        let ownerID = UUID()
-        do { try acquireExecutionOwner(ownerID) }
-        catch { notice = error.localizedDescription; return nil }
-        isRunning = true
-        cancellationRequested = false
-        finalEvidenceCommitStarted = false
-        defer {
-            executionAdmission.release(ownerID)
-            isRunning = false
-            finalEvidenceCommitStarted = false
-            executionTask = nil
-            activeFeatureRunID = nil
-        }
-        do {
-            let connection = try await executor.connectionForExecution(
-                definition: definition, configuration: runConfiguration, projectTrusted: trusted
-            )
-            try verify(plan: plan, definition: definition, connection: connection,
-                       configuration: runConfiguration)
-            return await executeStable(plan: plan, definition: definition,
-                                       configuration: runConfiguration, trusted: trusted,
-                                       connection: connection, ownerID: ownerID)
-        } catch {
-            notice = error.localizedDescription
-            return nil
-        }
-    }
-
     /// Repeats the selected record's saved requirements with a fresh plan and
     /// current checked build. Edits to the visible draft are never read here.
     @discardableResult
@@ -1500,7 +1458,7 @@ final class ScenarioCoordinator {
                 evidenceLaneResultID: acceptedRun.laneResults[0].id,
                 detail: acceptedRun.laneResults[0].diagnostic,
                 laneResult: acceptedRun.laneResults[0],
-                evidenceDigest: try Self.evidenceDigest(acceptedRun)
+                evidenceDigest: try ScenarioNativeRunEvidence.digest(acceptedRun)
             )
             try await checkpoint(plan: plan, records: progress.records)
             let record = try await persistence.finalizeExecutionRecord(plan: plan, records: progress.records)
@@ -2845,18 +2803,8 @@ final class ScenarioCoordinator {
             state: child.executionStatus == .completed ? .completed : .failedToExecute,
             evidenceRunID: finalized.id, evidenceLaneResultID: child.id,
             detail: child.diagnostic, laneResult: child,
-            evidenceDigest: try Self.evidenceDigest(finalized)
+            evidenceDigest: try ScenarioNativeRunEvidence.digest(finalized)
         )
-    }
-
-    private static func evidenceDigest(_ run: ScenarioRun) throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .iso8601
-        var immutableRun = run
-        immutableRun.acceptanceStatus = .pending
-        return SHA256.hash(data: try encoder.encode(immutableRun))
-            .map { String(format: "%02x", $0) }.joined()
     }
 
     func cancel() async {

@@ -1469,6 +1469,267 @@ struct IntentEvidenceBundleTests {
         #expect(throws: Error.self) { try IntentEvidenceBundle.read(fixture.bundle) }
     }
 
+    @Test func executionSealPreservesCanonicalBytesAndFailureBehavior() throws {
+        let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
+                                       executedTestCount: 1, xctestExitCode: 0)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var item = fixture.snapshot.cases[0]
+        let instant = Date(timeIntervalSince1970: 100.987654)
+        let values: [ScenarioValue] = [
+            .null, .string("café/東京"), .boolean(true), .integer(Int64.min), .number(1.25),
+            .date(.init(source: "today/明日", timeZoneIdentifier: "Europe/London", resolvedInstant: instant)),
+            .enumeration(.init(typeIdentifier: "type/é", caseIdentifier: "case/一")),
+            .entity(.init(typeIdentifier: "note/é", identifier: "id/一")),
+            .array([.null, .string("nested/東京"), .array([.boolean(false)])])
+        ]
+        var first = item.record.records[0]
+        first.detail = "café/東京"
+        first.laneResult?.startedAt = instant
+        first.laneResult?.completedAt = instant.addingTimeInterval(0.5)
+        for (index, value) in values.enumerated() {
+            first.laneResult?.observations["value/\(index)"] = value
+        }
+        var second = first
+        second.coordinate.id = UUID()
+        second.coordinate.repetition = 2
+        second.evidenceRunID = UUID()
+        second.evidenceLaneResultID = UUID()
+        let secondLaneResultID = try #require(second.evidenceLaneResultID)
+        second.laneResult?.id = secondLaneResultID
+        second.laneResult?.attempt = 2
+        item.plan.coordinates = [first.coordinate, second.coordinate]
+        let records = [second, first]
+        let empty = try ScenarioExecutionRecord.make(plan: item.plan, records: records, completedAt: instant)
+        #expect(empty.completedAt == instant)
+        #expect(empty.selectedAssessments == nil)
+        #expect(ScenarioCollectionService.hasValidSeal(empty))
+        let emptyBytes = try legacySealBytes(planID: item.plan.id, records: records, selectedAssessments: [])
+        #expect(empty.evidenceDigest == SHA256.hash(data: emptyBytes).map { String(format: "%02x", $0) }.joined())
+        var explicitEmpty = empty
+        explicitEmpty.selectedAssessments = []
+        #expect(ScenarioCollectionService.hasValidSeal(explicitEmpty))
+        #expect(try ScenarioExecutionRecord.canonicalSealBytes(
+            planID: item.plan.id, records: records, selectedAssessments: [])
+            == legacySealBytes(planID: item.plan.id, records: records, selectedAssessments: []))
+
+        let outputDigest = sha256("packing-001")
+        let projection = ScenarioSelectedAssessmentProjection(
+            scenarioRunID: try #require(first.evidenceRunID),
+            laneResultID: try #require(first.evidenceLaneResultID), caseID: first.coordinate.caseID,
+            lane: first.coordinate.lane, attempt: first.coordinate.repetition,
+            assertionID: UUID(), observationKey: "selectedNoteID", selectedAssessmentID: UUID(),
+            status: .passed, rawOutputDigest: outputDigest,
+            verifiedReferenceDigest: outputDigest, rubricDigest: outputDigest,
+            sourceBindingDigest: outputDigest, scoringContractDigest: outputDigest,
+            judgePolicyDigest: outputDigest, judgePromptVersion: "prompt/東京",
+            requestedJudgeModelID: "model/é", reportedJudgeModelID: nil, judgeConnectionID: nil
+        )
+        var other = projection
+        other.assertionID = UUID()
+        other.selectedAssessmentID = UUID()
+        let selected = [other, projection]
+        let sealed = try ScenarioExecutionRecord.make(
+            plan: item.plan, records: records, selectedAssessments: selected, completedAt: instant
+        )
+        let bytes = try ScenarioExecutionRecord.canonicalSealBytes(
+            planID: item.plan.id, records: records, selectedAssessments: selected
+        )
+        #expect(bytes == (try legacySealBytes(planID: item.plan.id, records: records,
+                                             selectedAssessments: selected)))
+        #expect(bytes == (try ScenarioExecutionRecord.canonicalSealBytes(
+            planID: item.plan.id, records: Array(records.reversed()),
+            selectedAssessments: Array(selected.reversed()))))
+        #expect(sealed.evidenceDigest == SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined())
+        #expect(ScenarioCollectionService.hasValidSeal(sealed))
+        var tampered = sealed
+        tampered.records[0].detail = "changed"
+        #expect(!ScenarioCollectionService.hasValidSeal(tampered))
+        tampered = sealed
+        tampered.records[0].laneResult?.observations["nonfinite"] = .number(.nan)
+        #expect(!ScenarioCollectionService.hasValidSeal(tampered))
+        #expect(throws: Error.self) {
+            try ScenarioExecutionRecord.make(plan: item.plan, records: tampered.records,
+                                             selectedAssessments: selected, completedAt: instant)
+        }
+        #expect(throws: Error.self) {
+            try ScenarioExecutionRecord.make(plan: item.plan, records: [first], completedAt: instant)
+        }
+    }
+
+    @Test func normalizedNativeRunDigestPreservesBytesAndDetectsTampering() throws {
+        let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
+                                       executedTestCount: 1, xctestExitCode: 0, siriOnly: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var run = fixture.snapshot.cases[0].runs[0]
+        run.startedAt = Date(timeIntervalSince1970: 100.987654)
+        run.laneResults[0].observations["unicode"] = .string("café/東京")
+        run.laneResults[0].artifacts = [.init(kind: .screenshot, filename: "é.png",
+            relativePath: "screens/東京.png", contentType: "image/png", byteCount: 10,
+            sha256: String(repeating: "a", count: 64))]
+        var normalized = run
+        normalized.acceptanceStatus = .pending
+        let expectedBytes = try encode(normalized)
+        let expectedDigest = SHA256.hash(data: expectedBytes).map { String(format: "%02x", $0) }.joined()
+        for status in [ScenarioRunAcceptanceStatus.pending, .accepted] {
+            run.acceptanceStatus = status
+            #expect(try ScenarioNativeRunEvidence.canonicalBytes(run) == expectedBytes)
+            #expect(try ScenarioNativeRunEvidence.digest(run) == expectedDigest)
+        }
+        for defect in ["output", "receipt", "cleanup", "artifact"] {
+            var changed = run
+            switch defect {
+            case "output": changed.laneResults[0].observations["selectedNoteID"] = .string("changed")
+            case "receipt": changed.laneResults[0].actionReceipts?[0].operationID = "ChangedIntent"
+            case "cleanup": changed.laneResults[0].cleanupVerified = false
+            case "artifact": changed.laneResults[0].artifacts[0].sha256 = String(repeating: "b", count: 64)
+            default: Issue.record("Unknown defect")
+            }
+            #expect(try ScenarioNativeRunEvidence.digest(changed) != expectedDigest)
+        }
+    }
+
+    @Test func comparisonPreservesDecisionsJSONAndExitCodesForValidatedInputs() throws {
+        let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
+                                       executedTestCount: 1, xctestExitCode: 0)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let baseline = try IntentEvidenceBundle.read(fixture.bundle)
+        let referenceTime = Date(timeIntervalSince1970: 100.875)
+        for variation in ["valid", "tampered", "partial", "incompatible"] {
+            var snapshot = fixture.snapshot
+            switch variation {
+            case "tampered": snapshot.cases[0].runs[0].laneResults[0].observations["selectedNoteID"] = .string("tampered/é")
+            case "partial": snapshot.cases[0].plan.purpose = .partialDiagnostic
+            case "incompatible": snapshot.cases[0].plan.profile.destinationIdentifier = "another-simulator"
+            default: break
+            }
+            let candidateURL = fixture.root.appending(path: "\(variation).intentlabrun")
+            try IntentEvidenceBundle.export(snapshot, to: candidateURL)
+            let candidate = try IntentEvidenceBundle.read(candidateURL)
+            let expected = try legacyComparison(baseline: baseline, candidate: candidate,
+                                                trusted: fixture.trusted, referenceTime: referenceTime)
+            let actual = try IntentEvidenceQualification.compare(
+                baseline: baseline, candidate: candidate, trusted: fixture.trusted,
+                baselineSource: "revision-a", candidateSource: "revision-a",
+                baselineAppDigest: String(repeating: "a", count: 64),
+                candidateAppDigest: String(repeating: "a", count: 64),
+                mode: .compareAppChanges, referenceTime: referenceTime
+            )
+            #expect(try encode(actual) == encode(expected))
+            let offline = try IntentEvidenceChecker.compare(
+                baseline: fixture.bundle, candidate: candidateURL, requirements: fixture.requirements,
+                baselineSource: "revision-a", candidateSource: "revision-a",
+                baselineAppDigest: String(repeating: "a", count: 64),
+                candidateAppDigest: String(repeating: "a", count: 64),
+                policy: IntentEvidenceChecker.policyID, mode: "app-change", referenceTime: referenceTime
+            )
+            let expectedExit: Int32 = !expected.incompleteEvidence.isEmpty || expected.comparable == false ? 20
+                : !expected.requiredFailures.isEmpty ? 10 : !expected.requirementsMet ? 20 : 0
+            #expect(offline.json == (try encode(expected)))
+            #expect(offline.exitCode == expectedExit)
+        }
+    }
+
+    @Test func comparisonPreservesBaselineFirstTrustErrorsAndMissingCaseRejection() throws {
+        let fixture = try fixtureBundle()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let valid = try IntentEvidenceBundle.read(fixture.bundle)
+        var invalidBaseline = valid
+        invalidBaseline.manifest.sourceRevision = "wrong-source"
+        var invalidCandidate = valid
+        invalidCandidate.cases[0].plan.appProductDigest = String(repeating: "9", count: 64)
+        var missing = valid
+        missing.cases = []
+        let referenceTime = Date(timeIntervalSince1970: 100.875)
+        for (baseline, candidate, failingInput) in [
+            (invalidBaseline, invalidCandidate, invalidBaseline),
+            (valid, invalidCandidate, invalidCandidate), (valid, missing, missing)
+        ] {
+            let expectedError = capturedError {
+                _ = try IntentEvidenceQualification.check(imported: failingInput, trusted: fixture.trusted,
+                    expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64),
+                    referenceTime: referenceTime)
+            }
+            let actualError = capturedError {
+                _ = try IntentEvidenceQualification.compare(baseline: baseline, candidate: candidate,
+                    trusted: fixture.trusted, baselineSource: "revision-a", candidateSource: "revision-a",
+                    baselineAppDigest: String(repeating: "a", count: 64),
+                    candidateAppDigest: String(repeating: "a", count: 64), mode: .compareAppChanges,
+                    referenceTime: referenceTime)
+            }
+            #expect(expectedError != nil)
+            #expect(actualError == expectedError)
+        }
+    }
+
+    private func capturedError(_ operation: () throws -> Void) -> String? {
+        do { try operation(); return nil }
+        catch { return String(reflecting: error) }
+    }
+
+    /// Independent copy of the pre-extraction seal wire shape and ordering.
+    private func legacySealBytes(planID: UUID, records: [ScenarioExecutionCoordinateRecord],
+                                 selectedAssessments: [ScenarioSelectedAssessmentProjection]) throws -> Data {
+        struct Seal: Encodable {
+            var planID: UUID
+            var records: [ScenarioExecutionCoordinateRecord]
+            var selectedAssessments: [ScenarioSelectedAssessmentProjection]
+        }
+        return try encode(Seal(planID: planID, records: records.sorted { $0.id.uuidString < $1.id.uuidString },
+            selectedAssessments: selectedAssessments.sorted {
+                "\($0.laneResultID.uuidString):\($0.assertionID.uuidString)"
+                    < "\($1.laneResultID.uuidString):\($1.assertionID.uuidString)"
+            }))
+    }
+
+    /// Frozen comparison orchestration, with public checks retaining their trust traversals.
+    private func legacyComparison(baseline: IntentEvidenceBundle.Imported,
+                                  candidate: IntentEvidenceBundle.Imported,
+                                  trusted: IntentEvidenceRequirements,
+                                  referenceTime: Date) throws -> IntentEvidenceDecisionPayload {
+        let appDigest = String(repeating: "a", count: 64)
+        let beforeDecision = try IntentEvidenceQualification.check(imported: baseline, trusted: trusted,
+            expectedSource: "revision-a", expectedAppDigest: appDigest, referenceTime: referenceTime)
+        var decision = try IntentEvidenceQualification.check(imported: candidate, trusted: trusted,
+            expectedSource: "revision-a", expectedAppDigest: appDigest, referenceTime: referenceTime)
+        decision.incompleteEvidence.append(contentsOf: beforeDecision.incompleteEvidence.map { "Baseline: \($0)" })
+        let before = Dictionary(uniqueKeysWithValues: baseline.cases.map { ($0.definition.id, $0) })
+        let after = Dictionary(uniqueKeysWithValues: candidate.cases.map { ($0.definition.id, $0) })
+        var comparisons: [ScenarioComparisonReport] = []
+        for requirement in trusted.cases.sorted(by: { $0.definition.id.uuidString < $1.definition.id.uuidString }) {
+            guard let lhs = before[requirement.definition.id], let rhs = after[requirement.definition.id] else {
+                if requirement.required {
+                    decision.incompleteEvidence.append("\(requirement.definition.id): Baseline or candidate case is missing.")
+                }
+                continue
+            }
+            let policy = rhs.plan.comparisonPolicy
+                ?? ScenarioComparisonPolicy(mode: .compareAppChanges, baselineRunID: lhs.plan.id)
+            var comparison = ScenarioExecutionComparison.compare(
+                baseline: .init(plan: lhs.plan, record: lhs.record, runs: lhs.runs,
+                    selectedAssessment: lhs.selectedAssessment, definition: lhs.definition),
+                candidate: .init(plan: rhs.plan, record: rhs.record, runs: rhs.runs,
+                    selectedAssessment: rhs.selectedAssessment, definition: rhs.definition), policy: policy)
+            let issues = [(lhs.plan.purpose == .partialDiagnostic, "Baseline is a partial diagnostic execution."),
+                          (rhs.plan.purpose == .partialDiagnostic, "Candidate is a partial diagnostic execution.")]
+                .compactMap { $0.0 ? $0.1 : nil }
+            if !issues.isEmpty {
+                comparison.isDirectlyComparable = false
+                comparison.qualificationIssues = (comparison.qualificationIssues ?? []) + issues
+                comparison.summary = (comparison.qualificationIssues ?? []).joined(separator: " ")
+            }
+            comparisons.append(comparison)
+            if requirement.required, !comparison.isDirectlyComparable {
+                decision.incompleteEvidence.append("\(requirement.definition.id): \(comparison.summary)")
+            }
+        }
+        decision.comparable = decision.incompleteEvidence.isEmpty && comparisons.count == trusted.cases.count
+            && comparisons.allSatisfy(\.isDirectlyComparable)
+        decision.comparisons = comparisons
+        decision.requirementsMet = decision.incompleteEvidence.isEmpty && decision.requiredFailures.isEmpty
+            && decision.comparable == true
+        return decision
+    }
+
     private struct Fixture {
         var root: URL
         var bundle: URL

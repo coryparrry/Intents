@@ -459,19 +459,22 @@ private struct ScenarioDeclaredScalarEditor: View {
                 set: { value = .string($0) }
             ))
         case .primitive(.boolean):
-            Toggle("Expected", isOn: Binding(
-                get: { if case .boolean(let item)? = value { item } else { false } },
-                set: { value = .boolean($0) }
+            Toggle("Expected", isOn: ScenarioExpectedValueBinding.scalar(
+                $value, default: false,
+                get: { if case .boolean(let item) = $0 { item } else { nil } },
+                wrap: ScenarioValue.boolean
             ))
         case .primitive(.integer):
-            TextField("Expected integer", value: Binding(
-                get: { if case .integer(let item)? = value { item } else { 0 } },
-                set: { value = .integer($0) }
+            TextField("Expected integer", value: ScenarioExpectedValueBinding.scalar(
+                $value, default: 0,
+                get: { if case .integer(let item) = $0 { item } else { nil } },
+                wrap: ScenarioValue.integer
             ), format: .number)
         case .primitive(.number):
-            TextField("Expected number", value: Binding(
-                get: { if case .number(let item)? = value { item } else { 0 } },
-                set: { value = .number($0) }
+            TextField("Expected number", value: ScenarioExpectedValueBinding.scalar(
+                $value, default: 0,
+                get: { if case .number(let item) = $0 { item } else { nil } },
+                wrap: ScenarioValue.number
             ), format: .number)
         case .primitive(.date):
             DatePicker("Expected date", selection: Binding(

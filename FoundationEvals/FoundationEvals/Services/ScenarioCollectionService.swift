@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 enum ScenarioCollectionService {
@@ -378,24 +377,10 @@ enum ScenarioCollectionService {
     }
 
     static func hasValidSeal(_ execution: ScenarioExecutionRecord) -> Bool {
-        struct Seal: Encodable {
-            var planID: UUID
-            var records: [ScenarioExecutionCoordinateRecord]
-            var selectedAssessments: [ScenarioSelectedAssessmentProjection]
-        }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .iso8601
-        let sorted = execution.records.sorted { $0.id.uuidString < $1.id.uuidString }
-        guard let data = try? encoder.encode(Seal(
-            planID: execution.planID, records: sorted,
-            selectedAssessments: ScenarioExecutionRecord.sortedAssessments(
-                execution.selectedAssessments ?? []
-            )
-        )) else {
-            return false
-        }
-        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        guard let digest = try? ScenarioExecutionRecord.sealDigest(
+            planID: execution.planID, records: execution.records,
+            selectedAssessments: execution.selectedAssessments ?? []
+        ) else { return false }
         return digest == execution.evidenceDigest
     }
 

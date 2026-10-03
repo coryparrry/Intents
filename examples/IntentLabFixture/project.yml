@@ -97,6 +97,8 @@ targets:
       - path: ../../Integration/AppIntentsTesting
         excludes:
           - README.md
+      - path: ../../Sources/IntentLabSiriBridge/SiriActivationBridge.m
+      - path: ../../Sources/IntentLabSiriBridge/include/SiriActivationBridge.h
     resources:
       - UITests/Generated
     dependencies:
@@ -104,7 +106,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.coryparry.IntentLabFixtureUITests
-        SWIFT_OBJC_BRIDGING_HEADER: ../../Integration/AppIntentsTesting/SiriActivationBridge.h
+        SWIFT_OBJC_BRIDGING_HEADER: ../../Sources/IntentLabSiriBridge/include/SiriActivationBridge.h
+        HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/../../Sources/IntentLabSiriBridge/include"]
         INTENT_LAB_HARNESS_VERSION: intent-lab-v1
         INTENT_LAB_HARNESS_CAPABILITIES: environment-payload fixture-reset invocation-correlation accessible-result direct-intent-output
         GENERATE_INFOPLIST_FILE: YES
