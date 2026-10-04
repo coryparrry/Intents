@@ -1,8 +1,9 @@
 # Intents showcase
 
-A static, responsive showcase of the current native Intents interface. The report,
-workflow trace, and Intent Lab examples are rendered as HTML and CSS, using the
-native app's icon assets, labels, design tokens, and recorded example outputs.
+A static, responsive Intents showcase with historical browser examples and a
+practical getting-started guide. The report, workflow trace, and Intent Lab
+examples use native icon assets, labels, and recorded outputs; they do not
+represent every control in current development source.
 
 All commands below run from the `website/` directory. From the repository root, enter it first:
 
@@ -50,7 +51,7 @@ source synchronization and publication.
 - Intent Lab: historical evidence from the real **PR54 physical read-only check**
   test fixture. The static demo predates suite Review and Batch runs; it does not
   show their current controls. These examples are not live model execution, Siri
-  calls, or device connections. Use the [current user guide](../docs/wiki/Home.md)
+  calls, or device connections. Use the [current user guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Home.md)
   for the merged workflows.
 - Reference direction: [Inspora](https://www.inspora.design/?category=Web), including
   its glassmorphism animation example: restrained depth, controlled transitions,
@@ -87,12 +88,21 @@ the app script. ResizeObserver supplies preview geometry without an immediate
 layout read.
 
 - `dist/robots.txt` permits crawlers and advertises the sitemap.
-- `dist/sitemap.xml` lists only the canonical HTML page. Update `lastmod` when
+- `dist/sitemap.xml` lists the homepage and getting-started HTML page. Update `lastmod` when
   its substantive content changes, not on every deployment.
 - `dist/llms.txt` is a concise reading guide following the optional llms.txt
   proposal. It is not an indexing requirement or a ranking guarantee.
 - `dist/index.html.md` is a linked Markdown product overview. Keep its facts
   and the JSON-LD consistent with the visible site and current product.
+- `dist/getting-started.html` and its Markdown alternate distinguish the
+  Foundation Evals v1.3.0 download from Intents development source, explain
+  a first evaluation, and link current source guides.
+- Sites serves that HTML at `/getting-started` and redirects its `.html` URL.
+  Canonical, sitemap and internal links use the extensionless public route.
+  A plain local static server may still require `/getting-started.html`.
+- Download facts were verified on 4 October 2026. Recheck published release
+  assets and the pending 1.4.0 PR before publishing or updating version copy.
+  Review, Batch runs, and Intent Lab are source capabilities, not v1.3.0 features.
 - `.openai/hosting.json` disables the homepage fallback for nonexistent URLs,
   so missing pages return HTTP 404 instead of duplicate homepage content.
 - Alternate and canonical links are in the HTML head. Sites serves the text
@@ -104,6 +114,10 @@ For anonymous production delivery checks after publication:
 ```sh
 node scripts/check-discovery.mjs
 ```
+
+For local delivery verification, start the static server above and run
+`node scripts/check-discovery.mjs --base http://127.0.0.1:4173/` in another terminal.
+The canonical and sitemap URLs must still refer to the public Site.
 
 Public Sites access is required. The checks use representative crawler
 user-agent headers; they do not prove visits from real crawler IPs, indexing,

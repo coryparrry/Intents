@@ -49,7 +49,7 @@ test('recorded trace has 13 unique spans with bounded expanded-scale bars', () =
 test('local assets and section links in the published HTML resolve', () => {
   const html = readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
   for(const [,path] of html.matchAll(/(?:src|href)="(\/[^"#]+)(?:#[^"]*)?"/g)) {
-    assert.ok(existsSync(fileURLToPath(new URL(`../dist${path}`,import.meta.url))),path);
+    assert.ok(existsSync(fileURLToPath(new URL(`../dist${path === '/getting-started' ? '/getting-started.html' : path}`,import.meta.url))),path);
   }
   const ids = new Set([...html.matchAll(/id="([^"]+)"/g)].map(match => match[1]));
   for(const [,id] of html.matchAll(/href="#([^"]+)"/g)) assert.ok(ids.has(id),id);
