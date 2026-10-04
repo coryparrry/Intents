@@ -21,6 +21,10 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 # Keep only the public guides and release instructions.
 /docs/*
 !/docs/EVAL_REVIEW_SPEC.md
+!/docs/EVAL_REVIEW_GUIDE.md
+!/docs/MCP_CONTROL_GUIDE.md
+!/docs/DEVELOPER_SWIFT_INTEGRATION.md
+!/docs/FEATURE_ADAPTER.md
 !/docs/PRODUCTION_EVALS_SPEC.md
 !/docs/PRODUCTION_EVALS_GUIDE.md
 !/docs/MCP_CONTROL_SPEC.md

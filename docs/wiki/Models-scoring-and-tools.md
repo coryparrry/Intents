@@ -67,3 +67,9 @@ If a feature is unavailable for the provider, read the message in Setup or Run r
 For an AI rubric, **Setup → Scoring** can use the subject model or an independent judge. Add a judge connection in **Intents → Settings → Judges**. Then use the connection's test action. This sends a small test request without evaluation evidence.
 
 An external judge receives the evidence that it needs to score a response. The app shows a disclosure and asks for approval before this transfer. Read that disclosure before you approve it. Intents keeps judge keys in the macOS Keychain.
+
+## Validate an external judge
+
+Use [Review and judge checks](Review-and-judge-checks.md) to label saved successes and failures, keep Development and Held-out examples separate, and replay a configured judge. Check false acceptance, false rejection, and unavailable examples before using judgments in a release decision. Evidence-transfer approval still applies.
+
+Judge API keys are bound to the saved connection ID, provider, and exact endpoint. Re-enter an older unbound key in judge settings before use. Changing the provider or endpoint requires key re-entry; changing only the model does not. Keys stay out of frozen batch configuration and evidence exports.
