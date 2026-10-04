@@ -78,6 +78,8 @@ RELEASE_VALIDATION = {
     "script.tests.test_release_dispatch",
 }
 PYTHON_DEPENDENCIES = {
+    "script/update_homebrew.py": {"script.tests.test_update_homebrew"},
+    ".github/workflows/update-homebrew.yml": {"script.tests.test_update_homebrew"},
     "script/check_fixture_shortcut_metadata.py": {"script.tests.test_fixture_shortcut_metadata"},
     "script/release_pr.py": {"script.tests.test_release_pr"},
     "script/release_notes.py": {"script.tests.test_release_notes"},
@@ -101,7 +103,7 @@ PYTHON_DEPENDENCIES = {
         "script.tests.test_wait_release_ci",
     },
     ".github/workflows/package-installer.yml": RELEASE_VALIDATION
-    | {"script.tests.test_wait_release_ci"},
+    | {"script.tests.test_wait_release_ci", "script.tests.test_update_homebrew"},
     ".github/workflows/release.yml": RELEASE_VALIDATION,
 }
 FULL_COVERAGE_PATHS = {
