@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.4.0](https://github.com/coryparrry/Intents/compare/v1.3.0...v1.4.0) (2026-10-03)
+
+
+### Features
+
+* automate Siri route checks with an XCTest-only runner ([8d1b0d8](https://github.com/coryparrry/Intents/commit/8d1b0d82acde907e3084aad833eca202370df709))
+* **brand:** rename Foundation Evals to Intents across the app and release experience ([27741da](https://github.com/coryparrry/Intents/commit/27741dac23b71a6d7815dbec8a659ba02d13a2c4))
+* compare stable Intent Lab requirements across app rebuilds ([a760d1f](https://github.com/coryparrry/Intents/commit/a760d1fcf6fd4767dac6b8117fa1ab00ad75345b))
+* **evals:** run resumable batches and control evaluations through MCP ([5008e16](https://github.com/coryparrry/Intents/commit/5008e167495ef18b5648576fa5a4876fcdcbd22c))
+* guide connected app checks through the current Intent Lab interface ([c28dd28](https://github.com/coryparrry/Intents/commit/c28dd28e1cb2d6b1570a96683081cc7a409b4503))
+* **intent-lab:** add reusable App Intents test integrations ([35c647c](https://github.com/coryparrry/Intents/commit/35c647c2d07979ecb98dada316939b7aca6cbfd8))
+* **intent-lab:** add scenario evaluation and project release reporting ([9e2c318](https://github.com/coryparrry/Intents/commit/9e2c3186ab01b565bb5b0b2ec8ba8ea7a894aa31))
+* **intent-lab:** guide app checks and show observed route outcomes ([b4c0a7f](https://github.com/coryparrry/Intents/commit/b4c0a7f38501813cf8fe8098c64cb8a137f89a4b))
+* **intent-lab:** keep developer checks comparable across app fixes and routes ([b69d7ce](https://github.com/coryparrry/Intents/commit/b69d7ce37efee3c8f2eabb9028688c9fe59a7555))
+* **intent-lab:** retain regression collections and scoped reruns ([b4c0a7f](https://github.com/coryparrry/Intents/commit/b4c0a7f38501813cf8fe8098c64cb8a137f89a4b))
+* **intent-lab:** verify saved evidence offline against trusted requirements ([b69d7ce](https://github.com/coryparrry/Intents/commit/b69d7ce37efee3c8f2eabb9028688c9fe59a7555))
+* review saved evaluation outputs, track failure patterns, and create verified regression cases ([a4e593d](https://github.com/coryparrry/Intents/commit/a4e593d6eb2d0e69e515fd4f4649b13ea4983c7b))
+* **site:** add an interactive showcase with recorded Intents app examples ([2477e15](https://github.com/coryparrry/Intents/commit/2477e157ce0a5a8b57cc905d33b0ab868c92a261))
+* **ui:** redesign the workspace with native toolbar navigation and a unified visual style ([5d2b98e](https://github.com/coryparrry/Intents/commit/5d2b98e92a1f7dd28c5a8a9d48a13d45e3cb61dc))
+
+
+### Bug Fixes
+
+* **brand:** restore the established Intents social preview layout ([b60b097](https://github.com/coryparrry/Intents/commit/b60b097d9489160e9148928f7115166242138453))
+* **evals:** bind judge credentials and require coherent approved release evidence ([5008e16](https://github.com/coryparrry/Intents/commit/5008e167495ef18b5648576fa5a4876fcdcbd22c))
+* **intent-lab:** reject incomplete scenario release evidence ([9e2c318](https://github.com/coryparrry/Intents/commit/9e2c3186ab01b565bb5b0b2ec8ba8ea7a894aa31))
+* **intent-lab:** select Siri choices with symbol-prefixed app attribution ([9e2c318](https://github.com/coryparrry/Intents/commit/9e2c3186ab01b565bb5b0b2ec8ba8ea7a894aa31))
+* keep CLI credentials explicit for custom endpoints and reject redirects ([301ac1a](https://github.com/coryparrry/Intents/commit/301ac1a0ac89e14f48a8b9ffd51db96bbdc75eb8))
+* preserve suite decisions and history across repository and recovery failures ([301ac1a](https://github.com/coryparrry/Intents/commit/301ac1a0ac89e14f48a8b9ffd51db96bbdc75eb8))
+* reject DTD-bearing project previews before XML entity expansion ([301ac1a](https://github.com/coryparrry/Intents/commit/301ac1a0ac89e14f48a8b9ffd51db96bbdc75eb8))
+* **site:** keep copy feedback with the current response ([2477e15](https://github.com/coryparrry/Intents/commit/2477e157ce0a5a8b57cc905d33b0ab868c92a261))
+* **site:** stop active transitions when motion is paused ([2477e15](https://github.com/coryparrry/Intents/commit/2477e157ce0a5a8b57cc905d33b0ab868c92a261))
+* **ui:** explain evaluation controls, comparison coverage, and workflow timing ([3947e78](https://github.com/coryparrry/Intents/commit/3947e785b975e3b3d45b58f6ef65f6da5b7cc5af))
+* verify executed actions in intent lab results ([890ab6b](https://github.com/coryparrry/Intents/commit/890ab6b32ca1fd4c00647547140173e577d48b49))
+* verify native Mac bundle resources and product fingerprints consistently ([301ac1a](https://github.com/coryparrry/Intents/commit/301ac1a0ac89e14f48a8b9ffd51db96bbdc75eb8))
+
 ## [1.3.0](https://github.com/coryparrry/Intents/compare/v1.2.0...v1.3.0) (2026-09-19)
 
 
