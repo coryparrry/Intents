@@ -33,7 +33,7 @@ extension AppAutomationStore {
             }
             let baseline: AutomationPreparedApplication?
             if matches.count == 1 { baseline = matches[0] }
-            else if matches.isEmpty, (fields["ui.preparedHostDigest"] != nil || frozen.plan.preparedMacBuildArtifacts != nil),
+            else if matches.isEmpty, (fields["ui.preparedHostDigest"] != nil || frozen.plan.preparedMacBuildArtifacts != nil || frozen.plan.preparedSimulatorBuildArtifacts != nil),
                     let retained = try? await loadRetainedPreparation(app: frozen.plan.app),
                     AutomationNativeUIRuntime.preparedEvidenceMatches(plan: frozen.plan, prepared: retained) { baseline = retained }
             else { baseline = nil }

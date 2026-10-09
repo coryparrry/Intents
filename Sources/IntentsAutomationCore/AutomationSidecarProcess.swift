@@ -1,13 +1,6 @@
 #if os(macOS) || os(Linux)
 import Foundation
 
-private actor AutomationPipeWriter {
-    let handle: FileHandle
-    init(_ handle: FileHandle) { self.handle = handle }
-    func write(_ data: Data) throws { try handle.write(contentsOf: data) }
-    func close() { try? handle.close() }
-}
-
 /// Owns one packaged Node child; never uses a shell or inherits the user's environment.
 public actor AutomationSidecarProcess {
     public struct Configuration: Sendable {
@@ -54,7 +47,7 @@ public actor AutomationSidecarProcess {
                                               attributes: [.posixPermissions: 0o700])
         guard configuration.stateDirectory.path == (try AutomationPath.canonical(configuration.stateDirectory)).path else { throw AutomationContractError.invalidIdentity }
         input = Pipe(); output = Pipe(); diagnostics = Pipe()
-        writer = AutomationPipeWriter(input.fileHandleForWriting)
+        writer = try AutomationPipeWriter(input.fileHandleForWriting)
         let pipeWriter = writer
         rpc = AutomationRPC(send: { data in try await pipeWriter.write(data) }, reverse: reverse)
         process = Process()

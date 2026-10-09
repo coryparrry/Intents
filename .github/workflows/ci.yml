@@ -84,6 +84,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Provision verified runtime for portable automation fixtures
+        if: needs.changes.outputs.swift_suites != '[]'
+        run: python3 Tools/IntentsAutomation/scripts/provision_runtime.py
       - name: Run selected portable Swift suites
         if: needs.changes.outputs.swift_suites != '[]'
         env:

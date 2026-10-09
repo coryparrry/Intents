@@ -220,6 +220,7 @@ public actor AutomationApplicationRunner {
         let release = AutomationSimulatorReleaseVerifier(developerDirectory: developerDirectory, workspace: root)
         let verifier = AutomationInstalledSubjectVerifier(developerDirectory: developerDirectory, workspace: root)
         var ownsBoot = false
+        var ownedBootCleanupAttempted = false
         var executionStarted = false
         var reservedCampaign = false
         do {
@@ -263,11 +264,14 @@ public actor AutomationApplicationRunner {
         } else if let apple { driver = apple }
         else { throw AutomationContractError.missingEvidence("Installed UI-only checks require the signed UI runtime") }
         executionStarted = true
-        var report = try await AutomationCoordinator(leases: leases, journal: journal).run(plan: plan, approval: approval,
+        var report = try await AutomationCoordinator(leases: leases, journal: journal, cleanupTimeout: .seconds(90),
+            releaseCampaignOnCompletion: !ownsBoot).run(plan: plan, approval: approval,
             capabilities: capabilities, attemptID: attemptID, driver: driver, fixtureTracker: fixtureTracker, qualificationFence: qualificationFence)
         if ownsBoot && report.resourcesReleased {
+            ownedBootCleanupAttempted = true
             let shutDown = await Task.detached { await self.shutDownOwnedSimulator(approval: approval, attemptID: attemptID, root: root, journal: journal, release: release, campaignBudget: campaignBudget) }.value
-            if !shutDown {
+            if shutDown { ownsBoot = false; reservedCampaign = false }
+            else {
                 report.resourcesReleased = false; report.result.summary = .unresolved
                 report.result.assessed = false; report.result.evidenceComplete = false
             }
@@ -296,7 +300,11 @@ public actor AutomationApplicationRunner {
         return report
         } catch {
             var bootReleased = !ownsBoot
-            if ownsBoot { bootReleased = await Task.detached { await self.shutDownOwnedSimulator(approval: approval, attemptID: attemptID, root: root, journal: journal, release: release, campaignBudget: campaignBudget) }.value }
+            if ownsBoot && !ownedBootCleanupAttempted {
+                ownedBootCleanupAttempted = true
+                bootReleased = await Task.detached { await self.shutDownOwnedSimulator(approval: approval, attemptID: attemptID, root: root, journal: journal, release: release, campaignBudget: campaignBudget) }.value
+                if bootReleased { ownsBoot = false; reservedCampaign = false }
+            }
             let uncertain = error as? AutomationContractError == .terminationUnverified
             if reservedCampaign && bootReleased && !uncertain { try? await leases.releaseCampaign(runID: approval.runID, target: approval.target) }
             if !executionStarted {
