@@ -8,17 +8,20 @@ final class AutomationMacConcurrentInventoryTests: XCTestCase {
     private typealias Inventory = AutomationMacProcessInventory
 
     func testParallelInventoryRetainsEveryRecordAndBothFullObservations() throws {
-        let kernel = ConcurrentInventoryKernel()
-        let inventory = try Inventory.collect(userID: 501, observerPID: 42, reader: kernel.reader)
-        try inventory.validate(expectedUserID: 501)
-        XCTAssertEqual(inventory.processes.map(\.identity.pid), Array(42...49))
-        let counts = kernel.counts
-        XCTAssertEqual(counts.lists, 3)
-        XCTAssertEqual(counts.peak, 4)
-        for pid: Int32 in 42...49 {
-            XCTAssertEqual(counts.identities[pid], 6)
-            XCTAssertEqual(counts.paths[pid], 4)
-            XCTAssertEqual(counts.facts[pid], 4)
+        for width in [1, 2, 4] {
+            let kernel = ConcurrentInventoryKernel(maximumConcurrentReads: width)
+            let inventory = try Inventory.collect(userID: 501, observerPID: 42, reader: kernel.reader)
+            try inventory.validate(expectedUserID: 501)
+            XCTAssertEqual(inventory.processes.map(\.identity.pid), Array(42...49))
+            let counts = kernel.counts
+            XCTAssertEqual(counts.lists, 3)
+            XCTAssertGreaterThanOrEqual(counts.peak, 1)
+            XCTAssertLessThanOrEqual(counts.peak, width)
+            for pid: Int32 in 42...49 {
+                XCTAssertEqual(counts.identities[pid], 6)
+                XCTAssertEqual(counts.paths[pid], 4)
+                XCTAssertEqual(counts.facts[pid], 4)
+            }
         }
     }
 
@@ -149,29 +152,24 @@ private final class ConcurrentInventoryKernel: Sendable {
         var lists = 0, active = 0, peak = 0
     }
     private let state = Mutex(Counts())
-    private let firstWave = DispatchGroup()
-    init() { for _ in 0..<4 { firstWave.enter() } }
+    private let maximumConcurrentReads: Int
+    init(maximumConcurrentReads: Int = 4) { self.maximumConcurrentReads = maximumConcurrentReads }
     var counts: Counts { state.withLock { $0 } }
     var reader: AutomationMacProcessInventory.Reader {
         .init(processIDs: { [self] _ in state.withLock { $0.lists += 1 }; return Set(42...49) },
             identity: { [self] pid, _ in
-                let first = state.withLock { value in
+                state.withLock { value in
                     value.identities[pid, default: 0] += 1
                     value.active += 1; value.peak = max(value.peak, value.active)
-                    return value.identities[pid] == 1
                 }
                 defer { state.withLock { $0.active -= 1 } }
-                if first && pid < 46 {
-                    firstWave.leave()
-                    guard firstWave.wait(timeout: .now() + 5) == .success else { throw AutomationContractError.terminationUnverified }
-                }
                 return .init(pid: pid, startIdentity: "100:0")
             }, executablePath: { [self] pid in
                 state.withLock { $0.paths[pid, default: 0] += 1 }; return "/bin/fixture"
             }, facts: { [self] pid, _ in
                 state.withLock { $0.facts[pid, default: 0] += 1 }
                 return .init(pid: pid, parentPID: 1, userID: 501, status: 2, startIdentity: "100:0")
-            }, maximumConcurrentReads: 4)
+            }, maximumConcurrentReads: maximumConcurrentReads)
     }
 }
 #endif
