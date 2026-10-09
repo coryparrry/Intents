@@ -23,20 +23,35 @@ public struct AutomationFixComparisonReport: Codable, Equatable, Sendable {
 public enum AutomationFixContract {
 #if os(macOS)
     public static func candidate(from baseline: AutomationFrozenCase, prepared: AutomationPreparedApplication) throws -> AutomationFrozenCase {
-        guard let before = baseline.plan.preparedMacBuildArtifacts, prepared.host.target == baseline.plan.target else {
-            throw AutomationContractError.missingEvidence("Review a versioned prepared Mac case before comparing rebuilt associated hosts")
-        }
-        let artifacts = try AutomationPreparedMacBuildArtifacts(prepared: prepared)
-        guard before.hostTemplateDigest == artifacts.hostTemplateDigest, before.catalogSurfaceDigest == artifacts.catalogSurfaceDigest else {
-            throw AutomationContractError.invalidPlan("Fix comparison changed the associated-host template or declared catalog surface")
-        }
-        let unchanged = try candidate(from: baseline, app: prepared.host.app)
-        var plan = unchanged.plan; plan.preparedMacBuildArtifacts = artifacts
+        guard prepared.host.target == baseline.plan.target else { throw AutomationContractError.conflictingOperation }
+        var plan = try candidatePlan(from: baseline, app: prepared.host.app)
+        if let before = baseline.plan.preparedMacBuildArtifacts {
+            let artifacts = try AutomationPreparedMacBuildArtifacts(prepared: prepared)
+            guard before.hostTemplateDigest == artifacts.hostTemplateDigest, before.catalogSurfaceDigest == artifacts.catalogSurfaceDigest else {
+                throw AutomationContractError.invalidPlan("Fix comparison changed the host template or declared catalog surface")
+            }
+            plan.preparedMacBuildArtifacts = artifacts
+        } else if let before = baseline.plan.preparedSimulatorBuildArtifacts {
+            let artifacts = try AutomationPreparedSimulatorBuildArtifacts(prepared: prepared)
+            guard before.hostTemplateDigest == artifacts.hostTemplateDigest, before.catalogSurfaceDigest == artifacts.catalogSurfaceDigest else {
+                throw AutomationContractError.invalidPlan("Fix comparison changed the host template or declared catalog surface")
+            }
+            plan.preparedSimulatorBuildArtifacts = artifacts
+            if plan.provenance["catalog"] != nil { plan.provenance["catalog"] = artifacts.catalogDigest }
+        } else { throw AutomationContractError.missingEvidence("Review a versioned prepared case before comparing rebuilt hosts") }
         let candidate = try AutomationFrozenCase(plan: plan)
         try validate(baseline: baseline, candidate: candidate); return candidate
     }
 #endif
     public static func candidate(from baseline: AutomationFrozenCase, app: AppIdentity) throws -> AutomationFrozenCase {
+        guard baseline.plan.preparedMacBuildArtifacts == nil, baseline.plan.preparedSimulatorBuildArtifacts == nil,
+              baseline.plan.provenance["ui.preparedHostDigest"] == nil else {
+            throw AutomationContractError.missingEvidence("Select the rebuilt prepared artifacts with the changed app")
+        }
+        let candidate = try AutomationFrozenCase(plan: candidatePlan(from: baseline, app: app))
+        try validate(baseline: baseline, candidate: candidate); return candidate
+    }
+    private static func candidatePlan(from baseline: AutomationFrozenCase, app: AppIdentity) throws -> AutomationCase {
         try baseline.validate()
         guard baseline.plan.target.kind != .physical, baseline.plan.app.productDigest != nil,
               app.logicalID == baseline.plan.app.logicalID, app.bundleID == baseline.plan.app.bundleID,
@@ -46,8 +61,7 @@ public enum AutomationFixContract {
               app.productDigest != baseline.plan.app.productDigest,
               (app.productDigestVersion ?? 1) == (baseline.plan.app.productDigestVersion ?? 1) else { throw AutomationContractError.invalidPlan("Select a separately built changed app") }
         var plan = baseline.plan; plan.app = app; plan.revision += 1
-        let candidate = try AutomationFrozenCase(plan: plan)
-        try validate(baseline: baseline, candidate: candidate); return candidate
+        return plan
     }
     public static func validate(baseline: AutomationFrozenCase, candidate: AutomationFrozenCase) throws {
         try baseline.validate(); try candidate.validate()

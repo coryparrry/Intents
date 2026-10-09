@@ -139,11 +139,12 @@ final class AppAutomationStore {
         selectedURL.map { ["xcodeproj", "xcworkspace"].contains($0.pathExtension.lowercased()) ? $0.deletingLastPathComponent() : $0 }
     }
     private var hasSecurityScope = false
-    private var closing = false
+    var closing = false
     private var task: Task<Void, Never>?
-    private var commandRequests: [UUID: AutomationNativeCommandStatus] = [:]
-    private var pendingCommand: UUID?
-    private var activeCommand: UUID?
+    var commandRequests: [UUID: AutomationNativeCommandStatus] = [:]
+    var commandHistory = AutomationCommandHistory()
+    var pendingCommand: UUID?
+    var activeCommand: UUID?
     var pendingCommandStatus: AutomationNativeCommandStatus? { pendingCommand.flatMap { commandRequests[$0] } }
     let support: URL
     private let preparation = AutomationPreparation()
@@ -833,21 +834,6 @@ final class AppAutomationStore {
             effects: request.approval.effects.map(\.rawValue).sorted(), maximumActions: request.approval.maximumActions,
             installApproved: request.installApproved, disposable: request.approval.disposable)
     }
-    /// A remote request can only queue native confirmation. It cannot mint approval.
-    func requestCommand(id: UUID, digest: String) throws -> AutomationNativeCommandStatus {
-        guard !closing else { throw AutomationContractError.targetBusy }
-        if let existing = commandRequests[id] {
-            guard existing.digest == digest, existing.kind == nil else { throw AutomationContractError.conflictingOperation }
-            return existing
-        }
-        guard pendingCommand == nil, commandRequests.count < 50 else { throw AutomationContractError.targetBusy }
-        let preview = try previewCommand()
-        guard preview.digest == digest else { throw AutomationContractError.conflictingOperation }
-        let status = AutomationNativeCommandStatus(requestID: id, digest: digest, state: "awaitingApproval")
-        commandRequests[id] = status; pendingCommand = id
-        message = "An execution request is ready. Review the selected app, inputs and effects, then confirm Run."
-        return status
-    }
     func previewReproductionCommand() async throws -> AutomationNativeReproductionPreview {
         guard canReproduceSavedFailure else { throw AutomationContractError.targetBusy }
         let request = try await makeReproductionRequest(runID: "preview")
@@ -857,24 +843,25 @@ final class AppAutomationStore {
             originalAttemptID: request.proposal.originalAttemptID, requestedAttempts: 5,
             installApproved: request.installApproved, disposable: request.proposal.approval.disposable)
     }
-    func requestReproductionCommand(id: UUID, digest: String) async throws -> AutomationNativeCommandStatus {
+    func requestReproductionCommand(id: UUID, digest: String, nativeConfirmation: Bool = false) async throws -> AutomationNativeCommandStatus {
         guard !closing else { throw AutomationContractError.targetBusy }
+        guard nativeConfirmation || !commandHistory.isNative(id) else { throw AutomationContractError.conflictingOperation }
         if let existing = commandRequests[id] {
             guard existing.digest == digest, existing.kind == .reproduction else { throw AutomationContractError.conflictingOperation }
             return existing
         }
-        guard pendingCommand == nil, !busy, commandRequests.count < 50 else { throw AutomationContractError.targetBusy }
+        guard pendingCommand == nil, !busy, commandHistory.canAdmit(id, nativeConfirmation: nativeConfirmation, requests: commandRequests) else { throw AutomationContractError.targetBusy }
         let preview = try await previewReproductionCommand()
         // Durable reads suspend; an identical request may have queued meanwhile.
         if let existing = commandRequests[id] {
             guard existing.digest == digest, existing.kind == .reproduction else { throw AutomationContractError.conflictingOperation }
             return existing
         }
-        guard !closing, !busy, pendingCommand == nil, commandRequests.count < 50,
+        guard !closing, !busy, pendingCommand == nil, commandHistory.canAdmit(id, nativeConfirmation: nativeConfirmation, requests: commandRequests),
               preview.digest == digest else { throw AutomationContractError.conflictingOperation }
         let status = AutomationNativeCommandStatus(requestID: id, digest: digest, state: "awaitingApproval", kind: .reproduction,
             originalAttemptID: preview.originalAttemptID, caseID: preview.caseID, revision: preview.revision, caseDigest: preview.caseDigest)
-        commandRequests[id] = status; pendingCommand = id
+        commandRequests[id] = status; pendingCommand = id; commandHistory.admitted(id)
         message = "Review the saved failure and confirm Reproduce failure to run its frozen case five times."
         return status
     }
@@ -888,20 +875,21 @@ final class AppAutomationStore {
             beforeProductDigest: request.before.app.productDigest!, afterProductDigest: request.after.app.productDigest!,
             originalAttemptID: request.originalAttemptID, requestedAttemptsPerBuild: 30, installApproved: request.before.target.kind == .simulator, disposable: proposal.beforeApproval.disposable)
     }
-    func requestComparisonCommand(id: UUID, digest: String) async throws -> AutomationNativeCommandStatus {
+    func requestComparisonCommand(id: UUID, digest: String, nativeConfirmation: Bool = false) async throws -> AutomationNativeCommandStatus {
         guard !closing else { throw AutomationContractError.targetBusy }
+        guard nativeConfirmation || !commandHistory.isNative(id) else { throw AutomationContractError.conflictingOperation }
         if let existing = commandRequests[id] {
             guard existing.digest == digest, existing.kind == .fixComparison else { throw AutomationContractError.conflictingOperation }; return existing
         }
-        guard pendingCommand == nil, !busy, commandRequests.count < 50 else { throw AutomationContractError.targetBusy }
+        guard pendingCommand == nil, !busy, commandHistory.canAdmit(id, nativeConfirmation: nativeConfirmation, requests: commandRequests) else { throw AutomationContractError.targetBusy }
         let preview = try await previewComparisonCommand()
         if let existing = commandRequests[id] {
             guard existing.digest == digest, existing.kind == .fixComparison else { throw AutomationContractError.conflictingOperation }; return existing
         }
-        guard !closing, !busy, pendingCommand == nil, commandRequests.count < 50, preview.digest == digest else { throw AutomationContractError.conflictingOperation }
+        guard !closing, !busy, pendingCommand == nil, commandHistory.canAdmit(id, nativeConfirmation: nativeConfirmation, requests: commandRequests), preview.digest == digest else { throw AutomationContractError.conflictingOperation }
         let status = AutomationNativeCommandStatus(requestID: id, digest: digest, state: "awaitingApproval", kind: .fixComparison,
             originalAttemptID: preview.originalAttemptID, caseID: preview.caseID, revision: preview.revision, caseDigest: preview.caseDigest)
-        commandRequests[id] = status; pendingCommand = id
+        commandRequests[id] = status; pendingCommand = id; commandHistory.admitted(id)
         message = "Review both builds and confirm Check fix to compare the unchanged case 30 times per build."
         return status
     }
