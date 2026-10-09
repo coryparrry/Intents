@@ -1,5 +1,6 @@
 """Exercise descriptor selection and the exact observed Xcode path correction."""
 
+import copy
 import importlib.util
 import plistlib
 import tempfile
@@ -107,6 +108,136 @@ class UIXctestrunTests(unittest.TestCase):
         self.descriptor.write_bytes(b"not a plist")
         with self.assertRaises(plistlib.InvalidFileException):
             helper.prepare_ui_xctestrun(self.products)
+
+    def nested_document(self):
+        return {
+            "TestPlan": {"Name": "CI", "IsDefault": True},
+            "TestConfigurations": [{"Name": "Default", "TestTargets": [
+                dict(self.document["FoundationEvalsTests"], BlueprintName="FoundationEvalsTests"),
+                copy.deepcopy(self.document["FoundationEvalsUITests"]),
+            ]}],
+            "__xctestrun_metadata__": {"FormatVersion": 2},
+        }
+
+    def test_legacy_descriptor_without_metadata_uses_version_one(self):
+        self.document.pop("__xctestrun_metadata__")
+        self.write_descriptor()
+        original = self.descriptor.read_bytes()
+        self.assertEqual(helper.prepare_ui_xctestrun(self.products), self.descriptor.resolve())
+        self.assertEqual(self.descriptor.read_bytes(), original)
+
+    def test_correct_version_two_descriptor_with_documented_ui_fields_is_unchanged(self):
+        self.document = self.nested_document()
+        self.document["TestConfigurations"][0]["TestTargets"][1].pop("IsUITestBundle")
+        self.write_descriptor()
+        original = self.descriptor.read_bytes()
+        self.assertEqual(helper.prepare_ui_xctestrun(self.products), self.descriptor.resolve())
+        self.assertEqual(self.descriptor.read_bytes(), original)
+
+    def test_version_two_normalizes_each_enabled_configuration_and_preserves_disabled_targets(self):
+        nested = self.nested_document()
+        target = nested["TestConfigurations"][0]["TestTargets"][1]
+        target["UITargetAppPath"] = "__TESTROOT__/Debug/FoundationEvals"
+        nested["TestConfigurations"].extend([
+            {"Name": "Second", "IsEnabled": True, "TestTargets": [copy.deepcopy(target)]},
+            {"Name": "Disabled", "IsEnabled": False, "TestTargets": [dict(target, UITargetAppPath="/Applications/Unused.app")]},
+            {"Name": "Core only", "TestTargets": [{"BlueprintName": "FoundationEvalsTests", "CONTROL": "preserve"}]},
+        ])
+        expected = copy.deepcopy(nested)
+        expected["TestConfigurations"][0]["TestTargets"][1]["UITargetAppPath"] = "__TESTROOT__/Debug/Intents.app"
+        expected["TestConfigurations"][1]["TestTargets"][0]["UITargetAppPath"] = "__TESTROOT__/Debug/Intents.app"
+        for format in (plistlib.FMT_XML, plistlib.FMT_BINARY):
+            with self.subTest(format=format):
+                self.document = copy.deepcopy(nested)
+                self.write_descriptor(format)
+                helper.prepare_ui_xctestrun(self.products)
+                self.assertEqual(plistlib.loads(self.descriptor.read_bytes()), expected)
+                self.assertEqual(self.descriptor.read_bytes().startswith(b"bplist00"), format == plistlib.FMT_BINARY)
+
+    def test_version_two_duplicate_ui_target_within_one_configuration_is_ambiguous(self):
+        self.document = self.nested_document()
+        entries = self.document["TestConfigurations"][0]["TestTargets"]
+        entries.append(copy.deepcopy(entries[1]))
+        self.write_descriptor()
+        original = self.descriptor.read_bytes()
+        with self.assertRaisesRegex(ValueError, "Ambiguous"):
+            helper.prepare_ui_xctestrun(self.products)
+        self.assertEqual(self.descriptor.read_bytes(), original)
+
+    def test_version_two_without_an_enabled_ui_target_fails(self):
+        nested = self.nested_document()
+        configurations = [
+            [{"Name": "Core", "TestTargets": [{"BlueprintName": "FoundationEvalsTests"}]}],
+            [dict(nested["TestConfigurations"][0], IsEnabled=False)],
+            [{"Name": "Empty", "TestTargets": []}],
+        ]
+        for entries in configurations:
+            with self.subTest(entries=entries):
+                self.document = dict(nested, TestConfigurations=entries)
+                self.write_descriptor()
+                with self.assertRaisesRegex(ValueError, "enabled.*UI target"):
+                    helper.prepare_ui_xctestrun(self.products)
+
+    def test_version_two_rejects_malformed_configuration_structure_and_duplicate_names(self):
+        nested = self.nested_document()
+        malformed = ["not an array", {}, [], [{}], ["not a dictionary"], [{"TestTargets": "not an array"}],
+                     [{"TestTargets": ["not a dictionary"]}], [{"TestTargets": [{}]}],
+                     [{"TestTargets": [], "IsEnabled": "true"}],
+                     [nested["TestConfigurations"][0], copy.deepcopy(nested["TestConfigurations"][0])]]
+        for configurations in malformed:
+            with self.subTest(configurations=configurations):
+                self.document = dict(nested, TestConfigurations=configurations)
+                self.write_descriptor()
+                original = self.descriptor.read_bytes()
+                with self.assertRaises(ValueError):
+                    helper.prepare_ui_xctestrun(self.products)
+                self.assertEqual(self.descriptor.read_bytes(), original)
+
+    def test_format_version_rejects_unknown_or_mixed_layouts(self):
+        flat = copy.deepcopy(self.document)
+        nested = self.nested_document()
+        malformed = [dict(flat, __xctestrun_metadata__={}), dict(flat, __xctestrun_metadata__="invalid"),
+                     dict(flat, __xctestrun_metadata__={"FormatVersion": True}),
+                     dict(flat, __xctestrun_metadata__={"FormatVersion": 3}),
+                     {"__xctestrun_metadata__": {"FormatVersion": 2}},
+                     dict(flat, TestConfigurations=nested["TestConfigurations"]),
+                     dict(nested, FoundationEvalsUITests=flat["FoundationEvalsUITests"])]
+        for document in malformed:
+            with self.subTest(document=document):
+                self.document = document
+                self.write_descriptor()
+                with self.assertRaises(ValueError):
+                    helper.prepare_ui_xctestrun(self.products)
+
+    def test_version_two_validates_all_active_app_paths_before_any_rewrite(self):
+        self.document = self.nested_document()
+        target = self.document["TestConfigurations"][0]["TestTargets"][1]
+        target["UITargetAppPath"] = "__TESTROOT__/Debug/FoundationEvals"
+        self.document["TestConfigurations"].append({"Name": "Foreign", "TestTargets": [
+            dict(target, UITargetAppPath="__TESTROOT__/../Foreign.app")]})
+        self.write_descriptor()
+        original = self.descriptor.read_bytes()
+        with self.assertRaisesRegex(ValueError, "app path"):
+            helper.prepare_ui_xctestrun(self.products)
+        self.assertEqual(self.descriptor.read_bytes(), original)
+
+    def test_version_two_keeps_ui_and_app_identity_guards(self):
+        nested = self.nested_document()
+        for invalid_flag in (False, "true", 1):
+            with self.subTest(flag=invalid_flag):
+                self.document = copy.deepcopy(nested)
+                self.document["TestConfigurations"][0]["TestTargets"][1]["IsUITestBundle"] = invalid_flag
+                self.write_descriptor()
+                with self.assertRaisesRegex(ValueError, "UI target"):
+                    helper.prepare_ui_xctestrun(self.products)
+        self.document = copy.deepcopy(nested)
+        self.document["TestConfigurations"][0]["TestTargets"][1]["UITargetAppPath"] = "__TESTROOT__/Debug/FoundationEvals"
+        self.write_descriptor()
+        original = self.descriptor.read_bytes()
+        self.info.write_bytes(plistlib.dumps({"CFBundleIdentifier": "example.Foreign"}))
+        with self.assertRaisesRegex(ValueError, "bundle identifier"):
+            helper.prepare_ui_xctestrun(self.products)
+        self.assertEqual(self.descriptor.read_bytes(), original)
 
     def test_workflow_executes_the_verified_descriptor_without_scheme_reconstruction(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
