@@ -7,9 +7,13 @@ import {resolve,join,dirname} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 
 const directory=resolve(process.argv[2]);
+// Optional pins let the deterministic fixture runtime reuse this check; staged runtimes use the frozen receipt pins.
+const expectedReceiptSHA256=process.argv[3]??'9fda71ac61b4d2428e4a08f6a9afb4ad363bd8fb20b8bc3dc10f03cc8f608bb3';
+const expectedFileCount=Number(process.argv[4]??472);
+assert.ok(/^[0-9a-f]{64}$/.test(expectedReceiptSHA256));assert.ok(Number.isSafeInteger(expectedFileCount) && expectedFileCount>0);
 assert.equal(await realpath(directory),directory);
 const receiptBytes=await readFile(join(directory,'intents-private-runtime.json'));
-assert.equal(createHash('sha256').update(receiptBytes).digest('hex'),'9fda71ac61b4d2428e4a08f6a9afb4ad363bd8fb20b8bc3dc10f03cc8f608bb3');
+assert.equal(createHash('sha256').update(receiptBytes).digest('hex'),expectedReceiptSHA256);
 const receipt=JSON.parse(receiptBytes);
 assert.equal(receipt.customerRuntimeEnabled,false);assert.equal(receipt.hardwareQualified,false);
 assert.equal(process.env.AGENT_DEVICE_MACOS_HELPER_BIN,join(directory,receipt.helperRelativePath));
@@ -24,7 +28,7 @@ async function verifyUnit(){
     assert.ok(info.size<=8*1024*1024);actual.push(relative);
     assert.equal(createHash('sha256').update(await readFile(file)).digest('hex'),receipt.files[relative]);
   }
-  assert.deepEqual(actual.sort(),Object.keys(receipt.files).sort());assert.equal(actual.length,472);
+  assert.deepEqual(actual.sort(),Object.keys(receipt.files).sort());assert.equal(actual.length,expectedFileCount);
 }
 await verifyUnit();
 const processModule=createRequire(import.meta.url)('node:child_process');let processAttempts=0,fetchAttempts=0;
