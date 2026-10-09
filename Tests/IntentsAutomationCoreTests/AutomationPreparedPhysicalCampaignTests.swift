@@ -188,20 +188,39 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
 
     func testSiriOutsideSubjectAndUIWithoutRuntimeAreRefusedBeforeStateOrDeviceReservation() async throws {
         let h = try await fixture()
-        var lateSiri = h.plan
+        // Use a valid query subject so Siri qualification cannot reject the plan
+        // before the cleanup/observation conditions under test are reached.
+        var base = h.plan
+        base.execution = h.plan.setup[0]
+        base.execution.id = "subject-query"; base.execution.phase = .subject
+        base.setup = []; base.observations = []; base.cleanup = []
+        base.setupChecks = nil; base.requirements = []
+        try PlanValidator.validate(base, approval: approved(base, h.approval), capabilities: h.capabilities)
+
+        var lateSiri = base
         var siri = AutomationSegment(id: "late-siri", kind: .siriText, phase: .cleanup, operation: "submitRecognizedText",
             requiredCapabilities: ["siri.recognizedText.api"], effects: [.navigate], lifecycle: .persistedStateAcrossSegments)
         siri.siriProgram = .init(request: "Open the approved fixture")
         lateSiri.cleanup.append(siri)
-        var uiWithoutRuntime = h.plan
-        uiWithoutRuntime.observations.append(AutomationSegment(id: "ui-check", kind: .ui, phase: .observe, operation: "observe",
-            requiredCapabilities: [], effects: [.observe], lifecycle: .persistedStateAcrossSegments))
-        for plan in [lateSiri, uiWithoutRuntime] {
+        var uiWithoutRuntime = base
+        var observer = AutomationSegment(id: "ui-check", kind: .ui, phase: .observe, operation: "observe",
+            requiredCapabilities: [], effects: [.observe, .navigate], lifecycle: .persistedStateAcrossSegments)
+        observer.uiProgram = .init(operations: [.init(id: "status", kind: .observeProperty,
+            locator: .init(.testId, "status"), property: "text")])
+        uiWithoutRuntime.observations.append(observer)
+        try PlanValidator.validate(uiWithoutRuntime, approval: approved(uiWithoutRuntime, h.approval), capabilities: h.capabilities)
+
+        let denials: [(String, AutomationCase, AutomationContractError)] = [
+            ("Siri cleanup", lateSiri, .invalidPlan("Siri requires one approved physical recognised-text subject request")),
+            ("UI observation without runtime", uiWithoutRuntime, .missingEvidence("Mixed physical checks require the signed UI runtime")),
+        ]
+        for (name, plan, expected) in denials {
             let device = Device(), installer = Installer()
+            let approval = try approved(plan, h.approval)
             do {
-                _ = try await run(h, plan: plan, approval: try approved(plan, h.approval), components: components(device, installer))
-                XCTFail("\(plan.cleanup.count) cleanup / \(plan.observations.count) observation segments admitted")
-            } catch {}
+                _ = try await run(h, plan: plan, approval: approval, qualify: false, components: components(device, installer))
+                XCTFail("\(name) admitted")
+            } catch { XCTAssertEqual(error as? AutomationContractError, expected, name) }
             try await assertNothingReserved(h, device, installer)
         }
     }
