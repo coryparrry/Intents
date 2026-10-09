@@ -106,6 +106,21 @@ final class AutomationSiriSubmissionTests: XCTestCase {
             assertRejected(receipt(runner: ["executablePath": path]), "executablePath \(path)")
         }
     }
+    func testRunnerExecutablePathLimitCountsUTF16UnitsForEmoji() throws {
+        let boundary = "/x" + String(repeating: "💫", count: 2047)
+        XCTAssertEqual(boundary.utf16.count, 4096)
+        XCTAssertLessThan(boundary.count, 4096)
+        let admitted = receipt(runner: ["executablePath": boundary])
+        XCTAssertLessThan(try JSONSerialization.data(withJSONObject: admitted).count, 16_384)
+        XCTAssertEqual(try read(admitted).executablePath, boundary)
+
+        let oversized = boundary + "x"
+        XCTAssertEqual(oversized.utf16.count, 4097)
+        XCTAssertLessThan(oversized.count, 4096)
+        let rejected = receipt(runner: ["executablePath": oversized])
+        XCTAssertLessThan(try JSONSerialization.data(withJSONObject: rejected).count, 16_384)
+        assertRejected(rejected, "4097 UTF-16 units despite fewer than 4096 characters")
+    }
     func testRunnerMustBeExactlyPIDStartIdentityAndExecutablePath() {
         for key in ["pid", "startIdentity", "executablePath"] {
             assertRejected(receipt(runner: [key: nil]), "missing runner.\(key)")
