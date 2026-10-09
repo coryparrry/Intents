@@ -549,16 +549,19 @@ actor XcodeTestExecutor {
     private var physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager?
     private var physicalRunnerRecords: [UUID: ScenarioPhysicalRunnerRecord] = [:]
     private var dispatchedDeviceInvocations: Set<UUID> = []
+    private let destinationStatusReader: (@Sendable (String, Bool) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?))?
     private var pendingInvocation: ScenarioExecutionJournal? {
         get { inFlightJournal }
         set { inFlightJournal = newValue }
     }
 
-    init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default, physicalLeaseStoreURL: URL? = nil, physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager? = nil) {
+    init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default, physicalLeaseStoreURL: URL? = nil, physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager? = nil,
+         destinationStatusReader: (@Sendable (String, Bool) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?))? = nil) {
         self.workDirectory = workDirectory
         self.persistence = persistence
         self.fileManager = fileManager
         self.physicalLeaseManager = physicalLeaseManager
+        self.destinationStatusReader = destinationStatusReader
         self.physicalLeaseStoreURL = physicalLeaseStoreURL ?? workDirectory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Automation/target-leases.json")
     }
 
@@ -3094,6 +3097,7 @@ actor XcodeTestExecutor {
         _ identifier: String,
         requiresSiri: Bool = false
     ) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?) {
+        if let destinationStatusReader { return destinationStatusReader(identifier, requiresSiri) }
         let requested = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requested.isEmpty else {
             return (false, "Choose an available Mac, iOS Simulator, or paired physical iPhone.", nil)
@@ -3222,8 +3226,14 @@ actor XcodeTestExecutor {
             case deadline
         }
         let (outcomes, continuation) = AsyncStream.makeStream(of: ProcessOutcome.self)
+        let clock = ContinuousClock()
+        let cutoff = deadline.map { clock.now.advanced(by: $0) }
         process.terminationHandler = { terminated in
-            continuation.yield(.exited(terminated.terminationStatus))
+            if let cutoff, clock.now >= cutoff {
+                continuation.yield(.deadline)
+            } else {
+                continuation.yield(.exited(terminated.terminationStatus))
+            }
             continuation.finish()
         }
         var runningJournal = journal
@@ -3235,6 +3245,21 @@ actor XcodeTestExecutor {
             continuation.finish()
             throw XcodeTestExecutorError.processLaunch(error.localizedDescription)
         }
+        // The command budget starts at launch, before journal publication or
+        // cooperative executor scheduling can delay timeout observation.
+        let timeout = cutoff.map { cutoff in
+            let components = clock.now.duration(to: cutoff).components
+            let seconds = Double(components.seconds) + Double(components.attoseconds) / 1e18
+            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+            timer.setEventHandler {
+                continuation.yield(.deadline)
+                continuation.finish()
+            }
+            timer.schedule(deadline: .now() + max(0, seconds))
+            timer.resume()
+            return timer
+        }
+        defer { timeout?.cancel() }
         if arguments.first == "test-without-building" {
             dispatchedDeviceInvocations.insert(invocationID)
             if connectionTestJournal?.id == invocationID { connectionDeviceTestLaunched = true }
@@ -3275,19 +3300,10 @@ actor XcodeTestExecutor {
             process.waitUntilExit()
             throw error
         }
-        let timeoutTask = deadline.map { deadline in
-            Task { @concurrent in
-                do {
-                    try await Task.sleep(for: deadline)
-                    continuation.yield(.deadline)
-                    continuation.finish()
-                } catch { }
-            }
-        }
         let outcome = await outcomes.first { _ in true }
-        timeoutTask?.cancel()
+        timeout?.cancel()
         guard case .some(.exited(let code)) = outcome else {
-            process.interrupt()
+            if process.isRunning { process.interrupt() }
             try? await Task.sleep(for: .seconds(2))
             if process.isRunning { process.terminate() }
             try? await Task.sleep(for: .milliseconds(250))
