@@ -18,6 +18,7 @@ case "$SCOPE" in
     [[ $# == 0 ]] || exit 2
     python3 Tools/IntentsAutomation/scripts/verify_dependency_provenance.py
     python3 Tools/IntentsAutomation/tests/dependency_provenance_test.py
+    python3 Tools/IntentsAutomation/tests/verify_qualification_test.py
     python3 Tools/IntentsAutomation/tests/offline_harness_test.py
     python3 Tools/IntentsAutomation/tests/mac_snapshot_staging_test.py
     python3 Tools/IntentsAutomation/tests/mac_sdk_staging_test.py
