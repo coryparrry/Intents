@@ -4,6 +4,24 @@ import {captureReadback,verifyReadback} from '../src/uiReadback.js';
 const target={id:'owned',platform:'ios' as const,kind:'simulator' as const,bundleId:'example.App',bundlePath:null,loginSession:null};
 const raw:CaptureSnapshotResult={identifiers:{udid:'owned'},truncated:false,appBundleId:'example.App',nodes:[{index:1,ref:'@e1',identifier:'result',label:'Result',value:'actual',checked:false,hittable:true,enabled:true,visibleToUser:true}]};
 const operation={id:'result',kind:'observeProperty' as const,locator:{kind:'testId' as const,value:'result'},property:'value' as const};
+test('secure roles and descendants are redacted even when observing an unrelated ordinary field',()=>{
+ const identities:Partial<CaptureSnapshotResult['nodes'][number]>[]=[
+  {type:'SecureTextField',password:false},{subrole:'AXSecureTextField'},
+  {role:'secure-text-field'},{kind:'password-field'},{password:true}
+ ];
+ for(const identity of identities){
+  const proof=captureReadback({...raw,nodes:[raw.nodes[0]!,
+   {index:2,ref:'@e2',identifier:'protected',label:'private-sentinel-label',value:'private-sentinel-value',hittable:true,enabled:true,visibleToUser:true,...identity},
+   {index:3,ref:'@e3',identifier:'child',parentIndex:2,label:'private-sentinel-child-label',value:'private-sentinel-child-value',hittable:true,enabled:true,visibleToUser:true}
+  ]},target);
+  assert.equal(verifyReadback(proof,operation),'actual');
+  assert.ok(!JSON.stringify(proof).includes('private-sentinel'));
+  for(const identifier of ['protected','child']){
+   assert.equal(proof.nodes.find(n=>n.identifier===identifier)!.secure,true);
+   assert.throws(()=>verifyReadback(proof,{...operation,locator:{kind:'testId',value:identifier}}));
+  }
+ }
+});
 test('fresh complete readback preserves actual values including false and explicit empty text',()=>{
  assert.equal(verifyReadback(captureReadback(raw,target),operation),'actual');
  assert.equal(verifyReadback(captureReadback(raw,target),{...operation,property:'checked'}),false);
