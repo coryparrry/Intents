@@ -126,20 +126,24 @@ final class AutomationOwnershipTests: XCTestCase, @unchecked Sendable {
         func tampered(_ mutate: (inout AutomationLeaseState) -> Void) -> AutomationLeaseState { var state = valid; mutate(&state); return state }
         // Boundary controls: each rejected case below differs from an accepted state by one field.
         XCTAssertNoThrow(try tampered { $0.campaigns[key]?.privatePayload = payload }.validate())
+        XCTAssertNoThrow(try tampered { $0.generations[key] = Int.max - 1; $0.campaigns[key]?.lease?.generation = Int.max - 1 }.validate())
         XCTAssertNoThrow(try tampered { $0.campaigns[key]?.runners = Array(repeating: runner, count: 16) }.validate())
         let cases: [(String, (inout AutomationLeaseState) -> Void)] = [
             ("unsupported schema version", { $0.schemaVersion = 2 }),
             ("campaign stored under another target's key", { $0.campaigns["ios:other"] = $0.campaigns.removeValue(forKey: key); $0.generations["ios:other"] = lease.generation }),
             ("missing generation entry", { $0.generations.removeValue(forKey: key) }),
             ("non-positive generation", { $0.generations[key] = 0 }),
+            ("generation cannot be incremented", { $0.generations[key] = Int.max; $0.campaigns[key]?.lease?.generation = Int.max }),
             ("empty generation key", { $0.generations[""] = 1 }),
             ("lease generation differs from durable generation", { $0.campaigns[key]?.lease?.generation += 1 }),
             ("lease for another run", { $0.campaigns[key]?.lease?.runID = "other" }),
             ("lease for another target", { $0.campaigns[key]?.lease?.target = .init(id: "other", kind: .simulator) }),
             ("empty owner token", { $0.campaigns[key]?.ownerToken = "" }),
             ("missing owner process", { $0.campaigns[key]?.owner.pid = 0 }),
+            ("empty owner start identity", { $0.campaigns[key]?.owner.startIdentity = "" }),
             ("private payload without a lease", { $0.campaigns[key]?.lease = nil; $0.campaigns[key]?.privatePayload = payload }),
             ("private payload for another lease generation", { $0.campaigns[key]?.privatePayload = .init(scope: .init(runID: "run", attemptID: "attempt", segmentID: "setup", leaseGeneration: lease.generation + 1), path: payload.path, frozenDigest: payload.frozenDigest, cleanDigest: payload.cleanDigest) }),
+            ("private payload for another run", { $0.campaigns[key]?.privatePayload = .init(scope: .init(runID: "other", attemptID: "attempt", segmentID: "setup", leaseGeneration: lease.generation), path: payload.path, frozenDigest: payload.frozenDigest, cleanDigest: payload.cleanDigest) }),
             ("private payload outside an xctestrun", { $0.campaigns[key]?.privatePayload = .init(scope: scope, path: root.appendingPathComponent("host.plist").path, frozenDigest: payload.frozenDigest, cleanDigest: payload.cleanDigest) }),
             ("dispatch for another run", { $0.campaigns[key]?.lastDispatch?.scope.runId = "other" }),
             ("dispatch scope above the current generation", { $0.campaigns[key]?.lastDispatch?.scope.leaseGeneration = lease.generation + 1 }),
@@ -147,6 +151,8 @@ final class AutomationOwnershipTests: XCTestCase, @unchecked Sendable {
             ("dispatch without an operation", { $0.campaigns[key]?.lastDispatch?.operationID = "" }),
             ("runner scope above the current generation", { $0.campaigns[key]?.runners[0].scope.leaseGeneration = lease.generation + 1 }),
             ("runner for another run", { $0.campaigns[key]?.runners[0].scope.runId = "other" }),
+            ("missing runner process", { $0.campaigns[key]?.runners[0].process.pid = 0 }),
+            ("empty runner start identity", { $0.campaigns[key]?.runners[0].process.startIdentity = "" }),
             ("runner with a relative executable", { $0.campaigns[key]?.runners[0].executablePath = "usr/bin/true" }),
             ("seventeen runners", { $0.campaigns[key]?.runners = Array(repeating: runner, count: 17) }),
         ]
