@@ -121,6 +121,9 @@ jobs:
   homebrew:
     name: Update Homebrew after publication
     needs: release
+    permissions:
+      contents: read
+      actions: read
     # Releases published with GITHUB_TOKEN do not trigger release workflows.
     uses: ./.github/workflows/update-homebrew.yml
     with:

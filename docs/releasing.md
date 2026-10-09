@@ -69,10 +69,16 @@ app's built-in updater; a Homebrew upgrade uses
 
 **Build DMG and publish release** calls **Update Homebrew** after successful
 publication. This explicit call is necessary because a release published using
-`GITHUB_TOKEN` does not emit another Actions run. The updater also handles
-human-published releases and supports manual dispatch with a published tag.
-It downloads the DMG and `SHA256SUMS.txt`, checks the actual bytes against the
-checksum and GitHub's asset digest when available, then commits the cask.
+`GITHUB_TOKEN` does not emit another Actions run. For a human-published release,
+dispatch the updater from the default branch with its published tag. Calls and
+dispatches use the `release` environment and its configured protections; publishing a release alone
+does not trigger a secret-bearing tap update.
+It downloads the DMG, `SHA256SUMS.txt`, and `appcast.xml`, checks the actual bytes
+against the checksum and GitHub's asset digest when available, and verifies
+successful default-branch source CI, the expected Apple signing team,
+notarization, signed source metadata, and Sparkle signature before writing the
+cask. The installer verifier examines the same downloaded bytes used for the
+cask checksum.
 Drafts, prereleases, missing assets, and checksum mismatches fail without
 changing the tap. Retries make no extra commit, older versions cannot roll
 the tap back, and an existing version's checksum cannot change.
@@ -88,8 +94,8 @@ of commits and logs.
 If a tap update fails, the verified GitHub release remains published and the
 existing cask remains available. Fix the tap access or asset issue and dispatch
 **Update Homebrew** from `main` with the same release tag. Do not rerun installer
-packaging for an already published release. The tap update runs on Ubuntu and
-does not rebuild or resign the app.
+packaging for an already published release. The tap update runs on the hosted
+`xcode-27` macOS runner and does not rebuild or resign the app.
 
 ## Retry a failed release
 

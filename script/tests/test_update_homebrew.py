@@ -36,6 +36,7 @@ class UpdateTests(unittest.TestCase):
                 {"name": self.filename, "size": len(self.payload),
                  "digest": f"sha256:{self.checksum}"},
                 {"name": "SHA256SUMS.txt", "size": len(self.sums)},
+                {"name": "appcast.xml", "size": 10},
             ],
         }
         self.downloads = 0
@@ -48,11 +49,15 @@ class UpdateTests(unittest.TestCase):
         destination = Path(args[args.index("--dir") + 1])
         (destination / self.filename).write_bytes(self.payload)
         (destination / "SHA256SUMS.txt").write_text(self.sums)
+        (destination / "appcast.xml").write_text("<fixture/>")
         return ""
 
     def update(self):
-        with patch.object(homebrew, "gh", side_effect=self.gh):
+        with patch.object(homebrew, "gh", side_effect=self.gh), \
+                patch.object(homebrew, "verify_provenance") as verify:
             homebrew.update("v1.4.0", self.tap, "coryparrry/Intents")
+            if self.downloads:
+                verify.assert_called_once()
 
     def seed(self, version="1.4.0", checksum=None):
         self.cask.parent.mkdir(parents=True)
@@ -165,12 +170,61 @@ class UpdateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Existing cask"):
             self.update()
 
+    def test_provenance_failure_preserves_existing_cask(self):
+        self.seed("1.3.0")
+        before = self.cask.read_bytes()
+        with patch.object(homebrew, "gh", side_effect=self.gh), \
+                patch.object(homebrew, "verify_provenance", side_effect=
+                             subprocess.CalledProcessError(1, ["verify_installer"])), \
+                self.assertRaises(subprocess.CalledProcessError):
+            homebrew.update("v1.4.0", self.tap, "coryparrry/Intents")
+        self.assertEqual(self.cask.read_bytes(), before)
+
+    def test_source_and_installer_verification_share_exact_repository_commit_and_bytes(self):
+        commit = "a" * 40
+        with patch.object(homebrew, "gh", return_value=commit) as gh, \
+                patch.object(homebrew.subprocess, "run") as run:
+            homebrew.verify_provenance(self.root, "v1.4.0", "example/Selected")
+        gh.assert_called_once_with("api", "repos/example/Selected/commits/v1.4.0", "--jq", ".sha")
+        self.assertEqual(len(run.call_args_list), 2)
+        source, installer = run.call_args_list
+        self.assertTrue(source.args[0][1].endswith("verify_release_source.sh"))
+        self.assertEqual(source.args[0][2:], [commit])
+        self.assertTrue(installer.args[0][1].endswith("verify_installer.sh"))
+        self.assertEqual(installer.args[0][2:], [str(self.root), "v1.4.0", commit])
+        for call in (source, installer):
+            self.assertEqual(call.kwargs["env"]["GITHUB_REPOSITORY"], "example/Selected")
+            self.assertTrue(call.kwargs["check"])
+
+    def test_untrusted_source_or_failed_source_ci_never_reaches_installer(self):
+        for commit in ("", "main", "A" * 40, "a" * 39):
+            with self.subTest(commit=commit), patch.object(homebrew, "gh", return_value=commit), \
+                    patch.object(homebrew.subprocess, "run") as run, self.assertRaises(ValueError):
+                homebrew.verify_provenance(self.root, "v1.4.0", "example/Selected")
+            run.assert_not_called()
+        with patch.object(homebrew, "gh", return_value="a" * 40), \
+                patch.object(homebrew.subprocess, "run", side_effect=
+                             subprocess.CalledProcessError(1, ["verify_release_source"])) as run, \
+                self.assertRaises(subprocess.CalledProcessError):
+            homebrew.verify_provenance(self.root, "v1.4.0", "example/Selected")
+        self.assertEqual(run.call_count, 1)
+
+    def test_workflow_requires_protected_main_and_release_verification(self):
+        workflow = (ROOT / ".github/workflows/update-homebrew.yml").read_text()
+        self.assertNotIn("  release:\n", workflow)
+        self.assertNotIn("github.event_name == 'release'", workflow)
+        for contract in ("environment: release", "runs-on: xcode-27", "actions: read",
+                         "EXPECTED_TEAM_ID: 3Z3955EFRE",
+                         "RELEASE_BRANCH: ${{ github.event.repository.default_branch }}"):
+            self.assertIn(contract, workflow)
+
     def test_cli_and_workflow_publish_then_retry_without_new_commit(self):
         fixture = self.root / "fixture"
         fixture.mkdir()
         (fixture / "release.json").write_text(json.dumps(self.release))
         (fixture / self.filename).write_bytes(self.payload)
         (fixture / "SHA256SUMS.txt").write_text(self.sums)
+        (fixture / "appcast.xml").write_text("<fixture/>")
         binary = self.root / "bin"
         binary.mkdir()
         stub = binary / "gh"
@@ -181,6 +235,8 @@ class UpdateTests(unittest.TestCase):
             fixture = Path(os.environ["FIXTURE_DIR"])
             if args[:2] == ["release", "view"]:
                 print((fixture / "release.json").read_text())
+            elif args[:1] == ["api"]:
+                print("a" * 40)
             elif args[:2] == ["release", "download"]:
                 destination = Path(args[args.index("--dir") + 1])
                 for index, arg in enumerate(args):
@@ -190,6 +246,25 @@ class UpdateTests(unittest.TestCase):
                 sys.exit("Unexpected GitHub command")
         '''))
         stub.chmod(0o755)
+        verifier = binary / "bash"
+        verifier.write_text(f"#!{sys.executable}\n" + textwrap.dedent('''
+            import os, sys
+            from pathlib import Path
+            args = sys.argv[1:]
+            if args and Path(args[0]).name in ("verify_release_source.sh", "verify_installer.sh"):
+                assert os.environ["GITHUB_REPOSITORY"] == "coryparrry/Intents"
+                assert args[-1] == "a" * 40
+                assert os.environ["EXPECTED_TEAM_ID"] == "3Z3955EFRE"
+                if Path(args[0]).name == "verify_installer.sh":
+                    directory = Path(args[1])
+                    assert (directory / "Intents-1.4.0-macOS-arm64.dmg").read_bytes() == b"verified installer fixture"
+                    assert (directory / "appcast.xml").exists()
+                with open(os.environ["VERIFY_CALLS"], "a") as log:
+                    log.write(Path(args[0]).name + "\\n")
+                sys.exit(0)
+            os.execv("/bin/bash", ["bash", *args])
+        '''))
+        verifier.chmod(0o755)
         remote = self.root / "remote.git"
         subprocess.run(["git", "init", "--quiet", "--bare", str(remote)], check=True)
         self.seed("1.3.0")
@@ -204,7 +279,8 @@ class UpdateTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/update-homebrew.yml").read_text()
         publish = textwrap.dedent(workflow.split("working-directory: tap\n        run: |\n")[1])
         environment = dict(os.environ, FIXTURE_DIR=str(fixture),
-                           PATH=f"{binary}:{os.environ['PATH']}", RELEASE_TAG="v1.4.0")
+                           PATH=f"{binary}:{os.environ['PATH']}", RELEASE_TAG="v1.4.0",
+                           EXPECTED_TEAM_ID="3Z3955EFRE", VERIFY_CALLS=str(self.root / "verification.log"))
         heads = []
         for _ in range(2):
             subprocess.run([sys.executable, str(SCRIPT), "v1.4.0", "--tap-dir", str(self.tap),
@@ -214,6 +290,8 @@ class UpdateTests(unittest.TestCase):
                            env=environment, check=True, capture_output=True, text=True)
             heads.append(git("rev-parse", "HEAD"))
         self.assertEqual(heads[0], heads[1])
+        self.assertEqual((self.root / "verification.log").read_text().splitlines(),
+                         ["verify_release_source.sh", "verify_installer.sh"] * 2)
         published = subprocess.check_output([
             "git", "--git-dir", str(remote), "show", "main:Casks/intents.rb",
         ], text=True)
@@ -224,7 +302,7 @@ class UpdateTests(unittest.TestCase):
         packaging = (ROOT / ".github/workflows/package-installer.yml").read_text()
         job = packaging.split("\n  homebrew:\n")[1]
         for contract in ("needs: release", "uses: ./.github/workflows/update-homebrew.yml",
-                         "tag: ${{ inputs.tag }}", "secrets: inherit"):
+                         "tag: ${{ inputs.tag }}", "secrets: inherit", "actions: read"):
             self.assertIn(contract, job)
         self.assertNotIn("always()", job)
 

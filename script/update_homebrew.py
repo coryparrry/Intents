@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Update the Intents cask from a published, checksum-verified release."""
+"""Update the Intents cask from a release with verified source and signed installer."""
 
 import argparse
 import hashlib
@@ -22,6 +22,18 @@ def version_tuple(value):
 
 def gh(*args):
     return subprocess.check_output(["gh", *args], text=True)
+
+
+def verify_provenance(directory, tag, repository):
+    commit = gh("api", f"repos/{repository}/commits/{tag}", "--jq", ".sha").strip()
+    if not re.fullmatch(r"[a-f0-9]{40}", commit):
+        raise ValueError("Release source must resolve to a full Git SHA.")
+    scripts = Path(__file__).resolve().parent
+    environment = dict(os.environ, GITHUB_REPOSITORY=repository)
+    subprocess.run(["bash", str(scripts / "verify_release_source.sh"), commit],
+                   env=environment, check=True)
+    subprocess.run(["bash", str(scripts / "verify_installer.sh"), str(directory), tag, commit],
+                   env=environment, check=True)
 
 
 def render_cask(version, checksum, repository):
@@ -74,7 +86,7 @@ def update(tag, tap_dir, repository):
             previous_checksum = current_checksum[1]
 
     filename = f"Intents-{version}-macOS-arm64.dmg"
-    for name in (filename, "SHA256SUMS.txt"):
+    for name in (filename, "SHA256SUMS.txt", "appcast.xml"):
         assets = [asset for asset in release["assets"] if asset["name"] == name]
         if len(assets) != 1 or assets[0]["size"] <= 0:
             raise ValueError(f"Require exactly one nonempty {name} release asset.")
@@ -82,7 +94,7 @@ def update(tag, tap_dir, repository):
 
     with tempfile.TemporaryDirectory(prefix="intents-homebrew-") as directory:
         gh("release", "download", tag, "--repo", repository, "--dir", directory,
-           "--pattern", filename, "--pattern", "SHA256SUMS.txt")
+           "--pattern", filename, "--pattern", "SHA256SUMS.txt", "--pattern", "appcast.xml")
         downloads = Path(directory)
         sums = (downloads / "SHA256SUMS.txt").read_text()
         matches = re.findall(r"^([a-fA-F0-9]{64}) [ *]" + re.escape(filename) + r"$",
@@ -97,6 +109,9 @@ def update(tag, tap_dir, repository):
         digest = dmg_asset.get("digest")
         if digest and digest != f"sha256:{checksum}":
             raise ValueError("Downloaded DMG does not match GitHub's asset digest.")
+        # Validate the same downloaded bytes that determine the cask checksum.
+        # Matching attacker-supplied checksums alone are not release provenance.
+        verify_provenance(downloads, tag, repository)
     if previous_checksum and previous_checksum != checksum:
         raise ValueError("Refusing to change the checksum of an existing cask version.")
     content = render_cask(version, checksum, repository)
