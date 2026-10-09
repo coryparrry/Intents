@@ -262,6 +262,7 @@ struct EvaluationHTTPLanguageModelTests {
     @Test(.timeLimit(.minutes(1)))
     func gatedLoopbackFixturePublishesBeforeSDKStreamCompletion() async throws {
         let fixture = try RunningCustomModelFixture(streamDelay: 0.05, gateTextStream: true)
+        defer { fixture.stop() }
 
         let caseID = UUID()
         let recorder = HTTPPartialResponseRecorder()
@@ -292,15 +293,13 @@ struct EvaluationHTTPLanguageModelTests {
                     ]
                 )
                 await completionRecorder.recordCompletion()
+                await recorder.responseCompleted(error: nil)
                 return response
             } catch {
                 await completionRecorder.recordCompletion()
+                await recorder.responseCompleted(error: error)
                 throw error
             }
-        }
-        defer {
-            responseTask.cancel()
-            fixture.stop()
         }
 
         do {
@@ -321,8 +320,72 @@ struct EvaluationHTTPLanguageModelTests {
             #expect(updates.last?.content == response.content)
         } catch {
             try? await fixture.releaseTextStream()
+            responseTask.cancel()
+            _ = await responseTask.result
             throw error
         }
+    }
+
+    @Test func recordedFirstResponseSurvivesAnAlreadyElapsedWaitBudget() async throws {
+        let recorder = HTTPPartialResponseRecorder()
+        let update = EvaluationHTTPLiveResponseUpdate(caseID: UUID(), repetition: 1, content: "first")
+        await recorder.record(update)
+        let first = try await recorder.firstUpdate(timeout: .zero)
+        #expect(first.caseID == update.caseID)
+        #expect(first.content == "first")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func delayedObserverResumesTheFirstResponseWaiter() async throws {
+        let recorder = HTTPPartialResponseRecorder()
+        let update = EvaluationHTTPLiveResponseUpdate(caseID: UUID(), repetition: 1, content: "delayed")
+        let publication = Task {
+            try await Task.sleep(for: .milliseconds(20))
+            await recorder.record(update)
+        }
+        do {
+            let first = try await recorder.firstUpdate(timeout: .seconds(10))
+            try await publication.value
+            #expect(first.caseID == update.caseID)
+            #expect(first.content == "delayed")
+        } catch {
+            publication.cancel()
+            _ = await publication.result
+            throw error
+        }
+    }
+
+    @Test func earlyResponseFailureReachesTheFirstResponseWaiter() async throws {
+        let recorder = HTTPPartialResponseRecorder()
+        await recorder.responseCompleted(error: URLError(.cannotConnectToHost))
+        do {
+            _ = try await recorder.firstUpdate(timeout: .seconds(10))
+            Issue.record("Expected the early response failure.")
+        } catch let error as URLError {
+            #expect(error.code == .cannotConnectToHost)
+        }
+    }
+
+    @Test func completedResponseWithoutAnUpdateFailsImmediately() async {
+        let recorder = HTTPPartialResponseRecorder()
+        await recorder.responseCompleted(error: nil)
+        await #expect(throws: HTTPPartialResponseRecorderError.completedBeforeFirstUpdate) {
+            try await recorder.firstUpdate(timeout: .seconds(10))
+        }
+    }
+
+    @Test func firstResponseWaitRemainsBoundedWithoutAnUpdate() async {
+        let recorder = HTTPPartialResponseRecorder()
+        await #expect(throws: HTTPPartialResponseRecorderError.firstUpdateTimedOut) {
+            try await recorder.firstUpdate(timeout: .milliseconds(10))
+        }
+    }
+
+    @Test func cancellingTheFirstResponseWaitReleasesItsIterator() async {
+        let recorder = HTTPPartialResponseRecorder()
+        let waiting = Task { try await recorder.firstUpdate(timeout: .seconds(30)) }
+        waiting.cancel()
+        await #expect(throws: CancellationError.self) { try await waiting.value }
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -487,18 +550,45 @@ private struct ErasedExecutorError: LocalizedError {
 
 private actor HTTPPartialResponseRecorder {
     private(set) var updates: [EvaluationHTTPLiveResponseUpdate] = []
+    private let firstUpdates: AsyncThrowingStream<EvaluationHTTPLiveResponseUpdate, any Error>
+    private let firstUpdateContinuation: AsyncThrowingStream<EvaluationHTTPLiveResponseUpdate, any Error>.Continuation
+
+    init() {
+        let pair = AsyncThrowingStream<EvaluationHTTPLiveResponseUpdate, any Error>.makeStream()
+        firstUpdates = pair.stream
+        firstUpdateContinuation = pair.continuation
+    }
 
     func record(_ update: EvaluationHTTPLiveResponseUpdate) {
+        let isFirst = updates.isEmpty
         updates.append(update)
+        if isFirst {
+            firstUpdateContinuation.yield(update)
+            firstUpdateContinuation.finish()
+        }
+    }
+
+    func responseCompleted(error: (any Error)?) {
+        guard updates.isEmpty else { return }
+        firstUpdateContinuation.finish(throwing: error ?? HTTPPartialResponseRecorderError.completedBeforeFirstUpdate)
     }
 
     func firstUpdate(timeout: Duration) async throws -> EvaluationHTTPLiveResponseUpdate {
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        while ContinuousClock.now < deadline {
-            if let update = updates.first { return update }
-            try await Task.sleep(for: .milliseconds(10))
+        try Task.checkCancellation()
+        if let update = updates.first { return update }
+        let components = timeout.components
+        let seconds = Double(components.seconds) + Double(components.attoseconds) / 1e18
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+        let continuation = firstUpdateContinuation
+        timer.setEventHandler { continuation.finish(throwing: HTTPPartialResponseRecorderError.firstUpdateTimedOut) }
+        timer.schedule(deadline: .now() + max(0, seconds))
+        timer.resume()
+        defer { timer.cancel() }
+        guard let update = try await firstUpdates.first(where: { _ in true }) else {
+            try Task.checkCancellation()
+            throw HTTPPartialResponseRecorderError.completedBeforeFirstUpdate
         }
-        throw HTTPPartialResponseRecorderError.firstUpdateTimedOut
+        return update
     }
 }
 
@@ -510,11 +600,17 @@ private actor HTTPResponseCompletionRecorder {
     }
 }
 
-private enum HTTPPartialResponseRecorderError: LocalizedError {
+private enum HTTPPartialResponseRecorderError: LocalizedError, Equatable {
     case firstUpdateTimedOut
+    case completedBeforeFirstUpdate
 
     var errorDescription: String? {
-        "The gated custom model fixture did not publish its first response chunk in time."
+        switch self {
+        case .firstUpdateTimedOut:
+            "The gated custom model fixture did not publish its first response chunk in time."
+        case .completedBeforeFirstUpdate:
+            "The gated custom model response completed before publishing its first chunk."
+        }
     }
 }
 
