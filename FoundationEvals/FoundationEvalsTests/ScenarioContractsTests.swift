@@ -3018,7 +3018,7 @@ struct ScenarioContractsTests {
             do {
                 _ = try await executor.runProcess(
                     executable: "/bin/zsh",
-                    arguments: ["-c", "trap '' INT TERM; zmodload zsh/zselect; print $$; while true; do zselect -t 100; done"],
+                    arguments: termResistantHostArguments,
                     logURL: logURL, invocationID: invocation.id,
                     destinationIdentifier: invocation.destinationIdentifier, journal: activeJournal,
                     appendLog: false, deadline: .seconds(1)
@@ -3035,6 +3035,112 @@ struct ScenarioContractsTests {
         }
         let reacquired = try XcodeBuildWorkspaceLease(derivedData: derivedData)
         withExtendedLifetime(reacquired) {}
+    }
+
+    @Test func failedRunningJournalWriteEscalatesUntilTermResistantHostStops() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistenceRoot = root.appending(path: "IntentLab", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: persistenceRoot, withIntermediateDirectories: true)
+        try Data().write(to: persistenceRoot.appending(path: "Journals"))
+        let executor = XcodeTestExecutor(
+            workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory),
+            persistence: ScenarioPersistence(rootDirectory: persistenceRoot)
+        )
+        let definition = try scenario()
+        let invocation = invocation(for: definition)
+        let launchedProcess = ProcessIDRecorder()
+        do {
+            _ = try await executor.runProcess(
+                executable: "/bin/zsh", arguments: termResistantHostArguments,
+                logURL: root.appending(path: "journal-failure.log"), invocationID: invocation.id,
+                destinationIdentifier: invocation.destinationIdentifier,
+                journal: journal(for: definition, invocation: invocation, phase: .running),
+                appendLog: false, deadline: .seconds(30),
+                onProcessLaunched: { launchedProcess.record($0) }
+            )
+            Issue.record("The running journal unexpectedly saved over a regular file.")
+        } catch let error as XcodeTestExecutorError {
+            Issue.record("The journal write failure was replaced by \(error).")
+        } catch {
+            // The persistence error itself is rethrown once the host has stopped.
+        }
+        expectHostStopped(try #require(launchedProcess.value))
+        #expect(!(await executor.hasActiveExecution()))
+    }
+
+    @Test func connectionCheckDeadlineStopsTermResistantHostAndReportsTimeout() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistence = ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab", directoryHint: .isDirectory))
+        let executor = XcodeTestExecutor(
+            workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory), persistence: persistence
+        )
+        let destination = "timed-out-connection-device"
+        let logURL = root.appending(path: "connection-timeout.log")
+        do {
+            _ = try await executor.runJournaledConnectionTest(
+                definition: try scenario(),
+                configuration: termResistantConnectionConfiguration(root: root, destination: destination),
+                methodName: "testIntentLabReadiness", derivedData: root.appending(path: "DerivedData"),
+                resultBundle: root.appending(path: "Readiness.xcresult"), arguments: termResistantHostArguments,
+                logURL: logURL, appendLog: false, deadline: .seconds(1)
+            )
+            Issue.record("The TERM-resistant connection host unexpectedly completed.")
+        } catch XcodeTestExecutorError.connectionCheck(let message) {
+            #expect(message == "Xcode timed out during the read-only setup check.")
+        } catch {
+            Issue.record("A connection-check timeout was reported as \(error).")
+        }
+        expectHostStopped(try loggedProcessID(logURL))
+        #expect(!(await executor.hasActiveExecution()))
+        #expect(await executor.reservation(for: destination) != nil)
+        let saved = try await persistence.loadJournals()
+        #expect(saved.contains {
+            $0.invocation.testIdentity.methodName == "testIntentLabReadiness" && $0.phase == .recoveryRequired
+        })
+    }
+
+    @Test func cancelledConnectionCheckStopsTermResistantHostAndReportsCancellation() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executor = XcodeTestExecutor(
+            workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory),
+            persistence: ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab", directoryHint: .isDirectory))
+        )
+        let definition = try scenario()
+        let configuration = termResistantConnectionConfiguration(root: root, destination: "cancelled-connection-device")
+        let logURL = root.appending(path: "connection-cancel.log")
+        let arguments = termResistantHostArguments
+        let task = Task {
+            try await executor.runJournaledConnectionTest(
+                definition: definition, configuration: configuration,
+                methodName: "testIntentLabReadiness", derivedData: root.appending(path: "DerivedData"),
+                resultBundle: root.appending(path: "Readiness.xcresult"), arguments: arguments,
+                logURL: logURL, appendLog: false, deadline: .seconds(2)
+            )
+        }
+        let launchDeadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !(await executor.connectionDeviceTestIsRunning()) && ContinuousClock.now < launchDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(await executor.connectionDeviceTestIsRunning())
+        guard case .recoveryRequired = await executor.cancelConnectionCheck() else {
+            Issue.record("Cancelling a launched connection host did not require recovery.")
+            task.cancel()
+            _ = try? await task.value
+            return
+        }
+        do {
+            _ = try await task.value
+            Issue.record("The TERM-resistant connection host unexpectedly completed.")
+        } catch XcodeTestExecutorError.cancelled {
+            // A requested cancellation must not be reported as a setup-check timeout.
+        } catch {
+            Issue.record("A cancelled connection check was reported as \(error).")
+        }
+        expectHostStopped(try loggedProcessID(logURL))
+        #expect(!(await executor.hasActiveExecution()))
     }
 
     @Test func inSessionCancellationQuarantinesAndCanBeExplicitlyCleared() async throws {
@@ -3664,6 +3770,49 @@ struct ScenarioContractsTests {
             )
         }
         #expect(ledger == ScenarioImportLedger())
+    }
+
+    private var termResistantHostArguments: [String] {
+        ["-c", "trap '' INT TERM; zmodload zsh/zselect; print $$; while true; do zselect -t 100; done"]
+    }
+
+    private func termResistantConnectionConfiguration(root: URL, destination: String) -> XcodeTestConfiguration {
+        var configuration = XcodeTestConfiguration(
+            containerPath: root.path, isWorkspace: false, scheme: "Fixture",
+            testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: destination, generatedResourceDirectory: root.path
+        )
+        configuration.xcodebuildPath = "/bin/zsh"
+        return configuration
+    }
+
+    private func loggedProcessID(_ logURL: URL) throws -> Int32 {
+        try #require(Int32(String(contentsOf: logURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+    }
+
+    private func expectHostStopped(_ processID: Int32, sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(processID > 0, sourceLocation: sourceLocation)
+        guard processID > 0 else { return }
+        let hostStillRunning = Darwin.kill(processID, 0) == 0
+        if hostStillRunning { _ = Darwin.kill(processID, SIGKILL) }
+        #expect(!hostStillRunning, sourceLocation: sourceLocation)
+    }
+
+    private final class ProcessIDRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedValue: Int32?
+
+        var value: Int32? {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedValue
+        }
+
+        func record(_ processID: Int32) {
+            lock.lock()
+            defer { lock.unlock() }
+            storedValue = processID
+        }
     }
 
     private func temporaryDirectory() throws -> URL {
