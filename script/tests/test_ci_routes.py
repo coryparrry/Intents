@@ -178,10 +178,10 @@ class CoverageTests(unittest.TestCase):
         self.assert_selection(
             [routes.APP + "Services/XcodeTestExecutor.swift"],
             native=True,
-            swift=("ScenarioContractsTests", "ExecutorSimplificationTests", "XcodeBundleLayoutTests",
+            swift=("ScenarioContractsTests", "ExecutorSimplificationTests", "XcodeBundleLayoutTests", "XcodeSyntheticReadinessTests",
                    "ScenarioPhysicalLeaseTests", "ScenarioPhysicalFailureTests", "ScenarioPhysicalSiriQualificationTests"),
         )
-        for suite in ("ExecutorSimplificationTests", "XcodeBundleLayoutTests"):
+        for suite in ("ExecutorSimplificationTests", "XcodeBundleLayoutTests", "XcodeSyntheticReadinessTests"):
             with self.subTest(suite=suite):
                 self.assert_selection(
                     [routes.TESTS + suite + ".swift"],
