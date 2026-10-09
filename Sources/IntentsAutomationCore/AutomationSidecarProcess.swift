@@ -35,8 +35,16 @@ public actor AutomationSidecarProcess {
     public private(set) var processID: Int32 = 0
     public private(set) var processIdentity: AutomationProcessIdentity?
 
+    private let exitGracePeriod: Duration
+    private let terminationGracePeriod: Duration
+
     public init(configuration: Configuration, reverse: @escaping AutomationRPC.ReverseHandler) throws {
+        try self.init(configuration: configuration, reverse: reverse, exitGracePeriod: .seconds(10), terminationGracePeriod: .seconds(5))
+    }
+    init(configuration: Configuration, reverse: @escaping AutomationRPC.ReverseHandler,
+         exitGracePeriod: Duration, terminationGracePeriod: Duration) throws {
         retainDiagnostics = configuration.retainDiagnostics
+        self.exitGracePeriod = exitGracePeriod; self.terminationGracePeriod = terminationGracePeriod
         for path in [configuration.node, configuration.entry] + (configuration.helper.map { [$0] } ?? []) {
             guard path.isFileURL, path.path == (try AutomationPath.canonical(path)).path,
                   FileManager.default.fileExists(atPath: path.path) else { throw AutomationContractError.invalidIdentity }
@@ -99,12 +107,12 @@ public actor AutomationSidecarProcess {
     private func stopOwnedChild() async -> Bool {
         await writer.close()
         // EOF gives the sidecar a chance to drain its owned workers first.
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        let deadline = ContinuousClock.now.advanced(by: exitGracePeriod)
         while process.isRunning && ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(100)) }
         if process.isRunning {
             if processIdentity?.presence() == .matching { process.terminate() }
         }
-        let terminationDeadline = ContinuousClock.now.advanced(by: .seconds(5))
+        let terminationDeadline = ContinuousClock.now.advanced(by: terminationGracePeriod)
         while process.isRunning && ContinuousClock.now < terminationDeadline { try? await Task.sleep(for: .milliseconds(100)) }
         await rpc.close(); reader?.cancel(); diagnosticReader?.cancel()
         return !process.isRunning
