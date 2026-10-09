@@ -42,9 +42,10 @@ enum AutomationLiveRunnerFixture {
     }
     /// Launches `executable` orphaned to launchd, as a real runner is, so exit is reaped outside the test process.
     static func launch(_ executable: URL, ignoringTerminate: Bool = false, in test: XCTestCase) throws -> Runner {
+        let canonicalExecutable = try AutomationPath.canonical(executable)
         let shell = Process(), output = Pipe(), acknowledgement = Pipe()
         shell.executableURL = URL(fileURLWithPath: "/bin/sh")
-        shell.arguments = ["-c", (ignoringTerminate ? "trap '' TERM; " : "") + "\"$0\" 600 </dev/null >/dev/null 2>&1 & child=$!; printf '%s\\n' \"$child\"; IFS= read -r acknowledgement", executable.path]
+        shell.arguments = ["-c", (ignoringTerminate ? "trap '' TERM; " : "") + "\"$0\" 600 </dev/null >/dev/null 2>&1 & child=$!; printf '%s\\n' \"$child\"; IFS= read -r acknowledgement", canonicalExecutable.path]
         shell.standardOutput = output; shell.standardInput = acknowledgement
         try shell.run()
         defer {
@@ -59,10 +60,10 @@ enum AutomationLiveRunnerFixture {
         test.addTeardownBlock { _ = signalIfMatching(identity) }
         try? acknowledgement.fileHandleForWriting.close()
         shell.waitUntilExit()
-        do { try waitForExecutable(identity, executable: executable) }
+        do { try waitForExecutable(identity, executable: canonicalExecutable) }
         catch { signalIfMatching(identity); throw error }
         XCTAssertEqual(identity.presence(), .matching)
-        return .init(identity: identity, executable: executable)
+        return .init(identity: identity, executable: canonicalExecutable)
     }
     static func captureOwnedIdentity(pid: Int32, launcherPID: Int32,
                                      inspect: (Int32) -> AutomationProcessIdentity? = { AutomationProcessIdentity.inspect(pid: $0) },

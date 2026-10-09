@@ -77,7 +77,11 @@ final class AutomationLiveRunnerFixtureTests: XCTestCase, @unchecked Sendable {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let executable = root.appendingPathComponent("sleep")
         try AutomationLiveRunnerFixture.installExecutable(at: executable)
-        let runner = try AutomationLiveRunnerFixture.launch(executable, in: self)
+        let alias = root.appendingPathComponent("sleep-alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: executable)
+        let runner = try AutomationLiveRunnerFixture.launch(alias, in: self)
+        XCTAssertEqual(runner.executable.path, try AutomationPath.canonical(executable).path)
+        XCTAssertEqual(AutomationLiveRunnerFixture.executablePath(runner.identity.pid), runner.executable.path)
         var stale = runner.identity; stale.startIdentity += "-stale"
         try await AutomationLiveRunnerFixture.forceStop(.init(identity: stale, executable: executable))
         XCTAssertEqual(runner.identity.presence(), .matching)
