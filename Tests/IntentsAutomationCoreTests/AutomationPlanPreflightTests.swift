@@ -101,7 +101,11 @@ final class AutomationPlanPreflightTests: XCTestCase {
             XCTAssertNoThrow(try PlanValidator.validate(plan, approval: approval, capabilities: .init()))
         }
         var observer = subject; observer.id = "read"; observer.phase = .observe
-        observer.effects = [.observe, .navigate, .fixtureWrite]
+        var readGoal = goal; readGoal.saveControl = nil
+        observer.uiProgram = .init(operations: [.init(id: "save", kind: .navigateGoal, goal: readGoal)])
+        plan.observations = [observer]
+        XCTAssertNoThrow(try PlanValidator.validate(plan, approval: approval, capabilities: .init()))
+        observer.uiProgram = subject.uiProgram
         plan.observations = [observer]
         XCTAssertThrowsError(try PlanValidator.validate(plan, approval: approval, capabilities: .init())) {
             guard case .invalidPlan? = $0 as? AutomationContractError else { return XCTFail("Unexpected error \($0)") }
