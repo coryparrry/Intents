@@ -40,6 +40,44 @@ final class AutomationSourceSyntaxTests: XCTestCase {
         } catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Selected Xcode source syntax component is absent")) }
         let drained = await command.stopOwned(); XCTAssertTrue(drained)
     }
+    func testCanonicalDeveloperAliasPreservesToolchainContainmentBeforeLaunch() async throws {
+        for escapes in [false, true] {
+            let root = URL(fileURLWithPath: "/private/tmp/source-syntax-alias-" + UUID().uuidString)
+            let installed = root.appendingPathComponent("Xcode_27.app/Contents/Developer")
+            let alias = root.appendingPathComponent("Xcode.app")
+            try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            for relative in ["usr/bin/swiftc", "usr/lib/swift/host/libSwiftSyntax.dylib",
+                             "usr/lib/swift/host/libSwiftParser.dylib", "usr/lib/swift/host/libSwiftParserDiagnostics.dylib"] {
+                let file = installed.appendingPathComponent("Toolchains/XcodeDefault.xctoolchain/" + relative)
+                try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data("synthetic fingerprint input".utf8).write(to: file)
+            }
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: root.appendingPathComponent("Xcode_27.app"))
+            let developer = try AutomationPath.canonical(alias.appendingPathComponent("Contents/Developer"))
+            XCTAssertEqual(developer.path, installed.path)
+            if escapes {
+                let outside = root.appendingPathComponent("outside-swiftc")
+                try Data("outside the selected developer root".utf8).write(to: outside)
+                let compiler = installed.appendingPathComponent("Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc")
+                try FileManager.default.removeItem(at: compiler)
+                try FileManager.default.createSymbolicLink(at: compiler, withDestinationURL: outside)
+            }
+            let graph = AutomationSourceGraph(sourceManifestDigest: String(repeating: "a", count: 64),
+                projectRelativePath: "App.xcodeproj", targetID: "APP", configuration: "Debug", nodes: [], edges: [],
+                inputs: [], declarations: [], gaps: [])
+            let command = AutomationOwnedCommand()
+            let stopBeforeLaunch = AutomationContractError.missingEvidence("Synthetic fixture stops before toolchain launch")
+            do {
+                _ = try await AutomationSourceSyntaxDiscovery.analyze(graph: graph, frozenRoot: root, session: root,
+                    developer: developer, command: command, willStart: { throw stopBeforeLaunch })
+                XCTFail("The synthetic fixture must not launch a toolchain command")
+            } catch {
+                XCTAssertEqual(error as? AutomationContractError, escapes ? .invalidIdentity : stopBeforeLaunch)
+            }
+            let drained = await command.stopOwned(); XCTAssertTrue(drained)
+        }
+    }
     func testActualSelectedXcodeParserHandlesExtensionsNestedTypesAndLiteralBodies() async throws {
         guard ProcessInfo.processInfo.environment["INTENTS_SOURCE_SYNTAX_TEST"] == "1" else { throw XCTSkip("Explicit local Xcode source-scanner qualification") }
         let retained = ProcessInfo.processInfo.environment["INTENTS_SOURCE_SYNTAX_TEST_ROOT"]
@@ -85,8 +123,9 @@ final class AutomationSourceSyntaxTests: XCTestCase {
                      .init(relativePath: "PackageAction.swift", sha256: AutomationArtifactRegistry.digest(packageSource), owner: "Package.swift#target:Package", role: "packageSwiftMembership")], declarations: [], gaps: ["Synthetic graph fixture"])
         let command = AutomationOwnedCommand()
         let conditions = AutomationSourceCompilationConditions(owner: "App.xcodeproj#APP", configuration: "Debug", settingsSHA256: String(repeating: "a", count: 64), activeConditions: ["CUSTOM_CONDITION"])
+        let developer = try AutomationPath.canonical(URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
         let index = try await AutomationSourceSyntaxDiscovery.analyze(graph: graph, frozenRoot: source, session: root,
-            developer: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"), command: command, compilationConditions: conditions)
+            developer: developer, command: command, compilationConditions: conditions)
         XCTAssertEqual(index.sourceGraphDigest, try graph.digest)
         XCTAssertEqual(index.declarations.map(\.name), ["Echo", "Item", "Echo", "Choice", "Spaced", "Conditional", "Inactive", "Alternate", "Unknown", "UnknownEarlier", "Nested", "PackageAction"])
         let resolved = index.declarations.filter { AutomationSourceCompilationConditions.resolve($0, facts: index.compilationConditions) == true }
