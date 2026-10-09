@@ -549,16 +549,19 @@ actor XcodeTestExecutor {
     private var physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager?
     private var physicalRunnerRecords: [UUID: ScenarioPhysicalRunnerRecord] = [:]
     private var dispatchedDeviceInvocations: Set<UUID> = []
+    private let destinationStatusReader: (@Sendable (String, Bool) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?))?
     private var pendingInvocation: ScenarioExecutionJournal? {
         get { inFlightJournal }
         set { inFlightJournal = newValue }
     }
 
-    init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default, physicalLeaseStoreURL: URL? = nil, physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager? = nil) {
+    init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default, physicalLeaseStoreURL: URL? = nil, physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager? = nil,
+         destinationStatusReader: (@Sendable (String, Bool) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?))? = nil) {
         self.workDirectory = workDirectory
         self.persistence = persistence
         self.fileManager = fileManager
         self.physicalLeaseManager = physicalLeaseManager
+        self.destinationStatusReader = destinationStatusReader
         self.physicalLeaseStoreURL = physicalLeaseStoreURL ?? workDirectory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Automation/target-leases.json")
     }
 
@@ -3094,6 +3097,7 @@ actor XcodeTestExecutor {
         _ identifier: String,
         requiresSiri: Bool = false
     ) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?) {
+        if let destinationStatusReader { return destinationStatusReader(identifier, requiresSiri) }
         let requested = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requested.isEmpty else {
             return (false, "Choose an available Mac, iOS Simulator, or paired physical iPhone.", nil)
