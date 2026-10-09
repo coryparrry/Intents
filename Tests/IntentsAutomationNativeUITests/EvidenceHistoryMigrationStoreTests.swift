@@ -8,7 +8,12 @@ import XCTest
     private func store(_ importer: HistoryImporter) throws -> AppAutomationStore {
         let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent("native-history-test-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock {
+            guard await importer.canRemoveFixtureDirectory() else {
+                return XCTFail("Migration did not drain; retaining its fixture directory")
+            }
+            try? FileManager.default.removeItem(at: root)
+        }
         return AppAutomationStore(supportDirectory: root.appendingPathComponent("support"), savedCasesReader: { [] },
             evidenceImporter: { plan, report, _, _ in try await importer.importEvidence(plan, report) })
     }
@@ -93,16 +98,26 @@ import XCTest
         let model = try store(importer)
         let (frozen, reports) = try await saveCase(model, id: "held", attempts: ["recorded"])
         await importer.register(frozen)
+        await importer.startMigration()
         let migration = Task {
             await model.migrateEvidenceHistory()
             await importer.finishMigration()
         }
-        addTeardownBlock { migration.cancel(); await importer.release() }
+        addTeardownBlock {
+            // Detached cleanup is independent of cancellation of the test task and is deadline bounded.
+            let drained = await Task.detached {
+                migration.cancel()
+                return await importer.releaseAndWaitForMigration()
+            }.value
+            XCTAssertTrue(drained, "Migration did not finish after gate release")
+        }
         try await importer.waitUntilHeld()
         await model.migrateEvidenceHistory()
         let heldCalls = await importer.calls
         XCTAssertEqual(heldCalls, 1); XCTAssertEqual(model.evidenceImportRevision, 0)
-        await importer.release(); await migration.value
+        let drained = await Task.detached { await importer.releaseAndWaitForMigration() }.value
+        guard drained else { throw HistoryImportError.timedOut }
+        await migration.value
         let imported = await importer.imported
         XCTAssertEqual(imported.map(\.report), reports); XCTAssertEqual(model.evidenceImportRevision, 1)
     }
@@ -120,6 +135,35 @@ import XCTest
             try await importer.waitUntilHeld()
             XCTFail("Finished migration left a pending gate")
         } catch { XCTAssertEqual(error as? HistoryImportError, .migrationFinishedBeforeImport) }
+    }
+    func testHistoryDrainWaitsForCompletionBeforeDirectoryCanBeRemoved() async throws {
+        let importer = HistoryImporter(holdFirst: true)
+        let model = try store(importer)
+        let (frozen, _) = try await saveCase(model, id: "drain", attempts: ["recorded"])
+        await importer.register(frozen)
+        await importer.startMigration()
+        let worker = Task {
+            _ = try? await importer.importEvidence(frozen.plan, historyReport(plan: frozen.plan, attemptID: "recorded"))
+            try? await Task.sleep(for: .milliseconds(25))
+            await importer.finishMigration()
+        }
+        addTeardownBlock {
+            _ = await Task.detached { worker.cancel(); return await importer.releaseAndWaitForMigration() }.value
+        }
+        try await importer.waitUntilHeld()
+        let pending = await importer.canRemoveFixtureDirectory(); XCTAssertFalse(pending)
+        let drained = await importer.releaseAndWaitForMigration(timeout: .seconds(1))
+        guard drained else { return XCTFail("Held migration did not drain before cleanup") }
+        let finished = await importer.canRemoveFixtureDirectory(); XCTAssertTrue(finished)
+        let imported = await importer.imported; XCTAssertEqual(imported.count, 1)
+    }
+    func testHistoryDrainDeadlineRetainsDirectoryWhileMigrationIsPending() async {
+        let importer = HistoryImporter(holdFirst: true)
+        await importer.startMigration()
+        let drained = await importer.releaseAndWaitForMigration(timeout: .milliseconds(25))
+        XCTAssertFalse(drained)
+        let removable = await importer.canRemoveFixtureDirectory(); XCTAssertFalse(removable)
+        await importer.finishMigration()
     }
     func testHistoryGateWaitRespondsToCancellation() async {
         let importer = HistoryImporter(holdFirst: true)
@@ -153,13 +197,25 @@ private actor HistoryImporter {
     private(set) var calls = 0
     private(set) var imported: [AutomationNativeEvidenceDocument] = []
     private var held = false
+    private var migrationStarted = false
     private var migrationFinished = false
     private var released = false
     private var pending: CheckedContinuation<Void, Never>?
     init(failure: Failure? = nil, holdFirst: Bool = false) { self.failure = failure; self.holdFirst = holdFirst }
     func register(_ frozen: AutomationFrozenCase) { frozenCases.append(frozen) }
     func succeed() { failure = nil }
+    func startMigration() { migrationStarted = true }
     func finishMigration() { migrationFinished = true }
+    func canRemoveFixtureDirectory() -> Bool { !migrationStarted || migrationFinished }
+    func releaseAndWaitForMigration(timeout: Duration = .seconds(5)) async -> Bool {
+        release()
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while !migrationFinished {
+            guard ContinuousClock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return true
+    }
     func waitUntilHeld(timeout: Duration = .seconds(5)) async throws {
         let deadline = ContinuousClock.now.advanced(by: timeout)
         while !held {
