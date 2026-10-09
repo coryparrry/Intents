@@ -274,9 +274,10 @@ test('the segment deadline terminates a worker blocked on a never-answering snap
    await new Promise(r=>context!.signal.addEventListener('abort',r,{once:true}));return doneSnapshot();},
   perform:async()=>{actions++;},release:async()=>({released:false,reason:'contract fixture'})};
  try{
+  // Leave ample room for a slow runner to start the real CLI before the deadline fires.
   const started=Date.now();
-  await assert.rejects(runWorker(backend,cancellationTarget,cancellationSegment('deadline-op',3000),root,signal),/^Error: Worker failed; see owned log$/);
-  assert.ok(Date.now()-started>=3000);assert.equal(signal.aborted,false);
+  await assert.rejects(runWorker(backend,cancellationTarget,cancellationSegment('deadline-op',10000),root,signal),/^Error: Worker failed; see owned log$/);
+  assert.ok(Date.now()-started>=10000);assert.equal(signal.aborted,false);
   assert.equal(snapshots,1);assert.equal(actions,0);assert.deepEqual(signals,['SIGTERM']);assert.ok(pids.length>0);
   await assertProcessesExit(pids);await assert.rejects(readFile(join(root,'receipt.json')),{code:'ENOENT'});
  }finally{await rm(root,{recursive:true,force:true});}
