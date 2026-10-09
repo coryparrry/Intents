@@ -337,12 +337,9 @@ class AutomationSignRuntimeTests(StubbedReleaseScriptCase):
         entitlements = str(self.root / 'Integration/AutomationRuntime/Node.entitlements')
         for call in signing:
             with self.subTest(target=Path(call[-1]).name):
-                self.assertEqual(call[1:5], ['--force', '--options', 'runtime', '--timestamp'])
-                self.assertEqual(call[call.index('--sign') + 1], self.identity)
-                if call[-1].endswith('/IntentsAutomationNode'):
-                    self.assertEqual(call[call.index('--entitlements') + 1], entitlements)
-                else:
-                    self.assertNotIn('--entitlements', call)
+                expected = ['codesign', '--force', '--options', 'runtime', '--timestamp']
+                if call[-1].endswith('/IntentsAutomationNode'): expected += ['--entitlements', entitlements]
+                self.assertEqual(call, expected + ['--sign', self.identity, call[-1]])
         self.assertEqual(manifest, ['python3', str(self.root / 'Tools/IntentsAutomation/scripts/bundle_manifest.py'),
             '--app', str(self.app), '--write'])
     def testFailedNestedSignatureStopsSigningAndManifestRewrite(self):
