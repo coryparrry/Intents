@@ -124,7 +124,7 @@ extension AutomationRPCTests {
         let rpc = AutomationRPC(send: { sender.yield($0) }, reverse: { _, _ in .null })
         var iterator = frames.makeAsyncIterator()
         let operation = Task { try await rpc.request(.hello, params: .object([:])) }
-        let id = try await nextRequestID(&iterator)
+        let id = try await nextRequestID(&iterator, sender)
         let frame = paddedResultFrame(id: id, byteCount: rpcFrameLimit)
         XCTAssertEqual(frame.count, rpcFrameLimit)
         // A buffer holding exactly the limit is still admissible while the terminator is pending.
@@ -140,7 +140,7 @@ extension AutomationRPCTests {
         let rpc = AutomationRPC(send: { sender.yield($0) }, reverse: { _, _ in .null })
         var iterator = frames.makeAsyncIterator()
         let operation = Task { try await rpc.request(.hello, params: .object([:])) }
-        let id = try await nextRequestID(&iterator)
+        let id = try await nextRequestID(&iterator, sender)
         // Otherwise valid JSON, so only the size bound can reject it.
         let oversized = paddedResultFrame(id: id, byteCount: rpcFrameLimit + 1)
         await assertRPCError(.invalidFrame) { try await rpc.receive(oversized + Data([10])) }
@@ -155,7 +155,7 @@ extension AutomationRPCTests {
         let rpc = AutomationRPC(send: { sender.yield($0) }, reverse: { _, _ in .null })
         var iterator = frames.makeAsyncIterator()
         let operation = Task { try await rpc.request(.runSegment, params: .object([:])) }
-        let id = try await nextRequestID(&iterator)
+        let id = try await nextRequestID(&iterator, sender)
         let oversized = paddedResultFrame(id: id, byteCount: rpcFrameLimit + 1)
         try await rpc.receive(Data(oversized.prefix(rpcFrameLimit)))
         await assertRPCError(.invalidFrame) { try await rpc.receive(Data(oversized.suffix(1))) }
@@ -167,7 +167,7 @@ extension AutomationRPCTests {
         let rpc = AutomationRPC(send: { sender.yield($0) }, reverse: { _, _ in .null })
         var iterator = frames.makeAsyncIterator()
         let operation = Task { try await rpc.request(.hello, params: .object([:])) }
-        let id = try await nextRequestID(&iterator)
+        let id = try await nextRequestID(&iterator, sender)
         let line = Data("{\"jsonrpc\":\"2.0\",\"id\":\"\(id)\",\"result\":\"".utf8) + Data([0xFF, 0xFE]) + Data("\"}\n".utf8)
         await assertRPCError(.invalidFrame) { try await rpc.receive(line) }
         await assertRPCError(.disconnected) { try await operation.value }
@@ -178,14 +178,14 @@ extension AutomationRPCTests {
         let rpc = AutomationRPC(send: { sender.yield($0) }, reverse: { _, _ in .null })
         var iterator = frames.makeAsyncIterator()
         let accepted = Task { try await rpc.request(.hello, params: .object([:])) }
-        let acceptedID = try await nextRequestID(&iterator)
+        let acceptedID = try await nextRequestID(&iterator, sender)
         // The reply object is depth 0, so the innermost of 39 result arrays sits at coding depth 39.
         try await rpc.receive(rpcLine("{\"jsonrpc\":\"2.0\",\"id\":\"\(acceptedID)\",\"result\":\(nestedArrays(39))}"))
         let result = try await accepted.value
         XCTAssertEqual(result, nestedArrayValue(39))
 
         let rejected = Task { try await rpc.request(.hello, params: .object([:])) }
-        let rejectedID = try await nextRequestID(&iterator)
+        let rejectedID = try await nextRequestID(&iterator, sender)
         do {
             try await rpc.receive(rpcLine("{\"jsonrpc\":\"2.0\",\"id\":\"\(rejectedID)\",\"result\":\(nestedArrays(40))}"))
             XCTFail("Frames nested past the decode depth bound must be rejected")
@@ -243,8 +243,7 @@ extension AutomationRPCTests {
         })
         var iterator = frames.makeAsyncIterator()
         try await rpc.receive(rpcLine(#"{"jsonrpc":"2.0","id":"node-7","method":"mac.helper.run","params":{"secret":"[REDACTED]"}}"#))
-        let nextFrame = await iterator.next()
-        let reply = try XCTUnwrap(nextFrame)
+        let reply = try await nextFrame(&iterator, sender)
         XCTAssertEqual(reply.last, 10)
         XCTAssertEqual(try JSONDecoder().decode(AutomationJSON.self, from: reply), .object([
             "jsonrpc": .string("2.0"), "id": .string("node-7"),
@@ -262,13 +261,13 @@ extension AutomationRPCTests {
         var operations: [Task<AutomationJSON, any Error>] = []
         for _ in 0..<64 { operations.append(Task { try await rpc.request(.hello, params: .object([:])) }) }
         var ids: [String] = []
-        for _ in 0..<64 { ids.append(try await nextRequestID(&iterator)) }
+        for _ in 0..<64 { ids.append(try await nextRequestID(&iterator, sender)) }
         XCTAssertEqual(Set(ids), Set((1...64).map { "host-\($0)" }))
         await assertRPCError(.requestLimit) { try await rpc.request(.status, params: .object([:])) }
 
         try await rpc.receive(rpcLine("{\"jsonrpc\":\"2.0\",\"id\":\"\(ids[0])\",\"result\":null}"))
         let admitted = Task { try await rpc.request(.status, params: .object([:])) }
-        let admittedID = try await nextRequestID(&iterator)
+        let admittedID = try await nextRequestID(&iterator, sender)
         XCTAssertEqual(admittedID, "host-65", "A rejected request must not consume an id")
         try await rpc.receive(rpcLine("{\"jsonrpc\":\"2.0\",\"id\":\"\(admittedID)\",\"result\":true}"))
         let admittedResult = try await admitted.value
@@ -289,8 +288,7 @@ extension AutomationRPCTests {
         let rpc = AutomationRPC(send: { sender.yield($0) }, reverse: { _, _ in .null })
         var iterator = frames.makeAsyncIterator()
         let operation = Task { try await rpc.request(.secretRunProgram, params: .object(["binding": .string("b")])) }
-        let nextFrame = await iterator.next()
-        let outbound = try XCTUnwrap(nextFrame)
+        let outbound = try await nextFrame(&iterator, sender)
         XCTAssertEqual(outbound.last, 10)
         XCTAssertNil(outbound.dropLast().firstIndex(of: 10))
         XCTAssertEqual(try JSONDecoder().decode(AutomationJSON.self, from: outbound), .object([
@@ -313,12 +311,12 @@ extension AutomationRPCTests {
             let rpc = AutomationRPC(send: { sender.yield($0) }, reverse: { _, _ in .null })
             var iterator = frames.makeAsyncIterator()
             let cancelled = Task { try await rpc.request(method, params: .object([:])) }
-            _ = try await nextRequestID(&iterator)
+            _ = try await nextRequestID(&iterator, sender)
             cancelled.cancel()
             await assertRPCError(onCancel, method.rawValue) { try await cancelled.value }
 
             let timed = Task { try await rpc.request(method, params: .object([:]), timeout: .milliseconds(10)) }
-            _ = try await nextRequestID(&iterator)
+            _ = try await nextRequestID(&iterator, sender)
             await assertRPCError(onTimeout, method.rawValue) { try await timed.value }
             await rpc.close()
         }
@@ -339,18 +337,18 @@ extension AutomationRPCTests {
         let rpc = AutomationRPC(send: { sender.yield($0) }, reverse: { _, _ in .null })
         var iterator = frames.makeAsyncIterator()
         let refused = Task { try await rpc.request(.runSegment, params: .object([:])) }
-        let refusedID = try await nextRequestID(&iterator)
+        let refusedID = try await nextRequestID(&iterator, sender)
         try await rpc.receive(rpcLine("{\"jsonrpc\":\"2.0\",\"id\":\"\(refusedID)\",\"error\":{\"code\":-32000,\"message\":\"Sidecar refused\"}}"))
         await assertRPCError(.remote(code: -32000, message: "Sidecar refused")) { try await refused.value }
 
         let message = String(repeating: "m", count: 4096)
         let bounded = Task { try await rpc.request(.hello, params: .object([:])) }
-        let boundedID = try await nextRequestID(&iterator)
+        let boundedID = try await nextRequestID(&iterator, sender)
         try await rpc.receive(rpcLine("{\"jsonrpc\":\"2.0\",\"id\":\"\(boundedID)\",\"error\":{\"code\":\(Int32.min),\"message\":\"\(message)\"}}"))
         await assertRPCError(.remote(code: Int(Int32.min), message: message)) { try await bounded.value }
 
         let followUp = Task { try await rpc.request(.status, params: .object([:])) }
-        let followUpID = try await nextRequestID(&iterator)
+        let followUpID = try await nextRequestID(&iterator, sender)
         try await rpc.receive(rpcLine("{\"jsonrpc\":\"2.0\",\"id\":\"\(followUpID)\",\"result\":\"ok\"}"))
         let result = try await followUp.value
         XCTAssertEqual(result, .string("ok"))
@@ -374,7 +372,7 @@ extension AutomationRPCTests {
             let rpc = AutomationRPC(send: { sender.yield($0) }, reverse: { _, _ in .null })
             var iterator = frames.makeAsyncIterator()
             let operation = Task { try await rpc.request(.hello, params: .object([:])) }
-            let id = try await nextRequestID(&iterator)
+            let id = try await nextRequestID(&iterator, sender)
             let label = String(error.prefix(64))
             await assertRPCError(.invalidFrame, label) { try await rpc.receive(rpcLine("{\"jsonrpc\":\"2.0\",\"id\":\"\(id)\",\"error\":\(error)}")) }
             await assertRPCError(.invalidFrame, label) { try await operation.value }
@@ -388,7 +386,7 @@ extension AutomationRPCTests {
             let rpc = AutomationRPC(send: { sender.yield($0) }, reverse: { _, _ in .null })
             var iterator = frames.makeAsyncIterator()
             let operation = Task { try await rpc.request(.hello, params: .object([:])) }
-            let id = try await nextRequestID(&iterator)
+            let id = try await nextRequestID(&iterator, sender)
             XCTAssertEqual(id, "host-1")
             await assertRPCError(.invalidFrame, forged) { try await rpc.receive(rpcLine("{\"jsonrpc\":\"2.0\",\"id\":\"\(forged)\",\"result\":\"forged\"}")) }
             await assertRPCError(.disconnected, forged) { try await operation.value }
@@ -413,9 +411,18 @@ private func nestedArrayValue(_ depth: Int) -> AutomationJSON {
     (1..<depth).reduce(AutomationJSON.array([])) { inner, _ in .array([inner]) }
 }
 
-private func nextRequestID(_ iterator: inout AsyncStream<Data>.AsyncIterator, file: StaticString = #filePath, line: UInt = #line) async throws -> String {
-    let nextFrame = await iterator.next()
-    let outbound = try XCTUnwrap(nextFrame, file: file, line: line)
+/// Bounded read: a frame that is never sent fails the test instead of hanging the suite.
+private func nextFrame(_ iterator: inout AsyncStream<Data>.AsyncIterator, _ stream: AsyncStream<Data>.Continuation,
+                       file: StaticString = #filePath, line: UInt = #line) async throws -> Data {
+    let watchdog = Task { try? await Task.sleep(for: .seconds(5)); if !Task.isCancelled { stream.finish() } }
+    defer { watchdog.cancel() }
+    let frame = await iterator.next()
+    return try XCTUnwrap(frame, "No outbound frame within 5s", file: file, line: line)
+}
+
+private func nextRequestID(_ iterator: inout AsyncStream<Data>.AsyncIterator, _ stream: AsyncStream<Data>.Continuation,
+                           file: StaticString = #filePath, line: UInt = #line) async throws -> String {
+    let outbound = try await nextFrame(&iterator, stream, file: file, line: line)
     return try XCTUnwrap(JSONDecoder().decode(AutomationJSON.self, from: outbound).object?["id"]?.string, file: file, line: line)
 }
 
