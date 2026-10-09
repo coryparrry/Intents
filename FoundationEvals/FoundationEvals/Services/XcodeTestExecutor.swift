@@ -537,6 +537,7 @@ actor XcodeTestExecutor {
     private var cancelledInvocationIDs: Set<UUID> = []
     private var connectionCheckInProgress = false
     private var connectionProcess: Process?
+    private var connectionProcessCancellation: (@Sendable () -> Void)?
     private var connectionCancellationRequested = false
     private var connectionTestJournal: ScenarioExecutionJournal?
     private var connectionDeviceTestLaunched = false
@@ -1178,6 +1179,7 @@ actor XcodeTestExecutor {
         connectionStageFailure = nil
         defer {
             connectionCheckInProgress = false
+            connectionProcessCancellation = nil
             connectionProcess = nil
             connectionCancellationRequested = false
         }
@@ -2552,7 +2554,7 @@ actor XcodeTestExecutor {
         process.arguments = arguments
         process.standardOutput = handle
         process.standardError = handle
-        enum Outcome: Sendable { case exited(Int32), deadline }
+        enum Outcome: Sendable { case exited(Int32), deadline, cancelled }
         let (stream, continuation) = AsyncStream.makeStream(of: Outcome.self)
         process.terminationHandler = { terminated in
             continuation.yield(.exited(terminated.terminationStatus))
@@ -2560,6 +2562,16 @@ actor XcodeTestExecutor {
         }
         try process.run()
         connectionProcess = process
+        connectionProcessCancellation = {
+            continuation.yield(.cancelled)
+            continuation.finish()
+        }
+        defer {
+            if connectionProcess === process {
+                connectionProcessCancellation = nil
+                connectionProcess = nil
+            }
+        }
         if var journal = connectionTestJournal {
             connectionDeviceTestLaunched = true
             journal.phase = .running
@@ -2567,9 +2579,6 @@ actor XcodeTestExecutor {
             journal.processStartedAt = Date()
             journal.updatedAt = Date()
             connectionTestJournal = journal
-        }
-        defer {
-            if connectionProcess === process { connectionProcess = nil }
         }
         let timeout = Task { @concurrent in
             do {
@@ -2581,7 +2590,7 @@ actor XcodeTestExecutor {
         let outcome = await stream.first { _ in true }
         timeout.cancel()
         guard case .some(.exited(let code)) = outcome else {
-            process.interrupt()
+            if process.isRunning { process.interrupt() }
             try? await Task.sleep(for: .seconds(2))
             if process.isRunning { process.terminate() }
             try? await Task.sleep(for: .milliseconds(250))
@@ -2599,6 +2608,9 @@ actor XcodeTestExecutor {
         guard connectionCheckInProgress || connectionTestJournal != nil else { return .notRunning }
         connectionCancellationRequested = true
         if let connectionProcess, connectionProcess.isRunning {
+            // Wake this process's wait so a TERM-resistant host is drained now,
+            // rather than waiting for the command's unrelated deadline.
+            connectionProcessCancellation?()
             connectionProcess.terminate()
         }
         guard connectionDeviceTestLaunched, var journal = connectionTestJournal else {

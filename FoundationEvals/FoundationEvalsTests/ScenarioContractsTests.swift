@@ -5,6 +5,97 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioContractsTests {
+    @Test(.timeLimit(.minutes(2))) func connectionCancellationDrainsHostBeforeLongCommandDeadline() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistence = ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab"))
+        let destination = "bounded-cancellation-device"
+        let executor = XcodeTestExecutor(
+            workDirectory: root.appending(path: "Executor"), persistence: persistence,
+            destinationStatusReader: { identifier, _ in
+                #expect(identifier == destination)
+                return (true, "Synthetic local process", .macOS)
+            }
+        )
+        var configurationDraft = XcodeTestConfiguration(
+            containerPath: root.path, isWorkspace: false, scheme: "Fixture",
+            testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: destination, generatedResourceDirectory: root.path
+        )
+        configurationDraft.xcodebuildPath = "/bin/zsh"
+        let configuration = configurationDraft
+        let definition = try scenario(), logURL = root.appending(path: "bounded-cancel.log")
+        let clock = ContinuousClock()
+        enum Completion: Sendable { case finished(ContinuousClock.Instant), deadline }
+        let (completions, completed) = AsyncStream.makeStream(of: Completion.self)
+        let task = Task {
+            defer { completed.yield(.finished(clock.now)); completed.finish() }
+            return try await executor.runJournaledConnectionTest(
+                definition: definition, configuration: configuration,
+                methodName: "testIntentLabReadiness", derivedData: root.appending(path: "DerivedData"),
+                resultBundle: root.appending(path: "Readiness.xcresult"),
+                arguments: ["-c", "trap '' INT TERM; zmodload zsh/zselect; print $$; while true; do zselect -t 100; done"],
+                logURL: logURL, appendLog: false, deadline: .seconds(90)
+            )
+        }
+        func readyPID() -> Int32? {
+            guard let text = try? String(contentsOf: logURL, encoding: .utf8), text.hasSuffix("\n"),
+                  let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 0 else { return nil }
+            return pid
+        }
+        do {
+            let launchDeadline = clock.now.advanced(by: .seconds(30))
+            while readyPID() == nil && clock.now < launchDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            guard let pid = readyPID() else {
+                Issue.record("The cancellation host did not acknowledge its signal traps.")
+                task.cancel()
+                _ = await executor.cancelConnectionCheck()
+                _ = await task.result
+                return
+            }
+            let cancellationDeadline = clock.now.advanced(by: .seconds(10))
+            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+            timer.setEventHandler { completed.yield(.deadline); completed.finish() }
+            timer.schedule(deadline: .now() + 10)
+            timer.resume()
+            defer { timer.cancel() }
+            guard case .recoveryRequired = await executor.cancelConnectionCheck() else {
+                Issue.record("Cancelling the launched host did not quarantine its destination.")
+                task.cancel()
+                _ = await task.result
+                return
+            }
+            let drainedPromptly: Bool
+            if case .some(.finished(let finishedAt)) = await completions.first(where: { _ in true }) {
+                drainedPromptly = finishedAt < cancellationDeadline
+            } else { drainedPromptly = false }
+            #expect(drainedPromptly, "Cancellation must drain the host before its 90-second command deadline.")
+            // Cancel the test task on regression so its stream wait and owned host still drain.
+            if !drainedPromptly { task.cancel() }
+            do {
+                _ = try await task.value
+                Issue.record("The cancelled host unexpectedly completed successfully.")
+            } catch XcodeTestExecutorError.cancelled {
+                // Only requested cancellation is acceptable, even after forced cleanup.
+            } catch { Issue.record("Unexpected cancellation error: \(error)") }
+            #expect(Darwin.kill(pid, 0) == -1 && errno == ESRCH)
+            #expect(!(await executor.hasActiveExecution()))
+            let quarantined: Bool
+            if case .some(.quarantined) = await executor.reservation(for: destination) {
+                quarantined = true
+            } else { quarantined = false }
+            #expect(quarantined)
+            #expect(try await persistence.loadJournals().contains { $0.phase == .recoveryRequired })
+        } catch {
+            task.cancel()
+            _ = await executor.cancelConnectionCheck()
+            _ = await task.result
+            throw error
+        }
+    }
+
     @Test func nativeSavePromotionUsesCapturedValidationAndRejectsCancellation() throws {
         let definition = try scenario()
         let identity = invocation(for: definition)
