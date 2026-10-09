@@ -3049,8 +3049,8 @@ struct ScenarioContractsTests {
         )
         let definition = try scenario()
         let invocation = invocation(for: definition)
-        let logURL = root.appending(path: "journal-failure.log")
         let launchedProcess = ProcessIDRecorder()
+        let logURL = root.appending(path: "journal-failure.log")
         do {
             _ = try await executor.runProcess(
                 executable: "/bin/zsh", arguments: termResistantHostArguments,
@@ -3058,9 +3058,9 @@ struct ScenarioContractsTests {
                 destinationIdentifier: invocation.destinationIdentifier,
                 journal: journal(for: definition, invocation: invocation, phase: .running),
                 appendLog: false, deadline: .seconds(30),
-                onProcessLaunched: { processID in
-                    // Hold the journal write until the host has installed its signal traps.
-                    if Self.readyHostProcessID(logURL) == processID { launchedProcess.record(processID) }
+                onProcessLaunched: {
+                    launchedProcess.record($0)
+                    #expect(Self.waitForHostReady(logURL, processID: $0))
                 }
             )
             Issue.record("The running journal unexpectedly saved over a regular file.")
@@ -3069,8 +3069,7 @@ struct ScenarioContractsTests {
         } catch {
             // The persistence error itself is rethrown once the host has stopped.
         }
-        let processID = try #require(launchedProcess.value, "The host never reported that its signal traps were ready.")
-        expectHostStopped(processID)
+        expectHostStopped(try #require(launchedProcess.value))
         #expect(!(await executor.hasActiveExecution()))
     }
 
@@ -3079,7 +3078,11 @@ struct ScenarioContractsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let persistence = ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab", directoryHint: .isDirectory))
         let executor = XcodeTestExecutor(
-            workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory), persistence: persistence
+            workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory), persistence: persistence,
+            destinationStatusReader: { identifier, _ in
+                #expect(identifier == "timed-out-connection-device")
+                return (true, "Synthetic local process", .macOS)
+            }
         )
         let destination = "timed-out-connection-device"
         let logURL = root.appending(path: "connection-timeout.log")
@@ -3111,7 +3114,11 @@ struct ScenarioContractsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let executor = XcodeTestExecutor(
             workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory),
-            persistence: ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab", directoryHint: .isDirectory))
+            persistence: ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab", directoryHint: .isDirectory)),
+            destinationStatusReader: { identifier, _ in
+                #expect(identifier == "cancelled-connection-device")
+                return (true, "Synthetic local process", .macOS)
+            }
         )
         let definition = try scenario()
         let configuration = termResistantConnectionConfiguration(root: root, destination: "cancelled-connection-device")
@@ -3122,15 +3129,20 @@ struct ScenarioContractsTests {
                 definition: definition, configuration: configuration,
                 methodName: "testIntentLabReadiness", derivedData: root.appending(path: "DerivedData"),
                 resultBundle: root.appending(path: "Readiness.xcresult"), arguments: arguments,
-                logURL: logURL, appendLog: false, deadline: .seconds(2)
+                logURL: logURL, appendLog: false, deadline: .seconds(30)
             )
         }
         let launchDeadline = ContinuousClock.now.advanced(by: .seconds(5))
-        while !(await executor.connectionDeviceTestIsRunning()) && ContinuousClock.now < launchDeadline {
+        while Self.readyProcessID(logURL) == nil && ContinuousClock.now < launchDeadline {
             try await Task.sleep(for: .milliseconds(20))
         }
+        guard let processID = Self.readyProcessID(logURL) else {
+            Issue.record("The connection host did not acknowledge its signal traps before cancellation.")
+            task.cancel()
+            _ = try? await task.value
+            return
+        }
         #expect(await executor.connectionDeviceTestIsRunning())
-        let processID = try #require(Self.readyHostProcessID(logURL), "The host never reported that its signal traps were ready.")
         guard case .recoveryRequired = await executor.cancelConnectionCheck() else {
             Issue.record("Cancelling a launched connection host did not require recovery.")
             task.cancel()
@@ -3792,21 +3804,25 @@ struct ScenarioContractsTests {
         return configuration
     }
 
-    /// The TERM-resistant host prints its PID only after `trap '' INT TERM` is installed.
-    private static func readyHostProcessID(_ logURL: URL, timeout: Duration = .seconds(5)) -> Int32? {
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        repeat {
-            if let contents = try? String(contentsOf: logURL, encoding: .utf8),
-               let processID = Int32(contents.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                return processID
-            }
-            usleep(10_000)
-        } while ContinuousClock.now < deadline
-        return nil
+    private func loggedProcessID(_ logURL: URL) throws -> Int32 {
+        try #require(Self.readyProcessID(logURL))
     }
 
-    private func loggedProcessID(_ logURL: URL) throws -> Int32 {
-        try #require(Int32(String(contentsOf: logURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+    private static func readyProcessID(_ logURL: URL) -> Int32? {
+        // print runs only after the signal traps are installed. Require the full
+        // line so a concurrent read cannot accept an incomplete PID as readiness.
+        guard let text = try? String(contentsOf: logURL, encoding: .utf8), text.hasSuffix("\n"),
+              let processID = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)), processID > 0 else { return nil }
+        return processID
+    }
+
+    private static func waitForHostReady(_ logURL: URL, processID: Int32) -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while ContinuousClock.now < deadline {
+            if readyProcessID(logURL) == processID { return true }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        return false
     }
 
     private func expectHostStopped(_ processID: Int32, sourceLocation: SourceLocation = #_sourceLocation) {

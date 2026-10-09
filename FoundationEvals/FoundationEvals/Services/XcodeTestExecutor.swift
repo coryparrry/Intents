@@ -528,6 +528,7 @@ actor XcodeTestExecutor {
     private let workDirectory: URL
     private let persistence: ScenarioPersistence
     private let fileManager: FileManager
+    private let destinationStatusReader: (@Sendable (String, Bool) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?))?
     private var active: ActiveExecution?
     private var inFlightJournal: ScenarioExecutionJournal?
     private var awaitingValidationJournal: ScenarioExecutionJournal?
@@ -542,10 +543,12 @@ actor XcodeTestExecutor {
     private var verifiedConnection: ScenarioVerifiedConnection?
     private var connectionStageFailure: ScenarioConnectionStageFailure?
 
-    init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default) {
+    init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default,
+         destinationStatusReader: (@Sendable (String, Bool) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?))? = nil) {
         self.workDirectory = workDirectory
         self.persistence = persistence
         self.fileManager = fileManager
+        self.destinationStatusReader = destinationStatusReader
     }
 
     func reconcileInterruptedJournals() async throws -> [ScenarioExecutionJournal] {
@@ -2943,6 +2946,7 @@ actor XcodeTestExecutor {
         _ identifier: String,
         requiresSiri: Bool = false
     ) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?) {
+        if let destinationStatusReader { return destinationStatusReader(identifier, requiresSiri) }
         let requested = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requested.isEmpty else {
             return (false, "Choose an available Mac, iOS Simulator, or paired physical iPhone.", nil)
