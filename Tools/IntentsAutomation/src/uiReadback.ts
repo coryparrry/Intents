@@ -2,7 +2,7 @@ import {z} from 'zod';
 import type {CaptureSnapshotResult} from 'agent-device';
 import type {Target} from './protocol.js';
 import type {Segment} from './segment.js';
-import {semanticTree} from './e2e/semanticTree.js';
+import {semanticTree,secureAncestry} from './e2e/semanticTree.js';
 const nodeSchema=z.strictObject({index:z.number().int().nonnegative(),parentIndex:z.number().int().nonnegative().optional(),
  identifier:z.string().max(1024).optional(),label:z.string().max(32768).optional(),value:z.string().max(32768).optional(),
  ownerBundle:z.string().max(256).optional(),blocked:z.boolean(),hidden:z.boolean(),visible:z.boolean(),disabled:z.boolean(),secure:z.boolean(),checked:z.boolean().optional(),selected:z.boolean().optional()});
@@ -13,8 +13,7 @@ export function captureReadback(raw:CaptureSnapshotResult,target:Target):UIReadb
  const capture=semanticTree(raw,1).snapshot;
  if(capture.truncated || capture.treeUnavailable || raw.appBundleId!==target.bundleId)throw new Error('Complete app-bound readback unavailable');
  const parents=new Map(raw.nodes.map(n=>[n.index,n]));
- const secure=(index:number)=>{let node=parents.get(index);const visited=new Set<number>();
-  while(node){if(visited.has(node.index))throw new Error('Invalid ancestry');visited.add(node.index);if(node.password)return true;node=node.parentIndex===undefined?undefined:parents.get(node.parentIndex);}return false;};
+ const secure=(index:number)=>secureAncestry(parents.get(index)!,parents);
  return readbackSchema.parse({schemaVersion:1,appBundleId:raw.appBundleId,targetId:target.id,complete:true,nodes:raw.nodes.map(n=>({index:n.index,
   ...(n.parentIndex!==undefined?{parentIndex:n.parentIndex}:{}),...(n.identifier!==undefined?{identifier:n.identifier}:{}),
   ...(n.label!==undefined && !secure(n.index)?{label:n.label}:{}),...(n.value!==undefined && !secure(n.index)?{value:n.value}:{}),
