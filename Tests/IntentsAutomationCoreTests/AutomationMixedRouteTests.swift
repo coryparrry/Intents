@@ -97,6 +97,75 @@ final class AutomationMixedRouteTests: XCTestCase, @unchecked Sendable {
         let final = await driver.release(scope: scope, lease: lease); XCTAssertTrue(final.commandsDrained)
         XCTAssertTrue(final.runnerTerminated)
     }
+    private func routedDriver(target: TargetIdentity, control: AutomationDeviceLeaseManager.Lease.Control, kind: AutomationSegment.Kind,
+                              includeSiri: Bool = true) async throws -> (AutomationMixedRouteDriver, AutomationCase, AutomationSegment,
+                                                                         AutomationScope, AutomationDeviceLeaseManager.Lease, MixedEvents) {
+        var (plan, _) = fixture(); plan.target = target
+        let events = MixedEvents(), leases = AutomationDeviceLeaseManager()
+        let driver = AutomationMixedRouteDriver(ui: MixedFixtureDriver(name: "ui", events: events),
+            apple: MixedFixtureDriver(name: "apple", events: events),
+            siri: includeSiri ? MixedFixtureDriver(name: "siri", events: events) : nil)
+        let lease = try await leases.acquire(runID: "run", target: target, control: control)
+        let segment = AutomationSegment(id: "routed", kind: kind, phase: .subject, operation: "Route")
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: segment.id, leaseGeneration: lease.generation)
+        return (driver, plan, segment, scope, lease, events)
+    }
+    private func assertAcquireDenied(target: TargetIdentity, control: AutomationDeviceLeaseManager.Lease.Control, kind: AutomationSegment.Kind,
+                                     includeSiri: Bool = true, expected: AutomationContractError,
+                                     file: StaticString = #filePath, line: UInt = #line) async throws {
+        let (driver, plan, segment, scope, lease, events) = try await routedDriver(target: target, control: control, kind: kind, includeSiri: includeSiri)
+        do {
+            try await driver.acquire(plan: plan, segment: segment, scope: scope, lease: lease)
+            XCTFail("\(kind) acquired under \(control) lease on \(target.kind)", file: file, line: line)
+        } catch { XCTAssertEqual(error as? AutomationContractError, expected, file: file, line: line) }
+        do { _ = try await driver.execute(plan: plan, segment: segment, scope: scope, lease: lease); XCTFail("Denied route executed", file: file, line: line) }
+        catch { XCTAssertEqual(error as? AutomationContractError, .unknownLease, file: file, line: line) }
+        let history = await events.values
+        XCTAssertEqual(history, [], "No concrete driver may be invoked for a denied route", file: file, line: line)
+    }
+    private let phone = TargetIdentity(id: "owned-phone", kind: .physical)
+    private let siriUnavailable = AutomationContractError.missingEvidence("Physical Siri submission driver is unavailable")
+    func testPhysicalSiriTextUnderSystemLeaseRoutesOnlyToSiriDriver() async throws {
+        let (driver, plan, segment, scope, lease, events) = try await routedDriver(target: phone, control: .system, kind: .siriText)
+        try await driver.acquire(plan: plan, segment: segment, scope: scope, lease: lease)
+        let receipt = try await driver.execute(plan: plan, segment: segment, scope: scope, lease: lease)
+        XCTAssertEqual(receipt.route, .siriText); XCTAssertEqual(receipt.segmentID, "routed")
+        let proof = await driver.release(scope: scope, lease: lease)
+        XCTAssertTrue(proof.commandsDrained); XCTAssertTrue(proof.runnerTerminated); XCTAssertTrue(proof.privatePayloadCleaned)
+        let history = await events.values
+        XCTAssertEqual(history, ["siri.acquire.routed", "siri.execute.routed", "siri.release.routed"])
+    }
+    func testSiriTextRequiresPhysicalTargetSystemLeaseAndSiriDriver() async throws {
+        try await assertAcquireDenied(target: .init(id: "owned", kind: .simulator), control: .system, kind: .siriText, expected: siriUnavailable)
+        try await assertAcquireDenied(target: .init(id: "host-macos-local", kind: .nativeMac, loginSession: "console"), control: .system,
+                                      kind: .siriText, expected: siriUnavailable)
+        try await assertAcquireDenied(target: phone, control: .ui, kind: .siriText, expected: siriUnavailable)
+        try await assertAcquireDenied(target: phone, control: .system, kind: .siriText, includeSiri: false, expected: siriUnavailable)
+    }
+    func testLeaseControlMismatchIsDeniedBeforeAnyDriverAcquires() async throws {
+        let simulator = TargetIdentity(id: "owned", kind: .simulator)
+        try await assertAcquireDenied(target: simulator, control: .system, kind: .ui, expected: .unknownLease)
+        try await assertAcquireDenied(target: simulator, control: .ui, kind: .systemIntent, expected: .unknownLease)
+        try await assertAcquireDenied(target: simulator, control: .ui, kind: .systemQuery, expected: .unknownLease)
+        try await assertAcquireDenied(target: phone, control: .system, kind: .ui, expected: .unknownLease)
+    }
+    func testUnsupportedSegmentKindsHaveNoProductionDriver() async throws {
+        let unsupported = AutomationContractError.missingEvidence("No qualified production driver for this segment route")
+        for kind in [AutomationSegment.Kind.pairedFeature, .observeOnly] {
+            for control in [AutomationDeviceLeaseManager.Lease.Control.ui, .system] {
+                try await assertAcquireDenied(target: phone, control: control, kind: kind, expected: unsupported)
+            }
+        }
+    }
+    func testDeniedRouteLeavesDriverFreeForTheCorrectlyControlledSegment() async throws {
+        let (driver, plan, segment, scope, lease, events) = try await routedDriver(target: phone, control: .system, kind: .ui)
+        do { try await driver.acquire(plan: plan, segment: segment, scope: scope, lease: lease); XCTFail("UI segment acquired under system lease") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .unknownLease) }
+        var siriSegment = segment; siriSegment.kind = .siriText
+        try await driver.acquire(plan: plan, segment: siriSegment, scope: scope, lease: lease)
+        let proof = await driver.release(scope: scope, lease: lease); XCTAssertTrue(proof.commandsDrained)
+        let history = await events.values; XCTAssertEqual(history, ["siri.acquire.routed", "siri.release.routed"])
+    }
 }
 private actor MixedEvents {
     var values: [String] = []
