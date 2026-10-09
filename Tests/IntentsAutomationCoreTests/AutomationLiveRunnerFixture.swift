@@ -8,10 +8,27 @@ enum AutomationLiveRunnerFixture {
     struct Runner: Sendable {
         let identity: AutomationProcessIdentity, executable: URL
     }
-    /// Replaces a synthetic host executable with a runnable Mach-O; product digests are computed afterwards.
+    /// Replaces a synthetic host executable with a runnable thin Mach-O; product digests are computed afterwards.
     static func installExecutable(at url: URL) throws {
         try? FileManager.default.removeItem(at: url)
-        try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/sleep"), to: url)
+        try nativeSlice(of: Data(contentsOf: URL(fileURLWithPath: "/bin/sleep"))).write(to: url)
+        guard chmod(url.path, 0o755) == 0 else { throw POSIXError(.EPERM) }
+    }
+    /// Host identity accepts only one slice per CPU type, but system binaries ship both arm64 and arm64e.
+    private static func nativeSlice(of data: Data) throws -> Data {
+        func word(_ offset: Int) -> UInt32 { data[offset..<offset + 4].reduce(0) { ($0 << 8) | UInt32($1) } }
+        guard data.count >= 8, word(0) == 0xcafebabe else { return data }
+        let slices = (0..<Int(word(4))).map { index -> (cpu: UInt32, subtype: UInt32, range: Range<Int>) in
+            let base = 8 + index * 20, offset = Int(word(base + 8))
+            return (word(base), word(base + 4) & 0x00ff_ffff, offset..<offset + Int(word(base + 12)))
+        }
+        #if arch(arm64)
+        let preferred = slices.filter { $0.cpu == 0x0100000c }.sorted { $0.subtype > $1.subtype }
+        #else
+        let preferred = slices.filter { $0.cpu == 0x01000007 }
+        #endif
+        guard let slice = preferred.first, slice.range.upperBound <= data.count else { throw AutomationContractError.invalidIdentity }
+        return data.subdata(in: slice.range)
     }
     /// Launches `executable` orphaned to launchd, as a real runner is, so exit is reaped outside the test process.
     static func launch(_ executable: URL, ignoringTerminate: Bool = false, in test: XCTestCase) throws -> Runner {
