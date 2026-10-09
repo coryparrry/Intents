@@ -27,26 +27,55 @@ struct ScenarioPhysicalFailureTests {
         }
     }
 
-    @Test func cancelDuringConnectionBuildPreventsPhysicalDispatch() async throws {
+    @Test(.timeLimit(.minutes(1))) func cancelDuringConnectionBuildPreventsPhysicalDispatch() async throws {
         try await fixture.withDirectory { root in
             let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("leases.json"),
                 inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in observation(target.id) }, drain: { true }) })
             let executor = XcodeTestExecutor(workDirectory: root.appendingPathComponent("Executor"), persistence: ScenarioPersistence(rootDirectory: root), physicalLeaseManager: manager)
-            let started = root.appendingPathComponent("build-started"), host = root.appendingPathComponent("held-build")
-            try Data("#!/bin/sh\ntrap 'exit 0' INT TERM\ntouch '\(started.path)'\nwhile :; do :; done\n".utf8).write(to: host)
-            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: host.path)
             var invocation = fixture.invocation(); invocation.testIdentity.methodName = "testIntentLabConnection"
             var check = journal(root, invocation: invocation); check.phase = .preparing
             try await executor.beginPendingInvocation(check)
             let buildJournal = check, buildID = invocation.id, buildDestination = invocation.destinationIdentifier
-            let build = Task { try await executor.runProcess(executable: host.path, arguments: ["build-for-testing"],
-                logURL: URL(fileURLWithPath: buildJournal.buildLogPath), invocationID: buildID,
-                destinationIdentifier: buildDestination, journal: buildJournal, appendLog: false, deadline: .seconds(10)) }
-            let until = ContinuousClock.now.advanced(by: .seconds(2))
-            while !FileManager.default.fileExists(atPath: started.path), ContinuousClock.now < until { try await Task.sleep(for: .milliseconds(10)) }
-            #expect(FileManager.default.fileExists(atPath: started.path))
-            #expect(await executor.cancelActiveExecution(grace: .zero)?.id == invocation.id)
-            _ = try? await build.value
+            let (launches, launched) = AsyncThrowingStream<Int32, any Error>.makeStream()
+            let launchTimeout = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+            launchTimeout.setEventHandler { launched.finish(throwing: XcodeTestExecutorError.timedOut) }
+            launchTimeout.schedule(deadline: .now() + 10)
+            launchTimeout.resume()
+            defer { launchTimeout.cancel() }
+            let build = Task {
+                do {
+                    // A sleeping owned child holds the build without consuming a CPU core.
+                    let code = try await executor.runProcess(executable: "/bin/sleep", arguments: ["120"],
+                        logURL: URL(fileURLWithPath: buildJournal.buildLogPath), invocationID: buildID,
+                        destinationIdentifier: buildDestination, journal: buildJournal, appendLog: false,
+                        deadline: .seconds(50), onProcessLaunched: { pid in
+                            launched.yield(pid)
+                            launched.finish()
+                        })
+                    launched.finish()
+                    return code
+                } catch {
+                    launched.finish(throwing: error)
+                    throw error
+                }
+            }
+            do {
+                let pid = try #require(try await launches.first(where: { _ in true }))
+                #expect(pid > 0)
+                launchTimeout.cancel()
+                #expect(await executor.cancelActiveExecution(grace: .zero)?.id == invocation.id)
+                do {
+                    _ = try await build.value
+                    Issue.record("Expected cancellation of the held connection build.")
+                } catch XcodeTestExecutorError.cancelled {
+                    // Only the requested cancellation is an acceptable build failure.
+                }
+            } catch {
+                build.cancel()
+                _ = await executor.cancelActiveExecution(grace: .zero)
+                _ = await build.result
+                throw error
+            }
             let sentinel = root.appendingPathComponent("device-launch")
             check.intendedExecutable = "/usr/bin/touch"; check.intendedArguments = [sentinel.path]
             await #expect(throws: XcodeTestExecutorError.self) {
