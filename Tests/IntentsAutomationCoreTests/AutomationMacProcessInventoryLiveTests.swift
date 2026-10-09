@@ -17,7 +17,7 @@ final class AutomationMacProcessInventoryLiveTests: XCTestCase {
         let start = "\(info.pbi_start_tvsec):\(info.pbi_start_tvusec)"
 
         let observed = try AutomationMacProcessInventory.currentUser(watchedExecutablePaths: ["/bin/sleep"])
-        try observed.validate(expectedUserID: getuid())
+        try observed.validate(expectedUserID: getuid(), matchingExecutablePaths: ["/bin/sleep"])
         let record = try XCTUnwrap(observed.processes.first { $0.identity.pid == pid })
         XCTAssertEqual(record.executablePath, "/bin/sleep")
         XCTAssertEqual(record.userID, getuid())
