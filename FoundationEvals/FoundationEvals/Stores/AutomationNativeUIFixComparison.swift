@@ -23,28 +23,40 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
         let reproduction = try AutomationNativeUIReproductionProposal.compile(frozen: frozen, original: original,
             subject: before, runtime: runtime, runID: runID + ".before", disposable: disposable)
         guard before.app.productDigest != nil, before.target == after.target else { throw AutomationContractError.conflictingOperation }
+        var baseline = frozen
         switch (before, after) {
         case (.installedUI, .installedUI):
-            guard frozen.plan.provenance["ui.preparedHostDigest"] == nil else { throw AutomationContractError.conflictingOperation }
-        case (.prepared(let baseline), .prepared(let candidate)):
-            try validatePreparedCandidate(before: baseline, after: candidate)
+            guard frozen.plan.provenance["ui.preparedHostDigest"] == nil,
+                  frozen.plan.preparedSimulatorBuildArtifacts == nil, frozen.plan.preparedMacBuildArtifacts == nil else { throw AutomationContractError.conflictingOperation }
+        case (.prepared(let retained), .prepared(let candidate)):
+            try validatePreparedCandidate(before: retained, after: candidate)
+            if frozen.plan.preparedSimulatorBuildArtifacts == nil, retained.host.target.kind == .simulator {
+                // Admission above uses the unchanged legacy case and its original exact failure.
+                // The new comparison runs both populations afresh under this linked definition.
+                var plan = frozen.plan
+                plan.id = "comparison." + frozen.digest; plan.revision = 1
+                plan.provenance["comparison.sourceCaseDigest"] = frozen.digest
+                try AutomationNativeUIRuntime.attachPreparedEvidence(to: &plan, prepared: retained)
+                baseline = try AutomationFrozenCase(plan: plan)
+            }
         default: throw AutomationContractError.invalidPlan("Compare two installed builds or two prepared source builds")
         }
         let candidate: AutomationFrozenCase
-        if frozen.plan.preparedMacBuildArtifacts != nil, case .prepared(let prepared) = after {
-            candidate = try AutomationFixContract.candidate(from: frozen, prepared: prepared)
-        } else { candidate = try AutomationFixContract.candidate(from: frozen, app: after.app) }
+        if case .prepared(let prepared) = after {
+            candidate = try AutomationFixContract.candidate(from: baseline, prepared: prepared)
+        } else { candidate = try AutomationFixContract.candidate(from: baseline, app: after.app) }
         let afterCapabilities: CapabilityProfile
         if reproduction.usesFreshFixture, case .prepared(let prepared) = after { afterCapabilities = AutomationNativeFreshFixtures.capabilities(prepared) }
         else { afterCapabilities = .init() }
         let beforeApproval = RunApproval(runID: runID + ".before", app: before.app, target: before.target,
-            environmentID: frozen.plan.environmentID, effects: reproduction.approval.effects, maximumActions: 30,
-            disposable: disposable, approvedCaseDigest: frozen.digest)
+            environmentID: baseline.plan.environmentID, effects: reproduction.approval.effects, maximumActions: 30,
+            disposable: disposable, approvedCaseDigest: baseline.digest)
         let afterApproval = RunApproval(runID: runID + ".after", app: after.app, target: after.target,
             environmentID: candidate.plan.environmentID, effects: reproduction.approval.effects, maximumActions: 30,
             disposable: disposable, approvedCaseDigest: candidate.digest)
+        try PlanValidator.validate(baseline.plan, approval: beforeApproval, capabilities: reproduction.capabilities, purpose: .review)
         try PlanValidator.validate(candidate.plan, approval: afterApproval, capabilities: afterCapabilities, purpose: .review)
-        return .init(baseline: frozen, candidate: candidate, beforeApproval: beforeApproval, afterApproval: afterApproval, beforeCapabilities: reproduction.capabilities, afterCapabilities: afterCapabilities)
+        return .init(baseline: baseline, candidate: candidate, beforeApproval: beforeApproval, afterApproval: afterApproval, beforeCapabilities: reproduction.capabilities, afterCapabilities: afterCapabilities)
     }
     static func compileMac(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
                            before: AutomationInstalledMacUIApplication, after: AutomationInstalledMacUIApplication,
