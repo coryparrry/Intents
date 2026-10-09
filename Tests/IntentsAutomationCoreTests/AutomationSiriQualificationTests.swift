@@ -120,4 +120,132 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
         let revoked = await registry.admission(prepared: prepared, plan: plan, approval: nextApproval); XCTAssertNil(revoked)
     }
     #endif
+    #if os(macOS)
+    private actor InventoryGate {
+        private var entered = false
+        private var listeners: [CheckedContinuation<Void, Never>] = []
+        private var release: CheckedContinuation<Void, Never>?
+        func hold() async {
+            entered = true; listeners.forEach { $0.resume() }; listeners.removeAll()
+            await withCheckedContinuation { release = $0 }
+        }
+        func wait() async { if !entered { await withCheckedContinuation { listeners.append($0) } } }
+        func resume() { release?.resume(); release = nil }
+    }
+    private func physicalHost(for plan: AutomationCase) -> AutomationPreparedApplication {
+        let host = AutomationPreparedAppleHost(app: plan.app, target: plan.target, xctestrunPath: "synthetic",
+            xctestrunDigest: String(repeating: "b", count: 64), subjectProductPath: "synthetic", hostBundlePath: "synthetic",
+            hostProductDigest: String(repeating: "c", count: 64), hostBundleID: "example.Host.xctrunner", testTarget: "Host")
+        return AutomationPreparedApplication(source: .init(sourceRoot: "synthetic", files: [], directories: [], excludedPaths: []),
+            generatedHost: .init(projectPath: "synthetic", scheme: "Host", targetID: "HOST", bundleID: host.hostBundleID,
+                configuration: "Debug", templateDigest: String(repeating: "d", count: 64), includesSiri: true), host: host,
+            catalog: .init(app: plan.app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: []),
+            buildLogPath: "synthetic-" + UUID().uuidString, buildLogTruncated: false)
+    }
+    private func assertUntouched(_ root: URL, target: TargetIdentity, attemptID: String = "attempt", casesExpected: Bool = false,
+                                 file: StaticString = #filePath, line: UInt = #line) async throws {
+        let observer = try AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("target-leases.json"))
+        let absent = try await observer.campaignAbsent(target: target)
+        XCTAssertTrue(absent, "Rejected calibration reserved the device campaign", file: file, line: line)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(attemptID).path), file: file, line: line)
+        if !casesExpected {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Cases").path), file: file, line: line)
+        }
+    }
+    private func assertReachesPhysicalCampaign(_ runner: AutomationApplicationRunner, prepared: AutomationPreparedApplication,
+                                               plan: AutomationCase, approval: RunApproval, capabilities: CapabilityProfile,
+                                               file: StaticString = #filePath, line: UInt = #line) async {
+        do {
+            _ = try await runner.qualifySiriWorkflow(prepared: prepared, plan: plan, approval: approval,
+                capabilities: capabilities, attemptID: "attempt", allowInstall: true)
+            XCTFail("Synthetic host cannot complete a physical campaign", file: file, line: line)
+        } catch {
+            XCTAssertEqual(error as? AutomationContractError,
+                .missingEvidence("Prepare the exact physical host in this process before running"), file: file, line: line)
+        }
+    }
+    func testQualifySiriWorkflowWithoutInstallApprovalStopsBeforeAuthorityOrDevice() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (plan, approval, capabilities) = try proposal()
+        let prepared = physicalHost(for: plan)
+        let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
+            simulatorInventory: { _, _ in XCTFail("Siri calibration read simulator inventory"); return [] })
+        var foreign = approval; foreign.disposable = false
+        for candidate in [approval, foreign] {
+            do {
+                _ = try await runner.qualifySiriWorkflow(prepared: prepared, plan: plan, approval: candidate,
+                    capabilities: capabilities, attemptID: "attempt", allowInstall: false)
+                XCTFail("Calibration ran without explicit install approval")
+            } catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
+        }
+        try await assertUntouched(root, target: plan.target)
+        await assertReachesPhysicalCampaign(runner, prepared: prepared, plan: plan, approval: approval, capabilities: capabilities)
+    }
+    func testQualifySiriWorkflowRejectsMismatchedApprovalWithoutLeavingRunnerBusy() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (plan, approval, capabilities) = try proposal()
+        let prepared = physicalHost(for: plan)
+        let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
+            simulatorInventory: { _, _ in XCTFail("Siri calibration read simulator inventory"); return [] })
+        var otherEnvironment = approval; otherEnvironment.environmentID = "other"
+        var retained = approval; retained.disposable = false
+        var otherTarget = approval; otherTarget.target = .init(id: "00008140-0000000000000000", kind: .physical)
+        var widened = plan; widened.execution.effects.insert(.externalWrite)
+        for (candidatePlan, candidateApproval) in [(plan, otherEnvironment), (plan, retained), (plan, otherTarget), (widened, approval)] {
+            do {
+                _ = try await runner.qualifySiriWorkflow(prepared: prepared, plan: candidatePlan, approval: candidateApproval,
+                    capabilities: capabilities, attemptID: "attempt", allowInstall: true)
+                XCTFail("Calibration accepted an approval that does not match its frozen proposal")
+            } catch {
+                guard case .invalidPlan = error as? AutomationContractError else { return XCTFail("Unexpected error \(error)") }
+            }
+            try await assertUntouched(root, target: plan.target)
+        }
+        // Authority failure precedes `running = true`, so the next admitted call is not reported busy.
+        await assertReachesPhysicalCampaign(runner, prepared: prepared, plan: plan, approval: approval, capabilities: capabilities)
+        try await assertUntouched(root, target: plan.target)
+    }
+    func testQualifySiriWorkflowIsRejectedWhileAnotherRunOwnsTheRunner() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (plan, approval, capabilities) = try proposal()
+        let prepared = physicalHost(for: plan)
+        let gate = InventoryGate()
+        let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
+            simulatorInventory: { _, _ in
+                await gate.hold()
+                throw AutomationContractError.missingEvidence("fixture unavailable")
+            })
+        let app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "ios", productDigest: String(repeating: "a", count: 64))
+        let simulator = TargetIdentity(id: "nonexistent-simulator", kind: .simulator)
+        let simulatorPlan = AutomationCase(id: "busy", app: app, target: simulator, environmentID: "disposable",
+            execution: .init(id: "subject", kind: .systemIntent, phase: .subject, operation: "Actual subject"))
+        let simulatorApp = AutomationPreparedApplication(source: .init(sourceRoot: root.path, files: [], directories: [], excludedPaths: []),
+            generatedHost: .init(projectPath: "unused", scheme: "unused", targetID: "unused", bundleID: "unused", configuration: "Debug", templateDigest: "unused"),
+            host: .init(app: app, target: simulator, xctestrunPath: "unused", xctestrunDigest: "unused", subjectProductPath: "unused",
+                hostBundlePath: "unused", hostProductDigest: "unused", hostBundleID: "unused", testTarget: "unused"),
+            catalog: .init(app: app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: []),
+            buildLogPath: "unused", buildLogTruncated: false)
+        let simulatorApproval = RunApproval(runID: "simulator-run", app: app, target: simulator, environmentID: simulatorPlan.environmentID,
+            effects: [.observe], maximumActions: 10, disposable: true)
+        let active = Task {
+            try await runner.run(prepared: simulatorApp, plan: simulatorPlan, approval: simulatorApproval, capabilities: .init(),
+                attemptID: "simulator-attempt", allowBootAndInstall: true)
+        }
+        await gate.wait()
+        do {
+            _ = try await runner.qualifySiriWorkflow(prepared: prepared, plan: plan, approval: approval,
+                capabilities: capabilities, attemptID: "attempt", allowInstall: true)
+            XCTFail("Calibration ran concurrently with another campaign")
+        } catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
+        // The active simulator run has frozen its own case; only the physical device must stay untouched.
+        try await assertUntouched(root, target: plan.target, casesExpected: true)
+        await gate.resume()
+        do { _ = try await active.value; XCTFail("Synthetic inventory failure") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("fixture unavailable")) }
+        await assertReachesPhysicalCampaign(runner, prepared: prepared, plan: plan, approval: approval, capabilities: capabilities)
+    }
+    #endif
 }
