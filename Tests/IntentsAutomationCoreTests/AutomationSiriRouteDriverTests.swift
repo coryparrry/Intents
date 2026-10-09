@@ -18,32 +18,44 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
     }
     actor Commands {
         var calls: [[String]] = []
-        var fail = false, foreign = false
-        let receipt: [String: AutomationJSON]
+        var fail = false, foreign = false, duplicate = false, flood = false
+        var codesign: AutomationOwnedCommand.Result?
+        var receipt: [String: AutomationJSON]
         init(receipt: [String: AutomationJSON]) { self.receipt = receipt }
         func run(_ executable: String, _ arguments: [String], _ directory: URL, _ duration: Duration) throws -> AutomationOwnedCommand.Result {
             calls.append([executable] + arguments)
+            if executable == "/usr/bin/codesign", let codesign { return codesign }
             if arguments.first == "xcodebuild", fail { return .init(exitStatus: 65, stdout: Data(), stderr: Data(), logsTruncated: false) }
             if arguments.first == "xcresulttool" {
                 let output = URL(fileURLWithPath: arguments[try XCTUnwrap(arguments.firstIndex(of: "--output-path")) + 1])
                 try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
                 var value = receipt; if foreign { value["attemptID"] = .string("foreign") }
-                try JSONEncoder().encode(AutomationJSON.object(value)).write(to: output.appendingPathComponent("submission.json"))
+                let encoded = try JSONEncoder().encode(AutomationJSON.object(value))
+                try encoded.write(to: output.appendingPathComponent("submission.json"))
+                if duplicate { try encoded.write(to: output.appendingPathComponent("submission-copy.json")) }
+                if flood { for index in 0..<1000 { try Data().write(to: output.appendingPathComponent("noise-\(index).txt")) } }
             }
             return .init(exitStatus: 0, stdout: Data(), stderr: Data(), logsTruncated: false)
         }
         func setFailure() { fail = true }
         func setForeign() { foreign = true }
+        func setDuplicate() { duplicate = true }
+        func setFlood() { flood = true }
+        func setCodesign(exitStatus: Int32, logsTruncated: Bool) {
+            codesign = .init(exitStatus: exitStatus, stdout: Data(), stderr: Data(), logsTruncated: logsTruncated)
+        }
+        func setReceipt(_ key: String, _ value: AutomationJSON) { receipt[key] = value }
     }
     struct Harness {
         let root: URL, prepared: AutomationPreparedApplication, plan: AutomationCase, approval: RunApproval
         let leases: AutomationDeviceLeaseManager, lease: AutomationDeviceLeaseManager.Lease, scope: AutomationScope
         let release: Release, commands: Commands, capabilities: CapabilityProfile
-        func driver() throws -> AutomationSiriRouteDriver {
-            try .init(prepared: prepared, approval: approval, capabilities: capabilities,
+        func driver(prepared: AutomationPreparedApplication? = nil, approval: RunApproval? = nil, capabilities: CapabilityProfile? = nil,
+                    siriAuthority: AutomationSiriRouteAuthority? = nil) throws -> AutomationSiriRouteDriver {
+            try .init(prepared: prepared ?? self.prepared, approval: approval ?? self.approval, capabilities: capabilities ?? self.capabilities,
                 developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"), stateDirectory: root.appendingPathComponent("driver"),
                 leases: leases, artifacts: AutomationArtifactRegistry(root: root.appendingPathComponent("artifacts")),
-                subjectVerifier: Subject(app: plan.app, target: plan.target), releaseVerifier: release,
+                subjectVerifier: Subject(app: plan.app, target: plan.target), releaseVerifier: release, siriAuthority: siriAuthority,
                 commands: .init(run: { try await commands.run($0, $1, $2, $3) }, stop: { true }))
         }
     }
@@ -121,7 +133,8 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
                 commands: .init(run: { _, _, _ in throw AutomationContractError.invalidIdentity }, stop: { true }))
         }
         let denied = try apple(nil, "denied")
-        do { try await denied.acquire(plan: plan, segment: segment, scope: scope, lease: h.lease); XCTFail("No authority must stop before query preparation") } catch {}
+        do { try await denied.acquire(plan: plan, segment: segment, scope: scope, lease: h.lease); XCTFail("No authority must stop before query preparation") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Unqualified Siri API submission cannot assess routing or business outcomes")) }
         _ = await denied.release(scope: scope, lease: h.lease)
         let authority = try AutomationSiriRouteAuthority(plan: plan, approval: approval)
         let admitted = try apple(authority, "admitted")
@@ -136,8 +149,8 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
             let h = try await fixture(), driver = try h.driver()
             if foreign { await h.commands.setForeign() } else { await h.commands.setFailure() }
             try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
-            for _ in 0..<2 {
-                do { _ = try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease); XCTFail("must reject") } catch {}
+            for expected in [AutomationContractError.ambiguousDispatch, .unknownLease] {
+                await assertRejects(expected) { try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
             }
             let calls = await h.commands.calls; XCTAssertEqual(calls.filter { $0.dropFirst().first == "xcodebuild" }.count, 1)
             let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.privatePayloadCleaned)
@@ -150,7 +163,8 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
         let proof = await driver.release(scope: h.scope, lease: h.lease)
         XCTAssertFalse(proof.runnerTerminated); XCTAssertFalse(proof.privatePayloadCleaned)
         let record = try await h.leases.currentRecord(h.lease); XCTAssertNotNil(record.privatePayload)
-        do { try await h.leases.release(h.lease, commandsDrained: proof.commandsDrained, ownedRunnerTerminated: proof.runnerTerminated); XCTFail("retain lease") } catch {}
+        do { try await h.leases.release(h.lease, commandsDrained: proof.commandsDrained, ownedRunnerTerminated: proof.runnerTerminated); XCTFail("retain lease") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .terminationUnverified) }
     }
     func testUnqualifiedAPIGrantDoesNotPermitBusinessAssessment() async throws {
         let h = try await fixture()
@@ -190,6 +204,182 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
             XCTAssertEqual($0 as? AutomationContractError, .missingEvidence("Unqualified Siri API submission cannot assess routing or business outcomes"))
         }
         let calls = await h.commands.calls; XCTAssertTrue(calls.isEmpty)
+    }
+    func assertRejects<T>(_ expected: AutomationContractError, file: StaticString = #filePath, line: UInt = #line,
+                          _ body: () async throws -> T) async {
+        do { _ = try await body(); XCTFail("Expected \(expected)", file: file, line: line) }
+        catch { XCTAssertEqual(error as? AutomationContractError, expected, file: file, line: line) }
+    }
+    func xcodebuildCalls(_ h: Harness) async -> Int { await h.commands.calls.filter { $0.dropFirst().first == "xcodebuild" }.count }
+    func testInitRefusesAnyHostThatIsNotTheApprovedSiriSubject() async throws {
+        let h = try await fixture()
+        let otherTarget = TargetIdentity(id: "00008140-0000000000000001", kind: .physical)
+        var noSiri = h.prepared; noSiri.generatedHost.includesSiri = false
+        var unknownSiri = h.prepared; unknownSiri.generatedHost.includesSiri = nil
+        var macApp = h.prepared; macApp.host.app.platform = "macos"
+        var macApproval = h.approval; macApproval.app = macApp.host.app
+        var digestV2 = h.prepared; digestV2.host.app.productDigestVersion = 2
+        var digestV2Approval = h.approval; digestV2Approval.app = digestV2.host.app
+        var hostDigestV2 = h.prepared; hostDigestV2.host.hostProductDigestVersion = 2
+        var badTestTarget = h.prepared; badTestTarget.host.testTarget = "Owned Host/../Other"
+        var simulator = h.prepared; simulator.host.target = TargetIdentity(id: h.plan.target.id, kind: .simulator)
+        var simulatorApproval = h.approval; simulatorApproval.target = simulator.host.target
+        var otherApp = h.approval; otherApp.app.bundleID = "example.Other"
+        var otherApproval = h.approval; otherApproval.target = otherTarget
+        let cases: [(String, AutomationPreparedApplication, RunApproval)] = [
+            ("no Siri host", noSiri, h.approval), ("unknown Siri host", unknownSiri, h.approval), ("non-iOS app", macApp, macApproval),
+            ("v2 subject digest", digestV2, digestV2Approval), ("v2 host digest", hostDigestV2, h.approval),
+            ("invalid test target", badTestTarget, h.approval), ("simulator target", simulator, simulatorApproval),
+            ("foreign approved app", h.prepared, otherApp), ("foreign approved target", h.prepared, otherApproval)]
+        for (name, prepared, approval) in cases {
+            XCTAssertThrowsError(try h.driver(prepared: prepared, approval: approval), name) {
+                XCTAssertEqual($0 as? AutomationContractError, .invalidIdentity, name)
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: h.root.appendingPathComponent("driver").path))
+        XCTAssertNoThrow(try h.driver())
+        let calls = await h.commands.calls; XCTAssertTrue(calls.isEmpty)
+    }
+    func testAcquireRefusesUnapprovedPlanScopeOrLeaseBeforeRecordingPayload() async throws {
+        let denied = AutomationContractError.invalidPlan("Siri requires the exact approved physical subject and lease")
+        let h = try await fixture(), driver = try h.driver()
+        var drifted = h.plan; drifted.execution.siriProgram = .init(request: "Open a different fixture")
+        await assertRejects(denied) { try await driver.acquire(plan: drifted, segment: drifted.execution, scope: h.scope, lease: h.lease) }
+        let scopes = [AutomationScope(runID: "run", attemptID: "attempt", segmentID: "siri", leaseGeneration: h.lease.generation + 1),
+            AutomationScope(runID: "other", attemptID: "attempt", segmentID: "siri", leaseGeneration: h.lease.generation),
+            AutomationScope(runID: "run", attemptID: "attempt", segmentID: "other", leaseGeneration: h.lease.generation)]
+        for scope in scopes {
+            await assertRejects(denied) { try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: scope, lease: h.lease) }
+        }
+        var foreignLease = h.lease; foreignLease.generation += 1
+        await assertRejects(denied) { try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: foreignLease) }
+        var record = try await h.leases.currentRecord(h.lease); XCTAssertNil(record.privatePayload)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: h.root.appendingPathComponent("driver/siri-\(h.lease.generation)").path))
+        try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
+        record = try await h.leases.currentRecord(h.lease); let held = try XCTUnwrap(record.privatePayload)
+        await assertRejects(denied) { try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
+        record = try await h.leases.currentRecord(h.lease); XCTAssertEqual(record.privatePayload, held)
+        let calls = await h.commands.calls; XCTAssertTrue(calls.isEmpty)
+        let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.privatePayloadCleaned)
+    }
+    func testAcquireRefusesAnApprovalForADifferentCaseOrAStaleLease() async throws {
+        let denied = AutomationContractError.invalidPlan("Siri requires the exact approved physical subject and lease")
+        let h = try await fixture()
+        for digest in [String(repeating: "b", count: 64), nil] {
+            var approval = h.approval; approval.approvedCaseDigest = digest
+            let driver = try h.driver(approval: approval)
+            await assertRejects(denied) { try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
+        }
+        let record = try await h.leases.currentRecord(h.lease); XCTAssertNil(record.privatePayload)
+        try await h.leases.release(h.lease, commandsDrained: true, ownedRunnerTerminated: true)
+        let next = try await h.leases.acquire(runID: "run", target: h.plan.target, control: .system)
+        let stale = try h.driver()
+        await assertRejects(denied) { try await stale.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
+        let current = try await h.leases.currentRecord(next); XCTAssertNil(current.privatePayload)
+        let calls = await h.commands.calls; XCTAssertTrue(calls.isEmpty)
+    }
+    func testUnverifiedSignatureStopsBeforeDispatch() async throws {
+        for (status, truncated) in [(Int32(1), false), (0, true)] {
+            let h = try await fixture(), driver = try h.driver()
+            await h.commands.setCodesign(exitStatus: status, logsTruncated: truncated)
+            try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
+            await assertRejects(.conflictingOperation) { try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
+            await assertRejects(.unknownLease) { try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
+            let calls = await h.commands.calls
+            XCTAssertEqual(calls, [["/usr/bin/codesign", "--verify", "--deep", "--strict", h.prepared.host.subjectProductPath]])
+            let submission = await driver.qualificationSubmission(); XCTAssertNil(submission)
+            let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.privatePayloadCleaned)
+        }
+    }
+    func testDuplicateOrFloodedAttachmentsCannotComplete() async throws {
+        for duplicate in [true, false] {
+            let h = try await fixture(), driver = try h.driver()
+            if duplicate { await h.commands.setDuplicate() } else { await h.commands.setFlood() }
+            try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
+            await assertRejects(.ambiguousDispatch) { try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
+            let dispatched = await xcodebuildCalls(h); XCTAssertEqual(dispatched, 1)
+            let submission = await driver.qualificationSubmission(); XCTAssertNil(submission)
+            let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.privatePayloadCleaned)
+        }
+    }
+    func testReceiptFromAnotherRunnerExecutableCannotComplete() async throws {
+        let container = "/private/var/containers/Bundle/Application/" + UUID().uuidString
+        for path in [container + "/Other-Runner.app/OwnedHost-Runner", container + "/OwnedHost-Runner.app/Other", "/Applications/OwnedHost-Runner.app/OwnedHost-Runner"] {
+            let h = try await fixture(), driver = try h.driver()
+            await h.commands.setReceipt("runner", .object(["pid": .number(42), "startIdentity": .string("1:2"), "executablePath": .string(path)]))
+            try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
+            await assertRejects(.ambiguousDispatch) { try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
+            let dispatched = await xcodebuildCalls(h); XCTAssertEqual(dispatched, 1, path)
+            let submission = await driver.qualificationSubmission(); XCTAssertNil(submission, path)
+            _ = await driver.release(scope: h.scope, lease: h.lease)
+        }
+    }
+    func testReceiptFromAnotherOSBuildCannotQualify() async throws {
+        for build in ["23B200", "23A100"] {
+            let h = try await fixture()
+            let catalog = ApplicationSurfaceCatalog(app: h.plan.app, systemActions: [], systemDiscoveryComplete: false,
+                uiDiscoveryComplete: false, gaps: [], entities: [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "TaskQuery",
+                    properties: ["title": "text", "completed": "bool"], propertyTitles: [:])])
+            var approval = h.approval; approval.effects = [.observe, .navigate, .fixtureWrite]; approval.maximumActions = 20
+            var capabilities = h.capabilities
+            capabilities.records["apple.entity.query"] = .init(state: .available, reason: "synthetic acquisition", probeVersion: "test", evidence: [])
+            let plan = try AutomationSiriEntityPlanner.compile(catalog: catalog, entityType: "TaskEntity", nameProperty: "title",
+                recordName: "Approved task", stateProperty: "completed", initialState: false, expectedState: true,
+                request: "Complete Approved task in Example", approval: approval, capabilities: capabilities)
+            approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+            let authority = try AutomationSiriRouteAuthority(plan: plan, approval: approval, osBuild: "23A100", evidenceDigest: String(repeating: "c", count: 64))
+            let driver = try h.driver(approval: approval, capabilities: capabilities, siriAuthority: authority)
+            await h.commands.setReceipt("schemaVersion", .number(2)); await h.commands.setReceipt("osBuild", .string(build))
+            let requestDigest = try XCTUnwrap(plan.execution.siriProgram).requestDigest
+            await h.commands.setReceipt("requestDigest", .string(requestDigest))
+            try await driver.acquire(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease)
+            if build == "23A100" {
+                let receipt = try await driver.execute(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease)
+                XCTAssertTrue(receipt.completed)
+                let submission = await driver.qualificationSubmission(); XCTAssertEqual(submission?.osBuild, "23A100")
+            } else {
+                await assertRejects(.conflictingOperation) { try await driver.execute(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease) }
+                let submission = await driver.qualificationSubmission(); XCTAssertNil(submission)
+            }
+            let dispatched = await xcodebuildCalls(h); XCTAssertEqual(dispatched, 1)
+            let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.privatePayloadCleaned)
+        }
+    }
+    func testProductOrFrozenRunChangedAfterAcquireStopsBeforeAnyCommand() async throws {
+        let tampering: [(String, AutomationContractError, (Harness) throws -> Void)] = [
+            ("subject executable", .conflictingOperation, { try Data("re-signed".utf8).write(to: URL(fileURLWithPath: $0.prepared.host.subjectProductPath).appendingPathComponent("Subject")) }),
+            ("host executable", .conflictingOperation, { try Data("re-signed".utf8).write(to: URL(fileURLWithPath: $0.prepared.host.hostBundlePath).appendingPathComponent("OwnedHost-Runner")) }),
+            ("source xctestrun", .conflictingOperation, { try Data("swapped".utf8).write(to: URL(fileURLWithPath: $0.prepared.host.xctestrunPath)) }),
+            ("frozen xctestrun", .unknownLease, { h in
+                let file = h.root.appendingPathComponent("driver/siri-\(h.lease.generation)/host.xctestrun")
+                try FileManager.default.removeItem(at: file); try Data("swapped".utf8).write(to: file)
+            })]
+        for (name, expected, tamper) in tampering {
+            let h = try await fixture(), driver = try h.driver()
+            try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
+            try tamper(h)
+            do { _ = try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease); XCTFail(name) }
+            catch { XCTAssertEqual(error as? AutomationContractError, expected, name) }
+            let calls = await h.commands.calls; XCTAssertTrue(calls.isEmpty, name)
+            let submission = await driver.qualificationSubmission(); XCTAssertNil(submission, name)
+            _ = await driver.release(scope: h.scope, lease: h.lease)
+        }
+    }
+    func testForeignReleaseIsRefusedAndKeepsPrivatePayloadAndAdmission() async throws {
+        let h = try await fixture(), driver = try h.driver()
+        try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
+        var foreignLease = h.lease; foreignLease.generation += 1
+        let foreignScope = AutomationScope(runID: "run", attemptID: "other-attempt", segmentID: "siri", leaseGeneration: h.lease.generation)
+        for (scope, lease) in [(foreignScope, h.lease), (h.scope, foreignLease)] {
+            let proof = await driver.release(scope: scope, lease: lease)
+            XCTAssertFalse(proof.commandsDrained); XCTAssertFalse(proof.runnerTerminated)
+            let record = try await h.leases.currentRecord(h.lease); XCTAssertNotNil(record.privatePayload)
+        }
+        let receipt = try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
+        XCTAssertTrue(receipt.completed)
+        let proof = await driver.release(scope: h.scope, lease: h.lease)
+        XCTAssertTrue(proof.commandsDrained); XCTAssertTrue(proof.runnerTerminated); XCTAssertTrue(proof.privatePayloadCleaned)
+        let clean = try await h.leases.currentRecord(h.lease); XCTAssertNil(clean.privatePayload)
     }
 }
 #endif
