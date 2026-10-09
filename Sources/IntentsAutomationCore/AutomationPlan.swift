@@ -93,6 +93,7 @@ public struct AutomationCase: Codable, Equatable, Sendable {
     public var budget: AutomationBudget
     public var provenance: [String: String]
     public var preparedMacBuildArtifacts: AutomationPreparedMacBuildArtifacts?
+    public var preparedSimulatorBuildArtifacts: AutomationPreparedSimulatorBuildArtifacts?
     public init(id: String, app: AppIdentity, target: TargetIdentity, environmentID: String, execution: AutomationSegment,
                 setup: [AutomationSegment] = [], observations: [AutomationSegment] = [], requirements: [AutomationRequirement] = [],
                 cleanup: [AutomationSegment] = [], budget: AutomationBudget = .init(), setupChecks: [AutomationRequirement]? = nil) {
@@ -114,6 +115,7 @@ public enum PlanValidator {
             try AutomationSiriTextProgram.validateAdmission(plan: plan, approval: approval, capabilities: capabilities, authority: siriAuthority, purpose: purpose)
         }
         try plan.preparedMacBuildArtifacts?.validate(plan: plan)
+        try plan.preparedSimulatorBuildArtifacts?.validate(plan: plan)
         try AutomationInputResolver.validate(plan: plan)
         let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
         guard Set(segments.map(\.id)).count == segments.count else { throw AutomationContractError.invalidPlan("Duplicate segment") }
