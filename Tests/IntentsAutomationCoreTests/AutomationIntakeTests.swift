@@ -12,6 +12,74 @@ final class AutomationIntakeTests: XCTestCase {
         let resolved = try AutomationWorkspaceProjects.resolve(workspace)
         XCTAssertTrue(resolved.projects.isEmpty); XCTAssertFalse(resolved.gaps.isEmpty)
     }
+    func testWorkspaceProjectResolutionKeepsReferencesInsideTheAuthorisedSourceRoot() throws {
+        let container = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        let root = container.appendingPathComponent("Source"), workspace = root.appendingPathComponent("Subject.xcworkspace")
+        defer { try? FileManager.default.removeItem(at: container) }
+        for directory in ["Source/Subject.xcworkspace", "Source/App.xcodeproj", "Source/Top.xcodeproj", "Source/Sub/Nested.xcodeproj", "Outside/Outside.xcodeproj", "SourceEvil/App.xcodeproj"] {
+            try FileManager.default.createDirectory(at: container.appendingPathComponent(directory), withIntermediateDirectories: true)
+        }
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("Link.xcodeproj"), withDestinationURL: container.appendingPathComponent("Outside/Outside.xcodeproj"))
+        let canonicalContainer = try AutomationPath.canonical(container)
+        let outside = "Workspace project is outside the authorised source root.", unavailable = "A referenced workspace project is unavailable."
+        let unsupportedReference = "An external or unsupported workspace reference requires explicit preparation."
+        let unsupportedGroup = "An unsupported workspace group requires explicit preparation."
+        let cases: [(name: String, xml: String, projects: [String], gaps: [String])] = [
+            ("container reference", "<FileRef location=\"container:App.xcodeproj\"/>", ["Source/App.xcodeproj"], []),
+            ("nested group reference", "<Group location=\"group:Sub\"><FileRef location=\"group:Nested.xcodeproj\"/></Group>", ["Source/Sub/Nested.xcodeproj"], []),
+            ("container reference inside a group", "<Group location=\"group:Sub\"><FileRef location=\"container:App.xcodeproj\"/></Group>", ["Source/App.xcodeproj"], []),
+            ("closed group restores parent", "<Group location=\"group:Sub\"></Group><FileRef location=\"group:Top.xcodeproj\"/>", ["Source/Top.xcodeproj"], []),
+            ("closed unsupported group restores parent", "<Group location=\"absolute:/outside\"></Group><FileRef location=\"group:App.xcodeproj\"/>", ["Source/App.xcodeproj"], [unsupportedGroup]),
+            ("duplicate references", "<FileRef location=\"container:App.xcodeproj\"/><FileRef location=\"group:App.xcodeproj\"/><FileRef location=\"group:Sub/../App.xcodeproj\"/>", ["Source/App.xcodeproj"], []),
+            ("sorted distinct references", "<FileRef location=\"group:Top.xcodeproj\"/><FileRef location=\"container:App.xcodeproj\"/>", ["Source/App.xcodeproj", "Source/Top.xcodeproj"], []),
+            ("parent traversal", "<FileRef location=\"group:../Outside/Outside.xcodeproj\"/>", [], [outside]),
+            ("container parent traversal", "<FileRef location=\"container:../Outside/Outside.xcodeproj\"/>", [], [outside]),
+            ("sibling root sharing a prefix", "<FileRef location=\"group:../SourceEvil/App.xcodeproj\"/>", [], [outside]),
+            ("in-root symlink to outside project", "<FileRef location=\"group:Link.xcodeproj\"/>", [], [outside]),
+            ("missing project", "<FileRef location=\"group:Missing.xcodeproj\"/>", [], [unavailable]),
+            ("non-project reference", "<FileRef location=\"group:Package.swift\"/>", [], [unsupportedReference]),
+            ("absolute reference", "<FileRef location=\"absolute:\(root.path)/App.xcodeproj\"/>", [], [unsupportedReference]),
+            ("reference without a kind", "<FileRef location=\"App.xcodeproj\"/>", [], [unsupportedReference]),
+            ("reference inside unsupported group", "<Group location=\"absolute:/outside\"><FileRef location=\"group:App.xcodeproj\"/></Group>", [], [unsupportedGroup, unsupportedReference]),
+            ("mixed in-root and outside references", "<FileRef location=\"group:Link.xcodeproj\"/><FileRef location=\"container:App.xcodeproj\"/>", ["Source/App.xcodeproj"], [outside]),
+        ]
+        for testCase in cases {
+            try Data("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Workspace version=\"1.0\">\(testCase.xml)</Workspace>".utf8).write(to: workspace.appendingPathComponent("contents.xcworkspacedata"))
+            let resolved = try AutomationWorkspaceProjects.resolve(workspace)
+            XCTAssertEqual(resolved.projects.map(\.path), testCase.projects.map { canonicalContainer.appendingPathComponent($0).path }, testCase.name)
+            XCTAssertEqual(resolved.gaps, testCase.gaps, testCase.name)
+        }
+    }
+    func testWorkspaceProjectResolutionRejectsDoctypeAndOversizedDocuments() throws {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        let workspace = root.appendingPathComponent("Subject.xcworkspace")
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("App.xcodeproj"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func groups(_ depth: Int) -> String { String(repeating: "<Group>", count: depth) + String(repeating: "</Group>", count: depth) }
+        func elements(_ count: Int) -> String { String(repeating: "<FileRef/>", count: count - 1) }
+        let reference = "<FileRef location=\"container:App.xcodeproj\"/>"
+        let cases: [(name: String, contents: String, accepted: Bool)] = [
+            ("plain workspace", "<Workspace>\(reference)</Workspace>", true),
+            ("internal entity declaration", "<!DOCTYPE Workspace [<!ENTITY project \"App.xcodeproj\">]><Workspace><FileRef location=\"container:&project;\"/></Workspace>", false),
+            ("lowercase doctype", "<!doctype Workspace><Workspace>\(reference)</Workspace>", false),
+            ("external entity declaration", "<!DOCTYPE Workspace SYSTEM \"file:///etc/passwd\"><Workspace>\(reference)</Workspace>", false),
+            ("64 nested groups", "<Workspace>\(groups(64))</Workspace>", true),
+            ("65 nested groups", "<Workspace>\(groups(65))</Workspace>", false),
+            ("10000 elements", "<Workspace>\(elements(10_000))</Workspace>", true),
+            ("10001 elements", "<Workspace>\(elements(10_001))</Workspace>", false),
+        ]
+        for testCase in cases {
+            try Data(testCase.contents.utf8).write(to: workspace.appendingPathComponent("contents.xcworkspacedata"))
+            if testCase.accepted {
+                XCTAssertNoThrow(try AutomationWorkspaceProjects.resolve(workspace), testCase.name)
+            } else {
+                XCTAssertThrowsError(try AutomationWorkspaceProjects.resolve(workspace), testCase.name) { XCTAssertEqual($0 as? AutomationContractError, .invalidIdentity, testCase.name) }
+            }
+        }
+        try Data("<Workspace>\(reference)</Workspace>".utf8).write(to: workspace.appendingPathComponent("contents.xcworkspacedata"))
+        XCTAssertEqual(try AutomationWorkspaceProjects.resolve(workspace).projects, [try AutomationPath.canonical(root.appendingPathComponent("App.xcodeproj"))])
+    }
     func testSourceTargetDiscoveryExcludesLibrariesAndTestsWithoutRunningScripts() throws {
         let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString + ".xcodeproj")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true); defer { try? FileManager.default.removeItem(at: root) }
