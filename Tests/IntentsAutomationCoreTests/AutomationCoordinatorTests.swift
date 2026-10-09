@@ -229,14 +229,14 @@ final class AutomationCoordinatorTests: XCTestCase, @unchecked Sendable {
     }
     func testCancellationBeforeCleanupWithholdsReleaseAndCampaign() async throws {
         let (plan, approval) = fixture(cleanup: cleanupSegments), leases = AutomationDeviceLeaseManager()
-        let runner = try coordinator(leases: leases), driver = ContractDriver(slowReleaseSegment: "readback", releaseDelay: .milliseconds(500))
+        let runner = try coordinator(leases: leases), driver = ContractDriver(gatedReleaseSegment: "readback")
         let task = Task { try await runner.run(plan: plan, approval: approval, capabilities: .init(), attemptID: "attempt", driver: driver) }
         let startedDeadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !(await driver.history.contains("release:readback")) && ContinuousClock.now < startedDeadline { await Task.yield() }
         guard await driver.history.contains("release:readback") else {
-            task.cancel(); _ = try? await task.value; XCTFail("Observation release never started within the test deadline"); return
+            task.cancel(); await driver.openReleaseGate(); _ = try? await task.value; XCTFail("Observation release never started within the test deadline"); return
         }
-        task.cancel()
+        task.cancel(); await driver.openReleaseGate()
         let report = try await task.value
         XCTAssertEqual(report.result.summary, .cancelled); XCTAssertFalse(report.resourcesReleased)
         XCTAssertTrue(report.result.subjectCompleted); XCTAssertFalse(report.result.evidenceComplete)
@@ -319,14 +319,21 @@ private actor ContractDriver: AutomationRouteDriver {
     let incompleteSegment: String?, failingSegment: String?
     let slowReleaseSegment: String?, releaseDelay: Duration
     let forgery: (segmentID: String, kind: ReceiptForgery)?
+    let gatedReleaseSegment: String?
+    private var releaseGateOpen = false, releaseGateWaiters: [CheckedContinuation<Void, Never>] = []
     init(omitObservation: Bool = false, unreleasedSegment: String? = nil, throwOnExecute: Bool = false, delay: Duration? = nil, sabotageJournal: URL? = nil, uncleanedPayloadSegment: String? = nil, remoteFailure: AutomationRPCError? = nil,
-         incompleteSegment: String? = nil, failingSegment: String? = nil, slowReleaseSegment: String? = nil, releaseDelay: Duration = .zero, forgery: (segmentID: String, kind: ReceiptForgery)? = nil) {
+         incompleteSegment: String? = nil, failingSegment: String? = nil, slowReleaseSegment: String? = nil, releaseDelay: Duration = .zero, forgery: (segmentID: String, kind: ReceiptForgery)? = nil, gatedReleaseSegment: String? = nil) {
         self.omitObservation = omitObservation; self.unreleasedSegment = unreleasedSegment; self.throwOnExecute = throwOnExecute
         self.delay = delay; self.sabotageJournal = sabotageJournal
         self.uncleanedPayloadSegment = uncleanedPayloadSegment
         self.remoteFailure = remoteFailure
         self.incompleteSegment = incompleteSegment; self.failingSegment = failingSegment
         self.slowReleaseSegment = slowReleaseSegment; self.releaseDelay = releaseDelay; self.forgery = forgery
+        self.gatedReleaseSegment = gatedReleaseSegment
+    }
+    func openReleaseGate() {
+        releaseGateOpen = true
+        releaseGateWaiters.forEach { $0.resume() }; releaseGateWaiters.removeAll()
     }
     func acquire(plan: AutomationCase, segment: AutomationSegment, scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease) {
         history.append("acquire:\(segment.id):\(lease.control.rawValue)")
@@ -347,6 +354,7 @@ private actor ContractDriver: AutomationRouteDriver {
     func release(scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease) async -> AutomationReleaseProof {
         history.append("release:\(scope.segmentId)")
         if scope.segmentId == slowReleaseSegment { try? await Task.sleep(for: releaseDelay) }
+        if scope.segmentId == gatedReleaseSegment && !releaseGateOpen { await withCheckedContinuation { releaseGateWaiters.append($0) } }
         if let sabotageJournal {
             try? FileManager.default.removeItem(at: sabotageJournal)
             try? FileManager.default.createDirectory(at: sabotageJournal, withIntermediateDirectories: true)
