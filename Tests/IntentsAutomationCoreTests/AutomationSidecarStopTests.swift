@@ -13,8 +13,21 @@ final class AutomationSidecarStopTests: XCTestCase, @unchecked Sendable {
         let canonical = try AutomationPath.canonical(root), entry = canonical.appendingPathComponent("fixture.sh")
         try Data(script.utf8).write(to: entry)
         let shell = try AutomationPath.canonical(URL(fileURLWithPath: "/bin/sh"))
-        return try AutomationSidecarProcess(configuration: .init(node: shell, entry: entry, stateDirectory: canonical.appendingPathComponent("state")),
+        let process = try AutomationSidecarProcess(configuration: .init(node: shell, entry: entry, stateDirectory: canonical.appendingPathComponent("state")),
             reverse: { _, _ in .null }, exitGracePeriod: exitGracePeriod, terminationGracePeriod: terminationGracePeriod)
+        // Register before start/handshake/assertions can throw. Teardown runs before directory removal.
+        addTeardownBlock { await Self.cleanup(process) }
+        return process
+    }
+    private static func cleanup(_ process: AutomationSidecarProcess) async {
+        _ = await process.stop()
+        guard let owned = await process.processIdentity else { return }
+        if owned.presence() == .matching { kill(owned.pid, SIGKILL) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while owned.presence() == .matching && ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue([.absent, .replaced].contains(owned.presence()), "Fixture child was not released during teardown")
     }
     private func helloResponder(protocolVersion: String, adapterVersion: String) -> String {
         """
@@ -60,14 +73,21 @@ final class AutomationSidecarStopTests: XCTestCase, @unchecked Sendable {
                                   terminationGracePeriod: .milliseconds(500))
         try await process.start()
         let owned = try await identity(process)
-        addTeardownBlock {
-            kill(owned.pid, SIGKILL)
-            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-            while owned.presence() == .matching && ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(50)) }
-        }
         let stopped = await process.stop()
         XCTAssertFalse(stopped, "A child still running after terminate must not produce a release proof")
         XCTAssertEqual(owned.presence(), .matching)
+    }
+
+    func testFixtureCleanupStopsChildWhenSetupFailsBeforeExplicitStop() async throws {
+        let process = try sidecar("trap '' TERM\nexec /bin/sleep 30\n", exitGracePeriod: .milliseconds(20),
+                                  terminationGracePeriod: .milliseconds(20))
+        try await process.start()
+        let owned = try await identity(process)
+        // Exercise the same cleanup registered by the fixture after a throwing setup step.
+        enum SetupFailure: Error { case failed }
+        do { throw SetupFailure.failed }
+        catch { await Self.cleanup(process) }
+        XCTAssertEqual(owned.presence(), .absent)
     }
 
     func testHandshakeRejectsIncompatibleProtocolOrAdapterVersions() async throws {
