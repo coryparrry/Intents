@@ -32,23 +32,63 @@ enum AutomationLiveRunnerFixture {
     }
     /// Launches `executable` orphaned to launchd, as a real runner is, so exit is reaped outside the test process.
     static func launch(_ executable: URL, ignoringTerminate: Bool = false, in test: XCTestCase) throws -> Runner {
-        let shell = Process(), output = Pipe()
+        let shell = Process(), output = Pipe(), acknowledgement = Pipe()
         shell.executableURL = URL(fileURLWithPath: "/bin/sh")
-        shell.arguments = ["-c", (ignoringTerminate ? "trap '' TERM; " : "") + "\"$0\" 600 </dev/null >/dev/null 2>&1 & echo $!", executable.path]
-        shell.standardOutput = output
-        try shell.run(); shell.waitUntilExit()
-        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        let pid = try XCTUnwrap(Int32(text))
-        let deadline = Date().addingTimeInterval(10)
-        while executablePath(pid) != executable.path {
-            guard Date() < deadline else { kill(pid, SIGKILL); throw AutomationRPCError.timedOut }
-            usleep(10_000)
+        shell.arguments = ["-c", (ignoringTerminate ? "trap '' TERM; " : "") + "\"$0\" 600 </dev/null >/dev/null 2>&1 & child=$!; printf '%s\\n' \"$child\"; IFS= read -r acknowledgement", executable.path]
+        shell.standardOutput = output; shell.standardInput = acknowledgement
+        try shell.run()
+        defer {
+            try? acknowledgement.fileHandleForWriting.close()
+            shell.waitUntilExit()
         }
-        let identity = try XCTUnwrap(AutomationProcessIdentity.inspect(pid: pid))
-        // Never signal a PID that may have been reused by an unrelated process.
-        test.addTeardownBlock { if identity.presence() == .matching { kill(pid, SIGKILL) } }
+        let text = String(decoding: output.fileHandleForReading.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        let pid = try XCTUnwrap(Int32(text))
+        // Bind the PID while the launcher is still its parent, before orphaning it to launchd.
+        // A reused PID or an unstable identity never authorizes cleanup.
+        let identity = try captureOwnedIdentity(pid: pid, launcherPID: shell.processIdentifier)
+        test.addTeardownBlock { _ = signalIfMatching(identity) }
+        try? acknowledgement.fileHandleForWriting.close()
+        shell.waitUntilExit()
+        do { try waitForExecutable(identity, executable: executable) }
+        catch { signalIfMatching(identity); throw error }
         XCTAssertEqual(identity.presence(), .matching)
         return .init(identity: identity, executable: executable)
+    }
+    static func captureOwnedIdentity(pid: Int32, launcherPID: Int32,
+                                     inspect: (Int32) -> AutomationProcessIdentity? = { AutomationProcessIdentity.inspect(pid: $0) },
+                                     parent: (Int32) -> Int32? = { parentPID($0) }) throws -> AutomationProcessIdentity {
+        guard let identity = inspect(pid), parent(pid) == launcherPID, inspect(pid) == identity else {
+            throw AutomationContractError.invalidIdentity
+        }
+        return identity
+    }
+    private static func parentPID(_ pid: Int32) -> Int32? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size, info.pbi_ppid <= UInt32(Int32.max) else { return nil }
+        return Int32(info.pbi_ppid)
+    }
+    @discardableResult
+    static func signalIfMatching(_ identity: AutomationProcessIdentity,
+                                 presence: (AutomationProcessIdentity) -> AutomationProcessIdentity.Presence = { $0.presence() },
+                                 signal: (Int32, Int32) -> Int32 = { kill($0, $1) }) -> Bool {
+        guard presence(identity) == .matching else { return false }
+        return signal(identity.pid, SIGKILL) == 0
+    }
+    static func waitForExecutable(_ identity: AutomationProcessIdentity, executable: URL,
+                                  timeout: Duration = .seconds(10),
+                                  presence: (AutomationProcessIdentity) -> AutomationProcessIdentity.Presence = { $0.presence() },
+                                  path: (Int32) -> String? = { executablePath($0) }) throws {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while true {
+            guard presence(identity) == .matching else { throw AutomationContractError.invalidIdentity }
+            if path(identity.pid) == executable.path {
+                guard presence(identity) == .matching else { throw AutomationContractError.invalidIdentity }
+                return
+            }
+            guard ContinuousClock.now < deadline else { throw AutomationRPCError.timedOut }
+            usleep(10_000)
+        }
     }
     static func executablePath(_ pid: Int32) -> String? {
         var bytes = [CChar](repeating: 0, count: 4096)
@@ -63,8 +103,12 @@ enum AutomationLiveRunnerFixture {
         return runner.identity.presence()
     }
     static func forceStop(_ runner: Runner) async throws {
-        kill(runner.identity.pid, SIGKILL)
-        _ = try await waitUntilGone(runner)
+        if !signalIfMatching(runner.identity) {
+            guard [.absent, .replaced].contains(runner.identity.presence()) else { throw AutomationContractError.terminationUnverified }
+            return
+        }
+        let presence = try await waitUntilGone(runner)
+        guard [.absent, .replaced].contains(presence) else { throw AutomationContractError.terminationUnverified }
     }
 }
 #endif
