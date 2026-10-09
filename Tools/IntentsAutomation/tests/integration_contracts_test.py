@@ -6,6 +6,7 @@ import plistlib
 import signal
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import shutil
@@ -94,10 +95,21 @@ class IntegrationContracts(unittest.TestCase):
             self.assertEqual(runner.command(['/bin/sh','-c','echo owned; exit 3'],log,10),3)
             self.assertEqual(log.read_text(),'owned\n')
 
-    def owned_children(self):
+    def owned_children(self, readiness=None, readiness_timeout=5):
         children=[]; spawn=subprocess.Popen
         def record(*arguments,**options):
-            children.append(spawn(*arguments,**options)); return children[-1]
+            child=spawn(*arguments,**options); children.append(child)
+            def reap():
+                if child.poll() is None: child.kill()
+                child.wait(timeout=5)
+            self.addCleanup(reap)
+            if readiness is not None:
+                deadline=time.monotonic()+readiness_timeout
+                while not readiness.exists():
+                    if child.poll() is not None: self.fail('Child exited before installing its TERM trap')
+                    if time.monotonic()>=deadline: self.fail('Child readiness deadline expired')
+                    time.sleep(0.01)
+            return child
         return children, patch.object(runner.subprocess,'Popen',side_effect=record)
 
     def test_owned_child_deadline_terminates_and_raises(self):
@@ -109,12 +121,22 @@ class IntegrationContracts(unittest.TestCase):
         self.assertEqual(children[0].returncode,-signal.SIGTERM)
 
     def test_owned_child_ignoring_terminate_is_killed_and_raises(self):
-        children, recording = self.owned_children()
-        with tempfile.TemporaryDirectory(dir='/private/tmp') as directory, recording:
-            with self.assertRaisesRegex(ValueError,'Owned child deadline expired'):
-                runner.command(['/bin/sh','-c',"trap '' TERM; exec /bin/sleep 30"],Path(directory).resolve()/'child.log',0.5)
+        with tempfile.TemporaryDirectory(dir='/private/tmp') as directory:
+            root=Path(directory).resolve(); ready=root/'ready'
+            children, recording = self.owned_children(ready)
+            with recording, self.assertRaisesRegex(ValueError,'Owned child deadline expired'):
+                runner.command(['/bin/sh','-c',"/bin/sleep 0.2; trap '' TERM; echo ready > \"$1\"; exec /bin/sleep 30",'owned-child',str(ready)],root/'child.log',0.1)
         self.assertEqual(len(children),1)
         self.assertEqual(children[0].returncode,-signal.SIGKILL)
+
+    def test_owned_child_missing_readiness_fails_with_deadline_and_is_reaped(self):
+        with tempfile.TemporaryDirectory(dir='/private/tmp') as directory:
+            root=Path(directory).resolve()
+            children, recording = self.owned_children(root/'never-ready',readiness_timeout=0.1)
+            with recording, self.assertRaisesRegex(AssertionError,'Child readiness deadline expired'):
+                runner.command(['/bin/sleep','30'],root/'child.log',10)
+            self.doCleanups()
+            self.assertEqual(children[0].returncode,-signal.SIGKILL)
 
 class IntegrationRunAcceptance(unittest.TestCase):
     """Drives run() offline: device, Xcode, and UI children are simulated, receipts are real files."""
@@ -181,8 +203,15 @@ class IntegrationRunAcceptance(unittest.TestCase):
         self.assertEqual((self.evidence/'dependency-lock.json').read_bytes(),b'{"lock":1}')
         frozen=plistlib.loads((self.evidence/'host.xctestrun').read_bytes())['Host']['EnvironmentVariables']['INTENTS_AUTOMATION_HOST_PLAN_B64']
         plan=json.loads(base64.b64decode(frozen))
-        self.assertEqual((plan['runID'],plan['attemptID'],plan['segmentID'],plan['leaseGeneration']),('run','attempt','system',2))
+        self.assertEqual(plan,self.profile['hostPlan'])
         self.assertEqual([call[1] for call in self.calls if call[0]=='/usr/bin/xcrun'],['simctl','xcodebuild','xcresulttool'])
+
+    def test_frozen_host_plan_preserves_parameters_queries_codecs_and_order(self):
+        self.profile['hostPlan']['operations']=[
+            {'id':'first','kind':'invoke','typeID':'FindIntent','parameters':{'name':{'kind':'text','value':'Ada'}},'resultCodec':'text'},
+            {'id':'second','kind':'query','typeID':'EntityQuery','parameters':{},'queryIDs':['second','first'],'properties':{'title':'text','enabled':'bool'}}]
+        runner.validate_host(self.profile['hostPlan'])
+        self.test_unique_complete_receipt_and_positive_readback_write_success_handoff()
 
     def test_missing_receipt_rejected(self):
         self.receipts=[]
