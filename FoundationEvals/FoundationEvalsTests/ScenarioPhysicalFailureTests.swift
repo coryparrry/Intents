@@ -150,6 +150,26 @@ struct ScenarioPhysicalFailureTests {
     @Test func hostIgnoringInterruptAndTerminateIsBoundedlyDrainedOnDeadline() async throws {
         try await hostileHost(persistenceFailure: false)
     }
+    @Test func processDeadlineIncludesLaunchPublicationDelay() async throws {
+        try await fixture.withDirectory { root in
+            let invocation = fixture.invocation(), execution = journal(root, invocation: invocation)
+            let executor = XcodeTestExecutor(workDirectory: root.appendingPathComponent("Executor"),
+                persistence: ScenarioPersistence(rootDirectory: root.appendingPathComponent("storage")))
+            do {
+                _ = try await executor.runProcess(executable: "/bin/sleep", arguments: ["0.1"],
+                    logURL: URL(fileURLWithPath: execution.buildLogPath), invocationID: invocation.id,
+                    destinationIdentifier: invocation.destinationIdentifier, journal: execution,
+                    appendLog: false, deadline: .milliseconds(20),
+                    onProcessLaunched: { _ in Thread.sleep(forTimeInterval: 0.2) })
+                Issue.record("Launch publication delayed the command deadline past a successful exit.")
+            } catch XcodeTestExecutorError.timedOut {
+                // The budget includes publication, even if the host exits during it.
+            } catch {
+                Issue.record("Unexpected deadline error: \(error)")
+            }
+            #expect(await executor.cancelActiveExecution(grace: .zero) == nil)
+        }
+    }
     @Test func persistenceFailureDoesNotLoseTheOwnedHostHandle() async throws {
         try await hostileHost(persistenceFailure: true)
     }
