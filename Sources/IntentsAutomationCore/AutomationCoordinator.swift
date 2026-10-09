@@ -54,13 +54,17 @@ public actor AutomationCoordinator {
     private let journal: AutomationJournal
     private let cleanupTimeout: Duration
     private let campaignDeadline: ContinuousClock.Instant?
+    private let releaseCampaignOnCompletion: Bool
     private var running = false
     public init(leases: AutomationDeviceLeaseManager, journal: AutomationJournal) {
         self.leases = leases; self.journal = journal; cleanupTimeout = .seconds(90); campaignDeadline = nil
+        releaseCampaignOnCompletion = true
     }
-    init(leases: AutomationDeviceLeaseManager, journal: AutomationJournal, cleanupTimeout: Duration, campaignDeadline: ContinuousClock.Instant? = nil) throws {
+    init(leases: AutomationDeviceLeaseManager, journal: AutomationJournal, cleanupTimeout: Duration, campaignDeadline: ContinuousClock.Instant? = nil,
+         releaseCampaignOnCompletion: Bool = true) throws {
         guard cleanupTimeout > .zero, cleanupTimeout <= .seconds(90) else { throw AutomationContractError.invalidIdentity }
         self.leases = leases; self.journal = journal; self.cleanupTimeout = cleanupTimeout; self.campaignDeadline = campaignDeadline
+        self.releaseCampaignOnCompletion = releaseCampaignOnCompletion
     }
     public func run(plan: AutomationCase, approval: RunApproval, capabilities: CapabilityProfile,
                     attemptID: String, driver: any AutomationRouteDriver, fixtureTracker: AutomationFreshFixtureTracker? = nil, qualificationFence: AutomationFreshFixtureQualificationFence? = nil, siriAuthority: AutomationSiriRouteAuthority? = nil) async throws -> AutomationAttemptReport {
@@ -124,7 +128,7 @@ public actor AutomationCoordinator {
                 }
             }
         }
-        if released { do { try await leases.releaseCampaign(runID: approval.runID, target: plan.target) } catch { released = false } }
+        if released && releaseCampaignOnCompletion { do { try await leases.releaseCampaign(runID: approval.runID, target: plan.target) } catch { released = false } }
         if !released && termination == nil { termination = .unresolved }
         let observations = receipts.filter { receipt in
             plan.observations.contains { $0.id == receipt.segmentID && $0.kind == receipt.route }

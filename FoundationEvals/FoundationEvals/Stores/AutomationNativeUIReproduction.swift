@@ -88,8 +88,7 @@ struct AutomationNativeUIReproductionProposal: Sendable {
             throw AutomationContractError.missingEvidence("Select the same app and simulator as an assessed, released UI failure; its prepared host, runtime and locale must still match")
         }
         if case .prepared(let prepared) = subject {
-            let fields = try AutomationNativeUIRuntime.preparedProvenance(prepared)
-            guard fields.allSatisfy({ plan.provenance[$0.key] == $0.value }) else { throw AutomationContractError.conflictingOperation }
+            guard AutomationNativeUIRuntime.preparedEvidenceMatches(plan: plan, prepared: prepared) else { throw AutomationContractError.conflictingOperation }
         }
         let approval = RunApproval(runID: runID, app: subject.app, target: subject.target,
             environmentID: plan.environmentID, effects: freshBindings == nil ? [.observe, .navigate] : [.observe, .navigate, .fixtureWrite], maximumActions: 30,
