@@ -2,6 +2,44 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationCoordinatorTests: XCTestCase, @unchecked Sendable {
+    func testRetainedCampaignBlocksCompetitorUntilOwnerFinishesCleanup() async throws {
+        for retained in [false, true] {
+            let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let file = root.appendingPathComponent("leases.json")
+            let owner = try AutomationDeviceLeaseManager(storeURL: file), competitor = try AutomationDeviceLeaseManager(storeURL: file)
+            let journal = try AutomationJournal(url: root.appendingPathComponent("journal.json"))
+            let coordinator = try AutomationCoordinator(leases: owner, journal: journal, cleanupTimeout: .seconds(10),
+                releaseCampaignOnCompletion: !retained)
+            let (plan, approval) = fixture()
+            let report = try await coordinator.run(plan: plan, approval: approval, capabilities: .init(), attemptID: "attempt", driver: ContractDriver())
+            XCTAssertTrue(report.resourcesReleased)
+            if retained {
+                do { try await competitor.reserveCampaign(runID: "competitor", target: plan.target); XCTFail("Cleanup ownership was handed off early") }
+                catch { XCTAssertEqual(error as? AutomationContractError, .targetBusy) }
+                let cleanup = try await owner.acquire(runID: approval.runID, target: plan.target, control: .system)
+                try await owner.release(cleanup, commandsDrained: true, ownedRunnerTerminated: true)
+                try await owner.releaseCampaign(runID: approval.runID, target: plan.target)
+            }
+            try await competitor.reserveCampaign(runID: "competitor", target: plan.target)
+            try await competitor.releaseCampaign(runID: "competitor", target: plan.target)
+        }
+    }
+
+    func testRetainedCampaignRemainsBlockedWhenControllerCleanupIsUnproved() async throws {
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("leases.json")
+        let owner = try AutomationDeviceLeaseManager(storeURL: file), competitor = try AutomationDeviceLeaseManager(storeURL: file)
+        let coordinator = try AutomationCoordinator(leases: owner, journal: AutomationJournal(url: root.appendingPathComponent("journal.json")),
+            cleanupTimeout: .seconds(10), releaseCampaignOnCompletion: false)
+        let (plan, approval) = fixture()
+        let report = try await coordinator.run(plan: plan, approval: approval, capabilities: .init(), attemptID: "attempt",
+            driver: ContractDriver(unreleasedSegment: "setup"))
+        XCTAssertFalse(report.resourcesReleased)
+        do { try await competitor.reserveCampaign(runID: "competitor", target: plan.target); XCTFail("Unproved cleanup released ownership") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .targetBusy) }
+    }
     private func fixture(cleanup: [AutomationSegment] = []) -> (AutomationCase, RunApproval) {
         let app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "ios", productDigest: String(repeating: "a", count: 64))
         let target = TargetIdentity(id: "device", kind: .simulator)
