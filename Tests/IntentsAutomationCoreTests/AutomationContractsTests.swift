@@ -140,3 +140,97 @@ extension AutomationContractsTests {
         }
     }
 }
+
+extension AutomationContractsTests {
+    private static let digestA = String(repeating: "a", count: 64), digestB = String(repeating: "b", count: 64)
+    private func journalURL() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("journal.json")
+    }
+    private func assertContractError<T>(_ expected: AutomationContractError, _ body: () async throws -> T,
+                                        file: StaticString = #filePath, line: UInt = #line) async {
+        do { _ = try await body(); XCTFail("Expected \(expected)", file: file, line: line) }
+        catch { XCTAssertEqual(error as? AutomationContractError, expected, file: file, line: line) }
+    }
+    private func writeJournal(_ json: String, to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try? FileManager.default.removeItem(at: url)
+        XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: Data(json.utf8), attributes: [.posixPermissions: 0o600]))
+    }
+    private func entryJSON(key: String, operationID: String? = nil, digest: String = digestA, state: String, response: Bool) -> String {
+        let value = response ? #","response":{"kind":"bool","value":true}"# : ""
+        return #"{"\#(key)":{"operationID":"\#(operationID ?? key)","payloadDigest":"\#(digest)","state":"\#(state)"\#(value)}}"#
+    }
+
+    func testJournalCompleteWithoutPriorBeginIsConflictingAndRecordsNothing() async throws {
+        let url = journalURL(), journal = try AutomationJournal(url: url)
+        await assertContractError(.conflictingOperation) { try await journal.complete(operationID: "never", digest: Self.digestA, response: .bool(true)) }
+        let unresolved = try await journal.unresolvedEntries()
+        XCTAssertEqual(unresolved, [])
+        let first = try await AutomationJournal(url: url).begin(operationID: "never", digest: Self.digestA)
+        XCTAssertNil(first, "A rejected completion must not leave a cached response behind")
+    }
+    func testJournalCompleteWithDifferentDigestIsConflictingAndLeavesDispatchUnresolved() async throws {
+        let url = journalURL(), journal = try AutomationJournal(url: url)
+        _ = try await journal.begin(operationID: "op", digest: Self.digestA)
+        await assertContractError(.conflictingOperation) { try await journal.complete(operationID: "op", digest: Self.digestB, response: .bool(true)) }
+        let unresolved = try await AutomationJournal(url: url).unresolvedEntries()
+        XCTAssertEqual(unresolved, [.init(operationID: "op", payloadDigest: Self.digestA, state: .dispatched, response: nil)])
+        await assertContractError(.ambiguousDispatch) { try await journal.begin(operationID: "op", digest: Self.digestA) }
+    }
+    func testJournalRepeatedCompletionIsIdempotentButConflictingResponseIsRejectedAcrossReopen() async throws {
+        let url = journalURL(), journal = try AutomationJournal(url: url)
+        _ = try await journal.begin(operationID: "op", digest: Self.digestA)
+        try await journal.complete(operationID: "op", digest: Self.digestA, response: .text("original"))
+        try await journal.complete(operationID: "op", digest: Self.digestA, response: .text("original"))
+        await assertContractError(.conflictingOperation) { try await journal.complete(operationID: "op", digest: Self.digestA, response: .text("forged")) }
+        let reopened = try AutomationJournal(url: url)
+        await assertContractError(.conflictingOperation) { try await reopened.complete(operationID: "op", digest: Self.digestA, response: .bool(false)) }
+        let cached = try await reopened.begin(operationID: "op", digest: Self.digestA)
+        XCTAssertEqual(cached, .text("original"))
+        let unresolved = try await reopened.unresolvedEntries()
+        XCTAssertEqual(unresolved, [])
+    }
+    func testJournalUnresolvedEntriesListsOnlyIncompleteDispatchesSorted() async throws {
+        let url = journalURL(), journal = try AutomationJournal(url: url)
+        for id in ["zeta", "alpha", "done"] { _ = try await journal.begin(operationID: id, digest: Self.digestA) }
+        try await journal.complete(operationID: "done", digest: Self.digestA, response: .null)
+        let unresolved = try await AutomationJournal(url: url).unresolvedEntries()
+        XCTAssertEqual(unresolved.map(\.operationID), ["alpha", "zeta"])
+        XCTAssertEqual(Set(unresolved.map(\.state)), [.dispatched])
+        XCTAssertTrue(unresolved.allSatisfy { $0.response == nil && $0.payloadDigest == Self.digestA })
+    }
+    func testJournalLoadAcceptsWellFormedPersistedEntries() async throws {
+        let url = journalURL()
+        try writeJournal(entryJSON(key: "op", state: "completed", response: true), to: url)
+        let cached = try await AutomationJournal(url: url).begin(operationID: "op", digest: Self.digestA)
+        XCTAssertEqual(cached, .bool(true))
+        try writeJournal(entryJSON(key: "op", state: "unresolved", response: false), to: url)
+        let unresolved = try await AutomationJournal(url: url).unresolvedEntries()
+        XCTAssertEqual(unresolved.map(\.state), [.unresolved])
+    }
+    func testJournalLoadRejectsTamperedEntries() throws {
+        let tampered: [(String, String)] = [
+            ("key differs from operationID", entryJSON(key: "op", operationID: "other", state: "dispatched", response: false)),
+            ("empty operationID", entryJSON(key: "", state: "dispatched", response: false)),
+            ("oversized operationID", entryJSON(key: String(repeating: "x", count: 1025), state: "dispatched", response: false)),
+            ("short digest", entryJSON(key: "op", digest: String(repeating: "a", count: 63), state: "dispatched", response: false)),
+            ("uppercase digest", entryJSON(key: "op", digest: String(repeating: "A", count: 64), state: "dispatched", response: false)),
+            ("completed without response", entryJSON(key: "op", state: "completed", response: false)),
+            ("dispatched with response", entryJSON(key: "op", state: "dispatched", response: true)),
+            ("unresolved with response", entryJSON(key: "op", state: "unresolved", response: true)),
+        ]
+        for (label, json) in tampered {
+            let url = journalURL()
+            try writeJournal(json, to: url)
+            XCTAssertThrowsError(try AutomationJournal(url: url), label) { XCTAssertEqual($0 as? AutomationContractError, .invalidIdentity, label) }
+        }
+    }
+    func testJournalTamperedAfterOpenRejectsFurtherTransactions() async throws {
+        let url = journalURL(), journal = try AutomationJournal(url: url)
+        _ = try await journal.begin(operationID: "op", digest: Self.digestA)
+        try writeJournal(entryJSON(key: "op", state: "completed", response: false), to: url)
+        await assertContractError(.invalidIdentity) { try await journal.begin(operationID: "op", digest: Self.digestA) }
+        await assertContractError(.invalidIdentity) { try await journal.complete(operationID: "op", digest: Self.digestA, response: .bool(true)) }
+        await assertContractError(.invalidIdentity) { try await journal.unresolvedEntries() }
+    }
+}
