@@ -8,7 +8,6 @@ struct AppAutomationCapsuleView: View {
     @State private var selectedDigest = ""
     @State private var selection: ExportSelection?
     @State private var pendingExport: ExportSelection?
-    @State private var reviewed = false
     @State private var working = false
     @State private var message: String?
     @State private var imported: AutomationImportedCapsule?
@@ -37,7 +36,7 @@ struct AppAutomationCapsuleView: View {
                             defer { working = false }
                             do {
                                 let (value, attempts, exposure) = try await model.capsuleExportSelection(frozen)
-                                reviewed = false; selection = .init(frozen: value, attempts: attempts, exposure: exposure)
+                                selection = .init(frozen: value, attempts: attempts, exposure: exposure)
                             } catch { message = error.localizedDescription }
                         }
                     }.disabled(working || model.busy || selectedDigest.isEmpty)
@@ -75,11 +74,11 @@ struct AppAutomationCapsuleView: View {
                         }
                     }
                 }
-                Toggle("I reviewed this case and these \(value.attempts.count) attempts as synthetic data and metadata suitable for export", isOn: $reviewed)
+                Toggle("I reviewed this case and these \(value.attempts.count) attempts as synthetic data and metadata suitable for export", isOn: $model.capsuleExportReviewed)
                 HStack {
                     Button("Cancel") { selection = nil }
                     Spacer()
-                    Button("Save capsule…") { pendingExport = value; selection = nil }.disabled(!reviewed || working || model.busy)
+                    Button("Save capsule…") { pendingExport = value; selection = nil }.disabled(!model.canSaveCapsuleExport || working)
                 }
             }.padding(20).frame(width: 680, height: 520)
         }
@@ -116,14 +115,12 @@ struct AppAutomationCapsuleView: View {
         present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             working = true
-            let frozen = value.frozen, attempts = value.attempts
-            let approval = AutomationCapsuleExportApproval(caseDigest: frozen.digest,
-                attemptIDs: Set(attempts.map(\.attemptID)), syntheticDataAndMetadataReviewed: true)
+            let frozen = value.frozen, attempts = value.attempts, exposure = value.exposure
             Task {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() }; working = false }
                 do {
-                    try await Task.detached { try AutomationCaseCapsule.exportCompressed(frozen: frozen, attempts: attempts, approval: approval, exposure: value.exposure, to: url) }.value
+                    try await model.exportCapsule(frozen: frozen, attempts: attempts, exposure: exposure, to: url)
                     message = "Capsule saved: " + url.lastPathComponent
                 } catch { message = "Could not save capsule: " + error.localizedDescription }
             }

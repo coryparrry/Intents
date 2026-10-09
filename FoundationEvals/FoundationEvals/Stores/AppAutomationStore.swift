@@ -96,6 +96,9 @@ final class AppAutomationStore {
     var savedViewedDirectory: URL?
     var selectionEpoch = 0
     var savedViewRequestID: UUID?
+    /// Set only by the capsule review toggle. Every new capsule preview starts unreviewed.
+    var capsuleExportReviewed = false
+    var canSaveCapsuleExport: Bool { capsuleExportReviewed && !busy }
     let savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])?
     private let savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])?
     private let runExecutor: AutomationNativeRunExecutor?
@@ -805,6 +808,7 @@ final class AppAutomationStore {
     }
     /// Read-only export snapshot. Capsule selection never changes execution approval or the viewed result.
     func capsuleExportSelection(_ frozen: AutomationFrozenCase) async throws -> (AutomationFrozenCase, [AutomationAttemptReport], AutomationEvidenceExposure) {
+        capsuleExportReviewed = false
         guard !busy, !closing, savedCases.contains(frozen) else { throw AutomationContractError.invalidIdentity }
         let attempts: [AutomationAttemptReport]
         if let savedAttemptsReader { attempts = try await savedAttemptsReader(frozen) }
@@ -812,6 +816,14 @@ final class AppAutomationStore {
         guard !busy, !closing, savedCases.contains(frozen), attempts.count <= 100 else { throw AutomationContractError.invalidIdentity }
         let exposure = try reserveEvidenceExposure(frozen, attempts: attempts)
         return (frozen, attempts, exposure)
+    }
+    func capsuleExportApproval(frozen: AutomationFrozenCase, attempts: [AutomationAttemptReport]) -> AutomationCapsuleExportApproval {
+        .init(caseDigest: frozen.digest, attemptIDs: Set(attempts.map(\.attemptID)), syntheticDataAndMetadataReviewed: capsuleExportReviewed)
+    }
+    /// The approval reflects the review toggle, so the core export rejects an unreviewed selection.
+    func exportCapsule(frozen: AutomationFrozenCase, attempts: [AutomationAttemptReport], exposure: AutomationEvidenceExposure, to url: URL) async throws {
+        let approval = capsuleExportApproval(frozen: frozen, attempts: attempts)
+        try await Task.detached { try AutomationCaseCapsule.exportCompressed(frozen: frozen, attempts: attempts, approval: approval, exposure: exposure, to: url) }.value
     }
     private func reserveEvidenceExposure(_ frozen: AutomationFrozenCase, attempts: [AutomationAttemptReport]) throws -> AutomationEvidenceExposure {
         try AutomationEvidenceExposureAuthority(supportRoot: support).reserve(frozen: frozen, attempts: attempts)

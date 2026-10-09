@@ -108,6 +108,49 @@ import XCTest
         do { _ = try await model.capsuleExportSelection(frozen); XCTFail("Exported an unselected case") } catch {}
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.path))
     }
+    func testCapsuleExportRequiresExplicitReviewForEachSelection() async throws {
+        let (model, root, _) = try fixture()
+        let cases = try AutomationCaseStore(root: model.support.appendingPathComponent("Cases"))
+        let plan = AutomationCase(id: "reviewed-capsule", app: .init(logicalID: "synthetic", bundleID: "example.Fixture", platform: "ios"),
+            target: .init(id: "fixture", kind: .simulator), environmentID: "synthetic",
+            execution: .init(id: "subject", kind: .systemIntent, phase: .subject, operation: "Echo"))
+        let frozen = try await cases.freeze(plan)
+        let result = AutomationAssessment.assess(plan: plan, attemptID: "recorded", subjectDispatched: false, subjectCompleted: false, observations: [], termination: .unresolved)
+        let report = AutomationAttemptReport(attemptID: "recorded", result: result, receipts: [], resourcesReleased: true)
+        try await cases.saveAttempt(report, for: frozen); model.savedCases = [frozen]
+        XCTAssertFalse(model.capsuleExportReviewed); XCTAssertFalse(model.canSaveCapsuleExport)
+        model.capsuleExportReviewed = true
+        let selection = try await model.capsuleExportSelection(frozen)
+        XCTAssertFalse(model.capsuleExportReviewed, "A new preview must not inherit an earlier review")
+        XCTAssertFalse(model.canSaveCapsuleExport)
+        let unreviewed = model.capsuleExportApproval(frozen: selection.0, attempts: selection.1)
+        XCTAssertFalse(unreviewed.syntheticDataAndMetadataReviewed)
+        XCTAssertEqual(unreviewed.caseDigest, frozen.digest); XCTAssertEqual(unreviewed.attemptIDs, ["recorded"])
+        let rejected = root.appendingPathComponent("unreviewed.intentscase")
+        do {
+            try await model.exportCapsule(frozen: selection.0, attempts: selection.1, exposure: selection.2, to: rejected)
+            XCTFail("Exported an unreviewed capsule")
+        } catch {}
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rejected.path))
+        model.capsuleExportReviewed = true
+        XCTAssertTrue(model.canSaveCapsuleExport)
+        XCTAssertTrue(model.capsuleExportApproval(frozen: selection.0, attempts: selection.1).syntheticDataAndMetadataReviewed)
+        model.progress = "Running"
+        XCTAssertFalse(model.canSaveCapsuleExport)
+        model.progress = nil
+        let saved = root.appendingPathComponent("reviewed.intentscase")
+        try await model.exportCapsule(frozen: selection.0, attempts: selection.1, exposure: selection.2, to: saved)
+        let imported = try AutomationCaseCapsule.read(saved)
+        XCTAssertEqual(imported.frozen, frozen); XCTAssertEqual(imported.historicalAttempts, [report]); XCTAssertFalse(imported.liveAccepted)
+        do {
+            try await model.exportCapsule(frozen: selection.0, attempts: selection.1, exposure: selection.2, to: saved)
+            XCTFail("Replaced an existing capsule")
+        } catch {}
+        model.progress = "Running"
+        do { _ = try await model.capsuleExportSelection(frozen); XCTFail("Previewed during a run") } catch {}
+        XCTAssertFalse(model.capsuleExportReviewed, "A rejected preview must clear the earlier review")
+        XCTAssertNil(model.report); XCTAssertNil(model.savedViewedReport); XCTAssertNil(model.canonicalEvidence)
+    }
     func testLearnedRetentionAndNewProposalInvalidateApprovalAndChangedContext() throws {
         let (model, root, _) = try fixture(); try selectFreshSource(model: model, root: root)
         let original = try model.makeNativeRunRequest(runID: "source"), prepared = try XCTUnwrap(model.prepared)
