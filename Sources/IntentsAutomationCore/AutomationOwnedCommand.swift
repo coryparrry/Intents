@@ -107,7 +107,9 @@ public actor AutomationOwnedCommand {
                 callback = nil
             } else {
                 guard ownershipGateNonce == nil else { throw AutomationContractError.invalidIdentity }
-                guard !child.isRunning else { throw AutomationContractError.invalidIdentity }
+                guard Self.permitsUncapturedExit(pid: child.processIdentifier, isRunning: child.isRunning) else {
+                    throw AutomationContractError.invalidIdentity
+                }
             }
             if let nonce = ownershipGateNonce, let identity, let gateInput {
                 while output.firstIndex(of: 10) == nil {
@@ -190,6 +192,11 @@ public actor AutomationOwnedCommand {
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while !terminated(child) && ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(50)) }
         return terminated(child)
+    }
+    // This only permits waiting for a delayed exit notification; it never grants signal ownership.
+    nonisolated static func permitsUncapturedExit(pid: Int32, isRunning: Bool) -> Bool {
+        guard pid > 0 else { return false }
+        return !isRunning || (kill(pid, 0) == -1 && errno == ESRCH)
     }
     private func terminated(_ child: Process) -> Bool {
         guard !child.isRunning else { return false }
