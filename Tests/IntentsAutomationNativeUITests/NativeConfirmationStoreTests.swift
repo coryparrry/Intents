@@ -5,6 +5,85 @@ import XCTest
 @testable import IntentsAutomationCore
 
 extension InstalledUIStoreTests {
+    func testNativeConfirmationHistoryExpiresTerminalPayloadsWithoutExhaustingAdmission() async throws {
+        let (model, _, _) = try fixture()
+        var reviews: [AutomationNativeConfirmationReview] = []
+        for index in 0..<65 {
+            let review = try await model.prepareNativeConfirmation(.run)
+            reviews.append(review)
+            if index.isMultiple(of: 2) { _ = try model.cancelCommand(id: review.id) }
+            else { model.preparationSelectionChanged() }
+        }
+        XCTAssertTrue(model.canRun)
+        XCTAssertNil(model.pendingCommandStatus)
+        let expired = try XCTUnwrap(reviews.first)
+        XCTAssertThrowsError(try model.commandStatus(id: expired.id))
+        XCTAssertThrowsError(try model.requestCommand(id: expired.id, digest: expired.digest))
+        do {
+            _ = try await model.requestReproductionCommand(id: expired.id, digest: expired.digest)
+            XCTFail("Expired native request was adopted for reproduction")
+        } catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
+        do {
+            _ = try await model.requestComparisonCommand(id: expired.id, digest: expired.digest)
+            XCTFail("Expired native request was adopted for comparison")
+        } catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
+        XCTAssertNil(model.pendingCommandStatus)
+        let latest = try XCTUnwrap(reviews.last)
+        XCTAssertEqual(try model.commandStatus(id: latest.id).state, "cancelled")
+        XCTAssertThrowsError(try model.requestCommand(id: latest.id, digest: latest.digest))
+        let next = try await model.prepareNativeConfirmation(.run)
+        XCTAssertEqual(model.pendingCommandStatus?.requestID, next.id)
+        _ = try model.cancelCommand(id: next.id)
+    }
+
+    func testExternalIdempotentHistoryLimitDoesNotBlockNativeConfirmations() async throws {
+        let (model, _, _) = try fixture()
+        let preview = try model.previewCommand()
+        var externalIDs: [UUID] = []
+        for _ in 0..<50 {
+            let id = UUID(); externalIDs.append(id)
+            _ = try model.requestCommand(id: id, digest: preview.digest)
+            let review = try await model.prepareNativeConfirmation(.run)
+            XCTAssertEqual(review.id, id)
+            _ = try model.cancelCommand(id: id)
+        }
+        XCTAssertThrowsError(try model.requestCommand(id: UUID(), digest: preview.digest))
+        for _ in 0..<65 {
+            let review = try await model.prepareNativeConfirmation(.run)
+            _ = try model.cancelCommand(id: review.id)
+        }
+        for id in externalIDs {
+            XCTAssertEqual(try model.commandStatus(id: id).state, "cancelled")
+            XCTAssertEqual(try model.requestCommand(id: id, digest: preview.digest).state, "cancelled")
+        }
+        XCTAssertThrowsError(try model.requestCommand(id: externalIDs[0], digest: String(repeating: "f", count: 64)))
+        XCTAssertThrowsError(try model.requestCommand(id: UUID(), digest: preview.digest))
+        XCTAssertNil(model.pendingCommandStatus)
+    }
+
+    func testNativeHistoryPinsActiveRequestsEvenAfterTheirStatusBecomesTerminal() throws {
+        var history = AutomationCommandHistory()
+        var requests: [UUID: AutomationNativeCommandStatus] = [:]
+        var ids: [UUID] = []
+        for _ in 0..<50 {
+            let id = history.nativeRequestID(requests: &requests, pending: nil, active: nil)
+            ids.append(id)
+            requests[id] = .init(requestID: id, digest: "digest", state: "cancelled")
+            history.admitted(id)
+        }
+        let active = ids[0]
+        requests[active]?.state = "completed"
+        let next = history.nativeRequestID(requests: &requests, pending: nil, active: active)
+        XCTAssertEqual(requests[active]?.state, "completed")
+        XCTAssertNil(requests[ids[1]])
+        XCTAssertFalse(history.canAdmit(ids[1], nativeConfirmation: false, requests: requests))
+        requests[next] = .init(requestID: next, digest: "digest", state: "awaitingApproval")
+        history.admitted(next)
+        XCTAssertEqual(history.nativeRequestID(requests: &requests, pending: next, active: active), next)
+        XCTAssertEqual(requests[next]?.state, "awaitingApproval")
+        XCTAssertEqual(requests[active]?.state, "completed")
+    }
+
     func testNativeRunConfirmationRejectsLateInventoryDestinationDriftWithoutFallback() async throws {
         let gate = NativeConfirmationGate(), calls = NativeConfirmationCalls()
         let replacement = AutomationSimulator(id: UUID().uuidString, name: "Replacement", runtime: "iOS", state: "Shutdown")
