@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';import {mkdtemp,writeFile,readFile,rm,stat,access} from 'node:fs/promises';
+import {spawn,type ChildProcess} from 'node:child_process';import {mkdtemp,writeFile,readFile,rm,stat,access} from 'node:fs/promises';
 import {join} from 'node:path';import {fileURLToPath,pathToFileURL} from 'node:url';
 import {segmentPayloadDigest} from '../src/payloadDigest.js';
 
@@ -10,8 +10,17 @@ const target={id:'device',platform:'ios',kind:'simulator',bundleId:'example.App'
 const segment={scope,operationId:'operation',phase:'setup',bindings:{name:'Ada'},timeoutMs:1000,
  operations:[{id:'tap',kind:'tap',locator:{kind:'testId',value:'done'}},{id:'fill',kind:'fillBinding',locator:{kind:'testId',value:'name'},binding:'name'}]};
 type Event={kind:string;action?:string;error?:string;digest?:string;state?:string};
-async function qualify(options:{scenario?:string;args?:(profile:string)=>string[];profile?:(root:string)=>Record<string,unknown>}={}){
+async function qualify(options:{scenario?:string;args?:(profile:string)=>string[];profile?:(root:string)=>Record<string,unknown>;timeoutMs?:number;onSpawn?:(pid:number)=>void}={}){
  const root=await mkdtemp('/private/tmp/intents-qualification-');
+ let child:ChildProcess|undefined,closed:Promise<number|null>|undefined,watchdog:ReturnType<typeof setTimeout>|undefined,returned=false;
+ async function dispose(){
+  clearTimeout(watchdog);
+  try{
+   if(child&&child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');
+   await closed;
+  }finally{await rm(root,{recursive:true,force:true});}
+ }
+ try{
  const entryURL=new URL('../src/qualificationUI.js',import.meta.url);
  const common=`import {appendFile} from 'node:fs/promises';import {join} from 'node:path';
  const root=process.env.INTENTS_TEST_ROOT, scenario=process.env.INTENTS_TEST_SCENARIO;
@@ -20,7 +29,7 @@ async function qualify(options:{scenario?:string;args?:(profile:string)=>string[
 `;
  await writeFile(join(root,'sdk.mjs'),common+`
  export function createAgentDeviceClient(config){return {
- devices:{list:async()=>{await event('list');return [device]},capabilities:async()=>{await event('capabilities');return {device}}},
+ devices:{list:async()=>{await event('list');if(scenario==='hang'){setInterval(()=>{},1000);await new Promise(()=>{});}return [device]},capabilities:async()=>{await event('capabilities');return {device}}},
  apps:{open:async()=>{await event('opened');return {identifiers:{udid:device.id,appBundleId:'example.App'}}}},
  sessions:{close:async()=>{await event('session-closed')},list:async()=>[{name:config.session,device}]},
  capture:{snapshot:async()=>{await event('snapshot');return {refsGeneration:1,appBundleId:'example.App',identifiers:{session:config.session},
@@ -28,6 +37,9 @@ async function qualify(options:{scenario?:string;args?:(profile:string)=>string[
  interactions:{press:async()=>{await event('press')},fill:async options=>{await event('fill',{text:options.text})},scroll:async()=>{await event('scroll')}}};}
  `);
  await writeFile(join(root,'lifecycle.mjs'),common+`export async function stopPrivateDaemon(state){await event('daemon-stopped',{state});
+ if(scenario==='corrupt-events')await appendFile(join(root,'events.jsonl'),'{broken');
+ if(scenario==='directory-events'){const fs=await import('node:fs/promises');await fs.rm(join(root,'events.jsonl'));await fs.mkdir(join(root,'events.jsonl'));}
+ if(scenario==='large-output'){process.stdout.write('x'.repeat(300000));process.stderr.write('y'.repeat(300000));}
  return scenario==='unproved-release'?{released:false,reason:'test-only unproved release'}:{released:true,reason:'test-only deterministic release'};}`);
  // Dispatches each frozen operation through the real DeviceSession policy and records its outcome.
  await writeFile(join(root,'worker.mjs'),common+`
@@ -49,16 +61,26 @@ async function qualify(options:{scenario?:string;args?:(profile:string)=>string[
  const profile={schemaVersion:1,target,scope,stateDirectory:join(root,'state'),evidenceDirectory:evidence,segment,approvedEffects:['activate','tap','fill'],
   ...options.profile?.(root)};
  await writeFile(profilePath,JSON.stringify(profile));
- const child=spawn(process.execPath,['--import',join(root,'hook.mjs'),fileURLToPath(entryURL),...(options.args?.(profilePath)??['--profile',profilePath])],{
+ child=spawn(process.execPath,['--import',join(root,'hook.mjs'),fileURLToPath(entryURL),...(options.args?.(profilePath)??['--profile',profilePath])],{
   env:{PATH:'/usr/bin:/bin',HOME:root,TMPDIR:'/private/tmp',INTENTS_TEST_ROOT:root,INTENTS_TEST_SCENARIO:options.scenario??'normal'},stdio:['ignore','pipe','pipe']});
- let stdout='',stderr='';child.stdout.on('data',c=>{stdout+=String(c)});child.stderr.on('data',c=>{stderr+=String(c)});
- const watchdog=setTimeout(()=>child.kill('SIGKILL'),30000);
- const code=await new Promise<number|null>((resolve,reject)=>{child.once('error',reject);child.once('exit',resolve);});clearTimeout(watchdog);
- let events:Event[]=[];try{events=(await readFile(join(root,'events.jsonl'),'utf8')).trim().split('\n').filter(Boolean).map(s=>JSON.parse(s));}catch{}
+ let stdout='',stderr='';child.stdout!.on('data',c=>{stdout+=String(c)});child.stderr!.on('data',c=>{stderr+=String(c)});
+ let spawnError:Error|undefined,timedOut=false;
+ closed=new Promise<number|null>(resolve=>{child!.once('error',error=>{spawnError=error;});child!.once('close',resolve);});
+ watchdog=setTimeout(()=>{timedOut=true;child!.kill('SIGKILL');},options.timeoutMs??30000);
+ options.onSpawn?.(child.pid!);
+ const code=await closed;
+ if(spawnError)throw spawnError;
+ if(timedOut)throw new Error('Qualification fixture deadline expired');
+ let contents:string;
+ try{contents=await readFile(join(root,'events.jsonl'),'utf8');}
+ catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;contents='';}
+ const events:Event[]=contents.trim().split('\n').filter(Boolean).map(line=>JSON.parse(line));
  const exists=async(name:string)=>{try{await access(join(evidence,name));return true;}catch{return false;}};
  const json=async(name:string)=>JSON.parse(await readFile(join(evidence,name),'utf8'));
  const mode=async(name:string)=>(await stat(join(evidence,name))).mode&0o777;
- return {root,code,stdout,stderr,events,exists,json,mode,evidence,dispose:()=>rm(root,{recursive:true,force:true})};
+ returned=true;
+ return {root,code,stdout,stderr,events,exists,json,mode,evidence,dispose};
+ }finally{clearTimeout(watchdog);if(!returned)await dispose();}
 }
 const kinds=(events:Event[])=>events.map(e=>e.kind);
 
@@ -145,4 +167,36 @@ test('a profile without a segment captures evidence without starting a worker',a
   assert.deepEqual(kinds(q.events),['list','capabilities','opened','snapshot','session-closed','daemon-stopped']);
   assert.ok(await q.exists('selection.json'));
  }finally{await q.dispose();}
+});
+
+test('qualification fixture drains large stdout and stderr before returning',async()=>{
+ const q=await qualify({scenario:'large-output'});try{
+  assert.equal(q.code,0);assert.equal(q.stderr,'y'.repeat(300000));
+  assert.ok(q.stdout.includes('x'.repeat(300000)));
+  assert.deepEqual(JSON.parse(q.stdout.slice(q.stdout.lastIndexOf('x')+1).trim()),{released:true,reason:'test-only deterministic release'});
+ }finally{await q.dispose();}
+});
+test('qualification fixture rejects corrupt and unreadable event logs and cleans failed setup',async()=>{
+ for(const scenario of ['corrupt-events','directory-events']){
+  let root='',pid=0;
+  const pending=qualify({scenario,profile:value=>{root=value;return {};},onSpawn:value=>{pid=value;}});
+  try{await assert.rejects(pending,
+   error=>scenario==='corrupt-events'?error instanceof SyntaxError:(error as NodeJS.ErrnoException).code==='EISDIR');}
+  finally{await pending.then(q=>q.dispose(),()=>{});}
+  await assert.rejects(access(root),{code:'ENOENT'});
+  assert.throws(()=>process.kill(pid,0),{code:'ESRCH'});
+ }
+});
+test('qualification fixture removes its directory when profile setup throws',async()=>{
+ let root='';
+ await assert.rejects(qualify({profile:value=>{root=value;throw new Error('fixture setup failed');}}),/fixture setup failed/);
+ await assert.rejects(access(root),{code:'ENOENT'});
+});
+test('qualification fixture deadline reaps a hanging child and removes its directory',async()=>{
+ let root='',pid=0;
+ const pending=qualify({scenario:'hang',timeoutMs:300,profile:value=>{root=value;return {};},onSpawn:value=>{pid=value;}});
+ try{await assert.rejects(pending,/Qualification fixture deadline expired/);}
+ finally{await pending.then(q=>q.dispose(),()=>{});}
+ await assert.rejects(access(root),{code:'ENOENT'});
+ assert.throws(()=>process.kill(pid,0),{code:'ESRCH'});
 });
