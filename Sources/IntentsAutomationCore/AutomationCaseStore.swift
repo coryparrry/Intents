@@ -22,7 +22,7 @@ public struct AutomationFrozenCase: Codable, Equatable, Sendable {
     }
     public static func planDigest(_ plan: AutomationCase) throws -> String { try canonicalDigest(plan) }
     /// Exact setup, inputs, route, observer, oracle and harness provenance stay
-    /// frozen. Typed Mac cases also vary their associated-host/catalog build
+    /// frozen. Typed prepared cases also vary their associated-host/catalog build
     /// fingerprints while retaining the host template and declared schema.
     /// Cases without typed artifacts keep the original strict projection.
     public static func comparisonContractDigest(_ plan: AutomationCase) throws -> String {
@@ -35,6 +35,12 @@ public struct AutomationFrozenCase: Codable, Equatable, Sendable {
             try artifacts.validate(plan: plan)
             contract.app.sourceSyntaxIndexDigest = nil
             contract.preparedMacBuildArtifacts = artifacts.comparisonProjection
+        }
+        if let artifacts = plan.preparedSimulatorBuildArtifacts {
+            try artifacts.validate(plan: plan)
+            contract.app.sourceSyntaxIndexDigest = nil
+            contract.preparedSimulatorBuildArtifacts = artifacts.comparisonProjection
+            if contract.provenance["catalog"] != nil { contract.provenance["catalog"] = artifacts.catalogSurfaceDigest }
         }
         return try canonicalDigest(contract)
     }
