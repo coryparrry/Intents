@@ -203,7 +203,6 @@ private enum Fixture {
 
     func testFrontmostApplicationIdentityRegressionsAreDenied() {
         let mutations: [(String, (inout State) -> Void)] = [
-            ("GUI target changed", { $0.targetValid = false }),
             ("accessibility not trusted", { $0.trusted = false }),
             ("process replaced", { $0.presence = [.replaced] }),
             ("process absent", { $0.presence = [.absent] }),
@@ -228,6 +227,11 @@ private enum Fixture {
             assertDenied(name) { _ = try resolveContext.resolve() }
             XCTAssertTrue(resolving.get { $0.positions.isEmpty }, name)
         }
+        let changedTarget = Native(); changedTarget.set { $0.targetValid = false }
+        let changedVerify = makeContext(changedTarget), changedResolve = makeContext(changedTarget)
+        XCTAssertThrowsError(try withDeadline { try changedVerify.verify() }) { XCTAssertEqual($0 as? AutomationContractError, .conflictingOperation) }
+        XCTAssertThrowsError(try withDeadline { _ = try changedResolve.resolve() }) { XCTAssertEqual($0 as? AutomationContractError, .conflictingOperation) }
+        XCTAssertTrue(changedTarget.get { $0.positions.isEmpty })
         let missingPath = Native(), missingPathContext = makeContext(missingPath, approval: approval(bundlePath: nil))
         missingPath.set { $0.application = .init(bundleID: "test.Secure", canonicalBundlePath: nil, isTerminated: false) }
         assertDenied("approval without a canonical bundle path") { try missingPathContext.verify() }
