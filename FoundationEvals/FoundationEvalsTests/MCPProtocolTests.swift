@@ -171,6 +171,177 @@ struct MCPProtocolTests {
         }
     }
 
+    @Test func attachmentToolsRequireConfirmationRevisionAndDeclaredFields() throws {
+        let attachmentID = UUID()
+        func removal(_ fields: [String: MCPJSONValue] = [:]) -> MCPJSONValue {
+            .object([
+                "id": .string(attachmentID.uuidString),
+                "expectedRevision": .string("revision-1"),
+                "confirm": .bool(true)
+            ].merging(fields) { _, new in new })
+        }
+        func upload(_ fields: [String: MCPJSONValue] = [:]) -> MCPJSONValue {
+            .object([
+                "id": .string(attachmentID.uuidString),
+                "name": .string("notes.txt"),
+                "mediaType": .string("text/plain"),
+                "dataBase64": .string(Data("hello".utf8).base64EncodedString()),
+                "expectedRevision": .string("revision-1")
+            ].merging(fields) { _, new in new })
+        }
+
+        guard case .removeAttachment(let removed) = try MCPToolCatalog.parse(
+            name: "eval_remove_attachment",
+            arguments: removal()
+        ) else {
+            Issue.record("Expected a typed attachment removal.")
+            return
+        }
+        #expect(removed.id == attachmentID)
+        #expect(removed.expectedRevision == "revision-1")
+        #expect(removed.confirm)
+
+        #expect(throws: MCPToolInputError.confirmationRequired) {
+            try MCPToolCatalog.parse(name: "eval_remove_attachment", arguments: removal(["confirm": .bool(false)]))
+        }
+        #expect(throws: MCPToolInputError.confirmationRequired) {
+            try MCPToolCatalog.parse(
+                name: "eval_remove_attachment",
+                arguments: removal(["expectedRevision": .string("")])
+            )
+        }
+        #expect(throws: MCPToolInputError.invalidArguments) {
+            try MCPToolCatalog.parse(name: "eval_remove_attachment", arguments: removal(["path": .string("/tmp/a")]))
+        }
+
+        guard case .uploadAttachment(let uploaded) = try MCPToolCatalog.parse(
+            name: "eval_upload_attachment",
+            arguments: upload()
+        ) else {
+            Issue.record("Expected a typed attachment upload.")
+            return
+        }
+        #expect(uploaded.id == attachmentID)
+        #expect(uploaded.name == "notes.txt")
+        #expect(uploaded.mediaType == "text/plain")
+        #expect(uploaded.dataBase64 == Data("hello".utf8))
+        #expect(uploaded.expectedRevision == "revision-1")
+
+        for field in ["name", "mediaType", "expectedRevision"] {
+            #expect(throws: MCPToolInputError.invalidArguments) {
+                try MCPToolCatalog.parse(name: "eval_upload_attachment", arguments: upload([field: .string("")]))
+            }
+        }
+        #expect(throws: MCPToolInputError.invalidArguments) {
+            try MCPToolCatalog.parse(name: "eval_upload_attachment", arguments: upload(["path": .string("/tmp/a")]))
+        }
+    }
+
+    @Test func startRunRequiresExpectedRevision() throws {
+        let runID = UUID()
+        guard case .startRun(let started) = try MCPToolCatalog.parse(
+            name: "eval_start_run",
+            arguments: .object(["runID": .string(runID.uuidString), "expectedRevision": .string("revision-1")])
+        ) else {
+            Issue.record("Expected a typed run start.")
+            return
+        }
+        #expect(started.runID == runID)
+        #expect(started.expectedRevision == "revision-1")
+
+        #expect(throws: MCPToolInputError.invalidArguments) {
+            try MCPToolCatalog.parse(
+                name: "eval_start_run",
+                arguments: .object(["runID": .string(runID.uuidString), "expectedRevision": .string("")])
+            )
+        }
+        #expect(throws: MCPToolInputError.invalidArguments) {
+            try MCPToolCatalog.parse(name: "eval_start_run", arguments: .object(["runID": .string(runID.uuidString)]))
+        }
+        #expect(throws: MCPToolInputError.invalidArguments) {
+            try MCPToolCatalog.parse(
+                name: "eval_start_run",
+                arguments: .object([
+                    "runID": .string(runID.uuidString),
+                    "expectedRevision": .string("revision-1"),
+                    "unexpected": .bool(true)
+                ])
+            )
+        }
+    }
+
+    @Test func listRunsEnforcesPageAndFilterBounds() throws {
+        guard case .listRuns(let defaults) = try MCPToolCatalog.parse(name: "eval_list_runs", arguments: .object([:])) else {
+            Issue.record("Expected typed run listing.")
+            return
+        }
+        #expect(defaults.cursor == nil)
+        #expect(defaults.limit == nil)
+
+        let bounded: [String: MCPJSONValue] = [
+            "cursor": .string(String(repeating: "c", count: 512)),
+            "limit": .integer(50),
+            "query": .string(String(repeating: "q", count: 1_024)),
+            "status": .string(String(repeating: "s", count: 64))
+        ]
+        guard case .listRuns(let listed) = try MCPToolCatalog.parse(
+            name: "eval_list_runs",
+            arguments: .object(bounded)
+        ) else {
+            Issue.record("Expected typed run listing.")
+            return
+        }
+        #expect(listed.cursor?.count == 512)
+        #expect(listed.limit == 50)
+        #expect(listed.query?.count == 1_024)
+        #expect(listed.status?.count == 64)
+        guard case .listRuns(let minimum) = try MCPToolCatalog.parse(
+            name: "eval_list_runs",
+            arguments: .object(["limit": .integer(1)])
+        ) else {
+            Issue.record("Expected typed run listing.")
+            return
+        }
+        #expect(minimum.limit == 1)
+
+        let rejected: [[String: MCPJSONValue]] = [
+            ["limit": .integer(0)],
+            ["limit": .integer(51)],
+            ["cursor": .string(String(repeating: "c", count: 513))],
+            ["query": .string(String(repeating: "q", count: 1_025))],
+            ["status": .string(String(repeating: "s", count: 65))],
+            ["unexpected": .bool(true)]
+        ]
+        for arguments in rejected {
+            #expect(throws: MCPToolInputError.invalidArguments) {
+                try MCPToolCatalog.parse(name: "eval_list_runs", arguments: .object(arguments))
+            }
+        }
+    }
+
+    @Test func projectReleaseReportDecodesProjectAndRejectsMalformedArguments() throws {
+        let projectID = UUID()
+        guard case .projectReleaseReport(let report) = try MCPToolCatalog.parse(
+            name: "eval_project_release_report",
+            arguments: .object(["projectID": .string(projectID.uuidString)])
+        ) else {
+            Issue.record("Expected a typed project release report.")
+            return
+        }
+        #expect(report.projectID == projectID)
+
+        let rejected: [MCPJSONValue] = [
+            .object([:]),
+            .object(["projectID": .string("not-a-uuid")]),
+            .object(["projectID": .string(projectID.uuidString), "suiteID": .string(UUID().uuidString)])
+        ]
+        for arguments in rejected {
+            #expect(throws: MCPToolInputError.invalidArguments) {
+                try MCPToolCatalog.parse(name: "eval_project_release_report", arguments: arguments)
+            }
+        }
+    }
+
     @Test func securityAndTransportBoundsRejectBeforeDispatch() async throws {
         let recorder = MCPCallRecorder()
         let authority = MCPAuthority(
