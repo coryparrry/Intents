@@ -84,16 +84,33 @@ final class AutomationUIProgramTests: XCTestCase, @unchecked Sendable {
             XCTAssertEqual(error as? AutomationContractError, .invalidPlan("UI payload exceeds frame budget"))
         }
     }
-    func testFrameBudgetAdmitsPayloadsUnderTheLimitAndRejectsTheFirstOversizedOne() throws {
-        func program(fills: Int) -> AutomationUIProgram {
-            let operations = (0..<fills).map { AutomationUIProgram.Operation(id: "fill\($0)", kind: .fillBinding, locator: .init(.testId, "field\($0)"), binding: "value\($0)") }
-            let bindings = Dictionary(uniqueKeysWithValues: (0..<fills).map { ("value\($0)", String(repeating: "\n", count: 32768)) })
-            return AutomationUIProgram(operations: operations, bindings: bindings)
-        }
+    func testFrameBudgetAdmitsExactSerializedLimitAndRejectsOneByteAbove() throws {
+        let operations = (0..<16).map { AutomationUIProgram.Operation(id: "fill\($0)", kind: .fillBinding,
+            locator: .init(.testId, "field\($0)"), binding: "value\($0)") }
+        var bindings = Dictionary(uniqueKeysWithValues: (0..<15).map { ("value\($0)", String(repeating: "\n", count: 32768)) })
+        bindings["value15"] = ""
+        var program = AutomationUIProgram(operations: operations, bindings: bindings)
         let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "setup", leaseGeneration: 1)
-        let admitted = try program(fills: 15).payload(scope: scope, phase: .setup, operationID: "setup")
-        XCTAssertLessThanOrEqual(try JSONEncoder().encode(admitted).count, 1_047_552)
-        XCTAssertThrowsError(try program(fills: 16).payload(scope: scope, phase: .setup, operationID: "setup")) { error in
+        let baseline = try program.payload(scope: scope, phase: .setup, operationID: "setup")
+        let remainingBytes = 1_047_552 - (try JSONEncoder().encode(baseline).count)
+        XCTAssertGreaterThan(remainingBytes, 0)
+        // JSON escapes each newline as two bytes; the optional ASCII byte handles odd overhead.
+        let padding = String(repeating: "\n", count: remainingBytes / 2) + String(repeating: "x", count: remainingBytes % 2)
+        XCTAssertLessThan(padding.utf16.count, 32768)
+        program.bindings["value15"] = padding
+        try program.validate(phase: .setup)
+        let admitted = try program.payload(scope: scope, phase: .setup, operationID: "setup")
+        XCTAssertEqual(try JSONEncoder().encode(admitted).count, 1_047_552)
+
+        program.bindings["value15"] = padding + "x"
+        try program.validate(phase: .setup)
+        // Independently measure the candidate so rejection cannot come from another bound.
+        var oversized = try XCTUnwrap(admitted.object)
+        var oversizedBindings = try XCTUnwrap(oversized["bindings"]?.object)
+        oversizedBindings["value15"] = .string(padding + "x")
+        oversized["bindings"] = .object(oversizedBindings)
+        XCTAssertEqual(try JSONEncoder().encode(AutomationJSON.object(oversized)).count, 1_047_553)
+        XCTAssertThrowsError(try program.payload(scope: scope, phase: .setup, operationID: "setup")) { error in
             XCTAssertEqual(error as? AutomationContractError, .invalidPlan("UI payload exceeds frame budget"))
         }
     }
