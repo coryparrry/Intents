@@ -1,3 +1,4 @@
+import ApplicationServices
 import Darwin
 import Foundation
 import XCTest
@@ -15,6 +16,35 @@ final class MacOwnedFillTests: XCTestCase {
   }
   private func decode(_ bytes: Data, x: Double = 20, nonce: String? = nil) throws -> MacOrdinaryFillFrame {
     try .decode(bytes, nonce: nonce ?? self.nonce, target: target, x: x, y: 30)
+  }
+  private final class Counter { var value = 0 }
+  private struct FakeNode {
+    var pid: pid_t = 123
+    var role: String? = "AXGroup"
+    var subrole: (status: AXError, value: String?) = (.noValue, nil)
+    var enabled: Bool? = true
+    var settable = true
+  }
+  private let field = FakeNode(role: "AXTextField", subrole: (.attributeUnsupported, nil))
+  private let root = FakeNode(role: "AXApplication")
+  private func ancestry(_ middle: [FakeNode] = [FakeNode()], field: FakeNode? = nil) -> [FakeNode] {
+    [field ?? self.field] + middle + [root]
+  }
+  private func refusal(_ nodes: [FakeNode], frontmost: Bool = true, confirmations: Counter = Counter()) -> String? {
+    let accessor = MacOrdinaryFieldAccessor<Int>(pid: { nodes[$0].pid }, role: { nodes[$0].role }, enabled: { nodes[$0].enabled },
+      valueSettable: { nodes[$0].settable }, subrole: { nodes[$0].subrole }, parent: { $0 + 1 < nodes.count ? $0 + 1 : nil },
+      confirmFrontmost: {
+        confirmations.value += 1
+        guard frontmost else { throw HelperError.commandFailed("selected app changed before fill") }
+      })
+    do { try verifyMacOrdinaryField(0, target: target, accessor: accessor); return nil } catch HelperError.commandFailed(let message, _) { return message } catch { return "\(error)" }
+  }
+  private func invalidArgs(_ body: () throws -> Any) -> String? {
+    do { _ = try body(); return nil } catch HelperError.invalidArgs(let message) { return message } catch { return "\(error)" }
+  }
+  private func write(_ text: String, to descriptor: Int32) {
+    let data = Data(text.utf8)
+    XCTAssertEqual(data.withUnsafeBytes { Darwin.write(descriptor, $0.baseAddress, $0.count) }, data.count)
   }
   func testEditableProbeNeverQueriesSecureInheritedDisabledOrNonTextNodes() {
     var probes = 0
@@ -110,5 +140,111 @@ final class MacOwnedFillTests: XCTestCase {
     let delivery = MacOwnedFillDelivery<Int>(resolve: { 7 }, verify: { _ in }, replace: { _, _ in writes += 1 }, readback: { _ in "é" })
     XCTAssertThrowsError(try delivery.fill(frame("e\u{301}")))
     XCTAssertEqual(writes, 1)
+  }
+  func testOrdinaryFieldWithSameOwnerAncestryAndFrontmostRootIsAdmitted() {
+    let confirmations = Counter()
+    for status in [AXError.success, .attributeUnsupported, .noValue] {
+      let ordinary = FakeNode(subrole: (status, status == .success ? "AXSearchField" : nil))
+      var fieldNode = field; fieldNode.subrole = ordinary.subrole; fieldNode.role = "AXTextArea"
+      XCTAssertNil(refusal(ancestry([ordinary], field: fieldNode), confirmations: confirmations))
+    }
+    XCTAssertEqual(confirmations.value, 3)
+  }
+  func testSecureFieldOrSecureAncestorIsRefusedBeforeFrontmostCheck() {
+    let confirmations = Counter()
+    var secureField = field; secureField.subrole = (.success, "AXSecureTextField")
+    XCTAssertEqual(refusal(ancestry(field: secureField), confirmations: confirmations), "secure field is outside ordinary fill")
+    XCTAssertEqual(refusal(ancestry([FakeNode(), FakeNode(subrole: (.success, "AXSecureTextField"))]), confirmations: confirmations),
+      "secure field is outside ordinary fill")
+    XCTAssertEqual(confirmations.value, 0)
+  }
+  func testUnexpectedSubroleErrorOnFieldOrAncestorIsRefused() {
+    for status in [AXError.cannotComplete, .failure, .apiDisabled] {
+      var failingField = field; failingField.subrole = (status, nil)
+      XCTAssertEqual(refusal(ancestry(field: failingField)), "secure field is outside ordinary fill")
+      XCTAssertEqual(refusal(ancestry([FakeNode(subrole: (status, nil))])), "secure field is outside ordinary fill")
+    }
+  }
+  func testForeignOwnerOnFieldOrAncestorIsRefused() {
+    var foreignField = field; foreignField.pid = 456
+    XCTAssertEqual(refusal(ancestry(field: foreignField)), "selected field cannot accept ordinary replacement")
+    XCTAssertEqual(refusal(ancestry([FakeNode(), FakeNode(pid: 456)])), "ordinary field owner changed")
+    var foreignRoot = ancestry(); foreignRoot[foreignRoot.count - 1].pid = 456
+    XCTAssertEqual(refusal(foreignRoot), "ordinary field owner changed")
+  }
+  func testDisabledNonSettableOrNonTextFieldIsRefused() {
+    var disabled = field; disabled.enabled = false
+    var unknownEnabled = field; unknownEnabled.enabled = nil
+    var fixed = field; fixed.settable = false
+    var button = field; button.role = "AXButton"
+    var roleless = field; roleless.role = nil
+    for candidate in [disabled, unknownEnabled, fixed, button, roleless] {
+      XCTAssertEqual(refusal(ancestry(field: candidate)), "selected field cannot accept ordinary replacement")
+    }
+  }
+  func testAncestryIsBoundedToThirtyTwoNodesAndMustReachTheApplication() {
+    XCTAssertNil(refusal(ancestry(Array(repeating: FakeNode(), count: 30))))
+    XCTAssertEqual(refusal(ancestry(Array(repeating: FakeNode(), count: 31))), "ordinary field ancestry exceeds bound")
+    XCTAssertEqual(refusal([field, FakeNode()]), "ordinary field ancestry unavailable")
+  }
+  func testApplicationRootThatIsNotFrontmostIsRefused() {
+    let confirmations = Counter()
+    XCTAssertEqual(refusal(ancestry(), frontmost: false, confirmations: confirmations), "selected app changed before fill")
+    XCTAssertEqual(confirmations.value, 1)
+  }
+  func testFillArgumentsRejectCallerDirectionAndMissingStartupNonceBeforeReadingInput() throws {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory()).resolvingSymlinksInPath()
+      .appendingPathComponent("intents-fill-\(UUID().uuidString)", isDirectory: true)
+    let bundle = directory.appendingPathComponent("Fixture.app", isDirectory: true)
+    try FileManager.default.createDirectory(at: bundle.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "test.fixture", "CFBundlePackageType": "APPL"], format: .xml, options: 0)
+    try plist.write(to: bundle.appendingPathComponent("Contents/Info.plist"))
+    let arguments = ["--x", "20", "--y", "30", "--surface", "frontmost-app", "--bundle-id", "test.fixture",
+      "--target-bundle-path", bundle.path, "--target-pid", "123", "--target-process-start", "123:0"]
+    XCTAssertEqual(invalidArgs { try performMacOwnedFill(arguments: arguments + ["--direction", "up"]) }, "invalid ordinary fill arguments")
+    XCTAssertEqual(invalidArgs { try performMacOwnedFill(arguments: ["--direction", "down"] + arguments) }, "invalid ordinary fill arguments")
+    let saved = getenv("INTENTS_MAC_HELPER_OWNERSHIP_NONCE").map { String(cString: $0) }
+    unsetenv("INTENTS_MAC_HELPER_OWNERSHIP_NONCE")
+    defer { if let saved { setenv("INTENTS_MAC_HELPER_OWNERSHIP_NONCE", saved, 1) } }
+    XCTAssertEqual(invalidArgs { try performMacOwnedFill(arguments: arguments) }, "private fill startup missing")
+  }
+  func testFrameReaderRejectsInvalidBoundsBeforeReading() throws {
+    var pair: [Int32] = [-1, -1]; XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair), 0)
+    defer { close(pair[0]); close(pair[1]) }
+    write("x\n", to: pair[1])
+    for maximum in [0, -1, MacPrivateInput.maximumFrameBytes + 1] {
+      XCTAssertEqual(invalidArgs { try MacPrivateInput.readLine(descriptor: pair[0], maximum: maximum, deadline: .now.advanced(by: .seconds(1))) },
+        "private input bound invalid")
+    }
+    XCTAssertEqual(try MacPrivateInput.readLine(descriptor: pair[0], maximum: MacPrivateInput.maximumFrameBytes, deadline: .now.advanced(by: .seconds(1))), Data("x\n".utf8))
+  }
+  func testHangupAfterPartialFrameFailsIncompleteNotDeadline() throws {
+    var pair: [Int32] = [-1, -1]; XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair), 0)
+    defer { close(pair[0]); close(pair[1]) }
+    write("{\"partial\"", to: pair[1])
+    XCTAssertEqual(shutdown(pair[1], SHUT_WR), 0)
+    XCTAssertEqual(invalidArgs { try MacPrivateInput.readLine(descriptor: pair[0], maximum: 4096, deadline: .now.advanced(by: .seconds(5))) },
+      "private input incomplete")
+  }
+  func testNonceMustBeLowercaseCanonicalUUID() throws {
+    for candidate in [nonce.uppercased(), "12345678123412341234123456789abc", "not-a-uuid"] {
+      let value = MacOrdinaryFillFrame(schemaVersion: 1, kind: "ordinaryFill", nonce: candidate, applicationTarget: target, x: 20, y: 30, value: "public")
+      XCTAssertEqual(invalidArgs { try MacOrdinaryFillFrame.decode(encode(value), nonce: candidate, target: target, x: 20, y: 30) }, "invalid private fill frame")
+    }
+  }
+  func testCoordinatesAreBoundedToOneMillion() throws {
+    func point(_ x: Double, _ y: Double) throws -> MacOrdinaryFillFrame {
+      let value = MacOrdinaryFillFrame(schemaVersion: 1, kind: "ordinaryFill", nonce: nonce, applicationTarget: target, x: x, y: y, value: "public")
+      return try MacOrdinaryFillFrame.decode(encode(value), nonce: nonce, target: target, x: x, y: y)
+    }
+    let accepted: [(Double, Double)] = [(1_000_000, 1_000_000), (-1_000_000, -1_000_000), (1_000_000, -1_000_000)]
+    let rejected: [(Double, Double)] = [(1_000_001, 0), (0, 1_000_001), (-1_000_001, 0), (0, -1_000_001)]
+    for (x, y) in accepted {
+      XCTAssertNoThrow(try point(x, y))
+    }
+    for (x, y) in rejected {
+      XCTAssertEqual(invalidArgs { try point(x, y) }, "invalid private fill frame")
+    }
   }
 }

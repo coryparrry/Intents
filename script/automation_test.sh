@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-if [[ $# -lt 2 || "$1" != --scope ]]; then echo 'usage: automation_test.sh --scope portable|sidecar|integration|verify-report [--profile file]' >&2; exit 2; fi
+if [[ $# -lt 2 || "$1" != --scope ]]; then echo 'usage: automation_test.sh --scope portable|sidecar|staging|integration|verify-report [--profile file]' >&2; exit 2; fi
 SCOPE="$2"; shift 2
 case "$SCOPE" in
   portable)
@@ -36,6 +36,13 @@ case "$SCOPE" in
     "$NODE" --test --test-concurrency=2 Tools/IntentsAutomation/dist/tests/*.test.js
     "$NODE" --test --test-concurrency=2 Tools/IntentsAutomation/patches/*.test.mjs
     "$NODE" --test --test-concurrency=2 Tools/IntentsAutomation/patches/mac-ownership/*.test.mjs
+    ;;
+  staging)
+    [[ $# == 0 ]] || exit 2
+    python3 Tools/IntentsAutomation/tests/staged_mac_ownership_suites_test.py
+    NODE="$ROOT/Tools/IntentsAutomation/.runtime/node-v24.21.0-darwin-arm64/bin/node"
+    [[ -x "$NODE" ]] || { echo 'Verified private runtime is missing; build-time provisioning required.' >&2; exit 2; }
+    PATH="$(dirname "$NODE"):$PATH" python3 Tools/IntentsAutomation/scripts/run_staged_mac_ownership_tests.py
     ;;
   verify-report)
     [[ $# == 2 && "$1" == --profile ]] || { echo 'An exact authorised integration profile is required.' >&2; exit 2; }
