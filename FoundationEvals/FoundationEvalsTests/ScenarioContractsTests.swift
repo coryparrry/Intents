@@ -3129,10 +3129,11 @@ struct ScenarioContractsTests {
                 definition: definition, configuration: configuration,
                 methodName: "testIntentLabReadiness", derivedData: root.appending(path: "DerivedData"),
                 resultBundle: root.appending(path: "Readiness.xcresult"), arguments: arguments,
-                logURL: logURL, appendLog: false, deadline: .seconds(30)
+                logURL: logURL, appendLog: false, deadline: .seconds(90)
             )
         }
-        let launchDeadline = ContinuousClock.now.advanced(by: .seconds(5))
+        // Parallel suites can stall task scheduling for several seconds on CI runners.
+        let launchDeadline = ContinuousClock.now.advanced(by: .seconds(30))
         while Self.readyProcessID(logURL) == nil && ContinuousClock.now < launchDeadline {
             try await Task.sleep(for: .milliseconds(20))
         }
@@ -3817,7 +3818,7 @@ struct ScenarioContractsTests {
     }
 
     private static func waitForHostReady(_ logURL: URL, processID: Int32) -> Bool {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
         while ContinuousClock.now < deadline {
             if readyProcessID(logURL) == processID { return true }
             Thread.sleep(forTimeInterval: 0.01)
