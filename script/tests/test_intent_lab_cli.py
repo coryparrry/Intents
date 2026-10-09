@@ -443,7 +443,8 @@ class IntentLabCLITests(unittest.TestCase):
         calls = []
         def respond(params):
             calls.append(params)
-            return {"outcome": "read", "cases": [], "total": 51, "truncated": True, "nextCursor": "f" * 64 + ":100"}
+            page = [{"caseID": f"case-{i}", "revision": 1, "digest": "a" * 64, "action": "ContractAction", "bundleID": "example.Fixture"} for i in range(50, 100)]
+            return {"outcome": "read", "cases": page, "total": 120, "truncated": True, "nextCursor": "f" * 64 + ":100"}
         with self.connector(respond) as (endpoint, _):
             completed = self.run_cli("automation-cases", "--limit", "50", "--cursor", cursor, "--endpoint", endpoint)
         self.assertEqual(completed.returncode, 0, completed.stderr)
