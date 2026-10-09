@@ -28,6 +28,7 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         var run: @Sendable ([String], URL, Duration) async throws -> AutomationOwnedCommand.Result
         var stop: @Sendable () async -> Bool
         var afterPayloadWrite: (@Sendable () throws -> Void)? = nil
+        var runnerPresence: (@Sendable (AutomationProcessIdentity) -> AutomationProcessIdentity.Presence)? = nil
     }
     private struct Control {
         var scope: AutomationScope
@@ -231,18 +232,19 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         let commandStopped: Bool
         if let commands { commandStopped = await commands.stop() } else { commandStopped = await command.stopOwned() }
         var runnerStopped = true
+        let presence: (AutomationProcessIdentity) -> AutomationProcessIdentity.Presence = commands?.runnerPresence ?? { $0.presence() }
         if let runner = control?.runner {
-            switch runner.presence() {
+            switch presence(runner) {
             case .matching:
                 guard let executable = Self.executablePath(runner),
                       executable.contains("/CoreSimulator/Devices/" + prepared.target.id + "/"),
                       executable.hasSuffix("/" + URL(fileURLWithPath: prepared.hostBundlePath).deletingPathExtension().lastPathComponent),
                       (try? AutomationProductDigest.compute(bundle: URL(fileURLWithPath: executable).deletingLastPathComponent())) == prepared.hostProductDigest,
-                      runner.presence() == .matching else { runnerStopped = false; break }
+                      presence(runner) == .matching else { runnerStopped = false; break }
                 _ = kill(runner.pid, SIGTERM)
                 let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-                while runner.presence() == .matching, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(50)) }
-                runnerStopped = runner.presence() == .absent || runner.presence() == .replaced
+                while presence(runner) == .matching, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(50)) }
+                runnerStopped = presence(runner) == .absent || presence(runner) == .replaced
             case .absent, .replaced: break
             case .unknown: runnerStopped = false
             }

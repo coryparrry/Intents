@@ -9,6 +9,7 @@ actor AutomationPrivateMacAppleRouteDriver: AutomationResolvedRouteDriver {
         var run: @Sendable ([String], URL, Duration) async throws -> AutomationOwnedCommand.Result
         var stop: @Sendable () async -> Bool
         var afterPayloadWrite: (@Sendable () throws -> Void)? = nil
+        var runnerPresence: (@Sendable (AutomationProcessIdentity) -> AutomationProcessIdentity.Presence)? = nil
     }
     private struct Control {
         var scope: AutomationScope
@@ -210,17 +211,18 @@ actor AutomationPrivateMacAppleRouteDriver: AutomationResolvedRouteDriver {
         let commandStopped: Bool
         if let commands { commandStopped = await commands.stop() } else { commandStopped = await command.stopOwned() }
         var runnerStopped = true
+        let presence: (AutomationProcessIdentity) -> AutomationProcessIdentity.Presence = commands?.runnerPresence ?? { $0.presence() }
         if let runner = control?.runner {
-            switch runner.presence() {
+            switch presence(runner) {
             case .matching:
                 guard let expected = try? AutomationMacAssociatedHostReleaseVerifier.profile(prepared).executable.path,
-                      Self.executablePath(runner) == expected, runner.presence() == .matching else {
+                      Self.executablePath(runner) == expected, presence(runner) == .matching else {
                     runnerStopped = false; break
                 }
                 _ = kill(runner.pid, SIGTERM)
                 let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-                while runner.presence() == .matching, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(50)) }
-                runnerStopped = runner.presence() == .absent || runner.presence() == .replaced
+                while presence(runner) == .matching, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(50)) }
+                runnerStopped = presence(runner) == .absent || presence(runner) == .replaced
             case .absent, .replaced: break
             case .unknown: runnerStopped = false
             }
