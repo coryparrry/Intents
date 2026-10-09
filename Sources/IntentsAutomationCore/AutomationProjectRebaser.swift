@@ -47,6 +47,7 @@ enum AutomationProjectRebaser {
         func value(_ input: Any) throws -> Any {
             if let text = input as? String {
                 guard !text.contains("\0") else { throw AutomationContractError.invalidIdentity }
+                if text == originalRoot.path { return frozenRoot.path }
                 return text.replacingOccurrences(of: originalRoot.path + "/", with: frozenRoot.path + "/")
             }
             if let array = input as? [Any] { return try array.map(value) }
