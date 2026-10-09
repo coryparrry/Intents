@@ -12,12 +12,7 @@ struct AppAutomationCapsuleView: View {
     @State private var message: String?
     @State private var imported: AutomationImportedCapsule?
 
-    private struct ExportSelection: Identifiable {
-        let id = UUID()
-        let frozen: AutomationFrozenCase
-        let attempts: [AutomationAttemptReport]
-        let exposure: AutomationEvidenceExposure
-    }
+    private typealias ExportSelection = AutomationCapsuleExportSelection
     var body: some View {
         GroupBox("Case capsules") {
             VStack(alignment: .leading, spacing: 10) {
@@ -74,11 +69,16 @@ struct AppAutomationCapsuleView: View {
                         }
                     }
                 }
-                Toggle("I reviewed this case and these \(value.attempts.count) attempts as synthetic data and metadata suitable for export", isOn: $model.capsuleExportReviewed)
+                Toggle("I reviewed this case and these \(value.attempts.count) attempts as synthetic data and metadata suitable for export", isOn: Binding(
+                    get: { selection?.id == value.id && selection?.reviewed == true },
+                    set: { if selection?.id == value.id { selection?.reviewed = $0 } }))
                 HStack {
                     Button("Cancel") { selection = nil }
                     Spacer()
-                    Button("Save capsule…") { pendingExport = value; selection = nil }.disabled(!model.canSaveCapsuleExport || working)
+                    Button("Save capsule…") {
+                        guard let reviewed = selection, reviewed.id == value.id, model.canSaveCapsuleExport(reviewed) else { return }
+                        pendingExport = reviewed; selection = nil
+                    }.disabled((selection.map { !model.canSaveCapsuleExport($0) } ?? true) || working)
                 }
             }.padding(20).frame(width: 680, height: 520)
         }
@@ -115,12 +115,11 @@ struct AppAutomationCapsuleView: View {
         present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             working = true
-            let frozen = value.frozen, attempts = value.attempts, exposure = value.exposure
             Task {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() }; working = false }
                 do {
-                    try await model.exportCapsule(frozen: frozen, attempts: attempts, exposure: exposure, to: url)
+                    try await model.exportCapsule(value, to: url)
                     message = "Capsule saved: " + url.lastPathComponent
                 } catch { message = "Could not save capsule: " + error.localizedDescription }
             }
