@@ -40,6 +40,8 @@ private enum Fixture {
         var positions: [Float] = []
         var written: [String] = []
         var writtenElements: [Int] = []
+        var ownerChecks = 0
+        var onOwnerCheck: (@Sendable (Int) -> Void)?
     }
     private final class Native: @unchecked Sendable {
         private let lock = NSLock()
@@ -66,7 +68,13 @@ private enum Fixture {
                 signingUniques: { url, pid in
                     self.call { url.path == "/synthetic/Secure.app" && pid == Fixture.pid ? $0.uniques : nil }
                 },
-                processOwner: { pid in self.call { pid == Fixture.pid ? $0.owner : nil } },
+                processOwner: { pid in
+                    self.call { state in
+                        state.ownerChecks += 1
+                        state.onOwnerCheck?(state.ownerChecks)
+                        return pid == Fixture.pid ? state.owner : nil
+                    }
+                },
                 currentUID: { self.call { $0.uid } },
                 accessibility: .init(
                     application: { pid in self.call { _ in pid == Fixture.pid ? Fixture.appElement : -1 } },
@@ -254,7 +262,7 @@ private enum Fixture {
         try withDeadline { try pinned.verify() }
     }
 
-    func testLeaseLossOrExpiredDeadlineDeniesBeforeNativeAccess() {
+    func testLeaseLossOrMissingDeadlineDeniesBeforeNativeAccess() {
         let approved = approval(), lost = makeFence(approved), native = Native()
         lost.invalidate()
         let lostContext = makeContext(native, approval: approved, fence: lost)
@@ -265,6 +273,24 @@ private enum Fixture {
         do { try unboundedContext.verify(); XCTFail("Verification ran without a native deadline") }
         catch { XCTAssertEqual(error as? AutomationSecretFillSession.Failure, .denied) }
         XCTAssertEqual(unbounded.get { $0.nativeCalls }, 0)
+    }
+
+    func testAlreadyExpiredDeadlineDeniesBeforeNativeAccessOrWrite() {
+        let native = Native(), context = makeContext(native)
+        let expired = ContinuousClock.now.advanced(by: .seconds(-1))
+        AutomationNativeSecretDeadline.$value.withValue(expired) {
+            XCTAssertThrowsError(try context.verify()) {
+                XCTAssertEqual($0 as? AutomationSecretFillSession.Failure, .denied)
+            }
+            XCTAssertThrowsError(try context.resolve()) {
+                XCTAssertEqual($0 as? AutomationSecretFillSession.Failure, .denied)
+            }
+            XCTAssertThrowsError(try context.replace(Fixture.field, value: sentinel)) {
+                XCTAssertEqual($0 as? AutomationSecretFillSession.Failure, .denied)
+            }
+        }
+        XCTAssertEqual(native.get { $0.nativeCalls }, 0)
+        XCTAssertTrue(native.get { $0.written.isEmpty })
     }
 
     func testResolveDeniesMissingElementOrMessagingTimeoutFailure() {
@@ -297,6 +323,27 @@ private enum Fixture {
         fence.invalidate()
         assertDenied("lease lost") { try context.replace(Fixture.field, value: self.sentinel) }
         XCTAssertTrue(native.get { $0.written.isEmpty })
+    }
+
+    func testReplaceDeniesLeaseLossDuringFinalNativeValidationBeforeWrite() {
+        let approved = approval(), fence = makeFence(approved), native = Native()
+        let context = makeContext(native, approval: approved, fence: fence)
+        native.set { state in
+            state.onOwnerCheck = { check in
+                // The fifth verification finishes the fresh field's ancestry check.
+                // Its owner read is the last native call before the pre-write fence.
+                if check == 5 { fence.invalidate() }
+            }
+        }
+        XCTAssertTrue(fence.isCurrent)
+        assertDenied("lease lost after final native validation") {
+            try context.replace(Fixture.field, value: self.sentinel)
+        }
+        XCTAssertEqual(native.get { $0.ownerChecks }, 5, "Must reach the final native validation")
+        XCTAssertEqual(native.get { $0.positions }, [120.5, 64], "Must re-resolve the retained field")
+        XCTAssertFalse(fence.isCurrent)
+        XCTAssertTrue(native.get { $0.written.isEmpty })
+        XCTAssertTrue(native.get { $0.writtenElements.isEmpty })
     }
 
     func testFailedAXWriteReportsUnresolvedOutcome() {
