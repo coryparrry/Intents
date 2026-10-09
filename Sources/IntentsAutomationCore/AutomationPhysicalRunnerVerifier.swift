@@ -121,7 +121,7 @@ public actor AutomationPhysicalRunnerVerifier {
         return stopped && !unprovedInspector
     }
     private func inventory(_ kind: String, targetID: String, didStart: @escaping @Sendable (AutomationProcessIdentity) async throws -> Void) async throws -> (data: Data, outputURL: URL) {
-        guard !unprovedInspector, ordinal < 8, targetID.range(of: #"^[A-Za-z0-9-]{1,128}$"#, options: .regularExpression) != nil else {
+        guard !unprovedInspector, ordinal < Int.max, targetID.range(of: #"^[A-Za-z0-9-]{1,128}$"#, options: .regularExpression) != nil else {
             throw AutomationContractError.invalidIdentity
         }
         ordinal += 1

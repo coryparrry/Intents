@@ -21,7 +21,7 @@ extension AppAutomationStore {
             stateProperty: freshStateProperty, initialState: freshInitialState == "true", expectedState: freshExpectedState == "true",
             approval: approval, capabilities: capabilities, localeIdentifier: Locale.current.identifier, context: freshContext, purpose: .simulatorDraft,
             saveControl: freshSaveControl.isEmpty ? nil : .init(.label, freshSaveControl))
-        plan.provenance.merge(try AutomationNativeUIRuntime.preparedProvenance(prepared)) { _, value in value }
+        try AutomationNativeUIRuntime.attachPreparedEvidence(to: &plan, prepared: prepared)
         plan.provenance["ui.runtimeManifestDigest"] = runtime.manifestDigest
         plan.provenance["ui.runtimeTeamID"] = runtime.runtime.expectedTeamID
         if useLearnedSetup {
@@ -95,7 +95,6 @@ extension AppAutomationStore {
     func makeUIRunRequest(runID: String) throws -> AutomationNativeRunRequest {
         guard let candidate else { throw AutomationContractError.invalidIdentity }
         let subject: AutomationApplicationSubject
-        var provenance: [String: String] = [:]
         if isInstalledUI {
             let installed = try AutomationInstalledUIApplication(bundleURL: URL(fileURLWithPath: candidate.containerPath),
                 target: .init(id: simulatorID, kind: .simulator))
@@ -106,7 +105,6 @@ extension AppAutomationStore {
                 throw AutomationContractError.missingEvidence("Prepare this source app for the selected configuration and simulator")
             }
             subject = .prepared(prepared)
-            provenance = try AutomationNativeUIRuntime.preparedProvenance(prepared)
         }
         // Revalidate the bundled signature and assets at every preview/confirmation.
         let runtime = try uiRuntimeProvider?() ?? AutomationNativeUIRuntime.bundled(stateDirectory: support.appendingPathComponent("ui-preview"))
@@ -119,7 +117,7 @@ extension AppAutomationStore {
             endpoint: uiEndpoint, approvedText: uiApprovedText, expectedVisibleText: uiExpectedText,
             observationLabel: uiObservationProperty == "text" ? "" : uiObservationLabel,
             observationProperty: uiObservationProperty, approval: approval, localeIdentifier: Locale.current.identifier)
-        plan.provenance.merge(provenance) { _, new in new }
+        if case .prepared(let prepared) = subject { try AutomationNativeUIRuntime.attachPreparedEvidence(to: &plan, prepared: prepared) }
         plan.provenance["ui.runtimeManifestDigest"] = runtime.manifestDigest
         plan.provenance["ui.runtimeTeamID"] = runtime.runtime.expectedTeamID
         plan.id = "ui." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
