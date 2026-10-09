@@ -237,6 +237,106 @@ import XCTest
         XCTAssertEqual(result.before.count, 30); XCTAssertEqual(result.after.count, 30)
         XCTAssertEqual(result.beforeCounters.failed, 30); XCTAssertEqual(result.afterCounters.failed, 0)
     }
+    private func freshQualificationInputs() async throws -> FreshQualificationInputs {
+        let (model, root, _) = try fixture(); try selectFreshSource(model: model, root: root)
+        let request = try model.makeNativeRunRequest(runID: "original-run"), prepared = try XCTUnwrap(model.prepared)
+        let cases = try AutomationCaseStore(root: root.appendingPathComponent("support/Cases")), frozen = try await cases.freeze(request.plan)
+        let original = nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: "original", completed: false)
+        try await cases.saveAttempt(original, for: frozen)
+        let uiRuntime = try XCTUnwrap(request.uiRuntime)
+        let runtime = AutomationNativeUIRuntime(runtime: uiRuntime, manifestDigest: String(repeating: "a", count: 64))
+        var reproduction = try AutomationNativeUIReproductionProposal.compile(frozen: frozen, original: original, subject: .prepared(prepared), runtime: runtime, runID: "reproduce", disposable: true)
+        XCTAssertTrue(reproduction.usesFreshFixture)
+        reproduction.capabilities.records["apple.codec.entity"] = .init(state: .available, reason: "Synthetic executor fixture only", probeVersion: "test-v1", evidence: ["synthetic"])
+        let token = try nativeFreshToken(plan: reproduction.frozen.plan, approval: reproduction.approval, prepared: prepared, prefix: "qualified")
+        return .init(frozen: reproduction.frozen, approval: reproduction.approval, capabilities: reproduction.capabilities, prepared: prepared, runtime: uiRuntime, token: token)
+    }
+    private func qualify(_ inputs: FreshQualificationInputs, runner: FreshQualificationRunner, capabilities: CapabilityProfile? = nil,
+                         installApproved: Bool = true) async throws -> AutomationQualifiedFreshFixture {
+        try await AutomationNativeFreshFixtures.qualify(frozen: inputs.frozen, prepared: inputs.prepared, approval: inputs.approval,
+            capabilities: capabilities ?? inputs.capabilities, runner: runner, runtime: inputs.runtime, installApproved: installApproved)
+    }
+    func testFreshFixtureQualificationRunsTwoReleasedAttemptsUnderItsOwnBudgetBeforeMintingFixture() async throws {
+        let inputs = try await freshQualificationInputs(), bindings = try AutomationFreshEntityPlanner.bindings(plan: inputs.frozen.plan)
+        var expectedLimits = AutomationCampaignLimits.firstCampaign
+        expectedLimits.attempts = 2; expectedLimits.subjectOperations = 2; expectedLimits.uiActions = 60
+        expectedLimits.controllerCalls = 24; expectedLimits.wallClockSeconds = 1200
+        for installApproved in [false, true] {
+            let runner = FreshQualificationRunner(token: inputs.token)
+            let fixture = try await qualify(inputs, runner: runner, installApproved: installApproved)
+            XCTAssertEqual(fixture.fixtureDigest, inputs.token.fixtureDigest)
+            XCTAssertEqual(fixture.qualificationAttemptIDs, inputs.token.qualificationAttemptIDs)
+            let capabilityCalls = await runner.capabilityCalls, runs = await runner.runs
+            let validations = await runner.validations, qualifications = await runner.qualifications
+            XCTAssertEqual(capabilityCalls, 1); XCTAssertEqual(runs.count, 2)
+            XCTAssertEqual(validations, 2); XCTAssertEqual(qualifications, 1)
+            XCTAssertEqual(Set(runs.map(\.attemptID)).count, 2)
+            for (index, run) in runs.enumerated() {
+                XCTAssertTrue(run.preparedSubjectChecked)
+                XCTAssertEqual(run.plan, inputs.frozen.plan); XCTAssertEqual(run.approval, inputs.approval)
+                XCTAssertEqual(run.allowBootAndInstall, installApproved)
+                XCTAssertTrue(run.receivedVerifiedCapabilities, "Run must use the capabilities verified by this runner")
+                XCTAssertEqual(run.uiRuntimeBundle, inputs.runtime.bundleURL)
+                XCTAssertFalse(run.hadFixtureTracker)
+                XCTAssertEqual(run.qualifyingBindings, bindings)
+                XCTAssertEqual(run.limits, expectedLimits)
+                XCTAssertEqual(run.usage?.attempts, index + 1, "Each attempt reserves budget before it runs")
+            }
+        }
+    }
+    func testFreshFixtureQualificationRejectsUnreleasedIncompleteUncertainOrUnassessableAttempts() async throws {
+        let inputs = try await freshQualificationInputs()
+        let defects: [(String, @Sendable (inout AutomationAttemptReport) -> Void)] = [
+            ("resources not released", { $0.resourcesReleased = false }),
+            ("subject incomplete", { $0.result.subjectCompleted = false }),
+            ("dispatch uncertain", { $0.result.subjectDispatchUncertain = true }),
+            ("unresolved", { $0.result.summary = .unresolved }),
+            ("needs review", { $0.result.summary = .needsReview }),
+            ("infrastructure failed", { $0.result.summary = .infrastructureFailed })]
+        for (label, defect) in defects {
+            for failingAttempt in 0..<2 {
+                let runner = FreshQualificationRunner(token: inputs.token, alter: { index, report in if index == failingAttempt { defect(&report) } })
+                do {
+                    _ = try await qualify(inputs, runner: runner)
+                    XCTFail("Qualification accepted attempt \(failingAttempt) with \(label)")
+                } catch {
+                    XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Fresh fixture qualification did not complete and release; inspect its saved attempt before continuing"), label)
+                }
+                let runs = await runner.runs.count, validations = await runner.validations, qualifications = await runner.qualifications
+                XCTAssertEqual(runs, failingAttempt + 1, label)
+                XCTAssertEqual(validations, failingAttempt, "\(label): a rejected attempt must not be validated")
+                XCTAssertEqual(qualifications, 0, "\(label): no fixture may be minted")
+            }
+        }
+    }
+    func testFreshFixtureQualificationStopsWhenLiveAttemptValidationFails() async throws {
+        let inputs = try await freshQualificationInputs()
+        for failingValidation in 1...2 {
+            let runner = FreshQualificationRunner(token: inputs.token, validationFailure: failingValidation)
+            do { _ = try await qualify(inputs, runner: runner); XCTFail("Qualification ignored a failed live validation") }
+            catch { XCTAssertEqual(error as? AutomationContractError, FreshQualificationRunner.validationError) }
+            let runs = await runner.runs.count, validations = await runner.validations, qualifications = await runner.qualifications
+            XCTAssertEqual(runs, failingValidation); XCTAssertEqual(validations, failingValidation); XCTAssertEqual(qualifications, 0)
+        }
+    }
+    func testFreshFixtureQualificationRejectsUnverifiedProposalBeforeAnyAttempt() async throws {
+        let inputs = try await freshQualificationInputs(), runner = FreshQualificationRunner(token: inputs.token)
+        var unverified = inputs.capabilities; unverified.records["apple.codec.entity"] = nil
+        do { _ = try await qualify(inputs, runner: runner, capabilities: unverified); XCTFail("Unverified conversion entered qualification") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Input and result conversion has not been verified for this app and target")) }
+        let capabilityCalls = await runner.capabilityCalls, runs = await runner.runs.count, qualifications = await runner.qualifications
+        XCTAssertEqual(capabilityCalls, 1); XCTAssertEqual(runs, 0); XCTAssertEqual(qualifications, 0)
+    }
+    func testFreshFixtureQualificationCancelledAfterFirstAttemptDoesNotRunSecond() async throws {
+        let inputs = try await freshQualificationInputs(), runner = FreshQualificationRunner(token: inputs.token, cancelAfterRun: 0)
+        let task = Task { try await self.qualify(inputs, runner: runner) }
+        switch await task.result {
+        case .success: XCTFail("Cancelled qualification minted a fixture")
+        case .failure(let error): XCTAssertTrue(error is CancellationError, "\(error)")
+        }
+        let runs = await runner.runs.count, validations = await runner.validations, qualifications = await runner.qualifications
+        XCTAssertEqual(runs, 1); XCTAssertEqual(validations, 1); XCTAssertEqual(qualifications, 0)
+    }
     func changedPreparedSource(_ before: AutomationPreparedApplication) throws -> AutomationPreparedApplication {
         var after = before
         after.source.files = [.init(inputPath: before.source.sourceRoot + "/Changed.swift", relativePath: "Changed.swift", bytes: 1,
@@ -935,6 +1035,74 @@ private func nativeFreshToken(plan: AutomationCase, approval: RunApproval, prepa
     return try .init(bindings: AutomationFreshEntityPlanner.bindings(plan: plan), evidence: [1, 2].map { index in
         .init(context: context, plan: plan, approval: approval, report: nativeFreshFact(plan: plan, approval: approval, attemptID: prefix + String(index), completed: false))
     })
+}
+private struct FreshQualificationInputs: Sendable {
+    let frozen: AutomationFrozenCase
+    let approval: RunApproval
+    let capabilities: CapabilityProfile
+    let prepared: AutomationPreparedApplication
+    let runtime: AutomationUIRuntime
+    let token: AutomationQualifiedFreshFixture
+}
+// Records the qualification gate's calls; reports are synthetic contract facts, not device execution.
+private actor FreshQualificationRunner: AutomationFreshFixtureQualifyingRunner {
+    struct Run: Sendable {
+        let attemptID: String
+        let preparedSubjectChecked: Bool
+        let plan: AutomationCase
+        let approval: RunApproval
+        let allowBootAndInstall: Bool
+        let receivedVerifiedCapabilities: Bool
+        let uiRuntimeBundle: URL?
+        let hadFixtureTracker: Bool
+        let qualifyingBindings: [AutomationFreshFixtureBinding]?
+        let limits: AutomationCampaignLimits?
+        let usage: AutomationCampaignUsage?
+    }
+    static let validationError = AutomationContractError.missingEvidence("Fake live attempt validation failed")
+    private static let marker = "test.freshQualification.verified"
+    let token: AutomationQualifiedFreshFixture
+    let alter: @Sendable (Int, inout AutomationAttemptReport) -> Void
+    let validationFailure: Int?
+    let cancelAfterRun: Int?
+    private(set) var capabilityCalls = 0
+    private(set) var runs: [Run] = []
+    private(set) var validations = 0
+    private(set) var qualifications = 0
+    private var capabilitySubjectWasPrepared = false
+    init(token: AutomationQualifiedFreshFixture, alter: @escaping @Sendable (Int, inout AutomationAttemptReport) -> Void = { _, _ in },
+         validationFailure: Int? = nil, cancelAfterRun: Int? = nil) {
+        self.token = token; self.alter = alter; self.validationFailure = validationFailure; self.cancelAfterRun = cancelAfterRun
+    }
+    func capabilitiesForExecution(subject: AutomationApplicationSubject, plan: AutomationCase, capabilities: CapabilityProfile) -> CapabilityProfile {
+        capabilityCalls += 1
+        if case .prepared = subject { capabilitySubjectWasPrepared = true }
+        var verified = capabilities
+        verified.records[Self.marker] = .init(state: .available, reason: "Fake runner verification", probeVersion: "test-v1", evidence: ["fake"])
+        return verified
+    }
+    func run(prepared: AutomationPreparedApplication, plan: AutomationCase, approval: RunApproval, capabilities: CapabilityProfile,
+             attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget?, uiRuntime: AutomationUIRuntime?,
+             fixtureTracker: AutomationFreshFixtureTracker?, qualifyingFreshBindings: [AutomationFreshFixtureBinding]?) async throws -> AutomationAttemptReport {
+        let index = runs.count
+        let limits = await campaignBudget?.limits, usage = await campaignBudget?.snapshot()
+        runs.append(.init(attemptID: attemptID, preparedSubjectChecked: capabilitySubjectWasPrepared, plan: plan, approval: approval,
+            allowBootAndInstall: allowBootAndInstall, receivedVerifiedCapabilities: capabilities.records[Self.marker] != nil,
+            uiRuntimeBundle: uiRuntime?.bundleURL, hadFixtureTracker: fixtureTracker != nil, qualifyingBindings: qualifyingFreshBindings,
+            limits: limits, usage: usage))
+        var report = nativeFreshFact(plan: plan, approval: approval, attemptID: attemptID, completed: false)
+        alter(index, &report)
+        if cancelAfterRun == index { withUnsafeCurrentTask { $0?.cancel() } }
+        return report
+    }
+    func validateFreshFixtureAttempt(bindings: [AutomationFreshFixtureBinding]) throws {
+        validations += 1
+        if validations == validationFailure { throw Self.validationError }
+    }
+    func qualifyFreshFixture(bindings: [AutomationFreshFixtureBinding]) -> AutomationQualifiedFreshFixture {
+        qualifications += 1
+        return token
+    }
 }
 private struct NativeFreshFactExecutor: AutomationFreshFixtureAttemptExecutor {
     let completed: Bool
