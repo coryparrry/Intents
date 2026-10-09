@@ -3049,15 +3049,19 @@ struct ScenarioContractsTests {
         )
         let definition = try scenario()
         let invocation = invocation(for: definition)
+        let logURL = root.appending(path: "journal-failure.log")
         let launchedProcess = ProcessIDRecorder()
         do {
             _ = try await executor.runProcess(
                 executable: "/bin/zsh", arguments: termResistantHostArguments,
-                logURL: root.appending(path: "journal-failure.log"), invocationID: invocation.id,
+                logURL: logURL, invocationID: invocation.id,
                 destinationIdentifier: invocation.destinationIdentifier,
                 journal: journal(for: definition, invocation: invocation, phase: .running),
                 appendLog: false, deadline: .seconds(30),
-                onProcessLaunched: { launchedProcess.record($0) }
+                onProcessLaunched: { processID in
+                    // Hold the journal write until the host has installed its signal traps.
+                    if Self.readyHostProcessID(logURL) == processID { launchedProcess.record(processID) }
+                }
             )
             Issue.record("The running journal unexpectedly saved over a regular file.")
         } catch let error as XcodeTestExecutorError {
@@ -3065,7 +3069,8 @@ struct ScenarioContractsTests {
         } catch {
             // The persistence error itself is rethrown once the host has stopped.
         }
-        expectHostStopped(try #require(launchedProcess.value))
+        let processID = try #require(launchedProcess.value, "The host never reported that its signal traps were ready.")
+        expectHostStopped(processID)
         #expect(!(await executor.hasActiveExecution()))
     }
 
@@ -3125,6 +3130,7 @@ struct ScenarioContractsTests {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(await executor.connectionDeviceTestIsRunning())
+        let processID = try #require(Self.readyHostProcessID(logURL), "The host never reported that its signal traps were ready.")
         guard case .recoveryRequired = await executor.cancelConnectionCheck() else {
             Issue.record("Cancelling a launched connection host did not require recovery.")
             task.cancel()
@@ -3139,7 +3145,7 @@ struct ScenarioContractsTests {
         } catch {
             Issue.record("A cancelled connection check was reported as \(error).")
         }
-        expectHostStopped(try loggedProcessID(logURL))
+        expectHostStopped(processID)
         #expect(!(await executor.hasActiveExecution()))
     }
 
@@ -3784,6 +3790,19 @@ struct ScenarioContractsTests {
         )
         configuration.xcodebuildPath = "/bin/zsh"
         return configuration
+    }
+
+    /// The TERM-resistant host prints its PID only after `trap '' INT TERM` is installed.
+    private static func readyHostProcessID(_ logURL: URL, timeout: Duration = .seconds(5)) -> Int32? {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        repeat {
+            if let contents = try? String(contentsOf: logURL, encoding: .utf8),
+               let processID = Int32(contents.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return processID
+            }
+            usleep(10_000)
+        } while ContinuousClock.now < deadline
+        return nil
     }
 
     private func loggedProcessID(_ logURL: URL) throws -> Int32 {
