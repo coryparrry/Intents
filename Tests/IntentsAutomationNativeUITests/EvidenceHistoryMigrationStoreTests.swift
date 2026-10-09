@@ -94,7 +94,9 @@ import XCTest
         let (frozen, reports) = try await saveCase(model, id: "held", attempts: ["recorded"])
         await importer.register(frozen)
         let migration = Task { await model.migrateEvidenceHistory() }
-        await importer.waitUntilHeld()
+        let held = await importer.waitUntilHeld()
+        XCTAssertTrue(held, "Migration never reached the importer")
+        guard held else { migration.cancel(); return }
         await model.migrateEvidenceHistory()
         let heldCalls = await importer.calls
         XCTAssertEqual(heldCalls, 1); XCTAssertEqual(model.evidenceImportRevision, 0)
@@ -127,17 +129,20 @@ private actor HistoryImporter {
     private(set) var calls = 0
     private(set) var imported: [AutomationNativeEvidenceDocument] = []
     private var held = false
-    private var heldWaiter: CheckedContinuation<Void, Never>?
     private var pending: CheckedContinuation<Void, Never>?
     init(failure: Failure? = nil, holdFirst: Bool = false) { self.failure = failure; self.holdFirst = holdFirst }
     func register(_ frozen: AutomationFrozenCase) { frozenCases.append(frozen) }
     func succeed() { failure = nil }
-    func waitUntilHeld() async { if !held { await withCheckedContinuation { heldWaiter = $0 } } }
+    func waitUntilHeld() async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !held, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+        return held
+    }
     func release() { pending?.resume(); pending = nil }
     func importEvidence(_ plan: AutomationCase, _ report: AutomationAttemptReport) async throws -> AutomationNativeEvidenceDocument {
         calls += 1
         if holdFirst {
-            holdFirst = false; held = true; heldWaiter?.resume(); heldWaiter = nil
+            holdFirst = false; held = true
             await withCheckedContinuation { pending = $0 }
         }
         guard let frozen = frozenCases.first(where: { $0.plan == plan }) else { throw HistoryImportError.failed }
