@@ -13,8 +13,15 @@ enum AutomationLiveRunnerFixture {
         try? FileManager.default.removeItem(at: url)
         try nativeSlice(of: Data(contentsOf: URL(fileURLWithPath: "/bin/sleep"))).write(to: url)
         guard chmod(url.path, 0o755) == 0 else { throw POSIXError(.EPERM) }
+        // Copied system slices retain a platform signature; sign this isolated test executable ad hoc.
+        let signer = Process()
+        signer.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        signer.arguments = ["--force", "--sign", "-", url.path]
+        signer.standardOutput = FileHandle.nullDevice; signer.standardError = FileHandle.nullDevice
+        try signer.run(); signer.waitUntilExit()
+        guard signer.terminationStatus == 0 else { throw AutomationContractError.invalidIdentity }
     }
-    /// Host identity accepts only one slice per CPU type, but system binaries ship both arm64 and arm64e.
+    /// Host identity accepts one slice per CPU type; select a supported subtype before signing the copy.
     private static func nativeSlice(of data: Data) throws -> Data {
         func word(_ offset: Int) -> UInt32 { data[offset..<offset + 4].reduce(0) { ($0 << 8) | UInt32($1) } }
         guard data.count >= 8, word(0) == 0xcafebabe else { return data }
@@ -23,7 +30,10 @@ enum AutomationLiveRunnerFixture {
             return (word(base), word(base + 4) & 0x00ff_ffff, offset..<offset + Int(word(base + 12)))
         }
         #if arch(arm64)
-        let preferred = slices.filter { $0.cpu == 0x0100000c }.sorted { $0.subtype > $1.subtype }
+        // Standard arm64/arm64-v8/arm64e are runnable test code. Platform-only subtypes (such as 12)
+        // can occur in current system binaries and cannot be executed from a copied fixture path.
+        let preferred = slices.filter { $0.cpu == 0x0100000c && [UInt32(0), 1, 2].contains($0.subtype) }
+            .sorted { $0.subtype < $1.subtype }
         #else
         let preferred = slices.filter { $0.cpu == 0x01000007 }
         #endif

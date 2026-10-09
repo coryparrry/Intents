@@ -59,6 +59,18 @@ final class AutomationLiveRunnerFixtureTests: XCTestCase, @unchecked Sendable {
             XCTAssertEqual($0 as? AutomationContractError, .invalidIdentity)
         }
     }
+    func testInstalledExecutableStartsAndCompletesSuccessfully() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("runner-executable-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let executable = root.appendingPathComponent("sleep")
+        try AutomationLiveRunnerFixture.installExecutable(at: executable)
+        let process = Process()
+        process.executableURL = executable; process.arguments = ["0"]
+        try process.run(); process.waitUntilExit()
+        XCTAssertEqual(process.terminationReason, .exit)
+        XCTAssertEqual(process.terminationStatus, 0, "The selected and signed native slice must actually execute")
+    }
     func testForceStopLeavesReplacedIdentityProcessAlive() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("runner-fixture-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
