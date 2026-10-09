@@ -29,7 +29,7 @@ public struct AutomationSourceSyntaxIndex: Codable, Equatable, Sendable {
 /// as preparation. Swift source is parser input; it is never evaluated or imported.
 #if os(macOS)
 enum AutomationSourceSyntaxDiscovery {
-    private struct Input: Codable { let relativePath: String, owner: String, sha256: String, source: String }
+    struct Input: Codable { let relativePath: String, owner: String, sha256: String, source: String }
     private struct Request: Codable { let graphDigest: String; let inputs: [Input] }
     private struct ParsedInput: Codable { let relativePath: String, owner: String, sha256: String }
     private struct Response: Codable { let graphDigest: String; let inputs: [ParsedInput]; let declarations: [AutomationSourceDeclaration]; let parseRecoveryFiles: [String] }
@@ -44,7 +44,7 @@ enum AutomationSourceSyntaxDiscovery {
         let directory = session.appendingPathComponent("source-syntax")
         guard !FileManager.default.fileExists(atPath: directory.path) else { throw AutomationContractError.conflictingOperation }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        var selected: [AutomationSourceGraph.Input] = [], input: [Input] = [], total = 0, excluded = 0
+        var selected: [AutomationSourceGraph.Input] = [], input: [Input] = [], total = 0, excluded: [String] = []
         var gaps = ["SwiftSyntax candidates resolve literal Boolean and observed selected-target custom/OS/environment conditions; architecture, import, compiler, feature predicates, aliases, macros, generated inputs and dependency ownership remain unresolved."]
         if compilationConditions?.activeConditions == nil { gaps.append("Selected-target custom compilation flags are unavailable or contain unsupported forms.") }
         if compilationConditions?.platformPredicates == nil { gaps.append("Selected-target Swift OS and environment predicates remain unresolved.") }
@@ -53,15 +53,14 @@ enum AutomationSourceSyntaxDiscovery {
             let data = try AutomationReadOnlyFile.read(root: frozenRoot, relativePath: file.relativePath, maximumBytes: 16 * 1024 * 1024)
             guard AutomationArtifactRegistry.digest(data) == file.sha256 else { throw AutomationContractError.conflictingOperation }
             if data.count > 512 * 1024 || total + data.count > 8 * 1024 * 1024 || input.count >= 1000 {
-                excluded += 1
-                if excluded <= 50 { gaps.append("Source syntax input budget excludes " + file.relativePath) }
+                excluded.append(file.relativePath)
                 continue
             }
             guard let source = String(data: data, encoding: .utf8) else { throw AutomationContractError.invalidIdentity }
             total += data.count; selected.append(file)
             input.append(.init(relativePath: file.relativePath, owner: file.owner, sha256: file.sha256, source: source))
         }
-        if excluded > 50 { gaps.append("Source syntax input budget excludes " + String(excluded) + " files; only the first 50 paths are listed.") }
+        gaps += exclusionGaps(excluded)
         let tools = try fingerprint(developer)
         let host = developer.appendingPathComponent("Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host")
         let environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DEVELOPER_DIR": developer.path,
@@ -96,7 +95,33 @@ enum AutomationSourceSyntaxDiscovery {
         guard helperDigest == (try digestFile(helper)), tools == (try fingerprint(developer)),
               source == (try AutomationReadOnlyFile.read(sourceFile.url, maximumBytes: 64 * 1024)),
               request == (try AutomationReadOnlyFile.read(requestFile.url, maximumBytes: 24 * 1024 * 1024)) else { throw AutomationContractError.conflictingOperation }
-        let response = try JSONDecoder().decode(Response.self, from: scanned.stdout)
+        let validated = try validateResponse(scanned.stdout, graphDigest: graphDigest, inputs: input)
+        gaps += validated.gaps
+        for file in selected {
+            guard file.sha256 == AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(root: frozenRoot, relativePath: file.relativePath, maximumBytes: 512 * 1024)) else { throw AutomationContractError.conflictingOperation }
+        }
+        for declaration in validated.all where AutomationSourceCompilationConditions.resolve(declaration, facts: compilationConditions) == nil {
+            if gaps.count < 100 { gaps.append("Conditional declaration is unresolved at " + declaration.relativePath + ":" + String(declaration.line)) }
+        }
+        let declarations = validated.retained
+        var index = AutomationSourceSyntaxIndex(sourceManifestDigest: graph.sourceManifestDigest, sourceGraphDigest: graphDigest,
+                     helperTemplateDigest: AutomationArtifactRegistry.digest(source), helperDigest: helperDigest,
+                     toolchain: tools, inputs: selected,
+                     declarations: declarations.sorted { ($0.owner, $0.relativePath, $0.line, $0.name) < ($1.owner, $1.relativePath, $1.line, $1.name) }, gaps: Array(Set(gaps)).sorted())
+        index.compilationConditions = compilationConditions
+        guard try encoder.encode(index).count <= 1_048_576 else { throw AutomationContractError.missingEvidence("Source syntax index exceeds its output budget") }
+        return index
+    }
+    static func exclusionGaps(_ excluded: [String]) -> [String] {
+        excluded.prefix(50).map { "Source syntax input budget excludes " + $0 } +
+            (excluded.count > 50 ? ["Source syntax input budget excludes " + String(excluded.count) + " files; only the first 50 paths are listed."] : [])
+    }
+    /// Validates scanner output against the exact request inputs before any declaration is trusted.
+    static func validateResponse(_ data: Data, graphDigest: String, inputs input: [Input]) throws
+        -> (all: [AutomationSourceDeclaration], retained: [AutomationSourceDeclaration], gaps: [String]) {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        var gaps: [String] = []
+        let response = try JSONDecoder().decode(Response.self, from: data)
         guard response.graphDigest == graphDigest, response.declarations.count <= 5000,
               response.parseRecoveryFiles.count <= input.count else { throw AutomationContractError.invalidIdentity }
         let expectedParsed = input.map { ParsedInput(relativePath: $0.relativePath, owner: $0.owner, sha256: $0.sha256) }
@@ -119,21 +144,8 @@ enum AutomationSourceSyntaxDiscovery {
             guard input.contains(where: { $0.relativePath == path }) else { throw AutomationContractError.invalidIdentity }
             gaps.append("SwiftSyntax parse recovery occurred in " + path)
         }
-        for file in selected {
-            guard file.sha256 == AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(root: frozenRoot, relativePath: file.relativePath, maximumBytes: 512 * 1024)) else { throw AutomationContractError.conflictingOperation }
-        }
-        for declaration in response.declarations where AutomationSourceCompilationConditions.resolve(declaration, facts: compilationConditions) == nil {
-            if gaps.count < 100 { gaps.append("Conditional declaration is unresolved at " + declaration.relativePath + ":" + String(declaration.line)) }
-        }
         // Parser recovery cannot establish either a declaration or its branch.
-        let declarations = response.declarations.filter { !response.parseRecoveryFiles.contains($0.relativePath) }
-        var index = AutomationSourceSyntaxIndex(sourceManifestDigest: graph.sourceManifestDigest, sourceGraphDigest: graphDigest,
-                     helperTemplateDigest: AutomationArtifactRegistry.digest(source), helperDigest: helperDigest,
-                     toolchain: tools, inputs: selected,
-                     declarations: declarations.sorted { ($0.owner, $0.relativePath, $0.line, $0.name) < ($1.owner, $1.relativePath, $1.line, $1.name) }, gaps: Array(Set(gaps)).sorted())
-        index.compilationConditions = compilationConditions
-        guard try encoder.encode(index).count <= 1_048_576 else { throw AutomationContractError.missingEvidence("Source syntax index exceeds its output budget") }
-        return index
+        return (response.declarations, response.declarations.filter { !response.parseRecoveryFiles.contains($0.relativePath) }, gaps)
     }
     private static func requireComplete(_ result: AutomationOwnedCommand.Result) throws {
         guard result.directChildReaped, result.pipesDrained, result.ownedIdentity != nil, result.callbacksDrained else { throw AutomationContractError.terminationUnverified }
