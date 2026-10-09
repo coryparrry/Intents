@@ -13,6 +13,13 @@ enum AutomationLiveRunnerFixture {
         try? FileManager.default.removeItem(at: url)
         try nativeSlice(of: Data(contentsOf: URL(fileURLWithPath: "/bin/sleep"))).write(to: url)
         guard chmod(url.path, 0o755) == 0 else { throw POSIXError(.EPERM) }
+        // A thinned platform binary keeps Apple's signature, which the kernel rejects for a copied path.
+        let sign = Process()
+        sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        sign.arguments = ["--force", "--sign", "-", url.path]
+        sign.standardOutput = FileHandle.nullDevice; sign.standardError = FileHandle.nullDevice
+        try sign.run(); sign.waitUntilExit()
+        guard sign.terminationStatus == 0 else { throw POSIXError(.EPERM) }
     }
     /// Host identity accepts only one slice per CPU type, but system binaries ship both arm64 and arm64e.
     private static func nativeSlice(of data: Data) throws -> Data {
