@@ -169,12 +169,10 @@ jobs:
           plutil -p "$built/Contents/Info.plist" | grep -E "CFBundleVersion|CFBundleShortVersionString" || true
           ls "$built/Contents/MacOS" || true
           echo "::endgroup::"
+          ui_xctestrun="$(python3 script/ci_ui_xctestrun.py "$RUNNER_TEMP/DerivedData/Build/Products")"
           xcodebuild test-without-building \
-            -project FoundationEvals/FoundationEvals.xcodeproj \
-            -scheme FoundationEvals \
-            -configuration Debug \
+            -xctestrun "$ui_xctestrun" \
             -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -resultBundlePath "$RUNNER_TEMP/ui-tests.xcresult" \
             -only-testing:FoundationEvalsUITests/FoundationEvalsUITests \
             -only-testing:FoundationEvalsUITests/IntentLabGuidanceUITests \
