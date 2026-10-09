@@ -49,6 +49,19 @@ final class AutomationPhysicalRunnerVerifierTests: XCTestCase, @unchecked Sendab
         try .init(workspace: root, developerDirectory: root.appendingPathComponent("Developer"),
             commands: .init(run: { invocation, _ in try await commands.run(invocation) }, stop: { await commands.stop() }))
     }
+    func testThreeSegmentsCanEachPrepareAndReleaseWithoutExhaustingInventory() async throws {
+        let root = try workspace(); defer { try? FileManager.default.removeItem(at: root) }
+        let commands = Commands(), verifier = try verifier(root, commands: commands)
+        for _ in 0..<6 {
+            let observation = try await verifier.inspect(target: target, controllers: controllers)
+            XCTAssertTrue(observation.controllers.allSatisfy(\.absent))
+        }
+        let (invocations, _) = await commands.snapshot()
+        XCTAssertEqual(invocations.count, 12)
+        let outputs = invocations.map { $0.arguments[$0.arguments.firstIndex(of: "--json-output")! + 1] }
+        XCTAssertEqual(Set(outputs).count, 12)
+        for output in outputs { XCTAssertTrue(FileManager.default.fileExists(atPath: output)) }
+    }
     func testAllControllersShareTwoExactDeviceInventoriesAndSelectedToolchain() async throws {
         let root = try workspace(); defer { try? FileManager.default.removeItem(at: root) }
         let commands = Commands(), verifier = try verifier(root, commands: commands)
