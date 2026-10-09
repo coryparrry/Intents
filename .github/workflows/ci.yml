@@ -84,9 +84,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Provision verified runtime for portable automation fixtures
+      - name: Prepare verified runtime for portable automation fixtures
         if: needs.changes.outputs.swift_suites != '[]'
-        run: python3 Tools/IntentsAutomation/scripts/provision_runtime.py
+        run: bash script/automation_prepare_runtime.sh
       - name: Run selected portable Swift suites
         if: needs.changes.outputs.swift_suites != '[]'
         env:
@@ -172,12 +172,10 @@ jobs:
           plutil -p "$built/Contents/Info.plist" | grep -E "CFBundleVersion|CFBundleShortVersionString" || true
           ls "$built/Contents/MacOS" || true
           echo "::endgroup::"
+          ui_xctestrun="$(python3 script/ci_ui_xctestrun.py "$RUNNER_TEMP/DerivedData/Build/Products")"
           xcodebuild test-without-building \
-            -project FoundationEvals/FoundationEvals.xcodeproj \
-            -scheme FoundationEvals \
-            -configuration Debug \
+            -xctestrun "$ui_xctestrun" \
             -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -resultBundlePath "$RUNNER_TEMP/ui-tests.xcresult" \
             -only-testing:FoundationEvalsUITests/FoundationEvalsUITests \
             -only-testing:FoundationEvalsUITests/IntentLabGuidanceUITests \
