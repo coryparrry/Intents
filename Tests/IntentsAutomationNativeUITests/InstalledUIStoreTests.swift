@@ -258,6 +258,7 @@ import XCTest
     }
     func testFreshFixtureQualificationRunsTwoReleasedAttemptsUnderItsOwnBudgetBeforeMintingFixture() async throws {
         let inputs = try await freshQualificationInputs(), bindings = try AutomationFreshEntityPlanner.bindings(plan: inputs.frozen.plan)
+        XCTAssertFalse(bindings.isEmpty, "Qualification must exercise nonempty fixture bindings")
         var expectedLimits = AutomationCampaignLimits.firstCampaign
         expectedLimits.attempts = 2; expectedLimits.subjectOperations = 2; expectedLimits.uiActions = 60
         expectedLimits.controllerCalls = 24; expectedLimits.wallClockSeconds = 1200
@@ -270,6 +271,9 @@ import XCTest
             let validations = await runner.validations, qualifications = await runner.qualifications
             XCTAssertEqual(capabilityCalls, 1); XCTAssertEqual(runs.count, 2)
             XCTAssertEqual(validations, 2); XCTAssertEqual(qualifications, 1)
+            let validatedBindings = await runner.validatedBindings, qualifiedBindings = await runner.qualifiedBindings
+            XCTAssertEqual(validatedBindings, [bindings, bindings])
+            XCTAssertEqual(qualifiedBindings, [bindings])
             XCTAssertEqual(Set(runs.map(\.attemptID)).count, 2)
             for (index, run) in runs.enumerated() {
                 XCTAssertTrue(run.preparedSubjectChecked)
@@ -1077,6 +1081,8 @@ private actor FreshQualificationRunner: AutomationFreshFixtureQualifyingRunner {
     private(set) var runs: [Run] = []
     private(set) var validations = 0
     private(set) var qualifications = 0
+    private(set) var validatedBindings: [[AutomationFreshFixtureBinding]] = []
+    private(set) var qualifiedBindings: [[AutomationFreshFixtureBinding]] = []
     private var capabilitySubjectWasPrepared = false
     init(token: AutomationQualifiedFreshFixture, alter: @escaping @Sendable (Int, inout AutomationAttemptReport) -> Void = { _, _ in },
          validationFailure: Int? = nil, cancelAfterRun: Int? = nil) {
@@ -1105,10 +1111,12 @@ private actor FreshQualificationRunner: AutomationFreshFixtureQualifyingRunner {
     }
     func validateFreshFixtureAttempt(bindings: [AutomationFreshFixtureBinding]) throws {
         validations += 1
+        validatedBindings.append(bindings)
         if validations == validationFailure { throw Self.validationError }
     }
     func qualifyFreshFixture(bindings: [AutomationFreshFixtureBinding]) -> AutomationQualifiedFreshFixture {
         qualifications += 1
+        qualifiedBindings.append(bindings)
         return token
     }
 }
