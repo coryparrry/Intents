@@ -28,6 +28,7 @@ case "$SCOPE" in
     python3 Tools/IntentsAutomation/tests/mac_daemon_provider_staging_test.py
     python3 Tools/IntentsAutomation/tests/mac_daemon_owned_mode_patch_test.py
     python3 Tools/IntentsAutomation/tests/private_mac_daemon_runtime_staging_test.py
+    python3 Tools/IntentsAutomation/tests/mac_helper_swift_tests_test.py
     python3 Tools/IntentsAutomation/scripts/apply_sdk_lifecycle_patch.py --package Tools/IntentsAutomation/node_modules/agent-device
     python3 Tools/IntentsAutomation/scripts/apply_e2e_action_budget_patch.py --package Tools/IntentsAutomation/node_modules/e2e
     npm --prefix Tools/IntentsAutomation run build
@@ -36,6 +37,7 @@ case "$SCOPE" in
     "$NODE" --test --test-concurrency=2 Tools/IntentsAutomation/dist/tests/*.test.js
     "$NODE" --test --test-concurrency=2 Tools/IntentsAutomation/patches/*.test.mjs
     "$NODE" --test --test-concurrency=2 Tools/IntentsAutomation/patches/mac-ownership/*.test.mjs
+    python3 Tools/IntentsAutomation/scripts/run_mac_helper_tests.py --package Tools/IntentsAutomation/node_modules/agent-device
     ;;
   verify-report)
     [[ $# == 2 && "$1" == --profile ]] || { echo 'An exact authorised integration profile is required.' >&2; exit 2; }
