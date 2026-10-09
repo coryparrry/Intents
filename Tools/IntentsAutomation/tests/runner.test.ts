@@ -198,3 +198,78 @@ test('real pinned runner preserves prototype-name and numeric operation receipts
   for(const id of ['constructor','2','10'])assert.equal(saved.outputs[id],1);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+const iosTarget={id:'exact',platform:'ios' as const,kind:'simulator' as const,bundleId:'com.example.App',bundlePath:null,loginSession:null};
+const sealed=async(body:Omit<Segment,'payloadDigest'>):Promise<Segment>=>{const {segmentPayloadDigest}=await import('../src/payloadDigest.js');return {...body,payloadDigest:segmentPayloadDigest(body)};};
+const pathExists=async(path:string)=>{const {access}=await import('node:fs/promises');return access(path).then(()=>true,()=>false);};
+
+test('real pinned runner records distinct readProperty value and text outputs and locate cardinality',async()=>{
+ let snapshots=0;const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:++snapshots,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:1,ref:'@e1',identifier:'title',label:'Title label',value:'typed value',hittable:true,enabled:true,visibleToUser:true},
+  {index:2,ref:'@e2',identifier:'row',label:'First',hittable:true,enabled:true,visibleToUser:true},
+  {index:3,ref:'@e3',identifier:'row',label:'Second',hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async()=>{throw new Error('Read-only fixture must not mutate');},release:async()=>({released:false,reason:'SDK contract fixture'})};
+ const segment=await sealed({scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'read',leaseGeneration:1},operationId:'read-op',digestVersion:2,phase:'observe',bindings:{},timeoutMs:50000,
+  operations:[{id:'value',kind:'readProperty',locator:{kind:'testId',value:'title'},property:'value'},
+   {id:'text',kind:'readProperty',locator:{kind:'testId',value:'title'},property:'text'},
+   {id:'rows',kind:'locate',locator:{kind:'testId',value:'row'}},
+   {id:'absent',kind:'locate',locator:{kind:'testId',value:'missing'}}]});
+ const root=await mkdtemp(join(tmpdir(),'intents-read-property-'));
+ try{
+  const receipt=await runWorker(backend,iosTarget,segment,root,new AbortController().signal) as {outputs:Record<string,unknown>};
+  const saved=JSON.parse(await readFile(join(root,'receipt.json'),'utf8')) as typeof receipt;
+  assert.deepEqual(saved,receipt);
+  assert.equal(saved.outputs.value,'typed value');
+  // semanticTree maps label to name and never sets SemanticNode.text, so
+  // textContent() is null on this path; value must not leak into text evidence.
+  assert.equal(saved.outputs.text,null);
+  assert.equal(saved.outputs.rows,2);assert.equal(saved.outputs.absent,0);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('real pinned runner resolves textbox role fills and button-qualified label taps on iOS',async()=>{
+ const performed:{ref:string;action:unknown}[]=[];let snapshots=0;
+ const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:++snapshots,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:1,ref:'@e1',role:'textbox',editable:true,hittable:true,enabled:true,visibleToUser:true},
+  {index:2,ref:'@e2',role:'text',label:'Save',hittable:true,enabled:true,visibleToUser:true},
+  {index:3,ref:'@e3',role:'button',label:'Save',hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async(ref,action)=>{performed.push({ref,action});},release:async()=>({released:false,reason:'SDK contract fixture'})};
+ const segment=await sealed({scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'roles',leaseGeneration:1},operationId:'roles-op',digestVersion:2,phase:'setup',bindings:{title:'approved title'},timeoutMs:50000,
+  operations:[{id:'fill',kind:'fillBinding',locator:{kind:'role',value:'textbox'},binding:'title'},
+   {id:'save',kind:'tap',locator:{kind:'label',value:'Save',role:'button'}}]});
+ const root=await mkdtemp(join(tmpdir(),'intents-role-locators-'));
+ try{
+  await runWorker(backend,iosTarget,segment,root,new AbortController().signal);
+  assert.deepEqual(performed.map(({ref,action})=>({ref:ref.split('~s')[0],action})),
+   [{ref:'@e1',action:{kind:'fill',value:'approved title',sensitive:false}},{ref:'@e3',action:{kind:'tap'}}]);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('real pinned runner refuses a fill whose approved binding is missing before any device action',async()=>{
+ let actions=0;const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:1,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:1,ref:'@e1',identifier:'title',role:'textbox',editable:true,hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async()=>{actions++;},release:async()=>({released:false,reason:'SDK contract fixture'})};
+ const segment=await sealed({scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'fill',leaseGeneration:1},operationId:'missing-binding-op',digestVersion:2,phase:'setup',bindings:{other:'unrelated'},timeoutMs:50000,
+  operations:[{id:'fill',kind:'fillBinding',locator:{kind:'testId',value:'title'},binding:'title'}]});
+ const root=await mkdtemp(join(tmpdir(),'intents-missing-binding-'));
+ try{
+  await assert.rejects(runWorker(backend,iosTarget,segment,root,new AbortController().signal),/Worker failed/);
+  assert.equal(actions,0);assert.equal(await pathExists(join(root,'receipt.json')),false);
+  assert.match(await readFile(join(root,'worker.log'),'utf8'),/Missing frozen fill binding|Missing approved binding/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('real pinned runner rejects a receipt over the evidence budget without writing it',async()=>{
+ const large='x'.repeat(36000);let snapshots=0;
+ const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:++snapshots,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:1,ref:'@e1',identifier:'body',label:'Body',value:large,hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async()=>{throw new Error('Read-only fixture must not mutate');},release:async()=>({released:false,reason:'SDK contract fixture'})};
+ const segment=await sealed({scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'large',leaseGeneration:1},operationId:'large-op',digestVersion:2,phase:'observe',bindings:{},timeoutMs:110000,
+  operations:Array.from({length:30},(_,i)=>({id:`read${i}`,kind:'readProperty' as const,locator:{kind:'testId' as const,value:'body'},property:'value' as const}))});
+ const root=await mkdtemp(join(tmpdir(),'intents-receipt-budget-'));
+ try{
+  await assert.rejects(runWorker(backend,iosTarget,segment,root,new AbortController().signal),/Worker failed/);
+  assert.ok(snapshots>=30);assert.equal(await pathExists(join(root,'receipt.json')),false);
+  assert.match(await readFile(join(root,'worker.log'),'utf8'),/UI receipt exceeds evidence budget/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
