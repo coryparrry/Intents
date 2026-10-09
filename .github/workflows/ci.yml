@@ -181,6 +181,8 @@ jobs:
             -only-testing:FoundationEvalsUITests/SimplificationUITests \
             -only-testing:FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration \
             -only-testing:FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence \
+            -only-testing:FoundationEvalsUITests/AppAutomationUITests/testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled \
+            -only-testing:FoundationEvalsUITests/AppAutomationUITests/testEmptyAutomationAndPickerCancellationRemainReadOnly \
             CODE_SIGNING_ALLOWED=NO
       - name: Export UI test attachments
         if: ${{ always() && needs.changes.outputs.ui == 'true' }}
