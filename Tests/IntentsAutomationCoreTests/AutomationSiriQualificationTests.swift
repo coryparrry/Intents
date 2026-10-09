@@ -124,6 +124,7 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
     private actor InventoryGate {
         enum WaitError: Error, Equatable { case timedOut, completedBeforeEntry }
         private var entered = false
+        private var started = false
         private var completed = false
         private var released = false
         private var release: CheckedContinuation<Void, Never>?
@@ -140,7 +141,18 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
                 try await Task.sleep(for: .milliseconds(10))
             }
         }
+        func start() { started = true }
         func finish() { completed = true }
+        func canRemoveFixtureDirectory() -> Bool { !started || completed }
+        func releaseAndWaitForCompletion(timeout: Duration = .seconds(5)) async -> Bool {
+            resume()
+            let deadline = ContinuousClock.now.advanced(by: timeout)
+            while !completed {
+                guard ContinuousClock.now < deadline else { return false }
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            return true
+        }
         func resume() { released = true; release?.resume(); release = nil }
     }
     func testInventoryGateTimesOutWhenRunNeverEntersInventory() async {
@@ -155,6 +167,31 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
         catch { XCTAssertEqual(error as? AutomationContractError, .invalidIdentity) }
         do { try await gate.wait(); XCTFail("Completed run left a pending inventory gate") }
         catch { XCTAssertEqual(error as? InventoryGate.WaitError, .completedBeforeEntry) }
+    }
+    func testInventoryDrainWaitsForCompletionBeforeDirectoryCanBeRemoved() async throws {
+        let gate = InventoryGate()
+        await gate.start()
+        let pending = await gate.canRemoveFixtureDirectory(); XCTAssertFalse(pending)
+        let worker = Task {
+            await gate.hold()
+            try? await Task.sleep(for: .milliseconds(25))
+            await gate.finish()
+        }
+        addTeardownBlock {
+            _ = await Task.detached { worker.cancel(); return await gate.releaseAndWaitForCompletion() }.value
+        }
+        try await gate.wait()
+        let drained = await gate.releaseAndWaitForCompletion(timeout: .seconds(1))
+        guard drained else { return XCTFail("Held inventory run did not drain before cleanup") }
+        let finished = await gate.canRemoveFixtureDirectory(); XCTAssertTrue(finished)
+    }
+    func testInventoryDrainDeadlineRetainsDirectoryWhileRunIsPending() async {
+        let gate = InventoryGate()
+        await gate.start()
+        let drained = await gate.releaseAndWaitForCompletion(timeout: .milliseconds(25))
+        XCTAssertFalse(drained)
+        let removable = await gate.canRemoveFixtureDirectory(); XCTAssertFalse(removable)
+        await gate.finish()
     }
     func testInventoryGateWaitRespondsToCancellation() async {
         let gate = InventoryGate()
@@ -240,10 +277,15 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
     }
     func testQualifySiriWorkflowIsRejectedWhileAnotherRunOwnsTheRunner() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let gate = InventoryGate()
+        addTeardownBlock {
+            guard await gate.canRemoveFixtureDirectory() else {
+                return XCTFail("Competing run did not drain; retaining its fixture directory")
+            }
+            try? FileManager.default.removeItem(at: root)
+        }
         let (plan, approval, capabilities) = try proposal()
         let prepared = physicalHost(for: plan)
-        let gate = InventoryGate()
         let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
             simulatorInventory: { _, _ in
                 await gate.hold()
@@ -261,6 +303,7 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
             buildLogPath: "unused", buildLogTruncated: false)
         let simulatorApproval = RunApproval(runID: "simulator-run", app: app, target: simulator, environmentID: simulatorPlan.environmentID,
             effects: [.observe], maximumActions: 10, disposable: true)
+        await gate.start()
         let active = Task {
             do {
                 let result = try await runner.run(prepared: simulatorApp, plan: simulatorPlan, approval: simulatorApproval, capabilities: .init(),
@@ -269,7 +312,14 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
                 return result
             } catch { await gate.finish(); throw error }
         }
-        addTeardownBlock { active.cancel(); await gate.resume() }
+        addTeardownBlock {
+            // Drain before the directory teardown, even if the test itself has been cancelled.
+            let drained = await Task.detached {
+                active.cancel()
+                return await gate.releaseAndWaitForCompletion()
+            }.value
+            XCTAssertTrue(drained, "Competing run did not finish after inventory release")
+        }
         try await gate.wait()
         do {
             _ = try await runner.qualifySiriWorkflow(prepared: prepared, plan: plan, approval: approval,
@@ -278,7 +328,8 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
         } catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
         // The active simulator run has frozen its own case; only the physical device must stay untouched.
         try await assertUntouched(root, target: plan.target, casesExpected: true)
-        await gate.resume()
+        let drained = await Task.detached { await gate.releaseAndWaitForCompletion() }.value
+        guard drained else { throw InventoryGate.WaitError.timedOut }
         do { _ = try await active.value; XCTFail("Synthetic inventory failure") }
         catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("fixture unavailable")) }
         await assertReachesPhysicalCampaign(runner, prepared: prepared, plan: plan, approval: approval, capabilities: capabilities)
