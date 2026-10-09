@@ -38,7 +38,7 @@ import XCTest
             gaps: ["System-action discovery is unavailable"])
         model.prepared = .init(source: source,
             generatedHost: .init(projectPath: "unused", scheme: "unused", targetID: "HOST", bundleID: "unused", configuration: "Debug", templateDigest: String(repeating: "c", count: 64)),
-            host: .init(app: app, target: target, xctestrunPath: "unused", xctestrunDigest: String(repeating: "d", count: 64), subjectProductPath: "unused", hostBundlePath: "unused", hostProductDigest: String(repeating: "e", count: 64), hostBundleID: "unused", testTarget: "unused"),
+            host: .init(app: app, target: target, xctestrunPath: "unused", xctestrunDigest: String(repeating: "d", count: 64), subjectProductPath: try XCTUnwrap(app.canonicalBundlePath), hostBundlePath: "unused", hostProductDigest: String(repeating: "e", count: 64), hostBundleID: "unused", testTarget: "unused"),
             catalog: catalog, buildLogPath: "unused", buildLogTruncated: false)
         model.catalog = catalog
     }
@@ -360,7 +360,7 @@ import XCTest
                 limits: proposal.limits, beforeExecutor: NativeSearchFactExecutor(fails: true), afterExecutor: NativeSearchFactExecutor(fails: false))
         })
         try selectPreparedSource(model: model, root: root)
-        let original = try await saveFailure(model: model, root: root), baseline = try XCTUnwrap(model.prepared)
+        let original = try await saveFailure(model: model, root: root, legacyPreparedEvidence: true), baseline = try XCTUnwrap(model.prepared)
         XCTAssertTrue(model.canPrepareSourceFix); XCTAssertFalse(model.canCheckFix)
         model.prepared = try changedPreparedSource(baseline); model.catalog = model.prepared?.catalog; model.installApproved = true
         XCTAssertTrue(model.canReproduceSavedFailure); XCTAssertTrue(model.canCheckFix)
@@ -369,10 +369,15 @@ import XCTest
         await model.checkFix()
         let result = try XCTUnwrap(model.comparisonReport)
         XCTAssertTrue(result.complete); XCTAssertEqual(result.before.count, 30); XCTAssertEqual(result.after.count, 30)
-        XCTAssertEqual(result.baseline, original); XCTAssertEqual(result.candidate.plan.requirements, original.plan.requirements)
+        XCTAssertNotEqual(result.baseline.plan.id, original.plan.id)
+        XCTAssertEqual(result.baseline.plan.provenance["comparison.sourceCaseDigest"], original.digest)
+        XCTAssertEqual(result.baseline.plan.preparedSimulatorBuildArtifacts, try .init(prepared: baseline))
+        XCTAssertEqual(result.candidate.plan.preparedSimulatorBuildArtifacts, try .init(prepared: XCTUnwrap(model.prepared)))
+        XCTAssertEqual(result.candidate.plan.requirements, original.plan.requirements)
         XCTAssertEqual(result.candidate.plan.observations, original.plan.observations)
-        XCTAssertEqual(result.candidate.plan.provenance, original.plan.provenance)
-        XCTAssertEqual(result.candidate.contractDigest, original.contractDigest)
+        XCTAssertEqual(result.candidate.plan.provenance, result.baseline.plan.provenance)
+        XCTAssertEqual(result.candidate.contractDigest, result.baseline.contractDigest)
+        try original.validate()
         XCTAssertEqual(result.candidate.oracleDigest, original.oracleDigest)
         XCTAssertEqual(try model.commandStatus(id: id).state, "completed")
     }
@@ -490,7 +495,7 @@ import XCTest
         XCTAssertEqual(try model.commandStatus(id: requestID).state, "invalidated")
         XCTAssertFalse(model.busy); XCTAssertNil(model.report)
     }
-    @discardableResult func saveFailure(model: AppAutomationStore, root: URL) async throws -> AutomationFrozenCase {
+    @discardableResult func saveFailure(model: AppAutomationStore, root: URL, legacyPreparedEvidence: Bool = false) async throws -> AutomationFrozenCase {
         let app = try XCTUnwrap(model.candidate?.app ?? model.prepared?.host.app), target = TargetIdentity(id: model.simulatorID, kind: .simulator)
         var approval = RunApproval(runID: "original", app: app, target: target, environmentID: "selected-simulator:" + target.id,
             effects: [.observe, .navigate], maximumActions: 30, disposable: false)
@@ -498,7 +503,10 @@ import XCTest
             expectedVisibleText: "Complete", approval: approval, localeIdentifier: Locale.current.identifier)
         plan.provenance["ui.runtimeManifestDigest"] = String(repeating: "a", count: 64)
         plan.provenance["ui.runtimeTeamID"] = "AAAAAAAAAA"
-        if let prepared = model.prepared { plan.provenance.merge(try AutomationNativeUIRuntime.preparedProvenance(prepared)) { _, new in new } }
+        if let prepared = model.prepared {
+            if legacyPreparedEvidence { plan.provenance.merge(try AutomationNativeUIRuntime.preparedProvenance(prepared)) { _, new in new } }
+            else { try AutomationNativeUIRuntime.attachPreparedEvidence(to: &plan, prepared: prepared) }
+        }
         let cases = try AutomationCaseStore(root: root.appendingPathComponent("support/Cases"))
         let frozen = try await cases.freeze(plan); approval.approvedCaseDigest = frozen.digest
         let fact = try await NativeSearchFactExecutor(fails: true).execute(frozen: frozen, approval: approval, attemptID: "original",
