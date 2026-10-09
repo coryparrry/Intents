@@ -48,29 +48,29 @@ test('oversized dispatch result becomes a -32001 error response',async()=>{
   endpoint.close();
 });
 
-test('reverse timeout rejects and forgets the pending call',async()=>{
+test('reverse timeout rejects and forgets the pending call',async t=>{
   const frames:string[]=[];
-  const endpoint=new RpcEndpoint(frame=>frames.push(frame),async()=>undefined);
+  const endpoint=new RpcEndpoint(frame=>frames.push(frame),async()=>undefined);t.after(()=>endpoint.close());
   await assert.rejects(endpoint.reverse('policy.reviewAction',{synthetic:true},10),/Reverse request timeout/);
   const sent=JSON.parse(frames[0]!);assert.equal(sent.method,'policy.reviewAction');
   await assert.rejects(()=>endpoint.receive(Buffer.from(JSON.stringify({jsonrpc:'2.0',id:sent.id,result:{allowed:true}})+'\n')),/Unknown response ID/);
   const expired=Array.from({length:64},()=>endpoint.reverse('controller.decide',{},10));
   for(const call of expired) await assert.rejects(call,/Reverse request timeout/);
-  const next=endpoint.reverse('controller.decide',{},60000);
+  const next=endpoint.reverse('controller.decide',{},60000);next.catch(()=>{});
   assert.equal(frames.length,66);
   await endpoint.receive(Buffer.from(JSON.stringify({jsonrpc:'2.0',id:JSON.parse(frames[65]!).id,result:{kind:'finish'}})+'\n'));
   assert.deepEqual(await next,{kind:'finish'});endpoint.close();
 });
 
-test('pending reverse call limit rejects the 65th call without sending it',async()=>{
+test('pending reverse call limit rejects the 65th call without sending it',async t=>{
   const frames:string[]=[];
-  const endpoint=new RpcEndpoint(frame=>frames.push(frame),async()=>undefined);
-  const calls=Array.from({length:64},(_,i)=>endpoint.reverse('controller.decide',{step:i},60000));
+  const endpoint=new RpcEndpoint(frame=>frames.push(frame),async()=>undefined);t.after(()=>endpoint.close());
+  const calls=Array.from({length:64},(_,i)=>endpoint.reverse('controller.decide',{step:i},60000));for(const call of calls) call.catch(()=>{});
   await assert.rejects(()=>endpoint.reverse('controller.decide',{step:64},60000),/Pending request limit/);
   assert.equal(frames.length,64);
   await endpoint.receive(Buffer.from(JSON.stringify({jsonrpc:'2.0',id:JSON.parse(frames[0]!).id,error:{code:1,message:'denied'}})+'\n'));
   await assert.rejects(calls[0]!,/denied/);
-  const admitted=endpoint.reverse('controller.decide',{step:65},60000);assert.equal(frames.length,65);
+  const admitted=endpoint.reverse('controller.decide',{step:65},60000);admitted.catch(()=>{});assert.equal(frames.length,65);
   endpoint.close();
   for(const call of [...calls.slice(1),admitted]) await assert.rejects(call,/Channel closed/);
 });
