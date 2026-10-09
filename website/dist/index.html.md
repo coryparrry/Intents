@@ -6,14 +6,14 @@ Intents is a free, open-source native Mac workbench for Apple Foundation Models,
 
 ## Current download and development source
 
-Intents was previously **Foundation Evals**. As checked 4 October 2026, the latest published release is **v1.3.0**, published 20 September 2026. Its installer and app still use the Foundation Evals name.
+Intents was previously **Foundation Evals**. As checked 9 October 2026, the current published release is **v1.4.0**, published 4 October 2026. Its installer and app use the Intents name.
 
-- [Download Foundation Evals 1.3.0 for Apple silicon](https://github.com/coryparrry/Intents/releases/download/v1.3.0/Foundation-Evals-1.3.0-macOS-arm64.dmg).
-- [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.3.0).
-- [Released interface instructions](https://github.com/coryparrry/Intents/blob/v1.3.0/README.md).
+- [Download Intents 1.4.0 for Apple silicon](https://github.com/coryparrry/Intents/releases/download/v1.4.0/Intents-1.4.0-macOS-arm64.dmg).
+- [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.4.0).
+- [Released interface instructions](https://github.com/coryparrry/Intents/blob/v1.4.0/README.md).
 - [Build development source](https://github.com/coryparrry/Intents#build-from-source).
 
-The released workflow includes prompt suites, scoring, traces, saved comparisons, JSON reports, and a local MCP server. Current source adds the newer interface, **Review**, **Batch runs**, and **Intent Lab (beta)**. Those features are not in the v1.3.0 installer. The 1.4.0 release remains pending; consult published releases for later downloads.
+The released workflow includes prompt suites, scoring, traces, saved comparisons, JSON reports, authenticated local MCP access, **Review**, **Batch runs**, and **Intent Lab (beta)**. Build development source to develop the app or try unshipped changes.
 
 ## First use and development workflows
 
@@ -31,7 +31,7 @@ Try “Reply with only the capital of France” and expected text “Paris”. E
 
 macOS 27 or later. The default on-device model needs an Apple Intelligence-capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Source builds and Intent Lab need Xcode 27; ordinary on-device suites do not. Compatible Core AI models and custom HTTP providers have their own requirements. Remote providers and judges use their configured services. Optional Private Cloud Compute uses Apple’s service; tools receive the content needed for their calls.
 
-The built-in MCP server lets coding agents use the evaluation workspace. Current source uses authenticated local access; v1.3.0 uses credential-free localhost access. Follow the guide for your build. [Current MCP guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Codex-and-MCP.md). [Swift feature integration](https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md) supports registered feature closures on paired apps.
+The built-in MCP server lets coding agents use the evaluation workspace. The released app uses authenticated local access. Follow the guide for your build. [Current MCP guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Codex-and-MCP.md). [Swift feature integration](https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md) supports registered feature closures on paired apps.
 
 Suites and evidence live on the Mac. Exports can contain prompts, responses, references, and tool content; inspect them before sharing. Optional app-open telemetry is enabled by default and can be disabled in Privacy settings. [Data and troubleshooting](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Data-and-troubleshooting.md).
 

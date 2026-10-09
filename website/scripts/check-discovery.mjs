@@ -14,7 +14,7 @@ const checks = [
   ['sitemap.xml', 'Googlebot', /(?:application|text)\/xml/, `<loc>${canonical}</loc>`],
   ['llms.txt', 'Claude-SearchBot', /text\/plain/, '# Intents'],
   ['index.html.md', 'ChatGPT-User', /text\/(?:markdown|plain)/, '# Intents'],
-  ['getting-started.html', 'OAI-SearchBot', /text\/html/, 'Foundation Evals 1.3.0'],
+  ['getting-started.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.4.0'],
   ['getting-started.html.md', 'Claude-SearchBot', /text\/(?:markdown|plain)/, '# Get started with Intents'],
   ['seo-check-missing-page', 'Googlebot', null, null, 404],
 ];

@@ -90,23 +90,31 @@ test('hosting returns not found rather than the homepage for nonexistent routes'
   assert.equal(hosting.static.directory, 'dist');
 });
 
-test('release paths and development features stay distinct across reading formats', () => {
+test('published installer and released features agree across reading formats', () => {
   const app = graph['@graph'].find(node => node['@type'] === 'SoftwareApplication');
   assert.equal(app.alternateName, 'Foundation Evals');
-  assert.equal(app.downloadUrl, 'https://github.com/coryparrry/Intents/releases/download/v1.3.0/Foundation-Evals-1.3.0-macOS-arm64.dmg');
-  assert.match(app.description, /published v1\.3\.0 download.*Foundation Evals; Intents development source adds Review, Batch runs, and Intent Lab/);
+  assert.equal(app.downloadUrl, 'https://github.com/coryparrry/Intents/releases/download/v1.4.0/Intents-1.4.0-macOS-arm64.dmg');
+  assert.match(app.description, /published Intents v1\.4\.0 download includes Review, Batch runs, and Intent Lab/);
   for (const path of ['index.html', 'index.html.md', 'llms.txt', 'getting-started.html', 'getting-started.html.md']) {
     const content = read(path);
     assert.match(content, /Foundation Evals/);
-    assert.match(content, /(?:v)?1\.3\.0/);
+    assert.match(content, /(?:v)?1\.4\.0/);
+    assert.doesNotMatch(content, /v1\.3\.0|1\.4\.0 release (?:is|remains) pending|not in the .*installer/);
+    const releaseLinks = [...content.matchAll(/https:\/\/github\.com\/coryparrry\/Intents\/releases\/(?:tag|download)\/([^/\s"<>)]+)/g)];
+    assert.ok(releaseLinks.length, `${path}: a published release link is required`);
+    for (const [, version] of releaseLinks) assert.equal(version, 'v1.4.0', `${path}: release links must select the current installer`);
     assert.match(content, /development|Development|Current source|current source/);
     assert.match(content, /Review/);
     assert.match(content, /Batch runs/);
     assert.match(content, /recognized text|recognized-text/);
     assert.match(content, /(?:not|does not|do not) (?:test|prove) (?:microphone|Siri)/);
   }
+  assert.equal(app.releaseNotes, 'https://github.com/coryparrry/Intents/releases/tag/v1.4.0');
+  assert.doesNotMatch(html, /DEVELOPMENT SOURCE · INTENT LAB/);
+  assert.doesNotMatch(read('app.js'), /Build development source to connect an app/);
+  assert.match(read('app.js'), /Use Intents 1\.4\.0 to connect an app/);
   for (const path of ['index.html', 'index.html.md', 'llms.txt']) {
-    assert.match(read(path), /credential-free localhost/);
+    assert.doesNotMatch(read(path), /credential-free localhost|release (?:is|remains) pending/);
     assert.match(read(path), /authenticated local/);
   }
 });
@@ -121,8 +129,10 @@ test('first-use guide has its own canonical identity and working local anchors',
   }
   assert.match(guide, /Exact text/);
   assert.match(guide, /Contains text/);
-  assert.match(guide, /Suite Editor/);
+  assert.match(guide, /In the released app, create a suite in <strong>Overview<\/strong>, then open <strong>Cases<\/strong> and <strong>Setup → Scoring<\/strong>/);
   assert.match(guide, /Xcode 27/);
-  assert.match(guide, /not included in the v1\.3\.0 installer/);
+  assert.match(guide, /Released download: Intents 1\.4\.0/);
+  assert.match(guide, /blob\/v1\.4\.0\/README\.md#run-your-first-evaluation/);
+  assert.doesNotMatch(guide, /Suite Editor|release (?:is|remains) pending/);
   assert.match(guide, /release or source commit/);
 });
