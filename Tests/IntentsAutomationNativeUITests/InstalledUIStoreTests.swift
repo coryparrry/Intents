@@ -270,6 +270,9 @@ import XCTest
             let validations = await runner.validations, qualifications = await runner.qualifications
             XCTAssertEqual(capabilityCalls, 1); XCTAssertEqual(runs.count, 2)
             XCTAssertEqual(validations, 2); XCTAssertEqual(qualifications, 1)
+            let validatedBindings = await runner.validatedBindings, qualifiedBindings = await runner.qualifiedBindings
+            XCTAssertEqual(validatedBindings, [bindings, bindings], "Each attempt is validated against the plan's bindings")
+            XCTAssertEqual(qualifiedBindings, [bindings], "The fixture is minted from the plan's bindings")
             XCTAssertEqual(Set(runs.map(\.attemptID)).count, 2)
             for (index, run) in runs.enumerated() {
                 XCTAssertTrue(run.preparedSubjectChecked)
@@ -1067,8 +1070,10 @@ private actor FreshQualificationRunner: AutomationFreshFixtureQualifyingRunner {
     let cancelAfterRun: Int?
     private(set) var capabilityCalls = 0
     private(set) var runs: [Run] = []
-    private(set) var validations = 0
-    private(set) var qualifications = 0
+    private(set) var validatedBindings: [[AutomationFreshFixtureBinding]] = []
+    private(set) var qualifiedBindings: [[AutomationFreshFixtureBinding]] = []
+    var validations: Int { validatedBindings.count }
+    var qualifications: Int { qualifiedBindings.count }
     private var capabilitySubjectWasPrepared = false
     init(token: AutomationQualifiedFreshFixture, alter: @escaping @Sendable (Int, inout AutomationAttemptReport) -> Void = { _, _ in },
          validationFailure: Int? = nil, cancelAfterRun: Int? = nil) {
@@ -1096,11 +1101,11 @@ private actor FreshQualificationRunner: AutomationFreshFixtureQualifyingRunner {
         return report
     }
     func validateFreshFixtureAttempt(bindings: [AutomationFreshFixtureBinding]) throws {
-        validations += 1
+        validatedBindings.append(bindings)
         if validations == validationFailure { throw Self.validationError }
     }
     func qualifyFreshFixture(bindings: [AutomationFreshFixtureBinding]) -> AutomationQualifiedFreshFixture {
-        qualifications += 1
+        qualifiedBindings.append(bindings)
         return token
     }
 }
