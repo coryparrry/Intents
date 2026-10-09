@@ -93,14 +93,40 @@ import XCTest
         let model = try store(importer)
         let (frozen, reports) = try await saveCase(model, id: "held", attempts: ["recorded"])
         await importer.register(frozen)
-        let migration = Task { await model.migrateEvidenceHistory() }
-        await importer.waitUntilHeld()
+        let migration = Task {
+            await model.migrateEvidenceHistory()
+            await importer.finishMigration()
+        }
+        addTeardownBlock { migration.cancel(); await importer.release() }
+        try await importer.waitUntilHeld()
         await model.migrateEvidenceHistory()
         let heldCalls = await importer.calls
         XCTAssertEqual(heldCalls, 1); XCTAssertEqual(model.evidenceImportRevision, 0)
         await importer.release(); await migration.value
         let imported = await importer.imported
         XCTAssertEqual(imported.map(\.report), reports); XCTAssertEqual(model.evidenceImportRevision, 1)
+    }
+    func testHistoryGateTimesOutWhenImporterIsNeverReached() async {
+        let importer = HistoryImporter(holdFirst: true)
+        do {
+            try await importer.waitUntilHeld(timeout: .milliseconds(25))
+            XCTFail("Unentered importer gate did not time out")
+        } catch { XCTAssertEqual(error as? HistoryImportError, .timedOut) }
+    }
+    func testHistoryGateReportsMigrationFinishingWithoutImport() async {
+        let importer = HistoryImporter(holdFirst: true)
+        await importer.finishMigration()
+        do {
+            try await importer.waitUntilHeld()
+            XCTFail("Finished migration left a pending gate")
+        } catch { XCTAssertEqual(error as? HistoryImportError, .migrationFinishedBeforeImport) }
+    }
+    func testHistoryGateWaitRespondsToCancellation() async {
+        let importer = HistoryImporter(holdFirst: true)
+        let waiter = Task { try await importer.waitUntilHeld() }
+        waiter.cancel()
+        do { try await waiter.value; XCTFail("Cancelled gate wait succeeded") }
+        catch { XCTAssertTrue(error is CancellationError) }
     }
     func testClosedStoreDoesNotMigrate() async throws {
         let importer = HistoryImporter()
@@ -118,7 +144,7 @@ private func historyReport(plan: AutomationCase, attemptID: String) -> Automatio
     let result = AutomationAssessment.assess(plan: plan, attemptID: attemptID, subjectDispatched: false, subjectCompleted: false, observations: [], termination: .unresolved)
     return AutomationAttemptReport(attemptID: attemptID, result: result, receipts: [], resourcesReleased: true)
 }
-private enum HistoryImportError: Error { case failed }
+private enum HistoryImportError: Error, Equatable { case failed, timedOut, migrationFinishedBeforeImport }
 private actor HistoryImporter {
     enum Failure { case mismatchedReport, mismatchedCase, throwing }
     private var failure: Failure?
@@ -127,18 +153,28 @@ private actor HistoryImporter {
     private(set) var calls = 0
     private(set) var imported: [AutomationNativeEvidenceDocument] = []
     private var held = false
-    private var heldWaiter: CheckedContinuation<Void, Never>?
+    private var migrationFinished = false
+    private var released = false
     private var pending: CheckedContinuation<Void, Never>?
     init(failure: Failure? = nil, holdFirst: Bool = false) { self.failure = failure; self.holdFirst = holdFirst }
     func register(_ frozen: AutomationFrozenCase) { frozenCases.append(frozen) }
     func succeed() { failure = nil }
-    func waitUntilHeld() async { if !held { await withCheckedContinuation { heldWaiter = $0 } } }
-    func release() { pending?.resume(); pending = nil }
+    func finishMigration() { migrationFinished = true }
+    func waitUntilHeld(timeout: Duration = .seconds(5)) async throws {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while !held {
+            try Task.checkCancellation()
+            guard !migrationFinished else { throw HistoryImportError.migrationFinishedBeforeImport }
+            guard ContinuousClock.now < deadline else { throw HistoryImportError.timedOut }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+    func release() { released = true; pending?.resume(); pending = nil }
     func importEvidence(_ plan: AutomationCase, _ report: AutomationAttemptReport) async throws -> AutomationNativeEvidenceDocument {
         calls += 1
         if holdFirst {
-            holdFirst = false; held = true; heldWaiter?.resume(); heldWaiter = nil
-            await withCheckedContinuation { pending = $0 }
+            holdFirst = false; held = true
+            if !released { await withCheckedContinuation { pending = $0 } }
         }
         guard let frozen = frozenCases.first(where: { $0.plan == plan }) else { throw HistoryImportError.failed }
         switch failure {
