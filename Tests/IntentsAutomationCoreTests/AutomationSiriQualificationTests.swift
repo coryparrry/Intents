@@ -122,15 +122,46 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
     #endif
     #if os(macOS)
     private actor InventoryGate {
+        enum WaitError: Error, Equatable { case timedOut, completedBeforeEntry }
         private var entered = false
-        private var listeners: [CheckedContinuation<Void, Never>] = []
+        private var completed = false
+        private var released = false
         private var release: CheckedContinuation<Void, Never>?
         func hold() async {
-            entered = true; listeners.forEach { $0.resume() }; listeners.removeAll()
-            await withCheckedContinuation { release = $0 }
+            entered = true
+            if !released { await withCheckedContinuation { release = $0 } }
         }
-        func wait() async { if !entered { await withCheckedContinuation { listeners.append($0) } } }
-        func resume() { release?.resume(); release = nil }
+        func wait(timeout: Duration = .seconds(5)) async throws {
+            let deadline = ContinuousClock.now.advanced(by: timeout)
+            while !entered {
+                try Task.checkCancellation()
+                guard !completed else { throw WaitError.completedBeforeEntry }
+                guard ContinuousClock.now < deadline else { throw WaitError.timedOut }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        func finish() { completed = true }
+        func resume() { released = true; release?.resume(); release = nil }
+    }
+    func testInventoryGateTimesOutWhenRunNeverEntersInventory() async {
+        let gate = InventoryGate()
+        do { try await gate.wait(timeout: .milliseconds(25)); XCTFail("Unentered inventory gate did not time out") }
+        catch { XCTAssertEqual(error as? InventoryGate.WaitError, .timedOut) }
+    }
+    func testInventoryGateReportsRunCompletingBeforeInventory() async {
+        let gate = InventoryGate()
+        let active = Task { await gate.finish(); throw AutomationContractError.invalidIdentity }
+        do { _ = try await active.value; XCTFail("Synthetic early run failure succeeded") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .invalidIdentity) }
+        do { try await gate.wait(); XCTFail("Completed run left a pending inventory gate") }
+        catch { XCTAssertEqual(error as? InventoryGate.WaitError, .completedBeforeEntry) }
+    }
+    func testInventoryGateWaitRespondsToCancellation() async {
+        let gate = InventoryGate()
+        let waiter = Task { try await gate.wait() }
+        waiter.cancel()
+        do { try await waiter.value; XCTFail("Cancelled gate wait succeeded") }
+        catch { XCTAssertTrue(error is CancellationError) }
     }
     private func physicalHost(for plan: AutomationCase) -> AutomationPreparedApplication {
         let host = AutomationPreparedAppleHost(app: plan.app, target: plan.target, xctestrunPath: "synthetic",
@@ -231,10 +262,15 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
         let simulatorApproval = RunApproval(runID: "simulator-run", app: app, target: simulator, environmentID: simulatorPlan.environmentID,
             effects: [.observe], maximumActions: 10, disposable: true)
         let active = Task {
-            try await runner.run(prepared: simulatorApp, plan: simulatorPlan, approval: simulatorApproval, capabilities: .init(),
-                attemptID: "simulator-attempt", allowBootAndInstall: true)
+            do {
+                let result = try await runner.run(prepared: simulatorApp, plan: simulatorPlan, approval: simulatorApproval, capabilities: .init(),
+                    attemptID: "simulator-attempt", allowBootAndInstall: true)
+                await gate.finish()
+                return result
+            } catch { await gate.finish(); throw error }
         }
-        await gate.wait()
+        addTeardownBlock { active.cancel(); await gate.resume() }
+        try await gate.wait()
         do {
             _ = try await runner.qualifySiriWorkflow(prepared: prepared, plan: plan, approval: approval,
                 capabilities: capabilities, attemptID: "attempt", allowInstall: true)
