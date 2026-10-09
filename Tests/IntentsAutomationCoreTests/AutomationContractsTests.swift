@@ -18,6 +18,100 @@ final class AutomationContractsTests: XCTestCase {
         for _ in 0..<20 { value = "{\"kind\":\"array\",\"value\":[\(value)]}" }
         XCTAssertThrowsError(try JSONDecoder().decode(AutomationValue.self, from: Data(value.utf8)))
     }
+    func testC01RejectsMalformedTagsKeysAndDigestsWhileDecoding() throws {
+        let digest = String(repeating: "a", count: 64)
+        let cases: [(json: String, reason: String)] = [
+            (#"{"kind":"weird"}"#, "Unknown value tag"),
+            (#"{"kind":"weird","value":1}"#, "Unknown value tag"),
+            (#"{"kind":"null","value":1}"#, "Unknown value key"),
+            (#"{"kind":"omission","value":null}"#, "Unknown value key"),
+            (#"{"kind":"enum","typeId":"Priority","value":"high","timeZone":"UTC"}"#, "Unknown value key"),
+            (#"{"kind":"date","value":"2026-10-05T21:00:00Z","timeZone":"Mars/Base"}"#, "Invalid timezone"),
+            (#"{"kind":"artifact","value":"snapshot-1","sha256":"ABC"}"#, "Invalid digest"),
+            ("{\"kind\":\"artifact\",\"value\":\"snapshot-1\",\"sha256\":\"\(String(repeating: "A", count: 64))\"}", "Invalid digest"),
+            ("{\"kind\":\"artifact\",\"value\":\"snapshot-1\",\"sha256\":\"\(digest)a\"}", "Invalid digest"),
+            ("{\"kind\":\"artifact\",\"value\":\"snapshot-1\",\"sha256\":\"\(digest.dropLast())g\"}", "Invalid digest"),
+            (Self.nullArrayJSON(count: 1001), "Array limit"),
+        ]
+        for (json, reason) in cases {
+            XCTAssertThrowsError(try JSONDecoder().decode(AutomationValue.self, from: Data(json.utf8)), json) { error in
+                guard case DecodingError.dataCorrupted(let context) = error else { return XCTFail("\(json): \(error)") }
+                XCTAssertEqual(context.debugDescription, reason, json)
+            }
+        }
+        XCTAssertThrowsError(try JSONDecoder().decode(AutomationValue.self, from: Data(#"{"value":"x"}"#.utf8))) { error in
+            guard case DecodingError.keyNotFound = error else { return XCTFail("\(error)") }
+        }
+    }
+    func testC01RejectsInvalidIdentifiersDatesAndNodeBudget() throws {
+        let digest = String(repeating: "a", count: 64)
+        let invalid: [(json: String, value: AutomationValue)] = [
+            (#"{"kind":"date","value":"2026-13-01","timeZone":"Europe/London"}"#, .date("2026-13-01", timeZone: "Europe/London")),
+            (#"{"kind":"date","value":"2026-10-05","timeZone":"UTC"}"#, .date("2026-10-05", timeZone: "UTC")),
+            (#"{"kind":"enum","typeId":"x y","value":"high"}"#, .enumeration(typeID: "x y", value: "high")),
+            (#"{"kind":"enum","typeId":"Priority","value":"a/b"}"#, .enumeration(typeID: "Priority", value: "a/b")),
+            (#"{"kind":"enum","typeId":"","value":"high"}"#, .enumeration(typeID: "", value: "high")),
+            (#"{"kind":"entity","typeId":"x/y","value":"id"}"#, .entity(typeID: "x/y", value: "id")),
+            (#"{"kind":"entity","typeId":"Task","value":""}"#, .entity(typeID: "Task", value: "")),
+            ("{\"kind\":\"artifact\",\"value\":\"a/b\",\"sha256\":\"\(digest)\"}", .artifact(handle: "a/b", sha256: digest)),
+            ("{\"kind\":\"artifact\",\"value\":\"\",\"sha256\":\"\(digest)\"}", .artifact(handle: "", sha256: digest)),
+            (#"{"kind":"object","value":{"a b":{"kind":"null"}}}"#, .object(["a b": .null])),
+            (#"{"kind":"object","value":{"":{"kind":"null"}}}"#, .object(["": .null])),
+            (#"{"kind":"object","value":{"../etc":{"kind":"null"}}}"#, .object(["../etc": .null])),
+            (#"{"kind":"array","value":[{"kind":"object","value":{"ok":{"kind":"enum","typeId":"x y","value":"v"}}}]}"#,
+             .array([.object(["ok": .enumeration(typeID: "x y", value: "v")])])),
+        ]
+        for (json, value) in invalid {
+            XCTAssertThrowsError(try JSONDecoder().decode(AutomationValue.self, from: Data(json.utf8)), json) { error in
+                XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Invalid tagged value"), json)
+            }
+            XCTAssertThrowsError(try JSONEncoder().encode(value), json) { error in
+                XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Invalid tagged value"), json)
+            }
+        }
+        for value: AutomationValue in [.date("2026-10-05T21:00:00Z", timeZone: "Mars/Base"), .artifact(handle: "snapshot-1", sha256: "ABC"),
+                                       .artifact(handle: "snapshot-1", sha256: String(repeating: "A", count: 64)),
+                                       .array(Array(repeating: .null, count: 1001))] {
+            XCTAssertThrowsError(try JSONEncoder().encode(value)) { error in
+                XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Invalid tagged value"))
+            }
+        }
+        let overBudget = Self.wideArrayJSON(lastCount: 990)
+        XCTAssertThrowsError(try JSONDecoder().decode(AutomationValue.self, from: Data(overBudget.utf8))) { error in
+            XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Value nesting/node limit"))
+        }
+        let wide = AutomationValue.array(Array(repeating: .array(Array(repeating: .null, count: 1000)), count: 9) + [.array(Array(repeating: .null, count: 990))])
+        XCTAssertThrowsError(try JSONEncoder().encode(wide)) { error in
+            XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Value nesting/node limit"))
+        }
+    }
+    func testC01AcceptsTaggedValueBoundaries() throws {
+        let digest = String(repeating: "0123456789abcdef", count: 4)
+        let boundaries: [AutomationValue] = [
+            .array(Array(repeating: .null, count: 1000)),
+            .artifact(handle: "snapshot_1.v2:part-3", sha256: digest),
+            .enumeration(typeID: String(repeating: "T", count: 256), value: "A-z_0.9:x"),
+            .object(["a.b:c-d_1": .null]),
+            .date("2026-10-05T21:00:00.123Z", timeZone: "America/New_York"),
+            .date("2026-10-05T21:00:00+01:00", timeZone: "UTC"),
+        ]
+        for value in boundaries {
+            XCTAssertEqual(try JSONDecoder().decode(AutomationValue.self, from: JSONEncoder().encode(value)), value)
+        }
+        XCTAssertThrowsError(try JSONEncoder().encode(AutomationValue.enumeration(typeID: String(repeating: "T", count: 257), value: "v")))
+        let atBudget = try JSONDecoder().decode(AutomationValue.self, from: Data(Self.wideArrayJSON(lastCount: 989).utf8))
+        guard case .array(let groups) = atBudget else { return XCTFail("Expected array") }
+        XCTAssertEqual(groups.count, 10)
+        XCTAssertEqual(try JSONDecoder().decode(AutomationValue.self, from: JSONEncoder().encode(atBudget)), atBudget)
+    }
+    private static func nullArrayJSON(count: Int) -> String {
+        "{\"kind\":\"array\",\"value\":[\(Array(repeating: #"{"kind":"null"}"#, count: count).joined(separator: ","))]}"
+    }
+    /// One outer array, ten inner arrays and their nulls: 11 + 9_000 + lastCount nodes at depth 2.
+    private static func wideArrayJSON(lastCount: Int) -> String {
+        let groups = Array(repeating: nullArrayJSON(count: 1000), count: 9) + [nullArrayJSON(count: lastCount)]
+        return "{\"kind\":\"array\",\"value\":[\(groups.joined(separator: ","))]}"
+    }
     func testC01UnicodeLimitsMatchJavaScriptCodeUnits() throws {
         let boundary = AutomationValue.text(String(repeating: "😀", count: 16_384))
         XCTAssertEqual(try JSONDecoder().decode(AutomationValue.self, from: JSONEncoder().encode(boundary)), boundary)
