@@ -362,6 +362,139 @@ class IntentLabCLITests(unittest.TestCase):
         completed = self.run_cli("automation-report", "--case-id", "../case", "--revision", "1", "--digest", "a" * 64, "--attempt-id", "attempt")
         self.assertEqual(completed.returncode, 30)
 
+    def native_preview(self):
+        return {"digest": "a" * 64, "bundleID": "example.Fixture", "targetID": "target", "environmentID": "environment",
+                "action": "ContractAction", "effects": ["Opens the fixture"], "maximumActions": 1,
+                "installApproved": True, "disposable": True}
+
+    def fix_preview(self):
+        return {"digest": "a" * 64, "bundleID": "example.Fixture", "targetID": "target", "environmentID": "environment",
+                "caseID": "case", "revision": 1, "caseDigest": "b" * 64, "candidateCaseDigest": "c" * 64,
+                "beforeProductDigest": "d" * 64, "afterProductDigest": "e" * 64, "originalAttemptID": "original",
+                "requestedAttemptsPerBuild": 30, "installApproved": True, "disposable": True}
+
+    def reproduction_preview(self):
+        return {"digest": "a" * 64, "bundleID": "example.Fixture", "targetID": "target", "environmentID": "environment",
+                "caseID": "case", "revision": 1, "caseDigest": "b" * 64, "originalAttemptID": "original",
+                "requestedAttempts": 5, "installApproved": True, "disposable": True}
+
+    def assert_preview_rejected(self, command, preview, outcome="read"):
+        with self.connector(lambda _params: {"outcome": outcome, "preview": preview}) as (endpoint, requests):
+            completed = self.run_cli(command, "--endpoint", endpoint)
+        self.assertEqual(completed.returncode, 30, completed.stdout + completed.stderr)
+        self.assertEqual(completed.stdout, "")
+        self.assertEqual(len(requests), 2)
+        return completed
+
+    def test_complete_previews_are_read_and_printed(self):
+        for command, tool, preview in [("automation-preview", "eval_preview_automation", self.native_preview()),
+                                       ("automation-fix-preview", "eval_preview_automation_fix", self.fix_preview()),
+                                       ("automation-reproduction-preview", "eval_preview_automation_reproduction", self.reproduction_preview())]:
+            calls = []
+            def respond(params, preview=preview):
+                calls.append(params)
+                return {"outcome": "read", "preview": preview}
+            with self.subTest(command=command), self.connector(respond) as (endpoint, requests):
+                completed = self.run_cli(command, "--endpoint", endpoint)
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                self.assertEqual(calls, [{"name": tool, "arguments": {}}])
+                self.assertTrue(all(header == f"Bearer {TOKEN}" for _, header in requests))
+                self.assertEqual(json.loads(completed.stdout), {"outcome": "read", "preview": preview})
+
+    def test_previews_must_be_read_only_responses(self):
+        for command, preview in [("automation-preview", self.native_preview()), ("automation-fix-preview", self.fix_preview()),
+                                 ("automation-reproduction-preview", self.reproduction_preview())]:
+            with self.subTest(command=command):
+                completed = self.assert_preview_rejected(command, preview, outcome="committed")
+                self.assertIn("canonical automation response", completed.stderr)
+
+    def test_native_preview_rejects_unbounded_actions_and_missing_effects(self):
+        for change in ({"maximumActions": 0}, {"maximumActions": 1001}, {"effects": []}, {"digest": "A" * 64},
+                       {"digest": "a" * 63}, {"bundleID": ""}, {"action": ""}):
+            with self.subTest(change=change):
+                completed = self.assert_preview_rejected("automation-preview", dict(self.native_preview(), **change))
+                self.assertIn("Incomplete native action preview", completed.stderr)
+        for boundary in (1, 1000):
+            with self.subTest(maximumActions=boundary), self.connector(lambda _params: {"outcome": "read", "preview": dict(self.native_preview(), maximumActions=boundary)}) as (endpoint, _):
+                completed = self.run_cli("automation-preview", "--endpoint", endpoint)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_fix_preview_rejects_incomplete_or_self_comparing_plans(self):
+        preview = self.fix_preview()
+        for change in ({"digest": "not-a-digest"}, {"afterProductDigest": "E" * 64},
+                       {"candidateCaseDigest": preview["caseDigest"]},
+                       {"afterProductDigest": preview["beforeProductDigest"]},
+                       {"requestedAttemptsPerBuild": 29}, {"requestedAttemptsPerBuild": 31},
+                       {"installApproved": False}, {"originalAttemptID": "../original"},
+                       {"revision": 0}, {"targetID": ""}):
+            with self.subTest(change=change):
+                completed = self.assert_preview_rejected("automation-fix-preview", dict(preview, **change))
+                self.assertIn("Incomplete fix comparison preview", completed.stderr)
+
+    def test_reproduction_preview_requires_exactly_five_attempts(self):
+        for change in ({"requestedAttempts": 4}, {"requestedAttempts": 6}, {"requestedAttempts": 30},
+                       {"caseDigest": "b" * 65}, {"caseID": "../case"}, {"revision": 100001}):
+            with self.subTest(change=change):
+                completed = self.assert_preview_rejected("automation-reproduction-preview", dict(self.reproduction_preview(), **change))
+                self.assertIn("Incomplete reproduction preview", completed.stderr)
+
+    def test_saved_case_cursor_is_forwarded_and_validated(self):
+        cursor = "f" * 64 + ":50"
+        calls = []
+        def respond(params):
+            calls.append(params)
+            return {"outcome": "read", "cases": [], "total": 51, "truncated": True, "nextCursor": "f" * 64 + ":100"}
+        with self.connector(respond) as (endpoint, _):
+            completed = self.run_cli("automation-cases", "--limit", "50", "--cursor", cursor, "--endpoint", endpoint)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(calls, [{"name": "eval_list_automation_cases", "arguments": {"limit": 50, "cursor": cursor}}])
+        self.assertEqual(json.loads(completed.stdout)["nextCursor"], "f" * 64 + ":100")
+        for invalid in ("f" * 64, "F" * 64 + ":1", "f" * 63 + ":1", "f" * 64 + ":12345", "f" * 64 + ":-1", "../" + "f" * 61 + ":1"):
+            with self.subTest(cursor=invalid), self.connector(respond) as (endpoint, requests):
+                rejected = self.run_cli("automation-cases", "--cursor", invalid, "--endpoint", endpoint)
+            self.assertEqual(rejected.returncode, 30)
+            self.assertIn("Invalid saved-case cursor", rejected.stderr)
+            self.assertEqual(requests, [])
+        for next_cursor in (None, "opaque"):
+            with self.subTest(next_cursor=next_cursor), self.connector(lambda _params: {"outcome": "read", "cases": [], "total": 51, "truncated": True, "nextCursor": next_cursor}) as (endpoint, _):
+                truncated = self.run_cli("automation-cases", "--endpoint", endpoint)
+            self.assertEqual(truncated.returncode, 30)
+            self.assertEqual(truncated.stdout, "")
+
+    def test_cancel_commits_only_the_matching_request(self):
+        request_id = "B895560E-634B-4323-A9E6-6C9EB12C5DE6"
+        calls = []
+        def respond(params):
+            calls.append(params)
+            return {"outcome": "committed", "request": {"requestID": request_id, "digest": "a" * 64, "state": "cancelling"}}
+        with self.connector(respond) as (endpoint, requests):
+            completed = self.run_cli("automation-cancel", "--request-id", request_id.lower(), "--endpoint", endpoint)
+        self.assertEqual(completed.returncode, 10, completed.stderr)
+        self.assertEqual(calls, [{"name": "eval_cancel_automation_request", "arguments": {"requestID": request_id}}])
+        self.assertTrue(all(header == f"Bearer {TOKEN}" for _, header in requests))
+        self.assertEqual(json.loads(completed.stdout)["request"]["state"], "cancelling")
+        with self.connector(lambda _params: {"outcome": "committed", "request": {"requestID": request_id, "digest": "a" * 64, "state": "cancelled"}}) as (endpoint, _):
+            completed = self.run_cli("automation-cancel", "--request-id", request_id, "--endpoint", endpoint)
+        self.assertEqual(completed.returncode, 20, completed.stderr)
+        for outcome, response_id in (("committed", "00000000-0000-0000-0000-000000000000"), ("read", request_id)):
+            with self.subTest(outcome=outcome, response_id=response_id), self.connector(lambda _params: {"outcome": outcome, "request": {"requestID": response_id, "digest": "a" * 64, "state": "cancelling"}}) as (endpoint, _):
+                rejected = self.run_cli("automation-cancel", "--request-id", request_id, "--endpoint", endpoint)
+            self.assertEqual(rejected.returncode, 30)
+            self.assertEqual(rejected.stdout, "")
+        for options in (["--request-id", "not-a-uuid"], ["--request-id", request_id, "--digest", "a" * 64]):
+            with self.subTest(options=options), self.connector(respond) as (endpoint, requests):
+                rejected = self.run_cli("automation-cancel", *options, "--endpoint", endpoint)
+            self.assertEqual(rejected.returncode, 30)
+            self.assertEqual(requests, [])
+
+    def test_automation_endpoint_must_be_absolute_http(self):
+        for endpoint in ("ftp://127.0.0.1/mcp", "file:///tmp/mcp", "/mcp"):
+            with self.subTest(endpoint=endpoint):
+                completed = self.run_cli("automation-preview", "--endpoint", endpoint)
+            self.assertEqual(completed.returncode, 30)
+            self.assertIn("Invalid MCP endpoint", completed.stderr)
+            self.assertEqual(completed.stdout, "")
+
     def test_failed_report_with_zero_xctest_capture_exits_nonzero(self):
         run_id = "b895560e-634b-4323-a9e6-6c9eb12c5de6"
         tool_calls = []
