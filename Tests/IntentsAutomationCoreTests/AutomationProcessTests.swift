@@ -2,6 +2,35 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationProcessTests: XCTestCase, @unchecked Sendable {
+    func testKernelAbsentChildCanReconcileStaleRunningState() throws {
+        let child = Process()
+        child.executableURL = try AutomationPath.canonical(URL(fileURLWithPath: "/usr/bin/true"))
+        child.environment = [:]
+        try child.run()
+        let pid = child.processIdentifier
+        child.waitUntilExit()
+        XCTAssertGreaterThan(pid, 0)
+        // Model Foundation's delayed notification against an actual reaped kernel process.
+        XCTAssertTrue(AutomationOwnedCommand.permitsUncapturedExit(pid: pid, isRunning: true))
+        XCTAssertTrue(AutomationOwnedCommand.permitsUncapturedExit(pid: pid, isRunning: false))
+    }
+    func testUncapturedLiveAndInvalidPIDsCannotReconcileRunningState() throws {
+        let child = Process()
+        child.executableURL = try AutomationPath.canonical(URL(fileURLWithPath: "/bin/sleep"))
+        child.arguments = ["30"]
+        child.environment = [:]
+        try child.run()
+        defer {
+            if child.isRunning { child.terminate() }
+            child.waitUntilExit()
+        }
+        XCTAssertTrue(child.isRunning)
+        XCTAssertFalse(AutomationOwnedCommand.permitsUncapturedExit(pid: child.processIdentifier, isRunning: true))
+        for pid in [Int32(0), Int32(-1)] {
+            XCTAssertFalse(AutomationOwnedCommand.permitsUncapturedExit(pid: pid, isRunning: true))
+            XCTAssertFalse(AutomationOwnedCommand.permitsUncapturedExit(pid: pid, isRunning: false))
+        }
+    }
     func testVeryShortCommandsFinishWithoutInventingAnUnreleasedProcess() async throws {
         let command = AutomationOwnedCommand()
         for _ in 0..<30 {
