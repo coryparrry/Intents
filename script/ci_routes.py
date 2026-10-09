@@ -61,7 +61,7 @@ SWIFT_DEPENDENCIES = {
     "Services/XCTestRunInvocationTransport.swift": SCENARIO_EXECUTION_SUITES,
     "Services/XcodeConnectionDiscovery.swift": SCENARIO_EXECUTION_SUITES,
     "Services/XcodeTestExecutor.swift": {
-        "ScenarioContractsTests", "ExecutorSimplificationTests", "XcodeBundleLayoutTests", *PHYSICAL_SCENARIO_SUITES,
+        "ScenarioContractsTests", "ExecutorSimplificationTests", "XcodeBundleLayoutTests", "XcodeSyntheticReadinessTests", *PHYSICAL_SCENARIO_SUITES,
     },
     "Services/ScenarioPersistence+AutomationEvidence.swift": {"ScenarioAutomationEvidenceTests"},
     "Services/ScenarioPhysicalRunnerLease.swift": PHYSICAL_SCENARIO_SUITES,
