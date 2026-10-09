@@ -275,10 +275,10 @@ private enum Fixture {
         XCTAssertEqual(unbounded.get { $0.nativeCalls }, 0)
     }
 
-    func testAlreadyExpiredDeadlineDeniesBeforeNativeAccessOrWrite() {
+    func testAlreadyExpiredDeadlineDeniesBeforeNativeAccessOrWrite() throws {
         let native = Native(), context = makeContext(native)
         let expired = ContinuousClock.now.advanced(by: .seconds(-1))
-        AutomationNativeSecretDeadline.$value.withValue(expired) {
+        try AutomationNativeSecretDeadline.$value.withValue(expired) {
             XCTAssertThrowsError(try context.verify()) {
                 XCTAssertEqual($0 as? AutomationSecretFillSession.Failure, .denied)
             }
