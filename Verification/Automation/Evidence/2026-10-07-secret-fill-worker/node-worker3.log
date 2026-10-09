@@ -1,0 +1,38 @@
+✔ real pinned worker maps capability-gated Mac viewport scroll through policy and fresh area (650.899708ms)
+✔ real pinned gated e2e worker maps exact Mac tap and independent readback through the existing engine (505.021375ms)
+✔ native admission denial cannot dispatch a Mac program capture or input (33.284625ms)
+✔ changed Mac application instance never submits a program input (530.345875ms)
+✔ unsupported fill or scroll is rejected before worker admission and before an earlier tap (0.950375ms)
+✔ uncertain Mac program input cannot retry or produce a completed receipt (628.150625ms)
+✔ goal requiring unsupported fill and a tampered payload fail capability or digest preflight (1.098583ms)
+✔ a full two-minute Mac program preserves a supported per-action capture budget (724.596042ms)
+✔ malformed typed outputs or extra receipt fields cannot become Mac program evidence (3.325ms)
+✔ real pinned worker replaces an approved public binding and observes a separate status (877.296584ms)
+✔ public fill limits preflight before worker admission or an earlier tap (0.488833ms)
+✔ role locators cannot authorize taps, readbacks or unsupported roles (0.524ms)
+✔ owned worker imports only after admission and drains both output pipes (51.663708ms)
+✔ denied worker admission never imports the UI runtime and reaps the child (40.746542ms)
+✔ cancelled suspended admission cannot acknowledge or import a late grant (37.956292ms)
+✔ cancellation after import drains and reaps the running owned child (41.618958ms)
+✔ nonzero worker exit preserves the log and negative operation result (40.240125ms)
+✔ excess worker output fails rather than producing a successful truncated log (37.597083ms)
+✔ pre-cancelled worker cannot start or request native admission (0.79175ms)
+✔ invalid UTF-8 expansion cannot bypass the rendered log bound (36.914833ms)
+✔ split multibyte output preserves exact UTF-8 text (50.600917ms)
+✔ opaque program sends only the exact scoped handle and returns unconfirmed delivery (3.193459ms)
+✔ missing broker and aborted program never dispatch (0.541416ms)
+✔ public text, extra handles, ambiguous declarations and observer input are denied before broker (1.379375ms)
+✔ changed digest, scope, generation and correlated identity are denied (0.386125ms)
+✔ lying, extra or credential-bearing native responses and errors stay sanitized (0.610417ms)
+✔ cancellation retains uncooperative broker work and rejects its late completion (1.94375ms)
+✔ special operation IDs retain own serialized receipts (0.168625ms)
+✔ opaque numeric binding hash matches native lexical order while legacy hash stays unchanged (0.094958ms)
+✔ deadline aborts broker signal and retains its work before rejecting late delivery (125.15275ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4691.477333

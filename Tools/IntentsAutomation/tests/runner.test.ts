@@ -1,0 +1,200 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';import {join} from 'node:path';import {tmpdir} from 'node:os';
+import {runWorker,payloadDigest} from '../src/workerRunner.js';import type {UIBackend} from '../src/deviceSession.js';import type {Segment} from '../src/segment.js';
+import {EngineError} from 'e2e/engine';
+test('real pinned e2e StepExecutor invokes scoped controller and grammar actions without a model account',async()=>{
+ let actions=0,calls=0;const backend:UIBackend={snapshot:async()=>({truncated:false,nodes:[{index:1,ref:'@e1',identifier:actions?'done':'open',role:'button',label:actions?'Done':'Open',hittable:true,enabled:true,visibleToUser:true,rect:{x:0,y:0,width:100,height:50}}],refsGeneration:7,identifiers:{udid:'exact'},appBundleId:'com.example.App'}),
+  perform:async(ref,_action,_context,nodeId)=>{assert.equal(ref,'@e1~s7');assert.ok(nodeId?.startsWith('node-'));actions++;},release:async()=>({released:false,reason:'SDK contract fixture; no hardware claim'})};
+ const segment:Segment={scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'goal',leaseGeneration:1},operationId:'goal-op',payloadDigest:'a'.repeat(64),phase:'setup',bindings:{},timeoutMs:50000,
+  operations:[{id:'goal',kind:'navigateGoal',goal:{id:'goal',instruction:'Open the test endpoint',endpoint:{kind:'testId',value:'done'},maximumCalls:12,maximumActions:30}}]};
+ const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);
+ await runWorker(backend,{id:'exact',platform:'ios',kind:'simulator',bundleId:'com.example.App',bundlePath:null,loginSession:null},segment,
+  await mkdtemp(join(tmpdir(),'intents-controller-contract-')),new AbortController().signal,async request=>{
+   calls++;assert.equal(request.goalId,'goal');assert.ok(request.verbs.includes('tap'));
+   return actions?{kind:'finish'}:{kind:'tap',node:request.nodes.find(n=>n.name==='Open')!.id};
+  });
+ assert.equal(actions,1);assert.equal(calls,2);
+});
+test('real pinned e2e CLI routes actions through adapter and broker',async()=>{
+ let calls=0,actionBudget=0;const backend:UIBackend={snapshot:async()=>({truncated:false,nodes:[{index:1,ref:'@e1',identifier:'done',role:'button',label:'Done',rect:{x:0,y:0,width:100,height:50}}],
+  refsGeneration:7,identifiers:{udid:'exact'},appBundleId:'com.example.App'}),perform:async(ref,_action,context)=>{assert.equal(ref,'@e1~s7');calls++;actionBudget=context.timeoutMs;},release:async()=>({released:false,reason:'not hardware'})};
+ const segment:Segment={scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'s',leaseGeneration:1},operationId:'op',payloadDigest:'a'.repeat(64),
+  phase:'setup',bindings:{},timeoutMs:50000,operations:[{id:'tap',kind:'tap',locator:{kind:'testId',value:'done'}},{id:'endpoint',kind:'assertEndpoint',locator:{kind:'testId',value:'done'}}]};
+ const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);
+ await runWorker(backend,{id:'exact',platform:'ios',kind:'simulator',bundleId:'com.example.App',bundlePath:null,loginSession:null},segment,
+  await mkdtemp(join(tmpdir(),'intents-runner-contract-')),new AbortController().signal);assert.equal(calls,1);assert.ok(actionBudget>49000 && actionBudget<=50000);
+});
+
+test('broker preserves the remaining action budget instead of silently clipping it to 15 seconds',async()=>{
+ const {createBroker,BrokerClient}=await import('../src/segmentBroker.js');
+ let received=0;const backend:UIBackend={snapshot:async()=>({nodes:[],identifiers:{udid:"exact"}}),perform:async(_ref,_action,context)=>{received=context.timeoutMs;},release:async()=>({released:false,reason:'not hardware'})};
+ const broker=await createBroker(backend);
+ try{await new BrokerClient(broker.socket,broker.token).perform('@e1~s1',{kind:'tap'},
+  {runId:'r',attemptId:'a',origin:'test',signal:new AbortController().signal,timeoutMs:50000});
+  assert.ok(received>49000 && received<=50000);
+ }finally{await broker.close();}
+});
+
+test('broker refuses already-aborted actions and removes queued actions on cancellation',async()=>{
+ const {createBroker,BrokerClient}=await import('../src/segmentBroker.js');
+ let started!:()=>void,unblock!:()=>void;const begun=new Promise<void>(r=>{started=r});const blocked=new Promise<void>(r=>{unblock=r});let actions=0;
+ const backend:UIBackend={snapshot:async()=>{started();await blocked;return {nodes:[],identifiers:{udid:'exact'}};},
+  perform:async()=>{actions++;},release:async()=>({released:false,reason:'not hardware'})};
+ const broker=await createBroker(backend);const client=new BrokerClient(broker.socket,broker.token);
+ const context=(signal:AbortSignal)=>({runId:'r',attemptId:'a',origin:'test' as const,signal,timeoutMs:50000});
+ try{
+  const aborted=new AbortController();aborted.abort();await assert.rejects(client.perform('@e1~s1',{kind:'tap'},context(aborted.signal)),/cancelled/);
+  const first=client.snapshot(context(new AbortController().signal));await begun;
+  const queued=new AbortController();const action=client.perform('@e1~s1',{kind:'tap'},context(queued.signal));
+  // Allow the real socket to enqueue behind the blocked snapshot before aborting.
+  await new Promise(r=>setTimeout(r,30));queued.abort();await assert.rejects(action,/cancelled/);
+  await new Promise(r=>setTimeout(r,30));unblock();await first;
+ }finally{unblock();await broker.close();}
+ assert.equal(actions,0);
+});
+
+test('public SDK viewport scroll is normalized without losing its action policy',async()=>{
+ let actions=0;
+ const backend:UIBackend={snapshot:async()=>({truncated:false,nodes:[{index:1,ref:'@e1',identifier:actions?'done':'open',role:'button',label:actions?'Done':'Open',hittable:true,enabled:true,visibleToUser:true,rect:{x:0,y:0,width:100,height:50}}],refsGeneration:7,identifiers:{udid:'exact'},appBundleId:'com.example.App'}),
+  perform:async(ref,action,_context,nodeId)=>{assert.equal(ref,'root');assert.equal(nodeId,'root');assert.deepEqual(action,{kind:'swipe',direction:'down'});actions++;},release:async()=>({released:false,reason:'SDK contract fixture; no hardware claim'})};
+ const segment:Segment={scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'goal',leaseGeneration:1},operationId:'scroll-op',payloadDigest:'a'.repeat(64),phase:'setup',bindings:{},timeoutMs:50000,
+  operations:[{id:'goal',kind:'navigateGoal',goal:{id:'goal',instruction:'Scroll to the test endpoint',endpoint:{kind:'testId',value:'done'},maximumCalls:12,maximumActions:30}}]};
+ const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);
+ await runWorker(backend,{id:'exact',platform:'ios',kind:'simulator',bundleId:'com.example.App',bundlePath:null,loginSession:null},segment,
+  await mkdtemp(join(tmpdir(),'intents-scroll-contract-')),new AbortController().signal,async()=>actions?{kind:'finish'}:{kind:'scroll',direction:'down'});
+ assert.equal(actions,1);
+});
+test('a pre-spawn setup failure closes the broker and lets its process exit',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const root=await mkdtemp(join(tmpdir(),'intents-worker-setup-failure-'));await mkdir(join(root,'case'));await mkdir(join(root,'case','e2e.config.mjs'));
+ const runnerURL=new URL('../src/workerRunner.js',import.meta.url).href;
+ const script=`import {runWorker,payloadDigest} from ${JSON.stringify(runnerURL)};
+ import {readdir} from 'node:fs/promises';import assert from 'node:assert/strict';
+ const body={scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'s',leaseGeneration:1},operationId:'op',phase:'setup',bindings:{},timeoutMs:50000,operations:[]};
+ await assert.rejects(runWorker({}, {}, {...body,payloadDigest:payloadDigest(body)},process.env.TEST_ROOT+'/case',new AbortController().signal));
+ assert.equal((await readdir(process.env.TEST_ROOT)).some(n=>n.startsWith('ia-')),false);`;
+ const child=spawnSync(process.execPath,['--input-type=module','-e',script],{env:{...process.env,TMPDIR:root,TEST_ROOT:root},timeout:10000,encoding:'utf8'});
+ assert.ifError(child.error);assert.equal(child.status,0,child.stderr);
+});
+
+test('real pinned runner obtains fresh app-bound property readback without invoking a model',async()=>{
+ let snapshots=0;const deadlines:number[]=[];const backend:UIBackend={snapshot:async context=>{deadlines.push(context!.timeoutMs);snapshots++;return {truncated:false,nodes:[{index:1,ref:'@e1',identifier:'result',label:'Result',value:'actual saved text',checked:false,hittable:true,enabled:true,visibleToUser:true}],refsGeneration:snapshots,identifiers:{udid:'exact'},appBundleId:'com.example.App'};},
+  perform:async()=>{throw new Error('Readback must not mutate')},release:async()=>({released:false,reason:'SDK contract fixture; no hardware claim'})};
+ const segment:Segment={scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'observe',leaseGeneration:1},operationId:'readback-op',payloadDigest:'a'.repeat(64),phase:'observe',bindings:{},timeoutMs:50000,
+  operations:[{id:'actual',kind:'observeProperty',locator:{kind:'testId',value:'result'},property:'value'},{id:'checked',kind:'observeProperty',locator:{kind:'testId',value:'result'},property:'checked'}]};
+ const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);
+ const receipt=await runWorker(backend,{id:'exact',platform:'ios',kind:'simulator',bundleId:'com.example.App',bundlePath:null,loginSession:null},segment,
+  await mkdtemp(join(tmpdir(),'intents-readback-contract-')),new AbortController().signal) as {outputs:Record<string,{complete:boolean;nodes:{value:string;checked:boolean}[]}>};
+ assert.ok(deadlines.every(value=>value>15000 && value<=50000));assert.ok(snapshots>=2);assert.equal(receipt.outputs.actual!.complete,true);assert.equal(receipt.outputs.actual!.nodes[0]!.value,'actual saved text');assert.equal(receipt.outputs.checked!.nodes[0]!.checked,false);
+});
+
+ test('controller retains exact unique identified control across index and geometry churn',async()=>{
+ let changed=false,actions=0,approved:string|undefined,calls=0;
+ const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:7,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:changed?4:1,ref:'@e1',identifier:'task.title',kind:'text-field',type:'TextField',hittable:true,enabled:true,visibleToUser:true,rect:{x:changed?20:0,y:0,width:100,height:50}},
+  {index:5,ref:'@e5',identifier:'done',role:'button',label:'Done',hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async(ref,action,_context,nodeId)=>{assert.equal(nodeId,approved);assert.equal(ref,'@e1~s7');assert.deepEqual(action,{kind:'fill',value:'fresh input',sensitive:false});actions++;},
+  release:async()=>({released:false,reason:'contract fixture'})};
+ const segment:Segment={scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'goal',leaseGeneration:1},operationId:'exact-fill-op',payloadDigest:'a'.repeat(64),phase:'setup',bindings:{approved:'fresh input'},timeoutMs:50000,
+  operations:[{id:'goal',kind:'navigateGoal',goal:{id:'goal',instruction:'Fill the approved title field',endpoint:{kind:'testId',value:'done'},maximumCalls:12,maximumActions:30,minimumBindingUses:{approved:1}}}]};
+ const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);
+ await runWorker(backend,{id:'exact',platform:'ios',kind:'simulator',bundleId:'com.example.App',bundlePath:null,loginSession:null},segment,
+  await mkdtemp(join(tmpdir(),'intents-exact-fill-contract-')),new AbortController().signal,async request=>{
+   calls++;if(actions)return {kind:'finish'};approved=request.nodes.find(n=>n.testId==='task.title')!.id;changed=true;
+   return {kind:'fill',node:approved,textBinding:'approved'};
+  });
+ assert.equal(actions,1);assert.equal(calls,2);
+});
+ test('controller rejects generic relocation to a different anonymous same-role node',async()=>{
+ let changed=false,actions=0;
+ const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:7,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:changed?4:1,ref:changed?'@e4':'@e1',kind:'text-field',type:'TextField',hittable:true,enabled:true,visibleToUser:true,rect:{x:changed?20:0,y:0,width:100,height:50}}]}),
+  perform:async()=>{actions++;throw new Error('Replacement must not reach policy or device');},release:async()=>({released:false,reason:'contract fixture'})};
+ const segment:Segment={scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'goal',leaseGeneration:1},operationId:'anonymous-fill-op',payloadDigest:'a'.repeat(64),phase:'setup',bindings:{approved:'fresh input'},timeoutMs:50000,
+  operations:[{id:'goal',kind:'navigateGoal',goal:{id:'goal',instruction:'Fill this approved field',endpoint:{kind:'testId',value:'done'},maximumCalls:12,maximumActions:30,minimumBindingUses:{approved:1}}}]};
+ const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);
+ await assert.rejects(runWorker(backend,{id:'exact',platform:'ios',kind:'simulator',bundleId:'com.example.App',bundlePath:null,loginSession:null},segment,
+  await mkdtemp(join(tmpdir(),'intents-anonymous-fill-contract-')),new AbortController().signal,async request=>{
+   changed=true;return {kind:'fill',node:request.nodes.find(n=>n.role==='text-field')!.id,textBinding:'approved'};
+  }));
+ assert.equal(actions,0);
+});
+
+ test('pinned private targeted action patch respects action and remaining step deadlines',async()=>{
+ const {StepAccounting}=await import(new URL('./agent/step-accounting.js',import.meta.resolve('e2e')).href);
+ for(const [configured,remaining,expected] of [[120000,50000,50000],[10000,50000,10000],[120000,8000,8000],[200000,200000,120000]]){
+  const signal=new AbortController().signal;const runtime={config:{actionTimeout:configured},engine:{signal,deadline:()=>({remaining:()=>remaining}),
+   operation:(timeoutMs:number)=>({signal,timeoutMs,runId:'r',attemptId:'a',origin:'test'})}};
+  const accounting=new StepAccounting(runtime,{api:'agent.act',timeoutMs:remaining,maxActions:30,maxModelCalls:12,contextBytes:0});
+  assert.equal(accounting.actionOperation().timeoutMs,expected);
+ }
+});
+ test('broker retains mutation uncertainty on a submitted action timeout',async()=>{
+ const {createBroker,BrokerClient}=await import('../src/segmentBroker.js');let actions=0;
+ const backend:UIBackend={snapshot:async()=>({nodes:[],identifiers:{udid:'exact'}}),
+  perform:async()=>{actions++;await new Promise(r=>setTimeout(r,100));},release:async()=>({released:false,reason:'contract'})};
+ const broker=await createBroker(backend);
+ try{await assert.rejects(new BrokerClient(broker.socket,broker.token).perform('@e1~s1',{kind:'tap'},
+  {runId:'r',attemptId:'a',origin:'test',signal:new AbortController().signal,timeoutMs:50}),{code:'ACTION_MAY_HAVE_COMMITTED',retryable:false});}
+ finally{await broker.close();}
+ assert.equal(actions,1);
+});
+ test('a real pinned controller action can complete beyond the upstream fifteen-second ceiling',async()=>{
+ let actions=0,approved:string|undefined,remaining=0;
+ const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:7,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:1,ref:'@e1',identifier:actions?'done':'open',role:'button',label:actions?'Done':'Open',hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async(_ref,_action,context,nodeId)=>{assert.equal(nodeId,approved);remaining=context.timeoutMs;await new Promise(r=>setTimeout(r,16050));actions++;},
+  release:async()=>({released:false,reason:'contract fixture'})};
+ const segment:Segment={scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'goal',leaseGeneration:1},operationId:'long-action-op',payloadDigest:'a'.repeat(64),phase:'setup',bindings:{},timeoutMs:50000,
+  operations:[{id:'goal',kind:'navigateGoal',goal:{id:'goal',instruction:'Open the approved endpoint',endpoint:{kind:'testId',value:'done'},maximumCalls:12,maximumActions:30}}]};
+ const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);
+ await runWorker(backend,{id:'exact',platform:'ios',kind:'simulator',bundleId:'com.example.App',bundlePath:null,loginSession:null},segment,
+  await mkdtemp(join(tmpdir(),'intents-long-action-contract-')),new AbortController().signal,async request=>{
+   if(actions)return {kind:'finish'};approved=request.nodes.find(n=>n.testId==='open')!.id;return {kind:'tap',node:approved};
+  });
+ assert.equal(actions,1);assert.ok(remaining>16050 && remaining<=50000);
+});
+
+ test('real runner retains explicit backend mutation uncertainty across the broker without retry',async()=>{
+ let actions=0;const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:7,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:1,ref:'@e1',identifier:'open',role:'button',label:'Open',hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async()=>{actions++;throw new EngineError('ACTION_MAY_HAVE_COMMITTED','unresolved backend',{retryable:false});},release:async()=>({released:false,reason:'contract fixture'})};
+ const segment:Segment={scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'goal',leaseGeneration:1},operationId:'uncertain-action-op',payloadDigest:'a'.repeat(64),phase:'setup',bindings:{},timeoutMs:50000,
+  operations:[{id:'goal',kind:'navigateGoal',goal:{id:'goal',instruction:'Open the approved endpoint',endpoint:{kind:'testId',value:'done'},maximumCalls:12,maximumActions:30}}]};
+ const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);const root=await mkdtemp(join(tmpdir(),'intents-uncertain-action-contract-'));
+ await assert.rejects(runWorker(backend,{id:'exact',platform:'ios',kind:'simulator',bundleId:'com.example.App',bundlePath:null,loginSession:null},segment,root,new AbortController().signal,
+  async request=>({kind:'tap',node:request.nodes.find(n=>n.testId==='open')!.id})));
+ assert.equal(actions,1);const {readFile}=await import('node:fs/promises');const log=await readFile(join(root,'worker.log'),'utf8');
+ assert.match(log,/"code": "ACTION_MAY_HAVE_COMMITTED"/);
+});
+
+ test('submitted actions cannot succeed from incomplete or contradictory broker responses',async()=>{
+ const {createServer}=await import('node:net');const {BrokerClient}=await import('../src/segmentBroker.js');
+ for(const response of [{},{result:'unexpected'},{result:null,error:{code:'ENGINE_FAILURE',message:'failure'}}]){
+  const root=await mkdtemp(join(tmpdir(),'ia-malformed-'));const socket=join(root,'b.sock');
+  const server=createServer(client=>{client.on('error',()=>{});client.once('data',chunk=>{const message=JSON.parse(chunk.toString());client.end(JSON.stringify({id:message.id,...response})+'\n');});});
+  await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(socket,resolve);});
+  try{await assert.rejects(new BrokerClient(socket,'a'.repeat(64)).perform('@e1~s1',{kind:'tap'},
+   {runId:'r',attemptId:'a',origin:'test',signal:new AbortController().signal,timeoutMs:1000}),{code:'ACTION_MAY_HAVE_COMMITTED',retryable:false});}
+  finally{await new Promise<void>(r=>server.close(()=>r()));}
+ }
+});
+
+test('real pinned runner preserves prototype-name and numeric operation receipts in a v2 segment',async()=>{
+ const {segmentPayloadDigest}=await import('../src/payloadDigest.js');let snapshots=0;
+ const backend:UIBackend={snapshot:async()=>({truncated:false,nodes:[{index:1,ref:'@e1',identifier:'result',label:'Result',value:'synthetic saved text',hittable:true,enabled:true,visibleToUser:true}],refsGeneration:++snapshots,identifiers:{udid:'exact'},appBundleId:'com.example.App'}),
+  perform:async()=>{throw new Error('Read-only fixture must not mutate');},release:async()=>({released:false,reason:'SDK contract fixture'})};
+ const body={scope:{protocolVersion:1 as const,runId:'r',attemptId:'a',segmentId:'observe',leaseGeneration:1},operationId:'reserved-op',digestVersion:2 as const,
+  phase:'observe' as const,bindings:{'2':'two','10':'ten'},timeoutMs:50000,
+  operations:[{id:'__proto__',kind:'observeProperty' as const,locator:{kind:'testId' as const,value:'result'},property:'value' as const},
+   ...['constructor','2','10'].map(id=>({id,kind:'locate' as const,locator:{kind:'testId' as const,value:'result'}}))]};
+ const segment:Segment={...body,payloadDigest:segmentPayloadDigest(body)};
+ const root=await mkdtemp(join(tmpdir(),'intents-special-receipt-'));
+ try{
+  const receipt=await runWorker(backend,{id:'exact',platform:'ios',kind:'simulator',bundleId:'com.example.App',bundlePath:null,loginSession:null},segment,root,new AbortController().signal) as {outputs:Record<string,unknown>};
+  const saved=JSON.parse(await readFile(join(root,'receipt.json'),'utf8')) as typeof receipt;
+  assert.deepEqual(Object.keys(saved.outputs).sort(),['__proto__','constructor','2','10'].sort());
+  assert.equal(Object.hasOwn(receipt.outputs,'__proto__'),true);
+  assert.equal((saved.outputs.__proto__ as {nodes:{value:string}[]}).nodes[0]!.value,'synthetic saved text');
+  for(const id of ['constructor','2','10'])assert.equal(saved.outputs[id],1);
+ }finally{await rm(root,{recursive:true,force:true});}
+});

@@ -1,0 +1,45 @@
+{
+  "slice": "input-probe-fixture-1",
+  "date": "2026-10-08",
+  "acceptance": "An authored String fixture builds the dedicated no-dispatch SDK host; optional test-only calibration remains behind full current-UID admission and throwing authored-source checks.",
+  "implementation": {
+    "fixture": "Known minimal Mac project and one required String parameter; input fixture perform deliberately throws. Existing no-parameter/no-op host fixture source remains byte-identical.",
+    "admission": "Live opt-in requires complete current-UID inventory before writing, building or launching; exact current GUI identity and independent production subject/runner absence checks.",
+    "sourceBinding": "Exact two original authored files and manifest hashes, frozen Swift bytes, singleton explicit selected Swift graph input with exact owner/hash/target/project and manifest/catalog digests; trusted generated-host PBX expansion allowed.",
+    "execution": "Separate fixed-sample plan, consent, system lease, internal calibration owner and artifacts; no business invocation, capability profile or customer route.",
+    "evidence": "Fresh canonical private directory; live evidence always retained; optional existing parent retains build-only outputs. Default temporary build-only outputs are owned and cleaned."
+  },
+  "verification": {
+    "regression": "80 checks passed, 1 build/live opt-in skipped; 75 core registered including 1 skip plus 6 host contracts.",
+    "command": "swift test --jobs 2 --filter 'AutomationMacHostGeneratorTests|AutomationMacInputProbeFixtureTests|InputAdapterProbeContractTests|AutomationPrivateMacAppleRouteDriverTests|AutomationMacProcessLineageTests'",
+    "actualBuildOnly": "4 checks passed; authored String subject and dedicated SDK host preparation in14.314seconds; no app, probe or business intent runtime launched.",
+    "buildOptIns": [
+      "INTENTS_MAC_INPUT_PROBE_FIXTURE_BUILD=1",
+      "INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT=<existing owned output parent>"
+    ],
+    "review": "Two disjoint Sol lanes clear after replacing nonfatal assertions with throwing pre-launch guards and binding consumed authored source.",
+    "repairs": "Extracted fixture return contract and canonical temp paths fixed; exact original PBX validation retained while allowing generated-host project rewrite; old fixture source semantics restored.",
+    "diffCheck": "git diff --check passed.",
+    "applicationBuild": "Not repeated; this slice changes only test fixtures and test code. Prior app build passed25.132seconds/zero errors and workspace closed.",
+    "diagnostics": "Ignored Tools/IntentsAutomation/.runtime/input-probe-fixture-1/; accepted prepared artifact suffix intents-input-fixture-18D23D7E-9A27-428C-A8C3-AE64B85ECA48/prepare"
+  },
+  "builtFixture": {
+    "bundleID": "com.intents.fixture.mac-host",
+    "platform": "macos",
+    "targetKind": "nativeMac",
+    "subjectSHA256": "75cfa128709e79b0a1a1f97451ee7d091be4a86bb638a1f1829661d24824df00",
+    "hostSHA256": "dafbbf768b4fb32977c4551a177081a5741bcc25858e7250040d5e482f077e22",
+    "xctestrunSHA256": "0ad297faaa9474aab070309e5b4100994d5718980bcf25d88cee06f33b6fd2e0",
+    "templateSHA256": "61aaec2ea7a4a9ec77e6e39215841e8ec65f58aa66e27d4223de4737d0406e2e"
+  },
+  "sourceSHA256": {
+    "Tests/IntentsAutomationCoreTests/AutomationMacInputProbeFixture.swift": "4a6a2edf95845cdabd2968628e36e065359f48b655b608a2ea3cc5186fef4992",
+    "Tests/IntentsAutomationCoreTests/AutomationMacInputProbeFixtureTests.swift": "8fed419c4415984018b0f14b0f1513905fc41d8624cf7720bb0b780cd9c60d50",
+    "Tests/IntentsAutomationCoreTests/AutomationMacHostGeneratorTests.swift": "a9b3501da0415883c76bba2cc2c57dc293453cc3da097d0ed0649961c51a870f"
+  },
+  "limits": [
+    "Live mode was never enabled; known current-UID executable-path failure remains unresolved. No unchanged census retry or foreign process cleanup.",
+    "A future successful String setter/readback would remain calibration-only; runner absence is not complete XCTest child-closure proof or generic codec availability.",
+    "No native UI or physical device qualification; full M0-M6 remains incomplete. No push, publication or release."
+  ]
+}

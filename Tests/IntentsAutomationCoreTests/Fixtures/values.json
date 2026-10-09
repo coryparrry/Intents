@@ -1,0 +1,64 @@
+[
+  {
+    "kind": "text",
+    "value": "a\u2600\ufe0f"
+  },
+  {
+    "kind": "bool",
+    "value": true
+  },
+  {
+    "kind": "integer",
+    "value": "9007199254740993"
+  },
+  {
+    "kind": "decimal",
+    "value": "123456789.123456789"
+  },
+  {
+    "kind": "date",
+    "value": "2026-10-05T21:00:00Z",
+    "timeZone": "Europe/London"
+  },
+  {
+    "kind": "enum",
+    "typeId": "Priority",
+    "value": "high"
+  },
+  {
+    "kind": "entity",
+    "typeId": "Task",
+    "value": "app-owned-id"
+  },
+  {
+    "kind": "artifact",
+    "value": "snapshot-1",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+    "kind": "array",
+    "value": [
+      {
+        "kind": "null"
+      },
+      {
+        "kind": "omission"
+      }
+    ]
+  },
+  {
+    "kind": "object",
+    "value": {
+      "nested": {
+        "kind": "integer",
+        "value": "-4"
+      }
+    }
+  },
+  {
+    "kind": "null"
+  },
+  {
+    "kind": "omission"
+  }
+]

@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:03:28.625676+00:00",
+  "scope": "Optional same-name protected record identified by existing developer-approved owner/list text property",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "checks": {
+    "tests132": {
+      "freshPlanner": 10,
+      "nativeStore": 37,
+      "freshFixture": 11,
+      "failures": 0
+    },
+    "nativeBuild25": "BUILD SUCCEEDED",
+    "probeBuild19": "passed",
+    "review": "fresh Sol6.1 protected scope clear; probe review pending"
+  },
+  "claims": [
+    "Selected record action binds unique actual query ID",
+    "Protected observer binds its own original query ID",
+    "Both IDs reserved by live freshness fence",
+    "Name is identical within each attempt; real owner/list property distinguishes records"
+  ],
+  "limits": [
+    "Native protected controls not visually qualified due UI-control service crash",
+    "Actual running-engine qualification pending",
+    "Qualified recipe integration remains incomplete"
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFreshEntityPlanner.swift",
+      "sha256": "e24c3314521c0dd20319479dcd5f6d653dcefe22b9e3200e8a7ec7b5eece2093",
+      "bytes": 10660
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift",
+      "sha256": "49f1edbc6138e952dae49c4f4bf93adcdcd0b38a3cd8592826733270a6870386",
+      "bytes": 62876
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Stores/AutomationNativeRunPlanning.swift",
+      "sha256": "38728ad8e998d0923e574d008f07e9714d752287579be8af10a6fab2cf4e4b00",
+      "bytes": 10592
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift",
+      "sha256": "99777c8aa9912bbe014137f1f0a53204cdf0dc401b8ab589e959e9ed3e8535af",
+      "bytes": 37980
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationFreshEntityPlannerTests.swift",
+      "sha256": "0ec4df95f8e9de1c8ec1a9ba8ceba9b3c26a034c644c46a4ec159092da90adb0",
+      "bytes": 19379
+    },
+    {
+      "path": "Tests/IntentsAutomationNativeUITests/InstalledUIStoreTests.swift",
+      "sha256": "b48a575c1b36ad270510d51d19ac4dfaa2d853089ddf6ca7724c3c2cb6ab0442",
+      "bytes": 64300
+    },
+    {
+      "path": "Tools/IntentsAutomationApplicationProbe/ApplicationProbe.swift",
+      "sha256": "f66b8d72d8f189c9283d76cc85001f4b0c9e5b047e2208f0a05c4e7ae37173ee",
+      "bytes": 13349
+    }
+  ],
+  "logs": [
+    {
+      "path": "/private/tmp/intents-automation-tests132.log",
+      "sha256": "7a5e34b4beb7a38ce6105de16a53601d6eb242ea7d13620b5a3fd390938a324e",
+      "bytes": 30294
+    },
+    {
+      "path": "/private/tmp/intents-automation-native25.log",
+      "sha256": "3017609756ec6a223fcef8a91a09d59594ab9be8d15e35f06aa22ea39daf1f0c",
+      "bytes": 523430
+    },
+    {
+      "path": "/private/tmp/intents-automation-probe-build19.log",
+      "sha256": "e303705bc3beb4a4a892412a3b535867f1fb2a3030c2f696f1f82c082847eeaf",
+      "bytes": 7472
+    }
+  ]
+}

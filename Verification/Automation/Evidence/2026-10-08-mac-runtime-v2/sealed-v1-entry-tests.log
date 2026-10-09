@@ -1,0 +1,15 @@
+✔ sealed private program entry with real SDK/e2e and synthetic native channel: fill-valid (2930.773042ms)
+✔ sealed private program entry with real SDK/e2e and synthetic native channel: fill-denied (2656.367ms)
+✔ sealed private program entry with real SDK/e2e and synthetic native channel: fill-uncertain (2663.173667ms)
+✔ sealed private program entry with real SDK/e2e and synthetic native channel: scroll-denied (2663.079958ms)
+✔ sealed private program entry with real SDK/e2e and synthetic native channel: invalid-literal (2227.494667ms)
+✔ sealed private program entry with real SDK/e2e and synthetic native channel: tap-valid (2688.73525ms)
+✔ sealed private program entry with real SDK/e2e and synthetic native channel: helper-downgrade (96.87025ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 16004.01325

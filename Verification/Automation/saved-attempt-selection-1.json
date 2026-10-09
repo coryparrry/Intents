@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "date": "2026-10-08",
+  "scope": "explicit saved attempt selection for inspection, Reproduce and Check fix",
+  "behavior": [
+    "Multiple attempts require an explicit choice; random attempt ID sorting is never chronology",
+    "One attempt selects automatically; empty draft clears prior result/evidence",
+    "Changing the case or attempt invalidates queued approvals before asynchronous reads",
+    "The selected report is validated against the frozen case and reloaded by existing exact preflight",
+    "Superseded, closed or cancelled loads cannot publish after reader or evidence import suspension"
+  ],
+  "verification": {
+    "command": "swift test --jobs 2 --filter InstalledUIStoreTests|MacWorkflowStoreTests|MacFreshDraftStoreTests",
+    "tests": 60,
+    "failures": 0,
+    "appBuild": "Official Xcode BuildProject, FoundationEvals / My Mac: passed, 9.674 seconds, no errors",
+    "reviews": [
+      "Sol integrity/oracle compatibility lane: clear",
+      "Sol asynchronous selection lane: clear after evidence-import cancellation fix"
+    ]
+  },
+  "failuresPreserved": [
+    "Initial extraction compile failed on private closing field; replaced access with scoped canLoadSavedAttemptSelection",
+    "Review found cancellation during evidence import; publication fenced, final cancellation cleanup and held-importer regression passed"
+  ],
+  "unverified": [
+    "Native UI interaction and actual replay/comparison are unqualified; no unchanged UI/controller retry",
+    "Tests use recorded synthetic receipts; no live Mac or simulator assertion evidence"
+  ],
+  "runtime": "Tools/IntentsAutomation/.runtime/saved-attempt-selection-1"
+}

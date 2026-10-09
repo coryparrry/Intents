@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "evidenceScope": "injected-source-contract",
+  "customerRuntimeEnabled": false,
+  "hardwareQualified": false,
+  "sdkTransportWired": false,
+  "nativeReleaseVerifierQualified": false,
+  "helperInvoked": false,
+  "checks": {
+    "strictTypeScript": "build4 passed",
+    "focusedMacTests": 15,
+    "allSidecarTests": 101,
+    "failures": 0,
+    "freshReview": "Sol28 tuple-retention finding fixed; Sol29 capture clear; Sol30 acquire recheck clear",
+    "scopedWhitespace": "passed"
+  },
+  "boundary": "All target operations use injected providers. Customer DeviceSession Mac fence remains before allocation and activation; no real SDK transport, Mac application, helper or device used. Generic e2e tests use local socket fixtures.",
+  "preservedFailures": [
+    "TS1/TS2 test fixture type errors; fixed",
+    "tests1 emitted build ran after failed TS2, detected generation-ref contract mismatch; fixed and build/test execution gated thereafter",
+    "allTests1 denied Unix fixture socket listen by sandbox; rerun allTests2 passed"
+  ],
+  "files": [
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/src/macOwnedSession.ts",
+      "SHA256": "2aaad89bb59ba0e410957dd630d09754ebb7305f53fe20339b34e7b95bc23a10"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/macOwnedSession.test.ts",
+      "SHA256": "a55a61d2ac55526d0cf4936495a015c5a055950b580f2247f9cbd11ba4c0e2a6"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/src/e2e/semanticTree.ts",
+      "SHA256": "05f73e474222075d110afddc5e5bcb325ab4d14653d659b1b6468bbf27de1b26"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/src/deviceSession.ts",
+      "SHA256": "1b9a62ce3bd48db54c1a9679fbc7ba5b539dbd343c80dbd40fd20feaf0e49910"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/mac-owned-sidecar-build1.log",
+      "SHA256": "1c6d64ab846564148823aa2d99f9a188a2a03e5e6328b9c11d3c1453394414e1"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/mac-owned-sidecar-build2.log",
+      "SHA256": "829b0b839d16d5c0e48ce082f9dac2445769aefa1652cc270751e96563f217d6"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/mac-owned-sidecar-build4.log",
+      "SHA256": "fb71c85ee45189f1c61f0b5f02dd8ec0879662aca10892adc7258b046e6d3eb5"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/mac-owned-session-tests1.log",
+      "SHA256": "dda7515ae30191a074936f315892ddd55f0f71df718e5dba4988604ed4385ede"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/mac-owned-session-tests3.log",
+      "SHA256": "40763f13eed9255fa58bcc0881af22b4f3d1102f2742edcc73b7c75837b544db"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/mac-owned-sidecar-all-tests1.log",
+      "SHA256": "e068863b85cbbdefeaa9be4a0c77943d8c61d7734079868b801ff895e58c82bf"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/mac-owned-sidecar-all-tests2.log",
+      "SHA256": "d0888d509038aa29b2869a1abdc7f9b7d3966319becf7536cf5268bae28d768b"
+    }
+  ]
+}

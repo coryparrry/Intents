@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T01:19:54.038145+00:00",
+  "scope": "Actual grounded native controller before typed-fill whitelist",
+  "attemptID": "fresh-owner-grounded1",
+  "runtimeBundle": "/private/tmp/IntentsAutomationNativeWorkflowQualification10.app",
+  "probe": "probe30",
+  "fullPlanComplete": false,
+  "fixtureSetupQualified": false,
+  "completeUIReceipt": false,
+  "independentQuery": false,
+  "subjectDispatched": false,
+  "resourcesReleased": true,
+  "campaignsEmpty": true,
+  "generation": 123,
+  "limits": [
+    "Model selected protectedContext into same name input after approvedText; no completed setup or learned token",
+    "Short input avoids the separately reviewed 1024-unit prefix clipping defect",
+    "No same-attempt mutation retry on uncertainty"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded1/report.json",
+      "sha256": "8def1923d5723dc8464c528a67da27c1a680fe137e407b85e87fccbe283d34f9"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded1/journal.json",
+      "sha256": "b56e453abee89aab26682c6e0ca23a7b6d50d30d2e4d3744c7393607988d54c7"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded1/ui/control-122/runs/fresh-owner-grounded-run1/fresh-owner-grounded1:fixture.create/e2e/report.json",
+      "sha256": "1215f23aa4eb0122fe4ebee89a06594fcbe0a0f6e36b4533de511e72f4db9c70"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded1/ui/control-122/runs/fresh-owner-grounded-run1/fresh-owner-grounded1:fixture.create/worker.log",
+      "sha256": "1215f23aa4eb0122fe4ebee89a06594fcbe0a0f6e36b4533de511e72f4db9c70"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded1/artifacts/controller-122-1.json",
+      "sha256": "9384095108982cd273224f495ad8bc6f0173b44735aab00f846fce0baab0dc2f"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded1/artifacts/controller-122-2.json",
+      "sha256": "28a6e365d3c0ed103982ee31b68672bb211def288c2432e3ef035f36ce5dfc60"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded1/artifacts/controller-122-3.json",
+      "sha256": "1167c2fec86d42267cc8cb04e892b8045a238c7caffd3f5349e69b20e988c2dc"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded1/artifacts/controller-122-4.json",
+      "sha256": "d3a6d10da83da72a1670b127cd75c0cb91fa3bfe399264095a3d297800a46f14"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded1/artifacts/controller-122-5.json",
+      "sha256": "34d0f0d830d587be46dd3f33fb0d8ef0043d2ae9498ed93a9a31d12b84e889b5"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded1/artifacts/sidecar-release-122-1.json",
+      "sha256": "cdbffeaaa54ce274deb62972d4bfcf80c27f054349a3c7e220acba8f7d1f59a2"
+    }
+  ]
+}

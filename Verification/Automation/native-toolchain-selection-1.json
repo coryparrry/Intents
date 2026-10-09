@@ -1,0 +1,87 @@
+{
+  "id": "native-toolchain-selection-1",
+  "date": "2026-10-08",
+  "behavior": "The native store captures DEVELOPER_DIR once and passes the same directory to preparation, simulator inventory, normal execution, search, reproduction and comparison. The existing default remains Xcode.app; Xcode bundle overrides normalize to Contents/Developer.",
+  "sources": {
+    "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift": "e4ec607ebb4059c01407beed3349fa30096982db011b1c85822e31036fd794f1",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativePreparation.swift": "3f1a8dfab41cdefe3712a056ea5bc3c4aa197d10b5afdafda27b7f0a66073bfd",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFailureSearch.swift": "d41766978e883198502ac18078ed7a9ba801bee58818f0737d91f9e274fdfdbb",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFixComparison.swift": "58e37e6b0107cab10c8d4ab05b52d13ac6e48bc5ecae06dbf847088c612c77ab",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIReproduction.swift": "7401adb6c2e004e6138f930160f4a349a1383ae06819cb7635f9572de6b35c43",
+    "Tests/IntentsAutomationNativeUITests/SourcePreparationStoreTests.swift": "aa7a427c98c35818d0555895e4c41360d18b6256ded6d140af26b44ce2b8141f",
+    "Tests/IntentsAutomationNativeUITests/MacSavedProposalTests.swift": "f669bfb8caef23a6a146285b1f21c7c80cdeb2a59a0ea4059f79a98899373288"
+  },
+  "unitTests": {
+    "command": "swift test --jobs 1 --filter IntentsAutomationNativeUITests",
+    "registered": 112,
+    "passed": 112,
+    "failed": 0,
+    "log": "Tools/IntentsAutomation/.runtime/native-toolchain-selection-1/intents-native-toolchain-tests.log"
+  },
+  "nativeBuild": {
+    "status": "passed",
+    "compilerDeveloperDirectory": "/Applications/Xcode.app/Contents/Developer",
+    "product": "/private/tmp/intents-v3-final-products/Intents.app",
+    "executableSHA256": "e7ce86c64a5323a1e5e695efabd678077ff4c2f6d7080d6b3694fff7ec14b8ce",
+    "codesignVerify": "passed"
+  },
+  "nativeInspection": {
+    "launchDeveloperDirectory": "/Applications/Xcode-27.2.0-Beta.2.app/Contents/Developer",
+    "storage": "/private/tmp/intents-native-toolchain-ui",
+    "observed": "Overview and App automation sidebar entry via accessibility; selected navigation failed when the native control pipe closed. Same failure after CUA reset. Process stayed alive and task-launched PID5519 was closed.",
+    "flowPassed": false
+  },
+  "compatibleToolchainUITests": {
+    "status": "passed",
+    "developerDirectory": "/Applications/Xcode-27.2.0-Beta.2.app/Contents/Developer",
+    "build": "app, app tests and UI runner compiled and linked",
+    "requestedTests": [
+      "FoundationEvalsUITests/AppAutomationUITests/testEmptyAutomationAndPickerCancellationRemainReadOnly",
+      "FoundationEvalsUITests/AppAutomationUITests/testSourceSelectionSurvivesNavigationWithoutBuildingOrRunning"
+    ],
+    "testBodiesExecuted": 2,
+    "exitCode": 0,
+    "resultBundle": "/private/tmp/intents-native272-ui-retry1.xcresult",
+    "log": "Tools/IntentsAutomation/.runtime/native-toolchain-selection-1/intents-native272-ui-retry1.log",
+    "remainingTaskOwnedProcesses": [],
+    "productsSHA256": {
+      "/private/tmp/intents-native272-products/Intents.app/Contents/MacOS/FoundationEvals": "cc5c65d2d35e9d3343f181020aa03a4d7c08a74ca7ef34089a63d708fca02ab7",
+      "/private/tmp/intents-native272-products/Intents.app/Contents/MacOS/FoundationEvals.debug.dylib": "87cd2ba374bfae5dff93e83793cbf7fafddccdc1f158719fedd2cf9396174a5f",
+      "/private/tmp/intents-native272-products/FoundationEvalsUITests-Runner.app/Contents/PlugIns/FoundationEvalsUITests.xctest/Contents/MacOS/FoundationEvalsUITests": "b6e18c4322ca4f2a6206688b54a7fa89557f2127aee655df4a6056a146871f23"
+    },
+    "passed": 2,
+    "failed": 0,
+    "durationSeconds": 31.476,
+    "screenshots": "Tools/IntentsAutomation/.runtime/native-toolchain-selection-1/ui-retry-attachments",
+    "sourceSelectionScreenshotInspected": true,
+    "emptyScreenshotInspected": true
+  },
+  "limits": [
+    "No global xcode-select change",
+    "Native default remains Xcode.app unless DEVELOPER_DIR or constructor override is supplied",
+    "No full v3 qualification or release claim"
+  ],
+  "previousUITestAttempts": [
+    {
+      "status": "blocked-before-test-body",
+      "developerDirectory": "/Applications/Xcode-27.2.0-Beta.2.app/Contents/Developer",
+      "build": "app, app tests and UI runner compiled and linked",
+      "requestedTests": [
+        "FoundationEvalsUITests/AppAutomationUITests/testEmptyAutomationAndPickerCancellationRemainReadOnly",
+        "FoundationEvalsUITests/AppAutomationUITests/testSourceSelectionSurvivesNavigationWithoutBuildingOrRunning"
+      ],
+      "testBodiesExecuted": 0,
+      "exitCode": 65,
+      "failure": "Timed out while enabling automation mode.",
+      "systemDiagnosis": "Automation Mode is disabled. This device requires user authentication to enable Automation Mode. Developer mode is currently enabled.",
+      "resultBundle": "/private/tmp/intents-native272-ui.xcresult",
+      "log": "Tools/IntentsAutomation/.runtime/native-toolchain-selection-1/intents-native272-ui.log",
+      "remainingTaskOwnedProcesses": [],
+      "productsSHA256": {
+        "/private/tmp/intents-native272-products/Intents.app/Contents/MacOS/FoundationEvals": "cc5c65d2d35e9d3343f181020aa03a4d7c08a74ca7ef34089a63d708fca02ab7",
+        "/private/tmp/intents-native272-products/Intents.app/Contents/MacOS/FoundationEvals.debug.dylib": "87cd2ba374bfae5dff93e83793cbf7fafddccdc1f158719fedd2cf9396174a5f",
+        "/private/tmp/intents-native272-products/FoundationEvalsUITests-Runner.app/Contents/PlugIns/FoundationEvalsUITests.xctest/Contents/MacOS/FoundationEvalsUITests": "b6e18c4322ca4f2a6206688b54a7fa89557f2127aee655df4a6056a146871f23"
+      }
+    }
+  ]
+}

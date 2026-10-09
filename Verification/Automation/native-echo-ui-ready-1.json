@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T02:12:38.976559+00:00",
+  "test": "FoundationEvalsUITests/AppAutomationUITests/testPreparedPureEchoShowsUnassessedNativeEvidence",
+  "scope": "Opt-in native real preparation, pure echo approval/run and saved unassessed result; isolated storage",
+  "compiled": true,
+  "executed": false,
+  "visuallyInspected": false,
+  "fullPlanComplete": false,
+  "blockedReason": "Xcode MCP OpenWorkspace recorded request and requires user approval; asked asynchronously",
+  "optInProfileCreated": false,
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-native-ui-build38.log",
+      "sha256": "483fd823ea7e5d8ce7e7208da2f2b7341a6d59b6048b6d3b9bd01e136b05f70b"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvalsUITests/AppAutomationUITests.swift",
+      "sha256": "f6ab70275b0f602f89f45c8da190e0aae847c103ad22a220b4d02cb8522ac605"
+    }
+  ],
+  "remaining": [
+    "Provider approval, actual test execution, retained exact report and screenshot inspection",
+    "Does not qualify mixed controller recipe, physical Siri or release"
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "checkpoint": "calendar-codec-1",
+  "sources": [
+    {
+      "path": "Package.swift",
+      "sha256": "2e98e76193c18efa844c9ab86708229b1e46dc991620339301814857ab5e70b1"
+    },
+    {
+      "path": "Integration/AutomationHost/AutomationDurationCodec.swift",
+      "sha256": "d965eb9b0b76e5909a7ee9cb74433cf65c946b2ce3ff38f45e9281dee8150fbf"
+    },
+    {
+      "path": "Integration/AutomationHost/HostPlan.swift",
+      "sha256": "e49bc31e94d661cc92536b89943c1524f7bb91dac4f029e36bc8661c435010b9"
+    },
+    {
+      "path": "Integration/AutomationHost/IntentDefinitionsHost.swift",
+      "sha256": "895411c2f06806d35b8bf52edde880a2952121f875d7c19a27227a96e47c0a7a"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationDurationValue.swift",
+      "sha256": "cb1179043ec3fa0d51d49bdc2a97d310a904282b5b599802e71570f0affd80ed"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCodecMetadata.swift",
+      "sha256": "38201fef078ad2992f241992fac2111a1362f3a41c9d0384c40d029f5539cfa6"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCodecRegistry.swift",
+      "sha256": "db51bfafd108e5e423f0dd54e71a8cb5adef02454082d99c6b13bd2a2a17187f"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationSurfaceCatalog.swift",
+      "sha256": "42eb2218e5376b261418547b271468f0f52dc720d0b833e5cb0d84abb73505f5"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostProgram.swift",
+      "sha256": "8d0d30ae954a63ae757281d4cbdb52169b70d3ed24d28023549c29161879c81e"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostReceiptImporter.swift",
+      "sha256": "70783941418958a1d9fb498bcde61cbce666aae86be6545ba422e7f5cff457c0"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostGenerator.swift",
+      "sha256": "5d736bb086cb26f044d1e4ced75d5d4a201acf55c5456c48dd31c3ed2990923e"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationTemplatePlanner.swift",
+      "sha256": "815dc9fdb9f877d6dab85997be39c52a2d11692935552e4f5085a80f37f2c85e"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationEntityActionPlanner.swift",
+      "sha256": "1d2923876f2904d98494363e61daad22e96254a4aaa4efc40f2d6992ae2bc98a"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift",
+      "sha256": "e291a1ebf69af9db032ac10648a2662b92076a9f34e97fb0622cb6d42327ea18"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationCollectionCodecTests.swift",
+      "sha256": "c7930867cafff883fab5cd72ecf0cfcb593d13c45a09cdc905e864b5201dc7c7"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationGeneratorTests.swift",
+      "sha256": "df3936a8674f0628f5086e0b19a3ab5f0aac1381a60fba311230651299e18b4e"
+    },
+    {
+      "path": "Tests/IntentsAutomationHostContractTests/HostCodecContractTests.swift",
+      "sha256": "fab2e2a436218359535d3d72d2243e9f23c35267a21e2b098fb6f28a39622fbd"
+    },
+    {
+      "path": "Integration/AutomationHost/AutomationCalendarCodec.swift",
+      "sha256": "2f911060c66dfbfcd5a1ab0fce18da750ca80b93c1bde9e2c2e9b7e838c88834"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCalendarValue.swift",
+      "sha256": "b43e5d067bb51c3672c0124c4f91f697440cd658134be83219bbb4c0354e878c"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-calendar-tests115.log",
+      "sha256": "5d606b4d3d56c08ed2d39096701876b7439a62b89c9bf518fff537db1c5d47a3"
+    },
+    {
+      "path": "/private/tmp/intents-automation-temporal-tests116.log",
+      "sha256": "57c45b869a620807b15065cf26e4f6f3a72c4200b2b0962ec1e4360ffb621ba3"
+    },
+    {
+      "path": "/private/tmp/intents-automation-host-calendar-typecheck13.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native22.log",
+      "sha256": "ca2e927c4705f1287caf5edf5a579b3b0bd8e928f8a94ee6de7d8a9936db38fe"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native22-summary.json",
+      "sha256": "70b0bac7beca01638544139cb2a3f8197da688cd26ac99dcacca91c85c3343ef"
+    }
+  ],
+  "validation": {
+    "focused115": {
+      "checks": 38,
+      "failures": 0
+    },
+    "broader116": {
+      "registeredXCTest": 310,
+      "hardwareSkips": 5,
+      "SwiftTestingChecks": 17,
+      "failures": 0
+    },
+    "fullSevenSourceHostSDK13": "passed",
+    "native22": {
+      "checks": 26,
+      "failures": 0
+    },
+    "bothScopedSourceReviews": "clear"
+  },
+  "scope": {
+    "all15PublicComponentFields": true,
+    "partialRelativeEmptyPreserved": true,
+    "calendarLocaleWeekRulesZoneLeapStatePreserved": true,
+    "conflictingDeclaredZonesRejected": true,
+    "calendarArraysQualified": false,
+    "deviceConversionQualified": false,
+    "nativeUIQualified": false,
+    "fullPlanComplete": false
+  }
+}

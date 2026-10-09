@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "authored-build-only",
+  "date": "2026-10-08",
+  "fixtureRoot": "Tools/IntentsAutomation/.runtime/file-declaration-1/file-declaration-fixture-BA2FDF59-83B3-4BDB-8140-55CDF563F636",
+  "metadataGenerator": {
+    "name": "xcode-tools",
+    "version": "27A266a"
+  },
+  "metadataSHA256": "444a21d7ba778d1dded108174b9ede7b81ebe40a17b0590af1abd96c0a81fe4c",
+  "sourceSHA256": "326a7033f72a2591437e8d69cf4826be7dca1dc5911bdf8dcda96464e5de80c0",
+  "subjectProductDigest": "b31826055741db97426d8d568d7fbdd6e45976905e2b47aa19d472a4f3413d28",
+  "productDigestVersion": 2,
+  "hostProductDigest": "7e8f2d5d1f0f7a1a8b365c17bd4054a99e5789611cb4c6d3ccfe446f134a0097",
+  "sourceManifestDigest": "3072f072d14e354738c1b1693f45c23c50f145a69f01754bf638bd3df451f132",
+  "sourceGraphDigest": "307e30127e3cd296782706eb2759823e25d77edd80cde9d55b0329d11a887220",
+  "descriptor": "Exact intents.wrapper.typeIdentifier12 for one IntentFile parameter and one ReturnsValue<IntentFile> output.",
+  "actualBuildPassed": true,
+  "runtimeLaunched": false,
+  "codecTransportQualified": false
+}

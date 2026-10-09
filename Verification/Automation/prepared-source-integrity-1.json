@@ -1,0 +1,38 @@
+{
+  "slice": "prepared-source-integrity-1",
+  "date": "2026-10-08",
+  "acceptance": "Preparation cannot persist a source catalog after an authorized build persistently changes the captured private discovery inputs.",
+  "implementation": {
+    "checks": "Before and after associated-host build, match each scanned/uncertain/inactive Swift input, package manifest and build configuration to the unique captured manifest entry and strict current nonlinked bytes/hash/count.",
+    "budgets": "100000 captured entries,10000 graph inputs,16MiB per file,64MiB unique checked inputs; cancellation honored.",
+    "boundary": "Generated host/PBX expansion is not treated as captured discovery input. Original checkout remains separately verified; failed private copy/build logs retained.",
+    "limits": "Current bytes only: a script that temporarily mutates then restores before postcheck is not disproved. No authenticated compiler-input receipt, generated-source provenance or execution capability."
+  },
+  "verification": {
+    "initialFocused": "41 passed,2 actual opt-ins skipped,0 failures",
+    "mutationCommand": "INTENTS_MAC_SOURCE_INTEGRITY_BUILD=1 INTENTS_MAC_SOURCE_INTEGRITY_ROOT=<owned-parent> swift test --jobs 2 --filter 'AutomationPreparedSourceIntegrityTests|AutomationMacSourceIntegrityBuildTests'",
+    "mutationChecksPassed": 5,
+    "mutationActualBuildSeconds": 15.141,
+    "mutationRoot": "Tools/IntentsAutomation/.runtime/source-integrity-1/source-integrity-fixture-2F3E0631-E1D3-40FB-AEF8-E9D2B24D68C2",
+    "mutationLog": "/private/tmp/intents-source-integrity-build-20261008.log",
+    "mutationOutcome": "Actual successful app+host build with private source append rejected as conflictingOperation before prepared-application.json; original unchanged; no runtime launched.",
+    "reviews": "Two disjoint Sol reviews clear; no reviewer builds/runtime checks.",
+    "finalFocusedCommand": "INTENTS_MAC_PACKAGE_PLATFORM_BUILD=1 INTENTS_MAC_PACKAGE_PLATFORM_ROOT=<owned-parent> swift test --jobs 2 --filter 'AutomationPreparedSourceIntegrityTests|AutomationSourceGraphTests|AutomationSourceCompilationConditionsTests|AutomationMacPackagePlatformFixtureTests'",
+    "finalRegistered": 43,
+    "finalPassed": 42,
+    "finalSkipped": 1,
+    "finalFailures": 0,
+    "positiveAuthoredBuildSeconds": 14.901,
+    "finalLog": "/private/tmp/intents-source-integrity-final-20261008.log",
+    "officialAppBuild": {
+      "tool": "Xcode MCP BuildProject",
+      "project": "FoundationEvals/FoundationEvals.xcodeproj",
+      "destination": "My Mac",
+      "seconds": 22.56,
+      "errors": 0,
+      "workspaceClosed": true,
+      "runtimeLaunched": false
+    }
+  },
+  "remaining": "Full M0-M6 incomplete. Compiler/generated/external source coverage, scoped file transport and actual native/device/distribution/trials remain unqualified."
+}

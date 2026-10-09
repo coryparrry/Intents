@@ -1,0 +1,34 @@
+{
+  "artifactVariant": "private-native-mac-provider-source",
+  "boundary": [
+    "Requires an authenticated native executor that verifies the gated helper artifact before launch and binds its lease",
+    "SDK daemon composition and native transport remain to integrate",
+    "Generic commands and Mac host operations are denied by the override; private SDK audio-probe bypass remains unqualified",
+    "The customer Mac fence remains enabled",
+    "Native55 and private unit1 predate this new TypeScript provider"
+  ],
+  "customerRuntimeEnabled": false,
+  "hardwareQualified": false,
+  "helperInvokedByProvider": false,
+  "nativeChannelCreated": false,
+  "reviews": {
+    "source": "fresh69 clear after fresh67 uncertain-input reuse finding fixed",
+    "tests": "fresh68 and70 gaps fixed; post-acquisition transport failure now blocks a future valid command"
+  },
+  "schemaVersion": 1,
+  "sdkDaemonComposed": false,
+  "sourceSHA256": {
+    "Tools/IntentsAutomation/src/macOwnedHelperProvider.ts": "d3ddc7ac4e0d9bb235de369554bfb77408b06c08df78d9cec2b4a62e0895babe",
+    "Tools/IntentsAutomation/src/macOwnedSession.ts": "615cdbb979ca37c5f51440aef0c7383b395b5991dc42ed458c16516c0a76e7b5",
+    "Tools/IntentsAutomation/tests/macOwnedHelperProvider.test.ts": "ed4237af748b7d7a515bb50afbd388e55543faa370d02730c9a450868b832acc"
+  },
+  "uiInteracted": false,
+  "verification": {
+    "failures": 0,
+    "focusedTests": 34,
+    "passed": 34,
+    "strictTypeScriptBuild": "passed",
+    "testLogSHA256": "12b263cadae904628e7ed539f0c5d041333b8e51fe10e74d90f3f5694bb52cf0",
+    "typecheckLogSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

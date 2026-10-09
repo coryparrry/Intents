@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "evidenceScope": "native-mac-helper-absence-source-and-non-atomic-read-only-observations",
+  "fullPlanComplete": false,
+  "customerRuntimeEnabled": false,
+  "customerRouteWired": false,
+  "helperInvoked": false,
+  "guiQualified": false,
+  "nativeCleanupQualified": false,
+  "kernelObservationAtomic": false,
+  "checks": {
+    "injectedInventoryAndVerifierTests195": 17,
+    "finalSwift199Registered": 30,
+    "finalSwift199Passed": 29,
+    "finalSwift199OptInHostSkip": 1,
+    "native54Build": "passed; preserved; not launched",
+    "freshReviews": "Sol37 findings fixed; Sol41 inventory, Sol42 lifecycle, Sol45 diagnostics clear"
+  },
+  "actualHostProbe": {
+    "qualified": false,
+    "test197": "rejected incomplete metadata; generic error retained",
+    "test198": "rejected metadata ESRCH: process disappeared; bounded diagnostic retained",
+    "unchangedRetryPerformed": false
+  },
+  "boundaries": [
+    "Complete current-UID inventory requires two matching full observations; transient changes between reads remain possible",
+    "Exact helper path absence plus explicit drain is an ingredient, not daemon/helper process-reap or GUI ownership qualification",
+    "64 inspections per verifier; construct a fresh verifier for a separately owned attempt rather than silently clearing failures",
+    "Constructor login namespace does not independently establish actual GUI login identity; no owned cleanup/product caller is wired"
+  ],
+  "files": [
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationMacProcessInventory.swift",
+      "SHA256": "0d8d648a1ab14325c75ed62b77e77c300b1e1cb17fe66407e60cef3e08b35906"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationMacHelperReleaseVerifier.swift",
+      "SHA256": "dfcdfbde4963602a79dd47b6a0d2760340604bfd71f7466b3268a2a629267f47"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationMacProcessInventoryTests.swift",
+      "SHA256": "c5d30314fb9b78b3802d368217c98ae466c2370961b684f3008c831232251939"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationMacHelperReleaseVerifierTests.swift",
+      "SHA256": "b0c8eec4ee60ad74174b61fcbdfa7cecdaa86987a814902d7da61c33321d6ca1"
+    },
+    {
+      "path": "/private/tmp/intents-automation-swift-tests192.log",
+      "SHA256": "c2f5571dd5dd6d1224b3a1fa339ec059c7f520685aeb407a2e594b83da7a4bb2"
+    },
+    {
+      "path": "/private/tmp/intents-automation-swift-tests193.log",
+      "SHA256": "23a1c616b9362a654c1a0c1c3e1f9232d4d1d9a1d1f6d767350d3b870bae9f51"
+    },
+    {
+      "path": "/private/tmp/intents-automation-swift-tests194.log",
+      "SHA256": "18de08c31a7d4c5538770adffa02bcec467890d7c45e7815169d1c3bc5318f0f"
+    },
+    {
+      "path": "/private/tmp/intents-automation-swift-tests195.log",
+      "SHA256": "83df8b577834efaecbdb418e64ed3481516c20bf184127f498592ae461826591"
+    },
+    {
+      "path": "/private/tmp/intents-automation-swift-tests197.log",
+      "SHA256": "f087ee0275694aba07ce380c70020bd40fb47e1f8ece9e5c3ba1062856efdb50"
+    },
+    {
+      "path": "/private/tmp/intents-automation-swift-tests198.log",
+      "SHA256": "e66cca9311a5c06c812100f19c5774b8151fcf03adc5702c49d78a495c048c4a"
+    },
+    {
+      "path": "/private/tmp/intents-automation-swift-tests199.log",
+      "SHA256": "311c3f475026c047e2b91c856db99b7cf95ca205b68a449569b9c31debb12e65"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native54.log",
+      "SHA256": "2c4b3436a34d562326c38710ded1c250b01be354b1ba215c6516e867c8250ca4"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native54-artifact/preservation.json",
+      "SHA256": "483949480678df3f794a6609f02bcef697049fee34c05ce662a2023cea4f2436"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native54-artifact/Intents.app/Contents/MacOS/FoundationEvals",
+      "SHA256": "d81140c6be3709014ebd24f94fdb09b32366d87061194cb456a530b2a1e168d0"
+    }
+  ]
+}

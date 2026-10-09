@@ -1,0 +1,28 @@
+{
+  "slice": "url-codec-1",
+  "date": "2026-10-08",
+  "acceptance": "URL declarations use exact typed HTTP(S) references; unsupported or unqualified conversion cannot reach a prepared Apple route.",
+  "implementation": {
+    "wire": "Existing tagged object with exactly one url text property; frozen case and protocol formats unchanged",
+    "bounds": "4096 printable ASCII bytes, exact Foundation round trip, HTTP(S), nonempty host, valid port; credentials, relative and file URLs denied",
+    "host": "Known generated host uses typed Foundation.URL setters and result getters",
+    "metadata": "Descriptor11 accepted only behind existing exact version1 / xcode-tools27A266a metadata guard",
+    "qualification": "Independent apple.codec.url requirement; metadata and compilation never mint runtime availability",
+    "predispatch": "Selected retained catalog validates URL fields/results and rejects deferred untyped bindings, including optional/defaulted fields"
+  },
+  "verification": {
+    "contracts": "122 selected core/host/native checks passed after deferred-binding fix",
+    "followup": "Five URL and prepared-route regression tests passed after final capability validation order change",
+    "compatibility": "47 selected host generator, immutable case, native draft, entity planner and comparison checks passed",
+    "actualHost": "One actual controlled Mac URL host preparation passed, 14.034 seconds; typed selected-SDK host compiled, retained settings tamper denied and source unchanged",
+    "applicationBuild": "Official Xcode My Mac FoundationEvals build passed, 22.947 seconds, zero errors",
+    "review": "Two independent Sol lanes cleared after literal and deferred-binding predispatch fixes",
+    "diffCheck": "git diff --check passed",
+    "diagnostics": "Ignored Tools/IntentsAutomation/.runtime/url-codec-1/"
+  },
+  "limits": [
+    "Build-only and injected-route proof; no real URL intent invocation or runtime conversion qualification.",
+    "File ownership, bookmarks and Transferable remain unsupported; URL arrays remain denied.",
+    "Full M0-M6 remains incomplete. Owned Xcode workspace closed; no app/simulator launched; local commit only."
+  ]
+}

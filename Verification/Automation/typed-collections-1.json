@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "checkpoint": "typed-collections-1",
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCodecMetadata.swift",
+      "sha256": "e0049203813d4cc22b0e60a98894d20229a1f74375fc99777280c4ea49667a8c"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCodecRegistry.swift",
+      "sha256": "659c799b7cf63b057e3ac523e583e5612d967f427f6cfa1ed60dcc0480851ee4"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationSurfaceCatalog.swift",
+      "sha256": "5b4cd06885e94bca60ac0f1026255fb4bbfadbdbb0389a9474b93728601addf1"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostProgram.swift",
+      "sha256": "a51bb19dace65089a4ad345aa8090b4160c7078cc2acea0cf5b001bdfecd03a6"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationTemplatePlanner.swift",
+      "sha256": "e6a1d4471bad13b7d3b828eab923b48b9e9653ec67dfd110901299569b0bf413"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationEntityActionPlanner.swift",
+      "sha256": "b89ca0c379595aa30435f6066276828aeaa6aa3df3956b1d8b42234e76b8cf45"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostReceiptImporter.swift",
+      "sha256": "5f98f1e5c08a09df5e9465609bed75bdbc836732f655a0cf37856ce6f56181fc"
+    },
+    {
+      "path": "Integration/AutomationHost/HostPlan.swift",
+      "sha256": "28bc122fece519e1425b08044df6b2a9f02bb61a6aa412c95f620c3718b9fbd7"
+    },
+    {
+      "path": "Integration/AutomationHost/IntentDefinitionsHost.swift",
+      "sha256": "8185e6c8cba1e5cbb0c831de8a3979b8e35130f0ed943e3b9d7275dd80e8759e"
+    },
+    {
+      "path": "Integration/AutomationHost/SegmentTests.swift",
+      "sha256": "7d4fa725e17022ccc541a5af706bc7d573d8497c3ecd5fec88d661fb0c806c05"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift",
+      "sha256": "877bd93ae0c478b96b2a9a6ebc4803fc423e12bb704cc0c6a9d067e393db09ee"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationCollectionCodecTests.swift",
+      "sha256": "dea346e5df05643708689e3ad511b05f8d662553f9d1227d3d9c3dccd7ed47a0"
+    },
+    {
+      "path": "Tests/IntentsAutomationHostContractTests/HostCodecContractTests.swift",
+      "sha256": "84bcd2d0640b631ce88fc1269eb9307163d054431e56aedf20b024dc930a5193"
+    },
+    {
+      "path": "Verification/Automation/Fixtures/CollectionMetadata/extract.actionsdata",
+      "sha256": "434ec7fb7e99a4238a184dea407bac3165f41cb96fea996868b57af5c64832f7"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-collection-tests106.log",
+      "sha256": "5bf647b431ba9f76ef7565332731b3a96be7297c05c69913b93b6013aabbd8f7"
+    },
+    {
+      "path": "/private/tmp/intents-automation-collection-tests108.log",
+      "sha256": "c6664249d0b3a37bf63d026ede39977ada3cd929d28186a27769760ebacee1bc"
+    },
+    {
+      "path": "/private/tmp/intents-automation-host-collection-typecheck9.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native20.log",
+      "sha256": "c9b55895556832a8ef7f585a4e90dd3b407109229b6ccb36917641f29f2a0a84"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native20-summary.json",
+      "sha256": "31d2b6ef320c397cc330dc7c41cbc579f9126de417b8e75c462c5a4e878c1e0c"
+    },
+    {
+      "path": "/private/tmp/intents-automation-host-collection-typecheck10.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "validation": {
+    "focused106": {
+      "checks": 22,
+      "failures": 0
+    },
+    "broader108": {
+      "registeredXCTest": 297,
+      "explicitHardwareSkips": 5,
+      "xctestFailures": 0,
+      "swiftTestingChecks": 17,
+      "swiftTestingFailures": 0
+    },
+    "fullHostSDKTypecheck9": "passed",
+    "independentSourceReviews": "both scoped reviews cleared after fixes",
+    "fullHostSDKTypecheck10": "passed",
+    "fullNative20": {
+      "checks": 42,
+      "failures": 0
+    }
+  },
+  "scope": {
+    "inputs": [
+      "textArray",
+      "boolArray",
+      "integerArray",
+      "decimalArray",
+      "dateArray"
+    ],
+    "results": [
+      "textArray",
+      "boolArray",
+      "integerArray",
+      "decimalArray"
+    ],
+    "emptyTypesFrozen": true,
+    "legacyNilFieldsOmitted": true,
+    "nestedDeclarationAdmission": false,
+    "deviceConversionQualified": false,
+    "renderedEditorQualified": false,
+    "fullPlanComplete": false
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-08",
+  "scope": "Independent authored simulator codec canaries, not business correctness or broad platform support",
+  "environment": {
+    "targetID": "1992A5AA-0484-4168-9FDC-F970B9D3EE95",
+    "macOSBuild": "26B5101f",
+    "architecture": "arm64",
+    "xcodeBuild": "27A266a",
+    "sdkBuild": "24A430",
+    "runnerBuild": "27A252a",
+    "runtimeBuild": "24A434",
+    "hostTemplateDigest": "0f812ac7ade31b1bea3056261569882341ac1df5d6bc21decba5d84f570a29e5",
+    "frameworkSHA256": "ab81429acdc990f72c908ce727693c4a0f4ffd73b0d61d27d14814b8e2de1ce3",
+    "signing": "simulator-ad-hoc"
+  },
+  "verified": [
+    {
+      "family": "integerArray",
+      "input": [
+        "1"
+      ],
+      "output": [
+        "1"
+      ],
+      "summary": "executedUnassessed",
+      "resourcesReleased": true,
+      "reportSHA256": "98f22d9e7c65ee9501d960c35454b99e85b647bd496b01c004a0344ac13db996"
+    }
+  ],
+  "failedAttempts": [
+    {
+      "id": "scalar-canary-1",
+      "stage": "install",
+      "reason": "timedOut",
+      "subjectDispatched": false,
+      "path": "/private/tmp/intents-codec-calibration-20261008/attempts/scalar-canary-1/report.json",
+      "recovery": {
+        "installerAndOwnerAbsent": true,
+        "taskSimulatorShutdown": true,
+        "leaseReconciled": true,
+        "journalAndFailurePreserved": true
+      }
+    }
+  ],
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "evidenceRoot": "Tools/IntentsAutomation/.runtime/simulator-codec-qualification-1",
+  "sourceValidation": {
+    "focusedTests": 4,
+    "failures": 0,
+    "log": "/private/tmp/intents-codec-qualification-tests-2.log"
+  }
+}

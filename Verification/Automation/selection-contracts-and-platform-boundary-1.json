@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T04:20:24.998867+00:00",
+  "scope": "Declared option selection grammar, clipping correction, native-Mac admission fence and private package15",
+  "fullPlanComplete": false,
+  "verification": {
+    "Swift176": "53 passed, including clipping/owner/controller/recipe/grading regressions",
+    "sidecar64": "strict TypeScript and86 tests passed",
+    "native44": "BUILD SUCCEEDED; no app/UI execution",
+    "package15": "signed/sealed nested hashes and signatures/provenance verified; not notarized/released"
+  },
+  "controller": "eval4 baseline,eval5 prompt-only andeval6 structured goals each2/4 progress,4/4 legal. eval6 selected-option repeat prevented but irrelevant Dictate control chosen; unqualified, no recipe/device repeat",
+  "sourceReview": "Fresh Sol44 found clipping edge; corrected and fresh Sol45 clear; source only",
+  "limits": [
+    "Eval6 ran before conservative clipping fix; affected observations use short values, but no claim of current model requalification",
+    "Model executable binary digest was not frozen before evaluation; source/runtime mapping is historical evidence, not an exact dispatch binary proof",
+    "Native Mac route is not implemented; pinned SDK cannot prove selected process/global HID recipient; direct acquisition now rejected before allocation or activation",
+    "Physical product execution route is not implemented; physical inventory/release plumbing is not execution; existing Siri ABI mismatch is additional runtime blocker"
+  ],
+  "sha256": {
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationNavigationController.swift": "4bfa5440c549a86b24fe3ad6d2fa41c24b4a673506fe12b667e5438f4b533b26",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationUIProgram.swift": "f0c3e71c3512614cdc39e459bc77d6b302b444b971fc47b17ad35812fbd873ab",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationFreshEntityPlanner.swift": "134bffcae936216238465b46896f90c5dd8bfc6ebbade2c1436f941ad7c5e7fa",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationGuidedNavigationDecision.swift": "20e2b8b1b0abd051e6af835f3c53c83fdf5709597625574c32131015a6184e92",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationFoundationController.swift": "8b0cf63fe766b59e924dbf3278bcb39f27fcdafdf19a4f2e438164dbc2a238a9",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationGeneratedNavigationDecisionTests.swift": "4eaeefa6cd0dee8068cbe070348941ec690e34a2101f72ff157d2c5d4d418b22",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationFreshEntityPlannerTests.swift": "00159e71354285caf2f0606e4b325c57973c8c423646f090d7e0ac51f8456d96",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/src/controllerProtocol.ts": "9fa067aa724e5742c4be2b42cae313781ee6307306a1d6a3d8254a4f4c09e142",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/src/segment.ts": "995c2dc4c7a4d5e298054023ae1e7ebc9ca17ad3f49fa84f93ed777ae63c45a1",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/src/e2e/nativeController.ts": "d9d722ae096d56c7f8eac86a6671cccba16c28d954e2ef61fee7f44675c1cb35",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/src/deviceSession.ts": "1b9a62ce3bd48db54c1a9679fbc7ba5b539dbd343c80dbd40fd20feaf0e49910",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/controller.test.ts": "176f8fd35965f736ede4e0029fada671a95622fed026ec41a664ac1a9fe7d5d8",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/mainLifecycle.test.ts": "5b98717f928c93d4dcd919dfe7fa3d956ff89d60d8fdcae643d31ba6c1d5039d",
+    "/private/tmp/intents-controller-contract-eval6/planning-profile.json": "8901fa08a2564680520a4a7b8c69c7d0c69d2ad9ef3c1cfd56f73fc1555b8e35",
+    "/private/tmp/intents-controller-contract-eval6/compiled-plan.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/private/tmp/intents-controller-contract-eval6/planning-stderr.log": "b58cfff76daf6ba5997d36f79186ad83e1625c71af33afcfd99273dd3292128f",
+    "/private/tmp/intents-controller-contract-eval6/compiled-plan2.json": "5ce3e6ddcb1c0a3811cb098585107c4a6de96609740dab23c64dbe374de2d226",
+    "/private/tmp/intents-controller-contract-eval6/planning-stderr2.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/private/tmp/intents-controller-contract-eval6/profile.json": "eddcebd1107afa81367f67555db13fcb38712625803e5ebcb1c12834c3f74758",
+    "/private/tmp/intents-controller-contract-eval6/results.json": "a78979ecdc785d3751bc342a7554bb2d67b1623852253020220ea9301f6da8e8",
+    "/private/tmp/intents-controller-contract-eval6/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/private/tmp/intents-automation-tests175.log": "2f2c5d782ffc2a9b706e1a06dacf4a45eb8bd3ce5ed22a52a48970b620a48edf",
+    "/private/tmp/intents-automation-tests176.log": "8e9c784509c903c3d93706720f2968e96151604102af4f986bec0826afcf12c6",
+    "/private/tmp/intents-automation-sidecar64.log": "fb71c85ee45189f1c61f0b5f02dd8ec0879662aca10892adc7258b046e6d3eb5",
+    "/private/tmp/intents-automation-sidecar64-tests.log": "9c5463e4dc40739e94179eb62fe21b1115ad745e86a8b72f5156fb0299544a41",
+    "/private/tmp/intents-automation-native43.log": "4d7ea13d72537d54b09b3981c7f92de7ca9e80325dba3d8ce9c918cbc43d9f03",
+    "/private/tmp/intents-automation-native44.log": "1fc4c9b7301b7674d89207eff0bcc7126c5de6fcdae8b121cded264b94ed6596",
+    "/private/tmp/intents-automation-package15.log": "12a9b241e59f9d7c0a969dbfae23e967d86d680aac73ca0d330e2fb193973221",
+    "/private/tmp/IntentsAutomationNativeWorkflowQualification15.app/Contents/Resources/Automation/runtime-manifest.json": "16fe4c3e2fa3b7e906359329bbc4d31c11835144c37527fd6906a276114318bf",
+    "/private/tmp/IntentsAutomationNativeWorkflowQualification15.app/Contents/MacOS/FoundationEvals": "33e6b9a9d911cf42b7fc5014bfa32c4872efba0a9cf220c97c895a470b075231"
+  }
+}

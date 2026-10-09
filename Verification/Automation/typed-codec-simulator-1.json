@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "checkpoint": "typed-codec-simulator-1",
+  "target": {
+    "id": "09D3C36B-7A4C-406A-91E5-0A99A429F7D3",
+    "kind": "simulator"
+  },
+  "xcodeBuild": "27A266a",
+  "simulatorOS": "27.0",
+  "simulatorOSBuild": "24A434",
+  "architecture": "arm64",
+  "hostArrangement": "generated associated private-copy XCTest host",
+  "signing": "Xcode ad hoc simulator",
+  "subject": {
+    "architecture": "arm64,x86_64",
+    "bundleID": "com.coryparry.IntentsAutomation.DuplicateTasks",
+    "canonicalBundlePath": "/private/tmp/intents-codec-runtime-qualification1/Prepared/DerivedData/Build/Products/Debug-iphonesimulator/DuplicateTasks.app",
+    "configuration": "Debug",
+    "logicalID": "/private/tmp/intents-codec-runtime-qualification1/Source/DuplicateTasks.xcodeproj#DE641280100333D2F09AF8A2",
+    "owningModule": "DuplicateTasks",
+    "platform": "ios",
+    "productDigest": "26427211f24d41c957692052629dd2e65222e610ef4ed43ee84f8cba03d1eebb",
+    "provenanceStrength": "productBytes",
+    "sourceManifestDigest": "d6a28d63bd076654939794382a274889be981fbbf10ab29a920f5bce9c88f0b3"
+  },
+  "hostDigest": "c7251d4113ffed464ff6189a5f1988d0853ad1ed58ea7e8d64f7e1201aacc945",
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/preparation-profile.json",
+      "sha256": "5dad7b37763b1c7ec4659bdb76e3379beed8dd1952313b7778176420c57a3207"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/Prepared/prepared-application.json",
+      "sha256": "853df77750b33c26959ada4152f786ace936d34d2b2ff19e83ce4e1019da80f1"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/Prepared/build.log",
+      "sha256": "376a39cfe6c1af4729610709c6258b4bd3dacb36a973daf8003a658148a17106"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/echo-actions.swift.txt",
+      "sha256": "517d6c631e163c4355efd870048a29c18aa29f17b56e0aec70e7a1ed71bfd971"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/bool-profile.json",
+      "sha256": "9ab185ccb5250e429fb61343e850cf80abcaaa4d878a6cc12d662e2e444c1b90"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/remaining-profile.json",
+      "sha256": "ac014dfa165f85a91ed1238cb35fb9c7661dd16d5fb80252bdc1535268c24048"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/remaining2-profile.json",
+      "sha256": "76bcf575b51ea302ddb5b783253e27673f3fff82ef70f70005d943abd5a1c8ee"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/conversion-comparison.json",
+      "sha256": "a94673eceafc5140d4cea40375f50a3e9d32b844fb7e07879004481ed0d4a69c"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/recovery-result.log",
+      "sha256": "dd1facb65c8e57847da7b650d98a61036b57dbaab06b2661bee133621ce97931"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/recovery2-result.log",
+      "sha256": "b0560d69fb13a64804dcbe4c580ad68771e1e7b234898987509769d657320d67"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/recovery2-simulators.json",
+      "sha256": "2933dda202c67348973a4e7a7cd1338c703e97a4180c62615052e213212776f2"
+    },
+    {
+      "path": "/private/tmp/intents-codec-runtime-qualification1/post-recovery2-leases.json",
+      "sha256": "f47404b25a272b94ec516a95f6adc9cda60f81628a77cdc89b504bede56bebb7"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/codec-echo-bool1/report.json",
+      "sha256": "9d748aa7c87d906674d1d721eea15ec45f492ec277ce1f0b980b7922ae50c577"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/codec-echo-bool1/journal.json",
+      "sha256": "d010b12ee2d9722b435a2d3d83aad5804f35127e77f63a27df0f00c9e947f8fa"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/codec-echo-bool1/artifacts/apple-receipt-52.json",
+      "sha256": "345ae63c8f8885b883c0ad7f88058f9e882ae9f76ea137a27880c6f042da53a1"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/codec-echo-remaining1/report.json",
+      "sha256": "4b7627b5d3c1b618c2a965e092b6ce79f9fc9d00342cc6d8dd424fc3792816ce"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/codec-echo-remaining1/journal.json",
+      "sha256": "564f34f9658082a0fd5d4029ca3a5ee28236e0222d7bb072ae152b9b13ad1ab7"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/codec-echo-remaining1/artifacts/apple-command-failure-57-37B34F61-08C0-45A1-8F2B-0D2615799CBF.txt",
+      "sha256": "047f7d995e24d35774c432808e3b13b50a84763db88012afbea3d2e789d46f30"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/codec-echo-remaining2/report.json",
+      "sha256": "316f45254861bb6bb53919c82deb2d3f4a9f077612f345782e93ac4fb4917e8a"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/codec-echo-remaining2/journal.json",
+      "sha256": "ae30b1b6a36e29c9c712fe3edb1b6b0c502034cbdb149e79d755ea17babb7d23"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/codec-echo-remaining2/artifacts/apple-receipt-61.json",
+      "sha256": "f7d5116903bc50f58b5c9cb93a10535309766f04c03892f8881a206744c117e4"
+    }
+  ],
+  "conversionResults": {
+    "boolReportResult": {
+      "assessed": false,
+      "evidenceComplete": true,
+      "failedObservations": [],
+      "missingObservations": [],
+      "subjectCompleted": true,
+      "subjectDispatchUncertain": false,
+      "subjectDispatched": true,
+      "summary": "executedUnassessed"
+    },
+    "remaining2Result": {
+      "assessed": false,
+      "evidenceComplete": false,
+      "failedObservations": [],
+      "missingObservations": [],
+      "subjectCompleted": true,
+      "subjectDispatchUncertain": false,
+      "subjectDispatched": true,
+      "summary": "unresolved"
+    },
+    "remaining2ResourcesReleased": false,
+    "comparisons": {
+      "calendar": {
+        "exactTaggedEquality": false
+      },
+      "calendarPartial": {
+        "exactTaggedEquality": true
+      },
+      "date": {
+        "exactTaggedEquality": true
+      },
+      "dates": {
+        "exactTaggedEquality": true
+      },
+      "decimals": {
+        "exactTaggedEquality": false,
+        "equalNumericValues": true
+      },
+      "duration": {
+        "exactTaggedEquality": true
+      },
+      "durationNegative": {
+        "exactTaggedEquality": true
+      },
+      "emptyBools": {
+        "exactTaggedEquality": true
+      },
+      "texts": {
+        "exactTaggedEquality": true
+      }
+    },
+    "calendarDifferences": [
+      "UTC timezone identifier becomes GMT",
+      "Explicit isLeapMonth false omitted"
+    ],
+    "integerListFailure": "castingFailed(elementType: ArrayContainerElement, targetType: Array<Int64>)",
+    "fullProfileQualified": false
+  },
+  "release": {
+    "boolOriginalReportReleased": true,
+    "remainingOriginalReportsReleased": false,
+    "exactDeadOwnersReconciledAfterShutdown": [
+      57,
+      61
+    ],
+    "originalJournalsPreserved": true,
+    "finalCampaignsEmpty": true,
+    "finalOwnedSimulatorState": "Shutdown"
+  },
+  "scope": {
+    "conversionEvidenceOnly": true,
+    "calendarContextExactnessQualified": false,
+    "integerListQualified": false,
+    "fullProfileQualified": false,
+    "physicalSiriQualified": false,
+    "fullPlanComplete": false
+  }
+}

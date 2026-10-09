@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-10-09",
+  "gitHead": "af0fec0b3a9d161062afb043e9b294eb35719232",
+  "sourceState": "dirty scoped implementation; unrelated work preserved",
+  "fullV3Complete": false,
+  "implemented": [
+    "Controlled existing-record Siri calibration uses real baseline query, actual Siri submission and independently queried actual entity identity/state",
+    "Actual-route authority is non-Codable, expiring, exact-case and exact-OS-build; only this owned physical campaign can issue it after a passed released live run",
+    "Historical v1 submission remains unassessed; v2 binds the returned physical OS build and checks expected OS before Siri activation",
+    "Native state-check controls freeze the exact record, before/after oracle, request and approval; no creation, reset or replacement ID",
+    "Initial preparation settings query pins the approved profile SDK, preserving simulator template qualification",
+    "Segmented-control containers remain model context but only eligible child buttons may be proposed for taps"
+  ],
+  "checks": {
+    "sharedCore": {
+      "registered": 146,
+      "skipped": 3,
+      "failures": 0
+    },
+    "controlledSiriNativeStores": {
+      "tests": 21,
+      "failures": 0
+    },
+    "physicalSDKTypecheck": "passed; no device execution",
+    "finalNativeBuild": "passed; build-for-testing only",
+    "runtimeSeal": "passed",
+    "deepStrictSignature": "passed",
+    "packagedJS": {
+      "files": 35,
+      "mismatches": 0
+    },
+    "expandedNativeSiriForm": "unverified: UI runner timed out enabling automation before test initialization",
+    "independentReviews": "shared preparation, controller proposal and controlled Siri scopes clear"
+  },
+  "candidate": "/private/tmp/intents-v3-native-01a11d93-20261009/Build/Products/Debug/Intents.app",
+  "evidence": {
+    "sharedCore": {
+      "path": "/private/tmp/intents-v3-01a11d93-shared-contracts-1.log",
+      "sha256": "a21d100eba8d1c2cb2a91d0ba135543e1cacc94c602ce4ca248b80f6fa748695"
+    },
+    "controlledSiriNativeStores": {
+      "path": "/private/tmp/intents-v3-01a11d93-siri-qualification-3.log",
+      "sha256": "387d2805b1223a11e8bbec55b71cab0fd4bbb3a5b3a22c06f181151dd336efcd"
+    },
+    "physicalSDKTypecheck": {
+      "path": "/private/tmp/intents-v3-01a11d93-siri-ios-sdk-typecheck-2.log",
+      "sha256": "36c477b3a4ff916e3b54db4e76884ba4eec7d068b54266d64e9aee02528407ba"
+    },
+    "finalNativeBuild": {
+      "path": "/private/tmp/intents-v3-native-01a11d93-build-8.log",
+      "sha256": "e58d213defa41ce5fd2f6c4f16514b50d732b750b074cda856f2e81052f4e589"
+    },
+    "runtimeSeal": {
+      "path": "/private/tmp/intents-v3-native-01a11d93-seal-9.log",
+      "sha256": "46ac97e287bcdcfee1a7ec3d1d105366014eca2c7dc6f5144fdbbaf8dd4b38c2"
+    },
+    "deepStrictSignature": {
+      "path": "/private/tmp/intents-v3-native-01a11d93-signature-9.log",
+      "sha256": "079d310ccdf2915ff0653e2ad81d365fd6a2b71b5ef9288e2d30afbbc50a6dfb"
+    },
+    "expandedNativeSiriForm": {
+      "path": "/private/tmp/intents-v3-native-01a11d93-siri-form-2.log",
+      "sha256": "9dc14ea844ade9ee0464f2454334b1cd6d8dd11b77b441f45a61e743b42235d5"
+    },
+    "liveFreshWorkflow": {
+      "path": "/private/tmp/intents-v3-01a11d93-independent-fresh-3.log",
+      "sha256": "d61124c10be4929aab233f5dd3fb6401fd59f1a8c5fc6fa27e5a0b73f146c106"
+    },
+    "physicalInventory": {
+      "path": "/private/tmp/intents-v3-01a11d93-final-physical-devices.json",
+      "sha256": "6e8cc18b772551e603d704fcc14222b0039f141d9a1678b6f1c86ad884d61c4e"
+    },
+    "simulatorInventory": {
+      "path": "/private/tmp/intents-v3-native-01a11d93-final-devices.json",
+      "sha256": "b99abfe95ba1138e324e4a747399f3e79282c9f314855ebfce4fa1fc079bf7a1"
+    }
+  },
+  "sourceSHA256": {
+    "Sources/IntentsAutomationCore/AutomationSiriQualification.swift": "ee616fa575b4264b8cda972a5ea6da95f4d06fe1c9da1f35ee21c24a856b6659",
+    "Sources/IntentsAutomationCore/AutomationSiriEntityPlanner.swift": "fe081fe81f891ddbbf6997422950859acf7dde32f79569da5736bf8204e29bbe",
+    "Sources/IntentsAutomationCore/AutomationSiriRouteDriver.swift": "8dfd78fb8f07a2992eded4247e20c020e4b63e37a08e682ba51426bc4553c549",
+    "Sources/IntentsAutomationCore/AutomationSiriCapabilitySnapshot.swift": "108a2ae4481f25671017652334ea8ba13b0bf4f1259779e41677a911c976c3e2",
+    "Sources/IntentsAutomationCore/AutomationPreparedPhysicalCampaign.swift": "08e773295c981ec8b33616dc3bce2c2b72ff487e141b98c4f44a6f3ca9fe71db",
+    "Sources/IntentsAutomationCore/AutomationPreparation.swift": "cef468e2d6d10e563ec0365bf5d08cf05c015e857586e147b00a78dbb2eb706c",
+    "Sources/IntentsAutomationCore/AutomationControllerContextSelection.swift": "cc7cc2b3494245ee49a3588c697f74e64e46ac1c7bc2935c776b361a9e51fd95",
+    "Integration/AutomationHost/SiriSubmissionTests.swift": "086120b41c9d182d684f949d154c372c5154152260235e94dc235c49e334ada4",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeSiriPlanning.swift": "22ecab6b4bb0e218f95afe42fca1c1ed89c4a5e3fe05a07902ffab75617aa0c2",
+    "FoundationEvals/FoundationEvals/Views/AutomationSiriControls.swift": "eb1719f522e3e32c1b41a5da3f27c2b1ebf082c65dabc99a55289abe9f9731ab",
+    "Tests/IntentsAutomationCoreTests/AutomationFreshWorkflowLiveTests.swift": "cc3571bd031617e1325a53b5fc863fbd95d385b075f1b68cae9c02ae6b7d2892"
+  },
+  "liveFreshWorkflow": {
+    "attemptID": "BEF20840-D580-4EC2-8F34-34B2D1690B15",
+    "report": {
+      "path": "/private/tmp/intents-v3-independent-fresh-AF4A1BFC-B8DE-4D18-B6B5-6A7D0964EF90/run/BEF20840-D580-4EC2-8F34-34B2D1690B15/report.json",
+      "sha256": "ac1bd6122fb8ec565fd0713fbf0fdd2a543feb8083a2c8a7f27732e25b93557a"
+    },
+    "seconds": 110.438,
+    "summary": "invalidFixture",
+    "subjectDispatched": false,
+    "resourcesReleased": true,
+    "receipts": 0,
+    "failure": "Controller chose Add task; fresh locator fingerprint could not confirm it before dispatch, ending LOCATOR_NOT_FOUND",
+    "boundary": "Real simulator/controller execution; bypasses Mac approval-input layer. No valid fixture or business outcome proved. Two fix-and-recheck rounds concluded."
+  },
+  "cleanup": {
+    "taskAppsExited": true,
+    "taskSimulators": [
+      "1992A5AA-0484-4168-9FDC-F970B9D3EE95",
+      "A95A3C41-AD87-4B9D-B0A7-D3B79B395902"
+    ],
+    "taskSimulatorState": "Shutdown"
+  },
+  "unverified": [
+    "Expanded native Siri state-check form after automation initialization failure",
+    "Valid fresh two-owner fixture, two deterministic setup paths, reproduction and same-oracle comparison",
+    "Physical Siri routing/outcome and release: paired iPhone currently disconnected",
+    "Clean-host/offline, Intel and distribution qualification",
+    "Twelve independent applications and three unfamiliar-developer trials"
+  ],
+  "claimBoundaries": [
+    "No hardware routing grant minted from synthetic reports or unit tests",
+    "Physical installed-byte equivalence and fix comparisons remain denied",
+    "No commit, push, publication or notarization"
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "evidence": {
+    "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+    "path": "Verification/Automation/Evidence/2026-10-07-prepared-mac-mixed/swift-mixed2.log",
+    "rawPath": "Tools/IntentsAutomation/.runtime/prepared-mac-mixed-1/swift-mixed2.log",
+    "rawSHA256": "39f0e38b6bb16c58a19ffc07ce93efc629bfd335d9df9878f641d8ab28642733",
+    "sha256": "39f0e38b6bb16c58a19ffc07ce93efc629bfd335d9df9878f641d8ab28642733"
+  },
+  "failureLessons": [
+    "UI activation counts toward phase operation budgets in addition to requested actions",
+    "Exact reviewed-case digest and prepared subject/xctestrun bytes must be authenticated before UI setup, not only at Apple acquisition"
+  ],
+  "failureTrace": {
+    "observation": "mixed UI/system/UI execution completed and released; two test assertions expected1 instead of2 for activation-inclusive UI phase budgets",
+    "rawPath": "Tools/IntentsAutomation/.runtime/prepared-mac-mixed-1/swift-mixed1.log",
+    "rawSHA256": "393eb3cbd5d2af2c9e0534cf3ed9f39067f2734b532da27812900bed5c53159b"
+  },
+  "limits": [
+    "Owned Apple factory remains nil until actual XCTest child closure qualification",
+    "Public prepared Mac runner stays fenced before simulator infrastructure",
+    "Installed Mac selection remains UI-only",
+    "Actual GUI/intent/process cleanup qualification and Mac saved campaigns remain open"
+  ],
+  "qualification": {
+    "actualKernelInventoryObserved": false,
+    "actualXCTestChildClosureObserved": false,
+    "appLaunched": false,
+    "customerQualified": false,
+    "intentExecuted": false,
+    "nativeSessionSynthetic": true,
+    "realCompositionActors": true,
+    "releaseProofSynthetic": true,
+    "xcodeCommandsSynthetic": true
+  },
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "Sources/IntentsAutomationCore/AutomationMacUIQualification.swift": "d2166a92ca4f816a5526ae31298d6e729198f4b959649c1f0fbb04ab2486d9c0",
+    "Tests/IntentsAutomationCoreTests/AutomationPreparedMacMixedTests.swift": "322a552d22e8126ab14ebc6c74b209c9ae274501c56ffb379b51547ea6a6c5a3"
+  },
+  "status": "private-prepared-mac-mixed-composition-source-verified",
+  "verification": {
+    "command": "swift test --disable-sandbox -j 2 --filter 'AutomationPrivateMacAppleRouteDriverTests|AutomationMacUIQualificationTests|AutomationMixedRouteDriverTests|AutomationCoordinatorTests'",
+    "failed": 0,
+    "newMixedRegressions": 7,
+    "passed": 50,
+    "skipped": 0,
+    "sourceReview": "distinct authority/preflight/Stop and provenance/ownership/persistence Sol lanes clear; exact reviewed-case preflight finding fixed"
+  }
+}

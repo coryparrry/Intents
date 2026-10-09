@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "artifactVariant": "private-owned-mac-source",
+  "customerRuntimeEnabled": false,
+  "hardwareQualified": false,
+  "developerIDSigned": false,
+  "helperInvoked": false,
+  "configuration": "Release",
+  "architecture": "arm64",
+  "toolchain": "Apple Swift 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)",
+  "sourceGuard": {
+    "schemaVersion": 1,
+    "baselineRevision": "35f407e6e9352544847732d3b8aa74b7b3d34d51",
+    "officialArchiveSHA256": "2dadf033c359810e0623479206048c6d4696874d1cf6aa03f1b0090a531b2e48",
+    "extensionCheckpointSHA256": "bb0044464ad96055da2ac83b377d8f0da8afd55511ac75d1e86d088ef0e2a834",
+    "artifactVariant": "private-owned-mac-source",
+    "customerRuntimeEnabled": false,
+    "hardwareQualified": false,
+    "signed": false,
+    "nativeInputsSHA256": {
+      "apple/macos-helper/Package.swift": "4b3985c849c9744e027e555944581820ccd9433239409c246cc9011c45f28cbf",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/AudioProbe.swift": "dbd8d9595d0665b542bf4fd2139bdead2161066a176ed5e52d405c6b71ec0e10",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacApplicationOwnership.swift": "2ee58123d50fa9895e398e016861cbfb8667eed3bdf45389c496106babeb539b",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacApplicationTarget.swift": "3fbe5c565799fc3da4fc0c16d983ae7665075f1a26cc6dd5d245acad8101e2c6",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacOwnedMouseDelivery.swift": "67ec193bea841b2df5492018a35ab61c54aa5fe696f836ea5a210952d99c8399",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacOwnedPressArguments.swift": "c223f339c98ea8c1b3c16aba3a5b758bdc779e3f56409c3194cd7e49ceee1736",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/SnapshotTraversal.swift": "71d013f5b3051310d2b2fb032fdcc88bf373697b46c19ab20cb12e49816d0e27",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/main.swift": "f3817b639521312c928e7946d5e77ea87319721364a0cfa292aef5abaf127f40",
+      "apple/macos-helper/Sources/AgentDeviceMacOSInput/MouseClickDelivery.swift": "40aa564c3d849e6f9604893fca7d64329d9b97d8dc5dece1a6eaaef881a6aec3",
+      "apple/macos-helper/Sources/AgentDeviceMacOSInput/MouseClickSchedule.swift": "53a3e22986cd0236f01e74bb41197a655b6d643878e7d84f44df8a12909556b1",
+      "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacApplicationOwnershipTests.swift": "36997a67ffb0de0f85b7942487915b2aa8ed1f90d43bbb23faf19416ab59326d",
+      "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacApplicationTargetTests.swift": "b647a8ba11bf10a4b6a40e896115c73a5511a18e152f02f606772134d6047c3c",
+      "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacOwnedMouseDeliveryTests.swift": "b83f3f8f9dbddfb3b807971b8e3b328826d0b20626f17172861eb31da85bbf49",
+      "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/ScreenshotResponseTests.swift": "5708f70182d4a507c8b4600691c8a1461e7be84a323a40c7f23e4e7c902fe2ac",
+      "apple/macos-helper/Tests/AgentDeviceMacOSInputTests/MouseClickScheduleTests.swift": "0ec3bd32b77136224fc750d8d178c9ab9abba618c46df116f988c2866d7d7653"
+    }
+  },
+  "checks": {
+    "guardRegressionTests": {
+      "registered": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "releaseBuild1": "failed: GenerateDSYMFile sandbox Operation not permitted",
+    "releaseBuild2": "passed: debug-symbol generation and link complete",
+    "guardBeforeAfter": "identical all 15 inputs",
+    "freshReview": "Sol20 clear after versioned SwiftPM manifest rejection",
+    "shellSyntax": "bash -n script/automation_test.sh passed"
+  },
+  "preservedFailures": [
+    "private-native-guard-tests2.log: misplaced test lines NameError; corrected tests3",
+    "private-helper-release-build1.log: sandbox debug-symbol denial"
+  ],
+  "files": [
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/scripts/verify_private_mac_source.py",
+      "SHA256": "ec6a2c37e20ecd2fb67bc0795aa9a7c68fc5a795dde327e5dcc1530152a754f2"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/private_mac_source_guard_test.py",
+      "SHA256": "84147a054a7b4cb6a54b8f66ad35db04c03b566c83170311f5a0eaa38a8f464a"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/script/automation_test.sh",
+      "SHA256": "c813276abf098cc11ba0d6ef65ba78f517efee70735d5cc262ce2d9eaa0c7990"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-native-inputs-release-before2.json",
+      "SHA256": "06e7adfafd2989bfd34140d481d40a0367078f1be376e1f400652244818f31bd"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-native-inputs-release-after2.json",
+      "SHA256": "06e7adfafd2989bfd34140d481d40a0367078f1be376e1f400652244818f31bd"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-native-guard-tests3.log",
+      "SHA256": "0490208e5a254f2f2e6e0f70f7a5ee55157accf27688d6887c0492cc0a5b37e0"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-helper-release-build1.log",
+      "SHA256": "60b50a5ade2f3d2c3ec86fd2943c4bdca20bc0e2c141f5425754ad9eff15fe6e"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-helper-release-build2.log",
+      "SHA256": "97fe667bbbbcf4d224ff01184de160735c8cd7d46012b6724f207b43bf5f5e79"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/swift-release-build1/out/Products/Release/agent-device-macos-helper",
+      "SHA256": "c0f30c873ba6acc0a0b9a703e259c97cb60758a7058970008525af56e1e7d002"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/swift-release-build1/out/Products/Release/agent-device-macos-helper.dSYM/Contents/Resources/DWARF/agent-device-macos-helper",
+      "SHA256": "7d65d8bd7cbeaf3b497d01a097157495a350b305d950cee0dcb1bd754bdac7d7"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "slice": "file-declaration-1",
+  "date": "2026-10-08",
+  "acceptance": "Ground file adapter implementation in actual selected-SDK input and ReturnsValue<IntentFile> declaration extraction.",
+  "verification": {
+    "actualCommand": "INTENTS_APPLE_FILE_DECLARATION_BUILD=1 INTENTS_APPLE_FILE_DECLARATION_ROOT=<owned-parent> swift test --jobs 2 --filter AutomationAppleFileDeclarationBuildTests",
+    "actualBuildPassed": 1,
+    "seconds": 14.962,
+    "actualLog": "/private/tmp/intents-file-declaration-build-20261008.log",
+    "retainedFixture": "Verification/Automation/Fixtures/IntentFileDeclarations",
+    "descriptor": "Exact intents.wrapper.typeIdentifier12; this is not a primitive wrapper.",
+    "subjectSHA256": "b31826055741db97426d8d568d7fbdd6e45976905e2b47aa19d472a4f3413d28",
+    "hostSHA256": "7e8f2d5d1f0f7a1a8b365c17bd4054a99e5789611cb4c6d3ccfe446f134a0097",
+    "metadataSHA256": "444a21d7ba778d1dded108174b9ede7b81ebe40a17b0590af1abd96c0a81fe4c",
+    "retainedRegressionCommand": "swift test --jobs 2 --filter AutomationAppleFileDeclarationBuildTests",
+    "retainedPassed": 1,
+    "retainedSkipped": 1,
+    "failures": 0,
+    "review": "Sol read-only fixture/provenance review clear.",
+    "schema": "Installed xcrun xcresulttool export attachments --schema retained as a schema definition, not an actual manifest or receipt."
+  },
+  "boundary": "Fixed owned source; perform always throws. Associated app+host build only; no app/adapter/perform/intent runtime launched. Production codec/transport unchanged and unavailable.",
+  "remaining": "Complete bounded binary attachment import, scoped typed artifact transfer, native-only host payload and confirmed-drain cleanup before file admission. Runtime transport/capability stays unqualified."
+}

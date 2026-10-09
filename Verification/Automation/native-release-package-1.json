@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "scope": "Full current native source private Release build and offline packaging/signature verification only",
+  "appPath": "/private/tmp/IntentsAutomationNativeReleaseQualification1.app",
+  "bundleID": "com.coryparry.Intents.AutomationUIVerification",
+  "customerReleaseQualified": false,
+  "launchQualified": false,
+  "notarised": false,
+  "sourceManifestPath": "/private/tmp/intents-automation-native-release-build11-source-manifest.json",
+  "rootEntitlementsBoundary": "Private adhoc build injected get-task-allow; sealing preserved existing entitlements. Not customer release signing-policy qualification.",
+  "coreProductDigestBoundary": "Current v1 Core product manifest rejects every symlink, including normal Sparkle/framework/npm internal symlinks. Capture helper returned invalidIdentity; no Core whole-app digest claimed. Native-Mac product intake remains unqualified.",
+  "symlinkCount": 10,
+  "symlinkExamples": [
+    "Contents/Frameworks/Sparkle.framework/Resources -> Versions/Current/Resources",
+    "Contents/Frameworks/Sparkle.framework/Autoupdate -> Versions/Current/Autoupdate",
+    "Contents/Frameworks/Sparkle.framework/Updater.app -> Versions/Current/Updater.app",
+    "Contents/Frameworks/Sparkle.framework/XPCServices -> Versions/Current/XPCServices",
+    "Contents/Frameworks/Sparkle.framework/Sparkle -> Versions/Current/Sparkle"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/IntentsAutomationNativeReleaseQualification1.app/Contents/MacOS/FoundationEvals",
+      "sha256": "5440a322c2c689116e662765b3f8d01b0c26705415da2af417b3ec1a6b0d6a62"
+    },
+    {
+      "path": "/private/tmp/IntentsAutomationNativeReleaseQualification1.app/Contents/Resources/Automation/runtime-manifest.json",
+      "sha256": "6df04fe42e077e11eede7bb397883e56e85356da17c25dfa1282f46c52d3748d"
+    },
+    {
+      "path": "/private/tmp/IntentsAutomationNativeReleaseQualification1.app/Contents/_CodeSignature/CodeResources",
+      "sha256": "cee30cd511da92ae5c5e9d8ab2975f5eb439257da00512b1bddaea1c6e004ce9"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-release-build11.log",
+      "sha256": "39c6d54d4bc946985958141fcfd2b820b04b783d24fc6ff81ddfb276a7270711"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-release-build11-source-manifest.json",
+      "sha256": "7074bc370a0a444d30e1539759b8bdc4c585da158ff417d253d31086e06213f5"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-package1.log",
+      "sha256": "1c3478e9930b81148217fce39b570dda0904eaac8ed54505b7302e55050c70ec"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-release-package1-signature.txt",
+      "sha256": "82c38521513ba5aefdef3933ffcda014b5aa044bebb5367eb19fa094cc0f9817"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-release-package1-deep-verify.log",
+      "sha256": "0bdbbafe15b12dc0c80bc22971b115223f25f68e35d8910d8480fdc01c9f85ef"
+    }
+  ]
+}

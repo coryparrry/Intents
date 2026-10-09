@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:12:41.912490+00:00",
+  "scope": "Actual action-specific alias-list fixture attempt",
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "result": "invalidFixture",
+  "uiActions": 0,
+  "subjectDispatched": false,
+  "resourcesReleasedInOriginalReport": false,
+  "releaseDiagnostic": "No shutdown RPC response; processStopped/deviceReleased/commandsDrained true, subjectInspectionUnreleasedfalse. Correlated SDK close took32.554s and failed application lifecycle cleanup, exceeding native20s RPC wait. Exact RPC case not captured.",
+  "recovery": "Recorded owner52012/start1791331665:864310 and sidecar52416/start1791331694:102709 absent; scoped device runner absence; ownedShutdown; guarded native Core reconciled generation98, report/journalbyteidentical",
+  "limits": [
+    "Prompt candidates did not prevent invalid fill target",
+    "No actual input or independent entity query",
+    "SDK close failure remains fail closed"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-candidates1/report.json",
+      "sha256": "133ca21fc9070c842b558832f80ae81fd016ea3aea6554b5a55bb4b94d607fd1"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-candidates1/journal.json",
+      "sha256": "8617bdaf9bbe08ebbb848d6abb5186e9ce5f9ab0c39dbe829b18b2d840060a5b"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-candidates1/artifacts/controller-denied-98-1.json",
+      "sha256": "55fe8f7223b0c461358f36afe9ed9973a14d396f8f16b41028ba85752a3427a9"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-candidates1/artifacts/sidecar-release-98-1.json",
+      "sha256": "87e3af2f0b59c6661609e3043732e544fc99e48495b2f950e9929009a8d4e04b"
+    },
+    {
+      "path": "/private/tmp/intents-fresh-owner-runtime-qualification1/recovery8-reconcile.log",
+      "sha256": "40090365efa18bfdbd3594f28bff79793dbd30167d09259c08f4b7fb86ce9463"
+    }
+  ]
+}

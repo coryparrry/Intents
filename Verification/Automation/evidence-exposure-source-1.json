@@ -1,0 +1,71 @@
+{
+  "evidence": [
+    {
+      "path": "Verification/Automation/Evidence/2026-10-07-evidence-exposure/swift4.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/evidence-exposure-1/swift4.log",
+      "rawSHA256": "0d78d66006e702d571f707c4dcbc9889fc8936282fe276461ceaea2784680e7e",
+      "sha256": "0d78d66006e702d571f707c4dcbc9889fc8936282fe276461ceaea2784680e7e"
+    },
+    {
+      "path": "Verification/Automation/Evidence/2026-10-07-evidence-exposure/native-build1.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/evidence-exposure-1/native-build1.log",
+      "rawSHA256": "f2a6c9a22aebafdda37cfcd288c11e1fa80ecf246a5ef74944f6a9ff236a146c",
+      "sha256": "5f43a6fd32870f4ad39e306e823349f0977de7ec45e82dd213418ec9b3be5025"
+    }
+  ],
+  "failureTrace": [
+    "Initial service test compile failed after tightened signatures; callers updated",
+    "Injected-executor test lacked owned support directory and waited for a gate not reached; own test run interrupted, fixture corrected",
+    "Review found root-substitution, hidden singular receipt, legacy pin adoption and view-lifetime gaps; fixed with regressions"
+  ],
+  "limits": [
+    "No actual preview/export/native history UI interaction; GUI approval remains pending",
+    "Existing populated archive without campaign provenance is preserved and withheld; no inferred migration",
+    "Native build includes existing unrelated working-tree edits; source hashes reflect tested working tree",
+    "No complete C13 egress qualification or declassification claim"
+  ],
+  "mechanisms": [
+    "Opaque non-Codable exposure binds exact plan and report bytes plus canonical campaign support root",
+    "Campaign shared read locks retained through preview, artifact import, archive publication, capsule export and rendered presentation lifetime",
+    "Archive pins campaign provenance only after verified source; unpinned populated historical archive fails closed",
+    "Recorded report validation rejects hidden singular receipt not covered by plural scopes"
+  ],
+  "qualification": {
+    "actualGUIExecuted": false,
+    "customerSecretExecutionEnabled": false,
+    "frozenRuntimeChanged": false,
+    "nativeAppCompiled": true,
+    "sourceVerified": true
+  },
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "FoundationEvals/FoundationEvals/FoundationEvalsApp.swift": "08bd12486ca90519e2fcf8ba1b1181f15a6528be48d3d6b2c2e2129e6cde1023",
+    "FoundationEvals/FoundationEvals/Services/ScenarioCoordinator.swift": "f52e71b6940fe76d66b4d94f9264cb03ffeb0c6c1115eb97b410858e8ae9057d",
+    "FoundationEvals/FoundationEvals/Services/ScenarioPersistence+AutomationEvidence.swift": "3e3b6fb09f5dcc937921bb1d98e461117182f3eb1941e1dc1cd407fbdb2414fa",
+    "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift": "7583d692e95de279aa40e19a0cbbddcdc74305275442e57d82e571b2a4a0845b",
+    "FoundationEvals/FoundationEvals/Views/AppAutomationCapsuleView.swift": "57e15a7a547541bfcdc343720e170736cba0fa4b155c27d901e79f23cfecaa2c",
+    "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift": "18ffb2630a84528ddc699ec271376b145224a2f32faaea15bf4cd89a000244f7",
+    "FoundationEvals/FoundationEvals/Views/NativeAutomationEvidenceView.swift": "bc88bd642285f7c9b2dc89eaedff2234472181d25cc582b9c94c6e2d10061583",
+    "FoundationEvals/FoundationEvals/Views/ScenarioReportView.swift": "da3c1172796a9ecf3c3237c3d5fbc3f2923ffda70b11302b325fc651a5371c7c",
+    "FoundationEvals/FoundationEvalsTests/ScenarioAutomationEvidenceTests.swift": "322be3153bbef273803193efe096551768e60565ea7fdee796ac2818b73d2a18",
+    "Sources/IntentsAutomationCore/AutomationCaseCapsule.swift": "8762b2bd625d3d3403070c06dd855042e90df6f37ee5c50d33f42ea081915a56",
+    "Sources/IntentsAutomationCore/AutomationEvidenceExposure.swift": "9a3276271433e88c4aa054fe8abe4329dfbefefa9d2f245ce853da20d9c472b4",
+    "Sources/IntentsAutomationCore/AutomationNativeEvidenceArchive.swift": "574c649bb3818ef2ced77cf0e5cde2b29f31caf7548d344d26da701d1a0a37b6",
+    "Sources/IntentsAutomationCore/AutomationRecordedEvidence.swift": "9e49c080a5df1417cda8fffda4a263f03b1c8f6319b3143f7f5e528e6f044267",
+    "Tests/IntentsAutomationCoreTests/AutomationCapsuleTests.swift": "a267a08217185b1de2786bc68f81e5bc169eecd147341f19360c8318ceaa831b",
+    "Tests/IntentsAutomationCoreTests/AutomationNativeEvidenceTests.swift": "61cea7e9d23b51ab568d43a46c9176d4fc6a841b672ee1d1dd4ab035cc58f234",
+    "Tests/IntentsAutomationNativeUITests/EntityQueryStoreTests.swift": "6a69d947be63aa8af0583f96c447a8ef63d4607c468520cedc6ed5cc51cb92be",
+    "Tests/IntentsAutomationNativeUITests/InstalledUIStoreTests.swift": "ad63270ead4feb3367af5953bcc31be19c506cd3bea6c24b937e101c746387db"
+  },
+  "status": "campaign-taint-egress-source-verified",
+  "verification": {
+    "command": "swift test --disable-sandbox -j 2 --filter 'AutomationNativeEvidenceTests|AutomationCapsuleTests|InstalledUIStoreTests|EntityQueryStoreTests|ScenarioAutomationEvidenceTests|AutomationSecretConsentTests|AutomationSecretFillTests'",
+    "failed": 0,
+    "nativeBuild": "unsigned Debug macOS build; succeeded",
+    "newRegressions": 9,
+    "passed": 117,
+    "registered": 118,
+    "review": "distinct exact root/privacy and retained task/view lifetime rechecks clear",
+    "skipped": 1
+  }
+}

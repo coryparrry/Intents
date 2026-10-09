@@ -1,0 +1,27 @@
+{
+  "slice": "transitive-local-package-1",
+  "date": "2026-10-08",
+  "acceptance": "Literal selected local-package product dependencies retain transitive snapshot-owned manifests and target members; unknown ownership stays a gap.",
+  "implementation": {
+    "parser": "Literal root path dependencies and named aliases plus explicit product(name:package:) target dependencies; no manifest evaluation",
+    "identity": "Unique bounded ASCII package identity; exact named alias; remote/opaque/duplicate declarations cannot lend local ownership",
+    "traversal": "Selected product/target closure only; relative paths must remain in captured root; exact file hashes and no symbolic-link substitution",
+    "bounds": "Shared graph work/depth budgets, product and active-target cycle detection before deduplication",
+    "versions": "Graph schema3 with central consumer version; syntax schema2 and frozen cases unchanged; earlier graph preparations require explicit re-preparation",
+    "coverage": "Partial; compiler consumption, remote checkout, generated inputs, plugins/macros/resources/platform conditions remain explicit gaps"
+  },
+  "verification": {
+    "contracts": "69 source/scanner/case/comparison/native checks passed; actual selected-Xcode scanner executed",
+    "trustedBuild": "Authored local-only three-package selected product built in2seconds; unused target with deliberate compile error excluded; executable printed selected;7source hashes unchanged",
+    "actualPreparation": "Actual controlled Mac build-only preparation and retained settings reload/tamper test passed in13.081seconds, graph schema3; no app or intent launched",
+    "applicationBuild": "Official Xcode My Mac FoundationEvals build passed in16.903seconds,zero errors",
+    "review": "Two independent Sol lanes clear after shared-target cycle and schema-consumer findings repaired",
+    "diffCheck": "git diff --check passed",
+    "diagnostics": "Ignored Tools/IntentsAutomation/.runtime/transitive-local-package-1/"
+  },
+  "limits": [
+    "Controlled compiler/source evidence does not establish arbitrary external package build consumption or runtime ownership.",
+    "Full M0-M6 incomplete; native GUI/runtime/distribution qualification remains separate.",
+    "Owned Xcode workspace closed; no owned app/simulator open; local commit only."
+  ]
+}

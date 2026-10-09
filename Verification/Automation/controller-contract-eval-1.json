@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T01:34:07.921697+00:00",
+  "scope": "retained snapshot controller contract; no app actions or recipe qualification",
+  "legalContractChecksPassed": 5,
+  "cases": 5,
+  "fullPlanComplete": false,
+  "runtimeQualified": false,
+  "progressIssues": [
+    "entered-name-save-visible tapped the already-filled input",
+    "two name approvals without any observed save produced finish; legal counters do not prove goal completion"
+  ],
+  "missingStates": [
+    "confirmed empty field",
+    "post-save"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-controller-contract-eval1/profile.json",
+      "sha256": "8c7251245f2f83fa762de27c7e8e774cc69a148b9df00b993964a6ba519f9f19"
+    },
+    {
+      "path": "/private/tmp/intents-controller-contract-eval1/results.json",
+      "sha256": "3ffecd1bf4beee32b6467e0f361aef16aad7ec0b5dd0d28a42214503535894cf"
+    }
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "c9b0831a6323e47d6ccbeb54499f299571c193b85a4f8348e9b7331694a58237"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationGuidedNavigationDecision.swift",
+      "sha256": "2f1f7a014291c1a844af49239db663168ec662a27e9b97cd42116bfc678cd7e9"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationControllerContextSelection.swift",
+      "sha256": "1af84885aca1a6e54eecfaf7e27bcc471d274db0c5040e9bacc37413bf9ef848"
+    },
+    {
+      "path": "Tools/IntentsAutomationControllerProbe/ControllerProbe.swift",
+      "sha256": "46d3f910760348c3aa7889444afa09506a6cdc5df2857c14fe751d8f4a6bc8a9"
+    }
+  ]
+}

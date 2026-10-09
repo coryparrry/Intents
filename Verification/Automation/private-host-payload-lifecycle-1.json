@@ -1,0 +1,29 @@
+{
+  "slice": "private-host-payload-lifecycle-1",
+  "date": "2026-10-08",
+  "acceptance": "Clean exact owned per-lease host/probe payloads only after independently confirmed drain; persist pending sanitation before first write and fence durable release/recovery on unknown or orphan bytes.",
+  "implementation": {
+    "sanitation": "Remove only host-plan and input-probe payload environment keys from the exact frozen derivative; preserve prepared originals, other fields, logs and raw result evidence.",
+    "durability": "Store exact scope/path/frozen and sanitized hashes before initial write; use a deterministic staging path. Ordinary release and recovery independently require absent staging and absent or exact sanitized final bytes. Recovery never creates directories, rewrites or deletes serialized paths.",
+    "ownership": "Cleanup is a separate release proof; failed cleanup retains route/campaign control. Retain in-memory payload authority before writing, including failure after publication before control assignment."
+  },
+  "verification": {
+    "command": "swift test --jobs 2 --filter 'AutomationAppleHostPayloadFileTests|AutomationAppleRouteDriverTests|AutomationPrivateMacAppleRouteDriverTests|AutomationCoordinatorTests|AutomationMixedRouteTests|AutomationOwnershipTests|AutomationMacUIQualificationTests'",
+    "passed": 132,
+    "failures": 0,
+    "skipped": 0,
+    "log": "/private/tmp/intents-private-payload-cleanup-final-20261008.log",
+    "regressions": "Modern/legacy host sanitation, exact scope/hash/linked-file rejection, changed derivative retained, failed acquisition after publication, independent drain denial, probe no-publication and lease retention on tamper, mixed/coordinator proof propagation, durable reload/stale-record fence, partial orphan stage without final file, missing parent read-only rejection.",
+    "review": "Two Sol read-only reviews clear after fixing orphan staging finding.",
+    "officialAppBuild": {
+      "tool": "Xcode MCP BuildProject",
+      "project": "FoundationEvals/FoundationEvals.xcodeproj",
+      "destination": "My Mac",
+      "seconds": 24.53,
+      "errors": 0,
+      "workspaceClosed": true,
+      "runtimeLaunched": false
+    }
+  },
+  "limitations": "Source/contract tests and app build only. Crash staging residues are conservatively retained for recovery, not automatically deleted. No IntentFile codec or file transfer activated. Raw logs/results remain private retained evidence; live host readback, device closure, rendered UI and full M0-M6 remain unqualified."
+}

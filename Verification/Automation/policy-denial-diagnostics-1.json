@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:32:06.544069+00:00",
+  "scope": "Scoped fixed-reason policy denial diagnostics",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "checks": {
+    "tests146": "19 passed",
+    "probe27": "build passed",
+    "native31": "build passed",
+    "gitDiffCheck": "passed"
+  },
+  "review": "Fresh Sol scoped review clear",
+  "limits": [
+    "No actual denial reason captured yet",
+    "Policy decisions and release authority remain unchanged"
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationRunAuthority.swift",
+      "sha256": "da33e065ffacb4980cbf375d22cb00ef76000848016738584b3a79375b0f6d4c"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationControllerTests.swift",
+      "sha256": "454dc49db30989063893c3b58525b4f7eb735a23933e0c77ec3f4844227cbc63"
+    }
+  ]
+}

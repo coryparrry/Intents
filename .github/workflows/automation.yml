@@ -1,0 +1,57 @@
+name: Automation contracts
+
+on:
+  pull_request:
+    paths:
+      - 'Sources/IntentsAutomationCore/**'
+      - 'Tests/IntentsAutomationCoreTests/**'
+      - 'Tools/IntentsAutomation/**'
+      - 'Integration/AutomationHost/**'
+      - 'Integration/AutomationRuntime/**'
+      - 'script/automation_*.sh'
+      - 'Package.swift'
+      - '.github/workflows/automation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Sources/IntentsAutomationCore/**'
+      - 'Tests/IntentsAutomationCoreTests/**'
+      - 'Tools/IntentsAutomation/**'
+      - 'Integration/AutomationHost/**'
+      - 'Integration/AutomationRuntime/**'
+      - 'script/automation_*.sh'
+      - 'Package.swift'
+      - '.github/workflows/automation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automation-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sidecar:
+    name: Pinned sidecar and packaging contracts
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Provision the exact builder runtime
+        run: |
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
+          python3 Tools/IntentsAutomation/scripts/provision_runtime.py
+      - name: Compile the pinned public APIs and run contract tests
+        run: |
+          export PATH="$PWD/Tools/IntentsAutomation/.runtime/node-v24.21.0-darwin-arm64/bin:$PATH"
+          npm ci --prefix Tools/IntentsAutomation --ignore-scripts --no-audit --no-fund
+          script/automation_test.sh --scope sidecar
+          python3 Tools/IntentsAutomation/tests/integration_contracts_test.py
+          python3 Tools/IntentsAutomation/tests/bundle_manifest_test.py
+          python3 Tools/IntentsAutomation/tests/sdk_lifecycle_patch_test.py
+          python3 Tools/IntentsAutomation/tests/e2e_action_budget_patch_test.py
+          python3 -m unittest discover -s script/tests -p test_automation_release_pipeline.py
+          # Device profiles and signing/notarization are separate qualification gates.

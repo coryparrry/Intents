@@ -1,0 +1,31 @@
+{
+  "slice": "structured-output-binding-1",
+  "date": "2026-10-08",
+  "acceptance": "Supported typed producer results can become exact deferred consumer parameters through the existing frozen-plan and correlated-receipt path.",
+  "implementation": {
+    "families": [
+      "textArray",
+      "boolArray",
+      "integerArray",
+      "decimalArray",
+      "dateArray",
+      "duration",
+      "calendarComponents"
+    ],
+    "freeze": "Optional deferred codec selected from the consumer declaration; exact producer result and compiled producer/consumer catalog checked before admission. Absent literal parameter and codec required.",
+    "resolution": "Exact run/attempt/app/target/route/producer/output and environment; reject null/omission, invalid shape and bounds. Commit value and codec atomically after host-input and program validation; original plan unchanged.",
+    "authority": "Existing non-Codable resolution authority remains bound to frozen plan digest, resolved bytes and run/attempt. Codec labels add requirements, never availability.",
+    "exclusions": "URL, files, nested arrays, enum and generic entity bindings excluded; existing unique-entity and unannotated scalar behavior retained."
+  },
+  "verification": {
+    "command": "swift test --jobs 2 --filter AutomationStructuredBindingTests|AutomationInputBindingTests|AutomationEntityBindingTests|AutomationPreparedProgramContractTests|AutomationCodecCapabilityGateTests|AutomationCollectionCodecTests|HostCodecContractTests",
+    "passed": 60,
+    "failed": 0,
+    "skipped": 0,
+    "integration": "Synthetic coordinator acquire/execute share exact resolved input; wrong type/null/omission/1001cells return inputUnavailable before consumer acquisition. Real receipt importer and shared host decoders round-trip7families+empty arrays; no SDK setter or intent invoked.",
+    "nativeAppBuild": "Official Xcode BuildProject succeeded16.523seconds/0errors; owned workspace closed.",
+    "sourceReviews": "Two Sol lanes clear after null/omission, exact environment and bound-failure classification fixes; added host contract review clear.",
+    "runtimeQualificationIssued": false
+  },
+  "remaining": "Actual live conversions and child ownership/release, mixed fixture/controller, UI/device/distribution/trials remain unqualified; file binary transport and generated/compiler/external source contracts still incomplete."
+}

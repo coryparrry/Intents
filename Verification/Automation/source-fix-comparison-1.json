@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "checkpoint": "source-fix-comparison-1",
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationPreparedApplicationRecord.swift",
+      "sha256": "7a25ee75acfa0d60e5cc1b77bec1c24630f68cc8a0dc02500edc5c500a940122"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFixComparison.swift",
+      "sha256": "dc40a3c853db7d1c06bfa75336933c045ead4c3ca2d1a0c646d98856f6e89d09"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFixComparison.swift",
+      "sha256": "e0a0cf5cd2b3b6c05beaba9b8f953119484157bab2a8dcec68864c07bc36320e"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFixComparisonCommand.swift",
+      "sha256": "71d70270a7de3dd1b34a4ef7b8fb1ce4fa65fdb3e039dedd153dc625dae951f3"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift",
+      "sha256": "1e9838cd691ae746b757100d866d045eb27519c9af8b5b2c781824bf2a09a18e"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift",
+      "sha256": "760564d3efc5092a7fe1096360a0dd9849cc5f198f4cfbc3262293ab0493c0c3"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationPreparedApplicationRecordTests.swift",
+      "sha256": "b2b94ab05b1028ecea6d25ec61de6089e872ffe7c01190f281e5ba5f64b86185"
+    },
+    {
+      "path": "Tests/IntentsAutomationNativeUITests/InstalledUIStoreTests.swift",
+      "sha256": "a4bd71e1328cc04ebf179f50fba6f0d3407c4e201fc2c6047e016a2f5d7f6b56"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-source-fix-tests120.log",
+      "sha256": "abb70e7427d2515f92042c16d6e57b8d3968767ec9621be1b0b94c2b969d62c0"
+    },
+    {
+      "path": "/private/tmp/intents-automation-source-fix-tests121.log",
+      "sha256": "25216748b69a6fb7b85680a857b6e6b369cb0e9c42afa55ca68c55158922c24d"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native23.log",
+      "sha256": "d48a7e770d29a3a47eb898a14c2a33bd19b03d09697abf4f154142b908d40063"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native23-summary.json",
+      "sha256": "e16f96e5a3c70e92d8733154425416b049aa46b563c0d26a3cb40752a23a9f7a"
+    }
+  ],
+  "validation": {
+    "focused120": {
+      "checks": 60,
+      "failures": 0
+    },
+    "broader121": {
+      "registeredXCTest": 318,
+      "hardwareSkips": 5,
+      "failures": 0
+    },
+    "native23": {
+      "checks": 26,
+      "failures": 0
+    },
+    "bothScopedSourceReviews": "clear"
+  },
+  "scope": {
+    "pureUINavigationComparison": true,
+    "separatePreparedBuildExecutors": true,
+    "frozenChecksUnchanged": true,
+    "exactOwnedBaselineRestartRestoration": true,
+    "queuedFullPreparationDigestBinding": true,
+    "actualNativePrepareButtonFlowQualified": false,
+    "renderedUIQualified": false,
+    "mutatingSourceComparisonQualified": false,
+    "fullPlanComplete": false
+  }
+}

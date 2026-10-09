@@ -1,0 +1,8 @@
+{
+  "generator": "Xcode 27A266a",
+  "scope": "Actual metadata rejection, not a supported result codec",
+  "error": "Nested collections cannot be used in ReturnsValue",
+  "sourceSHA256": "62577579f2c1a9a233429864558542c35cae20c9ac1042fee19e9f87f1be0599",
+  "logPath": "/private/tmp/intents-codec-metadata-qualification2/build3.log",
+  "logSHA256": "10090e00d13d66f937d2e0ec8f5df3bf614da8aa47f2af6c7e84f220c89e4978"
+}

@@ -1,0 +1,68 @@
+import AppIntents
+import Foundation
+
+struct TaskEntity: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Task"
+    static let defaultQuery = TaskQuery()
+    var id: String
+    @Property(title: "Title") var title: String
+    @Property(title: "Account") var owner: String
+    @Property(title: "Completed") var completed: Bool
+    @Property(title: "Control") var control: String
+    var displayRepresentation: DisplayRepresentation { .init(title: "\(title)", subtitle: "\(owner)") }
+    init(_ record: TaskRecord, control: TaskControl) {
+        id = record.id; title = record.title; owner = record.owner; completed = record.completed
+        self.control = control.rawValue
+    }
+}
+struct TaskQuery: EntityStringQuery {
+    func entities(for identifiers: [String]) async throws -> [TaskEntity] {
+        let document = try await TaskRepository.shared.persistedDocument()
+        return document.records.filter { identifiers.contains($0.id) }.map { TaskEntity($0, control: document.control) }
+    }
+    func entities(matching string: String) async throws -> [TaskEntity] {
+        let document = try await TaskRepository.shared.persistedDocument()
+        return document.records.filter { $0.title.localizedCaseInsensitiveContains(string) }.map { TaskEntity($0, control: document.control) }
+    }
+    func suggestedEntities() async throws -> [TaskEntity] {
+        let document = try await TaskRepository.shared.persistedDocument()
+        return document.records.map { TaskEntity($0, control: document.control) }
+    }
+}
+struct CompleteTaskIntent: AppIntent {
+    static let title: LocalizedStringResource = "Complete task"
+    static let openAppWhenRun = false
+    @Parameter(title: "Task") var task: TaskEntity
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        try await TaskRepository.shared.complete(id: task.id)
+        return .result(dialog: "Task marked complete.")
+    }
+}
+
+// Independent SDK metadata qualification declarations. Never invoked for business proof.
+enum MetadataFixtureMode: String, AppEnum {
+    case fast, careful
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Fixture mode"
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [.fast: "Fast", .careful: "Careful"]
+}
+struct MetadataCodecParametersIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata codec families"
+    @Parameter(title: "Text", default: "Fixture") var text: String
+    @Parameter(title: "Flag", default: false) var flag: Bool
+    @Parameter(title: "Count", default: 42) var count: Int
+    @Parameter(title: "Amount", default: 1.25) var amount: Double
+    @Parameter(title: "Optional text") var optionalText: String?
+    @Parameter(title: "Names") var names: [String]
+    @Parameter(title: "Date") var date: Date
+    @Parameter(title: "Mode", default: .careful) var mode: MetadataFixtureMode
+    func perform() async throws -> some IntentResult & ReturnsValue<String> { .result(value: text) }
+}
+struct MetadataPrimitiveInputsIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata primitive inputs"
+    @Parameter(title: "Text", default: "Fixture") var text: String
+    @Parameter(title: "Flag", default: false) var flag: Bool
+    @Parameter(title: "Count", default: 42) var count: Int
+    @Parameter(title: "Amount", default: 1.25) var amount: Double
+    @Parameter(title: "Optional text") var optionalText: String?
+    func perform() async throws -> some IntentResult { .result() }
+}

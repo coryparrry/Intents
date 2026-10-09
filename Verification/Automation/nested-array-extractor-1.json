@@ -1,0 +1,40 @@
+{
+  "slice": "nested-array-extractor-1",
+  "date": "2026-10-08",
+  "acceptance": "Selected Apple metadata extraction rejects authored nested App Intents arrays; existing unsupported gates remain in force.",
+  "actualBuild": {
+    "command": "INTENTS_NESTED_ARRAY_BUILD=1 INTENTS_NESTED_ARRAY_BUILD_ROOT=<owned-existing-parent> swift test --jobs 2 --filter AutomationNestedArrayCodecTests|AutomationCollectionCodecTests|AutomationCodecCapabilityGateTests|HostCodecContractTests|InputAdapterProbeContractTests",
+    "outcome": "failed before preparation completed",
+    "elapsedSeconds": 11.758,
+    "toolchain": "Xcode 27A266a, MacOSX27.0.sdk, arm64",
+    "stage": "ExtractAppIntentsMetadata",
+    "exception": "NSInternalInconsistencyException",
+    "reason": "Invalid parameter not satisfying: ![memberValueType isKindOfClass:[LN_TYPE(ArrayValueType) class]]",
+    "authoredSourceSHA256": "3eb9e63e277223e1799547733e57b8389483d164f491dc9308dbc01a91137bd3",
+    "buildLogSHA256": "ce92bf3c791a1679b81866114f78723b7ee43a4e8a357ffbcab70dccd4487137",
+    "retainedRoot": "Tools/IntentsAutomation/.runtime/nested-array-codec-1/nested-array-fixture-240FDFE4-20D2-4FEA-BE89-5B120E92784F",
+    "authoredTypes": [
+      "[[String]]",
+      "[[Bool]]",
+      "[[Int]]",
+      "[[Double]]",
+      "[[Date]]"
+    ],
+    "declarations": "Five parameters and five ReturnsValue declarations; combined fixture does not independently qualify any individual family."
+  },
+  "regressions": {
+    "command": "swift test --jobs 2 --filter AutomationAppleNestedArrayBuildTests|AutomationCollectionCodecTests|AutomationMacInputProbeFixtureTests|AutomationMacHostGeneratorTests",
+    "passed": 10,
+    "skipped": 2,
+    "failed": 0,
+    "skips": "Actual nested extractor and String build/live opt-ins were not rerun."
+  },
+  "scope": {
+    "productionNestedAdapters": "Removed after actual extractor failure; production files restored to pre-slice state.",
+    "optInTest": "Authored build-only reproduction asserts the exact rejection, no prepared record; a changed toolchain requires fresh qualification.",
+    "runtimeLaunched": false,
+    "availabilityIssued": false,
+    "extractorBypassed": false,
+    "claim": "Failure evidence only; no nested App Intents support or runtime qualification."
+  }
+}

@@ -1,23 +1,78 @@
 import Foundation
 import UniformTypeIdentifiers
+import IntentsAutomationCore
 
 @MainActor
 enum MCPStoreAuthority {
-    static func make(store: EvaluationStore, control: EvaluationAppControl? = nil) -> MCPAuthority {
+    static func make(store: EvaluationStore, control: EvaluationAppControl? = nil, automationStore: AppAutomationStore? = nil) -> MCPAuthority {
         let control = control ?? EvaluationAppControl(store: store)
         return MCPAuthority(
-            call: { call in await handle(call, store: store, control: control) },
+            call: { call in await handle(call, store: store, control: control, automationStore: automationStore) },
             readResource: { request in await read(request, store: store) }
         )
     }
 
-    private static func handle(_ call: MCPToolCall, store: EvaluationStore, control: EvaluationAppControl) async -> MCPToolPayload {
+    private static func handle(_ call: MCPToolCall, store: EvaluationStore, control: EvaluationAppControl, automationStore: AppAutomationStore?) async -> MCPToolPayload {
         do {
             switch call {
             case .actionCatalog(let request):
                 return MCPActionDiscovery.respond(request)
             case .control(let request):
                 return await control.mcp.execute(request)
+            case .listAutomationApplications:
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App selection is unavailable") }
+                return readPayload(["listing": try MCPJSONValue.encode(automationStore.listApplications())])
+            case .selectAutomationApplication(let arguments):
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App selection is unavailable") }
+                let listing = try automationStore.selectApplication(id: arguments.appID, snapshotDigest: arguments.snapshotDigest)
+                return mutation("committed", ["listing": try MCPJSONValue.encode(listing)])
+            case .previewAutomation:
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
+                return readPayload(["preview": try MCPJSONValue.encode(automationStore.previewCommand())])
+            case .requestAutomationRun(let arguments):
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
+                let status = try automationStore.requestCommand(id: arguments.requestID, digest: arguments.digest)
+                return mutation("committed", ["request": try MCPJSONValue.encode(status)])
+            case .previewAutomationReproduction:
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
+                return readPayload(["preview": try await MCPJSONValue.encode(automationStore.previewReproductionCommand())])
+            case .requestAutomationReproduction(let arguments):
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
+                let status = try await automationStore.requestReproductionCommand(id: arguments.requestID, digest: arguments.digest)
+                return mutation("committed", ["request": try MCPJSONValue.encode(status)])
+            case .previewAutomationFixComparison:
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
+                return readPayload(["preview": try await MCPJSONValue.encode(automationStore.previewComparisonCommand())])
+            case .requestAutomationFixComparison(let arguments):
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
+                let status = try await automationStore.requestComparisonCommand(id: arguments.requestID, digest: arguments.digest)
+                return mutation("committed", ["request": try MCPJSONValue.encode(status)])
+            case .getAutomationRequest(let arguments):
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
+                return readPayload(["request": try MCPJSONValue.encode(automationStore.commandStatus(id: arguments.requestID))])
+            case .cancelAutomationRequest(let arguments):
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
+                return mutation("committed", ["request": try MCPJSONValue.encode(automationStore.cancelCommand(id: arguments.requestID))])
+            case .listAutomationCases(let arguments):
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation storage is unavailable") }
+                let definitions = try await automationStore.readSavedCases()
+                let snapshot = AutomationArtifactRegistry.digest(Data(definitions.map(\.digest).joined(separator: "\n").utf8))
+                var offset = 0
+                if let cursor = arguments.cursor {
+                    let parts = cursor.split(separator: ":")
+                    guard parts.count == 2, String(parts[0]) == snapshot, let start = Int(parts[1]), start < definitions.count else { throw EvaluationStoreError.resourceConflict("Saved case population changed; restart pagination") }
+                    offset = start
+                }
+                let end = min(definitions.count, offset + (arguments.limit ?? 50))
+                return readPayload(["cases": .array(definitions[offset..<end].map { frozen in
+                    .object(["caseID": .string(frozen.plan.id), "revision": .integer(Int64(frozen.plan.revision)), "digest": .string(frozen.digest),
+                             "action": .string(frozen.plan.execution.operation), "bundleID": .string(frozen.plan.app.bundleID)])
+                }), "total": .integer(Int64(definitions.count)), "truncated": .bool(end < definitions.count), "nextCursor": end < definitions.count ? .string(snapshot + ":" + String(end)) : .null])
+            case .getAutomationAttempt(let arguments):
+                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation storage is unavailable") }
+                let report = try await automationStore.readSavedAttempt(caseID: arguments.caseID, revision: arguments.revision, digest: arguments.digest, attemptID: arguments.attemptID)
+                return readPayload(["attemptID": .string(report.attemptID), "caseDigest": .string(arguments.digest), "result": try MCPJSONValue.encode(report.result),
+                    "resourcesReleased": .bool(report.resourcesReleased), "routes": .array(report.receipts.map { .object(["segmentID": .string($0.segmentID), "route": .string($0.route.rawValue), "dispatched": .bool($0.dispatched), "completed": .bool($0.completed)]) })])
             case .getState:
                 return try state(store)
             case .listProjects:

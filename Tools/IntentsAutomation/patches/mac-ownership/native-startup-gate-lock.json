@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "artifactVariant": "private-owned-mac-startup-gate-source",
+  "helperABI": "startup-gate-v1",
+  "customerRuntimeEnabled": false,
+  "hardwareQualified": false,
+  "templates": {
+    "MacHelperOwnershipGate.swift": "c8e9fb556d564e78947e73a2740982d7027eb4e136dd0e32d951aeb16e7992e2",
+    "MacHelperOwnershipGateTests.swift": "b9400360cd6bbd9c51d82e4edca07db69cba74a90547f8faf25585e283f9cf4f"
+  }
+}

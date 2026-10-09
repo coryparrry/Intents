@@ -1,0 +1,48 @@
+{
+  "slice": "bounded-intent-file-transport-1",
+  "date": "2026-10-08",
+  "acceptance": "Bounded native IntentFile transport uses opaque frozen references, exact producer authority, separate verified binary attachments and private evidence; declaration/build proof never promotes runtime availability.",
+  "implementation": {
+    "bounds": "8192 decoded bytes per file; closed bounded basename and optional public.data/public.plain-text/public.json types;32768 aggregate encoded host environment payload.",
+    "authority": "Non-Codable permit binds original frozen plan, exact producer scope/output/raw receipt digest and frozen artifact hash/count to exact consumer operation/parameter. Current lease/app/target and final host/subject checks remain.",
+    "privacy": "File bytes and file-bearing runner logs occupy reserved native-/ .native- paths. Ordinary register/store/resolve deny those paths, even through stale/reloaded registries or removed optional index flags. Private reads reject links; secret evidence fence also gates transfer.",
+    "host": "Data-only IntentFile SDK constructor and data/filename/type getters. Binary XCTAttachment is separate from descriptor-only JSON; bounded metadata/hash checks and strict retained xcresult export schema correlate one final receipt and unique binary claim.",
+    "declarations": "Match only observed intents.wrapper.typeIdentifier12; primitive12 remains unknown. Generated host copies shared file helper. File arrays and arbitrary path/bookmark/fileURL transfer remain unsupported."
+  },
+  "verification": {
+    "focused": {
+      "registered": 206,
+      "passed": 200,
+      "failures": 0,
+      "skipped": 6,
+      "log": "/private/tmp/intents-file-transport-final-20261008.log",
+      "intentFilePipelineTests": 8,
+      "hostCodecTests": 22,
+      "skips": "Existing opt-in native/secret/build qualifications remain disabled."
+    },
+    "retainedDeclarationFence": {
+      "passed": 1,
+      "log": "/private/tmp/intents-file-transport-declaration-fence-20261008.log"
+    },
+    "installedSDKBuildOnly": {
+      "passed": 1,
+      "seconds": 15.169,
+      "fixture": "Tools/IntentsAutomation/.runtime/file-transport-1/file-declaration-fixture-82355DEE-7665-4389-9213-18D446C6A5CC",
+      "subjectSHA256": "c3bf7e7ae63a17838ea701103a3472aed02d0fe0c697bc12bf135c9809875638",
+      "hostSHA256": "6b0e4699839bec60f8c9690e0e801538382b979568df303ef0e09eae4042e85d",
+      "templateSHA256": "1f372fc28d5563288b398eb9c89c5f623a6b5efe1c393b82b29e2812285d76b5",
+      "metadataSHA256": "444a21d7ba778d1dded108174b9ede7b81ebe40a17b0590af1abd96c0a81fe4c",
+      "runtimeLaunched": false,
+      "log": "/private/tmp/intents-file-transport-sdk-build-20261008.log"
+    },
+    "officialAppBuild": {
+      "tool": "Xcode MCP BuildProject",
+      "seconds": 18.707,
+      "errors": 0,
+      "workspaceClosed": true,
+      "runtimeLaunched": false
+    },
+    "reviews": "Two Sol read-only reviews clear after receipt/hash/staging/classification fixes; positive driver tests assert raw receipt commitment."
+  },
+  "limitations": "Synthetic manifest tests use installed schema field names with strictly pinned unobserved testIdentifier/attachment naming. Actual device SDK readback, binary export naming, controller/process closure and file capability qualification remain open; current input probe does not qualify IntentFile and apple.codec.intentFile stays unavailable. No app/intent/file runtime launched, release/deployment performed or full M0-M6 completion claimed."
+}

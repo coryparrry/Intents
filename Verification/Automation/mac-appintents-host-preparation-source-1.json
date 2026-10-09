@@ -1,0 +1,210 @@
+{
+  "buildCommand": [
+    "/usr/bin/xcrun",
+    "xcodebuild",
+    "build-for-testing",
+    "-project",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-3DA00FE7-6651-4E61-97FE-85465F766501/session/source/Subject.xcodeproj",
+    "-scheme",
+    "IntentsAutomationHost_f030f86ca51f",
+    "-configuration",
+    "Debug",
+    "-destination",
+    "platform=macOS",
+    "-derivedDataPath",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-3DA00FE7-6651-4E61-97FE-85465F766501/DerivedData",
+    "-jobs",
+    "2",
+    "CODE_SIGNING_ALLOWED=NO"
+  ],
+  "evidence": {
+    "actual-build.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/actual-build.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/build.log",
+      "rawSHA256": "0b2519c34de8f2e3c6eb1129a570e7b529ab01106e2f8ae5d3f7f48cd64c8de3",
+      "sha256": "9e6505036aec351474137a3d0dac85424246cec529e65faa31250274f789e853"
+    },
+    "actual-platform-settings.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/actual-platform-settings.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/platform-settings.log",
+      "rawSHA256": "583efa65e7770d30afb7dd21c8a393b32d9a55640d8f4d3c90d6b4b5caf1935c",
+      "sha256": "583efa65e7770d30afb7dd21c8a393b32d9a55640d8f4d3c90d6b4b5caf1935c"
+    },
+    "actual-platform.json": {
+      "normalization": "none",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/actual-platform.json",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/platform.json",
+      "rawSHA256": "f56e29d7c196022d6a182fa119f333d2391d272ef617f707c2c477ed1c9b343a",
+      "sha256": "f56e29d7c196022d6a182fa119f333d2391d272ef617f707c2c477ed1c9b343a"
+    },
+    "actual-product-settings.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/actual-product-settings.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/product-settings.log",
+      "rawSHA256": "ff34437adfb42351c25c853c5e1176a5060f3b63389ddad8af02806ed093d14c",
+      "sha256": "ff34437adfb42351c25c853c5e1176a5060f3b63389ddad8af02806ed093d14c"
+    },
+    "actual.xctestrun": {
+      "normalization": "none",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/actual.xctestrun",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/DerivedData/Build/Products/IntentsAutomationHost_c5efa9471bed_macosx27.0-arm64.xctestrun",
+      "rawSHA256": "b9c7eedd64003ed29013bc17fa271c554f00114613150bf98cffbac433b0cf8e",
+      "sha256": "b9c7eedd64003ed29013bc17fa271c554f00114613150bf98cffbac433b0cf8e"
+    },
+    "failed-product-settings0.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/failed-product-settings0.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-AF127C72-7A75-4B5F-B347-355BABD445D3/product-settings.log",
+      "rawSHA256": "d7eb563a5c81e643728ace661a0d2809061de5e67878298a5de0302eea254feb",
+      "sha256": "d7eb563a5c81e643728ace661a0d2809061de5e67878298a5de0302eea254feb"
+    },
+    "failed-product-settings1.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/failed-product-settings1.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-14FB8475-7254-4713-9BC6-137B51256DAD/product-settings.log",
+      "rawSHA256": "260a522aa02c05ba6bdc30728e22605aa632f5b140c64216e5c4e3dea9b4a898",
+      "sha256": "260a522aa02c05ba6bdc30728e22605aa632f5b140c64216e5c4e3dea9b4a898"
+    },
+    "prepared-application.json": {
+      "normalization": "none",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/prepared-application.json",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/prepared-application.json",
+      "rawSHA256": "3fa7f24d3e7f6d3c3badd77f6c76ef86aa2ed718a60473bc22335240bbb94ca0",
+      "sha256": "3fa7f24d3e7f6d3c3badd77f6c76ef86aa2ed718a60473bc22335240bbb94ca0"
+    },
+    "swift-actual-preparation.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/swift-actual-preparation.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/swift-actual-preparation.log",
+      "rawSHA256": "f17e8e7edcd9b7fd8e40106c27ce39b1d958bcded0abf38c3e50aac1903f791c",
+      "sha256": "f17e8e7edcd9b7fd8e40106c27ce39b1d958bcded0abf38c3e50aac1903f791c"
+    },
+    "swift-actual-preparation2.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/swift-actual-preparation2.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/swift-actual-preparation2.log",
+      "rawSHA256": "fd3265eb056eca496fbad2eec88ad3754c41d631fd7b46cee134c0017adefff4",
+      "sha256": "fd3265eb056eca496fbad2eec88ad3754c41d631fd7b46cee134c0017adefff4"
+    },
+    "swift-actual-preparation3.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/swift-actual-preparation3.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/swift-actual-preparation3.log",
+      "rawSHA256": "91dc813a5a62f26017cd619aefa0a0a7d46b6213a146bbf44dd238ee50736482",
+      "sha256": "91dc813a5a62f26017cd619aefa0a0a7d46b6213a146bbf44dd238ee50736482"
+    },
+    "swift-actual-preparation4.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/swift-actual-preparation4.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/swift-actual-preparation4.log",
+      "rawSHA256": "8ca3ace9d19409365f6ce4ef4dcdc2e71571c66f3e06e791a7d5911322606b95",
+      "sha256": "8ca3ace9d19409365f6ce4ef4dcdc2e71571c66f3e06e791a7d5911322606b95"
+    },
+    "swift-actual-preparation5.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/swift-actual-preparation5.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/swift-actual-preparation5.log",
+      "rawSHA256": "06bdc584bfdc930ace863cd95ccddd88ba02296810cffb0bf480cc5549a890c1",
+      "sha256": "06bdc584bfdc930ace863cd95ccddd88ba02296810cffb0bf480cc5549a890c1"
+    },
+    "swift-generation.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/swift-generation.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/swift-generation.log",
+      "rawSHA256": "2f17a52654794b62450dd563d3882307896bcc50cf36b1ba6de5e89f07f4a459",
+      "sha256": "2f17a52654794b62450dd563d3882307896bcc50cf36b1ba6de5e89f07f4a459"
+    },
+    "swift-preparation1.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/swift-preparation1.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/swift-preparation1.log",
+      "rawSHA256": "b45d73fc50993d6b73727c8f25e74678c6d6796bb089c29147f16780a7e5f1cb",
+      "sha256": "b45d73fc50993d6b73727c8f25e74678c6d6796bb089c29147f16780a7e5f1cb"
+    },
+    "xcode-build1-fixture-concurrency-failure.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/xcode-build1-fixture-concurrency-failure.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/xcode-build1-fixture-concurrency-failure.log",
+      "rawSHA256": "e0133c8fa4c941bb0525f78e954bf8452e3d05313bb4001dd99b50ea132683f8",
+      "sha256": "2d581c8bc28d6d798c7424c0a1865208e1e3f9c1b1be32756ef29ed16fe2acd1"
+    },
+    "xcode-build2.log": {
+      "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+      "path": "Verification/Automation/Evidence/2026-10-07-mac-host-preparation/xcode-build2.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/xcode-build2.log",
+      "rawSHA256": "f72647ecab479f03ea9c531d9d905cbb86db39900cb4ad879d1984251d2ba31f",
+      "sha256": "d13a57264e2fb7ff620ea1ed3bacaf3b10ed78faf2c7fc29ad7617f07832ecae"
+    }
+  },
+  "failureLessons": [
+    "Sample AppIntent title must be a let under Swift 6 concurrency",
+    "Read-only active GUI identity requires normal local-session access; sandbox failure occurred before preparation",
+    "Generated scheme exposes only test runner build settings; query selected subject target directly with the same SDK and owned BUILD_DIR",
+    "Bind independently resolved subject path/bundleID and exact generated XCTest bundle; do not trust self-referential xctestrun values"
+  ],
+  "hostTemplates": {
+    "Integration/AutomationHost/AutomationCalendarCodec.swift": "2f911060c66dfbfcd5a1ab0fce18da750ca80b93c1bde9e2c2e9b7e838c88834",
+    "Integration/AutomationHost/AutomationDateCodec.swift": "db41e4125b3654ab19a01cb217175eec89cf1b0a89ae19c219aaf4c460f62c25",
+    "Integration/AutomationHost/AutomationDurationCodec.swift": "d965eb9b0b76e5909a7ee9cb74433cf65c946b2ce3ff38f45e9281dee8150fbf",
+    "Integration/AutomationHost/HostPlan.swift": "c06d826db3c0776c05c220bdfe83721abe36dacdc640466429ba0652bb11406b",
+    "Integration/AutomationHost/HostReceipt.swift": "88d4877f6f752364a42e5ab0434d5e1ff6020f71a9a2f979456def98482d03e9",
+    "Integration/AutomationHost/IntentDefinitionsHost.swift": "1e71c51a4fb60322790270fbe60bf5cf5eb7f6f75d65a3b4c13da40ddbdf9a77",
+    "Integration/AutomationHost/SegmentTests.swift": "7d4fa725e17022ccc541a5af706bc7d573d8497c3ecd5fec88d661fb0c806c05"
+  },
+  "publicPreparation": {
+    "exactSubjectBundleIDBound": true,
+    "exactSubjectPathBound": true,
+    "generatedTemplateDigest": "133c9fbab659d491c2856641ee805fd12b1bc6731b38986b4886271e234a43d1",
+    "hostProductDigest": "22cd5e72d0b069ab53e5d0827fa5ff48cf0e0e8389a70be2fc4ea684e8326804",
+    "hostProductDigestVersion": 2,
+    "originalSourceVerified": true,
+    "recordReloaded": true,
+    "subjectProductDigest": "057a94a8ddf310500447d9c61646cb41525211451306bad245e62778bfdfdc31",
+    "subjectProductDigestVersion": 2,
+    "target": {
+      "id": "host-macos-local",
+      "kind": "nativeMac",
+      "loginSession": "mac-gui-v1:501:100020:none"
+    }
+  },
+  "qualification": {
+    "appLaunched": false,
+    "customerQualified": false,
+    "distributionQualified": false,
+    "guiFlowObserved": false,
+    "intentExecuted": false,
+    "localBuild": true,
+    "mixedRouteExecuted": false,
+    "publicPreparation": true
+  },
+  "retainedPreparationRoot": "Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2",
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "Sources/IntentsAutomationCore/AutomationAppleHostFile.swift": "3677c2ce2da1768fa70f37f078d6a827ec2fcb004e24f2c2190ac412824aceb4",
+    "Sources/IntentsAutomationCore/AutomationAppleRouteDriver.swift": "70173922eb1fa23e0ae0525506d5d749e67a083b463c19e1a37e072dfe7f8250",
+    "Sources/IntentsAutomationCore/AutomationAssociatedHostPlatform.swift": "1ac50cf20099b92135bffe51fa74a88ff90d7b1566b908fef31fc39655d7db1c",
+    "Sources/IntentsAutomationCore/AutomationBuildPlatform.swift": "d3a13c9b3e61d89896c71cae61c1e3abe7c8b42f0968b6ab68c79635a3ecd703",
+    "Sources/IntentsAutomationCore/AutomationHostGenerator.swift": "e2bd5e3c37e4a9fb9ef364188b5f166f5a33f68487ff239f8ce9ae5ee0674e30",
+    "Sources/IntentsAutomationCore/AutomationPreparation.swift": "b33ecac994262c53c6caec1888b45bc8a0964841df2b24e6e9ef4493668cd51b",
+    "Tests/IntentsAutomationCoreTests/AutomationBuildPlatformTests.swift": "023e8ddff46277a2b84ee3c9bf827539488064f5a2ba4323691301358574f5f1",
+    "Tests/IntentsAutomationCoreTests/AutomationGeneratorTests.swift": "df3936a8674f0628f5086e0b19a3ab5f0aac1381a60fba311230651299e18b4e",
+    "Tests/IntentsAutomationCoreTests/AutomationHostTests.swift": "719bedae47d75d3abf8fddc74920f747d57d68d635fde7b4d589862f9000f6b5",
+    "Tests/IntentsAutomationCoreTests/AutomationMacHostGeneratorTests.swift": "bd3096e59a298cce3e51a4488210126593bc037cdbedd5260471457cf8b30cb5",
+    "Tests/IntentsAutomationCoreTests/AutomationMacHostPreparationTests.swift": "0f32a2d3c9767f53e73a62858dda4f6517c798b23189741fda8e1f09e1cffc82",
+    "Tests/IntentsAutomationCoreTests/AutomationPreparedApplicationRecordTests.swift": "b2b94ab05b1028ecea6d25ec61de6089e872ffe7c01190f281e5ba5f64b86185"
+  },
+  "status": "local-macos-associated-host-build-and-preparation-verified",
+  "verification": {
+    "failures": 0,
+    "finalFocusedSwiftTests": 22,
+    "nativeFixtureBuild": true,
+    "passed": 22,
+    "publicBuildOnlyPreparation": true,
+    "skipped": 0,
+    "sourceReview": "distinct generator/platform and preparation/provenance lanes; two identity findings fixed and rechecked; canonical project aliases reviewed",
+    "testFilter": "AutomationMacHostPreparationTests|AutomationHostTests|AutomationPreparedApplicationRecordTests|AutomationMacHostGeneratorTests|AutomationGeneratorTests|AutomationBuildPlatformTests",
+    "workers": 2
+  }
+}

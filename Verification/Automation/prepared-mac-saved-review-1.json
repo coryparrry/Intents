@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "date": "2026-10-08",
+  "scope": "data-only saved prepared Mac reproduction and comparison reviews",
+  "behavior": [
+    "Prepared UI-only and disposable fresh-record failures review against exact retained source/product/test/runtime/session/locale facts",
+    "Current session and products are checked again after independent runtime reading; versioned comparisons bind both retained artifact sets and original oracle",
+    "Build-derived capabilities survive native proposal formatting; imported review data cannot mint fresh-fixture authority or a runtime owner",
+    "Read-only reviews exclude literal/deferred/producer input and fill-bearing goals; prepared input-free goals are explicit, installed profile stays bounded",
+    "Shared product and deferred-input preflight retain runner checks; ordinary Mac execution gates remain closed"
+  ],
+  "verification": {
+    "command": "swift test --jobs 2 --filter 'AutomationPrivateMacAppleRouteDriverTests|AutomationMacSavedWorkflowContractTests|AutomationFreshFixtureTests|AutomationFreshEntityPlannerTests|AutomationFixComparisonTests|AutomationCaseStoreTests|MacFreshDraftStoreTests|MacWorkflowStoreTests|InstalledUIStoreTests|SourcePreparationStoreTests'",
+    "coreTests": 96,
+    "nativeTests": 84,
+    "failures": 0,
+    "negatives": "Unreleased/unassessed/foreign reports, runtime/locale/session drift, missing disposable consent, mid-read product/session change, changed template and otherwise generic-valid direct fill/fill-bearing goals reject",
+    "appBuild": "Official Xcode BuildProject, FoundationEvals / My Mac: passed, 17.46 seconds, no errors",
+    "reviews": ["Sol review authority lane: clear after read-only input fence", "Sol compatibility/composition lane: clear"],
+    "diffCheck": "passed"
+  },
+  "failuresPreserved": [
+    "Test initially mutated immutable receiptSHA256 field; construct a changed evidence value instead",
+    "Review found non-fresh declared read/navigation effects did not exclude fill; shared operation/input fence and direct/goal regressions added"
+  ],
+  "unverified": [
+    "Synthetic products/reports/drivers prove source contracts only; real GUI, associated host and child release remain unqualified",
+    "Normal native prepared Mac Run/Reproduce/Check fix remains gated; real five replays and 30+30 comparison remain outstanding",
+    "No device, clean-host, distribution or release qualification"
+  ],
+  "runtime": "Tools/IntentsAutomation/.runtime/prepared-mac-saved-review-1"
+}

@@ -1,0 +1,31 @@
+{
+  "slice": "entity-query-local-admission-1",
+  "date": "2026-10-08",
+  "acceptance": "Local entity-query validation failure does not create unresolved runtime ownership or permanently block the native workflow.",
+  "implementation": {
+    "admission": "One shared nonblank32768UTF16 query text bound used by store admission and core plan validation.",
+    "ownership": "Validate plan synchronously before task creation/progress/choice reset. Local validation errors show a message and return with no unresolved attempt ID. Preserve exact attempt retention for failures after executor or runner execution begins."
+  },
+  "verification": {
+    "command": "swift test --jobs 2 --filter 'EntityQueryStoreTests|AutomationEntityQueryTests|AutomationPreparedSourceIntegrityTests'",
+    "passed": 17,
+    "failures": 0,
+    "skipped": 0,
+    "nativeStoreChecks": 10,
+    "coreQueryChecks": 3,
+    "sourceIntegrityChecks": 4,
+    "log": "/private/tmp/intents-entity-query-admission-20261008.log",
+    "regressions": "ASCII/emoji UTF16 overflow and whitespace produce zero executor calls; stale catalog plan rejection leaves no latch; valid edit/restore queries again and permits Run after valid entity selection. Existing post-execution unresolved fences still pass.",
+    "review": "Sol read-only verification of reported bug and final fix clear.",
+    "officialAppBuild": {
+      "tool": "Xcode MCP BuildProject",
+      "project": "FoundationEvals/FoundationEvals.xcodeproj",
+      "destination": "My Mac",
+      "seconds": 22.56,
+      "errors": 0,
+      "workspaceClosed": true,
+      "runtimeLaunched": false
+    }
+  },
+  "limitations": "Native store contract tests and app build only; rendered UI and live entity/device execution remain unqualified. Full M0-M6 remains incomplete."
+}

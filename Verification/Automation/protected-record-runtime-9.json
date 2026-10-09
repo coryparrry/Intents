@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:27:28.334389+00:00",
+  "scope": "Actual runtime constrained model payload and release-close fixture attempt",
+  "guidedSchemaResponseQualified": true,
+  "fixtureSetupQualified": false,
+  "fullPlanComplete": false,
+  "result": "invalidFixture",
+  "acceptedControllerDecision": "fill approvedText on actual visible supported textfield",
+  "actionStepsAttempted": 1,
+  "sdkFillDispatchProved": false,
+  "subjectDispatched": false,
+  "resourcesReleased": true,
+  "limits": [
+    "One type action failed with generic Brokercommandfailed/ENGINE_FAILURE; logs show no SDK fill command",
+    "Native policy rejection vs other pre-dispatch failure remains unproved",
+    "No independent entity query"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-guided1/report.json",
+      "sha256": "c4090ebb47e0b34ac24ce0b79b13e2773938020f7944ea87da956be35522f94b"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-guided1/journal.json",
+      "sha256": "9ca50065cd85dc7043a8e7f2d4e68ae7846ca62655c3b0f0d19b51b67c69c018"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-guided1/artifacts/controller-102-1.json",
+      "sha256": "d2b7c4d6acec31a5cd7bccfea88a6af7c4133ebf47ccabc4b8443e30a5419256"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-guided1/artifacts/sidecar-release-102-1.json",
+      "sha256": "7378b66eaf040728e2a25544feee3021e354b1610aaf14bda2a00b5f825d0b78"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-guided1/ui/control-102/runs/fresh-owner-guided-run1/fresh-owner-guided1:fixture.create/worker.log",
+      "sha256": "bba07d5efda9ceb67c4760f2f6ea97f0707dceb310063e5dff4cba9eb4574e4a"
+    }
+  ]
+}

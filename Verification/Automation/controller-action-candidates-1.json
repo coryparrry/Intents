@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:06:14.428478+00:00",
+  "scope": "Action-specific eligible aliases from one bounded exact observed projection",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "tests142": "23 passed",
+  "probe25": "build passed",
+  "review": "Fresh Sol design and implementation reviews clear",
+  "limits": [
+    "Prompt eligibility is not action authorization or model success",
+    "Native29 build pending; no new live attempt"
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationControllerContextSelection.swift",
+      "sha256": "1af84885aca1a6e54eecfaf7e27bcc471d274db0c5040e9bacc37413bf9ef848"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "c0324c6ea040be4ba67363b4df2bce9f9a96837e1393df2dfe0a9ea99c8aab0a"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationControllerContextSelectionTests.swift",
+      "sha256": "fc4e5ac42166827a1df4c528a644705e6c6c0f7a0ef8b15e58b2b84c0bb6a742"
+    }
+  ]
+}

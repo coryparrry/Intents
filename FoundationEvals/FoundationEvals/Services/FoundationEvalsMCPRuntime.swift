@@ -19,6 +19,7 @@ struct MCPRuntimeServerConfiguration: Sendable {
 final class FoundationEvalsMCPRuntime {
     typealias ServerFactory = @MainActor @Sendable (MCPRuntimeServerConfiguration) -> any MCPServerLifecycle
 
+    private let automationStore: AppAutomationStore?
     private let store: EvaluationStore
     private let control: EvaluationAppControl
     private let serverFactory: ServerFactory
@@ -29,6 +30,7 @@ final class FoundationEvalsMCPRuntime {
     init(
         store: EvaluationStore,
         control: EvaluationAppControl? = nil,
+        automationStore: AppAutomationStore? = nil,
         serverFactory: @escaping ServerFactory = { configuration in
             MCPServer(
                 port: configuration.port,
@@ -41,6 +43,7 @@ final class FoundationEvalsMCPRuntime {
     ) {
         self.store = store
         self.control = control ?? EvaluationAppControl(store: store)
+        self.automationStore = automationStore
         self.serverFactory = serverFactory
     }
 
@@ -50,7 +53,7 @@ final class FoundationEvalsMCPRuntime {
         serverGeneration = generation
         let server = serverFactory(MCPRuntimeServerConfiguration(
             port: configuration.port,
-            authority: MCPStoreAuthority.make(store: store, control: control),
+            authority: MCPStoreAuthority.make(store: store, control: control, automationStore: automationStore),
             credential: configuration.credential,
             onRequest: { [weak self] date in
                 await self?.settingsController?.recordConnection(at: date)

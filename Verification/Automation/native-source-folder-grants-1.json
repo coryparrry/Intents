@@ -1,0 +1,44 @@
+{
+  "slice": "native-source-folder-grants-1",
+  "date": "2026-10-08",
+  "acceptance": "Native source preparation exposes exact extra folder grants, reviews them before building, and holds granted access until preparation drains.",
+  "implementation": {
+    "picker": "Directory-only single-folder native picker, selection-epoch callback fence, visible sorted removable paths, at most eight disjoint canonical additional folders. The Core root validator is reused without enumerating the common ancestor.",
+    "approval": "Exact primary and additional folders join candidate/configuration/destination/epoch in build review. Store invalidates prepared state on grant changes, forwards the reviewed grants to build approval, checks current roots on completion and validates returned capture roots.",
+    "lifetime": "Only successfully started security scopes are stopped. Failed additions roll back access; removal or primary replacement releases old grants. Close waits for the preparation task to drain before releasing folders; cancellation cannot publish late results. Ordinary readable URLs without a security scope remain usable."
+  },
+  "verification": {
+    "focused": {
+      "registered": 98,
+      "passed": 97,
+      "skipped": 1,
+      "failures": 0,
+      "log": "/private/tmp/intents-native-source-grants-final-20261008.log",
+      "command": "swift test --jobs 2 --filter 'SourcePreparationStoreTests|InstalledUIStoreTests|MacFreshDraftStoreTests|AutomationMultiRootSnapshotTests|AutomationMultiRootPreparationTests|AutomationSnapshotTests'"
+    },
+    "installedSDKBuildOnly": {
+      "passed": 1,
+      "seconds": 16.501,
+      "fixture": "Tools/IntentsAutomation/.runtime/multi-root-1/fixture-2C263FE3-A9E4-4D7C-A35F-5AF77A43F552",
+      "subjectSHA256": "32dc73cd112ae5dcdfe6cc2c3a6b17ab62c271bc208d9fcbfab5963a81feb98f",
+      "hostSHA256": "ab91c4e6d16e815464e3baf0ed101e0521fb5d18126929c9e5c5adbb1a29dde7",
+      "log": "/private/tmp/intents-native-source-grants-sdk-build-20261008.log",
+      "runtimeDispatched": false
+    },
+    "officialAppBuild": {
+      "tool": "Xcode MCP BuildProject",
+      "seconds": 16.955,
+      "errors": 0,
+      "workspaceClosed": true
+    },
+    "reviews": "Two distinct Sol lanes clear: folder authority/picker/scopes and native selection/approval/completion/close lifecycle.",
+    "renderedUI": {
+      "verified": false,
+      "tool": "Xcode MCP RenderPreview",
+      "source": "FoundationEvals/Views/AutomationSourcePreparationControls.swift",
+      "failure": "PreviewFailedError/RequestTimedOut: Could not connect to preview agent PID31693; bootstrap timeout after3.0s. No snapshot returned.",
+      "retried": false
+    }
+  },
+  "remaining": "Native picker interaction and rendered controls remain unverified. Compiler/generated/remote source provenance and existing live ownership/UI/Siri/controller/environment gates remain. Full M0-M6 incomplete; no push/publication/release."
+}

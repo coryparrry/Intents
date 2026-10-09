@@ -1,0 +1,120 @@
+{
+  "actualQualificationGates": [
+    "native UI provider approval/qualification",
+    "helper and recipient GUI-session/event qualification",
+    "strict release census foreign zombie",
+    "physical Siri Xcode/iOS ABI",
+    "fresh fixture/controller quality",
+    "clean-host/distribution/independent-app/human trials"
+  ],
+  "customerRuntimeEnabled": false,
+  "durableEvidenceLogsSHA256": {
+    "Verification/Automation/Evidence/2026-10-07-mac-scroll/core-tests1.log": "7919df0013a676df2bcaa7c12c465e67bb18cd9f45fe0a36bf1f26c4d2318280",
+    "Verification/Automation/Evidence/2026-10-07-mac-scroll/helper-release1.log": "40288e9ab682a71f4d8ce7cf98991683ad1dfe4b3197ece4f1fadf16de79a599",
+    "Verification/Automation/Evidence/2026-10-07-mac-scroll/helper-tests1.log": "cdb388a220f7bea71cc37dd25a436ac85284a5b1eeabc902775da82f9336b3f8",
+    "Verification/Automation/Evidence/2026-10-07-mac-scroll/node-tests2.log": "e62af4788925d75343270336208587a23a59be2a28cfd559aa808d0671d5546a",
+    "Verification/Automation/Evidence/2026-10-07-mac-scroll/staging-tests1.log": "79897d011a1aaa76145e639592b1207fa563cb1187e00ac85c3ee31c86a0b15f",
+    "Verification/Automation/Evidence/2026-10-07-mac-scroll/ts-build1.log": "536d45b6b500ac4e413f7e7b964aa70fcc96d53ddd86e16db03d3bb4392bde6d",
+    "Verification/Automation/Evidence/2026-10-07-mac-scroll/ts-build3.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "guiInputSubmitted": false,
+  "hardwareQualified": false,
+  "helper": {
+    "availableAtCheckpoint": true,
+    "nativeInputsSHA256": {
+      "apple/macos-helper/Package.swift": "4b3985c849c9744e027e555944581820ccd9433239409c246cc9011c45f28cbf",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/AudioProbe.swift": "dbd8d9595d0665b542bf4fd2139bdead2161066a176ed5e52d405c6b71ec0e10",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacApplicationOwnership.swift": "2ee58123d50fa9895e398e016861cbfb8667eed3bdf45389c496106babeb539b",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacApplicationTarget.swift": "3fbe5c565799fc3da4fc0c16d983ae7665075f1a26cc6dd5d245acad8101e2c6",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacHelperOwnershipGate.swift": "c8e9fb556d564e78947e73a2740982d7027eb4e136dd0e32d951aeb16e7992e2",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacOwnedMouseDelivery.swift": "67ec193bea841b2df5492018a35ab61c54aa5fe696f836ea5a210952d99c8399",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacOwnedPressArguments.swift": "c223f339c98ea8c1b3c16aba3a5b758bdc779e3f56409c3194cd7e49ceee1736",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacOwnedScroll.swift": "055343e2636608ad106a0abf67edec81f026364f70e491d1ab65638fdbd1e641",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacSnapshotDisclosure.swift": "9decaddc93deab650090d95979984d8936fe11a78439910db0e54b4edb4f671c",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/SnapshotTraversal.swift": "056f40dbd444a4265efaac8c18bab070d2236961b27222f8e9a9a0a1eaab9c12",
+      "apple/macos-helper/Sources/AgentDeviceMacOSHelper/main.swift": "3124e78250c7732f01a2b89f19d4862c7ad4dfc2048598607327e7262904a887",
+      "apple/macos-helper/Sources/AgentDeviceMacOSInput/MouseClickDelivery.swift": "40aa564c3d849e6f9604893fca7d64329d9b97d8dc5dece1a6eaaef881a6aec3",
+      "apple/macos-helper/Sources/AgentDeviceMacOSInput/MouseClickSchedule.swift": "53a3e22986cd0236f01e74bb41197a655b6d643878e7d84f44df8a12909556b1",
+      "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacApplicationOwnershipTests.swift": "36997a67ffb0de0f85b7942487915b2aa8ed1f90d43bbb23faf19416ab59326d",
+      "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacApplicationTargetTests.swift": "9c0697cd375e55483c65a86a2bb37f49e982a10fa1ae082970a49819270acc82",
+      "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacHelperOwnershipGateTests.swift": "1d55ade5e3e8cf22a0a9b4d4c0e7e249ce6e6421a0187a311809308f446dde74",
+      "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacOwnedMouseDeliveryTests.swift": "0824dd0fae5858d194e7ce8ebf2e00bbd25b92b7036eba270db76ca61ff8e534",
+      "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacOwnedScrollTests.swift": "6d6db478522046590ee4bfe9410ee304e9169bb0b00bd922541200f0cb11b06d",
+      "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/ScreenshotResponseTests.swift": "5708f70182d4a507c8b4600691c8a1461e7be84a323a40c7f23e4e7c902fe2ac",
+      "apple/macos-helper/Tests/AgentDeviceMacOSInputTests/MouseClickScheduleTests.swift": "0ec3bd32b77136224fc750d8d178c9ab9abba618c46df116f988c2866d7d7653"
+    },
+    "path": "Tools/IntentsAutomation/.runtime/mac-owned-scroll-source-1/agent-device-macos-helper",
+    "sha256": "068dfd47b668ddb656fdef257382f4763357fe49c0dbdeb89ea1bd634564be4f",
+    "sourceReceiptPath": "Tools/IntentsAutomation/.runtime/mac-owned-scroll-source-1/source-receipt.json",
+    "sourceReceiptSHA256": "66eef1564576702a5ed8bbc8427cd37cbdca4d8d336acc28b989d0f51572b23b"
+  },
+  "nativeRoutePreflightSupportsScroll": false,
+  "nativeUIRendered": false,
+  "ordinaryFillImplemented": false,
+  "recovery": {
+    "currentCandidateNativeInputsMatched": 20,
+    "originalWholeSourceArchiveReverified": false,
+    "previousTemporaryArtifactAndLogsAvailable": false,
+    "previousTemporaryHelperAcceptedByCurrentSource": false,
+    "previousTemporaryHelperSHA256": "6bcbdae86291e26dde7155775360f19755b492f2787eeaecb67b14aa78a694bc",
+    "recordedBaselineNativeInputsMatched": 17
+  },
+  "remainingSource": [
+    "whole frozen SDK/native runner scroll integration",
+    "ordinary Mac replacement fill via private framed input",
+    "Mac associated intent preparation and mixed driver",
+    "installed Mac Reproduce and Check fix",
+    "opaque credential mapping and consent UI"
+  ],
+  "review": "distinct source reviews; disclosure/title/ancestry/cutoffs and daemon capability forwarding findings fixed and rechecked",
+  "schemaVersion": 1,
+  "scope": "bounded experimental Mac scroll, helper disclosure and explicit native bridge source",
+  "sourceBaseCommit": "fb590f66abe14355c8f64bef6978f5f0078a998a",
+  "sourceInputsSHA256": {
+    "Sources/IntentsAutomationCore/AutomationMacNativeHelperBridge.swift": "f3985526b00f8c864e14cbe943f3c25e1c136c7bdc26ebb99c8c807a8a5f29f6",
+    "Tests/IntentsAutomationCoreTests/AutomationMacNativeHelperBridgeTests.swift": "2993dbb872374b598bdc7eec9fbb7ff31dec7e40b3bbb40742312a3ff48dec6c",
+    "Tools/IntentsAutomation/patches/mac-ownership/MacOwnedScroll.swift": "055343e2636608ad106a0abf67edec81f026364f70e491d1ab65638fdbd1e641",
+    "Tools/IntentsAutomation/patches/mac-ownership/MacOwnedScrollTests.swift": "6d6db478522046590ee4bfe9410ee304e9169bb0b00bd922541200f0cb11b06d",
+    "Tools/IntentsAutomation/patches/mac-ownership/MacSnapshotDisclosure.swift": "9decaddc93deab650090d95979984d8936fe11a78439910db0e54b4edb4f671c",
+    "Tools/IntentsAutomation/scripts/stage_mac_owned_scroll.py": "63dc058c451a8c5998279c180001321d1c7f4f62d69c0a8769ac01da8cfce3e3",
+    "Tools/IntentsAutomation/src/deviceSession.ts": "3fb05d31b6258c671bf03d320e1c13800d4fa8507a9efd3507de0fbd65dd5fdb",
+    "Tools/IntentsAutomation/src/e2e/config.ts": "988c35fff775e5c931d9ee73bb11e606704242538ebd7ba15003ac52a9afab9a",
+    "Tools/IntentsAutomation/src/macOwnedDaemon.ts": "d8706acaccba4465e91d38a5230b1351e66e1cb7e800d3603031a93372281c31",
+    "Tools/IntentsAutomation/src/macOwnedHelperProvider.ts": "f803ba587586bd15a4cd9c4b3ab8d60f3eeb3985b25a1c6a1989558ec10e55a3",
+    "Tools/IntentsAutomation/src/macOwnedProgram.ts": "99e1a548d27a1d860f4d3f649ea322a1960f329c06035178b15893da1e975555",
+    "Tools/IntentsAutomation/src/macOwnedSDKTransport.ts": "06525520d1fa3d874f02f57a631bbf5b14103d4e0f28001ebecb4ba9d7978b8b",
+    "Tools/IntentsAutomation/src/macOwnedSession.ts": "fad99f7446486352c0ed3f0c4b07cd2d49152d6ff1eb040771b6ff484aa9c5a7",
+    "Tools/IntentsAutomation/src/workerRunner.ts": "1351df330a1b3991d6dd53170026770795a975037194347245986d844798f1f2",
+    "Tools/IntentsAutomation/tests/fixtures/macDaemonScrollFixture.ts": "a41704f65ede1ee7654683a4331624ca6b4708f834ef152b411074d3456d04ec",
+    "Tools/IntentsAutomation/tests/macOwnedDaemonScroll.test.ts": "16b9aa3b23cbc0a45c3c8a8269ba59367f66e5db17ab124f8b4d302f77eb0ec9",
+    "Tools/IntentsAutomation/tests/macOwnedHelperProvider.test.ts": "b28319ffd205f3efa39770f6e1713932aad13997535bded3949158993b6554ad",
+    "Tools/IntentsAutomation/tests/macOwnedProgram.test.ts": "f23bf95ec0c30366be47a6a08d86cd4251bad611a30fb76d24ce82c774a06004",
+    "Tools/IntentsAutomation/tests/macOwnedSession.test.ts": "14c69e76092c394216fe8ea4ccadc1995ca3c17e44dec2f2913c7df07eaf06eb",
+    "Tools/IntentsAutomation/tests/mac_owned_scroll_staging_test.py": "a816c0873b233d53687b8933785fbb5b598cd985f2d51845d498ffd501c641b2"
+  },
+  "verification": {
+    "helperTests": {
+      "failed": 0,
+      "passed": 28,
+      "skipped": 0
+    },
+    "nodeTests": {
+      "failed": 0,
+      "passed": 58,
+      "skipped": 0
+    },
+    "stagerTests": {
+      "failed": 0,
+      "passed": 3,
+      "skipped": 0
+    },
+    "swiftCoreTests": {
+      "failed": 0,
+      "passed": 42,
+      "registered": 44,
+      "skipped": 2
+    },
+    "typeScriptBuild": "passed"
+  },
+  "wholeRuntimeScrollSealed": false
+}

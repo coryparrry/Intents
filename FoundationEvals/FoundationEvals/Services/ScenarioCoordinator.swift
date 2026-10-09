@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import Observation
+import IntentsAutomationCore
 
 /// Admission shared by scenario orchestration and ordinary evaluation starts.
 /// A child feature run carries its parent's owner ID, so it can use the same
@@ -42,6 +43,10 @@ final class ScenarioCoordinator {
     var assessmentJudgeConfiguration = EvaluationJudgeConfiguration()
     private(set) var selectedAssessmentOverlay: ScenarioAssessmentSelectionRecord?
     private(set) var assessmentSelectionHistory: [ScenarioAssessmentSelectionRecord] = []
+    private var automationSnapshot: AutomationNativeEvidenceSnapshot?
+    var automationEvidence: [AutomationNativeEvidencePresentation] { automationSnapshot?.presentations ?? [] }
+    @ObservationIgnored private var automationEvidenceEpoch = 0
+    private let automationSupport: URL
     var draft: ScenarioDefinition
     var parameterArrayDraftTexts: [Int: String] = [:]
     var invalidParameterDraftIndices: Set<Int> = []
@@ -96,6 +101,7 @@ final class ScenarioCoordinator {
          executionAdmission: ScenarioExecutionAdmission = .shared) {
         let root = supportDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
         rootDirectory = root
+        automationSupport = supportDirectory.appendingPathComponent("Automation")
         let persistence = ScenarioPersistence(rootDirectory: root)
         self.persistence = persistence
         collectionStore = ScenarioCollectionStore(rootDirectory: root)
@@ -105,7 +111,8 @@ final class ScenarioCoordinator {
         connectionDiscovery = initialConnectionDiscovery
         executor = XcodeTestExecutor(
             workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory),
-            persistence: persistence
+            persistence: persistence,
+            physicalLeaseStoreURL: supportDirectory.appendingPathComponent("Automation/target-leases.json")
         )
         draft = (try? ScenarioDefinition.starter(projectID: evaluationStore.selectedProjectID).frozen())
             ?? ScenarioDefinition.starter(projectID: evaluationStore.selectedProjectID)
@@ -194,12 +201,30 @@ final class ScenarioCoordinator {
         } ?? (draft.id == run.scenarioID && draft.version == run.scenarioVersion && draft.definitionDigest == run.scenarioDigest ? draft : nil)
     }
 
+    func refreshAutomationEvidence() async {
+        automationEvidenceEpoch += 1; let epoch = automationEvidenceEpoch
+        guard FileManager.default.fileExists(atPath: automationSupport.path) else { automationSnapshot = nil; return }
+        do {
+            let authority = try AutomationEvidenceExposureAuthority(supportRoot: automationSupport)
+            let snapshot = try await persistence.loadAutomationEvidence(authority: authority)
+            guard epoch == automationEvidenceEpoch, !Task.isCancelled else { return }
+            automationSnapshot = snapshot
+        } catch {
+            guard epoch == automationEvidenceEpoch else { return }
+            automationSnapshot = nil; notice = "Native app-check evidence could not be verified."
+        }
+    }
+    func clearAutomationEvidence() {
+        automationEvidenceEpoch += 1; automationSnapshot = nil
+    }
+
     func load() async {
         guard !hasLoaded else { return }
         do {
             try await persistence.prepare()
             definitions = try await persistence.loadDefinitions()
             runs = try await persistence.loadRuns()
+            await refreshAutomationEvidence()
             ledger = try await persistence.loadLedger()
             pendingOrdinarySaves = try await persistence.loadPendingOrdinarySaves()
             recoveryJournals = try await executor.reconcileInterruptedJournals()
