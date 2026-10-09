@@ -9,11 +9,20 @@ struct AutomationNativeUIRuntime: Sendable {
     static func attachPreparedEvidence(to plan: inout AutomationCase, prepared: AutomationPreparedApplication) throws {
         if prepared.host.target.kind == .nativeMac {
             plan.preparedMacBuildArtifacts = try .init(prepared: prepared)
-        } else { plan.provenance.merge(try preparedProvenance(prepared)) { _, value in value } }
+        } else {
+            plan.preparedSimulatorBuildArtifacts = try .init(prepared: prepared)
+            for key in ["ui.preparedHostDigest", "ui.preparedXctestrunDigest", "ui.preparedCatalogDigest", "ui.hostTemplateDigest"] {
+                plan.provenance.removeValue(forKey: key)
+            }
+        }
     }
     static func preparedEvidenceMatches(plan: AutomationCase, prepared: AutomationPreparedApplication) -> Bool {
-        guard plan.app == prepared.host.app else { return false }
+        guard plan.app == prepared.host.app, plan.target == prepared.host.target,
+              prepared.catalog.app == plan.app, prepared.host.subjectProductPath == plan.app.canonicalBundlePath,
+              prepared.generatedHost.configuration == plan.app.configuration else { return false }
+        if prepared.host.target.kind == .simulator, plan.app.sourceManifestDigest != (try? prepared.source.digest) { return false }
         if let artifacts = plan.preparedMacBuildArtifacts { return artifacts == (try? .init(prepared: prepared)) }
+        if let artifacts = plan.preparedSimulatorBuildArtifacts { return artifacts == (try? .init(prepared: prepared)) }
         return (try? preparedProvenance(prepared))?.allSatisfy { plan.provenance[$0.key] == $0.value } == true
     }
     static func preparedProvenance(_ prepared: AutomationPreparedApplication) throws -> [String: String] {
