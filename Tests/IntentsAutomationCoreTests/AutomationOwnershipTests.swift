@@ -143,4 +143,69 @@ final class AutomationOwnershipTests: XCTestCase, @unchecked Sendable {
         try input.fileHandleForWriting.write(contentsOf: Data("1".utf8)); child.waitUntilExit()
         try file.withLock { XCTAssertEqual(try file.read(), Data("{}".utf8)) }
     }
+    func testRetireNativeCommandRefusesLiveForeignAndUnrecordedRunnersBeforeRelease() async throws {
+        let root = try root(); defer { try? FileManager.default.removeItem(at: root) }
+        let target = TargetIdentity(id: "simulator", kind: .simulator)
+        let manager = try AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("leases.json"))
+        let lease = try await manager.acquire(runID: "run", target: target, control: .system)
+        let helper = Process(); helper.executableURL = URL(fileURLWithPath: "/bin/sleep"); helper.arguments = ["60"]
+        try helper.run(); defer { if helper.isRunning { helper.terminate(); helper.waitUntilExit() } }
+        let process = try XCTUnwrap(AutomationProcessIdentity.inspect(pid: helper.processIdentifier))
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: lease.generation)
+        let runner = AutomationDeviceLeaseManager.OwnedRunner(scope: scope, process: process, role: .nativeCommand, executablePath: "/bin/sleep")
+        try await manager.recordRunner(runner, lease: lease)
+        do { try await manager.retireNativeCommand(runner, lease: lease); XCTFail("A live helper cannot be retired") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .terminationUnverified) }
+        let retained = try await manager.currentRecord(lease); XCTAssertEqual(retained.runners, [runner])
+        do { try await manager.release(lease, commandsDrained: true, ownedRunnerTerminated: true); XCTFail("Live recorded helper fences release") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .terminationUnverified) }
+        helper.terminate(); helper.waitUntilExit(); XCTAssertEqual(process.presence(), .absent)
+        var wrongRole = runner; wrongRole.role = .appleHost
+        var foreignRun = runner; foreignRun.scope.runId = "other"
+        var staleGeneration = runner; staleGeneration.scope.leaseGeneration += 1
+        for foreign in [wrongRole, foreignRun, staleGeneration] {
+            do { try await manager.retireNativeCommand(foreign, lease: lease); XCTFail("Foreign runner identity retired a helper") }
+            catch { XCTAssertEqual(error as? AutomationContractError, .terminationUnverified) }
+        }
+        let afterForeign = try await manager.currentRecord(lease); XCTAssertEqual(afterForeign.runners, [runner])
+        var unrecorded = runner; unrecorded.executablePath = "/bin/other"
+        do { try await manager.retireNativeCommand(unrecorded, lease: lease); XCTFail("Unrecorded runner retired") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .invalidIdentity) }
+        let afterUnrecorded = try await manager.currentRecord(lease); XCTAssertEqual(afterUnrecorded.runners, [runner])
+        try await manager.retireNativeCommand(runner, lease: lease)
+        let retired = try await manager.currentRecord(lease); XCTAssertEqual(retired.runners, [])
+        do { try await manager.retireNativeCommand(runner, lease: lease); XCTFail("Runner retired twice") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .invalidIdentity) }
+        try await manager.release(lease, commandsDrained: true, ownedRunnerTerminated: true)
+        do { try await manager.retireNativeCommand(runner, lease: lease); XCTFail("Released lease retired a runner") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .unknownLease) }
+    }
+    func testRetirePrivatePayloadRefusesForeignReferenceAndUncleanBytes() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let target = TargetIdentity(id: "device", kind: .simulator)
+        let manager = try AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("leases.json"))
+        let lease = try await manager.acquire(runID: "run", target: target, control: .system)
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: lease.generation)
+        let plist: [String: Any] = ["OwnedHost": ["EnvironmentVariables": ["INTENTS_AUTOMATION_HOST_PLAN_B64": "frozen-plan"]], "__xctestrun_metadata__": ["FormatVersion": 1]]
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        let url = root.appendingPathComponent("host.xctestrun")
+        let recorded = try AutomationAppleHostPayloadFile(data: data, url: url, scope: scope)
+        let foreign = try AutomationAppleHostPayloadFile(data: data, url: root.appendingPathComponent("other.xctestrun"), scope: scope)
+        try await manager.recordPrivatePayload(recorded, lease: lease); try recorded.write(data)
+        do { try await manager.retirePrivatePayload(foreign, lease: lease); XCTFail("Foreign reference cleared the recovery record") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .unknownLease) }
+        let afterForeign = try await manager.currentRecord(lease); XCTAssertEqual(afterForeign.privatePayload, recorded.recoveryReference)
+        do { try await manager.retirePrivatePayload(recorded, lease: lease); XCTFail("Unsanitized payload retired") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
+        let afterUnclean = try await manager.currentRecord(lease); XCTAssertEqual(afterUnclean.privatePayload, recorded.recoveryReference)
+        XCTAssertEqual(try Data(contentsOf: url), data)
+        try recorded.clean(scope: scope)
+        try await manager.retirePrivatePayload(recorded, lease: lease)
+        let retired = try await manager.currentRecord(lease); XCTAssertNil(retired.privatePayload)
+        try await manager.release(lease, commandsDrained: true, ownedRunnerTerminated: true)
+        do { try await manager.retirePrivatePayload(recorded, lease: lease); XCTFail("Released lease retired a payload") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .unknownLease) }
+    }
 }
