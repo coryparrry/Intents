@@ -450,11 +450,13 @@ struct IntentLabRegressionTests {
     }
 
     @MainActor
-    @Test func ordinaryRunAndScenarioStartsDoNotShareTheExecutionDestination() async throws {
+    @Test(.timeLimit(.minutes(2)))
+    func ordinaryRunAndScenarioStartsDoNotShareTheExecutionDestination() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let evaluation = EvaluationStore(supportDirectory: root)
         let runners = DeveloperRunnerStore(evaluationStore: evaluation)
+        defer { runners.stop() }
         let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: evaluation)
         coordinator.bindRunnerStore(runners)
         await coordinator.load()
@@ -468,8 +470,13 @@ struct IntentLabRegressionTests {
         evaluation.isRunning = false
 
         let ordinaryRunnerID = UUID()
+        let lifetime = AsyncStream<Void>.makeStream()
+        defer { lifetime.continuation.finish() }
+        let completion = AsyncStream<Void>.makeStream()
         runners.startTrackedExecution(runID: ordinaryRunnerID) {
-            try? await Task.sleep(for: .seconds(30))
+            defer { completion.continuation.finish() }
+            for await _ in lifetime.stream {}
+            #expect(Task.isCancelled, "The ordinary fixture must finish through cancellation.")
         }
         #expect(runners.executingRunID == ordinaryRunnerID)
         coordinator.notice = nil
@@ -477,10 +484,10 @@ struct IntentLabRegressionTests {
         #expect(coordinator.notice?.contains("active evaluation") == true)
         #expect(ScenarioExecutionAdmission.shared.ownerID == nil)
         runners.cancelRun(ordinaryRunnerID)
-        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
-        while runners.executingRunID != nil && ContinuousClock.now < deadline {
-            await Task.yield()
-        }
+        #expect(runners.executingRunID == ordinaryRunnerID)
+        // Both tasks run on MainActor; identity cleanup follows operation completion without another suspension.
+        for await _ in completion.stream {}
+        try Task.checkCancellation()
         #expect(runners.executingRunID == nil)
 
         let scenarioOwner = UUID()
