@@ -30,7 +30,7 @@ binary="$app/Contents/MacOS/$executable"
 dwarf="$dsym/Contents/Resources/DWARF/$executable"
 [[ -f "$binary" && -f "$dwarf" ]] || { echo 'Archive binary or matching dSYM is missing.' >&2; exit 1; }
 codesign --verify --strict --deep "$app"
-signature="$(codesign -dv "$app" 2>&1)"
+signature="$(codesign -dvvv "$app" 2>&1)"
 printf '%s\n' "$signature" | grep -q '^Authority=Developer ID Application:' || {
   echo 'Symbols require a Developer ID signed Release archive.' >&2; exit 1;
 }

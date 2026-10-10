@@ -1,5 +1,8 @@
 # Intents telemetry repair
 
+> Historical source/fixture qualification from the earlier dirty checkout. Current PR archive, uploaded-symbol verification and local-Mac exclusion are recorded in [Telemetry PR qualification](../TelemetryPR-20261010/README.md).
+
+
 Intents supports native macOS. Its iPhone/simulator automation targets do not represent iPhone installations of Intents. The connected EU project **266962** matches the bundled ingestion token; credentials are omitted from this evidence.
 
 ## Measurement contract

@@ -30,7 +30,7 @@ class ArchiveSymbolUploadTests(unittest.TestCase):
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         self.tool('codesign', '''#!/bin/bash
-if [[ "$1" == -dv ]]; then
+if [[ "$1" == -dvvv ]]; then
   echo 'Authority=Developer ID Application: fixture' >&2
 fi
 exit "${FAKE_SIGNATURE_EXIT:-0}"

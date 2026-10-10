@@ -1,5 +1,8 @@
 # Automatic native crash reporting — 10 October 2026
 
+> Historical source/fixture qualification from the earlier dirty checkout. Current PR archive, uploaded-symbol verification and local-Mac exclusion are recorded in [Telemetry PR qualification](../TelemetryPR-20261010/README.md).
+
+
 Intents now enables automatic PostHog fatal crash reporting in eligible macOS production builds when **Share diagnostic statistics** is on. This switch remains off by default and independent of usage sharing. Reports are sent on the next launch. Development, test, preview, demo and isolated verification runs remain excluded.
 
 ## Privacy and consent

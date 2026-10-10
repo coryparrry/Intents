@@ -11,3 +11,9 @@
 - Existing EU Intents credential and one Developer ID identity discovered; official PostHog CLI 0.18.10 installed temporarily. Prepare a signed PR candidate only; no release distribution.
 
 - Native PR build Privacy UI inspected at top and bottom: both switches and Retry are disabled, local-policy copy is readable, temporary app closed. No simulator used.
+
+- Signed arm64 candidate archive succeeded at source 81b6b414673bae9f3aa4efd2a2d32bb04db09f47, version 1.0, build 2026101001. Signature verified; packaged privacy manifest lint passed. No installer, tag, release publication or distribution.
+- Actual archive validation exposed codesign -dv omitted Authority metadata; helper now uses -dvvv and its six regression tests were rerun successfully. No app source changed after archive.
+- Exact app/dSYM UUID: 369C06FB-C5A2-3A45-8D1F-E990F7424825 (arm64). PostHog upload exited 0; symbol set 01a1261e-aabe-0000-b989-361aef550662 has an uploaded file, matching release version/build and no failure reason.
+- Downloaded the symbol file from PostHog: SHA-256 equals the exact archive DWARF. atos resolves TelemetryController.appBecameActive() at TelemetryController.swift:166. No source files were included.
+- Saved native fatal insight 6465993 still returns No data recorded. Symbols are qualified; hosted live crash delivery/readable UI frames remain unverified on an eligible machine. This Mac remains excluded and no production crash/event was manufactured.
