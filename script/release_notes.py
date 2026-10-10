@@ -9,7 +9,20 @@ from pathlib import Path
 BEGIN = "BEGIN_COMMIT_OVERRIDE"
 END = "END_COMMIT_OVERRIDE"
 REQUIRED_PR_TYPES = {"feat", "fix"}
-ALLOWED_ENTRY_TYPES = {"deps", "feat", "fix", "perf"}
+ALLOWED_ENTRY_TYPES = {
+    "build",
+    "chore",
+    "ci",
+    "deps",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "refactor",
+    "revert",
+    "style",
+    "test",
+}
 HTML_COMMENT = re.compile(r"<!--.*?(?:-->|$)", re.DOTALL)
 SUBJECT = re.compile(
     r"^(?P<type>[a-z]+)(?:\([^()\r\n]+\))?(?P<breaking>!)?: (?P<summary>\S.*)$"
