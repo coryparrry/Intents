@@ -16,8 +16,9 @@
 Release Please sees one commit after GitHub squash-merges a pull request. For a
 feat: or fix: pull request, replace this comment with the active commit-override
 block documented in docs/releasing.md. Add one Conventional Commit entry for
-each user-visible change and keep implementation detail out of those entries.
+each user-visible change. Use docs, test, refactor, build, ci, chore, style, or
+revert entries for changes in those categories.
 CI validates the active block. Docs, CI, test, refactor, and chore pull requests
-can leave this instruction commented unless they intentionally need user-facing
-release notes.
+can leave this instruction commented to use their conventional squash-commit
+subject, or add an override to list several changes in the changelog.
 -->

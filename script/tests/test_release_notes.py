@@ -37,6 +37,18 @@ class ReleaseNotesTests(unittest.TestCase):
             ],
         )
 
+    def test_maintenance_and_documentation_overrides_preserve_multiple_entries(self):
+        entries = [
+            "docs(site): explain first evaluations",
+            "test(mcp): cover malformed tool requests",
+            "ci(release): keep release branches current",
+            "refactor(core): simplify request routing",
+        ]
+        self.assertEqual(
+            validate_pull_request("docs: describe the workflow", override(*entries)),
+            entries,
+        )
+
     def test_override_retains_the_pull_request_release_type(self):
         with self.assertRaises(ValueError):
             validate_pull_request(
@@ -44,7 +56,7 @@ class ReleaseNotesTests(unittest.TestCase):
                 override("fix(ui): align the sidebar"),
             )
 
-    def test_non_releasable_pull_request_can_omit_override(self):
+    def test_non_feature_or_fix_pull_request_can_omit_override(self):
         for title in (
             "docs: explain releases",
             "ci: route tests",
@@ -113,7 +125,7 @@ class ReleaseNotesTests(unittest.TestCase):
             "END_COMMIT_OVERRIDE\nfeat(ui): example\nBEGIN_COMMIT_OVERRIDE",
             "BEGIN_COMMIT_OVERRIDE\nEND_COMMIT_OVERRIDE",
             override("feat(ui): one") + "\n" + override("feat(ui): two"),
-            override("docs: implementation detail"),
+            override("unknown: implementation detail"),
             override("feat(ui) missing separator"),
         )
         for body in bodies:
@@ -125,6 +137,12 @@ class ReleaseNotesTests(unittest.TestCase):
         sections = config["packages"]["."]["changelog-sections"]
         self.assertEqual({section["type"] for section in sections}, ALLOWED_ENTRY_TYPES)
         self.assertTrue(all(section["section"] for section in sections))
+        self.assertEqual(len(sections), len(ALLOWED_ENTRY_TYPES))
+        self.assertTrue(all(not section.get("hidden", False) for section in sections))
+
+    def test_release_pr_refreshes_even_when_generated_notes_are_unchanged(self):
+        config = json.loads((ROOT / "release-please-config.json").read_text())
+        self.assertIs(config.get("always-update"), True)
 
     def test_ci_revalidates_edited_pull_request_bodies(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
