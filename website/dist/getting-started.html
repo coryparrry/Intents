@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fafafa">
+  <meta name="description" content="Install Intents 1.4.0 or build development source, run a small Apple Foundation Models evaluation, and inspect saved responses and traces.">
+  <meta name="author" content="Cory Parry">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+  <meta property="og:title" content="Get started with Intents — release, source, and your first evaluation">
+  <meta property="og:description" content="Install Intents 1.4.0 or build development source, run a small Apple Foundation Models evaluation, and inspect saved responses and traces.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Intents">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:url" content="https://intents-workbench.coryparry.chatgpt.site/getting-started">
+  <meta property="og:image" content="https://intents-workbench.coryparry.chatgpt.site/assets/intents-icon.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="256">
+  <meta property="og:image:height" content="256">
+  <meta property="og:image:alt" content="Intents app icon">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Get started with Intents — release, source, and your first evaluation">
+  <meta name="twitter:description" content="Install Intents 1.4.0 or build development source, run a small Apple Foundation Models evaluation, and inspect saved responses and traces.">
+  <meta name="twitter:image" content="https://intents-workbench.coryparry.chatgpt.site/assets/intents-icon.png">
+  <meta name="twitter:image:alt" content="Intents app icon">
+  <link rel="canonical" href="https://intents-workbench.coryparry.chatgpt.site/getting-started">
+  <link rel="alternate" type="text/markdown" href="https://intents-workbench.coryparry.chatgpt.site/getting-started.html.md" title="Intents getting-started guide in Markdown">
+  <link rel="describedby" type="text/plain" href="https://intents-workbench.coryparry.chatgpt.site/llms.txt" title="Intents reading guide">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml">
+  <link rel="icon" href="/assets/favicon.png" type="image/png" sizes="96x96">
+  <title>Get started with Intents — release, source, and your first evaluation</title>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "url": "https://intents-workbench.coryparry.chatgpt.site/getting-started", "name": "Get started with Intents — release, source, and your first evaluation", "description": "Install Intents 1.4.0 or build development source, run a small Apple Foundation Models evaluation, and inspect saved responses and traces.", "isPartOf": {"@type": "WebSite", "url": "https://intents-workbench.coryparry.chatgpt.site/", "name": "Intents"}}</script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header"><a class="brand" href="/"><img src="/assets/intents-icon-37.png" width="37" height="37" alt=""><span>Intents</span></a><a class="nav-download" href="/">The workbench</a></header>
+<main id="main" class="guide-body">
+<p class="eyebrow">GETTING STARTED</p>
+<h1>Start with a test you can explain.</h1>
+<p>Intents is a free, open-source Mac workbench for Apple Foundation Models. Start with one prompt, a concrete expectation, and a saved response. Then add cases that expose failures.</p>
+<h2 id="choose-a-build">Choose a build</h2>
+<div class="build-choice"><h3>Released download: Intents 1.4.0</h3>
+<p>Published 4 October 2026. Intents was previously named Foundation Evals. The released app includes prompt suites, scoring, traces, saved comparisons, Review, Batch runs, Intent Lab (beta), JSON exports, and authenticated local MCP access.</p>
+<p><a href="https://github.com/coryparrry/Intents/releases/download/v1.4.0/Intents-1.4.0-macOS-arm64.dmg">Download the Apple silicon disk image</a> · <a href="https://github.com/coryparrry/Intents/releases/tag/v1.4.0">Release notes and checksums</a></p>
+<p>Open <code>Intents-1.4.0-macOS-arm64.dmg</code>, drag Intents to Applications, eject the disk image, and open the app. Follow the <a href="https://github.com/coryparrry/Intents/blob/v1.4.0/README.md#run-your-first-evaluation">v1.4.0 instructions</a> for this interface.</p></div>
+<div class="build-choice"><h3>Development source: Intents</h3>
+<p>Build source to develop the app or try changes that have not shipped. Review, Batch runs, and Intent Lab (beta) are also available in the released 1.4.0 app. Check <a href="https://github.com/coryparrry/Intents/releases">published releases</a> for any later download.</p>
+<p>With Xcode 27 and its command-line tools selected, clone the repository and run the project’s build script:</p>
+<pre><code>git clone https://github.com/coryparrry/Intents.git
+cd Intents
+./script/build_and_run.sh</code></pre>
+<p>The script builds and opens <code>dist/Intents.app</code>. Read the <a href="https://github.com/coryparrry/Intents#build-from-source">source build instructions</a> and <a href="https://github.com/coryparrry/Intents/blob/main/docs/wiki/Home.md">current user guide</a>.</p></div>
+<h2 id="requirements">Check model readiness</h2>
+<p>Requires macOS 27 or later. The default on-device provider needs an Apple Intelligence–capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Ordinary on-device suites do not need Xcode. Source builds and Intent Lab require Xcode 27.</p>
+<p>Compatible Core AI models and custom HTTP providers have their own requirements. Remote providers and judges use their configured services. Optional Private Cloud Compute uses Apple’s service; tools can disclose the content needed for their calls. See <a href="https://github.com/coryparrry/Intents/blob/main/docs/wiki/Data-and-troubleshooting.md">data and troubleshooting</a>.</p>
+<h2 id="first-evaluation">Run your first case</h2>
+<p>In the released app, create a suite in <strong>Overview</strong>, then open <strong>Cases</strong> and <strong>Setup → Scoring</strong>.</p>
+<ol><li>Name the case “Capital answer”. Enter the prompt <code>Reply with only the capital of France</code> and expected text <code>Paris</code>.</li>
+<li>Choose <strong>Exact text</strong> to check the whole answer. Choose <strong>Contains text</strong> if extra words are allowed. Start with one repetition and no tools.</li>
+<li>Check that the model is ready, run the suite, and open its saved report and workflow trace. The <a href="https://github.com/coryparrry/Intents/blob/main/docs/wiki/Getting-started.md">current getting-started guide</a> explains the app controls.</li></ol>
+<h2 id="read-the-evidence">Read and compare results</h2>
+<p>Inspect the actual answer alongside the score. A pass means the response met your chosen scoring rule. Traces help explain measured stages and tool activity. Change one instruction, rerun the same cases, and compare the saved runs.</p>
+<p>Add a formatting failure, an ambiguous request, and a changed-preference case. Use repetitions to inspect variation. Small examples are not model benchmarks and do not establish statistical certainty. In the released app, <a href="https://github.com/coryparrry/Intents/blob/main/docs/EVAL_REVIEW_GUIDE.md">Review</a> records human verdicts and verified regression cases; <a href="https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md">Batch runs</a> retains frozen datasets and resumable jobs.</p>
+<h2 id="app-intents">Testing your app’s actions</h2>
+<p><a href="https://github.com/coryparrry/Intents/blob/main/docs/wiki/Intent-Lab.md">Intent Lab</a> needs app-owned test support and a signed UI-test target. Siri scenarios supply recognized text to a paired physical iPhone; they do not test microphone recognition. A direct App Intent pass does not prove Siri routing or the app’s observed effect. Read the separate action receipts and state checks.</p>
+<h2 id="contribute">Help improve a failure case</h2>
+<p>When <a href="https://github.com/coryparrry/Intents/issues">reporting an issue</a>, include your release or source commit, macOS and model, a minimal synthetic prompt, scoring rule, expected result, and actual response. Review exports for private content before attaching them. A reproducible case, documentation correction, or focused patch helps others test the same behavior. The source uses the <a href="https://github.com/coryparrry/Intents/blob/main/LICENSE">MIT licence</a>.</p>
+<p class="guide-note">Version facts checked 9 October 2026. The homepage’s HTML/CSS examples use a 17 September saved run and historical PR54 fixture, predating Review and Batch runs. They are browser recreations, not live model or Siri execution. Example scores are not model benchmarks.</p>
+<p><a href="/">Return to the workbench showcase</a> · <a href="/index.html.md">Product overview in Markdown</a></p>
+</main></body></html>

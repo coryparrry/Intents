@@ -14,6 +14,15 @@ Other providers have different requirements. See [Models, scoring, and tools](Mo
 4. Eject the disk image.
 5. Open **Intents** from Applications.
 
+You can also install the signed app using [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask coryparrry/tap/intents
+```
+
+The cask requires Apple Silicon and macOS 27 or later. To upgrade with Homebrew,
+run `brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
+
 ## Create a small evaluation
 
 1. In **Overview**, select **New Suite**.

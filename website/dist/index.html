@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#fafafa">
-  <meta name="description" content="Intents is a free, open-source Mac workbench for Apple Foundation Models. Run evaluations, inspect execution traces, and test App Intents. MIT licensed.">
+  <meta name="description" content="Test Apple Foundation Models before you ship. Intents is an open-source Mac workbench for repeatable prompt cases, response traces, and run comparisons.">
   <meta name="author" content="Cory Parry">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
-  <meta property="og:title" content="Intents — Open-source Apple Foundation Models workbench">
-  <meta property="og:description" content="A free Mac workbench for repeatable AI evaluations, execution traces, and App Intent testing. Native SwiftUI. Open source under the MIT licence.">
+  <meta property="og:title" content="Intents — Test Apple Foundation Models before you ship">
+  <meta property="og:description" content="Test Apple Foundation Models before you ship. Intents is an open-source Mac workbench for repeatable prompt cases, response traces, and run comparisons.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Intents">
   <meta property="og:locale" content="en_GB">
@@ -19,8 +19,8 @@
   <meta property="og:image:height" content="256">
   <meta property="og:image:alt" content="Intents app icon">
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Intents — Open-source Apple Foundation Models workbench">
-  <meta name="twitter:description" content="A free Mac workbench for repeatable AI evaluations, execution traces, and App Intent testing. Native SwiftUI. MIT licensed.">
+  <meta name="twitter:title" content="Intents — Test Apple Foundation Models before you ship">
+  <meta name="twitter:description" content="Test Apple Foundation Models before you ship. Intents is an open-source Mac workbench for repeatable prompt cases, response traces, and run comparisons.">
   <meta name="twitter:image" content="https://intents-workbench.coryparry.chatgpt.site/assets/intents-icon.png">
   <meta name="twitter:image:alt" content="Intents app icon">
   <link rel="canonical" href="https://intents-workbench.coryparry.chatgpt.site/">
@@ -28,73 +28,92 @@
   <link rel="describedby" type="text/plain" href="https://intents-workbench.coryparry.chatgpt.site/llms.txt" title="Intents reading guide">
   <link rel="sitemap" type="application/xml" href="/sitemap.xml">
   <link rel="icon" href="/assets/favicon.png" type="image/png" sizes="96x96">
-  <title>Intents — Open-source Apple Foundation Models workbench</title>
+  <title>Intents — Test Apple Foundation Models before you ship</title>
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "WebSite",
-        "@id": "https://intents-workbench.coryparry.chatgpt.site/#website",
-        "url": "https://intents-workbench.coryparry.chatgpt.site/",
-        "name": "Intents",
-        "inLanguage": "en",
-        "publisher": { "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator" }
-      },
-      {
-        "@type": "WebPage",
-        "@id": "https://intents-workbench.coryparry.chatgpt.site/#webpage",
-        "url": "https://intents-workbench.coryparry.chatgpt.site/",
-        "name": "Intents — Open-source Apple Foundation Models workbench",
-        "description": "Intents is a free, open-source Mac workbench for Apple Foundation Models. Run evaluations, inspect execution traces, and test App Intents. MIT licensed.",
-        "inLanguage": "en",
-        "isPartOf": { "@id": "https://intents-workbench.coryparry.chatgpt.site/#website" },
-        "mainEntity": { "@id": "https://intents-workbench.coryparry.chatgpt.site/#app" }
-      },
-      {
-        "@type": "SoftwareApplication",
-        "@id": "https://intents-workbench.coryparry.chatgpt.site/#app",
-        "name": "Intents",
-        "url": "https://intents-workbench.coryparry.chatgpt.site/",
-        "description": "A free, open-source native Mac workbench for evaluating Apple Foundation Models, inspecting execution traces, and testing App Intents with Intent Lab.",
-        "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "macOS 27 or later",
-        "processorRequirements": "Apple silicon",
-        "softwareRequirements": "Apple Intelligence-capable Mac with Apple Intelligence enabled and its on-device model downloaded.",
-        "isAccessibleForFree": true,
-        "license": "https://github.com/coryparrry/Intents/blob/main/LICENSE",
-        "downloadUrl": "https://github.com/coryparrry/Intents/releases/latest",
-        "image": "https://intents-workbench.coryparry.chatgpt.site/assets/intents-icon.png",
-        "sameAs": ["https://github.com/coryparrry/Intents"],
-        "author": { "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator" },
-        "subjectOf": { "@id": "https://intents-workbench.coryparry.chatgpt.site/#source" },
-        "featureList": [
-          "Repeatable evaluations for Apple Foundation Models",
-          "Recorded results and execution traces",
-          "App Intent testing with Intent Lab (beta)",
-          "Built-in MCP server for coding agents",
-          "Swift feature evaluation on a paired iPhone, iPad, or Mac",
-          "Compatible Core AI models and custom HTTP providers"
-        ]
-      },
-      {
-        "@type": "SoftwareSourceCode",
-        "@id": "https://intents-workbench.coryparry.chatgpt.site/#source",
-        "name": "Intents source code",
-        "codeRepository": "https://github.com/coryparrry/Intents",
-        "programmingLanguage": "Swift",
-        "license": "https://github.com/coryparrry/Intents/blob/main/LICENSE",
-        "targetProduct": { "@id": "https://intents-workbench.coryparry.chatgpt.site/#app" },
-        "author": { "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator" }
-      },
-      {
-        "@type": "Person",
-        "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator",
-        "name": "Cory Parry",
-        "url": "https://github.com/coryparrry"
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://intents-workbench.coryparry.chatgpt.site/#website",
+      "url": "https://intents-workbench.coryparry.chatgpt.site/",
+      "name": "Intents",
+      "inLanguage": "en",
+      "publisher": {
+        "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator"
       }
-    ]
-  }
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://intents-workbench.coryparry.chatgpt.site/#webpage",
+      "url": "https://intents-workbench.coryparry.chatgpt.site/",
+      "name": "Intents — Test Apple Foundation Models before you ship",
+      "description": "Test Apple Foundation Models before you ship. Intents is an open-source Mac workbench for repeatable prompt cases, response traces, and run comparisons.",
+      "inLanguage": "en",
+      "isPartOf": {
+        "@id": "https://intents-workbench.coryparry.chatgpt.site/#website"
+      },
+      "mainEntity": {
+        "@id": "https://intents-workbench.coryparry.chatgpt.site/#app"
+      }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://intents-workbench.coryparry.chatgpt.site/#app",
+      "name": "Intents",
+      "url": "https://intents-workbench.coryparry.chatgpt.site/",
+      "description": "Free, open-source macOS workbench for repeatable Apple Foundation Models evaluations, saved responses, execution traces, and comparisons. The published Intents v1.4.0 download includes Review, Batch runs, and Intent Lab (beta).",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS 27 or later",
+      "processorRequirements": "Apple silicon",
+      "softwareRequirements": "Apple Intelligence-capable Mac with Apple Intelligence enabled and its model downloaded for the default on-device provider. Xcode 27 for source builds and Intent Lab; other providers use their own services.",
+      "isAccessibleForFree": true,
+      "license": "https://github.com/coryparrry/Intents/blob/main/LICENSE",
+      "downloadUrl": "https://github.com/coryparrry/Intents/releases/download/v1.4.0/Intents-1.4.0-macOS-arm64.dmg",
+      "image": "https://intents-workbench.coryparry.chatgpt.site/assets/intents-icon.png",
+      "sameAs": [
+        "https://github.com/coryparrry/Intents"
+      ],
+      "author": {
+        "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator"
+      },
+      "subjectOf": {
+        "@id": "https://intents-workbench.coryparry.chatgpt.site/#source"
+      },
+      "featureList": [
+        "Repeatable prompt suites and scoring",
+        "Saved responses and execution traces",
+        "Saved run comparisons and JSON reports",
+        "Built-in local MCP server",
+        "Compatible Core AI models and custom HTTP providers",
+        "Development source: Review, Batch runs, and Intent Lab (beta)"
+      ],
+      "alternateName": "Foundation Evals",
+      "releaseNotes": "https://github.com/coryparrry/Intents/releases/tag/v1.4.0"
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": "https://intents-workbench.coryparry.chatgpt.site/#source",
+      "name": "Intents source code",
+      "codeRepository": "https://github.com/coryparrry/Intents",
+      "programmingLanguage": "Swift",
+      "license": "https://github.com/coryparrry/Intents/blob/main/LICENSE",
+      "targetProduct": {
+        "@id": "https://intents-workbench.coryparry.chatgpt.site/#app"
+      },
+      "author": {
+        "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator"
+      },
+      "description": "Intents development source. Source builds may include changes that have not shipped."
+    },
+    {
+      "@type": "Person",
+      "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator",
+      "name": "Cory Parry",
+      "url": "https://github.com/coryparrry"
+    }
+  ]
+}
   </script>
   <!-- Generated by scripts/inline-styles.mjs; edit the CSS files. -->
   <style id="site-styles">
@@ -129,6 +148,20 @@
 }
 
 @layer components {
+  .release-note{max-width:670px;margin:18px auto 0;padding:0 22px;font-size:14px;line-height:1.7;color:#606773}.release-note strong{font-weight:600}.release-note a,.development-note a,.start-grid a,.guide-body a,.documentation-links a{color:#2265b8;text-decoration:underline;text-underline-offset:3px}
+  .start-section{padding:0 0 96px}.start-section .eyebrow{margin-bottom:20px}.start-section h2{font-size:42px;letter-spacing:-1.8px}.start-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;margin-top:36px}.start-grid h3{font-size:20px;font-weight:580;letter-spacing:-.5px}.start-grid p{font-size:16px;line-height:1.75;color:#616773;margin:15px 0}.start-grid a{font-size:14px;line-height:1.6}
+  .development-note{max-width:800px;font-size:14px;line-height:1.8;color:#606773;margin:24px auto 0}.open-source-inner>p.development-note{font-size:16px}.documentation-links{display:flex;gap:24px;justify-content:center;flex-wrap:wrap;margin:22px 0;font-size:14px}
+  .guide-body{max-width:820px;margin:45px auto 90px;padding:0 24px;font-size:17px;line-height:1.8}.guide-body h1{font-size:clamp(36px,5vw,54px);line-height:1.1;letter-spacing:-2px;margin:18px 0 24px}.guide-body h2{font-size:29px;letter-spacing:-.7px;margin:44px 0 18px}.guide-body h3{font-size:22px;margin:24px 0 12px}.guide-body p{margin:14px 0}.guide-body li{margin:10px 0}.guide-body code{font-size:.94em;overflow-wrap:anywhere}.guide-body pre{padding:18px;border:1px solid #dce2eb;border-radius:9px;background:#f0f4fa;overflow:auto;line-height:1.5}.guide-body .build-choice{padding:8px 22px 20px;border-left:3px solid #007aff;margin:22px 0}.guide-body .guide-note{color:#606773;font-size:15px}.guide-body .eyebrow{font-size:14px}
+}
+@layer responsive {
+  @media(max-width:760px){.start-section{padding-bottom:65px}.start-section h2{font-size:34px}.start-grid{grid-template-columns:1fr;gap:26px;margin-top:28px}.release-note{font-size:14px;max-width:480px}.development-note{font-size:14px}.guide-body{margin-top:25px}.guide-body h2{font-size:27px}.documentation-links{gap:15px}}
+}
+
+@layer responsive {
+  @media(max-width:760px){.hero h1{font-size:clamp(36px,9.6vw,52px);letter-spacing:-2px}.hero-actions{padding-inline:18px}.hero-description{padding-inline:18px}}
+}
+
+@layer components {
 /* Values and geometry follow the current SwiftUI WorkspaceStyle and native captures. */
 .native-app{--native-blue:#007aff;--native-green:#45bd67;--native-canvas:#f5f5f7;--native-muted:#89898e;position:absolute;inset:0 auto auto 0;width:1400px;height:900px;transform-origin:top left;display:grid;grid-template-columns:249px 1fr;grid-template-rows:875px 25px;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;font-size:13px;color:#272729;line-height:1.3;background:var(--native-canvas);text-align:left}
 .native-app button,.native-app input{font-family:inherit;font-size:inherit}.native-app .icon{width:17px;height:17px;stroke-width:1.7}.native-sidebar{background:linear-gradient(135deg,#eaeaebee,#ebebed);border-right:1px solid #e5e5e9;position:relative;padding:0 10px}.sidebar-toolbar{height:57px;display:flex;align-items:center;justify-content:space-between;padding:0 5px 0 7px}.sidebar-toolbar>.icon{height:23px;width:23px;margin-right:9px;color:#45454b}.traffic-lights{display:flex;gap:8px;align-items:center}.traffic-lights i{display:block;width:12px;height:12px;border:1px solid #00000014;border-radius:50%;background:#ff6057;box-shadow:0 1px 2px #00000012}.traffic-lights i:nth-child(2){background:#ffbd2e}.traffic-lights i:nth-child(3){background:#28c840}.native-search{height:29px;border-radius:19px;border:1px solid #d0d0d3;box-shadow:inset 0 1px 2px #fff,0 0 0 1px #ffffff55;display:flex;align-items:center;gap:6px;color:#88888d;padding:0 9px;font-size:13px;margin:3px 0 16px}.native-search .icon{width:15px;height:15px}.native-project{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;background:#00000006;margin-bottom:9px;min-height:43px}.native-icon-box{background:#f1f6ff;border:1px solid #d6e4fc;box-shadow:0 2px 4px #3065a00b;color:#258aff;display:flex;align-items:center;justify-content:center;border-radius:9px;width:29px;height:29px;flex-shrink:0}.native-icon-box .icon{width:22px;height:22px}.native-project small{display:block;font-size:11px;color:#828286;line-height:1.1}.native-project strong{font-size:13px;font-weight:600}.native-project .project-chevron{margin-left:auto;width:14px;height:14px;color:#808085}.native-nav{margin-bottom:22px}.sidebar-label{display:flex;align-items:center;gap:11px;padding:9px 10px;font-size:13px;background:none;width:100%;text-align:left;border-radius:8px}.sidebar-label .icon{color:#0095ff;width:17px;height:17px}.sidebar-label small{font-size:10px;color:#8d8d93;margin-left:0}.sidebar-label.active{background:#d6d6d8}.sidebar-section-title{display:block;color:#96969b;font-size:11px;font-weight:500;padding:0 4px;margin:23px 0 7px}.sidebar-run{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px;font-size:13px;text-align:left;background:none;width:100%;margin-bottom:2px;min-height:40px}.sidebar-run small{display:block;color:#8c8c90;font-size:10px;margin-top:1px}.sidebar-run.active{background:#007aff;color:white}.sidebar-run.active small{color:#c2e0ff}.check-circle{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;background:var(--native-green,#45bd67);color:#fff;font-size:9px;font-weight:600;flex-shrink:0}.sidebar-run .check-circle{font-size:10px}.sidebar-bottom{position:absolute;bottom:18px;left:17px;display:flex;align-items:center;gap:10px;color:#88888b;font-size:13px}.sidebar-bottom .icon{width:14px;height:14px}.native-body{min-width:0;display:flex;flex-direction:column;overflow:hidden}.native-toolbar{height:53px;min-height:53px;display:flex;align-items:center;justify-content:center;position:relative;background:#fafafc9c}.native-segments{display:flex;border:1px solid #e2e2e7;background:#fafafbe6;border-radius:24px;padding:3px;box-shadow:inset 0 1px 1px white,0 2px 3px #00000003;font-size:13px}.native-segments button,.native-segments>span{border-radius:20px;background:none;display:block;min-width:100px;padding:7px 15px;text-align:center}.native-segments .active{background:linear-gradient(#e9e9ec,#dddde1);box-shadow:0 1px 2px #00000003}.toolbar-actions{display:flex;gap:21px;position:absolute;right:20px;align-items:center;color:#4a4a51}.toolbar-actions .icon{width:23px;height:23px}.native-screen{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:#c6c6cc transparent;overscroll-behavior:contain}.native-status{grid-column:1/-1;background:#fdfdfef5;border-top:1px solid #e0e0e4;display:flex;justify-content:space-between;align-items:center;padding:0 13px;font-size:9px;color:#96969c}.native-status>span{display:flex;align-items:center;gap:6px}.native-status i{height:6px;width:6px;background:#42c25d;border-radius:50%;margin-right:2px}.native-status b{font-weight:400;color:#c0c0c4;margin:0 4px}.native-status .icon{width:9px;height:9px;color:#aaaab0}
@@ -153,17 +186,18 @@
     <nav aria-label="Main navigation">
       <a href="#workbench">The workbench</a><a href="#intent-lab">Intent Lab</a><a href="#open-source">Open source</a>
     </nav>
-    <a class="nav-download" href="https://github.com/coryparrry/Intents/releases/latest">Download<span class="desktop-only"> for Mac</span></a>
+    <a class="nav-download" href="https://github.com/coryparrry/Intents/releases/tag/v1.4.0">Download v1.4.0</a>
   </header>
 
   <main id="main">
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
         <a class="open-label" href="#open-source"><svg class="icon"><use href="/assets/icons.svg#code-xml"/></svg>Open source. Native to Mac.</a>
-        <h1 id="hero-title"><span>Put intelligence</span><span>to the <em>test.</em></span></h1>
-        <p class="hero-description">A little more certainty.<br class="mobile-only"> A lot less guesswork.<br>Meet your workbench for Apple’s Foundation Models.</p>
-        <div class="hero-actions"><a class="button button-primary" href="https://github.com/coryparrry/Intents/releases/latest">Download for macOS</a><a class="button button-light" href="https://github.com/coryparrry/Intents">Explore the source<svg class="icon"><use href="/assets/icons.svg#code-xml"/></svg></a></div>
+        <h1 id="hero-title"><span>Test Apple’s models</span><span>before you <em>ship.</em></span></h1>
+        <p class="hero-description">Repeatable prompt cases for Foundation Models.<br>Inspect responses and failures. Compare saved runs.</p>
+        <div class="hero-actions"><a class="button button-primary" href="https://github.com/coryparrry/Intents/releases/tag/v1.4.0">Download for macOS · v1.4.0</a><a class="button button-light" href="https://github.com/coryparrry/Intents">Build development source<svg class="icon"><use href="/assets/icons.svg#code-xml"/></svg></a></div>
         <p class="requirements">Free & open source <span>·</span> macOS 27+ <span>·</span> Apple silicon</p>
+        <p class="release-note">The current download is <strong>Intents 1.4.0</strong>.<br>It includes Review, Batch runs, and Intent Lab (beta). <a href="/getting-started">Choose your starting point</a>.</p>
       </div>
       <div class="showcase-wrap" id="workbench">
         <div class="showcase-halo" aria-hidden="true"></div>
@@ -191,7 +225,7 @@
             </div>
           </div>
         </div>
-        <div class="demo-caption"><span>Explore a real run. Select a result or switch to its trace.</span><span>Interactive app preview</span></div>
+        <div class="demo-caption"><span>Recorded 17 September run and historical Intent Lab fixture.</span><span>Interactive browser recreation</span></div>
       </div>
     </section>
 
@@ -201,32 +235,43 @@
       <div class="intro-bottom reveal"><p>One good response is a start. Repeatable results are better.<br>Turn your prompts into test cases, run them again, and see<br class="desktop-only"> exactly where your model holds up.</p><div class="native-tag"><svg class="icon"><use href="/assets/icons.svg#cpu"/></svg>Made for Apple Foundation Models</div></div>
     </section>
 
+    <section class="start-section section-shell" id="get-started" aria-labelledby="start-title">
+      <p class="eyebrow">START WITH A SMALL TEST</p>
+      <h2 id="start-title">Your first evaluation.</h2>
+      <div class="start-grid">
+        <article><h3>1. Choose a build</h3><p>Download Intents 1.4.0 for the released evaluation workflow, Review, Batch runs, and Intent Lab. Build source to develop the app or try unshipped changes.</p><a href="/getting-started#choose-a-build">Release or development source</a></article>
+        <article><h3>2. Check an answer</h3><p>Try “Reply with only the capital of France” with expected text “Paris”. Exact text checks the whole answer; Contains text checks for a required phrase.</p><a href="/getting-started#first-evaluation">Run your first case</a></article>
+        <article><h3>3. Keep the evidence</h3><p>Read the response and trace, then compare another saved run after changing one thing. Include failure cases and repetitions before drawing conclusions.</p><a href="/getting-started#read-the-evidence">Read and compare results</a></article>
+      </div>
+    </section>
+
     <section class="trace-section" id="evidence" aria-labelledby="trace-title">
       <div class="section-shell trace-layout">
-        <div class="trace-copy reveal"><p class="eyebrow">01 / FOLLOW THE EVIDENCE</p><h2 id="trace-title">Every response<br>has a story.</h2><p>Read the answer. See why it passed. Then follow the whole journey, from the first input to the final score.</p><p class="muted-detail">A real workflow. Measured timings. Nothing hidden behind a single green tick.</p><button class="text-button" id="explore-trace">Explore this trace<svg class="icon"><use href="/assets/icons.svg#workflow"/></svg></button></div>
+        <div class="trace-copy reveal"><p class="eyebrow">01 / FOLLOW THE EVIDENCE</p><h2 id="trace-title">Every response<br>has a story.</h2><p>Read the answer. See why it passed. Then follow the whole journey, from the first input to the final score.</p><p class="muted-detail">Recorded stages, tool activity, and timings help explain a result. Compare saved runs after changing your prompts.</p><button class="text-button" id="explore-trace">Explore this trace<svg class="icon"><use href="/assets/icons.svg#workflow"/></svg></button></div>
         <div class="trace-card reveal" aria-label="Recorded workflow timing">
           <div class="trace-card-heading"><span><svg class="icon"><use href="/assets/icons.svg#workflow"/></svg>Workflow trace</span><span class="green-pill">Completed</span></div>
           <div class="trace-card-title">Latest preference wins<small>Conversation behaviour · 13 spans</small></div>
           <div class="mini-timeline"><div class="timeline-ruler"><span>0s</span><span>9.2s</span><span>18.4s</span></div><div class="mini-span"><span>Prepare input</span><div><i class="cyan" style="--start:0%;--length:36.4%"></i></div><b>6.70 s</b></div><div class="mini-span"><span>Generate response</span><div><i class="blue" style="--start:36.4%;--length:14.6%"></i></div><b>2.68 s</b></div><div class="mini-span"><span>Score response</span><div><i class="purple" style="--start:51%;--length:49%"></i></div><b>9.00 s</b></div><div class="timeline-playhead" aria-hidden="true"></div></div>
           <div class="trace-card-footer"><span><b>18.39 s</b>workflow</span><span><b>442 ms</b>first content</span><span><b>1,138</b>subject tokens</span></div>
-          <p class="recording-note">Recorded in Intents · 17 September 2026</p>
+          <p class="recording-note">Recorded 17 September 2026 · example, not a benchmark</p>
         </div>
       </div>
     </section>
 
     <section class="lab-section section-shell" id="intent-lab" aria-labelledby="lab-title">
-      <div class="section-heading reveal"><div><p class="eyebrow">02 / GO BEYOND THE PROMPT</p><h2 id="lab-title">Real actions.<br>Real expectations.</h2></div><p>What should happen when someone asks<br class="desktop-only"> your app to do something?<br>Describe it. Check it. Keep the evidence.</p></div>
+      <div class="section-heading reveal"><div><p class="eyebrow">02 / INTENT LAB BETA</p><h2 id="lab-title">Real actions.<br>Real expectations.</h2></div><p>What should happen when someone asks<br class="desktop-only"> your app to do something?<br>Describe it. Check it. Keep the evidence.</p></div>
       <div class="lab-showcase reveal">
-        <div class="lab-narrative"><span class="native-icon-box"><svg class="icon"><use href="/assets/icons.svg#workflow"/></svg></span><h3>Meet Intent Lab.<span>Beta</span></h3><p>Test an App Intent directly, include a Siri request on your iPhone, or link a saved app evaluation.</p><div class="lab-step"><b>01</b><span>Describe the request</span></div><div class="lab-step"><b>02</b><span>Define the expected result</span></div><div class="lab-step"><b>03</b><span>Choose what to check</span></div><button class="text-button" id="explore-lab">Take a closer look<svg class="icon"><use href="/assets/icons.svg#maximize-2"/></svg></button></div>
+        <div class="lab-narrative"><span class="native-icon-box"><svg class="icon"><use href="/assets/icons.svg#workflow"/></svg></span><h3>Meet Intent Lab.<span>Beta</span></h3><p>Test App Intents and recognized-text Siri scenarios with app-owned test support. Intent Lab needs Xcode and app-owned test support.</p><div class="lab-step"><b>01</b><span>Describe the request</span></div><div class="lab-step"><b>02</b><span>Define the expected result</span></div><div class="lab-step"><b>03</b><span>Choose what to check</span></div><button class="text-button" id="explore-lab">Take a closer look<svg class="icon"><use href="/assets/icons.svg#maximize-2"/></svg></button></div>
         <div class="lab-window" aria-label="Intent Lab native form example"><div class="mini-window-toolbar"><div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div><div class="native-segments"><span>Connect app</span><span class="active">Create test</span><span>Results</span></div></div><div class="lab-window-content"><h4>What should happen?</h4><p>Describe success, then add result checks to verify it.</p><dl><div><dt>Request</dt><dd>Open the packing note in Intent Lab Fixture</dd></div><div><dt>Expected result</dt><dd>Open packing-001 without changing the note store.</dd></div><div><dt>App action</dt><dd>OpenNoteIntent</dd></div></dl><div class="lab-check-row"><div><strong>App action</strong><span>Run the action directly, without Siri.</span></div><span class="native-select">Required<svg class="icon"><use href="/assets/icons.svg#chevrons-up-down"/></svg></span></div><div class="lab-check-row"><div><strong>Siri</strong><span>Send the request text to Siri on your iPhone.</span></div><span class="native-select">Not included<svg class="icon"><use href="/assets/icons.svg#chevrons-up-down"/></svg></span></div><p class="lab-footnote">Checks the returned value. Changes inside the app need additional verification.</p></div></div>
       </div>
+      <p class="development-note">Requires Xcode 27 and a signed UI-test target. Siri uses recognized text on a paired physical iPhone; it does not test microphone recognition. A direct App Intent pass does not prove Siri routing or the app’s observed effect. <a href="https://github.com/coryparrry/Intents/blob/main/docs/wiki/Intent-Lab.md">Intent Lab setup and evidence</a>.</p>
     </section>
 
     <section class="local-section section-shell" aria-labelledby="local-title">
       <div class="local-heading reveal"><p class="eyebrow">03 / PART OF YOUR WORKFLOW</p><h2 id="local-title">Feels at home.<br><span>Works with your tools.</span></h2></div>
       <div class="capability-grid">
         <article class="capability reveal"><svg class="feature-icon"><use href="/assets/icons.svg#cpu"/></svg><h3>On your Mac.</h3><p>Run Apple’s on-device model with native SwiftUI controls. Your suites and evidence stay in a local workspace.</p><div class="capability-foot">Native SwiftUI <span>·</span> Apple silicon</div></article>
-        <article class="capability reveal"><svg class="feature-icon"><use href="/assets/icons.svg#terminal"/></svg><h3>With your agent.</h3><p>The built-in MCP server lets your coding agent manage suites and run evaluations. Review the same results in the app.</p><a href="https://github.com/coryparrry/Intents#connect-an-agent">Connect an agent</a></article>
+        <article class="capability reveal"><svg class="feature-icon"><use href="/assets/icons.svg#terminal"/></svg><h3>With your agent.</h3><p>The built-in MCP server lets a coding agent manage suites and inspect saved results. The released app uses authenticated local access.</p><a href="https://github.com/coryparrry/Intents#connect-an-agent">Connect an agent</a></article>
         <article class="capability reveal"><svg class="feature-icon"><use href="/assets/icons.svg#monitor-smartphone"/></svg><h3>Inside your app.</h3><p>Evaluate real Swift feature closures on a paired iPhone, iPad, or Mac. Test the behaviour your users actually experience.</p><a href="https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md">Read the integration guide</a></article>
       </div>
       <p class="provider-note reveal">Need another model? Connect compatible Core AI models or your own HTTP provider. Remote providers and judges use their configured services.</p>
@@ -239,13 +284,15 @@
         <h2 id="source-title" class="reveal">Good tools get better<br>when they’re <em>shared.</em></h2>
         <p class="reveal">Intents is free and open source under the MIT licence.<br>Read it. Run it. Make it your own.</p>
         <div class="source-actions reveal"><a class="button button-dark" href="https://github.com/coryparrry/Intents">Explore on GitHub<svg class="icon"><use href="/assets/icons.svg#code-xml"/></svg></a><a class="source-docs" href="https://github.com/coryparrry/Intents#build-from-source">Build from source</a></div>
+        <p class="development-note">The released app includes <strong>Review</strong> for human verdicts and regression cases, and <strong>Batch runs</strong> for frozen datasets and resumable jobs.</p>
+        <div class="documentation-links"><a href="https://github.com/coryparrry/Intents/blob/main/docs/wiki/Home.md">User guide</a><a href="https://github.com/coryparrry/Intents/blob/main/docs/EVAL_REVIEW_GUIDE.md">Review guide</a><a href="https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md">Batch guide</a></div>
         <div class="source-meta reveal"><span>Swift</span><span>MIT licensed</span><span>Made by Cory Parry</span></div>
       </div>
     </section>
 
-    <section class="closing section-shell reveal"><img src="/assets/intents-icon-74.png" srcset="/assets/intents-icon-74.png 74w, /assets/intents-icon-148.png 148w, /assets/intents-icon.png 256w" sizes="(max-width: 760px) 59px, 74px" width="88" height="88" loading="lazy" decoding="async" alt="Intents app icon"><div><h2>A clearer picture starts here.</h2><p>Give your next idea a proper test.</p></div><a class="button button-primary" href="https://github.com/coryparrry/Intents/releases/latest">Download for macOS</a></section>
+    <section class="closing section-shell reveal"><img src="/assets/intents-icon-74.png" srcset="/assets/intents-icon-74.png 74w, /assets/intents-icon-148.png 148w, /assets/intents-icon.png 256w" sizes="(max-width: 760px) 59px, 74px" width="88" height="88" loading="lazy" decoding="async" alt="Intents app icon"><div><h2>A clearer picture starts here.</h2><p>Give your next idea a proper test.</p></div><a class="button button-primary" href="https://github.com/coryparrry/Intents/releases/tag/v1.4.0">Download for macOS · v1.4.0</a></section>
   </main>
-  <footer class="site-footer section-shell"><div><a class="footer-brand" href="#">Intents</a><span>Made for curious minds.</span></div><div><a href="https://github.com/coryparrry/Intents">GitHub</a><a href="https://github.com/coryparrry/Intents/blob/main/LICENSE">MIT licence</a><a href="https://github.com/coryparrry/Intents/issues">Feedback</a><button id="motion-toggle" aria-pressed="false">Pause motion</button></div><p>Requires macOS 27 or later and an Apple Intelligence–capable Mac with its on-device model downloaded.<br>App examples use a recorded evaluation and a test fixture. Example scores are not model benchmarks.</p></footer>
+  <footer class="site-footer section-shell"><div><a class="footer-brand" href="#">Intents</a><span>Made for curious minds.</span></div><div><a href="https://github.com/coryparrry/Intents">GitHub</a><a href="https://github.com/coryparrry/Intents/blob/main/LICENSE">MIT licence</a><a href="https://github.com/coryparrry/Intents/issues">Feedback</a><button id="motion-toggle" aria-pressed="false">Pause motion</button></div><p>Requires macOS 27 or later. The default on-device model needs an Apple Intelligence–capable Mac with Apple Intelligence enabled and its model downloaded. Xcode 27 is needed for source builds and Intent Lab, not ordinary on-device suites.<br>Browser examples use a recorded evaluation and historical test fixture, predating Review and Batch runs. Example scores are not model benchmarks. <a href="/getting-started">Getting started</a>.</p></footer>
   <div class="sr-only" id="demo-announcement" aria-live="polite"></div>
   <noscript><p class="no-script">The interactive app preview needs JavaScript. You can still explore the features and download Intents using the links above.</p></noscript>
 </body>
