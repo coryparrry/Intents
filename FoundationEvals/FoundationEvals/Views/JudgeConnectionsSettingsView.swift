@@ -46,6 +46,8 @@ struct JudgeConnectionsSettingsView: View {
                 Form {
                     Section {
                         TextField("Name", text: $draft.name)
+                            .accessibilityLabel("Connection name")
+                            .accessibilityIdentifier("Judge connection name")
                         Picker("Service", selection: Binding(get: { draft.kind }, set: { kind in
                             let old = draft.kind
                             draft.kind = kind
@@ -54,12 +56,15 @@ struct JudgeConnectionsSettingsView: View {
                             ForEach(EvaluationJudgeConnectionKind.allCases) { Text($0.title).tag($0) }
                         }
                         TextField("Base URL", text: $draft.baseURL, prompt: Text("https://your-endpoint.example/v1"))
+                            .accessibilityLabel("Base URL")
                         TextField("Model ID", text: $draft.modelID)
+                            .accessibilityLabel("Model ID")
                         SecureField(draft.requiresAPIKey ? "API key" : "API key (optional)", text: $apiKey)
+                            .accessibilityLabel(draft.requiresAPIKey ? "API key" : "API key (optional)")
                         Text(saved == nil ? "Keys are saved in the macOS Keychain." : "Leave the key blank to keep the saved key. Keys are stored in the macOS Keychain.")
                             .font(.caption).foregroundStyle(.secondary)
                     } header: { Text("Judge connection") } footer: {
-                        Text("Use the exact model ID provided by your service. Select this connection in a suite’s Configure → Scoring page.")
+                        Text("Use the exact model ID provided by your service. Select this connection in a suite’s Setup → Scoring page.")
                     }
                     Section("Capabilities") {
                         Toggle("Strict structured outputs", isOn: $draft.capabilities.structuredOutputs)
@@ -71,6 +76,7 @@ struct JudgeConnectionsSettingsView: View {
                                 get: { draft.providerOrder.joined(separator: ", ") },
                                 set: { draft.providerOrder = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } }
                             ), prompt: Text("Provider slugs, separated by commas"))
+                            .accessibilityLabel("Provider order")
                             Text("Use the provider slugs from OpenRouter. The order is fixed for repeatable judging.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }

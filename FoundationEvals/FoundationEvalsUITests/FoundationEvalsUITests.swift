@@ -7,7 +7,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testDebugAppDoesNotOfferSelfUpdates() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -29,7 +29,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testIntentLabOpensWithScenarioAndConnectionControls() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -78,7 +78,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testDuplicateParameterDraftsRemoveOneAtATime() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -88,20 +88,43 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.typeKey("2", modifierFlags: .command)
         app.radioButtons["Create test"].click()
+        let window = app.windows.firstMatch
+        let editor = app.scrollViews["Intent Lab scenario scroll"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        func reveal(_ element: XCUIElement) {
+            XCTAssertTrue(element.waitForExistence(timeout: 3))
+            for _ in 0..<12 {
+                let viewport = editor.frame.intersection(window.frame)
+                if element.isHittable && viewport.contains(element.frame) { return }
+                // macOS swipes can jump past a control; wheel steps can recover in either direction.
+                let delta: CGFloat = element.frame.minY < viewport.minY ? 180 : -180
+                editor.scroll(byDeltaX: 0, deltaY: delta)
+            }
+            let viewport = editor.frame.intersection(window.frame)
+            XCTAssertTrue(element.isHittable && viewport.contains(element.frame),
+                          "Parameter control \(element.frame) must be visible inside editor \(viewport) before clicking")
+        }
         let inputs = app.disclosureTriangles.matching(NSPredicate(format: "label BEGINSWITH %@", "Inputs ·")).firstMatch
-        for _ in 0..<12 where !inputs.isHittable { app.scrollViews.element(boundBy: app.scrollViews.count - 1).swipeUp() }
+        reveal(inputs)
         inputs.click()
 
         let names = app.textFields.matching(identifier: "Parameter name")
         XCTAssertEqual(names.count, 1)
         let addButton = app.buttons["Add parameter"]
-        addButton.click()
-        addButton.click()
-        XCTAssertEqual(names.count, 3)
+        for expectedCount in 2...3 {
+            reveal(addButton)
+            addButton.click()
+            XCTAssertTrue(names.element(boundBy: expectedCount - 1).waitForExistence(timeout: 3))
+            XCTAssertEqual(names.count, expectedCount)
+        }
 
         let remove = app.buttons.matching(identifier: "Remove parameter")
         XCTAssertEqual(remove.count, 3)
-        remove.element(boundBy: 2).click()
+        let thirdRemove = remove.element(boundBy: 2)
+        reveal(thirdRemove)
+        thirdRemove.click()
+        let removed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in names.count == 2 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 3), .completed)
         XCTAssertEqual(names.count, 2)
 
         let screenshot = app.windows.firstMatch.screenshot()
@@ -117,7 +140,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testRunCommandsMatchInvalidSuiteControls() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -127,6 +150,7 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         let prompt = app.textViews["Case prompt"]
         XCTAssertTrue(prompt.waitForExistence(timeout: 5))
         prompt.click()
@@ -154,7 +178,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testSuiteEditorShowsPrimaryRunControls() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -170,6 +194,7 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "The editor command must present the main window")
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
 
@@ -177,6 +202,7 @@ final class FoundationEvalsUITests: XCTestCase {
         XCTAssertTrue(app.windows.firstMatch.waitForNonExistence(timeout: 2))
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "The editor command must recover a closed main window")
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Add Case"].exists)
@@ -248,7 +274,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testSetupPagesRenderInDarkAppearance() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -264,6 +290,7 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
 
         app.radioButtons["Setup"].click()
@@ -287,7 +314,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testCaseSelectionSurvivesSetupNavigation() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -297,9 +324,10 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 5))
 
-        app.buttons["Add Case"].click()
+        addCaseToVisibleList(in: app)
         let caseName = app.textFields["Case name"]
         XCTAssertTrue(caseName.waitForExistence(timeout: 2))
         caseName.click()
@@ -322,7 +350,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testSameNamedCasesHaveDistinctAccessibilityLabels() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -332,9 +360,10 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 5))
 
-        app.buttons["Add Case"].click()
+        addCaseToVisibleList(in: app)
         let name = app.textFields["Case name"]
         XCTAssertTrue(name.waitForExistence(timeout: 2))
         name.click()
@@ -350,7 +379,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testCaseSearchKeepsEditorAndScoringSelectionAligned() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -360,8 +389,9 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 5))
-        app.buttons["Add Case"].click()
+        addCaseToVisibleList(in: app)
         let name = app.textFields["Case name"]
         name.click()
         app.typeKey("a", modifierFlags: .command)
@@ -384,9 +414,16 @@ final class FoundationEvalsUITests: XCTestCase {
         search.typeText("No matching case 582")
         XCTAssertTrue(app.staticTexts["No matching cases"].exists)
         XCTAssertFalse(name.exists, "An invisible case must not remain editable")
+        try app.windows.firstMatch.screenshot().pngRepresentation.write(
+            to: UITestStorage.screenshotURL(name: "empty-case-search"))
+        XCTAssertLessThanOrEqual(app.buttons["Add Case"].frame.maxY, app.windows.firstMatch.frame.maxY,
+                                 "Empty search results must keep the case actions inside the window")
         app.buttons["Add Case"].click()
         XCTAssertTrue(name.waitForExistence(timeout: 2))
         XCTAssertEqual(search.value as? String, "", "Selecting a new case clears an incompatible search")
+        XCTAssertLessThanOrEqual(app.buttons["Add Case"].frame.maxY, app.windows.firstMatch.frame.maxY)
+        try app.windows.firstMatch.screenshot().pngRepresentation.write(
+            to: UITestStorage.screenshotURL(name: "case-search-recovered"))
     }
 
     @MainActor
@@ -399,6 +436,29 @@ final class FoundationEvalsUITests: XCTestCase {
         } else {
             app.buttons[title].click()
         }
+    }
+
+    @MainActor
+    private func addCaseToVisibleList(in app: XCUIApplication) {
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "Select case "))
+        let previousCount = rows.count
+        let add = app.buttons["Add Case"]
+        app.activate()
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in add.isHittable }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
+                       "The case action must be reachable before clicking")
+        add.click()
+        let added = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in rows.count == previousCount + 1 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 5), .completed,
+                       "Adding a case must create a row before its editor is changed")
+    }
+
+    @MainActor
+    private func verificationApplication() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["--evaluation-window-width", "1000", "--evaluation-window-height", "700"]
+        return app
     }
 
     private func uiTestStorage(name: String) -> URL {

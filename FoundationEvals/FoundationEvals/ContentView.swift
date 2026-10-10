@@ -17,18 +17,12 @@ struct ContentView: View {
     }
 
     var body: some View {
+        // Pin the layout to the window so tall pages scroll instead of growing the window past the screen.
         GeometryReader { geometry in
-            VStack(spacing: 0) {
-                workspaceNavigation
-                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-                WorkbenchStatusBar(store: store)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("Workspace status")
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+            workspaceNavigation
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
         }
         .frame(minWidth: 1_000, minHeight: 700)
-        .background(WorkspaceStyle.canvas)
         .toolbar(removing: .title)
         .background { SuiteAutosaveObserver(store: store) }
         .task {
@@ -63,44 +57,66 @@ struct ContentView: View {
             WorkspaceSidebar(store: store)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
-            switch store.selection {
-            case .overview:
-                WorkspaceOverviewView(store: store)
-            case .intentLab:
-                IntentLabView(coordinator: scenarioCoordinator, store: store, projects: store.projects)
-            case .evaluations:
-                SuiteEditorView(store: store, initialPage: .review)
-                    .disclosureGroupStyle(FullWidthDisclosureStyle())
-            case .batchRuns:
-                ProductionWorkspaceView(model: productionWorkspace, store: store)
-            case .traces:
-                WorkspaceTracesView(store: store)
-            case .appAutomation:
-                AppAutomationView(model: automationStore)
-            case .suite:
-                SuiteEditorView(store: store)
-                    .disclosureGroupStyle(FullWidthDisclosureStyle())
-            case .run(let id):
-                if let run = store.run(with: id) {
-                    RunDetailView(
-                        run: run,
-                        store: store,
-                        baselineRuns: store.runs.filter {
-                            $0.id != run.id
-                                && $0.suiteID == run.suiteID
-                                && $0.startedAt < run.startedAt
-                        }
-                    )
-                    .disclosureGroupStyle(FullWidthDisclosureStyle())
-                } else {
-                    ContentUnavailableView(
-                        "Run Not Found",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text("The saved run may have been removed.")
-                    )
+            GeometryReader { geometry in
+                ZStack(alignment: .topLeading) { detail }
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                    .workspacePageTransition(value: WorkspacePageLocation(
+                        selection: store.selection, suiteID: store.selectedSuiteID
+                    ))
+            }
+                // Pages are dense with text, so bars get a solid edge that keeps their controls legible.
+                .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
+                .safeAreaBar(edge: .bottom, spacing: 0) {
+                    WorkbenchStatusBar(store: store)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("Workspace status")
                 }
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch store.selection {
+        case .overview:
+            WorkspaceOverviewView(store: store)
+        case .intentLab:
+            IntentLabView(coordinator: scenarioCoordinator, store: store, projects: store.projects)
+        case .evaluations:
+            SuiteEditorView(store: store, initialPage: .review)
+                .disclosureGroupStyle(FullWidthDisclosureStyle())
+        case .batchRuns:
+            ProductionWorkspaceView(model: productionWorkspace, store: store)
+        case .traces:
+            WorkspaceTracesView(store: store)
+        case .appAutomation:
+            AppAutomationView(model: automationStore)
+        case .suite:
+            SuiteEditorView(store: store)
+                .disclosureGroupStyle(FullWidthDisclosureStyle())
+        case .run(let id):
+            if let run = store.run(with: id) {
+                RunDetailView(
+                    run: run,
+                    store: store,
+                    baselineRuns: store.runs.filter {
+                        $0.id != run.id
+                            && $0.suiteID == run.suiteID
+                            && $0.startedAt < run.startedAt
+                    }
+                )
+                .disclosureGroupStyle(FullWidthDisclosureStyle())
+            } else {
+                ContentUnavailableView(
+                    "Run Not Found",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text("The saved run may have been removed.")
+                )
             }
         }
-        .navigationSplitViewStyle(.balanced)
     }
+}
+
+private struct WorkspacePageLocation: Equatable {
+    let selection: SidebarSelection
+    let suiteID: UUID
 }

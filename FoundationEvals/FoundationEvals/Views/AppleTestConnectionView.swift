@@ -71,7 +71,7 @@ struct AppleTestConnectionView: View {
         ) {
             VStack(alignment: .leading, spacing: 20) {
                 connectionField(
-                    title: "App project",
+                    number: 1, title: "App project",
                     detail: selectedProjectName ?? "Select the app's .xcodeproj or .xcworkspace."
                 ) {
                     HStack(spacing: 12) {
@@ -96,7 +96,7 @@ struct AppleTestConnectionView: View {
                 DeveloperConnectionBanner()
 
                 connectionField(
-                    title: "Run on",
+                    number: 2, title: "Run on",
                     detail: selectedDeviceDetail
                 ) {
                     HStack(spacing: 8) {
@@ -126,7 +126,7 @@ struct AppleTestConnectionView: View {
                 if coordinator.draft.schemaVersion == ScenarioDefinition.reusableSchemaVersion
                     || coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
                     connectionField(
-                        title: "Check installed support",
+                        number: 3, title: "Check installed support",
                         detail: coordinator.verifiedIntegrationSummary
                             ?? "Build the selected app and UI tests, then read the compiled integration receipt. This check does not run an app action."
                     ) {
@@ -164,7 +164,6 @@ struct AppleTestConnectionView: View {
     private var advancedConfiguration: some View {
         EditorSection(
             "Advanced configuration",
-            systemImage: "slider.horizontal.3",
             description: "Xcode scheme, test target and device settings"
         ) {
             VStack(alignment: .leading, spacing: 10) {
@@ -233,18 +232,38 @@ struct AppleTestConnectionView: View {
         }
     }
 
+    /// Steps finish in order: connect a project, pick a destination, then verify test support.
+    private func isStepDone(_ number: Int) -> Bool {
+        switch number {
+        case 1: coordinator.projectTrusted
+        case 2: selectedDeviceName != nil
+        default: coordinator.verifiedIntegrationSummary != nil
+        }
+    }
+
+    private var currentStep: Int? {
+        (1...3).first { !isStepDone($0) }
+    }
+
     private func connectionField<Content: View>(
+        number: Int,
         title: String,
         detail: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.callout.weight(.semibold))
-            content().controlSize(.regular)
-            Text(detail).font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top, spacing: 14) {
+            WorkspaceStepNumber(number: number, isDone: isStepDone(number), isCurrent: currentStep == number)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(.headline)
+                    .frame(minHeight: 24)
+                    .accessibilityLabel("Step \(number): \(title)")
+                content().controlSize(.regular)
+                Text(detail).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(WorkspaceStyle.stateMotion, value: isStepDone(number))
     }
 
     @ViewBuilder
@@ -306,24 +325,22 @@ struct AppleTestConnectionView: View {
         if let report = coordinator.preflight {
             let anyRouteReady = coordinator.routeReadiness.values.contains { $0.state == .ready }
             VStack(alignment: .leading, spacing: 8) {
-                Label(
+                WorkspaceNotice(
+                    report.isReady || anyRouteReady ? .success : .warning,
+                    message:
                     report.isReady ? "Ready to run on \(selectedDeviceName ?? "selected destination")"
                         : (anyRouteReady ? "Some routes are ready on \(selectedDeviceName ?? "selected destination")"
-                            : "Finish setup before running"),
-                    systemImage: report.isReady || anyRouteReady
-                        ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
+                            : "Finish setup before running")
                 )
-                .foregroundStyle(report.isReady ? .green : .orange)
-                .font(.callout.weight(.semibold))
                 if !report.isReady {
                     DisclosureGroup("See what needs attention") {
                         ForEach(report.checks.filter { $0.state != .ready }) { check in
                             Text(check.detail)
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.callout).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-
+                    .padding(.horizontal, 4)
                 }
                 ForEach(ScenarioLane.allCases.filter {
                     coordinator.draft.coverage[$0] != .notApplicable
@@ -348,9 +365,6 @@ struct AppleTestConnectionView: View {
                     }
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background((report.isReady ? Color.green : Color.orange).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 
@@ -374,13 +388,15 @@ struct AppleTestConnectionView: View {
     private var harnessGuidance: some View {
         EditorSection(
             "Test support your app needs",
-            systemImage: "checkmark.shield",
             description: "Required test support and observable results"
         ) {
             VStack(alignment: .leading, spacing: 6) {
-                IntentLabHelp("A test harness is helper code that prepares sample data, runs the action, and reports what happened. A fixture is that known sample data. Your app needs both before Intent Lab can test it.")
-                Text("The selected UI-test target must include IntentLabScenarioTests/testIntentLabScenario and harness version \(ScenarioInvocationIdentity.currentHarnessVersion).")
-                Text("The fixture must expose reset, invocation-correlation, and observable-result accessibility values. Intent Lab reports missing signing, test identity, fixture, and evidence separately; it never changes signing automatically.")
+                IntentLabHelp("Test support prepares sample data, runs the action, and reports the result. A fixture is the sample data. Your app needs both before Intent Lab can test it.")
+                Text("The selected UI-test target must include IntentLabScenarioTests/testIntentLabScenario.")
+                Text("The test support must use harness version \(ScenarioInvocationIdentity.currentHarnessVersion).")
+                Text("Your fixture must provide reset, invocation-correlation, and observable-result accessibility values.")
+                Text("Intent Lab reports missing signing, test identity, fixture, and evidence separately.")
+                Text("It does not change signing automatically.")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -393,7 +409,7 @@ struct AppleTestConnectionView: View {
             Divider()
             Label("Device recovery required", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(WorkspaceStyle.warning)
             Text("Automatic clearing is intentionally disabled until the device proves that this invocation stopped and the fixture reset. You can clear it after verifying both conditions.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

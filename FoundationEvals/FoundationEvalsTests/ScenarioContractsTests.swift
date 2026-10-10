@@ -4,6 +4,9 @@ import Foundation
 import Testing
 @testable import FoundationEvals
 
+// Process launch/readiness deadlines must not compete with this suite's many
+// synchronous filesystem and tooling fixtures on the cooperative thread pool.
+@Suite(.serialized)
 struct ScenarioContractsTests {
     @Test(.timeLimit(.minutes(2))) func connectionCancellationDrainsHostBeforeLongCommandDeadline() async throws {
         let root = try temporaryDirectory()

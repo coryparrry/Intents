@@ -11,7 +11,6 @@ struct ModelControlsSection: View {
     var body: some View {
         EditorSection(
             "Model controls",
-            systemImage: "slider.horizontal.3",
             description: "Choose a model and set the limits for each response."
         ) {
             VStack(alignment: .leading, spacing: 18) {

@@ -52,6 +52,7 @@ final class AppAutomationUITests: XCTestCase {
         app.activate(); app.typeKey("3", modifierFlags: .command)
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Evidence is saved on this Mac"].waitForExistence(timeout: 5))
         let choose = app.buttons["Choose app…"]
         XCTAssertTrue(choose.waitForExistence(timeout: 5)); XCTAssertTrue(choose.isHittable)
         let capsule = app.buttons["Open case capsule…"]

@@ -49,20 +49,20 @@ private enum RubricTemplate: String, CaseIterable, Identifiable {
 
 enum SuiteEditorPage: String, CaseIterable, Identifiable {
     case cases
-    case results
     case review
     case compare
     case configure
+    case history
 
     var id: Self { self }
 
     var title: LocalizedStringResource {
         switch self {
         case .cases: "Cases"
-        case .results: "Results"
         case .review: "Review"
         case .compare: "Compare"
         case .configure: "Setup"
+        case .history: "History"
         }
     }
 }
@@ -100,28 +100,44 @@ struct SuiteEditorView: View {
     private var isRunActive: Bool { store.isRunning || runners.executingRunID != nil }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                SuiteOverviewHeader(store: store)
-                if let migrationNotice = store.migrationNotice {
-                    Label(migrationNotice, systemImage: "tray.and.arrow.down")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .padding(.horizontal, 14).padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .workspaceInset()
+        ZStack(alignment: .topLeading) {
+            Group {
+                if selectedPage == .cases {
+                    VStack(alignment: .leading, spacing: 20) {
+                        header
+                        GeometryReader { geometry in
+                            SuiteCasesView(store: store, selectedCaseID: $selectedCaseID)
+                                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                        }
+                    }
+                    .padding(.horizontal, WorkspaceStyle.pagePadding)
+                    .padding(.top, 20).padding(.bottom, 18)
+                    .frame(maxWidth: WorkspaceStyle.readableWidth, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 24) {
+                                header
+                                selectedPageContent
+                            }
+                            .workspacePage()
+                            .id("suite-page-top")
+                        }
+                        .accessibilityIdentifier("Suite editor scroll")
+                        .onChange(of: configurationPage) { _, _ in
+                            var transaction = Transaction(animation: nil)
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) { proxy.scrollTo("suite-page-top", anchor: .top) }
+                        }
+                    }
                 }
-                if isRunActive {
-                    SuiteRunActivityBanner(store: store, runners: runners)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-                if let response = store.liveResponse, store.isRunning {
-                    LiveResponseSection(response: response)
-                }
-                selectedPageContent
             }
-            .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: isRunActive)
-            .workspacePage()
+            .id(selectedPage)
+            .transition(.blurReplace.combined(with: .offset(y: 6)))
         }
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: isRunActive)
+        .animation(reduceMotion ? nil : WorkspaceStyle.pageMotion, value: selectedPage)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .focusable()
         .focusEffectDisabled()
@@ -170,12 +186,24 @@ struct SuiteEditorView: View {
         }
     }
 
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            SuiteOverviewHeader(store: store)
+            if let migrationNotice = store.migrationNotice {
+                WorkspaceNotice(.info, message: migrationNotice)
+            }
+            if let response = store.liveResponse, store.isRunning {
+                LiveResponseSection(response: response)
+            }
+        }
+    }
+
     @ViewBuilder
     private var selectedPageContent: some View {
         switch selectedPage {
         case .cases:
-            SuiteCasesView(store: store, selectedCaseID: $selectedCaseID)
-        case .results:
+            EmptyView() // Laid out separately in `body` as a master–detail page.
+        case .history:
             SuiteResultsView(store: store)
         case .review:
             SuiteReviewView(store: store, showCases: { id in
@@ -203,7 +231,7 @@ struct SuiteEditorView: View {
             if store.draftSuite.scoringMode == .modelJudge {
                 JudgeConfigurationSection(store: store)
             }
-            SuiteOptionalSection(title: "Release requirements", detail: "Pass thresholds, baseline and latency limits", symbol: "checkmark.shield") {
+            SuiteOptionalSection(title: "Release requirements", detail: "Pass thresholds, baseline and latency limits") {
                 ReleasePolicySection(store: store)
             }
         case .model:
@@ -252,61 +280,62 @@ private struct SuiteOverviewHeader: View {
     private var isBusy: Bool { store.isRunning || store.isReassessing || store.isProcessingFiles }
     private var caseCount: Int { store.draftSuite.cases.count }
 
+    private var metadata: String {
+        [
+            "\(caseCount) case\(caseCount == 1 ? "" : "s")",
+            store.draftSuite.scoringMode.title,
+            runners.selectedRunner?.identity.displayName ?? store.draftSuite.modelConfiguration.provider.title
+        ].joined(separator: " · ")
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 16) {
-                WorkspaceIcon(symbol: "checklist", size: 46, presentation: .header)
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 4) {
                     TextField("Suite name", text: $store.draftSuite.name)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 26, weight: .bold)).tracking(-0.3)
+                        .font(.largeTitle.weight(.bold))
                         .accessibilityLabel("Suite name").disabled(isBusy)
-                    HStack(spacing: 16) {
-                        WorkspaceMetaLabel("\(caseCount) case\(caseCount == 1 ? "" : "s")", symbol: "list.bullet.rectangle")
-                        WorkspaceMetaLabel(store.draftSuite.scoringMode.title, symbol: "checkmark.seal")
-                        WorkspaceMetaLabel(
-                            runners.selectedRunner?.identity.displayName ?? store.draftSuite.modelConfiguration.provider.title,
-                            symbol: "cpu"
-                        )
+                    HStack(spacing: 10) {
+                        Text(metadata).lineLimit(1)
                         saveStatus
                     }
-                    .font(.callout)
+                    .font(.title3)
                     .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 16)
+                if let run = store.runs.first {
+                    LatestResultChip(run: run, state: SuiteCheckState.evaluate(
+                        run: run, currentRevision: store.suiteRevision, hasDraft: store.draftSuite != store.suite
+                    )) { store.selection = .run(run.id) }
+                }
                 Button("Suite details", systemImage: "info.circle") { showsDetails = true }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
-                    .font(.title3)
+                    .font(.title2)
                     .foregroundStyle(.secondary)
                     .help("Version and model availability")
                     .popover(isPresented: $showsDetails, arrowEdge: .bottom) { details }
             }
             if let blocker = runners.runIssue(for: store), !store.isRunning {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(WorkspaceStyle.warning)
-                    Text(blocker).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
-                }
-                .font(.callout)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(WorkspaceStyle.warning.opacity(0.1), in: .rect(cornerRadius: WorkspaceStyle.controlRadius))
-                .accessibilityElement(children: .combine)
+                WorkspaceNotice(.warning, message: blocker)
             }
         }
     }
 
-    private var saveStatus: some View {
-        HStack(spacing: 5) {
-            Image(systemName: store.draftSaveFailed ? "exclamationmark.triangle.fill" : "checkmark.circle")
-                .imageScale(.small)
-                .foregroundStyle(store.draftSaveFailed ? WorkspaceStyle.warning : Color.secondary.opacity(0.7))
-            Text(store.draftSaveFailed ? "Changes could not be saved"
-                 : store.isDraftSavePending ? "Saving changes…"
-                 : store.draftSuite != store.suite ? "Draft saved on this Mac"
-                 : "Saved automatically on this Mac")
-                .foregroundStyle(store.draftSaveFailed ? WorkspaceStyle.warning : .secondary)
+    /// Saving is automatic, so only say something when it is happening or has gone wrong.
+    @ViewBuilder private var saveStatus: some View {
+        if store.draftSaveFailed {
+            Label("Changes could not be saved", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(WorkspaceStyle.warning)
                 .lineLimit(1)
+        } else if store.isDraftSavePending {
+            Text("Saving…").foregroundStyle(.tertiary)
+        } else {
+            Text("· Saved")
+                .foregroundStyle(.tertiary)
+                .help(store.draftSuite != store.suite ? "Draft saved on this Mac" : "Saved automatically on this Mac")
+                .accessibilityLabel(store.draftSuite != store.suite ? "Draft saved on this Mac" : "Saved automatically on this Mac")
         }
     }
 
@@ -320,6 +349,38 @@ private struct SuiteOverviewHeader: View {
             ModelStatusBadge(status: store.modelStatus)
         }
         .padding(20).frame(width: 320)
+    }
+}
+
+/// The suite's latest result, one click from its report.
+private struct LatestResultChip: View {
+    let run: EvaluationRun
+    let state: SuiteCheckState
+    let open: () -> Void
+
+    private var title: String {
+        switch state {
+        case .passed, .failed: "\(run.passedCount) of \(run.scoredCount) passed"
+        default: state.title
+        }
+    }
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 10) {
+                WorkspaceStatusMark(state: state.mark, size: 20)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title).font(.callout.weight(.semibold)).monospacedDigit()
+                    Text("Latest run · \(run.startedAt.formatted(.relative(presentation: .named)))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .padding(.leading, 10).padding(.trailing, 14).padding(.vertical, 7)
+        }
+        .buttonStyle(.glass)
+        .help("Open the latest run’s report")
+        .accessibilityLabel("Latest run: \(state.title), \(run.passedCount) of \(run.scoredCount) passed")
     }
 }
 
@@ -435,13 +496,12 @@ private struct ModelInstructionsSection: View {
     var body: some View {
         EditorSection(
             "Model instructions",
-            systemImage: "text.quote",
             description: "Tell the model how to respond across all cases."
         ) {
             TextEditor(text: $store.draftSuite.instructions)
                 .accessibilityLabel("Model instructions")
                 .font(.body)
-                .workspaceTextWell(minHeight: 190)
+                .workspaceTextWell(minHeight: 140)
 
         }
         .disabled(store.isRunning || store.isProcessingFiles)
@@ -454,8 +514,7 @@ private struct ScoringSection: View {
     var body: some View {
         EditorSection(
             "Scoring and repetitions",
-            systemImage: "checkmark.seal",
-            description: "Choose how responses are judged and how many times each case runs."
+            description: "Decide what counts as a good answer, and how many times to ask."
         ) {
             VStack(alignment: .leading, spacing: 14) {
                 Picker("Scoring method", selection: $store.draftSuite.scoringMode) {
@@ -465,26 +524,24 @@ private struct ScoringSection: View {
                 }
                 .pickerStyle(.segmented)
 
-                Text(store.draftSuite.scoringMode.explanation)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                WorkspaceNotice(.info, message: store.draftSuite.scoringMode.explanation)
 
                 HStack {
-                    Label(
-                        "\(store.plannedSampleCount) response\(store.plannedSampleCount == 1 ? "" : "s") per run",
-                        systemImage: "square.stack.3d.up"
-                    )
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Run each case \(store.draftSuite.repetitions) \(store.draftSuite.repetitions == 1 ? "time" : "times")")
+                        Text("\(store.plannedSampleCount) response\(store.plannedSampleCount == 1 ? "" : "s") per run. More repeats show how consistent the model is.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Spacer()
                     Stepper(
                         "Repetitions: \(store.draftSuite.repetitions)",
                         value: $store.draftSuite.repetitions,
                         in: 1...5
                     )
+                    .labelsHidden()
                 }
 
-                Text("Set expected responses and field checks in each test case.")
+                Text("Add the expected answer for each prompt on the Cases tab.")
                     .font(.caption).foregroundStyle(.secondary)
 
                 if store.draftSuite.scoringMode == .modelJudge {
@@ -586,8 +643,7 @@ private struct SharedReferenceFilesSection: View {
     var body: some View {
         SuiteOptionalSection(
             title: "Reference files",
-            detail: store.draftSuite.attachments.isEmpty ? "Optional · Add documents or images shared by every case" : "\(store.draftSuite.attachments.count) files shared by every case",
-            symbol: "paperclip"
+            detail: store.draftSuite.attachments.isEmpty ? "Optional · Add documents or images shared by every case" : "\(store.draftSuite.attachments.count) files shared by every case"
         ) {
             HStack {
                 Label("\(store.draftSuite.attachments.count) file\(store.draftSuite.attachments.count == 1 ? "" : "s")", systemImage: "doc.on.doc")
@@ -702,15 +758,11 @@ private struct ModelStatusBadge: View {
     let status: ModelStatus
 
     var body: some View {
-        Label(
+        WorkspacePill(
             status.label,
-            systemImage: status.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+            symbol: status.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+            color: tint
         )
-        .font(.callout.weight(.medium))
-        .foregroundStyle(tint)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(tint.opacity(0.12), in: .capsule)
         .help(status.detail)
         .accessibilityLabel("Foundation model status")
         .accessibilityValue("\(status.label). \(status.detail)")

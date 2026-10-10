@@ -7,31 +7,18 @@ struct RunSidebarRow: View {
         if run.cancelled { return "Cancelled · \(run.results.count) of \(run.plannedResultCount)" }
         if run.stoppedEarly { return "\(run.terminationSummary ?? "Stopped early") · \(run.results.count) of \(run.plannedResultCount)" }
         if run.errorCount > 0 { return "\(run.errorCount) issue\(run.errorCount == 1 ? "" : "s")" }
+        if SuiteCheckState.savedRun(run) == .incomplete { return "Incomplete · \(run.results.count) of \(run.plannedResultCount)" }
         if let passRate = run.passRate {
             return "\(passRate.formatted(.percent.precision(.fractionLength(0)))) passed"
         }
         return "\(run.results.count) collected"
     }
 
-    private var statusSymbol: String {
-        if run.cancelled || run.stoppedEarly { return "exclamationmark.circle.fill" }
-        if run.errorCount > 0 || run.failedCount > 0 { return "xmark.circle.fill" }
-        if run.scoredCount > 0 { return "checkmark.circle.fill" }
-        return "circle.dotted"
-    }
-
-    private var statusColor: Color {
-        if run.cancelled || run.stoppedEarly { return WorkspaceStyle.warning }
-        if run.errorCount > 0 || run.failedCount > 0 { return WorkspaceStyle.failure }
-        if run.scoredCount > 0 { return WorkspaceStyle.success }
-        return .secondary
-    }
+    private var mark: WorkspaceStatusMark.State { SuiteCheckState.savedRun(run).mark }
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            Image(systemName: statusSymbol)
-                .foregroundStyle(statusColor)
-                .frame(width: 16)
+            WorkspaceStatusMark(state: mark, size: 16)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(run.startedAt, format: .dateTime.month(.abbreviated).day().hour().minute())
