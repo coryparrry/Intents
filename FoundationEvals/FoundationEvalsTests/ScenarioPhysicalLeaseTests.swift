@@ -120,6 +120,112 @@ struct ScenarioPhysicalLeaseTests {
         }
     }
 
+    @Test func receiptImportEnforcesRootManifestFilenameSizeAndPermissionGuards() async throws {
+        try await withDirectory { root in
+            let invocation = invocation(), product = runner()
+            let attachments = root.appendingPathComponent("Attachments")
+            try FileManager.default.createDirectory(at: attachments, withIntermediateDirectories: false)
+            let manifest = attachments.appendingPathComponent("manifest.json")
+            let receipt = receipt(invocation, product)
+            let encoded = try JSONEncoder().encode(receipt)
+            func write(_ data: Data, to url: URL, mode: Int = 0o600) throws {
+                try data.write(to: url)
+                try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: url.path)
+            }
+            func writeManifest(_ filename: String, testIdentifier: String = "IntentLabScenarioTests/testIntentLabScenario()") throws {
+                let item = ["suggestedHumanReadableName": "IntentLabRunnerReceipt-" + invocation.id.uuidString + ".json", "exportedFileName": filename]
+                try write(JSONSerialization.data(withJSONObject: [["testIdentifier": testIdentifier, "attachments": [item]]]), to: manifest)
+            }
+            func load(_ directory: URL? = nil) throws -> AutomationLegacyRunnerReceipt? {
+                try ScenarioRunnerReceiptImporter.load(directory: directory ?? attachments, invocation: invocation, runner: product)
+            }
+
+            #expect(throws: Error.self) { try load() }
+            let file = attachments.appendingPathComponent("receipt.json")
+            try write(encoded, to: file)
+            try writeManifest("receipt.json")
+            #expect(try load() == receipt)
+
+            let link = root.appendingPathComponent("AttachmentsLink")
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: attachments)
+            #expect(throws: Error.self) { try load(link) }
+
+            try writeManifest("receipt.json", testIdentifier: "OtherTests/testOther()")
+            #expect(try load() == nil)
+
+            try write(Data(#"{"testIdentifier":"IntentLabScenarioTests/testIntentLabScenario()","attachments":[]}"#.utf8), to: manifest)
+            #expect(throws: Error.self) { try load() }
+            try write(Data("[1]".utf8), to: manifest)
+            #expect(throws: Error.self) { try load() }
+
+            try write(encoded, to: root.appendingPathComponent("receipt.json"))
+            try FileManager.default.createDirectory(at: attachments.appendingPathComponent("sub"), withIntermediateDirectories: false)
+            try write(encoded, to: attachments.appendingPathComponent("sub/receipt.json"))
+            try write(encoded, to: attachments.appendingPathComponent("receipt.txt"))
+            for filename in ["../receipt.json", "sub/receipt.json", "receipt.txt", "receipt\0.json", "/receipt.json"] {
+                try writeManifest(filename)
+                #expect(throws: Error.self, "\(filename.debugDescription) must be rejected") { try load() }
+            }
+
+            try writeManifest("receipt.json")
+            let maximumReceipt = encoded + Data(repeating: 0x20, count: 65_536 - encoded.count)
+            try write(maximumReceipt, to: file)
+            #expect(try load() == receipt)
+            try write(maximumReceipt + Data(" ".utf8), to: file)
+            #expect(throws: Error.self) { try load() }
+            try write(encoded, to: file)
+
+            let manifestData = try Data(contentsOf: manifest)
+            let maximumManifest = manifestData + Data(repeating: 0x20, count: 2_097_152 - manifestData.count)
+            try write(maximumManifest, to: manifest)
+            #expect(try load() == receipt)
+            try write(maximumManifest + Data(" ".utf8), to: manifest)
+            #expect(throws: Error.self) { try load() }
+            try write(manifestData, to: manifest)
+
+            for mode in [0o664, 0o646, 0o622] {
+                try write(encoded, to: file, mode: mode)
+                #expect(throws: Error.self, "receipt mode \(String(mode, radix: 8)) must be rejected") { try load() }
+                try write(encoded, to: file)
+                try write(manifestData, to: manifest, mode: mode)
+                #expect(throws: Error.self, "manifest mode \(String(mode, radix: 8)) must be rejected") { try load() }
+                try write(manifestData, to: manifest)
+            }
+            try write(encoded, to: file, mode: 0o444)
+            #expect(try load() == receipt)
+
+            try FileManager.default.removeItem(at: file)
+            #expect(mkfifo(file.path, 0o600) == 0)
+            #expect(throws: Error.self) { try load() }
+            try FileManager.default.removeItem(at: file)
+            try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
+            #expect(throws: Error.self) { try load() }
+        }
+    }
+
+    @Test func ownershipReceiptLoadReportsBoundedErrorInsteadOfThrowing() async throws {
+        try await withDirectory { root in
+            let invocation = invocation(), product = runner(), receipt = receipt(invocation, product)
+            try JSONEncoder().encode(receipt).write(to: root.appendingPathComponent("receipt.json"))
+            let item = ["suggestedHumanReadableName": "IntentLabRunnerReceipt-" + invocation.id.uuidString + ".json", "exportedFileName": "receipt.json"]
+            let manifest = root.appendingPathComponent("manifest.json")
+            try JSONSerialization.data(withJSONObject: [["testIdentifier": "IntentLabScenarioTests/testIntentLabScenario()", "attachments": [item]]]).write(to: manifest)
+
+            let loaded = ScenarioRunnerReceiptImporter.loadForOwnership(directory: root, invocation: invocation, runner: product)
+            #expect(loaded.receipt == receipt && loaded.error == nil)
+
+            try Data("[]".utf8).write(to: manifest)
+            let absent = ScenarioRunnerReceiptImporter.loadForOwnership(directory: root, invocation: invocation, runner: product)
+            #expect(absent.receipt == nil && absent.error == nil)
+
+            try JSONSerialization.data(withJSONObject: [["testIdentifier": "IntentLabScenarioTests/testIntentLabScenario()", "attachments": [item, item]]]).write(to: manifest)
+            let rejected = ScenarioRunnerReceiptImporter.loadForOwnership(directory: root, invocation: invocation, runner: product)
+            #expect(rejected.receipt == nil)
+            let error = try #require(rejected.error)
+            #expect(!error.isEmpty && error.count <= 2048)
+        }
+    }
+
     @Test func quickMacHostExitIsObservedEvenWhileJournalPersistenceAwaits() async throws {
         try await withDirectory { root in
             let persistence = ScenarioPersistence(rootDirectory: root)
@@ -144,6 +250,12 @@ struct ScenarioPhysicalLeaseTests {
         try .init(storeURL: root.appendingPathComponent("target-leases.json"), inspectorFactory: { _ in
             .init(inspect: { target, _, _, _, _ in await script.next(target.id) }, drain: { true })
         })
+    }
+    func receipt(_ invocation: ScenarioInvocationIdentity, _ product: ScenarioProductIdentity) -> AutomationLegacyRunnerReceipt {
+        .init(invocationID: invocation.id, nonce: invocation.nonce,
+              destinationIdentifier: invocation.destinationIdentifier, scenarioDigest: invocation.scenarioDigest,
+              testBundleIdentifier: invocation.testProduct!.bundleIdentifier, testProductSHA256: invocation.testProduct!.sha256,
+              processIdentifier: 42, kernelStartIdentity: "1791302400:123456", executableName: product.executableName)
     }
     func absentHost() -> AutomationProcessIdentity { .init(pid: 2_000_000_000, startIdentity: "prior-host:1") }
     func runner() -> ScenarioProductIdentity { .init(bundleIdentifier: "com.example.Tests.xctrunner", executableName: "Tests-Runner", sha256: String(repeating: "a", count: 64)) }
