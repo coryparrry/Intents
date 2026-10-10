@@ -37,7 +37,7 @@ struct WorkbenchStatusBar: View {
         case .overview:
             let suites = store.suiteRecords.filter { !$0.isArchived }.count
             return "\(suites) \(suites == 1 ? "suite" : "suites") · Saved on this Mac"
-        case .intentLab, .batchRuns:
+        case .intentLab, .batchRuns, .appAutomation:
             return "Evidence is saved on this Mac"
         case .suite, .run, .evaluations, .traces:
             break
