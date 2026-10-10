@@ -104,7 +104,8 @@ struct SuiteOverviewSummary: Identifiable, Sendable {
 
 extension SuiteHistoryPoint {
     static func recent(_ runs: [EvaluationRun], limit: Int = 24) -> [SuiteHistoryPoint] {
-        runs.sorted { $0.startedAt < $1.startedAt }.suffix(limit).map {
+        runs.sorted { ($0.historySequence ?? 0, $0.startedAt) < ($1.historySequence ?? 0, $1.startedAt) }
+            .suffix(limit).sorted { $0.startedAt < $1.startedAt }.map {
             SuiteHistoryPoint(id: $0.id, date: $0.startedAt, rate: $0.passRate,
                               hasFailures: $0.failedCount > 0 || $0.errorCount > 0,
                               state: .savedRun($0))

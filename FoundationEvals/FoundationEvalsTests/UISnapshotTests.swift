@@ -9,6 +9,65 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct UISnapshotTests {
+    @Test func captureReviewFixScreens() async throws {
+        guard let path = ProcessInfo.processInfo.environment["INTENTS_SNAPSHOT_DIR"], !path.isEmpty else { return }
+        let output = URL(filePath: path, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+
+        let fixture = try SnapshotFixture()
+        defer { fixture.close() }
+        var run = try #require(fixture.store.runs.first)
+        let caseID = try #require(run.results.first?.caseID)
+        run.cancelled = true
+        run.results = run.results.filter { $0.caseID == caseID }.map { result in
+            var failed = result
+            failed.status = .failed
+            failed.score = 1
+            failed.rationale = "The completed case failed the fixture rubric."
+            return failed
+        }
+        fixture.store.runs = [run]
+        fixture.store.selection = .suite
+        #expect(CaseVerdict(run: run, caseID: caseID).title == "Failed 2 of 2 attempts")
+        try await capture(
+            SuiteCasesView(store: fixture.store, selectedCaseID: .constant(caseID))
+                .padding(26).background(WorkspaceStyle.canvas),
+            size: NSSize(width: 1_060, height: 760),
+            to: output.appending(path: "review-completed-failed-case.png"))
+
+        let date = Date(timeIntervalSince1970: 1_000)
+        var first = SuiteOverviewSummary(record: .init(id: UUID(), name: "Smoke", createdAt: date, updatedAt: date))
+        var second = SuiteOverviewSummary(record: .init(id: UUID(), name: "Smoke", createdAt: date, updatedAt: date))
+        first.history = [0, 2, 4].map {
+            .init(id: UUID(), date: date.addingTimeInterval(Double($0) * 86_400), rate: 1, hasFailures: false, state: .passed)
+        }
+        second.history = [1, 3, 5].map {
+            .init(id: UUID(), date: date.addingTimeInterval(Double($0) * 86_400), rate: 0, hasFailures: true, state: .failed)
+        }
+        try await capture(HomeTrendChart(summaries: [first, second]).padding(26).background(WorkspaceStyle.canvas),
+                          size: NSSize(width: 660, height: 380),
+                          to: output.appending(path: "review-same-named-suite-trends.png"))
+    }
+
+    private func capture<Content: View>(_ content: Content, size: NSSize, to url: URL) async throws {
+        let chart = NSWindow(contentRect: NSRect(origin: NSPoint(x: -12_000, y: -12_000), size: size),
+                             styleMask: [.titled], backing: .buffered, defer: false)
+        chart.isReleasedWhenClosed = false
+        chart.appearance = NSAppearance(named: .aqua)
+        let controller = NSHostingController(rootView: content.frame(width: size.width, height: size.height))
+        controller.sizingOptions = []
+        chart.contentViewController = controller
+        chart.setContentSize(size)
+        chart.orderFrontRegardless()
+        defer { chart.orderOut(nil); chart.contentViewController = nil }
+        try await Task.sleep(for: .seconds(1.5))
+        let view = try #require(chart.contentView)
+        view.layoutSubtreeIfNeeded()
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        try #require(bitmap.representation(using: .png, properties: [:])).write(to: url)
+    }
+
     @Test func captureMainWindowScreens() async throws {
         guard let path = ProcessInfo.processInfo.environment["INTENTS_SNAPSHOT_DIR"], !path.isEmpty else { return }
         let output = URL(filePath: path, directoryHint: .isDirectory)

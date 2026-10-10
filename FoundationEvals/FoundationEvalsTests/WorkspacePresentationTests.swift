@@ -409,10 +409,80 @@ struct WorkspacePresentationTests {
         #expect(CaseVerdict(run: incomplete, caseID: caseID).title == "Incomplete")
         incomplete.repetitions = 1
         incomplete.cancelled = true
-        #expect(CaseVerdict(run: incomplete, caseID: caseID).mark == .attention)
+        #expect(CaseVerdict(run: incomplete, caseID: caseID).mark == .passed)
         #expect(CaseVerdict(run: run, caseID: UUID(), hasDraft: true).title == "Not run")
         let unscored = fixture(status: .unscored)
         #expect(CaseVerdict(run: unscored, caseID: try #require(unscored.results.first?.caseID)).title == "Not scored")
+    }
+
+    @Test func recentHistoryIncludesNewestSavedRunsDespiteClockSkew() throws {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let runs = (1...25).map { sequence in
+            var run = fixture()
+            run.historySequence = UInt64(sequence)
+            run.startedAt = sequence == 25 ? start : start.addingTimeInterval(Double(sequence))
+            return run
+        }
+        let recent = SuiteHistoryPoint.recent(runs)
+        #expect(recent.count == 24)
+        #expect(recent.contains { $0.id == runs[24].id })
+        #expect(!recent.contains { $0.id == runs[0].id })
+        #expect(recent.map(\.date) == recent.map(\.date).sorted())
+        #expect(SuiteHistoryPoint.recent(runs, limit: 0).isEmpty)
+
+        let legacy = runs.map { item in
+            var run = item
+            run.historySequence = nil
+            return run
+        }
+        #expect(!SuiteHistoryPoint.recent(legacy).contains { $0.id == legacy[24].id })
+    }
+
+    @Test func sameNamedSuitesKeepSeparateTrendSeries() {
+        let date = Date(timeIntervalSince1970: 1_000)
+        var first = SuiteOverviewSummary(record: .init(id: UUID(), name: "Smoke", createdAt: date, updatedAt: date,
+                                                     archivedAt: nil, repositoryDefinitionPath: nil, lastRepositoryRevision: nil))
+        var second = SuiteOverviewSummary(record: .init(id: UUID(), name: "Smoke", createdAt: date, updatedAt: date,
+                                                      archivedAt: nil, repositoryDefinitionPath: nil, lastRepositoryRevision: nil))
+        first.history = [.init(id: UUID(), date: date, rate: 1, hasFailures: false, state: .passed)]
+        second.history = [.init(id: UUID(), date: date.addingTimeInterval(1), rate: 0, hasFailures: true, state: .failed)]
+        let points = HomeTrendChart.points(for: [first, second])
+        #expect(points.map(\.suite) == ["Smoke", "Smoke"])
+        #expect(points.map(\.suiteID) == [first.id, second.id])
+        #expect(Set(points.map(\.suiteID)).count == 2)
+        #expect(points.map(\.rate) == [100, 0])
+        second.name = "Renamed"
+        #expect(HomeTrendChart.points(for: [second]).first?.suiteID == second.id)
+    }
+
+    @Test func interruptedRunsRetainVerdictsForCompletedCases() throws {
+        for status in [EvaluationResultStatus.passed, .failed, .unscored, .error] {
+            var run = fixture(status: status)
+            let caseID = try #require(run.results.first?.caseID)
+            let completed = CaseVerdict(run: run, caseID: caseID)
+            let pending = EvaluationCase(name: "Pending", prompt: "Next", expected: "Next")
+            run.plannedCases?.append(pending)
+            run.plannedSampleCount = 2
+            for cancelled in [true, false] {
+                run.cancelled = cancelled
+                run.terminationReason = cancelled ? nil : "Stopped early"
+                let verdict = CaseVerdict(run: run, caseID: caseID)
+                #expect(!verdict.isIncomplete)
+                #expect(verdict.mark == completed.mark)
+                #expect(verdict.title == completed.title)
+                if status == .failed {
+                    #expect(verdict.mark == .failed)
+                    #expect(verdict.title == "Failed")
+                }
+                if status == .passed { #expect(verdict.title == "Passed") }
+                if status == .unscored { #expect(verdict.title == "Not scored") }
+                if status == .error { #expect(verdict.title == "Needs review") }
+                #expect(CaseVerdict(run: run, caseID: pending.id).title == "Not run")
+                run.repetitions = 2
+                #expect(CaseVerdict(run: run, caseID: caseID).title == "Incomplete")
+                run.repetitions = 1
+            }
+        }
     }
 
     private func fixture(status: EvaluationResultStatus = .passed) -> EvaluationRun {

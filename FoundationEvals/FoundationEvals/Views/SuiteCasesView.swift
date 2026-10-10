@@ -171,7 +171,7 @@ struct CaseVerdict {
         let caseResults = run?.effectiveResults.filter { $0.caseID == caseID } ?? []
         results = caseResults
         isOutOfDate = run != nil && (hasDraft || currentRevision.map { $0 != run?.suiteRevision } == true)
-        isIncomplete = run.map { $0.cancelled || $0.stoppedEarly || caseResults.count < $0.repetitions } ?? false
+        isIncomplete = run.map { caseResults.count < $0.repetitions } ?? false
     }
 
     var mark: WorkspaceStatusMark.State {

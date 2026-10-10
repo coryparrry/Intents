@@ -94,8 +94,9 @@ struct HomeTrendChart: View {
     let summaries: [SuiteOverviewSummary]
     @State private var hovered: Date?
 
-    private struct Point: Identifiable {
+    struct Point: Identifiable {
         let id: UUID
+        let suiteID: UUID
         let suite: String
         let date: Date
         let rate: Double
@@ -103,9 +104,16 @@ struct HomeTrendChart: View {
     }
 
     private var points: [Point] {
+        Self.points(for: summaries)
+    }
+
+    static func points(for summaries: [SuiteOverviewSummary]) -> [Point] {
         summaries.flatMap { summary in
             summary.history.compactMap { point in
-                point.rate.map { Point(id: point.id, suite: summary.name, date: point.date, rate: $0 * 100, hasFailures: point.hasFailures) }
+                point.rate.map {
+                    Point(id: point.id, suiteID: summary.id, suite: summary.name,
+                          date: point.date, rate: $0 * 100, hasFailures: point.hasFailures)
+                }
             }
         }
     }
@@ -146,8 +154,9 @@ struct HomeTrendChart: View {
                         .foregroundStyle(LinearGradient(colors: [Color.accentColor.opacity(0.22), Color.accentColor.opacity(0)],
                                                         startPoint: .top, endPoint: .bottom))
                 }
-                LineMark(x: .value("Date", point.date), y: .value("Pass rate", point.rate), series: .value("Suite", point.suite))
+                LineMark(x: .value("Date", point.date), y: .value("Pass rate", point.rate), series: .value("Suite", point.suiteID.uuidString))
                     .interpolationMethod(.monotone)
+                    .accessibilityLabel(point.suite)
                     .foregroundStyle(Color.accentColor)
                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
                 PointMark(x: .value("Date", point.date), y: .value("Pass rate", point.rate))
