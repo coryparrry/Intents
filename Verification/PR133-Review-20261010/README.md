@@ -6,16 +6,19 @@ Reviewed PR head `c6fbee2408a44ae15d7244fdf451643b6b3d4390` and integrated main 
 
 - Stable Intent Lab setup errors now return their fixed error category to the operation result. Definition and route-readiness errors report validation; build, device, timeout and cancellation errors retain distinct categories. Missing execution evidence still reports evidence failure. User notices remain intact.
 - A diagnostics-only consent change revokes queued events and old spans without recounting an active usage session or the current screen. Normal SDK session rotation and usage opt-out/re-enable still count opens. Tests exercise fresh SDK-client identities and the fallback session identity.
+- If feature capture rotates the SDK session before a diagnostics change, the next visit still records its screen. Only screen state belonging to the active usage session survives the restart; both consent-toggle directions have regression coverage.
 - The Settings conflict keeps the extracted usage/diagnostics Privacy view and main's page transition.
 
 ## Verification
 
-- Integrated Debug app and test bundles built successfully. Final `xcodebuild test` selection: **96 tests in 10 suites passed**, exit 0. Suites: `TelemetryControllerTests`, `TelemetryTransportTests`, `TelemetryDiagnosticsTests`, `TelemetryUsageTests`, `TelemetryPayloadFilterTests`, `TelemetryCrashTests`, `AutomationMCPTests`, `WorkspacePresentationTests`, `ScenarioNoMutationTests`, `ScenarioExecutionPlanTests`.
+- Integrated Debug app and test bundles built successfully. Initial repair snapshot `bc415dd8b022e9c29a225c7b1a94e3438d601528`: **96 tests in 10 suites passed**, exit 0. Suites: `TelemetryControllerTests`, `TelemetryTransportTests`, `TelemetryDiagnosticsTests`, `TelemetryUsageTests`, `TelemetryPayloadFilterTests`, `TelemetryCrashTests`, `AutomationMCPTests`, `WorkspacePresentationTests`, `ScenarioNoMutationTests`, `ScenarioExecutionPlanTests`.
+- After the feature-triggered session-rotation repair, rebuilt and reran all three affected suites: `TelemetryControllerTests`, `TelemetryDiagnosticsTests`, `TelemetryUsageTests`. **28 tests passed**, exit 0, including the new regression in both toggle directions. The other source and UI behavior remained unchanged.
 - `WorkspacePolishUITests/testSettingsTabsKeepTheirPrimaryControlsAccessible`: **1 UI test passed**, visiting MCP Connector, Judges and Privacy with isolated storage; test app terminated.
 - Inspected the actual Privacy screen after the page transition at its top and bottom: both sharing controls, copy-report control, disabled retry, local policy and disclosure text are present and readable. The first XCTest screenshot was captured during the fade-in and is not used as settled visual evidence. The manual inspection app was closed.
 - `python3 script/test_upload_posthog_symbols.py`: **6 tests passed**.
 - `bash -n script/upload_posthog_symbols.sh script/disable_local_telemetry.sh`, `git diff origin/main --check`, and `git diff --cached --check`: passed. No unresolved Git conflict entries remain.
-- Two independent read-only Sol 6.1 reviews covered privacy/transport/native crashes/symbol helper and integration/operation/session/Settings contracts. No additional material findings. The corrected nominal regression fixture was separately rechecked.
+- Two independent read-only Sol 6.1 reviews covered privacy/transport/native crashes/symbol helper and integration/operation/session/Settings contracts. No additional material findings. The corrected nominal regression fixture and final session-rotation repair were separately rechecked.
+- Added the repository-required curated release-note override to the PR description. `python3 script/release_notes.py validate-event --event <PR-event fixture>` passed with four entries; the subsequent GitHub release-note step passed. `shellcheck script/*.sh` also passed.
 
 Builds used two jobs and serial tests. Initial attempts encountered a full disk; one new fixture also needed a required observable assertion before it could reach the intended trust guard. The final native and UI runs passed after correcting the fixture and disabling verbose test failure diagnostics. No unrelated files or caches were deleted.
 

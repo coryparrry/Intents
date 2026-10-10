@@ -126,9 +126,10 @@ final class TelemetryController {
         let preserveUsage = preservingUsageSession && isEnabled && lastOpenSession != nil
             && lastOpenSession == (client?.analyticsSessionID ?? sessionID.uuidString)
             && lastUsageRecordedAt.map { $0.duration(to: .now) < .seconds(1_800) } == true
+        let preserveScreen = preserveUsage && lastScreenSession == lastOpenSession
         consentGeneration = UUID()
         lastOpenSession = nil
-        if !preserveUsage { lastScreen = nil }
+        if !preserveScreen { lastScreen = nil }
         lastScreenSession = nil
         client?.stopAndDiscard()
         discardPendingCrashes()
@@ -140,7 +141,7 @@ final class TelemetryController {
         if preserveUsage {
             let session = client?.analyticsSessionID ?? sessionID.uuidString
             lastOpenSession = session
-            if lastScreen != nil { lastScreenSession = session }
+            if preserveScreen { lastScreenSession = session }
         }
     }
 

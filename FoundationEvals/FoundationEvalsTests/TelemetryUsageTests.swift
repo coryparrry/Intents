@@ -129,6 +129,31 @@ import Testing
         #expect(client.events.filter { $0.name == "$screen" }.count == 2)
     }
 
+    @Test(arguments: [true, false])
+    func diagnosticsChangeAfterFeatureRotatesSessionStillRecordsTheScreen(diagnosticsInitiallyEnabled: Bool) {
+        let defaults = UserDefaults(suiteName: "TelemetryRotatedConsentUsage.\(UUID())")!
+        defaults.set(diagnosticsInitiallyEnabled, forKey: TelemetryController.diagnosticsConsentKey)
+        var clients: [UsageRecordingClient] = []
+        let recorder = TelemetryController(defaults: defaults,
+            configuration: .init(projectToken: "phc_test", host: "https://telemetry.invalid")) { _ in
+                let client = UsageRecordingClient()
+                clients.append(client)
+                return client
+            }
+        recorder.screen(.overview)
+        // The SDK can rotate at its maximum session length even when the
+        // screen was recorded recently. Feature capture records the new open.
+        clients[0].nextFeatureSession = UUID().uuidString
+        recorder.end(recorder.begin(.evaluation))
+        #expect(clients[0].events.filter { $0.name == "foundation_evals_app_opened" }.count == 2)
+        #expect(clients[0].events.filter { $0.name == "$screen" }.count == 1)
+        recorder.setDiagnosticsEnabled(!diagnosticsInitiallyEnabled)
+        recorder.screen(.overview)
+        #expect(clients[1].events.map(\.name) == ["$screen"])
+        recorder.screen(.overview)
+        #expect(clients[1].events.map(\.name) == ["$screen"])
+    }
+
     @Test func consentSpanningAndForeignMeasurementsNeverCreateAdoption() {
         let (recorder, client) = recorder()
         let span = recorder.begin(.evaluation)
@@ -195,11 +220,16 @@ import Testing
     var analyticsSessionID: String? = UUID().uuidString
     var events: [TelemetryEvent] = []
     var nextScreenSession: String?
+    var nextFeatureSession: String?
     var discardCount = 0
     func capture(_ event: TelemetryEvent) {
         if case .screen = event, let session = nextScreenSession {
             analyticsSessionID = session
             nextScreenSession = nil
+        }
+        if case .featureUsed = event, let session = nextFeatureSession {
+            analyticsSessionID = session
+            nextFeatureSession = nil
         }
         events.append(event)
     }
