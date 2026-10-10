@@ -95,13 +95,29 @@ final class FoundationEvalsUITests: XCTestCase {
         let names = app.textFields.matching(identifier: "Parameter name")
         XCTAssertEqual(names.count, 1)
         let addButton = app.buttons["Add parameter"]
-        addButton.click()
-        addButton.click()
-        XCTAssertEqual(names.count, 3)
+        let editor = app.scrollViews.containing(.button, identifier: "Add parameter").firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        func reveal(_ element: XCUIElement) {
+            for _ in 0..<12 where !element.isHittable || !editor.frame.contains(element.frame) {
+                editor.swipeUp()
+            }
+            XCTAssertTrue(element.isHittable && editor.frame.contains(element.frame),
+                          "Parameter controls must be visible inside the editor before clicking")
+        }
+        for expectedCount in 2...3 {
+            reveal(addButton)
+            addButton.click()
+            XCTAssertTrue(names.element(boundBy: expectedCount - 1).waitForExistence(timeout: 3))
+            XCTAssertEqual(names.count, expectedCount)
+        }
 
         let remove = app.buttons.matching(identifier: "Remove parameter")
         XCTAssertEqual(remove.count, 3)
-        remove.element(boundBy: 2).click()
+        let thirdRemove = remove.element(boundBy: 2)
+        reveal(thirdRemove)
+        thirdRemove.click()
+        let removed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in names.count == 2 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 3), .completed)
         XCTAssertEqual(names.count, 2)
 
         let screenshot = app.windows.firstMatch.screenshot()
