@@ -1,0 +1,4 @@
+50 tests in 8 suites passed. Xcode Debug, macOS, 2 jobs, parallel testing off.
+Native fixture: SIGABRT exit -6, next-launch report, 7 frames and 3 binary images; private sentinel removed.
+Opt-out: no pending SDK report. Re-enable: native context refreshed; next-launch report kept reenabled-build.
+Local dSYM UUID matches captured image and resolves Fixture.main(). No PostHog upload or production crash performed.

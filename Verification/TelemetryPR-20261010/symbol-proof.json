@@ -1,0 +1,13 @@
+{
+  "uuid": "369C06FB-C5A2-3A45-8D1F-E990F7424825",
+  "architecture": "arm64",
+  "symbol_set_id": "01a1261e-aabe-0000-b989-361aef550662",
+  "archive_dwarf_sha256": "77a938448f51cc32f82b3d2b10c0f10bd905acc3858967d39c2912b488d55b6e",
+  "downloaded_dwarf_sha256": "77a938448f51cc32f82b3d2b10c0f10bd905acc3858967d39c2912b488d55b6e",
+  "resolved_function": "TelemetryController.appBecameActive() (in dwarf) (TelemetryController.swift:166)",
+  "address": "0x000000010061badc",
+  "source_commit": "81b6b414673bae9f3aa4efd2a2d32bb04db09f47",
+  "version": "1.0",
+  "build": "2026101001",
+  "hosted_crash_verified": false
+}

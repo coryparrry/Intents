@@ -67,6 +67,7 @@ final class MCPSettingsController {
     private static let legacyPortKey = "mcp.server.port"
     private static let legacyBookmarkKey = "mcp.codex.configuration-directory-bookmark"
 
+    @ObservationIgnored private let telemetry: TelemetryController?
     private let serverControl: MCPServerControl
     private let installer: CodexMCPInstaller
     private let credentialStore: MCPCredentialStore
@@ -88,8 +89,10 @@ final class MCPSettingsController {
         installer: CodexMCPInstaller = CodexMCPInstaller(),
         credentialStore: MCPCredentialStore = .keychain,
         existingCredentialOnly: Bool = false,
-        configurationDirectory: URL? = nil
+        configurationDirectory: URL? = nil,
+        telemetry: TelemetryController? = nil
     ) {
+        self.telemetry = telemetry
         self.serverControl = serverControl
         self.userDefaults = userDefaults
         self.installer = installer
@@ -117,13 +120,19 @@ final class MCPSettingsController {
 
     func startServer() async {
         guard !isBusy else { return }
+        let diagnostic = telemetry?.begin(.mcpStart)
+        var diagnosticFailure: TelemetryFailure?
         isBusy = true
-        defer { isBusy = false }
+        defer {
+            isBusy = false
+            telemetry?.end(diagnostic, failure: diagnosticFailure)
+        }
         do {
             let configuration = try currentConfiguration()
             try await startServer(using: configuration)
             notice = nil
         } catch {
+            diagnosticFailure = .classify(error)
             notice = safeDescription(for: error)
         }
     }
@@ -131,8 +140,13 @@ final class MCPSettingsController {
     func installOrUpdateCodex() async {
         guard !existingCredentialOnly else { notice = MCPSettingsAccessError.configurationReadOnly.localizedDescription; return }
         guard !isBusy else { return }
+        let diagnostic = telemetry?.begin(.mcpInstall)
+        var diagnosticFailure: TelemetryFailure?
         isBusy = true
-        defer { isBusy = false }
+        defer {
+            isBusy = false
+            telemetry?.end(diagnostic, failure: diagnosticFailure)
+        }
         do {
             let configuration = try currentConfiguration()
             let receipt = try installer.installOrUpdate(
@@ -152,9 +166,11 @@ final class MCPSettingsController {
                 try await startServer(using: configuration)
                 notice = successNotice
             } catch {
+            diagnosticFailure = .classify(error)
                 notice = "Codex was configured, but the local connector could not start. " + safeDescription(for: error)
             }
         } catch {
+            diagnosticFailure = .classify(error)
             installationState = .needsAttention
             notice = safeDescription(for: error) + " You can copy the manual configuration instead."
         }
@@ -163,8 +179,13 @@ final class MCPSettingsController {
     func removeFromCodex() async {
         guard !existingCredentialOnly else { notice = MCPSettingsAccessError.configurationReadOnly.localizedDescription; return }
         guard !isBusy else { return }
+        let diagnostic = telemetry?.begin(.mcpStop)
+        var diagnosticFailure: TelemetryFailure?
         isBusy = true
-        defer { isBusy = false }
+        defer {
+            isBusy = false
+            telemetry?.end(diagnostic, failure: diagnosticFailure)
+        }
         do {
             let receipt = try installer.remove(from: codexConfigurationDirectory)
             try await serverControl.stop()
@@ -178,6 +199,7 @@ final class MCPSettingsController {
                 ? "Intents was removed from Codex. Restart Codex to apply the change."
                 : "No managed Intents entry was present."
         } catch {
+            diagnosticFailure = .classify(error)
             installationState = .needsAttention
             notice = safeDescription(for: error)
         }

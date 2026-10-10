@@ -1,0 +1,15 @@
+{
+  "unsigned_release_build": "passed",
+  "architectures": [
+    "arm64"
+  ],
+  "manifest_matches_source": true,
+  "dsym": "Intents.app.dSYM",
+  "binary_and_dsym_UUIDs_match": true,
+  "uuids": [
+    [
+      "B9C5B5DE-C48C-3517-B616-806F88B177A9",
+      "(arm64)"
+    ]
+  ]
+}
