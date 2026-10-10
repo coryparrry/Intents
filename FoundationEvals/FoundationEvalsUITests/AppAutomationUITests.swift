@@ -16,7 +16,7 @@ final class AppAutomationUITests: XCTestCase {
         app.typeKey("g", modifierFlags: [.command, .shift])
         let path = app.textFields.firstMatch; XCTAssertTrue(path.waitForExistence(timeout: 5))
         path.typeText(project.path); app.typeKey(.return, modifierFlags: [])
-        let panel = app.buttons["Choose app"]; XCTAssertTrue(panel.waitForExistence(timeout: 5)); panel.click()
+        let panel = app.sheets["open-panel"].buttons["OKButton"]; XCTAssertTrue(panel.waitForExistence(timeout: 5)); panel.click()
         let destination = app.popUpButtons["Prepare for"]; XCTAssertTrue(destination.waitForExistence(timeout: 10)); destination.click()
         app.menuItems["Physical iPhone or iPad"].firstMatch.click()
         let device = app.textFields["Exact physical device ID"]; XCTAssertTrue(device.waitForExistence(timeout: 5))
@@ -58,16 +58,18 @@ final class AppAutomationUITests: XCTestCase {
         XCTAssertTrue(capsule.exists); XCTAssertTrue(capsule.isHittable)
         captureEmptyFlow(window, name: "Automation empty")
         choose.click()
-        let cancel = app.buttons["Cancel"].firstMatch
+        let cancel = app.sheets["open-panel"].buttons["CancelButton"]
         XCTAssertTrue(cancel.waitForExistence(timeout: 5)); XCTAssertTrue(cancel.isHittable)
         captureEmptyFlow(window, name: "Choose app panel")
         cancel.click()
+        XCTAssertTrue(app.sheets["open-panel"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(choose.waitForExistence(timeout: 5)); XCTAssertTrue(choose.isHittable)
         XCTAssertFalse(app.buttons["Prepare app"].exists)
         capsule.click()
         XCTAssertTrue(cancel.waitForExistence(timeout: 5)); XCTAssertTrue(cancel.isHittable)
         captureEmptyFlow(window, name: "Open capsule panel")
         cancel.click()
+        XCTAssertTrue(app.sheets["open-panel"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(choose.waitForExistence(timeout: 5)); XCTAssertTrue(choose.isHittable)
         captureEmptyFlow(window, name: "Automation after cancellation")
     }
@@ -119,7 +121,7 @@ final class AppAutomationUITests: XCTestCase {
         let path = app.textFields.firstMatch
         XCTAssertTrue(path.waitForExistence(timeout: 5)); path.typeText(project.path)
         app.typeKey(.return, modifierFlags: [])
-        let panelChoose = app.buttons["Choose app"]
+        let panelChoose = app.sheets["open-panel"].buttons["OKButton"]
         XCTAssertTrue(panelChoose.waitForExistence(timeout: 5)); panelChoose.click()
         let simulator = app.popUpButtons["Simulator"]
         XCTAssertTrue(simulator.waitForExistence(timeout: 15)); simulator.click()
@@ -206,7 +208,7 @@ final class AppAutomationUITests: XCTestCase {
         let path = app.textFields.firstMatch
         XCTAssertTrue(path.waitForExistence(timeout: 5)); path.typeText(bundle.path)
         app.typeKey(.return, modifierFlags: [])
-        let panelChoose = app.buttons["Choose app"]
+        let panelChoose = app.sheets["open-panel"].buttons["OKButton"]
         XCTAssertTrue(panelChoose.waitForExistence(timeout: 5)); panelChoose.click()
         let goal = app.textFields["What should the app do?"]
         XCTAssertTrue(goal.waitForExistence(timeout: 10)); goal.click(); goal.typeText("Open tasks")
@@ -245,7 +247,7 @@ final class AppAutomationUITests: XCTestCase {
         let path = app.textFields.firstMatch
         XCTAssertTrue(path.waitForExistence(timeout: 5))
         path.typeText(project.path); app.typeKey(.return, modifierFlags: [])
-        let panelChoose = app.buttons["Choose app"]
+        let panelChoose = app.sheets["open-panel"].buttons["OKButton"]
         XCTAssertTrue(panelChoose.waitForExistence(timeout: 5)); XCTAssertTrue(panelChoose.isEnabled)
         panelChoose.click()
         XCTAssertTrue(app.staticTexts["Selected app"].waitForExistence(timeout: 10))
@@ -255,7 +257,8 @@ final class AppAutomationUITests: XCTestCase {
         let screenshot = app.windows.firstMatch.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot); attachment.name = "App automation selected source"; attachment.lifetime = .keepAlways; add(attachment)
         try screenshot.pngRepresentation.write(to: URL(fileURLWithPath: "/private/tmp/foundation-evals-ui-tests/intents-automation-app-selected-source.png"))
-        choose.click(); app.buttons["Cancel"].firstMatch.click()
+        choose.click(); app.sheets["open-panel"].buttons["CancelButton"].click()
+        XCTAssertTrue(app.sheets["open-panel"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Selected app"].exists)
     }
 }

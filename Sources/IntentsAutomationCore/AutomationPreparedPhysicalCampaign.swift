@@ -32,10 +32,18 @@ actor AutomationPhysicalCampaignRelease: AutomationDeviceReleaseVerifier {
 }
 
 enum AutomationPreparedPhysicalCampaign {
+    struct Components: Sendable {
+        var deviceRelease: @Sendable (URL, URL, [AutomationPhysicalRunnerVerifier.Controller]) throws -> AutomationPhysicalDeviceReleaseVerifier
+        var installer: @Sendable (URL, URL) throws -> AutomationPhysicalApplicationInstaller
+        static let owned = Components(
+            deviceRelease: { try AutomationPhysicalDeviceReleaseVerifier(workspace: $0, developerDirectory: $1, controllers: $2) },
+            installer: { try AutomationPhysicalApplicationInstaller(workspace: $0, developerDirectory: $1) })
+    }
     static func run(prepared: AutomationPreparedApplication, plan: AutomationCase, approval: RunApproval,
                     capabilities: CapabilityProfile, attemptID: String, root: URL, developer: URL,
                     leases: AutomationDeviceLeaseManager, runtime: AutomationUIRuntime?,
-                    campaignBudget: AutomationCampaignBudget?, siriAuthority: AutomationSiriRouteAuthority? = nil) async throws -> AutomationAttemptReport {
+                    campaignBudget: AutomationCampaignBudget?, siriAuthority: AutomationSiriRouteAuthority? = nil,
+                    components: Components = .owned) async throws -> AutomationAttemptReport {
         guard attemptID.range(of: #"^[A-Za-z0-9-]{1,128}$"#, options: .regularExpression) != nil,
               plan.app == prepared.host.app, plan.target == prepared.host.target, plan.target.kind == .physical,
               prepared.generatedHost.includesSiri == true, approval.disposable else { throw AutomationContractError.invalidIdentity }
@@ -71,9 +79,9 @@ enum AutomationPreparedPhysicalCampaign {
         guard let executable = info?["CFBundleExecutable"] as? String else { throw AutomationContractError.invalidIdentity }
         var controllers = [AutomationPhysicalRunnerVerifier.Controller(bundleID: prepared.host.hostBundleID, executableName: executable)]
         if needsUI { controllers += AutomationPhysicalUIQualification.controllers }
-        let deviceRelease = try AutomationPhysicalDeviceReleaseVerifier(workspace: state, developerDirectory: developer, controllers: controllers)
+        let deviceRelease = try components.deviceRelease(state, developer, controllers)
         let release = AutomationPhysicalCampaignRelease(verifier: deviceRelease, identifiers: controllers.map(\.bundleID))
-        let installer = try AutomationPhysicalApplicationInstaller(workspace: state, developerDirectory: developer)
+        let installer = try components.installer(state, developer)
         var held: AutomationDeviceLeaseManager.Lease?
         var executionStarted = false
         try await leases.reserveCampaign(runID: approval.runID, target: plan.target)

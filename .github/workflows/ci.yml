@@ -151,6 +151,10 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO
+      - name: Prepare measured UI desktop
+        if: ${{ needs.changes.outputs.ui == 'true' }}
+        timeout-minutes: 3
+        run: python3 script/ci_ui_display.py
       - name: Run selected UI tests
         if: ${{ needs.changes.outputs.ui == 'true' }}
         timeout-minutes: 14
@@ -182,6 +186,8 @@ jobs:
             -only-testing:FoundationEvalsUITests/SimplificationUITests \
             -only-testing:FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration \
             -only-testing:FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence \
+            -only-testing:FoundationEvalsUITests/AppAutomationUITests/testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled \
+            -only-testing:FoundationEvalsUITests/AppAutomationUITests/testEmptyAutomationAndPickerCancellationRemainReadOnly \
             CODE_SIGNING_ALLOWED=NO
       - name: Export UI test attachments
         if: ${{ always() && needs.changes.outputs.ui == 'true' }}

@@ -27,6 +27,39 @@ final class AutomationPhysicalInventoryTests: XCTestCase {
         XCTAssertThrowsError(try processes.runnerAbsent(bundleID: "example.Invalid_Runner", executableName: runnerName, ownedPID: nil, apps: apps))
     }
 
+    func testControllerExecutablePathAcceptsOnlyOwnedContainerLayout() {
+        let container = UUID().uuidString, owned = "Tests-Runner.app", longName = String(repeating: "a", count: 4097)
+        for prefix in ["/private/var/containers/Bundle/Application/", "/var/containers/Bundle/Application/"] {
+            XCTAssertTrue(AutomationPhysicalControllerValidation.matchesExecutablePath(
+                prefix + container + "/" + owned + "/" + runnerName, bundleName: owned, executableName: runnerName), prefix)
+        }
+        let base = "/private/var/containers/Bundle/Application/" + container + "/"
+        let rejected: [(String, String, String, String)] = [
+            ("foreign-prefix", "/private/Apps/" + container + "/" + owned + "/" + runnerName, owned, runnerName),
+            ("data-container", "/private/var/containers/Data/Application/" + container + "/" + owned + "/" + runnerName, owned, runnerName),
+            ("relative-prefix", "private/var/containers/Bundle/Application/" + container + "/" + owned + "/" + runnerName, owned, runnerName),
+            ("non-uuid-container", "/private/var/containers/Bundle/Application/fixture/" + owned + "/" + runnerName, owned, runnerName),
+            ("empty-container", "/private/var/containers/Bundle/Application//" + owned + "/" + runnerName, owned, runnerName),
+            ("nested-component", base + owned + "/Frameworks/" + runnerName, owned, runnerName),
+            ("trailing-slash", base + owned + "/" + runnerName + "/", owned, runnerName),
+            ("missing-executable", base + owned, owned, runnerName),
+            ("bundle-mismatch", base + "Other.app/" + runnerName, owned, runnerName),
+            ("executable-mismatch", base + owned + "/Other", owned, runnerName),
+            ("dot-names", base + "./.", ".", "."),
+            ("dot-dot-names", base + "../..", "..", ".."),
+            ("dot-bundle", base + "./" + runnerName, ".", runnerName),
+            ("dot-dot-executable", base + owned + "/..", owned, ".."),
+            ("empty-names", base + "/", "", ""),
+            ("nul-byte", base + owned + "/" + runnerName + "\0", owned, runnerName + "\0"),
+            ("over-length", base + owned + "/" + longName, owned, longName),
+            ("bundle-slash", base + owned + "/Nested/" + runnerName, owned + "/Nested", runnerName),
+            ("executable-slash", base + owned + "/Nested/" + runnerName, owned, "Nested/" + runnerName),
+        ]
+        for (label, path, bundleName, executableName) in rejected {
+            XCTAssertFalse(AutomationPhysicalControllerValidation.matchesExecutablePath(path, bundleName: bundleName, executableName: executableName), label)
+        }
+    }
+
     func testCompleteBoundInventoryProvesOnlyCurrentAbsence() throws {
         let apps = try appInventory()
         let absent = try processInventory([])
