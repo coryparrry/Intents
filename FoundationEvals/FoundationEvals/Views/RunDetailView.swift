@@ -33,6 +33,21 @@ private enum ResultFilter: String, CaseIterable, Identifiable {
     }
 }
 
+private enum RunPage: CaseIterable, Hashable, Identifiable {
+    case report, workflow, performance, review
+
+    var id: Self { self }
+
+    var title: LocalizedStringResource {
+        switch self {
+        case .report: "Report"
+        case .workflow: "Workflow trace"
+        case .performance: "Performance"
+        case .review: "Review & release"
+        }
+    }
+}
+
 struct RunDetailView: View {
     let run: EvaluationRun
     @Bindable var store: EvaluationStore
@@ -40,25 +55,46 @@ struct RunDetailView: View {
     @State private var exportDocument = JSONDocument()
     @State private var isExporting = false
     @State private var exportError: String?
-    @State private var showsWorkflow = true
+    @State private var selectedPage = RunPage.report
+    @State private var selectedBaselineID: UUID?
+
+    init(run: EvaluationRun, store: EvaluationStore, baselineRuns: [EvaluationRun]) {
+        self.run = run
+        self.store = store
+        self.baselineRuns = baselineRuns
+        _selectedBaselineID = State(initialValue: RunBaselineSelection.defaultID(for: run, candidates: baselineRuns))
+    }
 
     var body: some View {
-        Group {
-            if showsWorkflow {
-                WorkflowTraceView(run: run)
-                    .id(run.id)
-            } else {
-                report
+        ZStack(alignment: .topLeading) {
+            Group {
+                switch selectedPage {
+                case .report:
+                    report
+                case .workflow:
+                    WorkflowTraceView(run: run)
+                        .id(run.id)
+                case .performance:
+                    performance
+                case .review:
+                    review
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Keep AppKit-backed report/trace controls out of an outgoing layout pass.
+        .workspacePageTransition(value: selectedPage)
         .background(WorkspaceStyle.canvas)
         .navigationTitle(run.suiteName)
+        .onChange(of: run.id) { _, _ in
+            selectedBaselineID = RunBaselineSelection.defaultID(for: run, candidates: baselineRuns)
+        }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker("Run view", selection: $showsWorkflow) {
-                    Text("Workflow trace").tag(true)
-                    Text("Report").tag(false)
+                Picker("Run view", selection: $selectedPage) {
+                    ForEach(RunPage.allCases) { page in
+                        Text(page.title).tag(page)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -102,15 +138,40 @@ struct RunDetailView: View {
                 if let execution = run.developerExecution {
                     DeveloperExecutionSummary(execution: execution)
                 }
-                RunSummaryDashboard(run: run)
-                RunWorkflowPanel(store: store, run: run)
+                RunReportSummary(run: run)
                 ResultsSection(run: run)
                     .id(run.id)
-                RunAnalysisSection(run: run, baselineRuns: baselineRuns)
                 RunConfigurationSection(run: run)
+                    .padding(.top, 6)
             }
             .workspacePage()
         }
+        .accessibilityIdentifier("Run report scroll")
+    }
+
+    private var performance: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                RunOverviewHeader(run: run)
+                RunSectionLabel("Performance and comparison")
+                RunSummaryDashboard(run: run)
+                RunAnalysisSection(run: run, baselineRuns: baselineRuns, selection: $selectedBaselineID)
+            }
+            .workspacePage()
+        }
+        .accessibilityIdentifier("Run performance scroll")
+    }
+
+    private var review: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                RunOverviewHeader(run: run)
+                RunSectionLabel("Review and release tools")
+                RunWorkflowPanel(store: store, run: run)
+            }
+            .workspacePage()
+        }
+        .accessibilityIdentifier("Run review scroll")
     }
 
     private func safeFilename(_ value: String) -> String {
@@ -129,7 +190,7 @@ private struct RunOverviewHeader: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Text(run.suiteName)
-                        .font(.system(size: 28, weight: .bold)).tracking(-0.3)
+                        .font(.largeTitle.weight(.bold))
                         .lineLimit(2)
                 }
                 Spacer(minLength: 16)
@@ -188,15 +249,32 @@ private struct RunStatusBadge: View {
     }
 
     var body: some View {
-        Label(title, systemImage: symbol)
-            .font(.callout.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(color.opacity(0.13), in: .capsule)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text(title))
-            .accessibilityIdentifier("Run status")
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, color)
+            Text(title).foregroundStyle(.primary)
+        }
+        .font(.callout.weight(.semibold))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.fill.tertiary, in: .capsule)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityIdentifier("Run status")
+    }
+}
+
+/// A collapsible section heading at the foot of the run report.
+private struct RunSectionLabel: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.headline)
+            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
     }
 }
 
@@ -204,7 +282,7 @@ private struct RunConfigurationSection: View {
     let run: EvaluationRun
 
     var body: some View {
-        DisclosureGroup("Run configuration") {
+        DisclosureGroup {
             VStack(alignment: .leading, spacing: 14) {
                 LabeledText(label: "Instructions", text: run.instructions.isEmpty ? "None" : run.instructions)
                 if let execution = run.execution {
@@ -256,11 +334,13 @@ private struct RunConfigurationSection: View {
                     )
                 }
             }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .workspaceSurface()
             .padding(.top, 12)
+        } label: {
+            RunSectionLabel("Run configuration")
         }
-        .font(.headline)
-        .padding(18)
-        .workspaceSurface()
     }
 
     private func contextSummary(execution: EvaluationExecutionTrace) -> String {
@@ -309,42 +389,18 @@ private struct ResultsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                Text("Results")
-                    .font(.headline)
-                    .accessibilityAddTraits(.isHeader)
-                Text(isFiltering ? "\(results.count) of \(run.results.count)" : "\(run.results.count)")
-                    .font(.subheadline.weight(.medium).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if !run.results.isEmpty {
-                    Picker("Result filter", selection: $filter) {
-                        ForEach(ResultFilter.allCases) { filter in
-                            Text(filter.title).tag(filter)
-                        }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    resultsHeading
+                    Spacer(minLength: 0)
+                    resultControls
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    resultsHeading
+                    HStack(spacing: 12) {
+                        resultControls
+                        Spacer(minLength: 0)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .fixedSize()
-
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.tertiary)
-                        TextField("Search results", text: $searchText)
-                            .textFieldStyle(.plain)
-                            .accessibilityLabel("Search case, prompt, or response")
-                        if isFiltering {
-                            Button("Clear filters", systemImage: "xmark.circle.fill") { clearFilters() }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.tertiary)
-                                .accessibilityIdentifier("Clear result filters")
-                        }
-                    }
-                    .font(.callout)
-                    .padding(.horizontal, 9).padding(.vertical, 6)
-                    .frame(width: 210)
-                    .workspaceInset(radius: 7)
                 }
             }
             .padding(.horizontal, 18).padding(.vertical, 14)
@@ -386,7 +442,7 @@ private struct ResultsSection: View {
                     TableColumn("Score") { result in
                         Text(result.score.map { "\($0) / 4" } ?? "—")
                             .monospacedDigit()
-                            .foregroundStyle(result.score == nil ? Color.secondary : Color.accentColor)
+                            .foregroundStyle(result.score == nil ? Color.secondary : Color.primary)
                     }
                     .width(70)
                     TableColumn("Latency") { result in
@@ -407,8 +463,9 @@ private struct ResultsSection: View {
                     }
                     .width(80)
                 }
-                .tableStyle(.inset(alternatesRowBackgrounds: true))
-                .frame(height: min(320, max(160, CGFloat(results.count) * 30 + 40)))
+                .tableStyle(.inset(alternatesRowBackgrounds: false))
+                .scrollContentBackground(.hidden)
+                .frame(height: min(320, CGFloat(results.count) * 25 + 34))
                 .accessibilityIdentifier("Result list")
 
                 if let selectedResult {
@@ -434,6 +491,44 @@ private struct ResultsSection: View {
         }
     }
 
+    private var resultsHeading: some View {
+        HStack(spacing: 8) {
+            Text("Results").font(.headline).accessibilityAddTraits(.isHeader)
+            Text(isFiltering ? "\(results.count) of \(run.results.count)" : "\(run.results.count)")
+                .font(.subheadline.weight(.medium).monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private var resultControls: some View {
+        if !run.results.isEmpty {
+            Picker("Result filter", selection: $filter) {
+                ForEach(ResultFilter.allCases) { filter in Text(filter.title).tag(filter) }
+            }
+            .labelsHidden().pickerStyle(.segmented).fixedSize()
+
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+                TextField("Search results", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .accessibilityLabel("Search case, prompt, or response")
+                    .accessibilityIdentifier("Search results")
+                if isFiltering {
+                    Button("Clear filters", systemImage: "xmark.circle.fill") { clearFilters() }
+                        .labelStyle(.iconOnly).buttonStyle(.plain)
+                        .foregroundStyle(.tertiary)
+                        .accessibilityIdentifier("Clear result filters")
+                }
+            }
+            .font(.callout)
+            .padding(.horizontal, 9).padding(.vertical, 6)
+            .frame(width: 210)
+            .workspaceInset(radius: 7)
+        }
+    }
+
     private func clearFilters() {
         filter = .all
         searchText = ""
@@ -450,10 +545,14 @@ private struct ResultStatusLabel: View {
     let result: EvaluationSampleResult
 
     var body: some View {
-        Label(statusTitle, systemImage: statusSymbol)
-            .font(.caption)
-            .foregroundStyle(statusColor)
-            .accessibilityElement(children: .combine)
+        HStack(spacing: 5) {
+            Image(systemName: statusSymbol)
+                .symbolRenderingMode(result.status == .unscored ? .monochrome : .palette)
+                .foregroundStyle(result.status == .unscored ? AnyShapeStyle(.secondary) : AnyShapeStyle(.white), statusColor)
+            Text(statusTitle).foregroundStyle(.primary)
+        }
+        .font(.callout)
+        .accessibilityElement(children: .combine)
     }
 
     private var statusTitle: String {
@@ -574,20 +673,36 @@ private struct ResultDetail: View {
                 RefusalExplanationView(trace: refusal, title: "Why the judge refused")
             }
 
-            SampleTraceSection(result: result)
-            if let assertions = result.fieldAssertionResults, !assertions.isEmpty {
-                FieldAssertionEvidenceSection(results: assertions)
+            // Supporting evidence reads as one compact group of expandable rows.
+            VStack(alignment: .leading, spacing: 2) {
+                DisclosureGroup("Response details") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        LabeledText(label: "Generated by", text: subjectModelName)
+                        LabeledText(label: "Scored by", text: result.scorerSummary(scoringMode: scoringMode))
+                        LabeledContent("Response time", value: Duration.milliseconds(result.durationMilliseconds)
+                            .formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))
+                        LabeledContent("Total tokens", value: result.usage.totalTokens.formatted())
+                        if let effectivePrompt = result.effectivePrompt, effectivePrompt != result.prompt {
+                            LabeledText(label: "Effective model input", text: effectivePrompt)
+                        }
+                    }.font(.callout).padding(.top, 8)
+                }
+                SampleTraceSection(result: result)
+                if let assertions = result.fieldAssertionResults, !assertions.isEmpty {
+                    FieldAssertionEvidenceSection(results: assertions)
+                }
+                if let trace = result.featureTrace { FeatureTraceSection(trace: trace) }
+                if let transcript = result.featureTrace?.transcript {
+                    TranscriptFeedbackSection(
+                        trace: transcript,
+                        configuration: modelConfiguration,
+                        caseName: result.caseName,
+                        repetition: result.repetition
+                    )
+                }
+                if let trace = result.judgeTrace { JudgeEvidenceSection(trace: trace) }
             }
-            if let trace = result.featureTrace { FeatureTraceSection(trace: trace) }
-            if let transcript = result.featureTrace?.transcript {
-                TranscriptFeedbackSection(
-                    trace: transcript,
-                    configuration: modelConfiguration,
-                    caseName: result.caseName,
-                    repetition: result.repetition
-                )
-            }
-            if let trace = result.judgeTrace { JudgeEvidenceSection(trace: trace) }
+            .padding(.top, 4)
         }
         .textSelection(.enabled)
     }
@@ -623,39 +738,45 @@ private struct ResultCardHeader: View {
     let judgedByModel: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: statusSymbol)
-                .foregroundStyle(statusColor)
+        HStack(spacing: 12) {
+            WorkspaceStatusMark(state: mark, size: 24)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(result.caseName)
-                    .font(.headline)
+                    .font(.title3.weight(.semibold))
                 if repetitions > 1 {
                     Text("Repetition \(result.repetition) of \(repetitions)")
-                        .font(.caption)
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 Text(judgedByModel ? "Judged by \(scorerSummary)" : "Scored by \(scorerSummary)")
-                    .font(.caption)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("Result scorer")
             }
 
             Spacer()
 
-            Text(statusTitle)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(statusColor)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(statusColor.opacity(0.13), in: .capsule)
-
-            if let score = result.score {
-                Text("\(score) / 4")
-                    .font(.headline.monospacedDigit())
+            VStack(alignment: .trailing, spacing: 2) {
+                if let score = result.score {
+                    Text("\(score) / 4")
+                        .font(.title3.weight(.semibold).monospacedDigit())
+                }
+                Text(statusTitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var mark: WorkspaceStatusMark.State {
+        switch result.status {
+        case .passed: .passed
+        case .failed: .failed
+        case .error: .attention
+        case .unscored: .idle
+        }
     }
 
     private var statusTitle: String {
@@ -664,24 +785,6 @@ private struct ResultCardHeader: View {
         case .failed: "Failed"
         case .unscored: "Unscored"
         case .error: "Error"
-        }
-    }
-
-    private var statusSymbol: String {
-        switch result.status {
-        case .passed: "checkmark.circle.fill"
-        case .failed: "xmark.circle.fill"
-        case .unscored: "circle.dotted"
-        case .error: "exclamationmark.triangle.fill"
-        }
-    }
-
-    private var statusColor: Color {
-        switch result.status {
-        case .passed: WorkspaceStyle.success
-        case .failed: WorkspaceStyle.failure
-        case .error: WorkspaceStyle.warning
-        case .unscored: .secondary
         }
     }
 }
@@ -707,38 +810,28 @@ private struct ResponseTextBlock: View {
                     .buttonStyle(.borderless)
                 }
             }
-            Text(response.isEmpty ? "No response was captured." : response)
-                .foregroundStyle(response.isEmpty ? .secondary : .primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .workspaceInset()
+            Group {
+                if response.isEmpty {
+                    Text("No response was captured.").foregroundStyle(.secondary)
+                } else {
+                    Text(AttributedString.workspaceMarkdown(response))
+                }
+            }
+            .lineSpacing(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .workspaceInset(radius: 12)
         }
     }
 }
 
 private struct ErrorBanner: View {
-    let title: LocalizedStringResource
+    let title: String
     let message: String
     let category: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(WorkspaceStyle.failure)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.headline)
-                Text(message)
-                if let category {
-                    Text(category)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WorkspaceStyle.failure.opacity(0.08), in: .rect(cornerRadius: WorkspaceStyle.controlRadius))
+        WorkspaceNotice(.failure, title: title, message: category.map { "\(message)\n\($0)" } ?? message)
     }
 }
 

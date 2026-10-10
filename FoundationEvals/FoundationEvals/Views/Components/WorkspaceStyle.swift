@@ -2,20 +2,30 @@ import AppKit
 import SwiftUI
 
 /// Shared presentation for the workspace and its evaluation evidence.
+///
+/// The system's Liquid Glass sidebar and toolbar are the navigation layer. Content sits
+/// beneath them on one calm canvas: neutral grouped surfaces, the accent colour for
+/// interaction, and status colour only on the marks that report a result.
 enum WorkspaceStyle {
-    static let canvas = adaptive(light: (0.961, 0.961, 0.969), dark: (0.110, 0.110, 0.118))
-    static let surface = adaptive(light: (1, 1, 1), dark: (0.173, 0.173, 0.180))
+    static let canvas = Color(nsColor: .windowBackgroundColor)
+    /// Grouped content, raised slightly from the canvas.
+    static let surface = adaptive(light: (1, 1, 1), dark: (0.157, 0.157, 0.165))
     /// Wells inside a surface, such as search fields, editors, and quoted evidence.
-    static let inset = adaptive(light: (0.949, 0.949, 0.957), dark: (0.133, 0.133, 0.141))
+    static let inset = adaptive(light: (0.953, 0.953, 0.961), dark: (0.118, 0.118, 0.125))
     static let border = Color.primary.opacity(0.08)
+
     static let success = Color(nsColor: .systemGreen)
     static let warning = Color(nsColor: .systemOrange)
     static let failure = Color(nsColor: .systemRed)
 
-    static let panelRadius: CGFloat = 12
-    static let controlRadius: CGFloat = 8
-    static let pagePadding: CGFloat = 28
-    static let readableWidth: CGFloat = 1_200
+    static let panelRadius: CGFloat = 16
+    static let controlRadius: CGFloat = 10
+    static let pagePadding: CGFloat = 32
+    static let readableWidth: CGFloat = 1_160
+
+    /// System-feeling springs. Callers pass `nil` when Reduce Motion is on.
+    static let pageMotion: Animation = .smooth(duration: 0.35)
+    static let stateMotion: Animation = .snappy(duration: 0.28)
 
     private static func adaptive(light: (CGFloat, CGFloat, CGFloat), dark: (CGFloat, CGFloat, CGFloat)) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -29,39 +39,64 @@ extension View {
     func workspaceSurface(radius: CGFloat = WorkspaceStyle.panelRadius) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return clipShape(shape)
-            .background {
-                shape.fill(WorkspaceStyle.surface)
-                    .shadow(color: .black.opacity(0.05), radius: 1.5, y: 1)
-            }
-            .overlay { shape.strokeBorder(WorkspaceStyle.border, lineWidth: 0.5) }
+            .background(WorkspaceStyle.surface, in: shape)
+            .overlay { shape.strokeBorder(WorkspaceStyle.border, lineWidth: 1).allowsHitTesting(false) }
+    }
+
+    /// Liquid Glass for controls that float above content, never for the content itself.
+    func workspaceGlass(in shape: some Shape = Capsule(), interactive: Bool = false) -> some View {
+        glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
     }
 
     func workspaceInset(radius: CGFloat = WorkspaceStyle.controlRadius) -> some View {
-        background(WorkspaceStyle.inset, in: .rect(cornerRadius: radius))
+        background(WorkspaceStyle.inset, in: .rect(cornerRadius: radius, style: .continuous))
     }
 
     /// A recessed well for multi-line text editors.
     func workspaceTextWell(minHeight: CGFloat) -> some View {
         scrollContentBackground(.hidden)
             .frame(minHeight: minHeight)
-            .padding(8)
+            .padding(.horizontal, 10).padding(.vertical, 8)
             .workspaceInset()
             .overlay {
                 RoundedRectangle(cornerRadius: WorkspaceStyle.controlRadius, style: .continuous)
-                    .strokeBorder(WorkspaceStyle.border, lineWidth: 0.5)
+                    .strokeBorder(WorkspaceStyle.border, lineWidth: 1)
+                    .allowsHitTesting(false)
             }
     }
 
     /// Centres page content at a readable width with consistent margins.
     func workspacePage() -> some View {
         padding(.horizontal, WorkspaceStyle.pagePadding)
-            .padding(.top, 22)
-            .padding(.bottom, 32)
+            .padding(.top, 20)
+            .padding(.bottom, 36)
             .frame(maxWidth: WorkspaceStyle.readableWidth, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .top)
     }
 }
 
+extension AttributedString {
+    /// Model responses often use light Markdown. Show emphasis, code and links, and turn
+    /// headings and bullets into plain styled lines, while keeping the response's own line breaks.
+    static func workspaceMarkdown(_ text: String) -> AttributedString {
+        let lines = text.components(separatedBy: "\n").map { line -> String in
+            let trimmed = line.drop { $0 == " " }
+            if trimmed.hasPrefix("#") {
+                let heading = trimmed.drop { $0 == "#" }
+                if heading.first == " ", !heading.dropFirst().isEmpty { return "**\(heading.dropFirst())**" }
+            }
+            for marker in ["- ", "* ", "+ "] where trimmed.hasPrefix(marker) {
+                return String(line.prefix(line.count - trimmed.count)) + "• " + trimmed.dropFirst(2)
+            }
+            return line
+        }
+        let source = lines.joined(separator: "\n")
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: source, options: options)) ?? AttributedString(text)
+    }
+}
+
+/// A compact label for a state or attribute: a coloured symbol and quiet text on a neutral capsule.
 struct WorkspacePill: View {
     let title: String
     let symbol: String?
@@ -74,24 +109,20 @@ struct WorkspacePill: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
-            if let symbol { Image(systemName: symbol).imageScale(.small) }
+        HStack(spacing: 5) {
+            if let symbol {
+                Image(systemName: symbol)
+                    .imageScale(.small)
+                    .foregroundStyle(color)
+            }
             Text(title).lineLimit(1)
         }
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(color)
-        .padding(.horizontal, 8).padding(.vertical, 3)
-        .background(color.opacity(0.13), in: .capsule)
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 9).padding(.vertical, 4)
+        .background(.fill.tertiary, in: .capsule)
         .fixedSize()
         .accessibilityElement(children: .combine)
-    }
-}
-
-struct WorkspaceStatusBadge: View {
-    let state: SuiteCheckState
-
-    var body: some View {
-        WorkspacePill(state.title, symbol: state.symbol, color: state.color)
     }
 }
 
@@ -101,7 +132,7 @@ struct WorkspaceStatusDot: View {
 
     var body: some View {
         Circle()
-            .fill(color.gradient)
+            .fill(color)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
@@ -190,16 +221,17 @@ struct WorkspacePageHeader<Accessory: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 20) {
-            VStack(alignment: .leading, spacing: 5) {
+        HStack(alignment: .bottom, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
                 if let eyebrow {
-                    Text(eyebrow).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(eyebrow).font(.subheadline.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Text(title)
-                    .font(.system(size: 28, weight: .bold)).tracking(-0.3).lineLimit(2)
+                    .font(.largeTitle.weight(.bold)).lineLimit(2)
+                    .contentTransition(.opacity)
                     .accessibilityAddTraits(.isHeader)
                 if let subtitle {
-                    Text(subtitle).font(.body).foregroundStyle(.secondary)
+                    Text(subtitle).font(.title3).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -212,6 +244,63 @@ struct WorkspacePageHeader<Accessory: View>: View {
 extension WorkspacePageHeader where Accessory == EmptyView {
     init(_ title: String, eyebrow: String? = nil, subtitle: String? = nil) {
         self.init(title, eyebrow: eyebrow, subtitle: subtitle) { EmptyView() }
+    }
+}
+
+/// A heading for a group of content on the page, with an optional count and trailing controls.
+struct WorkspaceSectionTitle<Accessory: View>: View {
+    let title: String
+    let count: Int?
+    @ViewBuilder let accessory: Accessory
+
+    init(_ title: String, count: Int? = nil, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title
+        self.count = count
+        self.accessory = accessory()
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title).font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader)
+            if let count {
+                Text(count.formatted()).font(.title3).foregroundStyle(.tertiary).monospacedDigit()
+            }
+            Spacer(minLength: 8)
+            accessory
+        }
+        .frame(minHeight: 28)
+    }
+}
+
+extension WorkspaceSectionTitle where Accessory == EmptyView {
+    init(_ title: String, count: Int? = nil) {
+        self.init(title, count: count) { EmptyView() }
+    }
+}
+
+/// The number badge for a guided step. The current step takes the accent colour; finished steps show a check.
+struct WorkspaceStepNumber: View {
+    let number: Int
+    var isDone = false
+    var isCurrent = false
+
+    var body: some View {
+        ZStack {
+            if isDone {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 22))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, WorkspaceStyle.success)
+                    .transition(.symbolEffect(.drawOn))
+            } else {
+                Circle().fill(isCurrent ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.fill.secondary))
+                Text(number.formatted())
+                    .font(.callout.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(isCurrent ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            }
+        }
+        .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
     }
 }
 
@@ -232,7 +321,7 @@ struct WorkspacePanelHeader<Accessory: View>: View {
             if let count {
                 Text(count.formatted())
                     .font(.subheadline.weight(.medium).monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
             }
             Spacer(minLength: 8)
             accessory
@@ -265,34 +354,74 @@ struct WorkspaceSearchField: View {
             }
         }
         .font(.callout)
-        .padding(.horizontal, 9).padding(.vertical, 6)
-        .workspaceInset(radius: 7)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(.fill.quaternary, in: .capsule)
     }
 }
 
-struct WorkspaceMetric: View {
-    let title: String
-    let value: String
-    let detail: String
-    let symbol: String
-    let color: Color
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+/// An inline message inside page content. Colour stays on the symbol so the message reads calmly.
+struct WorkspaceNotice<Accessory: View>: View {
+    enum Kind {
+        case info, success, warning, failure
+
+        var symbol: String {
+            switch self {
+            case .info: "info.circle.fill"
+            case .success: "checkmark.circle.fill"
+            case .warning: "exclamationmark.triangle.fill"
+            case .failure: "xmark.octagon.fill"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .info: .accentColor
+            case .success: WorkspaceStyle.success
+            case .warning: WorkspaceStyle.warning
+            case .failure: WorkspaceStyle.failure
+            }
+        }
+    }
+
+    let kind: Kind
+    let title: String?
+    let message: String
+    @ViewBuilder let accessory: Accessory
+
+    init(_ kind: Kind, title: String? = nil, message: String, @ViewBuilder accessory: () -> Accessory) {
+        self.kind = kind
+        self.title = title
+        self.message = message
+        self.accessory = accessory()
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
-                Image(systemName: symbol).foregroundStyle(color).imageScale(.small)
-                Text(title)
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: kind.symbol)
+                .foregroundStyle(kind.color)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                if let title {
+                    Text(title).font(.callout.weight(.semibold))
+                }
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(title == nil ? .primary : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 30, weight: .semibold, design: .rounded)).monospacedDigit()
-                .contentTransition(.numericText())
-                .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: value)
-            Text(detail).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+            Spacer(minLength: 0)
+            accessory
         }
+        .padding(.horizontal, 14).padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.fill.quaternary, in: .rect(cornerRadius: WorkspaceStyle.controlRadius, style: .continuous))
         .accessibilityElement(children: .combine)
+    }
+}
+
+extension WorkspaceNotice where Accessory == EmptyView {
+    init(_ kind: Kind, title: String? = nil, message: String) {
+        self.init(kind, title: title, message: message) { EmptyView() }
     }
 }
 
@@ -309,11 +438,11 @@ struct WorkspaceRing: View {
 
     var body: some View {
         ZStack {
-            Circle().stroke(Color.primary.opacity(0.07), lineWidth: lineWidth)
+            Circle().stroke(.fill.tertiary, lineWidth: lineWidth)
             ForEach(arcs) { arc in
                 Circle()
                     .trim(from: arc.start, to: arc.end)
-                    .stroke(arc.color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
+                    .stroke(arc.color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
             }
         }
         .rotationEffect(.degrees(-90))
@@ -330,7 +459,7 @@ struct WorkspaceRing: View {
 
     private var arcs: [Arc] {
         let denominator = CGFloat(max(total, 1))
-        let gap: CGFloat = segments.filter { $0.count > 0 }.count > 1 ? 0.008 : 0
+        let gap: CGFloat = segments.filter { $0.count > 0 }.count > 1 ? 0.012 : 0
         var start: CGFloat = 0
         var result: [Arc] = []
         for (index, segment) in segments.enumerated() where segment.count > 0 {
@@ -349,19 +478,20 @@ struct WorkspaceProportionBar: View {
 
     var body: some View {
         let total = max(segments.reduce(0) { $0 + $1.count }, 1)
+        let gapWidth = CGFloat(max(segments.filter { $0.count > 0 }.count - 1, 0)) * 2
         GeometryReader { geometry in
             HStack(spacing: 2) {
                 ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     if segment.count > 0 {
                         segment.color
-                            .frame(width: max(2, (geometry.size.width - 4) * CGFloat(segment.count) / CGFloat(total)))
+                            .frame(width: max(0, geometry.size.width - gapWidth) * CGFloat(segment.count) / CGFloat(total))
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(height: height)
-        .background(Color.primary.opacity(0.07))
+        .background(.fill.tertiary)
         .clipShape(.capsule)
         .accessibilityHidden(true)
     }
@@ -371,25 +501,65 @@ struct WorkspaceEmptyState: View {
     let symbol: String
     let title: String
     let detail: String
+    var tint: Color?
+    var actionTitle: String?
+    var actionSymbol: String?
+    var action: (() -> Void)?
+
+    @State private var appeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             Image(systemName: symbol)
-                .font(.system(size: 24))
+                .font(.system(size: 34))
                 .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-                .frame(width: 54, height: 54)
-                .background(Color.primary.opacity(0.05), in: .circle)
-                .padding(.bottom, 6)
-            Text(title).font(.headline).multilineTextAlignment(.center)
-            Text(detail).font(.callout).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(tint ?? .secondary)
+                .symbolEffect(.bounce.down, options: .nonRepeating, value: appeared && !reduceMotion)
+                .frame(height: 44)
+                .accessibilityHidden(true)
+                .onAppear { appeared = true }
+            VStack(spacing: 6) {
+                Text(title).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
+                Text(detail).font(.callout).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            if let actionTitle, let action {
+                Button(action: action) {
+                    if let actionSymbol {
+                        Label(actionTitle, systemImage: actionSymbol).labelStyle(.titleAndIcon)
+                    } else {
+                        Text(actionTitle)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.top, 8)
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 36).padding(.horizontal, 24)
-        .accessibilityElement(children: .combine)
+        .padding(.vertical, 40).padding(.horizontal, 24)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// Presents a native GroupBox as a workspace card with a clear heading.
+/// Group box content brings its own 10-point inset, so the heading is inset to match it.
+struct WorkspaceGroupBoxStyle: GroupBoxStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            configuration.label
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, 10)
+            configuration.content
+        }
+        .padding(.horizontal, 10).padding(.top, 18).padding(.bottom, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .workspaceSurface()
     }
 }
 

@@ -19,6 +19,7 @@ enum TelemetryFailure: String, Codable, Sendable {
 
     static func classify(_ error: any Error) -> Self {
         if error is CancellationError { return .cancelled }
+        if error is ScenarioValidationError { return .validation }
         if let error = error as? XcodeTestExecutorError {
             return switch error {
             case .cancelled: .cancelled

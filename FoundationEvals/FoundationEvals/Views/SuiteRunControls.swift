@@ -55,6 +55,7 @@ private struct SuiteRunDestinationButton: View {
         .help("Choose where this suite runs")
         .accessibilityLabel("Run destination")
         .accessibilityValue(destinationName)
+        .accessibilityIdentifier("Run destination")
         .popover(isPresented: $showsDestination, arrowEdge: .bottom) { destination }
     }
 
@@ -176,36 +177,6 @@ private struct SuiteRunButton: View {
     private func run() {
         do { try runners.startSelectedRun(for: store) }
         catch { reportError(error.localizedDescription) }
-    }
-}
-
-/// Live progress for the run in flight, pinned above the page content.
-struct SuiteRunActivityBanner: View {
-    let store: EvaluationStore
-    let runners: DeveloperRunnerStore
-
-    private var total: Int {
-        let active = runners.executingRunID.flatMap { runners.status(for: $0) }
-        return max(store.totalSamples, active?.totalSamples ?? 0)
-    }
-
-    var body: some View {
-        HStack(spacing: 14) {
-            WorkspaceIcon(symbol: "waveform", size: 32)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Collecting responses").font(.headline)
-                Text("\(store.completedSamples) of \(total) responses")
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 20)
-            ProgressView(value: Double(store.completedSamples), total: Double(max(total, 1)))
-                .progressViewStyle(.linear)
-                .frame(maxWidth: 260)
-        }
-        .padding(.horizontal, 18).padding(.vertical, 14)
-        .workspaceSurface()
-        .accessibilityElement(children: .contain)
     }
 }
 

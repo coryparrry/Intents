@@ -63,7 +63,7 @@ struct FoundationEvalsApp: App {
         #if DEBUG
         // Hosted tests must not inherit a developer's saved telemetry consent.
         let environment = ProcessInfo.processInfo.environment
-        if environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil {
+        if environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil || acceptanceStorageDirectory != nil {
             return nil
         }
         #endif

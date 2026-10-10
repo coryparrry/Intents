@@ -1094,15 +1094,11 @@ final class ScenarioCoordinator {
         let changedDimensions = statedChangedDimensions
         let linkedRun = linkedFeatureRun(for: draft)
         if draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
-            let previousRecords = Set(executionRecords.map(\.id))
-            await runStableExecution(
+            diagnosticFailure = await runStableExecution(
                 ownerID: executionOwnerID, runConfiguration: runConfiguration,
                 runTrusted: runTrusted, backend: runFeatureBackend
             )
             if cancellationRequested { diagnosticFailure = .cancelled }
-            else if let record = executionRecords.first(where: { !previousRecords.contains($0.id) }) {
-                diagnosticFailure = record.aggregateOutcome == .passed ? nil : .evidence
-            }
             await refreshPreflight()
             return
         }
@@ -2200,10 +2196,11 @@ final class ScenarioCoordinator {
                                            priorBatchID: manifest.id)
     }
 
+    @discardableResult
     private func runStableExecution(ownerID: UUID, runConfiguration: XcodeTestConfiguration,
                                     runTrusted: Bool, backend: ScenarioFeatureBackend,
                                     purpose: ScenarioExecutionPlanPurpose = .fullRequirement,
-                                    selectedLanes: Set<ScenarioLane>? = nil) async {
+                                    selectedLanes: Set<ScenarioLane>? = nil) async -> TelemetryFailure? {
         do {
             let definition = try await freezeAndSave()
             guard !cancellationRequested else { throw XcodeTestExecutorError.cancelled }
@@ -2235,7 +2232,7 @@ final class ScenarioCoordinator {
                 let reasons = blocked.sorted { $0.rawValue < $1.rawValue }.map { lane in
                     "\(lane.rawValue): \(readiness[lane]?.detail ?? "Readiness has not been checked.")"
                 }
-                throw ScenarioPersistenceError.invalidRun(
+                throw XcodeTestExecutorError.connectionCheck(
                     "The selected routes are not ready. \(reasons.joined(separator: " "))"
                 )
             }
@@ -2276,11 +2273,14 @@ final class ScenarioCoordinator {
             )
             executionStage = purpose == .partialDiagnostic
                 ? "Running partial diagnostic" : "Verifying complete requirement"
-            _ = await executeStable(plan: plan, definition: definition,
+            let record = await executeStable(plan: plan, definition: definition,
                                     configuration: runConfiguration, trusted: runTrusted,
                                     connection: connection, ownerID: ownerID)
+            if cancellationRequested { return .cancelled }
+            return record?.aggregateOutcome == .passed ? nil : .evidence
         } catch {
             notice = error.localizedDescription
+            return .classify(error)
         }
     }
 

@@ -71,7 +71,7 @@ final class WorkflowTraceUITests: XCTestCase {
 
     @MainActor
     func testWorkspaceResetConfirmationAndPersistence() throws {
-        try withFixtureApplication { app in
+        try withFixtureApplication(windowWidth: 1000) { app in
             func choose(_ title: String) {
                 app.descendants(matching: .any).matching(identifier: "Start from Scratch").firstMatch.click()
                 app.menuItems[title].click()
@@ -80,6 +80,7 @@ final class WorkflowTraceUITests: XCTestCase {
             let dialog = app.sheets.firstMatch
             XCTAssertTrue(dialog.waitForExistence(timeout: 3), app.debugDescription)
             dialog.buttons["Cancel"].click()
+            app.radioButtons["Workflow trace"].click()
             XCTAssertTrue(app.popUpButtons["Trace case"].exists)
 
             choose("Clear This Suite’s Runs and Traces")
@@ -112,7 +113,8 @@ final class WorkflowTraceUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["App-observed timing"].exists)
             app.buttons["Expand all spans"].click()
 
-            span(WorkflowTraceFixture.generationID, in: app).click()
+            span(WorkflowTraceFixture.generationID, in: app)
+                .coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).click()
             assertSelectedTitle("Generate response", in: app)
             assertDetailContains("Framework-reported usage. Cached input is part of input; reasoning is part of output.", in: app)
             assertDetailContains("Input", in: app)
@@ -177,7 +179,7 @@ final class WorkflowTraceUITests: XCTestCase {
 
             // The original result report remains available from the same saved run.
             app.radioButtons["Report"].click()
-            XCTAssertTrue(app.staticTexts["Scored pass rate"].waitForExistence(timeout: 2))
+            XCTAssertTrue(app.staticTexts["Evaluation result headline"].waitForExistence(timeout: 2))
             app.radioButtons["Workflow trace"].click()
             XCTAssertTrue(app.descendants(matching: .any)["Workflow spans"].waitForExistence(timeout: 2))
         }
@@ -287,17 +289,206 @@ final class WorkflowTraceUITests: XCTestCase {
     }
 
     @MainActor
+    func testMinimumWidthWindowKeepsTraceContentInsideWindow() throws {
+        try withFixtureApplication(windowWidth: 1_000) { app in
+            let window = app.windows.firstMatch
+            XCTAssertTrue(window.waitForExistence(timeout: 5))
+            XCTAssertGreaterThanOrEqual(window.frame.width, 990, "The app must keep its 1000-point minimum width.")
+            XCTAssertLessThanOrEqual(window.frame.width, 1_010, "The test must exercise the app's 1000-point minimum width.")
+            try capture(app, name: "minimum-width-trace")
+            let list = app.descendants(matching: .any)["Workflow spans"]
+            let details = app.descendants(matching: .any)["Span details"]
+            XCTAssertTrue(list.waitForExistence(timeout: 3))
+            XCTAssertTrue(details.exists)
+            assertWithinWindow(list, window: window)
+            assertWithinWindow(details, window: window)
+            XCTAssertGreaterThanOrEqual(list.frame.width, 300)
+            XCTAssertGreaterThanOrEqual(details.frame.width, 240)
+            XCTAssertLessThanOrEqual(list.frame.maxX, details.frame.minX + 2, "The split panes must not overlap.")
+
+            let firstMetric = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", "Outcome")).firstMatch
+            let lastMetric = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", "First content")).firstMatch
+            XCTAssertTrue(firstMetric.exists)
+            XCTAssertTrue(lastMetric.exists)
+            assertWithinWindow(firstMetric, window: window)
+            assertWithinWindow(lastMetric, window: window)
+
+            let casePicker = app.popUpButtons["Trace case"]
+            let expandAll = app.buttons["Expand all spans"]
+            let traceTab = app.radioButtons["Workflow trace"]
+            XCTAssertTrue(casePicker.exists)
+            XCTAssertTrue(expandAll.exists)
+            XCTAssertTrue(traceTab.exists)
+            assertWithinWindow(casePicker, window: window)
+            assertWithinWindow(expandAll, window: window)
+            assertWithinWindow(traceTab, window: window)
+            try capture(app, name: "minimum-width-trace")
+        }
+    }
+
+    @MainActor
+    func testReportKeepsAdvancedToolsInDedicatedTabs() throws {
+        try withFixtureApplication(openTrace: false, windowWidth: 1_000) { app in
+            for title in ["Report", "Workflow trace", "Performance", "Review & release"] {
+                let tab = app.radioButtons[title]
+                XCTAssertTrue(tab.isHittable)
+                XCTAssertEqual(app.radioButtons.matching(identifier: title).count, 1)
+                assertWithinWindow(tab, window: app.windows.firstMatch)
+            }
+            XCTAssertTrue(app.staticTexts["Evaluation result headline"].waitForExistence(timeout: 5))
+            let resultSearch = app.textFields["Search results"]
+            reveal(resultSearch, in: app)
+            XCTAssertTrue(resultSearch.isHittable)
+            XCTAssertTrue(app.staticTexts["Results"].exists)
+            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Response latency", "Response latency")).firstMatch.exists)
+            XCTAssertFalse(app.buttons["Approve as baseline"].exists)
+            try capture(app, name: "simplified-results-report")
+
+            for iteration in 0..<2 {
+                app.radioButtons["Review & release"].click()
+                XCTAssertTrue(app.scrollViews["Run review scroll"].waitForExistence(timeout: 3))
+                XCTAssertTrue(app.buttons["Approve as baseline"].isHittable)
+                XCTAssertTrue(app.buttons["Release report"].isHittable)
+                XCTAssertFalse(app.scrollViews["Run report scroll"].exists)
+                if iteration == 0 { try capture(app, name: "minimum-width-review-tab") }
+
+                app.radioButtons["Performance"].click()
+                XCTAssertTrue(app.scrollViews["Run performance scroll"].waitForExistence(timeout: 3))
+                XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Response latency", "Response latency")).firstMatch.exists)
+                XCTAssertFalse(app.buttons["Approve as baseline"].exists)
+                if iteration == 0 { try capture(app, name: "minimum-width-performance-tab") }
+
+                app.radioButtons["Workflow trace"].click()
+                XCTAssertTrue(app.popUpButtons["Trace case"].waitForExistence(timeout: 3))
+                app.radioButtons["Report"].click()
+                XCTAssertTrue(app.staticTexts["Evaluation result headline"].waitForExistence(timeout: 3))
+                XCTAssertFalse(app.scrollViews["Run performance scroll"].exists)
+            }
+        }
+    }
+
+    @MainActor
+    func testNavigationKeepsControlsVisibleAtMinimumWidth() throws {
+        try withFixtureApplication(openTrace: false, windowWidth: 1_000) { app in
+            let window = app.windows.firstMatch
+            XCTAssertEqual(window.frame.width, 1_000, accuracy: 10,
+                           "Exercise the minimum width, not the restored window size")
+            let search = app.textFields["Search results"]
+            reveal(search, in: app)
+            XCTAssertTrue(search.isHittable)
+            XCTAssertLessThanOrEqual(search.frame.maxX, window.frame.maxX - 16)
+            for title in ["All", "Passed", "Failed", "Issues"] {
+                XCTAssertTrue(app.radioButtons[title].isHittable)
+            }
+            try capture(app, name: "minimum-width-result-controls")
+
+            for _ in 0..<2 {
+                app.radioButtons["Workflow trace"].click()
+                XCTAssertTrue(app.popUpButtons["Trace case"].waitForExistence(timeout: 3))
+                app.radioButtons["Report"].click()
+                XCTAssertEqual(app.radioButtons.matching(identifier: "Report").count, 1)
+                XCTAssertTrue(search.waitForExistence(timeout: 3))
+            }
+
+            app.typeKey("1", modifierFlags: .command)
+            for title in ["Cases", "Review", "Compare", "Setup", "History"] {
+                XCTAssertTrue(app.radioButtons[title].isHittable)
+                assertWithinWindow(app.radioButtons[title], window: window)
+            }
+            try capture(app, name: "minimum-width-suite-tabs")
+            app.radioButtons["Setup"].click()
+            app.popUpButtons["Suite setup"].click()
+            let headingTop = app.textFields["Suite name"].frame.minY
+            app.menuItems["Scoring"].click()
+            XCTAssertEqual(app.textFields["Suite name"].frame.minY, headingTop, accuracy: 1,
+                           "Switching setup sections must preserve the heading’s top spacing")
+            try capture(app, name: "minimum-width-setup-scoring")
+            app.scrollViews["Suite editor scroll"].scroll(byDeltaX: 0, deltaY: -1500)
+            app.radioButtons["History"].click()
+            XCTAssertTrue(app.textFields["Suite name"].isHittable)
+            app.radioButtons["Setup"].click()
+            XCTAssertTrue(app.textFields["Suite name"].isHittable,
+                          "Returning to a page must start at its heading")
+            app.radioButtons["Cases"].click()
+            try capture(app, name: "minimum-width-navigation-return")
+            XCTAssertTrue(app.buttons["Add Case"].isHittable)
+        }
+    }
+
+    @MainActor
+    func testPerformanceChartsShowUnitsScoreGuideAndPercentagePoints() throws {
+        try withFixtureApplication(openTrace: false, includeBaseline: true, judgePassingScore: 4) { app in
+            app.radioButtons["Performance"].click()
+
+            // Swift Charts does not expose its axis tick labels as separate AX text.
+            // Assert the chart's accessible unit description, then save a screenshot
+            // so the visible tick labels can be reviewed with the fixture.
+            let latencyChart = app.descendants(matching: .any)["Response latency in seconds by sample"]
+            reveal(latencyChart, in: app, scrollID: "Run performance scroll")
+            XCTAssertTrue(latencyChart.waitForExistence(timeout: 3), "The chart must expose its sample and seconds units.")
+
+            let scoreGuide = app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "≥4", "≥4")
+            ).firstMatch
+            reveal(scoreGuide, in: app, scrollID: "Run performance scroll")
+            app.scrollViews["Run performance scroll"].swipeUp()
+            try capture(app, name: "run-analysis-units-score-guide")
+            XCTAssertTrue(scoreGuide.exists, "The score guide must use this run's passing threshold.")
+
+            let baselinePicker = app.popUpButtons["Baseline picker"]
+            XCTAssertTrue(baselinePicker.waitForExistence(timeout: 3))
+            baselinePicker.click()
+            // This fixture has exactly one prior run, after the "No baseline" option.
+            XCTAssertEqual(baselinePicker.menuItems.count, 2)
+            let priorBaselineAction = baselinePicker.menuItems.element(boundBy: 1)
+            XCTAssertTrue(priorBaselineAction.waitForExistence(timeout: 3), "The saved prior run must be selectable as the baseline.")
+            priorBaselineAction.click()
+            let selectedBaseline = baselinePicker.value as? String
+            XCTAssertNotNil(selectedBaseline)
+            XCTAssertNotEqual(selectedBaseline, "No baseline")
+
+            let percentagePoints = app.staticTexts.matching(
+                NSPredicate(
+                    format: "(label CONTAINS %@ OR value CONTAINS %@) AND (label CONTAINS %@ OR value CONTAINS %@)",
+                    "Mean pass-rate change", "Mean pass-rate change", "percentage points", "percentage points"
+                )
+            ).firstMatch
+            reveal(percentagePoints, in: app, scrollID: "Run performance scroll")
+            XCTAssertTrue(percentagePoints.exists)
+            try capture(app, name: "run-analysis-units-score-guide-and-comparison")
+
+            app.radioButtons["Report"].click()
+            app.radioButtons["Performance"].click()
+            reveal(baselinePicker, in: app, scrollID: "Run performance scroll")
+            XCTAssertEqual(baselinePicker.value as? String, selectedBaseline,
+                           "Switching tabs must preserve the chosen comparison baseline")
+        }
+    }
+
+    @MainActor
     private func withFixtureApplication(
         longJudgeEvidence: Bool = false,
+        openTrace: Bool = true,
+        includeBaseline: Bool = false,
+        judgePassingScore: Int = 3,
+        windowWidth: Int = 1_400,
         _ body: (XCUIApplication) throws -> Void
     ) throws {
         let storage = try UITestStorage.makeDirectory(prefix: "workflow-trace")
         defer { try? FileManager.default.removeItem(at: storage) }
-        try WorkflowTraceFixture.write(to: storage, longJudgeEvidence: longJudgeEvidence)
+        try WorkflowTraceFixture.write(
+            to: storage,
+            longJudgeEvidence: longJudgeEvidence,
+            includeBaseline: includeBaseline,
+            judgePassingScore: judgePassingScore
+        )
 
         let app = XCUIApplication()
         app.launchArguments += [
             "--disable-mcp-autostart", "--evaluation-storage", storage.path,
+            "--evaluation-window-width", String(windowWidth), "--evaluation-window-height", "780",
             "-SUEnableAutomaticChecks", "NO", "-SUAutomaticallyUpdate", "NO"
         ]
         app.launch()
@@ -314,9 +505,28 @@ final class WorkflowTraceUITests: XCTestCase {
             .matching(NSPredicate(format: "label == %@", WorkflowTraceFixture.runName)).firstMatch
         try UITestStorage.waitFor(savedRun, in: app, timeout: 5)
         savedRun.click()
-        try UITestStorage.waitFor(app.popUpButtons["Trace case"], in: app, timeout: 5)
+        try UITestStorage.waitFor(app.radioButtons["Workflow trace"], in: app, timeout: 5)
+        if openTrace {
+            app.radioButtons["Workflow trace"].click()
+            try UITestStorage.waitFor(app.popUpButtons["Trace case"], in: app, timeout: 5)
+        }
         try body(app)
     }
+
+    @MainActor
+    private func reveal(
+        _ element: XCUIElement, in app: XCUIApplication,
+        direction: SwipeDirection = .up, scrollID: String = "Run report scroll"
+    ) {
+        let page = app.scrollViews[scrollID]
+        XCTAssertTrue(page.exists)
+        for _ in 0..<12 where !element.isHittable {
+            if direction == .up { page.swipeUp() } else { page.swipeDown() }
+        }
+        XCTAssertTrue(element.isHittable, app.debugDescription)
+    }
+
+    private enum SwipeDirection { case up, down }
 
     @MainActor
     private func span(_ id: String, in app: XCUIApplication) -> XCUIElement {
@@ -384,6 +594,19 @@ final class WorkflowTraceUITests: XCTestCase {
     }
 
     @MainActor
+    private func assertWithinWindow(
+        _ element: XCUIElement,
+        window: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let frame = element.frame
+        let bounds = window.frame
+        XCTAssertGreaterThanOrEqual(frame.minX, bounds.minX - 1, "\(element) extends past the left edge of the window.", file: file, line: line)
+        XCTAssertLessThanOrEqual(frame.maxX, bounds.maxX + 1, "\(element) extends past the right edge of the window.", file: file, line: line)
+    }
+
+    @MainActor
     private func contentViewport(of scrollView: XCUIElement, window: XCUIElement) -> CGRect {
         let viewport = scrollView.frame.intersection(window.frame)
         let statusBar = window.descendants(matching: .any)["Workspace status"]
@@ -448,7 +671,12 @@ private enum WorkflowTraceFixture {
     static let longJudgeOutput = "Fixture judge output reached."
     private static let longJudgePrompt = "Trace inspector long-input test fixture.\n" + String(repeating: "Fixture input.\n", count: 240)
 
-    static func write(to directory: URL, longJudgeEvidence: Bool = false) throws {
+    static func write(
+        to directory: URL,
+        longJudgeEvidence: Bool = false,
+        includeBaseline: Bool = false,
+        judgePassingScore: Int = 3
+    ) throws {
         let runs = directory.appending(path: "Runs", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: runs, withIntermediateDirectories: true)
         var firstSample = recordedSample
@@ -468,7 +696,7 @@ private enum WorkflowTraceFixture {
             "criteria": "Fixture response equals the expected text.",
             "scoringMode": "modelJudge",
             "judgePromptVersion": "fixture-v1",
-            "judgePassingScore": 3,
+            "judgePassingScore": judgePassingScore,
             "repetitions": 1,
             "plannedSampleCount": 4,
             "startedAt": "2026-09-08T09:00:00Z",
@@ -484,6 +712,21 @@ private enum WorkflowTraceFixture {
             "results": [firstSample, legacySample, cancelledSample, overflowingSample]
         ]
         let data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: runs.appending(path: "D0000000-0000-0000-0000-000000000001.json"), options: .atomic)
+        if includeBaseline {
+            var baseline = document
+            baseline["id"] = "D0000000-0000-0000-0000-000000000003"
+            baseline["startedAt"] = "2026-09-07T09:00:00Z"
+            baseline["completedAt"] = "2026-09-07T09:00:03Z"
+            if var results = baseline["results"] as? [[String: Any]], !results.isEmpty {
+                results[0]["status"] = "failed"
+                results[0]["score"] = 1
+                baseline["results"] = results
+            }
+            let baselineData = try JSONSerialization.data(withJSONObject: baseline, options: [.prettyPrinted, .sortedKeys])
+            try baselineData.write(to: runs.appending(path: "D0000000-0000-0000-0000-000000000003.json"), options: .atomic)
+        }
+        // Legacy runs are migrated only when they have a matching saved suite.
         let suite: [String: Any] = [
             "id": "D0000000-0000-0000-0000-000000000002",
             "name": runName
@@ -491,7 +734,6 @@ private enum WorkflowTraceFixture {
         try JSONSerialization.data(withJSONObject: suite).write(
             to: directory.appending(path: "suite.json"), options: .atomic
         )
-        try data.write(to: runs.appending(path: "D0000000-0000-0000-0000-000000000001.json"), options: .atomic)
     }
 
     private static var recordedSample: [String: Any] {

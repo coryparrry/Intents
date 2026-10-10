@@ -129,6 +129,58 @@ import Testing
         #expect(TelemetryFailure.evaluationFailure(results: [result], cancelled: false) == .provider)
     }
 
+    @Test(arguments: [true, false])
+    func stableScenarioSetupFailuresReportValidationBeforeAnyExecutionRecord(invalidDefinition: Bool) async throws {
+        let (telemetry, client) = makeController(diagnostics: true)
+        let directory = FileManager.default.temporaryDirectory.appending(path: "TelemetryStableSetup-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory, telemetry: telemetry)
+        let coordinator = ScenarioCoordinator(supportDirectory: directory, evaluationStore: store,
+            executionAdmission: ScenarioExecutionAdmission())
+        await coordinator.load()
+        #expect(coordinator.hasLoaded)
+        var definition = ScenarioDefinition.starter(projectID: store.selectedProjectID)
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.purpose = .exploratory
+        definition.checkMode = .basic
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        definition.observationPlan = [.init(id: "taskID", source: .intentResult)]
+        definition.assertions = [.init(kind: .returnedField, observationKey: "taskID",
+            expectedValue: .string("task-001"), explanation: "The returned ID matches.",
+            applicableLanes: [.intentIntegration])]
+        definition.directControl.outputFields = [.init(name: "taskID", type: .primitive(.string),
+            path: [.init(kind: .property, name: "value")])]
+        definition.goal = .init(requestText: "", languageCode: "", expectedBehavior: "")
+        definition.fixture = .init(id: "", version: "", digest: "", isSynthetic: false,
+            preparationOperation: "", cleanupOperation: "")
+        definition.coverage = .init(appFeature: .notApplicable, intentIntegration: .required,
+            siri: .notApplicable, siriAttemptCount: nil)
+        definition.integration = invalidDefinition ? nil : .init(id: "fixture", version: "1",
+            digest: String(repeating: "a", count: 64))
+        if !invalidDefinition { try ScenarioValidator.validate(try definition.frozen()) }
+        coordinator.draft = definition
+        await coordinator.run()
+        let finished = client.events.filter {
+            $0.name == "foundation_evals_operation_finished" && $0.properties["operation"] as? String == "scenario_run"
+        }
+        #expect(finished.count == 1)
+        #expect(finished.first?.properties["error_code"] as? String == "validation")
+        #expect(finished.first?.properties["outcome"] as? String == "failed")
+        #expect(coordinator.executionRecords.isEmpty)
+        #expect(coordinator.notice?.contains(invalidDefinition ? "integration" : "Approve this project") == true)
+        #expect(!telemetry.diagnosticReport().contains(directory.path))
+    }
+
+    @Test func stableSetupErrorCategoriesRemainDistinctAndContentFree() {
+        let secret = "/private/customer/build.log private@example.com"
+        #expect(TelemetryFailure.classify(XcodeTestExecutorError.buildFailed(1, secret)) == .build)
+        #expect(TelemetryFailure.classify(XcodeTestExecutorError.connectionCheck(secret)) == .validation)
+        #expect(TelemetryFailure.classify(XcodeTestExecutorError.deviceUnavailable(secret)) == .deviceUnavailable)
+        #expect(TelemetryFailure.classify(XcodeTestExecutorError.evidenceMissing) == .evidence)
+        #expect(TelemetryFailure.classify(XcodeTestExecutorError.cancelled) == .cancelled)
+        #expect(TelemetryFailure.classify(XcodeTestExecutorError.timedOut) == .timeout)
+    }
+
     @Test func corruptCatalogRecoveryReportsStorageFailure() throws {
         let (telemetry, _) = makeController()
         let directory = FileManager.default.temporaryDirectory.appending(path: "TelemetryCatalog-\(UUID())")

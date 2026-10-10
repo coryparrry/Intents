@@ -217,8 +217,11 @@ final class EvaluationStore {
             }
         }
         let loadedDraft = Self.loadDraft(from: activeDirectory, canonicalSuite: initialSuite)
-        let snapshotRecoveryNotice = Self.recoverSnapshotRuns(
+        var restoredHistorySequence = Self.maximumRunHistorySequence(
             catalog: bootstrap.catalog, supportDirectory: base
+        )
+        let snapshotRecoveryNotice = Self.recoverSnapshotRuns(
+            catalog: bootstrap.catalog, supportDirectory: base, historySequence: &restoredHistorySequence
         )
         var loadedRuns = Self.loadRuns(
             from: activeDirectory.appending(path: "Runs", directoryHint: .isDirectory),
@@ -228,7 +231,8 @@ final class EvaluationStore {
         let recovery = Self.recoverInterruptedRun(
             from: activeDirectory.appending(path: "active-run.json"),
             runsDirectory: activeDirectory.appending(path: "Runs", directoryHint: .isDirectory),
-            existingRuns: loadedRuns.runs
+            existingRuns: loadedRuns.runs,
+            minimumHistorySequence: restoredHistorySequence
         )
         if let recoveredRun = recovery.run {
             loadedRuns.runs.append(recoveredRun)
@@ -254,6 +258,8 @@ final class EvaluationStore {
         suite = initialSuite
         draftSuite = loadedDraft.suite ?? initialSuite
         runs = loadedRuns.runs
+        latestRunHistorySequence = max(restoredHistorySequence, recovery.run?.historySequence ?? 0,
+                                       recovery.pending?.completedRun?.historySequence ?? 0)
         activeRun = recovery.pending?.summary
         activeRunSuite = recovery.pending?.suite
         activeRunEvidence = recovery.pending?.subjectEvidence
@@ -824,7 +830,8 @@ final class EvaluationStore {
         let recovery = Self.recoverInterruptedRun(
             from: activeRunURL,
             runsDirectory: runsDirectory,
-            existingRuns: loadedRuns.runs
+            existingRuns: loadedRuns.runs,
+            minimumHistorySequence: latestRunHistorySequence
         )
         if let recoveredRun = recovery.run {
             loadedRuns.runs.append(recoveredRun)
@@ -833,6 +840,8 @@ final class EvaluationStore {
         suite = canonical
         draftSuite = draft.suite ?? canonical
         runs = loadedRuns.runs
+        latestRunHistorySequence = max(latestRunHistorySequence, recovery.run?.historySequence ?? 0,
+                                       recovery.pending?.completedRun?.historySequence ?? 0)
         activeRun = recovery.pending?.summary
         activeRunSuite = recovery.pending?.suite
         activeRunEvidence = recovery.pending?.subjectEvidence
@@ -4590,9 +4599,28 @@ final class EvaluationStore {
         return try? CanonicalJSON.decode(ActiveRunRecord.self, from: data)
     }
 
+    // Save order spans every suite, including archived suites and other projects.
+    // Restore once at startup rather than depending on the currently selected history.
+    private static func maximumRunHistorySequence(
+        catalog: EvaluationWorkspaceCatalog, supportDirectory: URL
+    ) -> UInt64 {
+        var maximum: UInt64 = 0
+        for project in catalog.projects {
+            for suite in project.suites {
+                let directory = EvaluationWorkspacePersistence.suiteDirectory(
+                    supportDirectory: supportDirectory, projectID: project.id, suiteID: suite.id
+                ).appending(path: "Runs", directoryHint: .isDirectory)
+                let history = loadRuns(from: directory, projectID: project.id, suiteID: suite.id).runs
+                maximum = max(maximum, history.compactMap(\.historySequence).max() ?? 0)
+            }
+        }
+        return maximum
+    }
+
     private static func recoverSnapshotRuns(
         catalog: EvaluationWorkspaceCatalog,
-        supportDirectory: URL
+        supportDirectory: URL,
+        historySequence: inout UInt64
     ) -> String? {
         var notices: [String] = []
         for project in catalog.projects {
@@ -4613,8 +4641,11 @@ final class EvaluationStore {
                         continue
                     }
                     let recovery = recoverInterruptedRun(
-                        from: url, runsDirectory: runsDirectory, existingRuns: existing
+                        from: url, runsDirectory: runsDirectory, existingRuns: existing,
+                        minimumHistorySequence: historySequence
                     )
+                    historySequence = max(historySequence, recovery.run?.historySequence ?? 0,
+                                          recovery.pending?.completedRun?.historySequence ?? 0)
                     if recovery.pending != nil || recovery.notice != nil {
                         notices.append(recovery.notice ?? "A snapshot run still needs its history save retried.")
                     }
@@ -4627,7 +4658,8 @@ final class EvaluationStore {
     private static func recoverInterruptedRun(
         from activeRunURL: URL,
         runsDirectory: URL,
-        existingRuns: [EvaluationRun]
+        existingRuns: [EvaluationRun],
+        minimumHistorySequence: UInt64
     ) -> (run: EvaluationRun?, pending: ActiveRunRecord?, notice: String?) {
         guard FileManager.default.fileExists(atPath: activeRunURL.path) else { return (nil, nil, nil) }
         guard let record = loadActiveRun(from: activeRunURL) else {
@@ -4685,7 +4717,7 @@ final class EvaluationStore {
             subjectEvidence: record.subjectEvidence
         )
         if run.historySequence == nil {
-            let existingMaximum = existingRuns.compactMap(\.historySequence).max() ?? 0
+            let existingMaximum = max(minimumHistorySequence, existingRuns.compactMap(\.historySequence).max() ?? 0)
             let wallClockMicroseconds = UInt64(max(0, Date().timeIntervalSince1970 * 1_000_000))
             run.historySequence = max(existingMaximum + 1, wallClockMicroseconds)
         }

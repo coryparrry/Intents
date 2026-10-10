@@ -29,7 +29,6 @@ struct FeatureControlsView: View {
     var body: some View {
         EditorSection(
             selectedPage.title,
-            systemImage: "slider.horizontal.3",
             description: "These settings apply to every case in this suite."
         ) {
             VStack(alignment: .leading, spacing: 16) {

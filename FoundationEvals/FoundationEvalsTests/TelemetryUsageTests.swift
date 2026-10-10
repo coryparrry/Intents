@@ -80,6 +80,55 @@ import Testing
         #expect(client.events.filter { $0.name == "intents_feature_used" }.count == 6)
     }
 
+    @Test(arguments: [true, false])
+    func diagnosticsChangesPreserveUsageCountsAndStillRevokeOldOperations(hasSDKSession: Bool) {
+        let defaults = UserDefaults(suiteName: "TelemetryConsentUsage.\(UUID())")!
+        var clients: [UsageRecordingClient] = []
+        var epochs: [UUID] = []
+        let recorder = TelemetryController(defaults: defaults,
+            configuration: .init(projectToken: "phc_test", host: "https://telemetry.invalid")) { config in
+                let client = UsageRecordingClient()
+                if !hasSDKSession { client.analyticsSessionID = nil }
+                clients.append(client)
+                epochs.append(config.consentEpoch)
+                return client
+            }
+        recorder.screen(.overview)
+        recorder.setDiagnosticsEnabled(true)
+        recorder.screen(.overview)
+        #expect(clients[0].discardCount == 1)
+        #expect(clients[1].events.isEmpty)
+        recorder.screen(.intentLab)
+        #expect(clients[1].events.map(\.name) == ["$screen"])
+        let oldSpan = recorder.begin(.evaluation)
+        recorder.setDiagnosticsEnabled(false)
+        recorder.end(oldSpan)
+        recorder.screen(.intentLab)
+        #expect(clients[1].discardCount == 1)
+        #expect(clients[2].events.isEmpty)
+        #expect(Set(epochs).count == 3)
+        #expect(clients.flatMap(\.events).filter { $0.name == "foundation_evals_app_opened" }.count == 1)
+        #expect(clients.flatMap(\.events).filter { $0.name == "intents_first_use" }.count == 1)
+        if hasSDKSession {
+            clients[2].analyticsSessionID = UUID().uuidString
+            recorder.screen(.intentLab)
+            #expect(clients[2].events.map(\.name) == ["foundation_evals_app_opened", "$screen"])
+        }
+    }
+
+    @Test func diagnosticsChangeBeforeFirstOpenAndUsageReenableStillCountOpens() {
+        let (recorder, client) = recorder()
+        recorder.setDiagnosticsEnabled(true)
+        recorder.screen(.overview)
+        recorder.setEnabled(false)
+        recorder.setDiagnosticsEnabled(false)
+        recorder.screen(.overview)
+        recorder.setEnabled(true)
+        recorder.screen(.overview)
+        #expect(client.events.filter { $0.name == "foundation_evals_app_opened" }.count == 2)
+        #expect(client.events.filter { $0.name == "$screen" }.count == 2)
+    }
+
     @Test func consentSpanningAndForeignMeasurementsNeverCreateAdoption() {
         let (recorder, client) = recorder()
         let span = recorder.begin(.evaluation)
@@ -146,6 +195,7 @@ import Testing
     var analyticsSessionID: String? = UUID().uuidString
     var events: [TelemetryEvent] = []
     var nextScreenSession: String?
+    var discardCount = 0
     func capture(_ event: TelemetryEvent) {
         if case .screen = event, let session = nextScreenSession {
             analyticsSessionID = session
@@ -153,7 +203,7 @@ import Testing
         }
         events.append(event)
     }
-    func stopAndDiscard() { }
+    func stopAndDiscard() { discardCount += 1 }
 }
 
 struct TelemetryPayloadFilterTests {

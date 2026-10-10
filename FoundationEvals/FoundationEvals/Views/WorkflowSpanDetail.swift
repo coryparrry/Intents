@@ -30,11 +30,13 @@ struct WorkflowSpanDetail: View {
                 }
                 .accessibilityElement(children: .contain)
                 HStack {
-                    Text(node.outcome.capitalized).foregroundStyle(node.color)
+                    Text(node.outcome.capitalized)
+                        .foregroundStyle(node.hasIssue || node.outcome == "cancelled" ? node.color : .secondary)
                     Spacer()
                     Text(WorkflowTracePresentation.duration(node.durationMilliseconds)).monospacedDigit()
+                        .foregroundStyle(.secondary)
                 }
-                .font(.caption.weight(.medium))
+                .font(.callout.weight(.medium))
                 .accessibilityElement(children: .contain)
                 Picker("Span detail", selection: $tab) {
                     ForEach(DetailTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -72,7 +74,7 @@ struct WorkflowSpanDetail: View {
 
     private var details: some View {
         Group {
-            if let error = node.errorMessage { TraceEvidenceBlock(title: "Error", text: error, color: .red) }
+            if let error = node.errorMessage { TraceEvidenceBlock(title: "Error", text: error, color: WorkspaceStyle.failure) }
             detailSection("TIMING") {
                 TraceDetailMetric(label: "Start", value: offset(node.startMilliseconds))
                 TraceDetailMetric(label: "End", value: offset(node.endMilliseconds))

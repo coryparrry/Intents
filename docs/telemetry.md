@@ -87,6 +87,10 @@ This internal marker is removed before network transmission. Related operation
 completion/issues also respect the consent generation at their start. Enabling
 sharing midway through an operation does not upload that earlier operation's details.
 Turning one switch off leaves the other switch's chosen setting intact.
+Changing diagnostics sharing alone rebuilds the SDK and revokes old queues, but
+does not count another app open or repeat the current screen while the observed
+usage session remains active. SDK session tokens can change during this reset;
+normal SDK session rotation and usage opt-out/re-enable still count new opens.
 Already-received PostHog data is not deleted by an app preference change.
 
 The pinned Swift SDK maintains a bounded queue of 50 events across launches while

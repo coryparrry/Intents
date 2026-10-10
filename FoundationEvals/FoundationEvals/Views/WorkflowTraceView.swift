@@ -16,16 +16,14 @@ struct WorkflowTraceView: View {
                         Text("Workflow trace")
                             .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                         Text(run.suiteName).font(.title2.weight(.bold)).lineLimit(1)
-                        WorkspaceFlowLayout(spacing: 14, lineSpacing: 4) {
-                            WorkspaceMetaLabel(run.execution?.modelDisplayName ?? run.environment.model, symbol: "cpu")
-                            WorkspaceMetaLabel(run.scoringMode.title, symbol: "checkmark.seal")
-                            WorkspaceMetaLabel(
-                                run.startedAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()),
-                                symbol: "calendar"
-                            )
-                            WorkspaceMetaLabel("\(run.results.count) / \(run.plannedResultCount) samples", symbol: "square.stack")
-                        }
+                        Text([
+                            run.execution?.modelDisplayName ?? run.environment.model,
+                            run.scoringMode.title,
+                            run.startedAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()),
+                            "\(run.results.count) / \(run.plannedResultCount) samples"
+                        ].joined(separator: " · "))
                         .font(.callout).foregroundStyle(.secondary)
+                        .lineLimit(2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
@@ -40,17 +38,20 @@ struct WorkflowTraceView: View {
                     }
                 }
                 if let sample {
-                    HStack(spacing: 10) {
+                    LazyVGrid(
+                        columns: Array(repeating: GridItem(.flexible(minimum: 96), spacing: 10), count: 5),
+                        spacing: 10
+                    ) {
                         TraceSummaryMetric(title: "Outcome", value: sample.status.rawValue.capitalized,
-                            color: sample.status == .passed ? WorkspaceStyle.success
-                                : sample.status == .unscored ? .secondary
-                                : sample.status == .error ? WorkspaceStyle.warning : WorkspaceStyle.failure)
-                        TraceSummaryMetric(title: "Workflow", value: WorkflowTracePresentation.duration(
+                            mark: sample.status == .passed ? .passed
+                                : sample.status == .unscored ? .idle
+                                : sample.status == .error ? .attention : .failed)
+                        TraceSummaryMetric(title: "Total time", value: WorkflowTracePresentation.duration(
                             sample.workflowTrace?.spans.first(where: { $0.kind == .sample })?.durationMilliseconds))
                             .help("The total time for this attempt, including preparation, the response, and scoring.")
-                        TraceSummaryMetric(title: "Subject request", value: WorkflowTracePresentation.duration(sample.durationMilliseconds))
-                            .help("The time spent preparing and generating the response. This excludes AI judge scoring.")
-                        TraceSummaryMetric(title: "Subject tokens", value: sample.usage.totalTokens == 0 && sample.status == .error
+                        TraceSummaryMetric(title: "Model answer", value: WorkflowTracePresentation.duration(sample.durationMilliseconds))
+                            .help("The time for the tested model to answer. This excludes AI judge scoring.")
+                        TraceSummaryMetric(title: "Model tokens", value: sample.usage.totalTokens == 0 && sample.status == .error
                             ? "Unavailable" : sample.usage.totalTokens.formatted())
                             .help("Tokens are pieces of text counted by the response model. This total includes input and output.")
                         TraceSummaryMetric(title: "First content", value: WorkflowTracePresentation.duration(sample.featureTrace?.firstContentMilliseconds))
@@ -76,13 +77,16 @@ struct WorkflowTraceView: View {
 private struct TraceSummaryMetric: View {
     let title: String
     let value: String
-    var color: Color = .primary
+    var mark: WorkspaceStatusMark.State?
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            Text(value).font(.body.weight(.semibold)).monospacedDigit().foregroundStyle(color).lineLimit(1)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 6) {
+                if let mark { WorkspaceStatusMark(state: mark, size: 18) }
+                Text(value).font(.title3.weight(.semibold)).monospacedDigit().lineLimit(1)
+            }
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
+        .padding(.horizontal, 14).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .workspaceInset()
         .accessibilityElement(children: .combine)
@@ -134,12 +138,24 @@ struct WorkflowSampleInspector: View {
                     .padding(.horizontal, 16).padding(.bottom, 10)
             }
             Divider()
-            HSplitView {
-                WorkflowWaterfall(trace: trace, selection: $selection, collapsed: $collapsed)
-                    .frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
-                if let selected {
-                    WorkflowSpanDetail(node: selected, result: result, run: run, trace: trace)
-                        .frame(minWidth: 250, idealWidth: 300, maxWidth: 380, maxHeight: .infinity)
+            GeometryReader { geometry in
+                let inspectorMinimumWidth: CGFloat = 320
+                let inspectorMaximumWidth = min(
+                    380,
+                    max(inspectorMinimumWidth, geometry.size.width * 0.38)
+                )
+                HSplitView {
+                    WorkflowWaterfall(trace: trace, selection: $selection, collapsed: $collapsed)
+                        .frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
+                    if let selected {
+                        WorkflowSpanDetail(node: selected, result: result, run: run, trace: trace)
+                            .frame(
+                                minWidth: inspectorMinimumWidth,
+                                idealWidth: inspectorMinimumWidth,
+                                maxWidth: inspectorMaximumWidth,
+                                maxHeight: .infinity
+                            )
+                    }
                 }
             }
         }
@@ -166,7 +182,7 @@ private struct WorkflowWaterfall: View {
                 extent: trace.extentMilliseconds, width: timelineWidth)
             VStack(alignment: .leading, spacing: 0) {
                 if trace.hasMeasuredOffsets {
-                    Text("Expanded time scale · Short steps spaced apart · Exact durations shown")
+                    Text("Short steps are widened so you can see them. Durations on the right are exact.")
                         .font(.caption2).foregroundStyle(.secondary)
                         .padding(.horizontal, 16).padding(.vertical, 6)
                 }
@@ -344,17 +360,16 @@ private struct TraceDurationBar: View {
 }
 
 extension WorkflowTraceNode {
+    /// Model work takes the accent colour and app work stays neutral, so the timeline reads at
+    /// a glance. Status colour is reserved for spans that were cancelled or hit an issue.
     var color: Color {
-        if outcome == "cancelled" { return .orange }
-        if hasIssue { return .red }
+        if outcome == "cancelled" { return WorkspaceStyle.warning }
+        if hasIssue { return WorkspaceStyle.failure }
         return switch kind {
-        case .sample: .indigo
-        case .preparation: .teal
-        case .generation: .blue
-        case .scoring: .purple
-        case .judge: .pink
-        case .tool: .green
-        case .httpRequest: .orange
+        case .generation, .tool: .accentColor
+        case .judge: .accentColor.opacity(0.65)
+        case .sample: .secondary.opacity(0.55)
+        case .preparation, .scoring, .httpRequest: .secondary
         }
     }
     var symbol: String {

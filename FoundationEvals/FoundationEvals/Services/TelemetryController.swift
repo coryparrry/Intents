@@ -63,6 +63,7 @@ final class TelemetryController {
     static let consentEpochKey = "telemetryConsentEpoch"
     static let firstUseKey = "telemetryObservedFirstUse"
     @ObservationIgnored private var lastOpenSession: String?
+    @ObservationIgnored private var lastUsageRecordedAt: ContinuousClock.Instant?
     @ObservationIgnored private var lastScreen: TelemetryScreen?
     @ObservationIgnored private var lastScreenSession: String?
     @ObservationIgnored private var lastScreenRecordedAt: ContinuousClock.Instant?
@@ -111,7 +112,7 @@ final class TelemetryController {
         rotateConsentEpoch()
         diagnosticsEnabled = enabled
         defaults.set(enabled, forKey: Self.diagnosticsConsentKey)
-        resetClientForConsentChange()
+        resetClientForConsentChange(preservingUsageSession: true)
     }
 
     private func rotateConsentEpoch() {
@@ -121,16 +122,26 @@ final class TelemetryController {
         defaults.set(consentEpoch.uuidString, forKey: Self.consentEpochKey)
     }
 
-    private func resetClientForConsentChange() {
+    private func resetClientForConsentChange(preservingUsageSession: Bool = false) {
+        let preserveUsage = preservingUsageSession && isEnabled && lastOpenSession != nil
+            && lastOpenSession == (client?.analyticsSessionID ?? sessionID.uuidString)
+            && lastUsageRecordedAt.map { $0.duration(to: .now) < .seconds(1_800) } == true
         consentGeneration = UUID()
         lastOpenSession = nil
-        lastScreen = nil
+        if !preserveUsage { lastScreen = nil }
         lastScreenSession = nil
         client?.stopAndDiscard()
         discardPendingCrashes()
         client = nil
         delivery = .stopped
         refreshClient()
+        // A diagnostics-only SDK restart is not another app open. Rebind the
+        // deduplication state while retaining queue revocation and span epochs.
+        if preserveUsage {
+            let session = client?.analyticsSessionID ?? sessionID.uuidString
+            lastOpenSession = session
+            if lastScreen != nil { lastScreenSession = session }
+        }
     }
 
     private func refreshClient() {
@@ -157,6 +168,7 @@ final class TelemetryController {
         if case .featureUsed = event { appBecameActive() }
         delivery = .queued
         client?.capture(event)
+        if !event.isDiagnostic { lastUsageRecordedAt = .now }
         // Capture advances the SDK session clock; a read-only lookup cannot.
         if case .screen = event { appBecameActive() }
         if case .featureUsed = event { appBecameActive() }

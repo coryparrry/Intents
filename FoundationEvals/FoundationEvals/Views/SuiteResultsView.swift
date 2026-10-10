@@ -1,104 +1,150 @@
 import Charts
 import SwiftUI
 
+/// The suite's history: how the pass rate has moved, every saved run, and tools to compare them.
 struct SuiteResultsView: View {
     @Bindable var store: EvaluationStore
+    @Environment(DeveloperRunnerStore.self) private var runners
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            if !store.runs.isEmpty {
+        VStack(alignment: .leading, spacing: 28) {
+            if store.runs.isEmpty {
+                WorkspaceEmptyState(symbol: "chart.xyaxis.line", title: "Ready for your first run",
+                                    detail: runners.runIssue(for: store)
+                                        ?? "Run this suite to see each response, its score, and how long it took.",
+                                    actionTitle: "Run Suite", actionSymbol: "play.fill") {
+                    do { try runners.startSelectedRun(for: store) } catch { store.notice = error.localizedDescription }
+                }
+                .disabled(!runners.canStartRun(for: store))
+                .workspaceSurface()
+            } else {
                 RunTrendPanel(runs: store.runs)
-            }
-            VStack(spacing: 0) {
-                WorkspacePanelHeader("Run history", count: store.runs.count)
-                Divider()
-                if store.runs.isEmpty {
-                    WorkspaceEmptyState(symbol: "chart.bar.doc.horizontal", title: "Ready for your first run",
-                                        detail: "Run this suite to collect responses, scores, and execution traces. Your results will appear here.")
-                } else {
-                    ForEach(store.runs) { run in
-                        let state = SuiteCheckState.evaluate(run: run, currentRevision: store.suiteRevision,
-                                                             hasDraft: store.draftSuite != store.suite)
-                        Button { store.selection = .run(run.id) } label: {
-                            WorkspaceRunRow(run: run, state: state,
-                                            isBaseline: store.activeBaselineApproval?.runID == run.id)
+                VStack(alignment: .leading, spacing: 14) {
+                    WorkspaceSectionTitle("Run history", count: store.runs.count)
+                    VStack(spacing: 0) {
+                        ForEach(Array(store.runs.enumerated()), id: \.element.id) { index, run in
+                            let state = SuiteCheckState.evaluate(run: run, currentRevision: store.suiteRevision,
+                                                                 hasDraft: store.draftSuite != store.suite)
+                            Button { store.selection = .run(run.id) } label: {
+                                WorkspaceRunRow(run: run, state: state,
+                                                isBaseline: store.activeBaselineApproval?.runID == run.id)
+                            }
+                            .buttonStyle(WorkspaceRowButtonStyle())
+                            if index < store.runs.count - 1 {
+                                Divider().padding(.leading, 56)
+                            }
                         }
-                        .buttonStyle(WorkspaceRowButtonStyle())
-                        if run.id != store.runs.last?.id { Divider().padding(.leading, 62) }
                     }
+                    .padding(.vertical, 4)
+                    .workspaceSurface()
                 }
             }
-            .workspaceSurface()
+            VStack(alignment: .leading, spacing: 14) {
+                WorkspaceSectionTitle("Compare")
+                SuiteCompareView(store: store)
+            }
         }
     }
 }
 
-/// Latest pass rate, its change since the previous run, and a compact trend of recent runs.
+/// The latest pass rate beside a large, hoverable chart of recent runs.
 private struct RunTrendPanel: View {
     let runs: [EvaluationRun]
+    @State private var hovered: String?
+
+    private var trend: RunTrendSummary { RunTrendSummary(runs: runs) }
+
+    private var selected: RunTrendSummary.Point? {
+        guard let hovered else { return nil }
+        return trend.points.first { $0.label == hovered }
+    }
 
     var body: some View {
-        let trend = RunTrendSummary(runs: runs)
-        HStack(alignment: .center, spacing: 28) {
+        HStack(alignment: .top, spacing: 40) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Latest pass rate").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+                Text("Latest pass rate").font(.subheadline).foregroundStyle(.secondary)
                 Text(runs[0].passRate.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—")
-                    .font(.system(size: 34, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: 44, weight: .semibold)).monospacedDigit()
+                    .contentTransition(.numericText())
                 if let delta = trend.delta {
                     let rounded = Int(delta.rounded())
-                    WorkspacePill(
-                        rounded == 0 ? "No change" : "\(rounded > 0 ? "+" : "")\(rounded) pts vs previous",
-                        symbol: rounded > 0 ? "arrow.up.right" : rounded < 0 ? "arrow.down.right" : "equal",
-                        color: rounded > 0 ? WorkspaceStyle.success : rounded < 0 ? WorkspaceStyle.failure : .secondary
-                    )
+                    Label(rounded == 0 ? "No change" : "\(rounded > 0 ? "+" : "")\(rounded) pts vs previous run",
+                          systemImage: rounded > 0 ? "arrow.up.right" : rounded < 0 ? "arrow.down.right" : "equal")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(rounded > 0 ? WorkspaceStyle.success : rounded < 0 ? WorkspaceStyle.failure : .secondary)
                 } else {
-                    Text(trend.comparisonCaption).font(.caption).foregroundStyle(.tertiary)
+                    Text(trend.comparisonCaption).font(.callout).foregroundStyle(.secondary)
                 }
+                HStack(spacing: 28) {
+                    WorkspaceFigure(title: "Passed", value: runs[0].passedCount.formatted())
+                    WorkspaceFigure(title: "Failed", value: runs[0].failedCount.formatted())
+                }
+                .padding(.top, 18)
             }
-            .frame(minWidth: 170, alignment: .leading)
-            Divider().frame(height: 96)
-            VStack(alignment: .leading, spacing: 8) {
-                Text(trend.title)
-                    .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+            .frame(width: 230, alignment: .leading)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(trend.title).font(.headline)
                 if trend.points.isEmpty {
                     Text("No scored runs yet")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 86)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    Chart(trend.points) { point in
-                        if point.rate == 0 {
-                            PointMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate))
-                                .foregroundStyle(color(for: point.run))
-                                .symbolSize(55)
-                        } else {
-                            BarMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate), width: .ratio(0.6))
-                                .foregroundStyle(color(for: point.run).gradient)
-                                .cornerRadius(3)
-                        }
-                    }
-                    .chartYScale(domain: 0...100)
-                    .chartXAxis(.hidden)
-                    .chartYAxis {
-                        AxisMarks(position: .trailing, values: [0, 50, 100]) { value in
-                            AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
-                            AxisValueLabel { Text("\(value.as(Int.self) ?? 0)%").font(.caption2) }
-                        }
-                    }
-                    .frame(height: 86)
-                    .accessibilityLabel("Pass rate trend")
+                    chart
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 190)
         }
-        .padding(22)
+        .padding(26)
         .workspaceSurface()
+    }
+
+    private var chart: some View {
+        Chart(trend.points) { point in
+            AreaMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate))
+                .interpolationMethod(.monotone)
+                .foregroundStyle(LinearGradient(colors: [Color.accentColor.opacity(0.22), Color.accentColor.opacity(0)],
+                                                startPoint: .top, endPoint: .bottom))
+            LineMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate))
+                .interpolationMethod(.monotone)
+                .foregroundStyle(Color.accentColor)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+            PointMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate))
+                .foregroundStyle(color(for: point.run))
+                .symbolSize(point.label == hovered ? 100 : 40)
+            if point.label == hovered {
+                RuleMark(x: .value("Run", point.label))
+                    .foregroundStyle(Color.primary.opacity(0.18))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .annotation(position: .top, spacing: 6, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(Int(point.rate.rounded()))% passed").font(.callout.weight(.semibold)).monospacedDigit()
+                            Text("\(point.run.passedCount) passed · \(point.run.failedCount) failed")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text(point.run.startedAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .workspaceGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+            }
+        }
+        .chartYScale(domain: 0...100)
+        .chartXAxis(.hidden)
+        .chartYAxis {
+            AxisMarks(position: .leading, values: [0, 50, 100]) { value in
+                AxisGridLine().foregroundStyle(Color.primary.opacity(0.07))
+                AxisValueLabel { Text("\(value.as(Int.self) ?? 0)%").font(.caption2) }
+            }
+        }
+        .chartXSelection(value: $hovered)
+        .animation(.snappy(duration: 0.2), value: hovered)
+        .accessibilityLabel("Pass rate trend")
     }
 
     private func color(for run: EvaluationRun) -> Color {
         if run.errorCount > 0 || run.cancelled || run.stoppedEarly { return WorkspaceStyle.warning }
-        guard let rate = run.passRate else { return .gray }
-        return rate >= 1 ? WorkspaceStyle.success : rate >= 0.5 ? .accentColor : WorkspaceStyle.failure
+        guard let rate = run.passRate else { return .secondary.opacity(0.4) }
+        return rate >= 1 ? .accentColor : WorkspaceStyle.failure
     }
 }
 
@@ -149,10 +195,9 @@ private struct WorkspaceRunRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            WorkspaceIcon(symbol: state.symbol, size: 30)
-                .foregroundStyle(state.color)
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .center, spacing: 14) {
+            WorkspaceStatusMark(state: state.mark, size: 22)
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(run.startedAt, format: .dateTime.month(.abbreviated).day().hour().minute())
                         .font(.body.weight(.semibold)).foregroundStyle(.primary)
@@ -161,24 +206,23 @@ private struct WorkspaceRunRow: View {
                     }
                 }
                 Text("\(state.title) · \(run.suiteVersion) · \(target)")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.callout).foregroundStyle(.secondary).lineLimit(1)
             }
+            .padding(.vertical, 13)
             Spacer(minLength: 12)
-            VStack(alignment: .trailing, spacing: 5) {
+            VStack(alignment: .trailing, spacing: 6) {
                 Text(run.passRate.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—")
                     .font(.title3.weight(.semibold)).monospacedDigit()
                 WorkspaceProportionBar(segments: [
                     WorkspaceRingSegment(count: run.passedCount, color: WorkspaceStyle.success),
                     WorkspaceRingSegment(count: run.failedCount, color: WorkspaceStyle.failure),
                     WorkspaceRingSegment(count: run.errorCount, color: WorkspaceStyle.warning)
-                ], height: 5)
-                .frame(width: 120)
-                Text("\(run.passedCount) passed · \(run.failedCount) failed\(run.errorCount > 0 ? " · \(run.errorCount) \(run.errorCount == 1 ? "error" : "errors")" : "")")
-                    .font(.caption2).foregroundStyle(.secondary)
+                ], height: 4)
+                .frame(width: 96)
             }
-            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            Image(systemName: "chevron.right").font(.callout.weight(.semibold)).foregroundStyle(.tertiary)
         }
-        .padding(.horizontal, 18).padding(.vertical, 12)
+        .padding(.horizontal, 20)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
@@ -207,6 +251,7 @@ struct SuiteCompareView: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .workspaceSurface()
                 if let execution = current.developerExecution {
                     DeveloperExecutionSummary(execution: execution)

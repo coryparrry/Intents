@@ -34,17 +34,12 @@ struct DeveloperDevicesView: View {
                         }
                     }
                     if runners.runners.isEmpty {
-                        VStack(spacing: 14) {
-                            Image(systemName: "laptopcomputer.and.iphone")
-                                .font(.system(size: 36, weight: .light)).foregroundStyle(Color.accentColor)
-                            Text("Connect your first app").font(.title3.weight(.semibold))
-                            Text("Open the runner in your development app on an iPhone, iPad, or Mac. Keep both devices on the same local network.")
-                                .font(.callout).foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center).frame(maxWidth: 390)
-                            Button("Set up the Swift package") { showsGuide = true }
-                                .buttonStyle(.borderedProminent)
-                        }
-                        .frame(maxWidth: .infinity).padding(30).workspaceSurface()
+                        WorkspaceEmptyState(
+                            symbol: "laptopcomputer.and.iphone", title: "Connect your first app",
+                            detail: "Open the runner in your development app on an iPhone, iPad, or Mac. Keep both devices on the same local network.",
+                            actionTitle: "Set up the Swift package", actionSymbol: "plus", action: { showsGuide = true }
+                        )
+                        .workspaceSurface()
                     } else {
                         VStack(spacing: 12) {
                             ForEach(runners.runners) { runner in
@@ -53,8 +48,7 @@ struct DeveloperDevicesView: View {
                         }
                     }
                     if let message = runners.lastError {
-                        Label(message, systemImage: "exclamationmark.triangle")
-                            .font(.callout).foregroundStyle(.orange).textSelection(.enabled)
+                        WorkspaceNotice(.warning, message: message).textSelection(.enabled)
                     }
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {

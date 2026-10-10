@@ -14,15 +14,21 @@ struct RunAnalysisSection: View {
     let run: EvaluationRun
     let baselineRuns: [EvaluationRun]
     @State private var selectedBaselineID: UUID?
+    private let externalSelection: Binding<UUID?>?
 
-    init(run: EvaluationRun, baselineRuns: [EvaluationRun]) {
+    init(run: EvaluationRun, baselineRuns: [EvaluationRun], selection: Binding<UUID?>? = nil) {
         self.run = run
         self.baselineRuns = baselineRuns
+        externalSelection = selection
         _selectedBaselineID = State(initialValue: RunBaselineSelection.defaultID(for: run, candidates: baselineRuns))
     }
 
+    private var selection: Binding<UUID?> {
+        externalSelection ?? $selectedBaselineID
+    }
+
     private var selectedBaseline: EvaluationRun? {
-        guard let selectedBaselineID else { return nil }
+        guard let selectedBaselineID = selection.wrappedValue else { return nil }
         return baselineRuns.first { $0.id == selectedBaselineID }
     }
 
@@ -32,7 +38,7 @@ struct RunAnalysisSection: View {
         VStack(alignment: .leading, spacing: 16) {
             RunAnalysisHeader(
                 baselineRuns: baselineRuns,
-                selectedBaselineID: $selectedBaselineID
+                selectedBaselineID: selection
             )
             RunAnalysisMetrics(analysis: analysis)
             RunCasePatterns(cases: analysis.cases)
@@ -52,11 +58,11 @@ struct RunAnalysisSection: View {
         .padding(18)
         .workspaceSurface()
         .onChange(of: run.id) { _, _ in
-            selectedBaselineID = RunBaselineSelection.defaultID(for: run, candidates: baselineRuns)
+            selection.wrappedValue = RunBaselineSelection.defaultID(for: run, candidates: baselineRuns)
         }
         .onChange(of: baselineRuns.map(\.id)) { _, ids in
-            if let selectedBaselineID, !ids.contains(selectedBaselineID) {
-                self.selectedBaselineID = RunBaselineSelection.defaultID(for: run, candidates: baselineRuns)
+            if let selectedBaselineID = selection.wrappedValue, !ids.contains(selectedBaselineID) {
+                selection.wrappedValue = RunBaselineSelection.defaultID(for: run, candidates: baselineRuns)
             }
         }
     }
@@ -72,7 +78,7 @@ private struct RunAnalysisHeader: View {
                 Text("Analysis")
                     .font(.title2.bold())
                     .accessibilityAddTraits(.isHeader)
-                Text("Percentiles exclude subject-request errors. Pass rates include scored samples only.")
+                Text("Latency percentiles exclude response errors. Pass rates use scored samples only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -86,6 +92,7 @@ private struct RunAnalysisHeader: View {
                         Text(baselineLabel(baseline)).tag(Optional(baseline.id))
                     }
                 }
+                .accessibilityIdentifier("Baseline picker")
                 .accessibilitySelectionActions(
                     [Optional<UUID>.none] + baselineRuns.map { Optional($0.id) },
                     selection: $selectedBaselineID,
@@ -123,21 +130,22 @@ private struct RunAnalysisMetrics: View {
                 detail: "\(analysis.unscoredSampleCount) unscored · \(analysis.errorSampleCount) \(analysis.errorSampleCount == 1 ? "error" : "errors") · \(analysis.missingSampleCount) missing"
             )
             AnalysisMetric(
-                title: "Subject latency",
+                title: "Response model latency",
                 value: latency(analysis.subjectLatency.p50Milliseconds),
-                detail: "p50 · p95 \(latency(analysis.subjectLatency.p95Milliseconds)) · n=\(analysis.subjectLatency.sampleCount)"
+                detail: "Median (p50) · Estimated p95 \(latency(analysis.subjectLatency.p95Milliseconds)) · \(analysis.subjectLatency.sampleCount) samples"
             )
+            .help("p50 is the middle response time. p95 estimates the time that 95% of responses fall within. Small runs give rough estimates.")
             AnalysisMetric(
-                title: "Subject tokens",
+                title: "Response model tokens",
                 value: tokenTotal(analysis.subjectUsage),
                 detail: tokenDetail(analysis.subjectUsage)
             )
             AnalysisMetric(
-                title: "Judge tokens",
+                title: "Scoring model tokens",
                 value: tokenTotal(analysis.judgeUsage),
                 detail: analysis.judgeUsage.requestCount == 0
                     && analysis.judgeUsage.usageUnavailableSampleCount == 0
-                    ? "No judge requests recorded"
+                    ? "No scoring requests recorded"
                     : tokenDetail(analysis.judgeUsage)
             )
         }
@@ -161,7 +169,7 @@ private struct RunAnalysisMetrics: View {
         let unavailable = usage.usageUnavailableSampleCount > 0
             ? " · \(usage.usageUnavailableSampleCount) unavailable"
             : ""
-        return "\(usage.inputTokens.formatted()) in · \(usage.outputTokens.formatted()) out · \(usage.reasoningTokens.formatted()) reasoning\(unavailable)"
+        return "Text pieces · \(usage.inputTokens.formatted()) in · \(usage.outputTokens.formatted()) out · \(usage.reasoningTokens.formatted()) reasoning\(unavailable)"
     }
 }
 
@@ -282,7 +290,7 @@ private struct BaselineComparisonContent: View {
                 }
                 if !comparison.warnings.isEmpty {
                     ComparisonMessages(
-                        title: "Run conditions changed",
+                        title: "Run details to review",
                         messages: comparison.warnings.map(\.title),
                         symbol: "info.circle.fill",
                         color: .blue
@@ -304,26 +312,18 @@ private struct CompatibilityBadge: View {
     let compatibility: EvaluationRunComparisonCompatibility
 
     var body: some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.1), in: .capsule)
+        WorkspacePill(
+            title,
+            symbol: compatibility == .compatible ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+            color: compatibility == .compatible ? WorkspaceStyle.success : WorkspaceStyle.warning
+        )
     }
 
-    private var title: LocalizedStringResource {
+    private var title: String {
         switch compatibility {
         case .compatible: "Comparable"
         case .partialCoverage: "Partial coverage"
         case .incompatible: "Incompatible"
-        }
-    }
-
-    private var color: Color {
-        switch compatibility {
-        case .compatible: .green
-        case .partialCoverage, .incompatible: .orange
         }
     }
 }
@@ -348,9 +348,9 @@ private struct ComparisonMessages: View {
                 }
             }
         }
-        .padding(10)
+        .padding(.horizontal, 14).padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(color.opacity(0.07), in: .rect(cornerRadius: 8))
+        .background(.fill.quaternary, in: .rect(cornerRadius: WorkspaceStyle.controlRadius, style: .continuous))
     }
 }
 
@@ -358,24 +358,62 @@ private struct ComparisonSummary: View {
     let comparison: EvaluationRunComparison
 
     var body: some View {
-        HStack(spacing: 18) {
-            Label("\(comparison.regressedCaseCount) regressed", systemImage: "arrow.down.right")
-                .foregroundStyle(comparison.regressedCaseCount > 0 ? Color.red : .secondary)
-            Label("\(comparison.improvedCaseCount) improved", systemImage: "arrow.up.right")
-                .foregroundStyle(comparison.improvedCaseCount > 0 ? Color.green : .secondary)
-            Text("\(comparison.coverage.comparableRateCaseCount) fully scored cases compared")
-                .foregroundStyle(.secondary)
-            if let delta = comparison.meanComparableCasePassRateDelta {
-                Text("Mean case delta \(signedPercent(delta))")
-                    .foregroundStyle(.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 14) {
+                caseOutcomes
+                coverage
+                meanChange
+                Spacer(minLength: 0)
             }
-            Spacer()
+            .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 8) {
+                caseOutcomes
+                coverage
+                meanChange
+            }
         }
         .font(.callout.weight(.medium))
     }
 
-    private func signedPercent(_ value: Double) -> String {
-        value.formatted(.percent.precision(.fractionLength(0)).sign(strategy: .always()))
+    private var caseOutcomes: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                regressedCount
+                improvedCount
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                regressedCount
+                improvedCount
+            }
+        }
+    }
+
+    private var regressedCount: some View {
+        Label("\(comparison.regressedCaseCount) regressed", systemImage: "arrow.down.right")
+            .foregroundStyle(comparison.regressedCaseCount > 0 ? Color.red : .secondary)
+    }
+
+    private var improvedCount: some View {
+        Label("\(comparison.improvedCaseCount) improved", systemImage: "arrow.up.right")
+            .foregroundStyle(comparison.improvedCaseCount > 0 ? Color.green : .secondary)
+    }
+
+    private var coverage: some View {
+        Text("\(comparison.coverage.comparableRateCaseCount) fully scored cases compared")
+            .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var meanChange: some View {
+        if let delta = comparison.meanComparableCasePassRateDelta {
+            Text("Mean pass-rate change \(signedPercentagePoints(delta))")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func signedPercentagePoints(_ value: Double) -> String {
+        let points = (value * 100).formatted(.number.precision(.fractionLength(0)).sign(strategy: .always()))
+        return "\(points) percentage points"
     }
 }
 
@@ -474,11 +512,11 @@ private extension EvaluationRunComparisonWarning {
         switch self {
         case .suiteVersionChanged: "Suite version changed."
         case .instructionsChanged: "Suite instructions changed."
-        case .subjectModelChanged: "Subject model changed."
-        case .modelConfigurationChanged: "Model generation configuration changed."
-        case .executionContractUnavailable: "One or both runs do not record the generation execution contract."
-        case .executionContractChanged: "Execution behavior, capabilities, or tools changed."
-        case .environmentChanged: "Operating system, locale, or context size changed."
+        case .subjectModelChanged: "Response model changed."
+        case .modelConfigurationChanged: "Response model settings changed."
+        case .executionContractUnavailable: "Some saved run settings are missing from one or both runs."
+        case .executionContractChanged: "Model behavior, supported features, or tools changed."
+        case .environmentChanged: "Operating system, language, or context size changed."
         case .referencesChanged: "Shared reference files changed."
         }
     }

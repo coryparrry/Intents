@@ -66,19 +66,19 @@ struct WorkspaceSidebar: View {
     var body: some View {
         SidebarNavigationList(selection: destination) {
             Section {
-                Label { Text("Overview") } icon: { WorkspaceIcon(symbol: "square.grid.2x2", size: 18) }
+                Label("Overview", systemImage: "square.grid.2x2")
                     .tag(WorkspaceDestination.overview)
                 Label {
                     HStack(spacing: 6) {
                         Text("Intent Lab")
                         Text("Beta")
-                            .font(.caption2.weight(.medium))
+                            .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.primary.opacity(0.06), in: Capsule())
+                            .padding(.vertical, 1)
+                            .background(.fill.tertiary, in: .capsule)
                     }
-                } icon: { WorkspaceIcon(symbol: "intent-lab", size: 18) }
+                } icon: { Image(systemName: WorkspaceIcon.systemName(for: "intent-lab")) }
                     .accessibilityElement(children: .combine)
                     .tag(WorkspaceDestination.intentLab)
                 Label { Text("Evaluations") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
@@ -96,9 +96,7 @@ struct WorkspaceSidebar: View {
 
             Section("Suites") {
                 ForEach(store.suiteRecords.filter { $0.archivedAt == nil }) { suite in
-                    Label {
-                        Text(suite.id == store.selectedSuiteID ? store.draftSuite.name : suite.name)
-                    } icon: { WorkspaceIcon(symbol: "checklist", size: 18) }
+                    Label(suite.id == store.selectedSuiteID ? store.draftSuite.name : suite.name, systemImage: "checklist")
                         .lineLimit(1)
                         .tag(WorkspaceDestination.suite(suite.id))
                         .contextMenu {
@@ -114,7 +112,11 @@ struct WorkspaceSidebar: View {
                 }
             }
 
-            Section("Runs · \(store.draftSuite.name)") {
+            Section("Runs for \(store.draftSuite.name)") {
+                if store.runs.count > 5 || !runSearch.isEmpty {
+                    WorkspaceSearchField(prompt: "Filter runs", text: $runSearch)
+                        .selectionDisabled()
+                }
                 if filteredRuns.isEmpty {
                     EmptyRunHistoryRow(isSearching: !runSearch.isEmpty)
                 } else {
@@ -131,7 +133,6 @@ struct WorkspaceSidebar: View {
                 }
             }
         }
-        .searchable(text: $runSearch, placement: .sidebar, prompt: "Filter runs")
         .onChange(of: store.selectedSuiteID) { _, _ in runSearch = "" }
         .safeAreaInset(edge: .top, spacing: 0) {
             projectSwitcher
@@ -140,7 +141,7 @@ struct WorkspaceSidebar: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack(spacing: 8) {
                 Button { isCreatingSuite = true } label: {
-                    Label("New Suite", systemImage: "plus.circle.fill")
+                    Label("New Suite", systemImage: "plus")
                         .font(.callout.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
@@ -186,18 +187,22 @@ struct WorkspaceSidebar: View {
             Button("Manage projects…", systemImage: "folder.badge.gearshape") { isManagingWorkspace = true }
         } label: {
             HStack(spacing: 9) {
-                WorkspaceIcon(symbol: "square.stack.3d.up.fill", size: 28, presentation: .header)
+                Image(systemName: "square.stack.3d.up")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Project").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                    Text("Project").font(.caption2).foregroundStyle(.secondary)
                     Text(store.selectedProject.name)
                         .font(.callout.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                        .contentTransition(.opacity)
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(Color.primary.opacity(0.05), in: .rect(cornerRadius: 9))
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(.quinary, in: .rect(cornerRadius: 12, style: .continuous))
             .contentShape(.rect)
         }
         .menuStyle(.button)

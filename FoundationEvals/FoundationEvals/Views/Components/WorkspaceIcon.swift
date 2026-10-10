@@ -1,87 +1,50 @@
 import SwiftUI
 
-/// Lucide's original vector icons for workspace navigation and section headings.
+/// SF Symbols for workspace navigation and section headings.
 /// Foreground style is inherited so native sidebar selection and dark mode work.
 struct WorkspaceIcon: View {
     enum Presentation {
+        /// The symbol alone, inheriting the surrounding foreground style.
         case plain
+        /// An accent-coloured symbol for panel and popover headings.
         case header
+        /// A quiet secondary symbol for rows and optional sections.
+        case soft
     }
 
     let symbol: String
     var size: CGFloat = 28
-    var presentation: Presentation = .plain
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var contrast
+    var presentation: Presentation = .header
+    var tint: Color?
 
     var body: some View {
-        Group {
-            switch presentation {
-            case .plain:
-                glyph.padding(size * 0.1)
-            case .header:
-                glyph
-                    .padding(size * 0.19)
-                    .foregroundStyle(Color.accentColor)
-                    .background {
-                        let shape = RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
-                        shape
-                            .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.14 : 0.065))
-                            .background(.background, in: shape)
-                            .overlay {
-                                shape.strokeBorder(
-                                    Color.accentColor.opacity(contrast == .increased ? 0.5 : 0.18),
-                                    lineWidth: 0.75
-                                )
-                            }
-                            .shadow(color: .black.opacity(colorScheme == .dark ? 0.16 : 0.05), radius: 2, y: 1)
-                    }
-            }
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        Image(systemName: WorkspaceIcon.systemName(for: symbol))
+            .symbolRenderingMode(.hierarchical)
+            .font(.system(size: size * 0.7, weight: .regular))
+            .foregroundStyle(foreground)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 
-    private var glyph: some View {
-        Group {
-            if let asset = lucideAsset {
-                SwiftUI.Image("Lucide-\(asset)")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                SwiftUI.Image(systemName: symbol)
-                    .symbolRenderingMode(.monochrome)
-                    .font(.system(size: size * 0.64, weight: .regular))
-            }
+    private var foreground: AnyShapeStyle {
+        if let tint { return AnyShapeStyle(tint) }
+        switch presentation {
+        case .plain: return AnyShapeStyle(.foreground)
+        case .header: return AnyShapeStyle(Color.accentColor)
+        case .soft: return AnyShapeStyle(.secondary)
         }
     }
 
-    /// Existing pane definitions also use these names in native menus and controls.
-    /// Keep that system-symbol contract while using Lucide in the workspace.
-    private var lucideAsset: String? {
+    /// Maps the app's internal names onto SF Symbols.
+    static func systemName(for symbol: String) -> String {
         switch symbol {
-        case "square.grid.2x2": "layout-dashboard"
-        case "square.stack.3d.up.fill": "layers"
-        case "intent-lab": "workflow"
-        case "checklist": "list-checks"
-        case "laptopcomputer.and.iphone": "monitor-smartphone"
-        case "iphone": "smartphone"
-        case "slider.horizontal.3": "sliders-horizontal"
-        case "checkmark.shield", "checkmark.seal", "checkmark.seal.fill", "person.badge.shield.checkmark": "file-check"
-        case "text.alignleft": "text-align-start"
-        case "text.quote": "quote"
-        case "paperclip": "paperclip"
-        case "cpu": "cpu"
-        case "wrench.and.screwdriver.fill": "wrench"
-        case "curlybraces": "braces"
-        case "arrow.triangle.branch": "git-branch"
-        case "gauge.with.dots.needle.50percent": "gauge"
-        case "flask": "git-compare-arrows"
-        case "waveform": "text-cursor-input"
-        case "play.circle.fill": "play"
-        case "shippingbox": "package"
-        default: nil
+        case "intent-lab": "testtube.2"
+        case "app-automation", "play": "macwindow.and.cursorarrow"
+        case "square.stack.3d.up.fill": "square.stack.3d.up"
+        case "wrench.and.screwdriver.fill": "wrench.and.screwdriver"
+        case "checkmark.seal.fill": "checkmark.seal"
+        case "play.circle.fill": "play.circle"
+        default: symbol
         }
     }
 }
