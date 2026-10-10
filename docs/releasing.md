@@ -22,11 +22,15 @@ Before merging the version/changelog PR, merge the documentation update and conf
 6. Updates the [Homebrew tap](https://github.com/coryparrry/homebrew-tap) with the
    published version and verified DMG checksum.
 
+The top-level `always-update` option refreshes an existing release PR from the
+latest `main` on every eligible run, including merges whose release notes are
+unchanged. Release Me dispatches CI again on the updated release branch.
+
 Draft staging and release PR generation run in separate Release Please steps. Before generating a PR, the workflow requires the version in the current `main` manifest to have a published GitHub release. A draft pauses PR generation until packaging succeeds; a missing release or API error stops the workflow instead of treating old commits as unreleased. A run with no releasable changes skips PR CI without parsing an absent PR output.
 
 No separate packaging action is required. A missing signing secret, failed CI/build/notarization, source mismatch, failed upload, or failed download verification leaves the release unpublished. The installer is built from the release PR's source, never a previously generated local DMG. Hosted build numbers are fixed to that source's Git commit count, which increases as commits land on `main`.
 
-Tags use `vMAJOR.MINOR.PATCH`. `fix:` changes produce a patch and `feat:` changes produce a minor release. Docs and chores alone do not normally produce a release PR. Release Please updates `version.txt`, `CHANGELOG.md`, and `.release-please-manifest.json` in its PR; the initial baseline is the existing `v1.0.0` release.
+Tags use `vMAJOR.MINOR.PATCH`. `fix:` changes produce a patch and `feat:` changes produce a minor release. Documentation, tests, refactoring, build, CI, maintenance, style, and revert entries are included alongside features, fixes, performance, and dependencies. With these categories visible, a docs-, test-, or maintenance-only change can also produce a patch release PR. Non-conventional commit messages still need a valid override to appear in the changelog. Release Please updates `version.txt`, `CHANGELOG.md`, and `.release-please-manifest.json` in its PR; the initial baseline is the existing `v1.0.0` release.
 
 ### Curate squash-merge release notes
 
@@ -42,9 +46,14 @@ feat(judging): configure independent judges and reassess saved responses
 END_COMMIT_OVERRIDE
 ```
 
-Add one Conventional Commit line for each independently useful user-visible
-change. Keep implementation details, tests, CI, and maintenance out of the block.
-The pull request template contains a commented example, and CI fails releasable
+Add one Conventional Commit line for each independently useful change, grouped
+by its actual type. Feature and fix notes should describe user-visible behavior.
+Documentation, tests, refactoring, build, CI, maintenance, style, and reverts can
+have their own typed entries.
+
+Non-feature/fix PRs can omit the override and contribute their conventional
+squash-commit subject, or add an override to describe several changes. The pull
+request template contains instructions, and CI fails feature and fix
 pull requests whose active block is missing, malformed, duplicated, or does not
 retain the pull request's `feat`/`fix` release type. Editing the pull request body
 reruns that validation. Breaking-change markers must agree between the pull
