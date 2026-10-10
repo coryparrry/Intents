@@ -1,0 +1,22 @@
+{
+  "project": 266962,
+  "dashboard": 998410,
+  "insight": 6465993,
+  "short_id": "pv2qBZ2F",
+  "tile": 7314622,
+  "query_verified": "valid, no eligible data",
+  "layout": {
+    "x": 0,
+    "y": 29,
+    "w": 12,
+    "h": 5
+  },
+  "filters": {
+    "app": "intents",
+    "environment": "production",
+    "platform": "macOS",
+    "schema_version": 2,
+    "$exception_level": "fatal"
+  },
+  "measure": "fatal report count by original app_build over 30 days, not crash rate"
+}

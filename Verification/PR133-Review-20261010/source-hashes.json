@@ -1,0 +1,18 @@
+{
+  "FoundationEvals/FoundationEvals/ContentView.swift": "b9582d492e2221a8a5f68312082e502c0df3f7ef4c70f3bc4321c617e08792db",
+  "FoundationEvals/FoundationEvals/FoundationEvalsApp.swift": "48ff28c645e08116c6dd1a89404b6ccb2c2b0d988dec358dd505c97945854082",
+  "FoundationEvals/FoundationEvals/MCP/Installer/MCPSettingsController.swift": "5165516282b014917a4f69bab9310cc8dbf9d629c12c76bc31a83e2b211d74a0",
+  "FoundationEvals/FoundationEvals/PrivacyInfo.xcprivacy": "0fffce4dcfcf5544ae697f140a9afe4ba1632cf385ce5ea900dff66ca485d5b6",
+  "FoundationEvals/FoundationEvals/Services/ScenarioCoordinator.swift": "3cc29f9d4b2df16216e571f88f58b57b2fb775ced3bd8626c33cb48dacddd5f6",
+  "FoundationEvals/FoundationEvals/Services/TelemetryController.swift": "17341d6f3d80736de6ad6ad5c5d920e9a130440772e424f8c6df31bc58eeb5e9",
+  "FoundationEvals/FoundationEvals/Services/TelemetryTransport.swift": "ca3e1bc5350eef7111f0ddbd6da478b98d919a33b2b0fc5e0b9cf7eb99e4f4b0",
+  "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift": "e15887097b3f9ad8dc6f10e6082b6b3e35ecb5c33da73acc42f1e7d6f878b80b",
+  "FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift": "b4b4989a3e3d44b41fa118625c3ae6b671ab64cc07b02265afaff4cf521e1471",
+  "FoundationEvals/FoundationEvals/Support/TelemetryCrashPrivacy.swift": "9b0d31e766d00ee2118bba3dafb48e9b8ea891e55608563be3fc3919b67235f0",
+  "FoundationEvals/FoundationEvals/Support/TelemetryEvent.swift": "fde4ab78cb86267178058d094d364506a3fc184af048498ae212cae6cc66763b",
+  "FoundationEvals/FoundationEvals/Support/TelemetryPendingCrashReports.swift": "8e6eb21008332b8f6f4106adc6d92e1e906d62faad8417ad5d2614182db5c651",
+  "FoundationEvals/FoundationEvals/Support/TelemetryPrivacy.swift": "31395b00c5477878b06e93d5f84a5d1d02f42bfd39ebf8f382abab02f306d594",
+  "FoundationEvals/FoundationEvals/Views/AppSettingsView.swift": "bc20efaa3c27086c3c5da2e0bb3e7adeb19bf106638663d6837ab0f436e2e817",
+  "FoundationEvals/FoundationEvals/Views/TelemetrySettingsView.swift": "67df7bd4fa044d0285898da4cf51dbc5ae391645fc26a643e6e4ac7b243c9ec0",
+  "Sources/IntentsAutomationCore/AutomationRunTelemetry.swift": "0ca75d5c7c853b0af7eebe3e1806da23c288a60687b8d64d3bce574ea67d7549"
+}

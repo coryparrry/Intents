@@ -9,8 +9,9 @@ struct NativeHistoryRefreshTests {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         for cancelled in [false, true] {
+            let telemetry = NativeRunTelemetryRecorder()
             let reader = HeldAutomationCaseReader(), execution = AutomationCommandExecutionCounter()
-            let model = commandStore(root: root, savedCasesReader: { await reader.read() }, runExecutor: { _, plan, approval, _, attemptID, _ in
+            let model = commandStore(root: root, telemetry: telemetry, savedCasesReader: { await reader.read() }, runExecutor: { _, plan, approval, _, attemptID, _ in
                 await execution.record()
                 if cancelled { throw CancellationError() }
                 let receipt = AutomationSegmentReceipt(scope: .init(runID: approval.runID, attemptID: attemptID, segmentID: plan.execution.id, leaseGeneration: 1),
@@ -36,6 +37,9 @@ struct NativeHistoryRefreshTests {
                 await model.closeAndWait()
                 #expect(try model.commandStatus(id: id).state == terminal)
                 #expect(await execution.calls == 1)
+                #expect(telemetry.starts == 1)
+                #expect(telemetry.completions == 1)
+                #expect(telemetry.cancelled == cancelled)
             } catch {
                 await reader.finish()
                 await model.closeAndWait()
@@ -49,12 +53,12 @@ struct NativeHistoryRefreshTests {
         await reader.finish()
         #expect(await reader.read().isEmpty)
     }
-    @MainActor private func commandStore(root: URL, savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil,
+    @MainActor private func commandStore(root: URL, telemetry: (any AutomationRunTelemetry)? = nil, savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil,
                                         runExecutor: AutomationNativeRunExecutor? = nil) -> AppAutomationStore {
         let app = AppIdentity(logicalID: "fixture", bundleID: "example.Fixture", platform: "ios", productDigest: String(repeating: "a", count: 64))
         let target = TargetIdentity(id: "unit-target", kind: .simulator)
         let catalog = ApplicationSurfaceCatalog(app: app, systemActions: [.init(id: "ReadText", typeName: "ReadText", title: "Read text", parameters: [.init(name: "text", family: "text", optional: false)], parametersComplete: true, compiled: true, registered: false, executed: false)], systemDiscoveryComplete: true, uiDiscoveryComplete: false, gaps: [])
-        let model = AppAutomationStore(supportDirectory: root, savedCasesReader: savedCasesReader, runExecutor: runExecutor)
+        let model = AppAutomationStore(supportDirectory: root, telemetry: telemetry, savedCasesReader: savedCasesReader, runExecutor: runExecutor)
         model.candidateID = "fixture"; model.configuration = "Debug"; model.simulatorID = target.id
         model.catalog = catalog; model.actionID = "ReadText"; model.inputs = ["text": "Original input"]
         model.effectChoice = "read"; model.effectsConfirmed = true
@@ -62,6 +66,19 @@ struct NativeHistoryRefreshTests {
             generatedHost: .init(projectPath: "unused", scheme: "unused", targetID: "unused", bundleID: "example.Host", configuration: "Debug", templateDigest: String(repeating: "b", count: 64)),
             host: .init(app: app, target: target, xctestrunPath: "unused", xctestrunDigest: String(repeating: "c", count: 64), subjectProductPath: "unused", hostBundlePath: "unused", hostProductDigest: String(repeating: "d", count: 64), hostBundleID: "example.Host", testTarget: "unused"), catalog: catalog, buildLogPath: "unused", buildLogTruncated: false)
         return model
+    }
+}
+
+@MainActor private final class NativeRunTelemetryRecorder: AutomationRunTelemetry {
+    var starts = 0
+    var completions = 0
+    var cancelled = false
+    func beginAutomationRun() -> AutomationRunTelemetryCompletion {
+        starts += 1
+        return { [self] result in
+            completions += 1
+            if case .failure(let error) = result { cancelled = error is CancellationError }
+        }
     }
 }
 

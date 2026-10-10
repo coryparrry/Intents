@@ -114,12 +114,43 @@ struct AutomationMCPTests {
         await reader.finish()
         #expect(await reader.read().isEmpty)
     }
+    @MainActor @Test func telemetryUsesActualAutomationExecutionAndCleanupOutcome() async throws {
+        for released in [true, false] {
+            let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+            let defaultsName = "AutomationTelemetry.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: defaultsName))
+            defer {
+                try? FileManager.default.removeItem(at: root)
+                defaults.removePersistentDomain(forName: defaultsName)
+            }
+            defaults.set(true, forKey: TelemetryController.diagnosticsConsentKey)
+            let client = DiagnosticRecordingClient()
+            let telemetry = TelemetryController(defaults: defaults, configuration: .init(projectToken: "phc_test", host: "https://telemetry.invalid"), makeClient: { _ in client })
+            let model = commandStore(root: root, runExecutor: { _, plan, approval, _, attemptID, _ in
+                let receipt = AutomationSegmentReceipt(scope: .init(runID: approval.runID, attemptID: attemptID, segmentID: plan.execution.id, leaseGeneration: 1),
+                    app: plan.app, target: plan.target, segmentID: plan.execution.id, route: plan.execution.kind, dispatched: true, completed: true, environmentID: plan.environmentID)
+                return .init(attemptID: attemptID, result: AutomationAssessment.assess(plan: plan, attemptID: attemptID, subjectDispatched: true, subjectCompleted: true, observations: []), receipts: [receipt], resourcesReleased: released)
+            }, telemetry: telemetry)
+            let preview = try model.previewCommand()
+            _ = try model.requestCommand(id: UUID(), digest: preview.digest)
+            model.run()
+            let deadline = Date().addingTimeInterval(5)
+            while model.busy && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(!model.busy)
+            #expect(model.report != nil)
+            #expect(client.events.filter { if case .featureUsed(.automationRun) = $0 { return true }; return false }.count == (released ? 1 : 0))
+            #expect(telemetry.recentDiagnostics.contains {
+                $0.properties["operation"] == "automation_run" && $0.properties["outcome"] == (released ? "succeeded" : "failed")
+            })
+            await model.closeAndWait()
+        }
+    }
     @MainActor private func commandStore(root: URL, savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil,
-                                        runExecutor: AutomationNativeRunExecutor? = nil) -> AppAutomationStore {
+                                        runExecutor: AutomationNativeRunExecutor? = nil, telemetry: TelemetryController? = nil) -> AppAutomationStore {
         let app = AppIdentity(logicalID: "fixture", bundleID: "example.Fixture", platform: "ios", productDigest: String(repeating: "a", count: 64))
         let target = TargetIdentity(id: "unit-target", kind: .simulator)
         let catalog = ApplicationSurfaceCatalog(app: app, systemActions: [.init(id: "ReadText", typeName: "ReadText", title: "Read text", parameters: [.init(name: "text", family: "text", optional: false)], parametersComplete: true, compiled: true, registered: false, executed: false)], systemDiscoveryComplete: true, uiDiscoveryComplete: false, gaps: [])
-        let model = AppAutomationStore(supportDirectory: root, savedCasesReader: savedCasesReader, runExecutor: runExecutor)
+        let model = AppAutomationStore(supportDirectory: root, telemetry: telemetry, savedCasesReader: savedCasesReader, runExecutor: runExecutor)
         model.candidateID = "fixture"; model.configuration = "Debug"; model.simulatorID = target.id
         model.catalog = catalog; model.actionID = "ReadText"; model.inputs = ["text": "Original input"]
         model.effectChoice = "read"; model.effectsConfirmed = true
