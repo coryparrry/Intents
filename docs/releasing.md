@@ -19,6 +19,8 @@ Before merging the version/changelog PR, merge the documentation update and conf
 3. Builds the app, signs it with Developer ID, creates the DMG, notarizes and staples it.
 4. Creates the version tag at the verified source if it does not already exist, uploads the DMG, `SHA256SUMS.txt`, and signed `appcast.xml`, then downloads and verifies all three.
 5. Publishes the release only after those checks pass.
+6. Updates the [Homebrew tap](https://github.com/coryparrry/homebrew-tap) with the
+   published version and verified DMG checksum.
 
 Draft staging and release PR generation run in separate Release Please steps. Before generating a PR, the workflow requires the version in the current `main` manifest to have a published GitHub release. A draft pauses PR generation until packaging succeeds; a missing release or API error stops the workflow instead of treating old commits as unreleased. A run with no releasable changes skips PR CI without parsing an absent PR output.
 
@@ -56,6 +58,44 @@ not preserve the single squash commit whose pull request body Release Please
 uses for the override.
 
 Enable **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests**. The workflow creates PRs but does not approve or merge them. Since PRs created with `GITHUB_TOKEN` do not trigger normal PR workflows, Release Me explicitly dispatches CI on the generated branch.
+
+## Homebrew publication
+
+Users install the signed app with `brew install --cask coryparrry/tap/intents`.
+The cask lives in `coryparrry/homebrew-tap`, supports Apple Silicon on macOS 27+,
+and downloads the same versioned DMG as the GitHub release. It declares the
+app's built-in updater; a Homebrew upgrade uses
+`brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
+
+**Build DMG and publish release** calls **Update Homebrew** after successful
+publication. This explicit call is necessary because a release published using
+`GITHUB_TOKEN` does not emit another Actions run. For a human-published release,
+dispatch the updater from the default branch with its published tag. Calls and
+dispatches use the `release` environment and its configured protections; publishing a release alone
+does not trigger a secret-bearing tap update.
+It downloads the DMG, `SHA256SUMS.txt`, and `appcast.xml`, checks the actual bytes
+against the checksum and GitHub's asset digest when available, and verifies
+successful default-branch source CI, the expected Apple signing team,
+notarization, signed source metadata, and Sparkle signature before writing the
+cask. The installer verifier examines the same downloaded bytes used for the
+cask checksum.
+Drafts, prereleases, missing assets, and checksum mismatches fail without
+changing the tap. Retries make no extra commit, older versions cannot roll
+the tap back, and an existing version's checksum cannot change.
+
+The `HOMEBREW_TAP_SSH_KEY` repository secret in `coryparrry/Intents` contains the
+private half of a write-enabled deploy key attached only to
+`coryparrry/homebrew-tap`. No personal access token or signing credentials are
+needed for the tap. To rotate access, create a new Ed25519 key, add its public
+half under the tap's **Settings → Deploy keys** with write access, replace the
+source repository secret, and remove the old deploy key. Keep private keys out
+of commits and logs.
+
+If a tap update fails, the verified GitHub release remains published and the
+existing cask remains available. Fix the tap access or asset issue and dispatch
+**Update Homebrew** from `main` with the same release tag. Do not rerun installer
+packaging for an already published release. The tap update runs on the hosted
+`xcode-27` macOS runner and does not rebuild or resign the app.
 
 ## Retry a failed release
 
