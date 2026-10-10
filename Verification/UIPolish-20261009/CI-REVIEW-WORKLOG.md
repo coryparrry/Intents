@@ -104,3 +104,41 @@ xcodebuild -project FoundationEvals/FoundationEvals.xcodeproj -scheme Foundation
 python3 -m unittest script.tests.test_ci_routes script.tests.test_ci_ui_xctestrun
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -ignore 'label "xcode-27" is unknown'
 ```
+
+## Integration and cross-suite review
+
+A concurrent update integrated reviewed Automation and release-refresh dependencies on top of
+43191735f; preserve those changes at 0de189e6f. Its native CI build found a missing Automation
+case in WorkbenchStatusBar. Include Automation with the existing local-evidence status summary.
+
+The refreshed review added one verified cross-suite clock-rollback bug. Restore the history
+sequence maximum from all workspace run histories at startup, including archived suites and
+other projects. Carry that floor through snapshot and active-run recovery, advancing it after
+each recovered run. Existing saved sequences and the persistence format remain unchanged.
+
+Add an integration regression that saves six runs with future sequence/timestamp metadata,
+restarts with a different empty suite selected, saves a new run, checks the real overview loader
+and six-item timeline, and restarts again to verify monotonic ordering continues. This simulates
+a clock rollback without changing the machine clock. Qualification passed: 34 presentation/lifecycle
+tests, then all 72 development-workflow tests, including the named restart regression. The method
+filter omitted the new Swift Testing method in the first run; the second suite-level run confirms
+it executed and passed. Reviewed the scoped diff; git diff --check passed.
+
+A concurrent 664fcec01 update supplied the identical App Automation switch fix plus a UI-test
+footer assertion. Fast-forwarded to preserve it; publish only the remaining history fix and regression.
+
+```sh
+xcodebuild -project FoundationEvals/FoundationEvals.xcodeproj -scheme FoundationEvals -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/intents-pr131-native-derived -clonedSourcePackagesDirPath /private/tmp/intents-ui-pr-derived/SourcePackages -jobs 2 -parallel-testing-enabled NO -resultBundlePath /private/tmp/intents-pr131-global-order-final2.xcresult -only-testing:FoundationEvalsTests/EvaluationDevelopmentWorkflowTests/savedRunsKeepGlobalOrderAcrossSuitesAfterRestartAndClockRollback -only-testing:FoundationEvalsTests/EvaluationStoreRunLifecycleTests -only-testing:FoundationEvalsTests/WorkspacePresentationTests test
+xcodebuild -project FoundationEvals/FoundationEvals.xcodeproj -scheme FoundationEvals -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/intents-pr131-native-derived -clonedSourcePackagesDirPath /private/tmp/intents-ui-pr-derived/SourcePackages -jobs 2 -parallel-testing-enabled NO -resultBundlePath /private/tmp/intents-pr131-global-order-workflow.xcresult -only-testing:FoundationEvalsTests/EvaluationDevelopmentWorkflowTests test-without-building
+```
+
+Extended the restart regression to create an interrupted snapshot in the first suite and an
+interrupted active run in the second. Both recover above the last saved sequence, and active-run
+recovery advances past snapshot recovery. Final native rerun passed all 72 development-workflow
+tests, including this expanded regression. The additional FoundationEvalsTests filter selected no
+separate suite; report only the 72 tests that actually executed. No further fixes are required by
+these focused checks. Hosted native/UI qualification follows the push.
+
+```sh
+xcodebuild -project FoundationEvals/FoundationEvals.xcodeproj -scheme FoundationEvals -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/intents-pr131-native-derived -clonedSourcePackagesDirPath /private/tmp/intents-ui-pr-derived/SourcePackages -jobs 2 -parallel-testing-enabled NO -resultBundlePath /private/tmp/intents-pr131-global-recovery.xcresult -only-testing:FoundationEvalsTests/EvaluationDevelopmentWorkflowTests -only-testing:FoundationEvalsTests/FoundationEvalsTests test
+```

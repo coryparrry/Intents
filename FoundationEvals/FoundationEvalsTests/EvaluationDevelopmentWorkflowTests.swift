@@ -66,6 +66,81 @@ struct EvaluationDevelopmentWorkflowTests {
     }
 
     @MainActor
+    @Test func savedRunsKeepGlobalOrderAcrossSuitesAfterRestartAndClockRollback() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = EvaluationStore(supportDirectory: directory)
+        original.draftSuite.scoringMode = .exactMatch
+        original.draftSuite.cases = [EvaluationCase(name: "Ready", prompt: "Ready", expected: "READY")]
+        #expect(original.saveSuite())
+        let projectID = original.selectedProjectID
+        let firstSuiteID = original.selectedSuiteID
+        let adapter = ClosureFeatureAdapter(displayName: "Saved response") { _ in "READY" }
+        // Saved records from the future simulate a rollback without changing the system clock.
+        let futureDate = Date().addingTimeInterval(3_600)
+        let futureSequence = UInt64(futureDate.timeIntervalSince1970 * 1_000_000)
+        let firstRuns = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: projectID, suiteID: firstSuiteID
+        ).appending(path: "Runs")
+        for index in 0..<6 {
+            var run = try await original.runFeatureAdapter(expectedRevision: original.suiteRevision, adapter: adapter)
+            run.startedAt = futureDate.addingTimeInterval(Double(index))
+            run.completedAt = run.startedAt.addingTimeInterval(0.1)
+            run.historySequence = futureSequence + UInt64(index)
+            try CanonicalJSON.data(for: run).write(to: firstRuns.appending(path: "\(run.id.uuidString).json"))
+        }
+        let secondSuiteID = try original.createSuite(name: "Second suite")
+        original.draftSuite.scoringMode = .exactMatch
+        original.draftSuite.cases = [EvaluationCase(name: "Ready", prompt: "Ready", expected: "READY")]
+        #expect(original.saveSuite())
+
+        let restarted = EvaluationStore(supportDirectory: directory)
+        #expect(restarted.selectedSuiteID == secondSuiteID)
+        #expect(restarted.runs.isEmpty)
+        let newest = try await restarted.runFeatureAdapter(expectedRevision: restarted.suiteRevision, adapter: adapter)
+        #expect(try #require(newest.historySequence) > futureSequence + 5)
+        let summaries = await WorkspaceOverviewLoader().load(
+            project: try #require(restarted.projects.first { $0.id == projectID }), directory: directory)
+        let timeline = RecentRunsTimeline.recentItems(in: summaries)
+        #expect(timeline.count == 6)
+        #expect(timeline.first?.id == newest.id)
+
+        let reopened = EvaluationStore(supportDirectory: directory)
+        let next = try await reopened.runFeatureAdapter(expectedRevision: reopened.suiteRevision, adapter: adapter)
+        #expect(try #require(next.historySequence) > #require(newest.historySequence))
+
+        struct InterruptedRun: Codable {
+            var summary: EvaluationActiveRun
+            var suite: EvaluationSuite
+            var results: [EvaluationSampleResult] = []
+        }
+        func interruption(for suite: EvaluationSuite) throws -> InterruptedRun {
+            var summary = EvaluationActiveRun(id: UUID(), suiteRevision: try EvaluationStore.revision(for: suite),
+                startedAt: Date(), completedSamples: 0, totalSamples: 1, cancellationRequested: false)
+            summary.projectID = projectID
+            summary.suiteID = suite.id
+            return InterruptedRun(summary: summary, suite: suite)
+        }
+        let firstSuite = try CanonicalJSON.decode(EvaluationSuite.self,
+            from: Data(contentsOf: firstRuns.deletingLastPathComponent().appending(path: "suite.json")))
+        let snapshot = try interruption(for: firstSuite)
+        let checkpoints = firstRuns.deletingLastPathComponent().appending(path: "SnapshotRuns")
+        try FileManager.default.createDirectory(at: checkpoints, withIntermediateDirectories: true)
+        try CanonicalJSON.data(for: snapshot).write(to: checkpoints.appending(path: "\(snapshot.summary.id.uuidString).json"))
+        let active = try interruption(for: reopened.suite)
+        let secondRoot = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: projectID, suiteID: secondSuiteID)
+        try CanonicalJSON.data(for: active).write(to: secondRoot.appending(path: "active-run.json"))
+
+        let recovered = EvaluationStore(supportDirectory: directory)
+        let recoveredSnapshot = try CanonicalJSON.decode(EvaluationRun.self,
+            from: Data(contentsOf: firstRuns.appending(path: "\(snapshot.summary.id.uuidString).json")))
+        let recoveredActive = try #require(recovered.run(with: active.summary.id))
+        #expect(try #require(recoveredSnapshot.historySequence) > #require(next.historySequence))
+        #expect(try #require(recoveredActive.historySequence) > #require(recoveredSnapshot.historySequence))
+    }
+
+    @MainActor
     @Test func failedWorkspaceSwitchRestoresTheOriginalSuiteAndSelection() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
