@@ -361,7 +361,7 @@ struct SuiteRow: View {
 }
 
 /// A tiny trend of the suite's recent pass rates, or its latest split when there is only one run.
-private struct SuiteSparkline: View {
+struct SuiteSparkline: View {
     let summary: SuiteOverviewSummary?
 
     private var scored: [SuiteHistoryPoint] { summary?.history.filter { $0.rate != nil } ?? [] }
@@ -377,7 +377,7 @@ private struct SuiteSparkline: View {
                     .interpolationMethod(.monotone)
                     .foregroundStyle(Color.accentColor)
                     .lineStyle(StrokeStyle(lineWidth: 1.6, lineCap: .round))
-                if point.id == scored.last?.id {
+                if point.id == summary?.latestScoredRunID {
                     PointMark(x: .value("Date", point.date), y: .value("Rate", (point.rate ?? 0) * 100))
                         .foregroundStyle(point.hasFailures ? WorkspaceStyle.failure : Color.accentColor)
                         .symbolSize(30)

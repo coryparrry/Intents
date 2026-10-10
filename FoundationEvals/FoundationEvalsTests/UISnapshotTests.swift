@@ -47,6 +47,16 @@ struct UISnapshotTests {
         try await capture(HomeTrendChart(summaries: [first, second]).padding(26).background(WorkspaceStyle.canvas),
                           size: NSSize(width: 660, height: 380),
                           to: output.appending(path: "review-same-named-suite-trends.png"))
+
+        var skewed = first
+        skewed.history = [
+            .init(id: UUID(), date: date, rate: 0, hasFailures: true, state: .failed, historySequence: 11),
+            .init(id: UUID(), date: date.addingTimeInterval(86_400), rate: 1, hasFailures: false, state: .passed, historySequence: 10)
+        ]
+        #expect(skewed.latestScoredRunID == skewed.history.first?.id)
+        try await capture(SuiteSparkline(summary: skewed).padding(26).background(WorkspaceStyle.canvas),
+                          size: NSSize(width: 260, height: 120),
+                          to: output.appending(path: "review-latest-saved-sparkline.png"))
     }
 
     private func capture<Content: View>(_ content: Content, size: NSSize, to url: URL) async throws {

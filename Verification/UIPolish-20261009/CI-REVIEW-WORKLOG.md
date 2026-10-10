@@ -58,3 +58,25 @@ INTENTS_SNAPSHOT_DIR=/private/tmp/intents-pr131-review-screens TEST_RUNNER_INTEN
 
 Commit/push these fixes to PR 131, resolve the three verified threads after publication,
 and verify hosted checks on that exact commit. The PR remains open for review.
+
+## Refreshed review
+
+The review of 869124a36 added 3 threads: 1 Fix now and 2 Ignore (informational), bringing
+the complete inventory to 4 verified bugs and 2 intentional presentation choices.
+- Sparkline latest marker: chronological geometry picked an older scored run under clock skew.
+  Preserve historySequence on chart points and choose the marker by saved order. Keep the
+  latest scored marker when a newer run is unscored; legacy points fall back to dates.
+- Report default: intentional result-first navigation in this PR. Workflow trace remains a
+  peer tab, covered by the initial repeated-navigation UI checks. No failure trigger was alleged.
+- Markdown response display: intentional presentation-only formatting. RunDetailView.copyResponse
+  copies result.response directly, and the stored response/scoring input remains untouched.
+  The comment reports a display choice without a persistence or scoring bug.
+The final focused native run passed 23 tests (21 presentation + 2 render tests). Inspected
+review-latest-saved-sparkline.png: the latest saved failed run is marked on the left despite
+an older saved run having a later date. Regression coverage also checks newer unscored runs,
+legacy date fallback, and no scored runs. Reviewed the final diff; git diff checks passed.
+No persistence format or scoring behavior changes. The new point metadata is only presentation data.
+
+```sh
+INTENTS_SNAPSHOT_DIR=/private/tmp/intents-pr131-review-screens TEST_RUNNER_INTENTS_SNAPSHOT_DIR=/private/tmp/intents-pr131-review-screens xcodebuild -project FoundationEvals/FoundationEvals.xcodeproj -scheme FoundationEvals -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/intents-pr131-native-derived -clonedSourcePackagesDirPath /private/tmp/intents-ui-pr-derived/SourcePackages -jobs 2 -parallel-testing-enabled NO -resultBundlePath /private/tmp/intents-pr131-sparkline.xcresult -only-testing:FoundationEvalsTests/WorkspacePresentationTests -only-testing:FoundationEvalsTests/UISnapshotTests test
+```

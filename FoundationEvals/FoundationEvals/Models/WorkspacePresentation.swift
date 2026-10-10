@@ -52,6 +52,7 @@ struct SuiteHistoryPoint: Identifiable, Hashable, Sendable {
     var rate: Double?
     var hasFailures: Bool
     var state: SuiteCheckState
+    var historySequence: UInt64? = nil
 }
 
 struct SuiteOverviewSummary: Identifiable, Sendable {
@@ -75,6 +76,12 @@ struct SuiteOverviewSummary: Identifiable, Sendable {
     var latestPassRate: Double? {
         let scored = passedCount + failedCount
         return scored == 0 ? nil : Double(passedCount) / Double(scored)
+    }
+
+    var latestScoredRunID: UUID? {
+        history.filter { $0.rate != nil }.max {
+            ($0.historySequence ?? 0, $0.date) < ($1.historySequence ?? 0, $1.date)
+        }?.id
     }
 
     init(record: EvaluationSuiteRecord) {
@@ -108,7 +115,7 @@ extension SuiteHistoryPoint {
             .suffix(limit).sorted { $0.startedAt < $1.startedAt }.map {
             SuiteHistoryPoint(id: $0.id, date: $0.startedAt, rate: $0.passRate,
                               hasFailures: $0.failedCount > 0 || $0.errorCount > 0,
-                              state: .savedRun($0))
+                              state: .savedRun($0), historySequence: $0.historySequence)
         }
     }
 }

@@ -455,6 +455,31 @@ struct WorkspacePresentationTests {
         #expect(HomeTrendChart.points(for: [second]).first?.suiteID == second.id)
     }
 
+    @Test func sparklineHighlightsLatestScoredSaveDespiteClockSkew() {
+        let date = Date(timeIntervalSince1970: 1_000)
+        var summary = SuiteOverviewSummary(record: .init(id: UUID(), name: "Smoke", createdAt: date, updatedAt: date))
+        var older = fixture()
+        older.historySequence = 10
+        older.startedAt = date.addingTimeInterval(60)
+        var latestScored = fixture(status: .failed)
+        latestScored.historySequence = 11
+        latestScored.startedAt = date
+        var latestUnscored = fixture(status: .unscored)
+        latestUnscored.historySequence = 12
+        latestUnscored.startedAt = date.addingTimeInterval(-60)
+        summary.history = SuiteHistoryPoint.recent([older, latestScored, latestUnscored])
+        #expect(summary.history.last?.id == older.id)
+        #expect(summary.latestScoredRunID == latestScored.id)
+        summary.history = summary.history.map { point in
+            var legacy = point
+            legacy.historySequence = nil
+            return legacy
+        }
+        #expect(summary.latestScoredRunID == older.id)
+        summary.history = SuiteHistoryPoint.recent([latestUnscored])
+        #expect(summary.latestScoredRunID == nil)
+    }
+
     @Test func interruptedRunsRetainVerdictsForCompletedCases() throws {
         for status in [EvaluationResultStatus.passed, .failed, .unscored, .error] {
             var run = fixture(status: status)
