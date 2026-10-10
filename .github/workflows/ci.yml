@@ -151,6 +151,10 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO
+      - name: Prepare measured UI desktop
+        if: ${{ needs.changes.outputs.ui == 'true' }}
+        timeout-minutes: 3
+        run: python3 script/ci_ui_display.py
       - name: Run selected UI tests
         if: ${{ needs.changes.outputs.ui == 'true' }}
         timeout-minutes: 14
