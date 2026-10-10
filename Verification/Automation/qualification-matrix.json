@@ -1,0 +1,716 @@
+{
+  "schemaVersion": 1,
+  "adapterVersion": "0.1.0",
+  "e2eVersion": "0.17.0",
+  "agentDeviceVersion": "0.21.20",
+  "nodeVersion": "24.21.0",
+  "profiles": [
+    {
+      "id": "engineering-ios27-flipbook-private-host",
+      "scope": "engineering fixture handoff; not product coordinator or arbitrary business verdict",
+      "platform": "ios",
+      "kind": "simulator",
+      "targetID": "0CF801C6-B421-4AC1-8889-4AABE24D88F5",
+      "bundleID": "com.coryparry.FlipBook",
+      "productDigest": "6311e6b95db95e606946f48eedb05a2740824a37c7d8004e9b82e8cd8ed3b2f4",
+      "hostDigest": "7f6a1342db94583c23da5b0a81be8f8da9308739aeb71631159c8f5ec90aedb6",
+      "signing": "Xcode ad hoc simulator arrangement",
+      "gates": [
+        {
+          "id": "H05",
+          "state": "reopenedLifecycleQualification"
+        },
+        {
+          "id": "H07",
+          "state": "reopenedLifecycleQualification"
+        },
+        {
+          "id": "H08",
+          "state": "reopenedLifecycleQualification"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "/private/tmp/intents-automation-m0-evidence/frozen-command-a6/handoff.json",
+          "sha256": "2183119e378d7485e71fbd3021b2c0eb892898435658a255847c50e7c8fca444"
+        },
+        {
+          "path": "/private/tmp/intents-automation-m0-evidence/frozen-command-a6/verified-readback.png",
+          "sha256": "2acf2d5339fd4df3f5d2e1827388cedc09fe0dab68caf44b4bb2fddf6b26bf78"
+        }
+      ],
+      "repeatAttempts": [
+        "a3",
+        "a4",
+        "a5",
+        "a6"
+      ],
+      "releaseProofLimit": "SDK/private daemon release was recorded; subsequent native checks found its device-side UI runner still loaded. Full device runner termination remains unqualified."
+    },
+    {
+      "id": "engineering-ios27-flipbook-production-mixed-patch3",
+      "scope": "AutomationApplicationRunner through engineering executable with a signed sidecar runtime; fresh UI fixtures, real Apple invocation and independent positive UI readback; no business verdict or root-app UI/release qualification",
+      "platform": "ios",
+      "kind": "simulator",
+      "targetID": "0CF801C6-B421-4AC1-8889-4AABE24D88F5",
+      "bundleID": "com.coryparry.FlipBook",
+      "productDigest": "fcaeb64039579d3ab1b3d005b3d44d7bb2c4b1444c3c29f4132875f06fb86bb7",
+      "hostDigest": "37f3605804d488f8ffd86fec0147a9261e11a34d81e47cbf6239ff96f6e539a1",
+      "xctestrunDigest": "aecedf1faa5fdb2f2c6d7d6c1ee5980a66f21c24fcf18c987266906eca16e23b",
+      "xcodeBuild": "27A266a",
+      "runtimeID": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "osVersion": "27.0",
+      "osBuild": "24A434",
+      "hostOSVersion": "27.2",
+      "hostOSBuild": "26B5091g",
+      "architecture": "arm64",
+      "signing": "ad hoc simulator app/host; Developer ID signed nested sidecar runtime; unsigned engineering executable",
+      "lifecyclePatch": "intents-owned-disposal-3",
+      "snapshotPolicy": {
+        "raw": true,
+        "forceFull": true,
+        "depth": 24,
+        "maximumNodes": 5000,
+        "maximumTimeoutMilliseconds": 60000
+      },
+      "runtimeManifestDigest": "fd76f106c01fb1ae3d88cb64477ed1ef50ddd81d6c0353d70c7d94db1a43580a",
+      "nativeProbeDigest": "3ac41879963b7184eb7d6125f6d072d17ca7193d0f39d84eb0224ab1c960fe16",
+      "gates": [
+        {
+          "id": "H05",
+          "state": "qualifiedForThisEngineeringArrangement"
+        },
+        {
+          "id": "H07",
+          "state": "qualifiedForThisEngineeringArrangement"
+        },
+        {
+          "id": "H08",
+          "state": "qualifiedForThisEngineeringArrangement"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "mixed-production-a1",
+          "summary": "unresolved",
+          "subjectDispatched": false,
+          "subjectCompleted": false,
+          "evidenceComplete": false,
+          "resourcesReleased": false,
+          "report": {
+            "path": "/private/tmp/intents-automation-production-mixed-a1/mixed-production-a1/report.json",
+            "sha256": "c8572cf14a923a022531a1c4c9d096b2fc55d28af7fd0350902e526308d5c907"
+          }
+        },
+        {
+          "id": "mixed-production-a2",
+          "summary": "invalidFixture",
+          "subjectDispatched": false,
+          "subjectCompleted": false,
+          "evidenceComplete": false,
+          "resourcesReleased": true,
+          "report": {
+            "path": "/private/tmp/intents-automation-production-mixed-a2/mixed-production-a2/report.json",
+            "sha256": "54e9753e5767afb072482a8039cb8894b095486349572339c7a7a619e4754c2a"
+          }
+        },
+        {
+          "id": "mixed-production-a3",
+          "summary": "unresolved",
+          "subjectDispatched": true,
+          "subjectCompleted": true,
+          "evidenceComplete": false,
+          "resourcesReleased": true,
+          "report": {
+            "path": "/private/tmp/intents-automation-production-mixed-a3/mixed-production-a3/report.json",
+            "sha256": "3bca4d95caa5c2b37b329f7089bf36eb5c76ae286851c52960591e2e7ebafd19"
+          }
+        },
+        {
+          "id": "mixed-production-a4",
+          "summary": "unresolved",
+          "subjectDispatched": true,
+          "subjectCompleted": true,
+          "evidenceComplete": false,
+          "resourcesReleased": false,
+          "report": {
+            "path": "/private/tmp/intents-automation-production-mixed-a4/mixed-production-a4/report.json",
+            "sha256": "dac8535ba23ef0b041d8775aa3a083f515c54f271d1892a16b3174d98fa149b9"
+          }
+        },
+        {
+          "id": "mixed-production-a5",
+          "summary": "unresolved",
+          "subjectDispatched": true,
+          "subjectCompleted": true,
+          "evidenceComplete": false,
+          "resourcesReleased": true,
+          "report": {
+            "path": "/private/tmp/intents-automation-production-mixed-a5/mixed-production-a5/report.json",
+            "sha256": "22ec2444b4fed2bf005c89fa21e80086c770991dee60b87c3dade74adb20b45a"
+          }
+        },
+        {
+          "id": "mixed-production-a6",
+          "summary": "executedUnassessed",
+          "subjectDispatched": true,
+          "subjectCompleted": true,
+          "evidenceComplete": true,
+          "resourcesReleased": true,
+          "report": {
+            "path": "/private/tmp/intents-automation-production-mixed-a6/mixed-production-a6/report.json",
+            "sha256": "c31d5a5acd8ab2cc8f5976e7aa9d8c6927f657e66c9d20619eb5a2b0168b42ca"
+          }
+        },
+        {
+          "id": "mixed-production-a7",
+          "summary": "executedUnassessed",
+          "subjectDispatched": true,
+          "subjectCompleted": true,
+          "evidenceComplete": true,
+          "resourcesReleased": true,
+          "report": {
+            "path": "/private/tmp/intents-automation-production-mixed-a7/mixed-production-a7/report.json",
+            "sha256": "c0606ab6c827d326da74cca2b838358ca36d76678daad7208017c0450fa20904"
+          },
+          "freshFixture": true,
+          "evidence": [
+            {
+              "path": "/private/tmp/intents-automation-production-mixed-a7/verified-readback.png",
+              "sha256": "40aad89fdb953b6293277c60aeebe1faee1a8cda6ab9a8b0b2af0641da821b4d"
+            },
+            {
+              "path": "/private/tmp/intents-automation-production-mixed-a7/native-jobs-after.txt",
+              "sha256": "5c33695162a743b06530b6b1a8ad77005df064ecbaba17b384422f21ddb4e4d3"
+            }
+          ]
+        },
+        {
+          "id": "mixed-production-a8",
+          "summary": "executedUnassessed",
+          "subjectDispatched": true,
+          "subjectCompleted": true,
+          "evidenceComplete": true,
+          "resourcesReleased": true,
+          "report": {
+            "path": "/private/tmp/intents-automation-production-mixed-a8/mixed-production-a8/report.json",
+            "sha256": "7497a0dd5b4b5d2f6885dac17f45628104c019c819b3b21f1bb3be87a7d8d430"
+          },
+          "freshFixture": true,
+          "evidence": [
+            {
+              "path": "/private/tmp/intents-automation-production-mixed-a8/verified-readback.png",
+              "sha256": "4cd6390a5661d837dd69501a256f33afaec00ed349d5c2a82d13a97914746912"
+            },
+            {
+              "path": "/private/tmp/intents-automation-production-mixed-a8/native-jobs-after.txt",
+              "sha256": "c9519f72adddbddd2c4cf01c89c01f1eb319dddb4b8e89bc20ef204761dfe024"
+            }
+          ]
+        }
+      ],
+      "limits": [
+        "Two fresh fixture cases qualify this exact simulator arrangement, not broad app support.",
+        "UI facts have visibleState proof; durable-state business assertions are unqualified.",
+        "Signed root-app UI, physical iPhone/iPad, native Mac, replay and notarized release remain unqualified."
+      ]
+    },
+    {
+      "id": "engineering-ios27-seeded-duplicate-tasks-business",
+      "scope": "Seeded positive entity business checks through real production coordinator; one attempt per control, not broad or held-out qualification",
+      "platform": "ios",
+      "kind": "simulator",
+      "targetID": "09D3C36B-7A4C-406A-91E5-0A99A429F7D3",
+      "bundleID": "com.coryparry.IntentsAutomation.DuplicateTasks",
+      "app": {
+        "architecture": "arm64,x86_64",
+        "bundleID": "com.coryparry.IntentsAutomation.DuplicateTasks",
+        "canonicalBundlePath": "/private/tmp/intents-automation-canonical-preparation-c2/DerivedData/Build/Products/Debug-iphonesimulator/DuplicateTasks.app",
+        "configuration": "Debug",
+        "logicalID": "/Users/coryparry/Developer/Projects/Intents/Verification/Automation/Fixtures/DuplicateTasks/DuplicateTasks.xcodeproj#DE641280100333D2F09AF8A2",
+        "owningModule": "DuplicateTasks",
+        "platform": "ios",
+        "productDigest": "7823ea9a538f2395f68968ce2f73d01b578fc62d60c01c29dbd147aad08bc10a",
+        "provenanceStrength": "productBytes",
+        "sourceManifestDigest": "d9ead2a198e3fbb66c63d455ab81c59636f7f455413f78b8d9d974a5930212ba"
+      },
+      "hostDigest": "38f33b6c6b7ae21c3e475dd0eb7cffec1f922930a95c29e28aa119aaa91536a7",
+      "xctestrunDigest": "ba66d610e5b4334f2f7cc5908a35ba4cc7cb9bef9f293249a32b3d22671f7cfa",
+      "nativeRunner": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/native-runner-canonical-controls",
+        "sha256": "00e935961c8af8bdc520a17cc398a7f32dbc569eca0953fa71c086172f137ae6"
+      },
+      "preparedApplication": {
+        "path": "/private/tmp/intents-automation-canonical-preparation-c2/prepared-application.json",
+        "sha256": "f5f2de83f38916ed12c9492be3f83f79569657f02dd69b7992c378308ee4d96e"
+      },
+      "runtimeBundle": "/private/tmp/IntentsAutomationCurrentQualification7.app",
+      "runtimeManifestDigest": "fd76f106c01fb1ae3d88cb64477ed1ef50ddd81d6c0353d70c7d94db1a43580a",
+      "runtimeTeamID": "3Z3955EFRE",
+      "locale": "en_GB",
+      "simulatorShutdown": {
+        "path": "/private/tmp/intents-automation-canonical-owned-shutdown.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "gates": [
+        {
+          "id": "H10",
+          "state": "scopedSeededEngineeringControlsPassed"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "canonical-correct-c1",
+          "seededControl": "correct",
+          "assessed": true,
+          "evidenceComplete": true,
+          "failedObservations": [],
+          "missingObservations": [],
+          "subjectCompleted": true,
+          "subjectDispatchUncertain": false,
+          "subjectDispatched": true,
+          "summary": "passed",
+          "resourcesReleased": true,
+          "freshFixture": true,
+          "controllerJobsAfter": 0,
+          "report": {
+            "path": "/private/tmp/intents-automation-canonical-campaign/canonical-correct-c1/report.json",
+            "sha256": "e92260204acf8f9425cd1754d1ca8a1ca836d411913cbebd960ab1b540c31e6b"
+          },
+          "evidence": [
+            {
+              "path": "/private/tmp/intents-automation-canonical-correct-profile-c1.json",
+              "sha256": "9d8374aef7abe891de051101cf3ff0dc8761d1dd528f3116fec7f00060c73144"
+            },
+            {
+              "path": "/private/tmp/intents-automation-canonical-campaign/canonical-correct-c1/verified-state-fresh.png",
+              "sha256": "ccdc7eac9e8a7a917dd1d0a5ff91d3113a0cb3f094d47089aa4a7a07bcdedbf2"
+            },
+            {
+              "path": "/private/tmp/intents-automation-canonical-campaign/canonical-correct-c1/native-jobs-after.txt",
+              "sha256": "b4d8dd1e090b0790ff991ad62031f286e33e3cb679b8d6f10cf916e0454caeb8"
+            }
+          ]
+        },
+        {
+          "id": "canonical-wrong-record-w1",
+          "seededControl": "wrong-record",
+          "assessed": true,
+          "evidenceComplete": true,
+          "failedObservations": [
+            "business.personal.completed",
+            "business.work.unchanged"
+          ],
+          "missingObservations": [],
+          "subjectCompleted": true,
+          "subjectDispatchUncertain": false,
+          "subjectDispatched": true,
+          "summary": "assertionFailed",
+          "resourcesReleased": true,
+          "freshFixture": true,
+          "controllerJobsAfter": 0,
+          "report": {
+            "path": "/private/tmp/intents-automation-canonical-campaign/canonical-wrong-record-w1/report.json",
+            "sha256": "7a7e6072892333c2c4407570454b86d70a08f8078ecfcb4468795f1eaf476ad8"
+          },
+          "evidence": [
+            {
+              "path": "/private/tmp/intents-automation-canonical-wrong-record-profile-w1.json",
+              "sha256": "584cfa91a4afa5b2589862138b233888a188575e5b5eaaafabf31f1921a12d66"
+            },
+            {
+              "path": "/private/tmp/intents-automation-canonical-campaign/canonical-wrong-record-w1/verified-state-fresh.png",
+              "sha256": "404461654c5d73a160755105b84d61f4b0cf64b5d049ce2ce7a471cd3e8b6cd7"
+            },
+            {
+              "path": "/private/tmp/intents-automation-canonical-campaign/canonical-wrong-record-w1/native-jobs-after.txt",
+              "sha256": "a414f3d43c7b2ef08116faf1782ce6c2a1800e1ab74e0aad956fde90935ba623"
+            }
+          ]
+        },
+        {
+          "id": "canonical-missing-save-m1",
+          "seededControl": "missing-save",
+          "assessed": true,
+          "evidenceComplete": true,
+          "failedObservations": [
+            "business.personal.completed"
+          ],
+          "missingObservations": [],
+          "subjectCompleted": true,
+          "subjectDispatchUncertain": false,
+          "subjectDispatched": true,
+          "summary": "assertionFailed",
+          "resourcesReleased": true,
+          "freshFixture": true,
+          "controllerJobsAfter": 0,
+          "report": {
+            "path": "/private/tmp/intents-automation-canonical-campaign/canonical-missing-save-m1/report.json",
+            "sha256": "bbd2d04ee2e3859f9a5061a4aaa1508c6b4e5e533b50449f9017b0e7f11b2cfa"
+          },
+          "evidence": [
+            {
+              "path": "/private/tmp/intents-automation-canonical-missing-save-profile-m1.json",
+              "sha256": "6883ad9e4ea2abefc4859a61218e45cabb716534674f8a104930fe7add62926d"
+            },
+            {
+              "path": "/private/tmp/intents-automation-canonical-campaign/canonical-missing-save-m1/verified-state-fresh.png",
+              "sha256": "62bbb63eb8d580106ea512560d549af7b52b644e9fc99d0e3b166de82ea52283"
+            },
+            {
+              "path": "/private/tmp/intents-automation-canonical-campaign/canonical-missing-save-m1/native-jobs-after.txt",
+              "sha256": "d0bfc6bd29e9f1ab9be3462859290f75d1ade1ca646493916d17f413326f0b54"
+            }
+          ]
+        }
+      ],
+      "limits": [
+        "Engineering executable plus signed sidecar bundle7; root-app native flow remains unverified.",
+        "Bundle7 predates the latest secure-field guard; this evidence does not qualify that guard.",
+        "A fresh independent query proves these positive record properties; no general persistence/absence/completeness guarantee.",
+        "Intermittent controls, held-out discovery, repeated reproduction, fix comparison, physical devices and release remain unqualified."
+      ],
+      "simulatorFinalState": {
+        "state": "Shutdown",
+        "inventory": {
+          "path": "/private/tmp/intents-automation-canonical-owned-final-device-inventory.json",
+          "sha256": "813e1cc87e88f4fceb24b5c8aad6d3a849f37d5ee6e3be2ec3c5382e2905309a"
+        },
+        "commandExitStatus": 0
+      }
+    }
+  ],
+  "advertisedMixedProfiles": [],
+  "pending": [
+    "H01",
+    "H02",
+    "H03",
+    "H04",
+    "H05",
+    "H06",
+    "H07",
+    "H08",
+    "H09",
+    "H10",
+    "H11",
+    "H12",
+    "H13",
+    "H14"
+  ],
+  "note": "Historical unpatched engineering lifecycle failures are retained. Current production mixed routing completed two distinct fresh fixtures using patch3 and full raw depth24 snapshots, with independent runner-job absence. This scoped engineering arrangement does not advertise broad, physical, root-app UI or release support.",
+  "unqualifiedAttempts": [
+    {
+      "id": "engineering-fresh-fixture-interrupted-q1-q2",
+      "qualified": false,
+      "targetID": "09D3C36B-7A4C-406A-91E5-0A99A429F7D3",
+      "profile": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-wrong-profile-q1.json",
+        "sha256": "71b95229f44edc8c18bd5f386884f161faecb2148d0b14c70f3c5af1ea682d1c"
+      },
+      "nativeRunner": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/native-runner-fresh-fixture-q1",
+        "sha256": "94508465d6e9ae1c82d11ff1d4f3330f1fe2c2fb54242b8b67ae6c3d367c0eb8"
+      },
+      "attempts": [
+        {
+          "attemptID": "fresh-fixture-wrong-q1",
+          "report": {
+            "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q1/report.json",
+            "sha256": "1a22a93e3242317af376e251810e407e6ebc16698a1e07ee6b20b12cf3fd2ee4"
+          },
+          "result": "assertionFailed",
+          "resourcesReleased": true
+        },
+        {
+          "attemptID": "fresh-fixture-wrong-q2",
+          "journal": {
+            "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q2/journal.json",
+            "sha256": "9365b25e6d7a6c7477eefd16d506c1d6afaa9f5339d4bbf710b00fbe3219bff1"
+          },
+          "lastDispatch": "create-fixtures",
+          "subjectDispatchRecorded": false,
+          "completedReport": false
+        }
+      ],
+      "retainedUnresolvedOwnership": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-ownership-interrupted-q2.json",
+        "sha256": "48ac611565ad0adb9d7d0f4cc19b2fa808c37d2a98ace541f800ba772e825ff6",
+        "scope": "immutable historical snapshot; live target-leases.json remains authoritative"
+      },
+      "manualShutdownInventory": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-final-shutdown-inventory.json",
+        "sha256": "bef5652493e7f9af6e6fef73f3dac3e0551e6004bd943c8d1f1eeb06f7be060b"
+      },
+      "simulatorFinalState": "Shutdown",
+      "freshFixtureQualificationCreated": false,
+      "limits": "Disk exhaustion was observed concurrently; the specific Probe exit cause is unverified. No q2 completion, token, mutating campaign, reproduction or comparison qualification. Lease and dispatched setup journal retained; shutdown does not clear ownership or authorize replay. Runner predates later eligibility preflight.",
+      "laterReconciliation": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-reconciliation-q2.json",
+        "sha256": "02b40629222927cf50a479af0e43141dae455607e31a3a9932f170fbe679420e"
+      },
+      "laterReconciliationScope": "Exact inactive owner/runner and Shutdown inventory verified; production recovery manager freed control only. Interrupted journal unchanged; no replay or fixture authority."
+    },
+    {
+      "id": "engineering-fresh-fixture-release-q3",
+      "qualified": false,
+      "targetID": "09D3C36B-7A4C-406A-91E5-0A99A429F7D3",
+      "profile": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-wrong-profile-q3.json",
+        "sha256": "d020c260e0f712623c6462196d6b98a133e0bb60d314785176654f4075417842"
+      },
+      "nativeRunner": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/native-runner-fresh-fixture-q3",
+        "sha256": "bc779aaa7591638d80793185da06a8bdeba592be02f5c6815521e60beab6a782"
+      },
+      "runtimeManifest": {
+        "path": "/private/tmp/IntentsAutomationCurrentQualification8.app/Contents/Resources/Automation/runtime-manifest.json",
+        "sha256": "56a2e918aace715ec8d3df6e36b444a4764f97b0343c449c8532e914df39d006"
+      },
+      "report": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q3/report.json",
+        "sha256": "f48f5360e1c2179e177767265fd16f39d2d24fedcfc2642075961b59cebc6677"
+      },
+      "journal": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q3/journal.json",
+        "sha256": "c01420840df82fe69e9dc9bc204e82ef4331a7d4f8134e69a304f05752e014a3"
+      },
+      "historicalOwnership": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-ownership-q3-before-reconciliation.json",
+        "sha256": "4cfabbeecd7e256008d04dd354f1baf1a04f7307231ad5938ed2587bd946ff10"
+      },
+      "manualShutdownInventory": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-q3-final-device-inventory.json",
+        "sha256": "dc18eb0b45a8a9d40af2e25d30929daafb418f49099af94bc853fa1b16af6023"
+      },
+      "processInventory": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-q3-final-process-inventory.txt",
+        "sha256": "edfd45cf3fa41713670e3b29c0331b586783b875e4b11a0a48716734c84e2ff6"
+      },
+      "reconciliationLog": {
+        "path": "/private/tmp/intents-automation-owned-reconcile-result3.log",
+        "sha256": "9d81bed9e5caef90f6039055fea9f0927265c333ef573b65381eb19d463b972f"
+      },
+      "simulatorFinalState": "Shutdown",
+      "freshFixtureQualificationCreated": false,
+      "limits": "Boot/install completed, then release verification failed terminationUnverified. No UI setup/subject/observer dispatch and no q4 execution. Scoped controllers and recorded owner processes absent; stale lease reconciled without changing journal. Cause of original verifier failure remains unverified; diagnostic retention added afterward."
+    },
+    {
+      "id": "engineering-fresh-fixture-ambiguous-control-q5",
+      "qualified": false,
+      "targetID": "09D3C36B-7A4C-406A-91E5-0A99A429F7D3",
+      "profile": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-wrong-profile-q5.json",
+        "sha256": "f61dc873693bac28571bc2ee7436f6d99bcdf88f56454b58eaf711d2719771bd"
+      },
+      "nativeRunner": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/native-runner-fresh-fixture-q5",
+        "sha256": "4050df71b8bc1bd393837eeeee080282336381c7206a861ff256241eded3f1e0"
+      },
+      "runtimeManifest": {
+        "path": "/private/tmp/IntentsAutomationCurrentQualification8.app/Contents/Resources/Automation/runtime-manifest.json",
+        "sha256": "56a2e918aace715ec8d3df6e36b444a4764f97b0343c449c8532e914df39d006"
+      },
+      "report": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q5/report.json",
+        "sha256": "e1a2a7055a1204aceadd139106f336803d5e1c99f783946519f6cef91253f4ea"
+      },
+      "journal": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q5/journal.json",
+        "sha256": "1824c6b03e7ff0fddbf3bb6300c41814d901c93ac4c7981ef2c205055c60f62e"
+      },
+      "releaseInspection": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q5/release-inspection.json",
+        "sha256": "1983b5591c58aa9b7cdac27e8ea4bb27c72378097ab622dc68f855a53a7c8762"
+      },
+      "shutdownInventory": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-q5-final-device-inventory.json",
+        "sha256": "b9e4ab27add6118602b27b2483c09a52c4f93d66446e4a0652161d5c8b3573c9"
+      },
+      "simulatorFinalState": "Shutdown",
+      "freshFixtureQualificationCreated": false,
+      "limits": "Live UI setup stopped with LOCATOR_AMBIGUOUS: Wrong record matched menu text and button. No subject dispatched, no fixture repetition or token. Canonical report invalidFixture, resourcesReleased true; automatic shutdown completed, durable campaign lease released. No reproduction qualification."
+    },
+    {
+      "id": "engineering-fresh-fixture-release-q7",
+      "qualified": false,
+      "targetID": "09D3C36B-7A4C-406A-91E5-0A99A429F7D3",
+      "profile": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-wrong-profile-q7.json",
+        "sha256": "f8771dd2e6e895755ca51e34bec9ff3ddf98a93c3a97973dbb9ed16cb10bb342"
+      },
+      "nativeRunner": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/native-runner-fresh-fixture-q7",
+        "sha256": "ac4b27c21edaf27b84c5d498007a3055c77472bf0b3bf4ea9ea3b9b897bc4a46"
+      },
+      "runtimeManifest": {
+        "path": "/private/tmp/IntentsAutomationCurrentQualification9.app/Contents/Resources/Automation/runtime-manifest.json",
+        "sha256": "2b4a260a1ba9f2b404102133514cfe64acbcb7ca102001b0a33b6ab987ecc159"
+      },
+      "report": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q7/report.json",
+        "sha256": "c98ee9447f1c590c35723eb25d3842bde8589ec2e877fd185b32c031c6517467"
+      },
+      "journal": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q7/journal.json",
+        "sha256": "37c24a75dafc351d4e20573538b2bfac0d6a963cfd067ec56f044d041ff511a5"
+      },
+      "latestReleaseInspection": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q7/release-inspection.json",
+        "sha256": "6807df63cf585036c4650e85c394c334bf1cf2e13ffdb74efa838aa394da2213"
+      },
+      "controllerInventory": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-q7-native-jobs.txt",
+        "sha256": "1279876b4e12a144545417f5c22e56c5eca1d54bba7cac8cb2f96efd2c9db5e9"
+      },
+      "historicalOwnership": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-ownership-q7-before-reconciliation.json",
+        "sha256": "f6cfe985b5cd88b84ea7e3c3662ce9ed5c5d786a639334d899094456f361ced0"
+      },
+      "shutdownInventory": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-q7-final-device-inventory.json",
+        "sha256": "2b82a00c9f5458e3ce24029a4ba850fdf41b82446e902c646c22424b2cecca81"
+      },
+      "ownedProcessInventory": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-q7-owned-processes.txt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "reconciliationLog": {
+        "path": "/private/tmp/intents-automation-owned-reconcile-result7.log",
+        "sha256": "0a272d839ca7b8f28cb044106af83b5ad161da7f63a3057e1e6611f36c35d2ea"
+      },
+      "simulatorFinalState": "Shutdown",
+      "freshFixtureQualificationCreated": false,
+      "limits": "Boot/install journal completed0; native release failed terminationUnverified before UI/subject. Latest inspection succeeded but may be catch cleanup, so original failed gate remains unproved. Exact recorded owner/runner identities subsequently absent, scoped controllers empty, owned target Shutdown. Gen41 reconciled without journal changes or replay. No q8, fixture token or reproduction. Independent source review found weaker OwnedCommand completion proof; bounded kernel proof and decision-time/per-call diagnostics added afterward, not historical-cause proof."
+    },
+    {
+      "id": "engineering-fresh-fixture-install-timeout-q9",
+      "qualified": false,
+      "targetID": "09D3C36B-7A4C-406A-91E5-0A99A429F7D3",
+      "profile": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-wrong-profile-q9.json",
+        "sha256": "87fc653e33a88a3b52629257403e4f7892c4efa1f97dc232f95757b666c272a8"
+      },
+      "nativeRunner": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/native-runner-fresh-fixture-q9",
+        "sha256": "d0dc4af74a6c5d66a6b94fec7bdc34f94c310fe73efa83d8147aa50a78f94e88"
+      },
+      "runtimeManifest": {
+        "path": "/private/tmp/IntentsAutomationCurrentQualification9.app/Contents/Resources/Automation/runtime-manifest.json",
+        "sha256": "2b4a260a1ba9f2b404102133514cfe64acbcb7ca102001b0a33b6ab987ecc159"
+      },
+      "report": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q9/report.json",
+        "sha256": "80cf0b9adf73a0e7d37a35800769d99139cbcc3401e8275678204ca464f85181"
+      },
+      "journal": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q9/journal.json",
+        "sha256": "632c546422c382f5d0a5a902d0e49fa455f2ecbe05b8955271ab764494faa2c1"
+      },
+      "releaseDecisionFailures": [
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/release-failures/464FD1EE-FC28-42DA-BD7F-0AE5C5DECAB8.json",
+          "sha256": "a87901ade82bbfe560f45c054046f07dee1567626858f32e041a7806caca454a"
+        }
+      ],
+      "releaseInspectionHistory": [
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q9/release-inspections/1-4C00B0D8-13D6-4849-A28C-B629810FE8BF.json",
+          "sha256": "81b44af92e3d2cae0668af16055b968163384bb7d1e1d0ea4cb10b29b9b8df4f"
+        },
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q9/release-inspections/2-8A46B5F8-50DA-47C9-AA78-DB06E5AE99A9.json",
+          "sha256": "8f82b470288723bbe597d62e490b7f3ce559485cbcddf75d00dbd54c42b4c39d"
+        },
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q9/release-inspections/3-BB2487C8-36C2-47BE-AD2E-FB4F97CE882A.json",
+          "sha256": "ff90673fd2977138827c408c984fef175529d7e9ba858f44a6b0d69cf463473d"
+        },
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-wrong-q9/release-inspections/4-1E1E1E7C-7CFA-4099-9C68-F93EED4BB567.json",
+          "sha256": "d6c56e24154d4b89b485b32410b188e036829b5de3a14e22ead3a9f2eb85bdf4"
+        }
+      ],
+      "historicalOwnership": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/fresh-fixture-ownership-q9-before-reconciliation.json",
+        "sha256": "8ae5b817d820ea69ea62eb275396fb84dce34b5dff63c5de000b5b14892894be"
+      },
+      "shutdownInventory": {
+        "path": "/private/tmp/intents-automation-fresh-fixture-q9-final-device-inventory.json",
+        "sha256": "6ebbb494d3d6e6a1375b0e3c5966e0372ad522b69fe1227437b95002117c4ef9"
+      },
+      "reconciliation": {
+        "path": "/private/tmp/intents-automation-owned-reconcile-result9.log",
+        "sha256": "2a309ba07d3c6480b53a603160df3eaff6bf43d892b6ace6d6b7976072a21c59"
+      },
+      "simulatorFinalState": "Shutdown",
+      "freshFixtureQualificationCreated": false,
+      "limits": "Native install timed out before any UI setup or subject receipt. At release decision, commandsDrained was true and the exact runner was absent; controller verification timed out, so failedGate was controllerTermination. No live token or reproduction. Exact owner/runner absence and final Shutdown inventory support scoped generation44 reconciliation without journal replay; CoreSimulator timeout cause remains unknown."
+    },
+    {
+      "id": "engineering-typed-entity-query-preparation-release-timeout-1",
+      "qualified": false,
+      "targetID": "09D3C36B-7A4C-406A-91E5-0A99A429F7D3",
+      "nativeRunner": {
+        "path": "/private/tmp/IntentsActualEntityQueryProbe",
+        "sha256": "9312f35481339de07fb86a9c4136849976b94a2e55fcfc708946180ba728d6e1"
+      },
+      "probeSource": {
+        "path": "/private/tmp/IntentsActualEntityQueryProbe.swift",
+        "sha256": "44d6b78fe96358acef2fa55042bcf6570c70a876c8b25822d1f9a90b358af712"
+      },
+      "queryEvidence": {
+        "path": "/private/tmp/intents-actual-entity-query-evidence1.json",
+        "sha256": "042b21597b5ccf22d40043f6f2e1988aecc7ecd47da6726108088461fff538f7"
+      },
+      "preparedApplication": {
+        "path": "/private/tmp/intents-automation-canonical-preparation-c2/prepared-application.json",
+        "sha256": "f5f2de83f38916ed12c9492be3f83f79569657f02dd69b7992c378308ee4d96e"
+      },
+      "report": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/actual-query-21EA05F9-469C-4FCE-AF33-844C2361EA19/report.json",
+        "sha256": "464c0432accd411432b214d55729fa1f22e66657e70e95f794a4c5b93d63537f"
+      },
+      "journal": {
+        "path": "/private/tmp/intents-automation-canonical-campaign/actual-query-21EA05F9-469C-4FCE-AF33-844C2361EA19/journal.json",
+        "sha256": "bc745a5dd69bfc272077ade9b8b44a676dd724dc04217d1bc424bf938f810f74"
+      },
+      "releaseDecisionFailures": [
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/release-failures/D11C5F91-965B-45EE-8123-8CE458FF89B2.json",
+          "sha256": "24b637cb70ffc3bf4699487e357ff505dc4acd43a1f0d7b19c8def8aa783bff3"
+        }
+      ],
+      "releaseInspectionHistory": [
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/actual-query-21EA05F9-469C-4FCE-AF33-844C2361EA19/release-inspections/1-149715E0-E005-480B-8E25-2805C9A41FFB.json",
+          "sha256": "ebe837b4d5605d4edcff8956994d4ece43808211c3a92f836b9d0ba7e8a5fb09"
+        },
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/actual-query-21EA05F9-469C-4FCE-AF33-844C2361EA19/release-inspections/2-0F0A8960-BC9B-499E-AE9B-26E9FB2A238D.json",
+          "sha256": "d2f60ffa4e7146be3bb4dd792738dcb0073f5a58ee55d57986e740e8adee44dc"
+        },
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/actual-query-21EA05F9-469C-4FCE-AF33-844C2361EA19/release-inspections/3-CF9C8ECB-6E63-43B9-A323-63D47CBBA7C2.json",
+          "sha256": "db4e5c1a58b5d20341f1bdd87012661fb1799260a6b7bed76abf3907a0da32e6"
+        },
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/actual-query-21EA05F9-469C-4FCE-AF33-844C2361EA19/release-inspections/4-9B61FE51-AFBB-4ADB-9A95-DE4DFE9D43AF.json",
+          "sha256": "8d9362f9a6171e872c9df063eeeb744c06f9084d30bda3c3112846ca0060149c"
+        },
+        {
+          "path": "/private/tmp/intents-automation-canonical-campaign/actual-query-21EA05F9-469C-4FCE-AF33-844C2361EA19/release-inspections/5-ED15BDAC-586E-4EF9-AD5A-359D9BB0A766.json",
+          "sha256": "7c9b94ae6e0129329e96132fd8393ebcce53b94e30687a83f7c6e16bbe2fa993"
+        }
+      ],
+      "shutdownInventory": {
+        "path": "/private/tmp/intents-actual-query-final-inventory1.json",
+        "sha256": "7873b7f1eca107f4c211a8f2b1b632dc39be3c71c262d798f01291e206c631d4"
+      },
+      "simulatorFinalState": "Shutdown",
+      "actualChoices": 0,
+      "queryDispatched": false,
+      "freshFixtureQualificationCreated": false,
+      "limits": "Boot and install completed, but verify-stage inspection3 timed out before query dispatch. Exact install runner6040 was absent, commandsDrained true, historical failedGate controllerTermination. Shutdown completed; shared leases/campaigns empty afterward. The actual query wrapper retained the unresolved preparation report without choices. No requalification or retry; root timeout cause unknown."
+    }
+  ]
+}

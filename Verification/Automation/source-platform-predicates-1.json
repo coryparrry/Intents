@@ -1,0 +1,44 @@
+{
+  "slice": "source-platform-predicates-1",
+  "date": "2026-10-08",
+  "acceptance": "Selected-target Swift OS and native/device/simulator predicates reconcile source candidates only when exact retained settings consistently identify the profile.",
+  "implementation": {
+    "facts": "Optional version1 OS/environment facts derived from the unique bound target/configuration/project/platform/SDK row, exact Swift platform prefix and conservative variant/effective/Catalyst fields. Unsupported flags keep predicates unresolved.",
+    "parser": "One exact supported os or targetEnvironment argument; bounded tri-state Boolean composition. Declaration owner must match the selected target; packages cannot borrow these facts.",
+    "replay": "Nonnil platform facts must rederive identically from retained hash-bound raw settings and observed graph context on prepared-record reload. Unknown versions reject; legacy nil facts retain unresolved behavior.",
+    "limits": "Architecture, compiler/import/feature predicates, Catalyst qualification, generated/compiler input provenance and external dependency ownership remain unresolved; source coverage remains partial."
+  },
+  "verification": {
+    "focused": {
+      "registered": 54,
+      "passed": 48,
+      "skipped": 6,
+      "failures": 0,
+      "log": "/private/tmp/intents-source-platform-predicates-initial-20261008.log",
+      "command": "swift test --jobs 2 --filter 'AutomationSourceCompilationConditionsTests|AutomationSourcePlatformPredicatesTests|AutomationSourcePlatformPredicateBuildTests|AutomationSourceSyntaxTests|AutomationSourceGraphTests|AutomationMacHostPreparationTests'"
+    },
+    "installedSDKBuildOnly": {
+      "passed": 1,
+      "seconds": 13.953,
+      "fixture": "Tools/IntentsAutomation/.runtime/source-platform-predicates-1/platform-fixture-9DB62DB4-9FED-4300-8579-FAD3473DECF1",
+      "subjectSHA256": "92ebdb934f40a6abb1b130310433687ca282aaf0a547380b11b1331d2c1fabfe",
+      "hostSHA256": "06b95bf3df581d3831afc61a90aba6d31365c1a053aac90ca34827296ce720b4",
+      "assertions": "Two same-name conditional syntax declarations; only active declaration matches compiled metadata, then actual saved preparation reload succeeds. No runtime dispatch.",
+      "log": "/private/tmp/intents-source-platform-predicates-sdk-final-20261008.log",
+      "initialFixtureFailure": "Initial build passed but reload fixture used invalid session name prepare; corrected to required prepare-UUID and rechecked. Initial failure retained separately."
+    },
+    "officialAppBuild": {
+      "tool": "Xcode MCP BuildProject",
+      "seconds": 22.509,
+      "errors": 0,
+      "workspaceClosed": true,
+      "runtimeLaunched": false
+    },
+    "reviews": "Two distinct Sol source lanes clear: authority/derivation/legacy replay and parser/branch/reconciliation."
+  },
+  "sources": [
+    "https://docs.swift.org/latest/documentation/the-swift-programming-language/statements/",
+    "https://developer.apple.com/documentation/xcode/running-code-on-a-specific-version/"
+  ],
+  "remaining": "Planned build settings prove selected source candidate conditions, not exact compiler input consumption or live execution. Previously blocking PID14398 remains present; no unchanged full-census/native/Siri retry, foreign process cleanup or runtime capability promotion. No push/publication/release or full M0-M6 completion."
+}

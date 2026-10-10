@@ -1,0 +1,40 @@
+{
+  "evidence": {
+    "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+    "path": "Verification/Automation/Evidence/2026-10-07-mac-associated-host-release/swift-release1.log",
+    "rawPath": "Tools/IntentsAutomation/.runtime/mac-associated-host-release-1/swift-release1.log",
+    "rawSHA256": "842dc8eaac021812251f3d23d6ac3252ccf23657f023f1762a56ac13fe788023",
+    "sha256": "842dc8eaac021812251f3d23d6ac3252ccf23657f023f1762a56ac13fe788023"
+  },
+  "limits": [
+    "Exact prepared-host executable absence is only one ingredient of route release",
+    "Owned command drain and attested runner termination remain separate driver obligations",
+    "Actual generic XCTest child process closure is unobserved and unqualified",
+    "Full UID census and typed zombie failures remain strict; no live retry, filtering or foreign-process termination occurred"
+  ],
+  "qualification": {
+    "actualKernelInventoryObserved": false,
+    "actualXCTestChildClosureObserved": false,
+    "appLaunched": false,
+    "commandDrainSynthetic": true,
+    "completeRouteReleaseQualified": false,
+    "customerQualified": false,
+    "exactHostAbsenceSynthetic": true
+  },
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "Sources/IntentsAutomationCore/AutomationMacAssociatedHostReleaseVerifier.swift": "fba50f993a7ce152620e16f87f1b8e16dfe78dbd9450003aab7299fbb2939eeb",
+    "Sources/IntentsAutomationCore/AutomationMacProcessInventory.swift": "53d44fab1d859f0f9ea6a8b8b6e845d93a19bb1b66f7f9dad36519f310fe62f1",
+    "Tests/IntentsAutomationCoreTests/AutomationMacAssociatedHostReleaseVerifierTests.swift": "6de7745cf187b3b6043d1cc59f75e19087c627bc99ead39c269b0772f23ee7ec"
+  },
+  "status": "synthetic-exact-associated-host-absence-source-verified",
+  "verification": {
+    "command": "swift test --disable-sandbox -j 2 --filter AutomationMacAssociatedHostReleaseVerifierTests|AutomationMacHelperReleaseVerifierTests|AutomationMacProcessInventoryTests|AutomationMacInventoryReconciliationTests",
+    "failed": 0,
+    "newSyntheticTests": 7,
+    "passed": 37,
+    "registered": 38,
+    "skipped": 1,
+    "sourceReview": "independent Sol review clear: exact profile/scope, complete census, reentrancy/cancellation/drain and truthful release limits"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T06:11:10.269383+00:00",
+  "scope": "Owned physical install source and selected sidecar toolchain/controller scope",
+  "fullPlanComplete": false,
+  "physicalDeviceCommandsExecuted": false,
+  "sourceChecks": {
+    "swift187": {
+      "tests": 21,
+      "failures": 0
+    },
+    "swift188": {
+      "tests": 64,
+      "failures": 0
+    },
+    "swift189AffectedRecheck": {
+      "tests": 14,
+      "failures": 0
+    },
+    "native50Build": "passed",
+    "freshReviews": "Installer findings fixed, recheck clear; sidecar path ordering fixed, final recheck clear"
+  },
+  "failureRetained": "Swift186 compile failed on AutomationValue.string; corrected to existing text case",
+  "limits": [
+    "Installer integration uses injected commands; no device installation or inventory qualification",
+    "Actual owned Node child test proves selected environment transport only; no real UI controller started",
+    "Installation receipt explicitly records ownedInstallCommandAndBundlePresence and installedBytesVerified=false; device inventory cannot hash installed bytes",
+    "Physical product execution remains fenced pending installed-subject route and qualification",
+    "Private signed package15 remains earlier native44; no new runtime packaging, app launch or publication"
+  ],
+  "sha256": {
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPhysicalInstallPayload.swift": "a02c981ec95387ebbdaf86be3f3255ad209dbf389227847f92f1e4375d2a169b",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPhysicalApplicationInstaller.swift": "791aae328fe5a454570efaff8155e8890f079f42f0420b6a60ace3e8dbedfdc3",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationSidecarProcess.swift": "51e3d661fef85a900fc626147962f3cce0fb329f6f4d1ddfe27bf91277cadfe3",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationRuntimeBundle.swift": "45e2906ae811eed9cb8d7cf554197bea8ebbb667fb0f077c6dd16cd311f2756d",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationSidecarRouteDriver.swift": "fecee392d1b0098cfb5dc94d8ffe6a589a8e1b33b417edf7dfadbfde9515df0d",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationApplicationRunner.swift": "0757f680777587f9a8200b00fc43dc90a2f4ca5f3dc85b2cd9e54098f0c675d3",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationPhysicalApplicationInstallerTests.swift": "e6715ae483d279594b02bb59f3f05fab912ca927706cb14bdd9568c76125b362",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationSidecarSelectionTests.swift": "093ebdeaf177a76e00ef13fe826f5733198e6f4ef28c1dd6f7185c8a7881a628",
+    "/private/tmp/intents-automation-swift186.log": "1fcec031b71bdaae3c623536e1581fce9dc689940201a0e947e3ab4f5755f6d3",
+    "/private/tmp/intents-automation-swift187.log": "72d17b0b20549b160d01ac421eb8131b6f0cba84fed6b5c1df9cdf1790b95f13",
+    "/private/tmp/intents-automation-swift188.log": "d3aa1f7f1ee20d3741d0641122b7d5f0365792167b0ef20902994e8831fb1df7",
+    "/private/tmp/intents-automation-swift189.log": "5f631ceb9a979c75bb07a6ab453b866fa9a1339636a73502dc1cd0e089630446",
+    "/private/tmp/intents-automation-native49.log": "0a1104bc35b21d9bb471516faab2724e0f9448cc328c9d0f543fc997bf83216b",
+    "/private/tmp/intents-automation-native50.log": "f8b31bddf94b8b81c1652081826b0b1115e218cabad0995f040789d5c8d48628",
+    "/private/tmp/intents-automation-native50-artifact/preservation.json": "aac8154defefb4c3066410b6543667e513e2425e99fa0f60e1636999644f396e",
+    "/private/tmp/intents-automation-native50-artifact/Intents.app/Contents/Info.plist": "e07da181611acccad0722778c980b6359dcae058e10cee733096c8e9b00b942f",
+    "/private/tmp/intents-automation-native50-artifact/Intents.app/Contents/MacOS/FoundationEvals": "569c52c04fd250ac4eddcda3380b7fbc2d5fe382a8b2a4d23b6f35e7029acb60",
+    "/private/tmp/intents-physical-installer-source-review.patch": "eb10fba3aae9fb8b11cbfc98d06bebb332313d6469ba98ee6e5bd2b3b17edc4d",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/node-v24.21.0-darwin-arm64/bin/node": "e4b5a3af0e05c75de2eae013904145f40fe7fc2a6e6f17510128bf45cca4e79b"
+  }
+}

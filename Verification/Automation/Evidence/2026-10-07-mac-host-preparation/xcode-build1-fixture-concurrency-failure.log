@@ -1,0 +1,476 @@
+2026-10-07 19:55:52.522 xcodebuild[13763:595955]  DVTFilePathFSEvents: Failed to start fs event stream.
+2026-10-07 19:55:52.660 xcodebuild[13763:595953] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error". Using NSCachesDirectory instead.
+2026-10-07 19:55:52.917 xcodebuild[13763:595954] CoreSimulatorService connection became invalid.  Simulator services will no longer be available.
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild build-for-testing -project /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj -scheme IntentsAutomationHost_6fd7c56f67a9 -configuration Debug -destination platform=macOS -derivedDataPath /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData -jobs 2 CODE_SIGNING_ALLOWED=NO
+
+Build settings from command line:
+    CODE_SIGNING_ALLOWED = NO
+
+2026-10-07 19:55:52.967 xcodebuild[13763:595953] [MT] DVTAssertions: Warning in DVTFrameworks/DVTFoundation/FileTypes/DVTFileDataTypeDetection.m:80
+Details:  detectedTypeIdentifier (com.apple.binary-property-list) does not conform to matchedTypeIdentifier in MagicFileDataTypeDetector extenson com.apple.property-list. When both are specified, this conformance is required unless overridden by setting allowNonInheritance. extension.identifier:Xcode.MagicFileDataTypeDetector.BinaryPlist
+Object:   <DVTFileDataTypeDetectionMagicCache: 0x7aedbab870>
+Method:   -initWithExtension:
+Thread:   <_NSMainThread: 0x1026556f0>{number = 1, name = main}
+Please file a bug at https://feedbackassistant.apple.com with this warning message and any useful information you can provide.
+2026-10-07 19:55:52.967 xcodebuild[13763:595953] [MT] DVTAssertions: Warning in DVTFrameworks/DVTFoundation/FileTypes/DVTFileDataTypeDetection.m:80
+Details:  detectedTypeIdentifier (com.apple.xml-property-list) does not conform to matchedTypeIdentifier in MagicFileDataTypeDetector extenson com.apple.property-list. When both are specified, this conformance is required unless overridden by setting allowNonInheritance. extension.identifier:Xcode.MagicFileDataTypeDetector.XMLPlist
+Object:   <DVTFileDataTypeDetectionMagicCache: 0x7aedbab870>
+Method:   -initWithExtension:
+Thread:   <_NSMainThread: 0x1026556f0>{number = 1, name = main}
+Please file a bug at https://feedbackassistant.apple.com with this warning message and any useful information you can provide.
+2026-10-07 19:55:52.999 xcodebuild[13763:595974]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/c52cfcba-ea6e-4a76-9ea1-3138209e658a.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:52.999 xcodebuild[13763:595984]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/b80f73cf-c0d4-4fbb-ac59-1a0c5806c323.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:52.999 xcodebuild[13763:595981]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/ccd83354-68aa-4a18-8dc8-863f36d7001e.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:52.999 xcodebuild[13763:595985]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/70382c9d-8ed9-472b-b5b1-fa424cd7bffb.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:52.999 xcodebuild[13763:595980]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/a12c5d25-117a-4841-92f2-c8ba8a3a29d2.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:53.000 xcodebuild[13763:595982]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/cc0f12a6-a539-4646-aee6-526a5837d59f.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:53.001 xcodebuild[13763:595983]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/ce3b401d-6460-4579-917d-f41cb85a4b99.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:53.002 xcodebuild[13763:595977]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/2f71416c-9807-423a-a2e9-cea6e9548908.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:53.002 xcodebuild[13763:595979]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/e8bce979-41a2-4025-bda3-6560bc6d37dc.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:53.002 xcodebuild[13763:595976]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/00f988f1-b0d7-4528-be3d-40ee6c518cf4.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:53.002 xcodebuild[13763:595981]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/07da202c-63b6-4c0d-8747-d44711433c53.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:53.002 xcodebuild[13763:595974]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/a6ceaa68-1823-461b-8200-dc0aa435fd4e.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:53.003 xcodebuild[13763:595980]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/5edda297-63a6-40d0-ab3d-7ab1e3d8efbf.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:53.003 xcodebuild[13763:595982]  DVTProvisioningProfileManager: Failed to load profile "/Users/coryparry/Library/Developer/Xcode/UserData/Provisioning Profiles/0c3bd719-3421-4939-9847-fa26b82daa12.mobileprovision" (Error Domain=DVTProvisioningProfileProviderErrorDomain Code=1 "Failed to load profile." UserInfo={NSLocalizedDescription=Failed to load profile., NSLocalizedRecoverySuggestion=Profile is missing the required UUID property.})
+2026-10-07 19:55:53.011 xcodebuild[13763:595982] Logging connecton invalid: <OS_xpc_error: <dictionary: 0x1f0efa2b0> { count = 1, transaction: 0, voucher = 0x0, contents =
+	"XPCErrorDescription" => <string: 0x1f0efa3f0> { string cache = 0x0, length = 18, contents = "Connection invalid" }
+}>
+2026-10-07 19:55:53.011 xcodebuild[13763:595979] Error opening log file (/Users/coryparry/Library/Logs/CoreSimulator/CoreSimulator.com.apple.dt.xcodebuild.log): Operation not permitted
+[-[SimDiskImageManager init]:175] ERROR : Could not kickstart simdiskimaged; SimDiskImageManager services will not be available: Error Domain=NSPOSIXErrorDomain Code=53 "Software caused connection abort" UserInfo={NSLocalizedDescription=Error returned in reply from CoreSimulatorService: Connection invalid}
+[-[SimDiskImageManager _onQueue_checkConnection:]:239] ERROR : simdiskimaged returned error (invalid), marking disconnected.
+[-[SimServiceContext initWithDeveloperDir:connectionType:error:]:499] WARN  : Unable to discover any Simulator runtimes. Developer Directory is /Applications/Xcode.app/Contents/Developer.
+[-[SimDiskImageManager _onQueue_checkConnection:]:219] ERROR : simdiskimaged connection is currently unavailable because connection became invalid
+[-[SimServiceContext initWithDeveloperDir:connectionType:error:]_block_invoke:556] ERROR : Could not get list of trusted mount directories: Error Domain=com.apple.CoreSimulator.SimError Code=409 "Cannot talk to the service used to manage runtime disk images (simdiskimaged) because its launchd job is not registered or was unloaded" UserInfo={NSLocalizedDescription=Cannot talk to the service used to manage runtime disk images (simdiskimaged) because its launchd job is not registered or was unloaded}
+[-[SimServiceContext sendRequest:reply:error:]:1982] ERROR : Unable to deliver request ({
+    request = "notification_subscription";
+    "set_path" = "/Users/coryparry/Library/Developer/CoreSimulator/Devices";
+}) because we are not connected to CoreSimulatorService.
+2026-10-07 19:55:53.011 xcodebuild[13763:595955] Error Domain=NSPOSIXErrorDomain Code=61 "Connection refused" UserInfo={NSLocalizedDescription=CoreSimulatorService connection became invalid.  Simulator services will no longer be available.}
+[-[SimServiceContext sendRequest:reply:error:]:1982] ERROR : Unable to deliver request ({
+    request = "notification_subscription";
+    "set_path" = "/Users/coryparry/Library/Developer/CoreSimulator/Devices";
+}) because we are not connected to CoreSimulatorService.
+2026-10-07 19:55:53.011 xcodebuild[13763:595975] Error Domain=NSPOSIXErrorDomain Code=61 "Connection refused" UserInfo={NSLocalizedDescription=CoreSimulatorService connection became invalid.  Simulator services will no longer be available.}
+2026-10-07 19:55:53.011 xcodebuild[13763:595955]  IDESimulatorAvailability: startObservingSimulatorUpdates() FAILED to register SimDeviceSet observer
+2026-10-07 19:55:53.012 xcodebuild[13763:595975]  iOSSimulator: [SimServiceContext defaultDeviceSetWithError:] returned nil (Error Domain=NSPOSIXErrorDomain Code=61 "Connection refused" UserInfo={NSLocalizedFailureReason=Failed to subscribe to notifications from CoreSimulatorService., NSLocalizedDescription=Failed to initialize simulator device set., NSUnderlyingError=0x7aee88a6d0 {Error Domain=NSPOSIXErrorDomain Code=61 "Connection refused" UserInfo={NSLocalizedDescription=CoreSimulatorService connection became invalid.  Simulator services will no longer be available.}}}). Simulator device support disabled.
+Build Preparation
+Build task concurrency set to 2 via user default IDEBuildOperationMaxNumberOfConcurrentCompileTasks
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (2 targets)
+    Target 'IntentsAutomationHost_6fd7c56f67a9' in project 'Subject'
+        ➜ Explicit dependency on target 'Subject' in project 'Subject'
+    Target 'Subject' in project 'Subject' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+Build description signature: 79faf110397576bf5e65dc1a56804700
+Build description path: /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/XCBuildData/79faf110397576bf5e65dc1a56804700.xcbuilddata
+CreateBuildDirectory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    builtin-create-build-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules
+
+CreateBuildDirectory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/ModuleCache.noindex
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    builtin-create-build-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/ModuleCache.noindex
+
+CreateBuildDirectory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/CompilationCache.noindex
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    builtin-create-build-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/CompilationCache.noindex
+
+CreateBuildDirectory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    builtin-create-build-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products
+
+CreateBuildDirectory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    builtin-create-build-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -o /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+
+CreateBuildDirectory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    builtin-create-build-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject-7bd413a0546028326518ee063fe9597a-VFS/all-product-headers.yaml
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject-7bd413a0546028326518ee063fe9597a-VFS/all-product-headers.yaml
+
+CreateBuildDirectory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    builtin-create-build-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+CreateBuildDirectory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/PrecompiledHeaders
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    builtin-create-build-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/PrecompiledHeaders
+
+CreateBuildDirectory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/ExplicitPrecompiledModules
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    builtin-create-build-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+CreateBuildDirectory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/EagerLinkingTBDs/Debug
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.xcodeproj
+    builtin-create-build-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/EagerLinkingTBDs/Debug
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/empty-Subject.plist (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/empty-Subject.plist
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject.hmap (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject.DependencyStaticMetadataFileList (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject.DependencyMetadataFileList (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject.DependencyMetadataFileList
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-project-headers.hmap (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-project-headers.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-own-target-headers.hmap (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-own-target-headers.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-generated-files.hmap (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-generated-files.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-all-target-headers.hmap (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-all-target-headers.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-all-non-framework-target-headers.hmap (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-all-non-framework-target-headers.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject_const_extract_protocols.json (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject_const_extract_protocols.json
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.SwiftFileList (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.SwiftFileList
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.SwiftConstValuesFileList (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.LinkFileList (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.LinkFileList
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject-OutputFileMap.json (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject-OutputFileMap.json
+
+MkDir /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/Subject.app/Contents/MacOS (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    /bin/mkdir -p /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/Subject.app/Contents/MacOS
+
+MkDir /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/Subject.app/Contents (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    /bin/mkdir -p /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/Subject.app/Contents
+
+MkDir /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/Subject.app (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    /bin/mkdir -p /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/Subject.app
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/empty-IntentsAutomationHost_6fd7c56f67a9.plist (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/empty-IntentsAutomationHost_6fd7c56f67a9.plist
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/ProductTypeInfoPlistAdditions.plist (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/ProductTypeInfoPlistAdditions.plist
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/Objects-normal/arm64/IntentsAutomationHost_6fd7c56f67a9_const_extract_protocols.json (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/Objects-normal/arm64/IntentsAutomationHost_6fd7c56f67a9_const_extract_protocols.json
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/Objects-normal/arm64/IntentsAutomationHost_6fd7c56f67a9.SwiftFileList (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/Objects-normal/arm64/IntentsAutomationHost_6fd7c56f67a9.SwiftFileList
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/Objects-normal/arm64/IntentsAutomationHost_6fd7c56f67a9.SwiftConstValuesFileList (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/Objects-normal/arm64/IntentsAutomationHost_6fd7c56f67a9.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/Objects-normal/arm64/IntentsAutomationHost_6fd7c56f67a9.LinkFileList (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/Objects-normal/arm64/IntentsAutomationHost_6fd7c56f67a9.LinkFileList
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/Objects-normal/arm64/IntentsAutomationHost_6fd7c56f67a9-OutputFileMap.json (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/Objects-normal/arm64/IntentsAutomationHost_6fd7c56f67a9-OutputFileMap.json
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9.hmap (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9.DependencyStaticMetadataFileList (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9.DependencyMetadataFileList (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9.DependencyMetadataFileList
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9-project-headers.hmap (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9-project-headers.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9-own-target-headers.hmap (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9-own-target-headers.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9-generated-files.hmap (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9-generated-files.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9-all-target-headers.hmap (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9-all-target-headers.hmap
+
+WriteAuxiliaryFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9-all-non-framework-target-headers.hmap (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    write-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/IntentsAutomationHost_6fd7c56f67a9.build/IntentsAutomationHost_6fd7c56f67a9-all-non-framework-target-headers.hmap
+
+MkDir /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/IntentsAutomationHost_6fd7c56f67a9-Runner.app/Contents/PlugIns/IntentsAutomationHost_6fd7c56f67a9.xctest/Contents/MacOS (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    /bin/mkdir -p /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/IntentsAutomationHost_6fd7c56f67a9-Runner.app/Contents/PlugIns/IntentsAutomationHost_6fd7c56f67a9.xctest/Contents/MacOS
+
+MkDir /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/IntentsAutomationHost_6fd7c56f67a9-Runner.app/Contents/PlugIns/IntentsAutomationHost_6fd7c56f67a9.xctest/Contents (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    /bin/mkdir -p /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/IntentsAutomationHost_6fd7c56f67a9-Runner.app/Contents/PlugIns/IntentsAutomationHost_6fd7c56f67a9.xctest/Contents
+
+MkDir /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/IntentsAutomationHost_6fd7c56f67a9-Runner.app/Contents/PlugIns/IntentsAutomationHost_6fd7c56f67a9.xctest (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    /bin/mkdir -p /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/IntentsAutomationHost_6fd7c56f67a9-Runner.app/Contents/PlugIns/IntentsAutomationHost_6fd7c56f67a9.xctest
+
+ProcessInfoPlistFile /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/Subject.app/Contents/Info.plist /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/empty-Subject.plist (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    builtin-infoPlistUtility /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/empty-Subject.plist -producttype com.apple.product-type.application -genpkginfo /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/Subject.app/Contents/PkgInfo -expandbuildsettings -platform macosx -o /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/Subject.app/Contents/Info.plist
+
+SwiftDriver Subject normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name Subject -O @/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.SwiftFileList -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos27.0 -g -module-cache-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 6 -I /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug -F /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug -parse-as-library -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -emit-const-values -const-gather-protocols-list /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject_const_extract_protocols.json -Xcc -iquote -Xcc /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-generated-files.hmap -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-own-target-headers.hmap -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-all-target-headers.hmap -Xcc -iquote -Xcc /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-project-headers.hmap -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/include -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/DerivedSources-normal/arm64 -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/DerivedSources/arm64 -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject-Swift.h -working-directory /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source -experimental-emit-module-separately -disable-cmo
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/ptrcheck-HXPB3UGL1VPRQQ64CCADK6G.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdarg-7XLDKYCD2PBDNPMYVQ6PAMIAJ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/DeveloperToolsSupport-7E8BMFQX6WADS9UUSCDPYR9GQ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/ptrauth-EBPUUNOA80EMG2KGP60EREU65.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_SwiftConcurrencyShims-926LXQVQ1WIGN8F814D1IRRWB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdbool-B8JJ7XUHPUA2PC4MRLEM0SW2U.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/SwiftShims-BEPD2SQ5UVMAKH7L12HR3G81G.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stddef-423K8SVX1ELDN2L30DMO33F5E.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_AvailabilityInternal-EUW7RCX0PFT0XM9UYSGOO6ITB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_Builtin_float-DMK3J5HK6JSMSFNJ6OF0450Y0.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_DarwinFoundation1-BOGXBKEEUNXE35UMEJE9GGD1L.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/ExtensionFoundation-B5R19R6HBTVEVJ05676IE8IUP.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_DarwinFoundation2-2N2IBTHVBZ46GB3K2421ZS15Y.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_Builtin_limits-50U02EBU6AHGV7VRF8LP8O6O5.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/sys_types-BMSZ26I22FE4M2L90F8QVMGB4.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_Builtin_tgmath-1XXRQSZWT2PZXDOJM2IJ8VM1A.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdint-AVEPNTB6UBBEU0OK2GPCMZ6KJ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/string_h-88VGT0FHFNISLOIKC5RH2GK5M.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/libDER-JSWLBUTBFRG140KUYCLRHAXO.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_Builtin_stdatomic-A4IFVM41GBXN31KDTYZAKZQPW.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_Builtin_intrinsics-6D3KRS1TKJVDVNUC21SGO26LA.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_DarwinFoundation3-83V0UI5SJSNHJSE3HI02TBEQB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_Builtin_inttypes-8579ODI8UNQX9VDBRMVP8CNWX.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/Darwin-C4C8AKY0H7KH22A2N2HW89PIC.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/simd-EWSVS5TYUPSTB6WFTJ9XKE0I7.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/libkern-2WBFJTB95IL2M678Q1CH4EVMX.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CUPS-5N41T3WGQ87OI692QDIVRR5LY.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/launch-6G700GP42YLEQLO6RNZ3G0Z73.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/Spatial-7O2PIZQTHOWSP37MTS906ERAV.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/MachO-VUFVADKEO439OBBKOEUCVQ4D.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/ObjectiveC-1SCSXN2EG91ZNACB41E49QBGZ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/os_object-5PTIUU2CX9SOFMG9298GM76C3.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/os_workgroup-IIWFYYZSC99F3ECW0SHIQS5F.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/Dispatch-498TDO1XRFTAKZDXAT3ZA5007.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/XPC-B1Q392CUGO7YOVF0EXBAOITXY.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreFoundation-DVSS8I02OAK8IQ2LNWOS5XI8Y.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/dnssd-AYNLKDN6YY92OHGMD7E6I61BB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/os-SD103FZHXOJ28HCAXEMNR227.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/IOKit-C7GLTHK799LRFM9STY47V7V5X.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/ColorSync-6DQLXK3DAI1XCJ1UGNGSAKCBR.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreAudioTypes-E6CIK7OEBWTPOL5ZEA6HK6A05.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CFNetwork-68MVBFF5KKXFKS32WH1MXRSQF.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/Security-3MCWA7FZDJ0D24KIAJLY0T1DA.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreGraphics-COE4824W4WIWJ9B0QGZRIPGUK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/DiskArbitration-60BL6BSXNA3VBMRGBRZ8DFERV.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/ImageIO-CGT9NS1LV9KJFOLKOHORG3A41.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreText-38IRCI24DKVLEJLRQ94FADXII.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreServices-B9G34N5V6KZA1VA6YVTV9LLAP.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/Foundation-B2TXWIVZSJHNA381ZRRTD64NK.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/UniformTypeIdentifiers-5WRZNTZN1T2WKWE7GLS32KFTZ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/DataDetection-CEOE2MR2JSHDREV6YOVRZRZPP.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/IOSurface-7JAY4GFTC64006FS19O25HRNQ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/Accessibility-DKEKAF6IDAOURWLNHEWZ6SKWB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreSpotlight-2AW0E6XE7ILEER7BJ38OEU6EQ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/OpenGL-8PQQS6VP0MQ0O9H7YAJQNR3Y4.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/ApplicationServices-BGPLT1OPD3VNTEW43MWV71GVC.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreData-C6PR5UNZCOD6FEL99T0XLNFPM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/RelevanceKit-D0CVCJA5741BPD5FKGP19FS02.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/Symbols-A23AKEU3XPML4RPZDXV9IW7SW.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreAudio-38NAWBEVMNVXBLFK0WLLKOIYD.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/AppIntents-B78Q5YBJCRBIG7JN7Q8YVC2EM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/AppIntentsTypeSupport-4HKWLCMJ3PDBYU5UY5PQWRZQ8.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/OSLog-4KSQFH1IR5QP9BOJST41VKVP.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreTransferable-9T9XSWKRY5AMWGLCI1KIH3895.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/Network-60ISXPCQFBLB34Z2M7P34VLUE.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/_LocationEssentials-1ZBPVXOQL9CY9TV2WA7YKZ1J3.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/Metal-3TJRJBE0K6IGP4RUZT6PTQ3KH.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreLocation-933BXGPWUSIZPRS1BQRDP6WQM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreVideo-5Z8KM5AI3NUMGYSCCSC3PH9DB.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreMedia-BA5BN5QGTQDWOJI3TQ7S8K8TF.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/QuartzCore-9V9HFLA7YSPD55V960TJXY2VH.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/CoreImage-EC2JHBAFM240INEJ1003N8TT7.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/SwiftUICore-5TG0G940DWVUSJ1PLPF1Q93OC.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/AppKit-BQE3M0CDJ2GW74BMQGGY34W59.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules/SwiftUI-81UHPJJBNI9RUZ61ZXAIF6VP9.pcm
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ Subject (in target 'Subject' from project 'Subject')
+/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.swift:7:16: error: static property 'title' is not concurrency-safe because it is nonisolated global shared mutable state [#MutableGlobalVariable]
+5 | }
+6 | struct HostProbeIntent: AppIntent {
+7 |     static var title: LocalizedStringResource = "Host probe"
+  |                |- error: static property 'title' is not concurrency-safe because it is nonisolated global shared mutable state [#MutableGlobalVariable]
+  |                |- note: convert 'title' to a 'let' constant to make 'Sendable' shared state immutable
+  |                |- note: add '@MainActor' to make static property 'title' part of global actor 'MainActor'
+  |                `- note: disable concurrency-safety checks if accesses are protected by an external synchronization mechanism
+8 |     func perform() async throws -> some IntentResult { .result() }
+9 | }
+
+[#MutableGlobalVariable]: <https://docs.swift.org/compiler/documentation/diagnostics/mutable-global-variable>
+Failed frontend command:
+
+SwiftCompile normal arm64 (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+
+
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend -frontend -emit-module -experimental-skip-non-inlinable-function-bodies-without-types /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.swift -target arm64-apple-macos27.0 -disable-cross-import-overlay-search -swift-module-cross-import AppIntents /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/AppIntents.framework/Modules/AppIntents.swiftcrossimport/AppKit.swiftoverlay -swift-module-cross-import AppIntents /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/AppIntents.framework/Modules/AppIntents.swiftcrossimport/HealthKit.swiftoverlay -swift-module-cross-import AppIntents /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/AppIntents.framework/Modules/AppIntents.swiftcrossimport/SwiftUI.swiftoverlay -swift-module-cross-import AppIntents /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/AppIntents.framework/Modules/AppIntents.swiftcrossimport/UIKit.swiftoverlay -swift-module-cross-import AppIntents /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk/System/Library/Frameworks/AppIntents.framework/Modules/AppIntents.swiftcrossimport/AppKit.swiftoverlay -swift-module-cross-import AppIntents /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk/System/Library/Frameworks/AppIntents.framework/Modules/AppIntents.swiftcrossimport/HealthKit.swiftoverlay -swift-module-cross-import AppIntents /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk/System/Library/Frameworks/AppIntents.framework/Modules/AppIntents.swiftcrossimport/SwiftUI.swiftoverlay -swift-module-cross-import AppIntents /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk/System/Library/Frameworks/AppIntents.framework/Modules/AppIntents.swiftcrossimport/UIKit.swiftoverlay -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libAppIntentsMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#AppIntentsMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libFoundationMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#FoundationMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libObservationMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#ObservationMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libPreviewsMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#PreviewsMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libSwiftMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#SwiftMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libSwiftUIMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#SwiftUIMacros -disable-implicit-swift-modules -Xcc -fno-implicit-modules -Xcc -fno-implicit-module-maps -explicit-swift-module-map-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject-dependencies-1.json -Xllvm -aarch64-use-tbi -enable-objc-interop -stack-check -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -I /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug -F /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug -module-cache-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -no-color-diagnostics -Xcc -fno-color-diagnostics -g -debug-info-format\=dwarf -dwarf-version\=5 -swift-version 6 -O -serialize-debugging-options -enable-experimental-feature DebugDescriptionMacro -empty-abi-descriptor -validate-clang-modules-once -clang-build-session-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -working-directory -Xcc /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source -file-compilation-dir /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source -Xcc -ivfsstatcache -Xcc /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKStatCaches.noindex/macosx27.0-26A425-7231f6df4def33e022ae2eb8f782df1a.sdkstatcache -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -Xcc -iquote -Xcc /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-generated-files.hmap -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-own-target-headers.hmap -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-all-target-headers.hmap -Xcc -iquote -Xcc /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Subject-project-headers.hmap -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Products/Debug/include -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/DerivedSources-normal/arm64 -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/DerivedSources/arm64 -Xcc -I/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/DerivedSources -no-auto-bridging-header-chaining -module-name Subject -const-gather-protocols-file /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject_const_extract_protocols.json -disable-clang-spi -clang-target arm64-apple-macos27.0 -target-sdk-version 27.0 -target-sdk-name macosx27.0 -in-process-plugin-server-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/libSwiftInProcPluginServer.dylib -emit-module-doc-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.swiftdoc -emit-module-source-info-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.swiftsourceinfo -emit-objc-header-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject-Swift.h -serialize-diagnostics-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject-primary-emit-module.dia -emit-dependencies-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject-primary-emit-module.d -parse-as-library -o /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.swiftmodule -emit-abi-descriptor-path /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/Subject.build/Debug/Subject.build/Objects-normal/arm64/Subject.abi.json
+SwiftCompile normal arm64 Compiling\ Subject.swift /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.swift (in target 'Subject' from project 'Subject')
+
+SwiftCompile normal arm64 /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source/Subject.swift (in target 'Subject' from project 'Subject')
+    cd /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/session/source
+    builtin-SwiftPerFileCompile Subject.swift
+
+PruneExplicitPrecompiledModules /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-F00822BD-2BD7-4420-980A-5A1A0A78E0C5/DerivedData/SDKExplicitPrecompiledModules
+
+warning: Traditional headermap style is no longer supported; please migrate to using separate headermaps and set 'ALWAYS_SEARCH_USER_PATHS' to NO. (in target 'Subject' from project 'Subject')
+warning: Traditional headermap style is no longer supported; please migrate to using separate headermaps and set 'ALWAYS_SEARCH_USER_PATHS' to NO. (in target 'IntentsAutomationHost_6fd7c56f67a9' from project 'Subject')
+** TEST BUILD FAILED **
+
+
+The following build commands failed:
+	SwiftCompile normal arm64 (in target 'Subject' from project 'Subject')
+	SwiftEmitModule normal arm64 Emitting\ module\ for\ Subject (in target 'Subject' from project 'Subject')
+	Building project Subject for testing with scheme IntentsAutomationHost_6fd7c56f67a9
+(3 failures)

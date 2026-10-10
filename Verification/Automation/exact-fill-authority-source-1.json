@@ -1,0 +1,24 @@
+{
+  "artifactVariant": "exact-public-fill-approval-source",
+  "behavior": "Ordinary fill approval matches exact UTF16 code units; canonical equivalence alone cannot consume a grant",
+  "evidenceSHA256": {
+    "Verification/Automation/Evidence/2026-10-07-exact-fill-authority/core-tests.log": "7101944f241cf4fed2701c2a62fd2fa61656cc579baf375107f1dd464afafe46"
+  },
+  "limits": [
+    "Synthetic policy tests only",
+    "No GUI input or app launch",
+    "Full M0-M6 remains incomplete"
+  ],
+  "schemaVersion": 1,
+  "sourceSHA256": {
+    "Sources/IntentsAutomationCore/AutomationRunAuthority.swift": "20c8bc843b7882c5107f325306ed62710433decd40833657ff2f7b9007b494a7",
+    "Tests/IntentsAutomationCoreTests/AutomationAuthorityTests.swift": "d0c99687068a6b90d2f5029c5e15b878950e125e4e418b959a99a0292c6aefb7"
+  },
+  "verification": {
+    "distinctSolReviewClear": true,
+    "failed": 0,
+    "passed": 31,
+    "registered": 31,
+    "skipped": 0
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "customerRuntimeEnabled": false,
+  "daemonLaunched": false,
+  "hardwareQualified": false,
+  "helperLaunched": false,
+  "limits": [
+    "Read-only exact frozen unit verification; no native GUI/device ownership proof",
+    "Internal configuration supports a later owned transport; no product route enabled",
+    "Native artifact checkpoint1 predates this loader source"
+  ],
+  "publicLaunchConfiguration": false,
+  "receiptSHA256": "0dbd9f8b9a83181d94cbbe47103c1b55daeb147c211994ce3b0d571f7e5c8aaf",
+  "review": "Fresh scoped Sol recheck clear",
+  "schemaVersion": 1,
+  "skipped": 0,
+  "sourceFilesSHA256": {
+    "Sources/IntentsAutomationCore/AutomationPrivateMacDaemonUnit.swift": "8ce65df3a69ec08d325599e640adf297a2b92e3e43da46a9585aec1236c3ac0f",
+    "Tests/IntentsAutomationCoreTests/AutomationPrivateMacDaemonUnitTests.swift": "e70d8642581db2d5cbc34a68a9eb26816f7999b4469366d09205c2499c6b4110"
+  },
+  "swiftTestLogSHA256": "5c5ff0828c9a3192ab70cd9a73cfabc9a3c676c5981aaa7bb5e3a00a5bb0922d",
+  "testsPassed": 5,
+  "verifiedFileCount": 5465
+}

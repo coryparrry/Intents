@@ -1,0 +1,37 @@
+{
+  "slice": "mac-lineage-1",
+  "date": "2026-10-08",
+  "acceptance": "Retain stable kernel ancestry and bounded exact observed descendants for future owned fixture qualification without claiming complete child closure.",
+  "implementation": {
+    "inventory": "Optional parent PID and sampled process status; actual kernel facts bind UID/PID/start/parent within and across both full scans. Valid state transitions remain diagnostic.",
+    "compatibility": "Older inventory records decode and retain previous executable-absence semantics; missing ancestry cannot support lineage observations.",
+    "ledger": "Exact root PID/start/path/UID, transitive observed descendants, reparented descendants retained, reused PIDs isolated; malformed ancestry rejected before state mutation.",
+    "bounds": "256 observations and 1024 retained descendant identities; no foreign process paths exported.",
+    "authority": "Internal diagnostic data only; no launch permission, termination authority, capability availability or complete child closure issuer."
+  },
+  "verification": {
+    "focusedTests": "108 passed, 2 actual opt-ins skipped; inventory, reconciliation, helper/host release, private Apple ownership and lineage checks.",
+    "command": "swift test --jobs 2 --filter 'AutomationMacProcessLineageTests|AutomationMacProcessInventoryTests|AutomationMacInventoryReconciliationTests|AutomationMacAssociatedHostReleaseVerifierTests|AutomationMacHelperReleaseVerifierTests|AutomationPrivateMacAppleRouteDriverTests|AutomationNativeHelperStartupTests'",
+    "applicationBuild": "Official Xcode FoundationEvals My Mac build passed in25.132seconds,zero errors; owned workspace closed.",
+    "review": "Two disjoint Sol source lanes clear.",
+    "diffCheck": "git diff --check passed.",
+    "diagnostics": "Ignored Tools/IntentsAutomation/.runtime/mac-lineage-1/"
+  },
+  "actualAdmissionRefresh": {
+    "command": "INTENTS_MAC_READ_ONLY_INVENTORY=1 swift test --jobs 2 --filter AutomationMacProcessInventoryTests.testNativeReadOnlyInventoryWhenRequested",
+    "result": "Failed before any fixture launch: executablePath observation pid14398 errno2,parent14299,state2.",
+    "readOnlyFollowup": "Targeted ps confirmed the process remained active; no kill, skip or foreign cleanup attempted. Old blocking PIDs55592/55434 no longer appeared in earlier read-only check.",
+    "qualification": "Full UID admission, live input readback and actual XCTest child closure remain unqualified; no unchanged retry."
+  },
+  "sourceSHA256": {
+    "Sources/IntentsAutomationCore/AutomationMacProcessInventory.swift": "98b779073a9bc8272cd1510d23d2d5b5c65d02e6584f52603e54ba93e8b6e08a",
+    "Sources/IntentsAutomationCore/AutomationMacProcessLineage.swift": "2f2903ecf2f95e7006f1ac8d26b066dcd3fb030f7084cdc7d9176c6ce2f44390",
+    "Tests/IntentsAutomationCoreTests/AutomationMacProcessLineageTests.swift": "985cc12e701a2126cd4b1930a809f0a1d0e333be24f856260b6e05939538b249"
+  },
+  "limits": [
+    "Sampled ancestry can miss children born and reparented between observations; absence of observed descendants is not proof of all children released.",
+    "No app, intent or probe runtime launched. Customer Mac routes remain gated.",
+    "Full M0-M6 incomplete; native GUI, physical Siri, controller, distribution and independent app/user trials still need actual evidence.",
+    "Local commits only; unrelated work preserved."
+  ]
+}

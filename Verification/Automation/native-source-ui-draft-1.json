@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "date": "2026-10-08",
+  "scope": "prepared Mac UI-only workflow draft review and save",
+  "behavior": [
+    "Exact selected source, configuration, prepared build and current Mac session admit the existing data-only review flow",
+    "Navigation and independent visible-state requirements freeze with prepared provenance; no runtime, persisted approval or attempt is created",
+    "Unsupported text entry can be cleared from the native form; simulator installation controls are hidden",
+    "Save regenerates the current review and binds supplied plan bytes to its frozen digest"
+  ],
+  "verification": {
+    "command": "swift test --jobs 2 --filter 'MacFreshDraftStoreTests|MacWorkflowStoreTests|SourcePreparationStoreTests|InstalledUIStoreTests'",
+    "tests": 83,
+    "failures": 0,
+    "appBuild": "Official Xcode BuildProject, FoundationEvals / My Mac: passed, 13.357 seconds, no errors",
+    "reviews": ["Sol authority lane: clear after exact-byte save fix", "Sol native compatibility lane: clear"],
+    "diffCheck": "passed"
+  },
+  "failurePreserved": "Review found synthesized equality accepts canonically equivalent Unicode with different frozen bytes; digest check and composed/decomposed regression added",
+  "unverified": [
+    "Actual native rendering/interaction and Mac source execution remain unqualified; unchanged environment failures were not retried",
+    "No device, clean-host, distribution or release qualification"
+  ],
+  "runtime": "Tools/IntentsAutomation/.runtime/native-source-ui-draft-1"
+}

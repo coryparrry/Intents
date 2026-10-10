@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:02:42.689879+00:00",
+  "scope": "Required approved input activity, asynchronous terminal guards and fixed release component diagnostics",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "checks": {
+    "Swift140": "33 passed",
+    "Swift141": "59 passed",
+    "sidecar46": "67 passed",
+    "sidecar47": "17 passed",
+    "native28": "build succeeded",
+    "probe24": "build succeeded",
+    "gitDiffCheck": "passed"
+  },
+  "reviews": "Fresh Sol setup review findings fixed; fresh terminal guard and dictionary reviews clear; prior fresh release diagnostic review clear",
+  "limits": [
+    "Counts are necessary activity, not actual record proof",
+    "No completed live fixture setup or new release diagnostic capture yet",
+    "Native rendered workflow and physical Siri still unqualified"
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationNavigationController.swift",
+      "sha256": "867ae440ed466fdf9c8b0a61e2af521817087534c4809aa7b8af2691ed328018"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationRunAuthority.swift",
+      "sha256": "4ff6646378bff7e880d0c31cabc21bf811de4aca8e7647adebad7cb325e05757"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "6270a59b6edd65c6bc37ba47a36446337f85ef14527ede6b529b4ac902b4c64f"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFreshEntityPlanner.swift",
+      "sha256": "b28fe308d981e9670c089298aa5fce3892468e9761ee9ea8f627af7e2cf38206"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationUIProgram.swift",
+      "sha256": "bdb899fa1546dd9069db9b1d73d0af9768f48d35d7cd0f6c197e2d32b8e34db5"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationSidecarRouteDriver.swift",
+      "sha256": "5bb25572c74cfa5921f0a0937525d95797ebb6fc88147d9742f7784f0ca35071"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationSidecarReleaseDiagnostics.swift",
+      "sha256": "bad984b07f6258901b060b111bc156fdfa39d96ee775806cae57d7709bdc38c0"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/controllerProtocol.ts",
+      "sha256": "f3868e6cff6b7e9ed4a5cec1129f5f1434d3229f2ce54515c8287472f68ea304"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/nativeController.ts",
+      "sha256": "6dc53d6e6405e8291dc1efb3834d78fae977e45be352a11010f41d415a44ff0f"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/main.ts",
+      "sha256": "c20cb682a8d111e2056ea89e46a3b769c8dd0660d268e694ca08b15b612b28c0"
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/controller.test.ts",
+      "sha256": "48e9e1e0d1621d95f3e2747ebc392ba679a197ad49a66d9f310532dc8a565b07"
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/engine.test.ts",
+      "sha256": "cdb31c8198951e3291df80a04456f0dec3c4411d2fcc9610ec5ba17c2d8b3bab"
+    }
+  ]
+}

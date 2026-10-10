@@ -1,0 +1,27 @@
+{
+  "slice": "prepared-program-contract-1",
+  "date": "2026-10-08",
+  "acceptance": "Prepared Apple invokes use the selected app's compiled field/type/result declarations before any setup or dispatch.",
+  "implementation": {
+    "authority": "Exactly one compiled complete action and unique declared fields from the selected prepared catalog",
+    "inputs": "Exact names, literal families, enum/entity type identities and structured codec annotations; required inputs cannot disappear",
+    "deferred": "Known primitive output families or typed query entity selection must match destination; optional/defaulted fields do not bypass checks",
+    "results": "Projected result codec equals declaration; nil/noValue preserves explicit invocation without result extraction",
+    "boundary": "Prepared runner validates before coordinator setup; native Mac validates selected artifacts first",
+    "compatibility": "Frozen case/schema/digests unchanged; synthetic mixed fixture now supplies its exact declaration"
+  },
+  "verification": {
+    "focused": "59 URL/binding/prepared-route checks passed; final extra host-result/entity-binding test also passed",
+    "compatibility": "101 selected checks passed: 81 core runner/planner/case/route and 20 native draft/preparation",
+    "dispatch": "Injected runner rejected five mismatched literal/result/required/deferred cases with zero UI inputs and Apple invocations",
+    "applicationBuild": "Official Xcode My Mac FoundationEvals build passed, 21.114 seconds, zero errors",
+    "review": "Two independent Sol lanes clear",
+    "diffCheck": "git diff --check passed",
+    "diagnostics": "Ignored Tools/IntentsAutomation/.runtime/prepared-program-contract-1/"
+  },
+  "limits": [
+    "Structural and injected-route proof; no new live codec, native input or release qualification.",
+    "Query-only declaration validation is the next separate slice; full M0-M6 remains incomplete.",
+    "Owned Xcode workspace closed; no owned app/simulator open; local commit only."
+  ]
+}

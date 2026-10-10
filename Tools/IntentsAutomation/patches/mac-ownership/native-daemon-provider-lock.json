@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "artifactVariant": "private-owned-mac-daemon-provider-source",
+  "customerRuntimeEnabled": false,
+  "hardwareQualified": false,
+  "helperABI": "startup-gate-v1",
+  "templates": {
+    "intents-daemon.ts": "2eeb835e0c4d8bac78f0aeb40cf7cd311e2640d7492e0891f6b1695891d54e16",
+    "intents-mac-lifecycle.test.ts": "299ccafa0cde69ade5edbd6c6e7f195223604c1003f169c245ee24ba6fd0bd3f",
+    "patch_owned_mac_daemon.py": "3ac58f0642279c208a1b90597a5d4242bdde435fe3703b6b6271e9cd27f0c8ff"
+  }
+}

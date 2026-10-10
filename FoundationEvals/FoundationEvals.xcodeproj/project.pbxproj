@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FEA000000000000000000001 /* IntentsAutomationCore in Frameworks */ = {isa = PBXBuildFile; productRef = FEA000000000000000000002 /* IntentsAutomationCore */; };
+		FEA000000000000000000004 /* AutomationHost in Resources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000005 /* AutomationHost */; };
 		DA0000000000000000000020 /* DeveloperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000010 /* DeveloperProtocol.swift */; };
 		DA0000000000000000000021 /* DeveloperFeatureRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000011 /* DeveloperFeatureRegistry.swift */; };
 		DA0000000000000000000022 /* DeveloperRunnerHostEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000012 /* DeveloperRunnerHostEngine.swift */; };
@@ -38,6 +40,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		FEA000000000000000000005 /* AutomationHost */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AutomationHost; path = ../Integration/AutomationHost; sourceTree = SOURCE_ROOT; };
 		DA0000000000000000000010 /* DeveloperProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperProtocol.swift; sourceTree = "<group>"; };
 		DA0000000000000000000011 /* DeveloperFeatureRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperFeatureRegistry.swift; sourceTree = "<group>"; };
 		DA0000000000000000000012 /* DeveloperRunnerHostEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperRunnerHostEngine.swift; sourceTree = "<group>"; };
@@ -77,6 +80,7 @@
 		AFC28B43304733170023273E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				FEA000000000000000000001 /* IntentsAutomationCore in Frameworks */,
 				AFC28B70304B00010023273E /* CoreAILM in Frameworks */,
 				FE0000000000000000000001 /* Sparkle in Frameworks */,
 				FE0000000000000000000011 /* PostHog in Frameworks */,
@@ -152,6 +156,7 @@
 			);
 			name = FoundationEvals;
 			packageProductDependencies = (
+				FEA000000000000000000002 /* IntentsAutomationCore */,
 				FE0000000000000000000012 /* PostHog */,
 				FE0000000000000000000002 /* Sparkle */,
 				AFC28B72304B00010023273E /* CoreAILM */,
@@ -236,6 +241,7 @@
 			mainGroup = AFC28B3D304733160023273E;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				FEA000000000000000000003 /* XCLocalSwiftPackageReference ".." */,
 				FE0000000000000000000013 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 				FE0000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				AFC28B71304B00010023273E /* XCRemoteSwiftPackageReference "coreai-models" */,
@@ -257,6 +263,7 @@
 		AFC28B44304733170023273E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
+				FEA000000000000000000004 /* AutomationHost in Resources */,
 			);
 		};
 		AFC28B513047331D0023273E /* Resources */ = {
@@ -620,6 +627,10 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		FEA000000000000000000003 /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
 		AFC28B6C304A00010023273E /* XCRemoteSwiftPackageReference "hummingbird" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/hummingbird-project/hummingbird.git";
@@ -655,6 +666,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		FEA000000000000000000002 /* IntentsAutomationCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FEA000000000000000000003 /* XCLocalSwiftPackageReference ".." */;
+			productName = IntentsAutomationCore;
+		};
 		AFC28B6D304A00010023273E /* Hummingbird */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AFC28B6C304A00010023273E /* XCRemoteSwiftPackageReference "hummingbird" */;

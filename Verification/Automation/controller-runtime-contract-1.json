@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:12:58.269839+00:00",
+  "scope": "Actual simulator setup failures: pinned blocked-verdict compatibility and ephemeral AX node identity",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "checks": {
+    "sidecar35": {
+      "passed": 26,
+      "failed": 0
+    },
+    "sidecar36": {
+      "passed": 60,
+      "failed": 0
+    },
+    "runtime": "Node24.21.0",
+    "review": "fresh isolated Sol6.1 clear; production budgets align with reserved codes",
+    "privatePackage2": "offline staged, signed, strict signatures and manifest verified"
+  },
+  "excludedValidation": "tests34 accidentally used unsupported system Node26, failed lifecycle setup and was stopped; no pass claim",
+  "limits": [
+    "No fresh workflow business result yet",
+    "Imported reports/candidate data grant no live recipe authority",
+    "Native GUI service crash persists"
+  ],
+  "sources": [
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/nativeController.ts",
+      "sha256": "e980ae15578ebc7bff0cd64c1e3f79a29912e411b09091330f6c1125426db4bd",
+      "bytes": 6763
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/semanticTree.ts",
+      "sha256": "a28adf61cbf73f3b6ac89ed4921c5740727074b21c1e05af2ea2167e4e4c3cf0",
+      "bytes": 4036
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/controller.test.ts",
+      "sha256": "e76944864b7a395f3ef4475f18c8be5497bd83bf812f295db0fdba6f652d3a4f",
+      "bytes": 8571
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/engine.test.ts",
+      "sha256": "db9ff5551ac4f2dfacb01c01b44e6e78bb7bb59eb88dd869ed1e84f03ac4c1df",
+      "bytes": 11370
+    }
+  ],
+  "logs": [
+    {
+      "path": "/private/tmp/intents-automation-sidecar-tests35.log",
+      "sha256": "e853f4f65117fe2074fc924b5336164d78a4db3132d600b67fc70c44d08130c7",
+      "bytes": 2381
+    },
+    {
+      "path": "/private/tmp/intents-automation-sidecar-tests36.log",
+      "sha256": "558d6783f90459767e228220b50b6a7466cccb8ba10a586936580b889768e170",
+      "bytes": 5459
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-workflow-package2.log",
+      "sha256": "e63e9bbc9968f24ac68e986887d0671d28dabad329145f861ff62512d418a621",
+      "bytes": 1088
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-workflow-sign2.log",
+      "sha256": "2307efea70dd2bd66b292cf2ecbfbf190b2ca0c51a67290f34642c0b2e48347f",
+      "bytes": 714
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-workflow-seal2.log",
+      "sha256": "c9f9cd9dbcd8af29694275b881e8185dc0d9ee086375986d8c45ae80ad0929d8",
+      "bytes": 4591
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T02:00:14.175415+00:00",
+  "scope": "Actual pure synthetic [Int] echo through generated Apple host; integer conversion only",
+  "attemptID": "integer-list-sdk3",
+  "exactOutputsMatchInputs": true,
+  "operationsCompleted": 2,
+  "result": {
+    "assessed": false,
+    "evidenceComplete": true,
+    "failedObservations": [],
+    "missingObservations": [],
+    "subjectCompleted": true,
+    "subjectDispatchUncertain": false,
+    "subjectDispatched": true,
+    "summary": "executedUnassessed"
+  },
+  "resourcesReleased": true,
+  "campaignsEmpty": true,
+  "generation": 133,
+  "app": {
+    "architecture": "arm64,x86_64",
+    "bundleID": "com.coryparry.IntentsAutomation.DuplicateTasks",
+    "canonicalBundlePath": "/private/tmp/intents-integer-codec-qualification2/Prepared/DerivedData/Build/Products/Debug-iphonesimulator/DuplicateTasks.app",
+    "configuration": "Debug",
+    "logicalID": "/private/tmp/intents-codec-runtime-qualification1/Source/DuplicateTasks.xcodeproj#DE641280100333D2F09AF8A2",
+    "owningModule": "DuplicateTasks",
+    "platform": "ios",
+    "productDigest": "86c0753922a4b076e1a24897bc9cae148e72b1e9697d30cfa1926c4ff9954951",
+    "provenanceStrength": "productBytes",
+    "sourceManifestDigest": "46c73dd7aa4a9f9c377fa1713fa628772e99f05365f7b6afa98fcbb99cac17e2"
+  },
+  "target": {
+    "id": "09D3C36B-7A4C-406A-91E5-0A99A429F7D3",
+    "kind": "simulator"
+  },
+  "fullPlanComplete": false,
+  "businessWorkflowQualified": false,
+  "supersedesIntegerRetrievalGapOnly": "typed-codec-simulator-1.json",
+  "limits": [
+    "No business assertion: report correctly executedUnassessed",
+    "Physical execution, other declared integer collection types and broader codec profile remain unqualified",
+    "No UI-controller or learned-recipe qualification"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-integer-codec-qualification2/preparation-profile.json",
+      "sha256": "da64619aae9a280ddde34fb9639451f353deb155593502f8119e2fa4ae5bbe63"
+    },
+    {
+      "path": "/private/tmp/intents-integer-codec-qualification2/Prepared/prepared-application.json",
+      "sha256": "25ab1e18ac13ff97365d88eb865d00e37ccd42888021e707bc08f5ddb64002d2"
+    },
+    {
+      "path": "/private/tmp/intents-integer-codec-qualification2/integer3-profile.json",
+      "sha256": "f33a467b6da8f322a603b8ce090b4b308b2bcba31681e332e83bf082f5d1fa7a"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/integer-list-sdk3/report.json",
+      "sha256": "d97e0f3919b69cbe82a21d3812481b97ee3e3b29343908243aea0eee22b3ef33"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/integer-list-sdk3/journal.json",
+      "sha256": "5b2e81a8203500b2a00946fc2570008246356050b285f815d0ee27ac7d2ca3d4"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/integer-list-sdk3/artifacts/apple-receipt-132.json",
+      "sha256": "a9fa5601c97062ade17231837f324c5a1b34cf97cc4d18257d6603c7ef7f2b80"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/integer-list-sdk3/release-inspection.json",
+      "sha256": "fdbcbd4f4bb3f1e4ca2c2f3c45b9d2691d734aa70c5d97aac75c2794c4786d58"
+    },
+    {
+      "path": "/private/tmp/intents-automation-tests160.log",
+      "sha256": "86b55814b71265bd444121d62c9ac0d2b45b9d8eaa2aeaafab685e43c68bc0e7"
+    }
+  ],
+  "sources": [
+    {
+      "path": "Integration/AutomationHost/IntentDefinitionsHost.swift",
+      "sha256": "1e71c51a4fb60322790270fbe60bf5cf5eb7f6f75d65a3b4c13da40ddbdf9a77"
+    },
+    {
+      "path": "Integration/AutomationHost/HostPlan.swift",
+      "sha256": "c06d826db3c0776c05c220bdfe83721abe36dacdc640466429ba0652bb11406b"
+    },
+    {
+      "path": "Tests/IntentsAutomationHostContractTests/HostCodecContractTests.swift",
+      "sha256": "9286a1a2c470c5f831dc3d05efae2f22dc3ef2d64c31a9421d4d5d8b011e5f5c"
+    }
+  ]
+}

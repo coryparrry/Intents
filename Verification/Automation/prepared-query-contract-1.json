@@ -1,0 +1,24 @@
+{
+  "slice": "prepared-query-contract-1",
+  "date": "2026-10-08",
+  "acceptance": "Prepared queries select one catalog-declared entity and project only its exact declared property families before any dispatch.",
+  "implementation": {
+    "authority": "Unique selected catalog entity type and valid retained default-query identifier",
+    "projection": "Exact property names and text/bool/integer families; nil/empty identity-only and subset projections preserved",
+    "boundary": "Shared prepared-program preflight covers setup, subject, observers and cleanup; existing selection/output contracts stay stricter",
+    "formats": "No source, case or protocol schema changes"
+  },
+  "verification": {
+    "contracts": "108 selected checks passed:88 core query/entity/binding/case/prepared route and20 native draft/preparation",
+    "dispatch": "Five injected runner entity/property/provenance mismatch variants denied with zero UI inputs and Apple invocations",
+    "applicationBuild": "Official Xcode My Mac FoundationEvals build passed,15.281seconds,zero errors",
+    "review": "Two independent Sol lanes clear",
+    "diffCheck": "git diff --check passed",
+    "diagnostics": "Ignored Tools/IntentsAutomation/.runtime/prepared-query-contract-1/"
+  },
+  "limits": [
+    "Structural/injected-route proof; no new runtime query qualification or derived-property support.",
+    "Full M0-M6 incomplete; next bounded source work is transitive literal local-package closure.",
+    "Owned Xcode workspace closed; no owned app/simulator open; local commit only."
+  ]
+}

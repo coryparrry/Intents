@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:35:30.984676+00:00",
+  "attemptID": "fresh-owner-policy1",
+  "runtimeBundle": "/private/tmp/IntentsAutomationNativeWorkflowQualification7.app",
+  "probe": "probe27",
+  "fullPlanComplete": false,
+  "runtimeQualified": false,
+  "evidence": {
+    "nativeControllerAcceptedFill": true,
+    "policyDeniedReason": "controllerNode",
+    "sdkFillDispatchConfirmed": false,
+    "completeUIReceipt": false,
+    "independentQuery": false,
+    "subjectDispatched": false,
+    "resourcesReleased": true,
+    "campaignsEmpty": true,
+    "generation": 108
+  },
+  "reportPath": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-policy1/report.json",
+  "reportSHA256": "8ab99e1aedc7d7b2d88980f0aa6d065916d1015ca38c6093428d4a6faeb25cec",
+  "limits": [
+    "Controller accepted node differs from submitted engine node",
+    "No setup or business result qualified",
+    "Owned simulator shutdown recorded in journal"
+  ]
+}

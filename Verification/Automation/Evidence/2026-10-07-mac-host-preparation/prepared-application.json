@@ -1,0 +1,109 @@
+{
+  "buildLogPath" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/build.log",
+  "buildLogTruncated" : false,
+  "catalog" : {
+    "app" : {
+      "architecture" : "arm64",
+      "bundleID" : "com.intents.fixture.mac-host",
+      "canonicalBundlePath" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/DerivedData/Build/Products/Debug/Subject.app",
+      "configuration" : "Debug",
+      "logicalID" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-3DA00FE7-6651-4E61-97FE-85465F766501/original/Subject.xcodeproj#000000000000000000000004",
+      "owningModule" : "Subject",
+      "platform" : "macos",
+      "productDigest" : "057a94a8ddf310500447d9c61646cb41525211451306bad245e62778bfdfdc31",
+      "productDigestVersion" : 2,
+      "provenanceStrength" : "productBytes",
+      "sourceManifestDigest" : "ba0ee0677845e367ce7842a25f2febaf483d748e156c2b80a918b1b287c24dec"
+    },
+    "entities" : [
+
+    ],
+    "enumerations" : [
+
+    ],
+    "gaps" : [
+      "Runtime registration, query execution and source graph reconciliation remain independent checks."
+    ],
+    "systemActions" : [
+      {
+        "compiled" : true,
+        "executed" : false,
+        "id" : "HostProbeIntent",
+        "parameters" : [
+
+        ],
+        "parametersComplete" : true,
+        "registered" : false,
+        "resultFamily" : "noValue",
+        "title" : "Host probe",
+        "typeName" : "Subject.HostProbeIntent"
+      }
+    ],
+    "systemDiscoveryComplete" : false,
+    "uiDiscoveryComplete" : false
+  },
+  "generatedHost" : {
+    "bundleID" : "com.intents.automation.host.c5efa9471bed.xctrunner",
+    "configuration" : "Debug",
+    "projectPath" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/source/Subject.xcodeproj",
+    "scheme" : "IntentsAutomationHost_c5efa9471bed",
+    "subjectBundleID" : "com.intents.fixture.mac-host",
+    "subjectProductPath" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/DerivedData/Build/Products/Debug/Subject.app",
+    "targetID" : "4C8BBBB4ADDA4C7E8AC023FC",
+    "templateDigest" : "133c9fbab659d491c2856641ee805fd12b1bc6731b38986b4886271e234a43d1"
+  },
+  "host" : {
+    "app" : {
+      "architecture" : "arm64",
+      "bundleID" : "com.intents.fixture.mac-host",
+      "canonicalBundlePath" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/DerivedData/Build/Products/Debug/Subject.app",
+      "configuration" : "Debug",
+      "logicalID" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-3DA00FE7-6651-4E61-97FE-85465F766501/original/Subject.xcodeproj#000000000000000000000004",
+      "owningModule" : "Subject",
+      "platform" : "macos",
+      "productDigest" : "057a94a8ddf310500447d9c61646cb41525211451306bad245e62778bfdfdc31",
+      "productDigestVersion" : 2,
+      "provenanceStrength" : "productBytes",
+      "sourceManifestDigest" : "ba0ee0677845e367ce7842a25f2febaf483d748e156c2b80a918b1b287c24dec"
+    },
+    "hostBundleID" : "com.intents.automation.host.c5efa9471bed.xctrunner",
+    "hostBundlePath" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/DerivedData/Build/Products/Debug/IntentsAutomationHost_c5efa9471bed-Runner.app",
+    "hostProductDigest" : "22cd5e72d0b069ab53e5d0827fa5ff48cf0e0e8389a70be2fc4ea684e8326804",
+    "hostProductDigestVersion" : 2,
+    "subjectProductPath" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/DerivedData/Build/Products/Debug/Subject.app",
+    "target" : {
+      "id" : "host-macos-local",
+      "kind" : "nativeMac",
+      "loginSession" : "mac-gui-v1:501:100020:none"
+    },
+    "testTarget" : "IntentsAutomationHost_c5efa9471bed",
+    "xctestrunDigest" : "b9c7eedd64003ed29013bc17fa271c554f00114613150bf98cffbac433b0cf8e",
+    "xctestrunPath" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/prepare-0CCE5972-531F-459D-A609-B3580AF4C2E2/DerivedData/Build/Products/IntentsAutomationHost_c5efa9471bed_macosx27.0-arm64.xctestrun"
+  },
+  "source" : {
+    "directories" : [
+      "Subject.xcodeproj"
+    ],
+    "excludedPaths" : [
+
+    ],
+    "files" : [
+      {
+        "bytes" : 312,
+        "inputPath" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-3DA00FE7-6651-4E61-97FE-85465F766501/original/Subject.swift",
+        "permissions" : 420,
+        "relativePath" : "Subject.swift",
+        "sha256" : "71f512a3fab874fbd8b2689a138c69578aa77aeca4ce68634d88b4123a06b29b"
+      },
+      {
+        "bytes" : 5361,
+        "inputPath" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-3DA00FE7-6651-4E61-97FE-85465F766501/original/Subject.xcodeproj/project.pbxproj",
+        "permissions" : 420,
+        "relativePath" : "Subject.xcodeproj/project.pbxproj",
+        "sha256" : "7493afdd2630d3e7094af4133cea4f8e638fa4096e42d5668a51d6697527ba1f"
+      }
+    ],
+    "schemaVersion" : 1,
+    "sourceRoot" : "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/.runtime/mac-host-preparation-1/mac-host-3DA00FE7-6651-4E61-97FE-85465F766501/original"
+  }
+}

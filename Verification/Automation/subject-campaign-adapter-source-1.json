@@ -1,0 +1,44 @@
+{
+  "evidence": {
+    "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+    "path": "Verification/Automation/Evidence/2026-10-07-subject-campaign-adapter/swift-subject2.log",
+    "rawPath": "Tools/IntentsAutomation/.runtime/subject-campaign-adapter-1/swift-subject2.log",
+    "rawSHA256": "50f743768a071ae179fa63f3f74f8536f6ba5b368b9c4ca25137c2f30d2267aa",
+    "sha256": "50f743768a071ae179fa63f3f74f8536f6ba5b368b9c4ca25137c2f30d2267aa"
+  },
+  "failureTrace": {
+    "observation": "Shared fresh-fixture test data was file-private; changed to test-module visibility for tracker forwarding/fence regressions only",
+    "rawPath": "Tools/IntentsAutomation/.runtime/subject-campaign-adapter-1/swift-subject1.log",
+    "rawSHA256": "206558352aac93aa892b01ebd56dea73c2a008545d21f6bb82cd0e276072ad8c"
+  },
+  "limits": [
+    "Native saved-proposal/store admission remains source work",
+    "Installed subjects require read-only effects and no fresh-fixture tracker",
+    "All Mac fresh-fixture trackers are refused pending qualified setup/reset equivalence",
+    "Public runner route gates remain unchanged"
+  ],
+  "qualification": {
+    "appLaunched": false,
+    "customerMacQualified": false,
+    "defaultRunnerFenceObserved": true,
+    "forwardingSynthetic": true,
+    "freshSimulatorTrackerForwardedSynthetic": true,
+    "macSavedNativeUIQualified": false,
+    "macSelectionRetained": true
+  },
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "Sources/IntentsAutomationCore/AutomationSubjectCampaignExecutor.swift": "eb37e06e2fe15b53c025cd03b9c95c7dc823f3dd9911fe69abb9f2964e01e130",
+    "Tests/IntentsAutomationCoreTests/AutomationFreshFixtureTests.swift": "747fd560420017f58b84fb19cb38837b906f24c3175096f5d896ad35f2d19601",
+    "Tests/IntentsAutomationCoreTests/AutomationSubjectCampaignExecutorTests.swift": "53f8f330828312a530c70e8fd3bcd043f14e6eb5563d820a26bacfe82e0a7899"
+  },
+  "status": "generic-selected-subject-campaign-adapter-source-verified",
+  "verification": {
+    "adapterTests": 5,
+    "command": "swift test --disable-sandbox -j 2 --filter 'AutomationSubjectCampaignExecutorTests|AutomationReproductionTests|AutomationFixComparisonTests|AutomationFailureSearchTests|AutomationFreshFixtureTests'",
+    "failed": 0,
+    "passed": 38,
+    "skipped": 0,
+    "sourceReview": "distinct provenance/forwarding and authority/effects Sol lanes clear"
+  }
+}

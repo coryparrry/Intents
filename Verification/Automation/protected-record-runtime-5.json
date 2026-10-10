@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:38:59.709904+00:00",
+  "scope": "Actual controller rejected-decision shape investigation",
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "result": "invalidFixture",
+  "controllerFailureStage": "decisionValidation",
+  "rejectedDecisionShape": {
+    "kind": "fill",
+    "nodeMatches": true,
+    "nodeEditable": false,
+    "reasonPresent": true,
+    "bindingPresent": true
+  },
+  "capturedEditableNodes": 0,
+  "capturedTextFieldRolePresent": true,
+  "uiActions": 0,
+  "subjectDispatched": false,
+  "resourcesReleased": true,
+  "commonCampaignsEmptyAfterAttempt": true,
+  "limits": [
+    "SDK optional native editability absent is unknown, not false or true",
+    "No setup/readback or fixture authority"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-diagnostic2/report.json",
+      "sha256": "d69487d2d4824cf59b56eb3ae13e49e2c24e2fca47934473eaec6f5b4e4a9c3a",
+      "bytes": 466
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-diagnostic2/journal.json",
+      "sha256": "4035319439b3afa207bf568786ed6339f726f7869fe9d91c5ff2c3dca2f1604b",
+      "bytes": 990
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-diagnostic2/artifacts/controller-denied-84-1.json",
+      "sha256": "70226cb67412c466db3853db21edf8e1011d8397595a987036a1a7f98de4aca3",
+      "bytes": 14749
+    }
+  ]
+}

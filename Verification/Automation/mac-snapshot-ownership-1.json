@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "scope": "Private upstream exact-instance snapshot extension; not installed runtime",
+  "runtimeEnabled": false,
+  "inputImplemented": false,
+  "checks": {
+    "pythonStagingTests": 4,
+    "swiftFocusedTests": 6,
+    "review": "Fresh Sol source review; guard regression corrected"
+  },
+  "limitations": [
+    "No actual Mac GUI snapshot executed",
+    "No SDK session propagation, input, product Mac route or physical route",
+    "Initial Swift test command failed on denied global cache; private cache retry passed",
+    "Historical checkpoint; later source changes do not rewrite its hashes"
+  ],
+  "sha256": {
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/scripts/stage_mac_snapshot_ownership.py": "86ab71979757dabf8f653f98e79b5481b3512b886ce618b85e50a354eed20f75",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/mac_snapshot_staging_test.py": "a337cd8b985d2524f74d96176363c0af3adf8611cfbdfc2c49d1780d87381840",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacApplicationTarget.swift": "c3a618ca974b5942e1c27e98c209bff3b9cb8515a13996fa24300cd475e3742e",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacApplicationTargetTests.swift": "95db0d116f282ee566d7e5951091e7524ab0bb8a3c96e2525dcc039c7280101d",
+    "/Users/coryparry/Developer/Projects/Intents/script/automation_test.sh": "36d514764bdfd1e05b0243cd8b122e623089ccfc47b0e70dc8b8431bc9a6f6b9",
+    "/private/tmp/intents-agent-device-native-ownership-source1/acquisition.json": "dd22823391204c06c2abbe63f810335982d379ce7d92f38f533fdd294d7b66bd",
+    "/private/tmp/intents-agent-device-native-ownership-source1/upstream.tar.gz": "2dadf033c359810e0623479206048c6d4696874d1cf6aa03f1b0090a531b2e48",
+    "/private/tmp/intents-agent-device-native-ownership-source1/staging4.json": "f70e3118dddd098dc57103bee760f101cfeaaac003a62a98529b34fd6e1d8ae2",
+    "/private/tmp/intents-agent-device-native-ownership-source1/staging-regressions3.log": "5d8a174d448d59185fd227bcbab9c964e39b10a9c2e28965972cfb0c833dd854",
+    "/private/tmp/intents-agent-device-native-ownership-source1/swift-tests3.log": "4a009e4b17c18935212d789a046c199c219eb56909f5baf0a69491ed3d7dff39",
+    "/private/tmp/intents-agent-device-native-ownership-source1/swift-tests4.log": "f90f99d901f4bb25dc692a63cdc39508576dc9fadf6214a519e5f43bc17ab936"
+  }
+}

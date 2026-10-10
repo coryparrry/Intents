@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "qualification": "url-metadata-1",
+  "date": "2026-10-08",
+  "baseCommit": "05ebebe84",
+  "behavior": [
+    "Unsupported catalog inputs now identify their action and parameter; first50 details plus an additional count are retained.",
+    "All unsupported inputs remain unusable, including inputs whose detail is omitted by the bound.",
+    "No URL, file-URL or Transferable codec is admitted; result projection remains an independent gap."
+  ],
+  "checks": [
+    {
+      "command": "swift test --jobs 2 --filter 'AutomationCatalogTests|AutomationCodecTests|AutomationCollectionCodecTests|AutomationEntityIntegerTests'",
+      "passed": 21,
+      "failures": 0,
+      "skips": 0,
+      "log": "Tools/IntentsAutomation/.runtime/url-metadata-1/swift3.log",
+      "logDigest": "1d9afc6f8b0ffafc865f2511d22a3011d2c99849907f11f534822a29816fde26"
+    },
+    {
+      "command": "swift test --jobs 2 --filter 'AutomationMacHostPreparationTests/testExplicitActualMacPreparationBuildsWithoutLaunching'",
+      "passed": 1,
+      "failures": 0,
+      "skips": 0,
+      "scope": "Controlled source with independent URL input and URL result intents; generated host built and saved preparation reloaded.",
+      "log": "Tools/IntentsAutomation/.runtime/url-metadata-1/swift1.log",
+      "logDigest": "40164a4709aa488ca8c3fec602ce202c737e81c39e1d251309a801386ff9fbe4"
+    }
+  ],
+  "controlledSDK": {
+    "source": "Tools/IntentsAutomation/.runtime/url-metadata-1/Source/Subject.swift",
+    "sourceDigest": "8985e2f118c0b45d0d5e741a5365232561d0e2cba1afe0fafcfc6df827fd3abb",
+    "record": "Tools/IntentsAutomation/.runtime/url-metadata-1/prepare-2C51BCA1-5AF3-41AD-8079-CFC659676C43/prepared-application.json",
+    "recordDigest": "55458db80f9bf31f6795b884bf10e1da5a58db3d1daf03ee3cb8e5d1acd13ae5",
+    "metadata": "Tools/IntentsAutomation/.runtime/url-metadata-1/prepare-2C51BCA1-5AF3-41AD-8079-CFC659676C43/DerivedData/Build/Products/Debug/Subject.app/Contents/Resources/Metadata.appintents/extract.actionsdata",
+    "metadataDigest": "7a7860e6d9150ac18646ae016e5e315165fa1476779dd4e0c73508894869a35a",
+    "generator": "xcode-tools 27A266a",
+    "descriptors": {
+      "URLInputProbeIntent.url": 11,
+      "URLResultProbeIntent.outputType": 11
+    },
+    "hostProductDigest": "5511e31b6f1b06258827d7d4d57823b3be0d0bf16983b4d4d538328c516e9582",
+    "hostTemplateDigest": "28b688fa7e53456382201ff97e37c0c260772709277f514b9de057212383b415",
+    "sourceManifestDigest": "8a24c061dc8b696c290e71a6f8b3a8da7c1cc1711a533cc9c9fda679c652b50a"
+  },
+  "reviews": [
+    "Sol catalog bounds, unknown-input rejection and independent result projection: clear.",
+    "Sol exact source/metadata/provenance and saved-catalog compatibility: clear."
+  ],
+  "compatibility": "Newly read catalog digests include the added gap text; saved catalog bytes and their existing digests remain intact.",
+  "limitations": [
+    "Descriptor extraction and host compilation are independent of successful URL conversion or execution.",
+    "No app, intent, test runner or simulator launched. Native visual/user-flow and release qualification remain open.",
+    "File URL identity, ownership and transfer semantics are not inferred from descriptor11."
+  ]
+}

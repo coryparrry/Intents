@@ -1,0 +1,40 @@
+{
+  "slice": "input-adapter-probe-1",
+  "date": "2026-10-08",
+  "acceptance": "A separate owned calibration path tests fixed selected-parameter setter/readback samples without invoking perform, creating a business receipt or enabling generic codecs.",
+  "implementation": {
+    "selection": "Exact app/product/target/catalog/source/template/host/xctestrun and separately reviewed probe digest;13 fixed primitive/structured/homogeneous-array families; arrays empty/singleton; entities/enums/null/default/omission excluded.",
+    "host": "Dedicated InputAdapterProbeTests/testParameterRoundTrip and payload/receipt purpose;exact definition/instance identity;shared existing setter and typed getter;never AnyAppIntent.run;bounded input/readback.",
+    "owner": "Internal separate lease and owned command flow, unique correlated receipt, exact runner identity/path, independent release quarantine. Checks Stop after lease hop, derivative file digest at final willStart, and Stop/cancellation before final publication.",
+    "compatibility": "Default hostfile purpose remains segment;both stale payload keys removed before setting only the selected one; probe onlyMac.",
+    "authority": "Readback import/report is data only;no capability issuer,live context token,or business-dispatch fields. Customer construction remains unwired pending child-closure qualification."
+  },
+  "verification": {
+    "contractsAndOwner": "91 affected checks passed after fixes;1 final purpose regression passed",
+    "hostBuildOnly": "Actual authored Mac host with dedicated SDK probe entrypoint compiled14.117seconds;no runtime probe/app/intent launch",
+    "applicationBuild": "Official Xcode FoundationEvals My Mac passed23.817seconds,0errors;owned workspace closed",
+    "review": "Two Sol lanes clear;revocation-after-await,publication-after-Stop,final derivative check and optional cleanup path equality fixed/rechecked",
+    "diff": "git diff --check passed",
+    "processRefresh": "Read-only ps no longer finds prior blocking PIDs55592/55434;not a full UID census or child-closure proof"
+  },
+  "limits": [
+    "No real SDK setter/readback qualification performed;synthetic command/release fixtures are not live process evidence.",
+    "No selected-app result getter or perform decode proof;generic apple.codec.* availability stays unqualified.",
+    "Native UI/live child closure,physical Siri/device,controller,distribution and independent-app/user qualification remain incomplete;full M0-M6 not complete.",
+    "No apps or simulators launched by this slice,no push/publication/release."
+  ],
+  "sourceSHA256": {
+    "Integration/AutomationHost/HostPlan.swift": "e1b0ddd426a6ada1abf94d75ad81070ee9ff203c49ad46a1b50a150d04d4291d",
+    "Integration/AutomationHost/HostInputAdapterProbePlan.swift": "82e76c84c8cf4a9bd5bc311073bbe31f425c2d0f99d7e085c08b5fad106edd00",
+    "Integration/AutomationHost/InputAdapterProbeTests.swift": "6b9dd96407e0efa941de5bd83fa5fa77d92a90791110a27f44120ad871db53c1",
+    "Integration/AutomationHost/IntentDefinitionsHost.swift": "82cc6629a86c5f20ad0caa0b7f03320b2c46eae8b2c8f92abb6580b66676c58e",
+    "Sources/IntentsAutomationCore/AutomationInputAdapterProbe.swift": "09addcd11ada88394f0a10271adcd4f85c24761545219f18daf2a677bd5bf498",
+    "Sources/IntentsAutomationCore/AutomationInputAdapterProbeRunner.swift": "42d2c4046bfc9e7a80f83b189b9a5edc021955b204f5c48d50f339feaba652c2",
+    "Sources/IntentsAutomationCore/AutomationHostGenerator.swift": "22e4058c46429effb2815f7ca0f8d894246249c8b5e9d2e25cd2270616bef57b",
+    "Sources/IntentsAutomationCore/AutomationHostReceiptImporter.swift": "645a35f8d67b9a1400c252e666df5106da0c33800772070e305ee7e16fa8319a",
+    "Sources/IntentsAutomationCore/AutomationAppleHostFile.swift": "e57ec2325b1125e284dc174f7d2781713b8f0a1d7549f32abec960507a9279de",
+    "Package.swift": "e363fb121ee42f3fd14048011392246861c3f8a42593d1464adf404765eb0be4",
+    "Tests/IntentsAutomationHostContractTests/InputAdapterProbeContractTests.swift": "2e365ddc6b22a513cb4413c092ca2070cb710dfd76de6250c3566970947a3806",
+    "Tests/IntentsAutomationCoreTests/AutomationInputAdapterProbeRunnerTests.swift": "493a6ce3bf57784825452132d4c3ba05d2b6dff6854d7dda5eebb9783e095b54"
+  }
+}

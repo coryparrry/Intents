@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:17:17.386147+00:00",
+  "scope": "Runtime guided action payloads and bounded SDK close cleanup repair",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "checks": {
+    "tests143": "24 passed",
+    "tests145": "18 passed, delayed shutdown response21s retainsfalse",
+    "sidecar49": "28 passed",
+    "probe26": "build passed",
+    "gitDiffCheck": "passed"
+  },
+  "review": "Fresh Sol guided-schema design/code clear; release review test compilation finding corrected; no confirmed production defect",
+  "limits": [
+    "Native30 build pending",
+    "No actual guided root union response or successful fill yet",
+    "45s response/90s cleanup budgets accommodate observed delay but longer cleanup remains fail closed",
+    "SDK close failure never grants release authority"
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationGuidedNavigationDecision.swift",
+      "sha256": "15c15b9c56d6c2030a16738b547e9f85f8a3d5e37dc9f4f8df95f1fac1d3da43"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "e8745e78bdcf960f9ae86d2c7367819ffffb25214159ae6da4773bdd29b7fd16"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationSidecarShutdown.swift",
+      "sha256": "9cb2cedc2758cfc30f1f32553a0f549d8f2f30fa1dd34cca1cddcf59f7d80cca"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationSidecarRouteDriver.swift",
+      "sha256": "d9073381265c759994d9b450aa66a8ca742f9392deabf8ed04c368b4ec1f45b9"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationSidecarReleaseDiagnostics.swift",
+      "sha256": "bd404edd24832c29c40ac2bd5b27e80cbf9086bde68f573992ec37342214f62f"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCoordinator.swift",
+      "sha256": "ee761b6f04be5206da09b2519869f855eece39fa87574910c382ca26f49a8136"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/deviceSession.ts",
+      "sha256": "6c31adb6b687704fc034d99e3b2171e18701ae9ed15134d8450bb68be805b091"
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/mainLifecycle.test.ts",
+      "sha256": "5132c95339ece69135185108d11ad534f349bb21df76cd0d958ae69341eb0a27"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationGeneratedNavigationDecisionTests.swift",
+      "sha256": "1a6ce290e2906226f0959387d523ad4ff1004efd065aa1392d8f9cbedf3c42f6"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationRPCTests.swift",
+      "sha256": "3f787e288b1a4fac9d6f79d02c48042f9c6221c8cae6c297215512bbaa09c21b"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationSidecarReleaseDiagnosticsTests.swift",
+      "sha256": "bf7500eb46bf9fa3bade098e2556a71a7be62b0e277ee53c31406f601d5cb3d5"
+    }
+  ]
+}

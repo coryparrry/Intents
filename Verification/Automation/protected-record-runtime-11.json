@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:47:10.645812+00:00",
+  "scope": "Actual exact identified controller fill and action timeout boundary",
+  "attemptID": "fresh-owner-exact1",
+  "runtimeBundle": "/private/tmp/IntentsAutomationNativeWorkflowQualification8.app",
+  "probe": "probe28",
+  "fullPlanComplete": false,
+  "fixtureSetupQualified": false,
+  "acceptedExactFillReachedSDK": true,
+  "sdkFillReportedSuccess": true,
+  "sdkFillDurationMs": 36129,
+  "workerActionTimeoutMs": 15011,
+  "completeUIReceipt": false,
+  "independentQuery": false,
+  "subjectDispatched": false,
+  "resourcesReleased": true,
+  "campaignsEmpty": true,
+  "generation": 113,
+  "limits": [
+    "Worker Broker timeout before SDK response; generic engine failure hides mutation uncertainty",
+    "No same-attempt mutation retry",
+    "No record/query/business result qualified",
+    "Cleanup completed after outstanding SDK command"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-exact1/report.json",
+      "sha256": "e051c672202c3f7e92e55adb1b64b6760fed71d950895114095d8f3f3a75c070"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-exact1/journal.json",
+      "sha256": "a23c91bf86f5bdcf1c2a98aa6b8d7cd4e8f0fdab826c5b3fd399213dc5f9f97a"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-exact1/artifacts/controller-112-1.json",
+      "sha256": "e7a34320ba82dc7eaa1e15c6b430de1f7ec0505ee12dcd190e8276c5154c0615"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-exact1/artifacts/sidecar-release-112-1.json",
+      "sha256": "05cfa1d9aab76f3ea538557ac0c227d81ff5ca8685ecf8148724f5f58d615073"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-exact1/ui/control-112/device/sessions/intents-fresh-owner-exact-run1-112/events.ndjson",
+      "sha256": "53201bfc2da79b49c20d6bdbf5214b5be2af8c5373f078b98e478846daa119ef"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T02:44:35.695394+00:00",
+  "scope": "Expected controller target grading and current native compilation",
+  "gradingChangesAuthority": false,
+  "runtimeQualified": false,
+  "nativeUITestExecuted": false,
+  "fullPlanComplete": false,
+  "review": "Fresh Sol v21: no material grader defects; expectations remain outside controller/model call and action validation precedes target grading",
+  "tests": [
+    {
+      "log": "/private/tmp/intents-automation-tests162.log",
+      "passed": 3
+    },
+    {
+      "log": "/private/tmp/intents-automation-tests166.log",
+      "passed": 71
+    }
+  ],
+  "build": {
+    "log": "/private/tmp/intents-automation-native39.log",
+    "result": "BUILD SUCCEEDED",
+    "jobs": 2,
+    "destination": "macOS",
+    "launchPerformed": false
+  },
+  "evidence": [
+    {
+      "path": "Tools/IntentsAutomationControllerProbe/ControllerProbe.swift",
+      "sha256": "d71a3d88252be7ca7e2bcf779f050bc9e86d374be14a82e1068413096b7b6578"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/ControllerSnapshotTargetExpectationTests.swift",
+      "sha256": "b78c938a61342d31c71477b8e6b99a381deead67270e4898ae72ef9d80478076"
+    },
+    {
+      "path": "Package.swift",
+      "sha256": "ee2c94a374c5dbcf7e960e1d0178c40eb427318da70eb438a47f06f8595d75e9"
+    },
+    {
+      "path": "/private/tmp/intents-automation-tests162.log",
+      "sha256": "3ebc0469dc24d29af3adfbebcc98bd4e7d7c9598724f2ba2a4ef80bc3e279bf7"
+    },
+    {
+      "path": "/private/tmp/intents-automation-tests166.log",
+      "sha256": "3fb9e8ee095b686b99ad5ad8f0dfa0423abffccfe6fe3f4408ba07a970c0b145"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native39.log",
+      "sha256": "a5cdc8c29296f69261eb237f5129726c071c2da1194c7ff0ac25d312a49b8dc6"
+    }
+  ]
+}

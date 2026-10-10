@@ -419,9 +419,11 @@ struct RecentRunsTimeline: View {
     let disabled: Bool
     let open: (SuiteOverviewSummary, UUID) -> Void
 
-    private var items: [Item] {
+    private var items: [Item] { Self.recentItems(in: summaries) }
+
+    static func recentItems(in summaries: [SuiteOverviewSummary]) -> [Item] {
         Array(summaries.flatMap { summary in summary.history.map { Item(id: $0.id, suite: summary, point: $0) } }
-            .sorted { $0.point.date > $1.point.date }
+            .sorted { ($0.point.historySequence ?? 0, $0.point.date) > ($1.point.historySequence ?? 0, $1.point.date) }
             .prefix(6))
     }
 

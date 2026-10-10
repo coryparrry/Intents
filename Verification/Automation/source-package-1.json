@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scope": "literal in-root local SwiftPM product/target closure; no manifest evaluation or resolver",
+  "coverage": "partial",
+  "verification": {
+    "focusedSwift": {
+      "passed": 38,
+      "skipped": 0,
+      "failed": 0,
+      "filter": "AutomationPackageManifestTests|AutomationSourceGraphTests|AutomationSourceSyntaxTests|AutomationBuildPlatformTests|AutomationPreparedApplicationRecordTests|AutomationMacHostPreparationTests/testExplicit"
+    },
+    "postBoundsParserAndGraph": {
+      "passed": 23,
+      "skipped": 0,
+      "failed": 0
+    },
+    "finalLibraryTypes": {
+      "passed": 5,
+      "skipped": 0,
+      "failed": 0
+    },
+    "scanner": "package-owned input parsed under its own owner; forged-input SHA rejection passed",
+    "actualMacBuildOnly": "passed; no app/intent launch; explicit Stop and saved reload passed",
+    "reviews": [
+      "Sol static manifest admission: clear after root/product contract fixes",
+      "Sol graph bytes, ownership, workload bounds and exclusions: clear after fixes"
+    ]
+  },
+  "repositoryCoreQualification": {
+    "fixture": "synthetic selected PBX product using actual repository package manifest and reachable source files",
+    "graph": "Tools/IntentsAutomation/.runtime/source-package-1/repository-core-graph.json",
+    "graphFileSHA256": "5313a09acfd396d53f2bcdb2add25db9605c1bdb025b1d822fe647b8824584ac",
+    "sourceManifestDigest": "06a2c4e0c6b1f1159684cac15d6b7ae54882f88573c04edfdce539b90e231237",
+    "targets": [
+      "IntentLabContracts",
+      "IntentsAutomationCore",
+      "IntentsAutomationDateCodec"
+    ],
+    "inputCount": 144,
+    "ownerCounts": {
+      "Package/Package.swift#target:IntentLabContracts": 7,
+      "Package/Package.swift#target:IntentsAutomationCore": 134,
+      "Package/Package.swift#target:IntentsAutomationDateCodec": 3
+    },
+    "unreachableTargets": "excluded",
+    "originalSnapshotSentinel": "passed"
+  },
+  "limits": [
+    "Static literal observations do not establish actual compiler conditions, generated inputs or build consumption.",
+    "Dynamic/conditional manifests and unsupported generator/resource fields retain unavailable membership and precise gaps.",
+    "Transitive external packages and remote checkouts remain unresolved.",
+    "Conservative opaque-directory omissions remain gaps; selected app module cannot be borrowed by package declarations.",
+    "No native rendered UI or live package-intent execution qualified."
+  ],
+  "failureLessons": [
+    "Validate root and product argument contracts as well as target fields.",
+    "Cache parsed manifests and expanded targets; charge every membership comparison to bounded work.",
+    "Ignore known SwiftPM manifest/hidden/project traversal nonmembers."
+  ],
+  "sources": [
+    "https://docs.swift.org/latest/documentation/packagedescription/target/sources/",
+    "https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageLoading/TargetSourcesBuilder.swift"
+  ],
+  "logs": [
+    {
+      "path": "Tools/IntentsAutomation/.runtime/source-package-1/swift-final1.log",
+      "sha256": "3057b4e8daaa6df433ab761a1eae085dd89849dde9dc682329ab8c137831b53d"
+    },
+    {
+      "path": "Tools/IntentsAutomation/.runtime/source-package-1/swift-bounds1.log",
+      "sha256": "2a5aaaa1ece1447484b4488bc78cc051cee6d3734fed65985fd2883af9e9c16a"
+    },
+    {
+      "path": "Tools/IntentsAutomation/.runtime/source-package-1/swift-types1.log",
+      "sha256": "d7d8d5111a38a013d1cb939db2b0dd42a91eb7e18e01c96ff44653aec72ef796"
+    }
+  ]
+}

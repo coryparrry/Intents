@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "date": "2026-10-08",
+  "scope": "prepared native Mac fresh-record draft review and save; no execution",
+  "plan": [
+    "UI-create uniquely named selected and protected records",
+    "query actual entity identities",
+    "invoke selected App Intent using unique query binding",
+    "independently query both resulting states"
+  ],
+  "binding": [
+    "exact prepared app/configuration/build provenance",
+    "current native Mac login session and environment",
+    "review regenerated before save",
+    "changed state/context/destination/configuration/session rejected"
+  ],
+  "execution": "Default planner remains simulator-only. Native Mac application runner, canRun and run requests remain gated. Saving creates no attempt or approval.",
+  "verification": {
+    "command": "swift test --jobs 2 --filter MacFreshDraftStoreTests|AutomationFreshEntityPlannerTests|MacWorkflowStoreTests|SourcePreparationStoreTests",
+    "tests": 30,
+    "failures": 0,
+    "appBuild": "Official Xcode BuildProject, FoundationEvals / My Mac: passed, 17.967 seconds, no errors",
+    "reviews": [
+      "Sol approval/session/persistence lane: clear",
+      "Sol mixed-plan/oracle/simulator compatibility lane: clear"
+    ]
+  },
+  "failedAttempts": [
+    "Initial sandbox compiler cache denied; rerun with existing Swift-test authorization",
+    "First test compilation used nonexistent systemAction kind; corrected to systemIntent"
+  ],
+  "unverified": [
+    "Native UI interaction/rendering remains unverified; prior AX/automation-mode/preview/blank-render failures preserved without unchanged retries",
+    "Associated host invocation, UI input, query receipt and mixed state assertions were not run on this Mac"
+  ],
+  "runtime": "Tools/IntentsAutomation/.runtime/native-mixed-flow-1"
+}

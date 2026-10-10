@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-08",
+  "scope": "Independent authored simulator adapter canaries; source and actual system invocation only",
+  "environment": {
+    "targetID": "A95A3C41-AD87-4B9D-B0A7-D3B79B395902",
+    "macOSBuild": "26B5101f",
+    "architecture": "arm64",
+    "xcodeBuild": "27A266a",
+    "sdkBuild": "24A430",
+    "runnerBuild": "27A252a",
+    "runtimeBuild": "24A434",
+    "hostTemplateDigest": "3d754425fdbc87d8fb542b5e930bcc4b055af679caed5344c6f7cf16abe5eb77",
+    "frameworkSHA256": "ab81429acdc990f72c908ce727693c4a0f4ffd73b0d61d27d14814b8e2de1ce3",
+    "signing": "simulator-ad-hoc"
+  },
+  "verified": [
+    {
+      "family": "text",
+      "reportSHA256": "a6eb54a0435dd12c9bf624e7b43803f15e399c3a58949217162e0f19d564f474",
+      "summary": "executedUnassessed",
+      "resourcesReleased": true
+    },
+    {
+      "family": "bool",
+      "reportSHA256": "a6eb54a0435dd12c9bf624e7b43803f15e399c3a58949217162e0f19d564f474",
+      "summary": "executedUnassessed",
+      "resourcesReleased": true
+    },
+    {
+      "family": "integer",
+      "reportSHA256": "a6eb54a0435dd12c9bf624e7b43803f15e399c3a58949217162e0f19d564f474",
+      "summary": "executedUnassessed",
+      "resourcesReleased": true
+    },
+    {
+      "family": "decimal",
+      "reportSHA256": "a6eb54a0435dd12c9bf624e7b43803f15e399c3a58949217162e0f19d564f474",
+      "summary": "executedUnassessed",
+      "resourcesReleased": true
+    },
+    {
+      "family": "enum",
+      "reportSHA256": "a6eb54a0435dd12c9bf624e7b43803f15e399c3a58949217162e0f19d564f474",
+      "summary": "executedUnassessed",
+      "resourcesReleased": true
+    },
+    {
+      "family": "entity",
+      "reportSHA256": "a6eb54a0435dd12c9bf624e7b43803f15e399c3a58949217162e0f19d564f474",
+      "summary": "executedUnassessed",
+      "resourcesReleased": true
+    },
+    {
+      "family": "integerArray",
+      "reportSHA256": "a6eb54a0435dd12c9bf624e7b43803f15e399c3a58949217162e0f19d564f474",
+      "summary": "executedUnassessed",
+      "resourcesReleased": true
+    }
+  ],
+  "exactOutputs": {
+    "text": {
+      "kind": "text",
+      "value": "Intents Ω 👋"
+    },
+    "bool": {
+      "kind": "bool",
+      "value": true
+    },
+    "integer": {
+      "kind": "integer",
+      "value": "9007199254740993"
+    },
+    "decimal": {
+      "kind": "decimal",
+      "value": "12.5"
+    },
+    "enum": {
+      "kind": "text",
+      "value": "second"
+    },
+    "entity": {
+      "kind": "text",
+      "value": "canary-1"
+    },
+    "optionalNull": {
+      "kind": "text",
+      "value": "<nil>"
+    },
+    "optionalOmitted": {
+      "kind": "text",
+      "value": "<nil>"
+    },
+    "optionalValue": {
+      "kind": "text",
+      "value": "Optional Ω"
+    },
+    "integerArray": {
+      "kind": "array",
+      "value": [
+        {
+          "kind": "integer",
+          "value": "1"
+        }
+      ]
+    }
+  },
+  "evidenceRoot": "Tools/IntentsAutomation/.runtime/simulator-codec-qualification-2",
+  "normalCapabilityProductionIntegerArray": {
+    "reportSHA256": "778e5510ded16f9e0000da14c9e3c21a1a6014ca2f946f53a8085775986d9654",
+    "hostTemplateDigest": "0f812ac7ade31b1bea3056261569882341ac1df5d6bc21decba5d84f570a29e5",
+    "resourcesReleased": true,
+    "note": "Previous template verified in the same process as actual fresh preparation; corrected-template production admission remains to be verified by native workflow"
+  },
+  "unsupported": [
+    "date",
+    "dateArray",
+    "calendar",
+    "duration",
+    "url",
+    "file",
+    "boolArray",
+    "decimalArray",
+    "textArray"
+  ],
+  "fullV3Complete": false,
+  "businessCorrectnessVerified": false
+}

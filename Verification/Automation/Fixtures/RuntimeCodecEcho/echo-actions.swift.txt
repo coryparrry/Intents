@@ -1,0 +1,42 @@
+
+// Pure synthetic echo actions: no repository access, writes, reset, or UI mutation.
+struct QualificationEchoBoolArrayIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo BoolArray"
+    @Parameter(title: "Value") var value: [Bool]
+    func perform() async throws -> some IntentResult & ReturnsValue<[Bool]> { .result(value: value) }
+}
+struct QualificationEchoIntegerArrayIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo IntegerArray"
+    @Parameter(title: "Value") var value: [Int]
+    func perform() async throws -> some IntentResult & ReturnsValue<[Int]> { .result(value: value) }
+}
+struct QualificationEchoDecimalArrayIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo DecimalArray"
+    @Parameter(title: "Value") var value: [Double]
+    func perform() async throws -> some IntentResult & ReturnsValue<[Double]> { .result(value: value) }
+}
+struct QualificationEchoDateArrayIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo DateArray"
+    @Parameter(title: "Value") var value: [Date]
+    func perform() async throws -> some IntentResult & ReturnsValue<[Date]> { .result(value: value) }
+}
+struct QualificationEchoTextArrayIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo TextArray"
+    @Parameter(title: "Value") var value: [String]
+    func perform() async throws -> some IntentResult & ReturnsValue<[String]> { .result(value: value) }
+}
+struct QualificationEchoDateIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo Date"
+    @Parameter(title: "Value") var value: Date
+    func perform() async throws -> some IntentResult & ReturnsValue<Date> { .result(value: value) }
+}
+struct QualificationEchoCalendarIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo Calendar"
+    @Parameter(title: "Value") var value: DateComponents
+    func perform() async throws -> some IntentResult & ReturnsValue<DateComponents> { .result(value: value) }
+}
+struct QualificationEchoDurationIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo Duration"
+    @Parameter(title: "Value") var value: Duration
+    func perform() async throws -> some IntentResult & ReturnsValue<Duration> { .result(value: value) }
+}

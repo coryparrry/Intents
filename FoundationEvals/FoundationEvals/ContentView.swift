@@ -3,15 +3,17 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var store: EvaluationStore
     @State private var productionWorkspace: ProductionWorkspaceStore
+    @State private var automationStore: AppAutomationStore
     @State private var scenarioCoordinator: ScenarioCoordinator
     @Environment(DeveloperRunnerStore.self) private var runners
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
-    init(store: EvaluationStore, control: EvaluationAppControl? = nil) {
+    init(store: EvaluationStore, control: EvaluationAppControl? = nil, automationStore: AppAutomationStore? = nil) {
         self.store = store
         let control = control ?? EvaluationAppControl(store: store)
         _productionWorkspace = State(initialValue: control.production)
         _scenarioCoordinator = State(initialValue: control.scenarios)
+        _automationStore = State(initialValue: automationStore ?? AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation")))
     }
 
     var body: some View {
@@ -23,6 +25,13 @@ struct ContentView: View {
         .frame(minWidth: 1_000, minHeight: 700)
         .toolbar(removing: .title)
         .background { SuiteAutosaveObserver(store: store) }
+        .task {
+            await automationStore.migrateEvidenceHistory()
+            await scenarioCoordinator.refreshAutomationEvidence()
+        }
+        .onChange(of: automationStore.evidenceImportRevision) { _, _ in
+            Task { await scenarioCoordinator.refreshAutomationEvidence() }
+        }
         .onChange(of: runners.activeRuns) { previous, current in
             for status in current.values where [.failed, .timedOut, .disconnected].contains(status.phase) {
                 guard previous[status.id] != status else { continue }
@@ -79,6 +88,8 @@ struct ContentView: View {
             ProductionWorkspaceView(model: productionWorkspace, store: store)
         case .traces:
             WorkspaceTracesView(store: store)
+        case .appAutomation:
+            AppAutomationView(model: automationStore)
         case .suite:
             SuiteEditorView(store: store)
                 .disclosureGroupStyle(FullWidthDisclosureStyle())

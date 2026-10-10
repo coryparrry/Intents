@@ -1,0 +1,8 @@
+{
+  "historicalCheckpoint": "physical-release-source-1.json",
+  "originalMutablePath": "/private/tmp/intents-automation-ui-test-build/Build/Products/Debug/Intents.app/Contents/MacOS/FoundationEvals",
+  "preservedPath": "/private/tmp/intents-automation-native46-executable-preserved/FoundationEvals",
+  "SHA256": "90b13aee62de8b92a69df4da247794f9c4e87cbb186d2b88c667acfa14e82d98",
+  "originalHashMatchedBeforeNative47Link": true,
+  "scope": "Exact historical executable only; no reconstructed full-app claim"
+}

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "scope": "selected-target frozen source graph and separate lexical catalog candidates",
+  "customerRuntimeEnabled": false,
+  "systemDiscoveryComplete": false,
+  "verification": {
+    "focusedSwift": {
+      "registered": 35,
+      "passed": 34,
+      "skipped": 1,
+      "skip": "explicit frozen product intake fixture absent"
+    },
+    "actualMacBuildOnly": {
+      "passed": true,
+      "launched": false,
+      "savedGraphReload": "passed",
+      "sourceSentinel": "passed",
+      "productRecord": "Tools/IntentsAutomation/.runtime/source-graph-1/mac-preparation/prepare-3D59D511-641B-4CCA-8758-3E4C6B80EC24/prepared-application.json",
+      "productRecordSHA256": "598df115890bb0bbd73906e7f3e8499cf43834128295eef82c771fe0c9fb4c6e",
+      "subjectProductDigest": "6df6b92284657edfaca8db69e732b2d27c493c1fd2642c124590be879225ad2d",
+      "graphDigest": "e0f0dbe1d4bafbe85d4f15dbaf07911bea02328f821f8fba18eb1c5629c4db06",
+      "nodeCount": 1,
+      "inputCount": 1,
+      "declarationCount": 1
+    },
+    "reviews": [
+      "Sol frozen bytes, membership, workload budget and restore: clear after fixes",
+      "Sol lexical candidates and catalog/runtime separation: clear"
+    ]
+  },
+  "limits": [
+    "coverage remains partial",
+    "SwiftSyntax/compiler index, active conditions, generated inputs and transitive packages unresolved",
+    "no app launch or intent execution in this qualification",
+    "native interface proof blocked by previously recorded automation-mode timeout"
+  ],
+  "failureLessons": [
+    "Canonical manifest roots must retain their spelling; lexical path normalization avoids Foundation alias rewriting.",
+    "Keep original project bytes separately because host generation rewrites the working copy.",
+    "Reject composed/decomposed Unicode evidence changes using serialized digests, not Swift equality."
+  ],
+  "log": {
+    "path": "Tools/IntentsAutomation/.runtime/source-graph-1/swift-mac-final1.log",
+    "sha256": "74661c69e919ae52227f332f72d7223cc813d0399f5def33abe69ba9f3d35f1b"
+  }
+}

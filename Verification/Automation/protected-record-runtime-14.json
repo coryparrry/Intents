@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T01:55:12.940664+00:00",
+  "scope": "Actual current controller setup, one fresh end-to-end attempt",
+  "attemptID": "fresh-owner-grounded2",
+  "runtimeBundle": "/private/tmp/IntentsAutomationNativeWorkflowQualification11.app",
+  "probe": "probe32",
+  "native": "native35",
+  "fullPlanComplete": false,
+  "fixtureSetupQualified": false,
+  "completeUIReceipt": false,
+  "independentQuery": false,
+  "subjectDispatched": false,
+  "resourcesReleased": true,
+  "campaignsEmpty": true,
+  "generation": 128,
+  "limits": [
+    "navigationStalled after approved name entry and repeated Add task then Personal taps",
+    "Actual later observations contain three new same-name Personal rows, no Work row; UI visibility is not independent durable readback",
+    "The actual fixture retains the name input after saves; repeated approved fills are not a count of saved records",
+    "No retry, reset, learned token or subject dispatch"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/report.json",
+      "sha256": "e625e97d25a122f853dd543c1a6ca87d956e2660952023784a40d45bcf86bccd"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/journal.json",
+      "sha256": "ba83b9c6dcc08ef29bb60113b0d6235c41d237b407dc797e2c5d1948c66f463b"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-1.json",
+      "sha256": "dbc237a76354cc7e164eb2aed6868b0d0d1f320db4375fe0ef88f2251620f4bf"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-2.json",
+      "sha256": "ffacac40bc309e454a24546edbc6ef4ca24e74ecbc6f1029b995dbbca97c48fa"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-3.json",
+      "sha256": "d3a97579408fedf9588c1eea5932f1df6ddc8a564775368aa48354b859225d4e"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-4.json",
+      "sha256": "ae3f703bf3e6253d0061c9d6fa3a5154f221cde4b326623a82cad0354ec7447f"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-5.json",
+      "sha256": "fe5d7ff186c2afcfacbd99e499b71c5c16442af6f131ecc91273131ca07abb06"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-6.json",
+      "sha256": "493f8129b81efb002f2d01686c4b1774d1da6ab21d6ae6a11edc947d5d895baa"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/sidecar-release-127-1.json",
+      "sha256": "a54f5df166e195478fceec6825196f92a0ea085d7dcce71d85b96727c5b92663"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/ui/control-127/runs/fresh-owner-grounded-run2/fresh-owner-grounded2:fixture.create/e2e/report.json",
+      "sha256": "1dc83ed2f0196227a318f868be587a1ed66b61164bfc6633cee48565eeec85cf"
+    }
+  ]
+}

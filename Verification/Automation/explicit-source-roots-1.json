@@ -1,0 +1,40 @@
+{
+  "slice": "explicit-source-roots-1",
+  "date": "2026-10-08",
+  "acceptance": "Explicit disjoint source grants preserve sibling project and local-package topology in a private copy, with bounded capture and exact replay identity.",
+  "implementation": {
+    "authority": "Primary source grant plus at most eight exact canonical disjoint folder grants. Virtual common ancestor is never enumerated. Ungranted leaves, aliases, overlaps, credential folder roots and cross-root symlinks reject.",
+    "snapshot": "Schema2 records original root identities, qualified private paths and exact per-root content digests including dirty/untracked files. Schema1 remains compatible. Shared entry/byte budgets cover each complete capture and original verification pass before file reads.",
+    "integration": "Graph, rebasing, associated host preparation and retained reload use the same layout-relative project path. Ordinary PBXGroups may traverse bounded scaffold ancestors; actual file/package/synchronized roots require a grant. Native returned preparation must match queued build grants; saved fresh drafts retain those grants.",
+    "limits": "Core explicit-grant API is implemented; native additional-folder picker remains missing. Captured tree revisions are content digests, not Git/submodule revisions. Remote/generated/macro/script/compiler consumption remains partial; copied builds are not a security sandbox."
+  },
+  "verification": {
+    "focused": {
+      "registered": 72,
+      "passed": 70,
+      "skipped": 2,
+      "failures": 0,
+      "log": "/private/tmp/intents-multi-root-final-contracts-20261008.log",
+      "command": "swift test --jobs 2 --filter 'AutomationMultiRootSnapshotTests|AutomationMultiRootPreparationTests|AutomationSnapshotTests|AutomationGeneratorTests|AutomationSourceGraphTests|SourcePreparationStoreTests|MacFreshDraftStoreTests'"
+    },
+    "installedSDKBuildOnly": {
+      "passed": 1,
+      "seconds": 16.698,
+      "fixture": "Tools/IntentsAutomation/.runtime/multi-root-1/fixture-7BC22E47-BD97-47BC-9045-107D0216471F",
+      "subjectSHA256": "cebd6406107620c63070663eeb6e0e29a027cf5b76ab2da80c37d676d7706c59",
+      "hostSHA256": "bf7e11f6c820ff98153c18a621aeef7ac6f78c50f98ae0dff03c9bde5ec32b25",
+      "assertions": "App plus Shared sibling package plus transitive Leaf sibling package and external Extra.swift compile, saved preparation reloads, original trees remain identical. No runtime launch or intent dispatch.",
+      "log": "/private/tmp/intents-multi-root-sdk-build-final-20261008.log",
+      "initialFailure": "First actual prepare failed before build due to stale primary-relative isolation path. Corrected to shared layout-relative path; original log retained separately."
+    },
+    "officialAppBuild": {
+      "tool": "Xcode MCP BuildProject",
+      "seconds": 23.84,
+      "errors": 0,
+      "workspaceClosed": true,
+      "runtimeLaunched": false
+    },
+    "reviews": "Two Sol lanes clear: root authority/capture privacy/shared bounds and graph/rebase/preparation/native queued approval/reload. Five findings corrected, including final SDK-caught path mismatch."
+  },
+  "remaining": "Full M0-M6 incomplete. Native extra-root selection, compiler-consumption provenance and existing live ownership/UI/Siri/controller/environment gates remain. No runtime capability promotion, push/publication/release."
+}

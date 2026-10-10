@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T01:50:59.516141+00:00",
+  "scope": "retained snapshot controller contract; no app actions or recipe qualification",
+  "progressChecksPassed": 4,
+  "cases": 5,
+  "fullPlanComplete": false,
+  "runtimeQualified": false,
+  "progressIssues": [
+    "entered-name-after-two-name-approvals finishes without an observed save; approved input counts do not prove saved records"
+  ],
+  "missingStates": [
+    "confirmed empty field",
+    "post-save",
+    "confirmed owner selection"
+  ],
+  "results": {
+    "passed": false,
+    "results": [
+      {
+        "bindingName": "approvedText",
+        "exactObservedTarget": true,
+        "expectedClass": true,
+        "id": "initial-placeholder",
+        "kind": "fill",
+        "nodeID": "node-cd41244f6433093a80f4e243ca21e2d1b52c83c5c611ee21c4737dfa2bf9ef13",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "exactObservedTarget": true,
+        "expectedClass": true,
+        "id": "entered-name-save-visible",
+        "kind": "tap",
+        "nodeID": "node-5aa9b54efe6b401f67195f82278d7c04ec5abbb3260816350e18a265e6b9a891",
+        "nodeName": "Add task",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "exactObservedTarget": true,
+        "expectedClass": true,
+        "id": "entered-name-keyboard-visible",
+        "kind": "tap",
+        "nodeID": "node-5aa9b54efe6b401f67195f82278d7c04ec5abbb3260816350e18a265e6b9a891",
+        "nodeName": "Add task",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "bindingName": "approvedText",
+        "exactObservedTarget": true,
+        "expectedClass": true,
+        "id": "context-in-name-field",
+        "kind": "fill",
+        "nodeID": "node-cd41244f6433093a80f4e243ca21e2d1b52c83c5c611ee21c4737dfa2bf9ef13",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "exactObservedTarget": true,
+        "expectedClass": false,
+        "id": "entered-name-after-two-name-approvals",
+        "kind": "finish",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      }
+    ],
+    "scope": "retained snapshot controller contract; no app actions or recipe qualification"
+  },
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-controller-contract-eval2/profile.json",
+      "sha256": "ba666f246914c00c27f020225aec9de6281bf725fe363eb586cf7cc61d13fe06"
+    },
+    {
+      "path": "/private/tmp/intents-controller-contract-eval2/results.json",
+      "sha256": "c4fa8fcfa84fda5ecce47c1adfe5d295799d919b7b93b4623644553d752546d9"
+    }
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "ff4b04cedf9f0d49ee983726aeaa73629dffbe80444ddddc50754c92687c31ae"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationGuidedNavigationDecision.swift",
+      "sha256": "81529271de781b6bfb4ccbc9e51f2ccf0a48dabb00c9530ef27b2f0ef928f020"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationControllerContextSelection.swift",
+      "sha256": "b76a959325eeb00e5d9f792fce904fc90eb5a0c18967b2e879b3478a70c753df"
+    },
+    {
+      "path": "Tools/IntentsAutomationControllerProbe/ControllerProbe.swift",
+      "sha256": "46d3f910760348c3aa7889444afa09506a6cdc5df2857c14fe751d8f4a6bc8a9"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/nativeController.ts",
+      "sha256": "a29d41a5094c726a97f8a5370051499aaff95f7834141de72a80ddd9ea216167"
+    }
+  ]
+}

@@ -1,0 +1,279 @@
+warning: /Users/coryparry/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/coryparry/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/coryparry/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'intents': failed storing manifest for 'intents' in cache: attempt to write a readonly database
+warning: 'intents': found 28 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/AttachmentStorageDirectorySafetyTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/AutomationMCPTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/CaseImportBoundedReadTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/DeveloperRunPresentationTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EditorPerformanceTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationCompatibleJudgeClientTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationDevelopmentWorkflowTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationExperimentRunnerFatalStopTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationJudgeIntegrityTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationWorkspaceRepairTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationWorkspaceStateMigrationTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/ExternalJudgeFailureTraceTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/IntentLabArrayInputTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/IntentLabRegressionTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/JudgmentCorrectionPersistenceTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/PromptTextEditorTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/QuickActionsPillViewModelTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/ReferenceSharedAdmissionTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/ResultPresentationTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/ScenarioAcceptanceTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/ScoringAttributionTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/SelectedAssessmentCoverageTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/StructuredFeatureEvidenceTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/SubjectEvidenceCompletenessTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/SuiteRunActionTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/UISnapshotTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/WorkspacePresentationTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/WorkspaceResetTests.swift
+warning: 'intents': found 8 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/EditorSection.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/PromptQuickActionsSection.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/QuickActionsPill.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/QuickActionsPillMotion.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/QuickActionsPillPhaseLayout.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/WorkspaceIcon.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/WorkspacePaneLayout.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/WorkspaceStyle.swift
+warning: 'intents': found 19 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Models/DevelopmentWorkflowModels.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Models/WorkspacePresentation.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationCaseImporter.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationCompatibleJudgeClient.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationCompatibleJudgeResponse.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationDeveloperFeatureAdapter.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationDevelopmentAnalysis.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationExperimentRunner.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationFeatureAdapter.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationReassessmentService.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationStarterPacks.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationWorkspacePersistence.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/ModelContextSizeCache.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/QuickActionsRewriteService.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/ScenarioCoordinator.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/ScenarioFeatureEvidence.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/ScenarioResponseAssessmentService.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/ScenarioSuggestionService.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/WorkspaceOverviewLoader.swift
+Building for debugging...
+[Computing dependencies]
+[Using on-disk description]
+[1 / 1]
+[1 / 73] IntentsAutomationCoreTests-product
+[1 / 46] IntentLabTesting
+[2 / 40] IntentsAutomationCore
+[4 / 42] IntentsAutomationCore
+[8 / 36] IntentsAutomationCore
+[9 / 36] IntentsAutomationCore
+[12 / 28] IntentsAutomationNativeUITests-product
+[13 / 28] IntentsAutomationHostContractTests-product
+[15 / 32] IntentsAutomationCore-product
+[16 / 32] IntentsAutomationExecutionProbe-product
+[18 / 32] IntentsAutomationPreparationProbe-product
+[20 / 32] IntentsAutomationNativeUITests-product
+[25 / 35] FoundationEvalsPortableTests-product
+[27 / 33] IntentsAutomationControllerProbe-product
+[29 / 30] IntentsAutomationCoreTests-product
+[31 / 33] IntentsAutomationCoreTests-product
+[32 / 32] IntentsAutomationPreparationProbe-product
+[34 / 34] IntentsAutomationExecutionProbe-product
+Build complete! (16.79 secs)
+Test Suite 'Selected tests' started at 2026-10-07 11:02:58.664 pm.
+Test Suite 'IntentsAutomationNativeUITests.xctest' started at 2026-10-07 11:02:58.667 pm.
+Test Suite 'IntentsAutomationNativeUITests.xctest' passed at 2026-10-07 11:02:58.667 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-07 11:02:58.667 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.003) seconds
+Test Suite 'Selected tests' started at 2026-10-07 11:02:58.880 pm.
+Test Suite 'IntentsAutomationHostContractTests.xctest' started at 2026-10-07 11:02:58.883 pm.
+Test Suite 'IntentsAutomationHostContractTests.xctest' passed at 2026-10-07 11:02:58.883 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-07 11:02:58.883 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.003) seconds
+Test Suite 'Selected tests' started at 2026-10-07 11:02:59.042 pm.
+Test Suite 'IntentsAutomationCoreTests.xctest' started at 2026-10-07 11:02:59.045 pm.
+Test Suite 'AutomationContractsTests' started at 2026-10-07 11:02:59.045 pm.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC01RejectsUnknownKeysMalformedExactNumbersAndDepth]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC01RejectsUnknownKeysMalformedExactNumbersAndDepth]' passed (0.003 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC01SharedTaggedValueGoldenRoundTrip]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC01SharedTaggedValueGoldenRoundTrip]' passed (0.010 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC01UnicodeLimitsMatchJavaScriptCodeUnits]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC01UnicodeLimitsMatchJavaScriptCodeUnits]' passed (0.002 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC04UndrainedCommandsAndUnverifiedTerminationRetainLease]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC04UndrainedCommandsAndUnverifiedTerminationRetainLease]' passed (0.001 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC05JournalRejectsConflictingAndAmbiguousRedispatchAfterReopen]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC05JournalRejectsConflictingAndAmbiguousRedispatchAfterReopen]' passed (0.007 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC06MacControlSerializesWholeLoginSession]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC06MacControlSerializesWholeLoginSession]' passed (0.000 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC14PopulationRetainsNotRunAndUnassessed]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC14PopulationRetainsNotRunAndUnassessed]' passed (0.001 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC14TimedOutAndUncertainDispatchRemainInUnresolvedPopulation]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC14TimedOutAndUncertainDispatchRemainInUnresolvedPopulation]' passed (0.000 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC15MissingBusinessEvidenceCannotPass]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC15MissingBusinessEvidenceCannotPass]' passed (0.000 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC20SuccessTextDoesNotProvePersistedChange]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC20SuccessTextDoesNotProvePersistedChange]' passed (0.000 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC21ObserverCannotRepairSubject]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC21ObserverCannotRepairSubject]' passed (0.001 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC29CrashIsUnresolvedEvenIfOldObservationsExist]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testC29CrashIsUnresolvedEvenIfOldObservationsExist]' passed (0.000 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testCompleteIndependentStatePassesButWrongIdentityAndDuplicatesDoNot]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testCompleteIndependentStatePassesButWrongIdentityAndDuplicatesDoNot]' passed (0.000 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testReviewJournalInstancesCannotRedispatch]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testReviewJournalInstancesCannotRedispatch]' passed (0.005 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testReviewLiveEnvironmentCannotReset]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testReviewLiveEnvironmentCannotReset]' passed (0.000 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testReviewWrongRouteAndUndispatchedStateCannotPass]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testReviewWrongRouteAndUndispatchedStateCannotPass]' passed (0.000 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testTaggedValueEncodingRejectsInvalidDatesPathsAndExactNumbers]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationContractsTests testTaggedValueEncodingRejectsInvalidDatesPathsAndExactNumbers]' passed (0.002 seconds).
+Test Suite 'AutomationContractsTests' passed at 2026-10-07 11:02:59.083 pm.
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.035 (0.038) seconds
+Test Suite 'AutomationMacSecureSinkTests' started at 2026-10-07 11:02:59.083 pm.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testChangedSecureRoleOrExactContextCannotSubmit]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testChangedSecureRoleOrExactContextCannotSubmit]' passed (0.002 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testCloseDrainsHeldContextAndPreventsLatePin]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testCloseDrainsHeldContextAndPreventsLatePin]' passed (0.002 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testConsentAndRunAuthorityComposeWithRetainedNativeAdapter]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testConsentAndRunAuthorityComposeWithRetainedNativeAdapter]' passed (0.010 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testExpiredOperationRetainsActualWorkAndRefusesLateSubmission]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testExpiredOperationRetainsActualWorkAndRefusesLateSubmission]' passed (0.035 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testForeignScopeFingerprintAndApprovalDeniedBeforeInput]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testForeignScopeFingerprintAndApprovalDeniedBeforeInput]' passed (0.001 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testLeaseFenceRejectsReleaseDuringSynchronousValidation]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testLeaseFenceRejectsReleaseDuringSynchronousValidation]' passed (0.003 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testReplacementObjectAtSamePointCannotInheritConsent]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testReplacementObjectAtSamePointCannotInheritConsent]' passed (0.001 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testRetainedSinkWorksOnlyOnceAndHasNoCredentialReadbackAPI]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testRetainedSinkWorksOnlyOnceAndHasNoCredentialReadbackAPI]' passed (0.001 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testSessionCannotWriteAfterLeaseEndsDuringSubmitContext]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testSessionCannotWriteAfterLeaseEndsDuringSubmitContext]' passed (0.008 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testStopCancelsBlockedSynchronousValidationBeforeWrite]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testStopCancelsBlockedSynchronousValidationBeforeWrite]' passed (0.024 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testUncertainWriteSanitizesAndConsumesWithoutRetry]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationMacSecureSinkTests testUncertainWriteSanitizesAndConsumesWithoutRetry]' passed (0.001 seconds).
+Test Suite 'AutomationMacSecureSinkTests' passed at 2026-10-07 11:02:59.173 pm.
+	 Executed 11 tests, with 0 failures (0 unexpected) in 0.089 (0.090) seconds
+Test Suite 'AutomationNativeInputLeaseFenceTests' started at 2026-10-07 11:02:59.173 pm.
+Test Case '-[IntentsAutomationCoreTests.AutomationNativeInputLeaseFenceTests testDurableFenceRereadsIndependentStoreMutation]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationNativeInputLeaseFenceTests testDurableFenceRereadsIndependentStoreMutation]' passed (0.007 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationNativeInputLeaseFenceTests testFailedReleaseRetainsLeaseButForeignAndSystemLeasesCannotIssueFence]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationNativeInputLeaseFenceTests testFailedReleaseRetainsLeaseButForeignAndSystemLeasesCannotIssueFence]' passed (0.001 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationNativeInputLeaseFenceTests testFenceTracksExactLeaseAndNeverReactivatesForNextGeneration]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationNativeInputLeaseFenceTests testFenceTracksExactLeaseAndNeverReactivatesForNextGeneration]' passed (0.000 seconds).
+Test Suite 'AutomationNativeInputLeaseFenceTests' passed at 2026-10-07 11:02:59.181 pm.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.008 (0.008) seconds
+Test Suite 'AutomationSecretConsentTests' started at 2026-10-07 11:02:59.182 pm.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testCallerCancellationRetainsUncooperativeValidationUntilDrained]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testCallerCancellationRetainsUncooperativeValidationUntilDrained]' passed (0.005 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testCancelDrainsHeldConfirmWithoutDisclosingHandle]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testCancelDrainsHeldConfirmWithoutDisclosingHandle]' passed (0.005 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testCancelDrainsHeldPrepareWithoutLateReadiness]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testCancelDrainsHeldPrepareWithoutLateReadiness]' passed (0.004 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testChangedGenerationCannotPrepare]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testChangedGenerationCannotPrepare]' passed (0.003 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testDifferentFullApprovalCannotReachSinkReviewOrCollectInput]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testDifferentFullApprovalCannotReachSinkReviewOrCollectInput]' passed (0.003 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testFreshSinkFailureAfterPrepareSanitizesErrorAndRevokesSession]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testFreshSinkFailureAfterPrepareSanitizesErrorAndRevokesSession]' passed (0.004 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testLeaseReleaseDuringBoundHandleValidationCannotPublishConsent]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testLeaseReleaseDuringBoundHandleValidationCannotPublishConsent]' passed (0.005 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testLeaseReleaseDuringFreshConsentCheckCannotDiscloseHandle]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testLeaseReleaseDuringFreshConsentCheckCannotDiscloseHandle]' passed (0.005 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testPrepareWithholdsEvidenceBeforeInputAndConfirmReturnsOnlyBoundHandle]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testPrepareWithholdsEvidenceBeforeInputAndConfirmReturnsOnlyBoundHandle]' passed (0.005 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testReviewRequiresStrongMacCaseSessionAndWritableEffect]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretConsentTests testReviewRequiresStrongMacCaseSessionAndWritableEffect]' passed (0.002 seconds).
+Test Suite 'AutomationSecretConsentTests' passed at 2026-10-07 11:02:59.224 pm.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 0.041 (0.043) seconds
+Test Suite 'AutomationSecretFillTests' started at 2026-10-07 11:02:59.224 pm.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testActualOpaqueNodeWorkerUsesNativeRPCWithSpecialKeysWithoutReceivingCredential]' started.
+/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationSecretFillTests.swift:446: -[IntentsAutomationCoreTests.AutomationSecretFillTests testActualOpaqueNodeWorkerUsesNativeRPCWithSpecialKeysWithoutReceivingCredential] : Test skipped - Requires compiled opaque source worker and explicit owned Node test path
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testActualOpaqueNodeWorkerUsesNativeRPCWithSpecialKeysWithoutReceivingCredential]' skipped (0.002 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testAlteredReferenceSinkAndFingerprintCannotDispatch]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testAlteredReferenceSinkAndFingerprintCannotDispatch]' passed (0.003 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testCancellationDuringDispatchRetainsAndDrainsUncertainOwnership]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testCancellationDuringDispatchRetainsAndDrainsUncertainOwnership]' passed (0.005 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testChangedAppTargetEnvironmentScopeAndUseBudgetCannotBind]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testChangedAppTargetEnvironmentScopeAndUseBudgetCannotBind]' passed (0.002 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testDefaultBackendRefusesWithoutResolvingOrTainting]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testDefaultBackendRefusesWithoutResolvingOrTainting]' passed (0.002 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testDifferentApprovalOrMissingOrDifferentFenceCannotBind]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testDifferentApprovalOrMissingOrDifferentFenceCannotBind]' passed (0.012 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testEvidenceExposureAndSecretAdmissionExcludeEachOther]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testEvidenceExposureAndSecretAdmissionExcludeEachOther]' passed (0.005 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testExpiryDuringSinkValidationPreventsDispatch]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testExpiryDuringSinkValidationPreventsDispatch]' passed (0.003 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testFailedTaintPersistencePreventsSecretDispatch]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testFailedTaintPersistencePreventsSecretDispatch]' passed (0.005 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testLeaseChangedDuringSinkValidationPreventsDispatch]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testLeaseChangedDuringSinkValidationPreventsDispatch]' passed (0.003 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testOpaqueBindingAndReceiptNeverSerializeCredentialAndConsentIsOneUse]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testOpaqueBindingAndReceiptNeverSerializeCredentialAndConsentIsOneUse]' passed (0.004 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testOpaqueProgramMappingDispatchesOnceAndNeverSerializesCredential]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testOpaqueProgramMappingDispatchesOnceAndNeverSerializesCredential]' passed (0.007 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testRevocationAcrossSecretRegistrationLeaseReadCannotPublishHandle]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testRevocationAcrossSecretRegistrationLeaseReadCannotPublishHandle]' passed (0.004 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testRevocationOrExpiryDuringFinalLeaseCheckCannotReturnReceipt]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testRevocationOrExpiryDuringFinalLeaseCheckCannotReturnReceipt]' passed (0.009 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testRevocationWhileValidationIsSuspendedDrainsAndNeverDispatches]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testRevocationWhileValidationIsSuspendedDrainsAndNeverDispatches]' passed (0.004 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretBrokerRejectsChangedScopeOperationBindingReferenceAndExtraValueBeforeDispatch]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretBrokerRejectsChangedScopeOperationBindingReferenceAndExtraValueBeforeDispatch]' passed (0.005 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretBrokerRevokeDrainsActualUncooperativeSubmissionBeforeReturning]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretBrokerRevokeDrainsActualUncooperativeSubmissionBeforeReturning]' passed (0.004 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretBrokerSanitizesAdapterErrorAndConsumesMapping]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretBrokerSanitizesAdapterErrorAndConsumesMapping]' passed (0.006 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretMappingDrainWaitsForSuspendedRegistrationValidation]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretMappingDrainWaitsForSuspendedRegistrationValidation]' passed (0.003 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretMappingRejectsObserverAndAmbiguousDeclarationsAndPublicOperationDecode]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretMappingRejectsObserverAndAmbiguousDeclarationsAndPublicOperationDecode]' passed (0.003 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretRegistrationRequiresExactLiveSessionEntryAndUniqueOperationAndReference]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecretRegistrationRequiresExactLiveSessionEntryAndUniqueOperationAndReference]' passed (0.004 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecureSinkValidationRejectsWithoutResolution]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSecureSinkValidationRejectsWithoutResolution]' passed (0.003 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSharedAuthorityIsRequiredEvenWithValidSecretConsent]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSharedAuthorityIsRequiredEvenWithValidSecretConsent]' passed (0.004 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSharedFenceBlocksOtherAttemptAndSurvivesReload]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testSharedFenceBlocksOtherAttemptAndSurvivesReload]' passed (0.013 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testTaintDeniesOldNewDerivedAndCrossSegmentArtifactsAcrossRegistries]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testTaintDeniesOldNewDerivedAndCrossSegmentArtifactsAcrossRegistries]' passed (0.011 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testTaintedControllerRequestIsDeniedBeforeProviderDispatch]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testTaintedControllerRequestIsDeniedBeforeProviderDispatch]' passed (0.013 seconds).
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testUncertainAdapterFailureIsSanitizedNeverRetriedAndRetainsTaint]' started.
+Test Case '-[IntentsAutomationCoreTests.AutomationSecretFillTests testUncertainAdapterFailureIsSanitizedNeverRetriedAndRetainsTaint]' passed (0.005 seconds).
+Test Suite 'AutomationSecretFillTests' passed at 2026-10-07 11:02:59.373 pm.
+	 Executed 27 tests, with 1 test skipped and 0 failures (0 unexpected) in 0.145 (0.149) seconds
+Test Suite 'IntentsAutomationCoreTests.xctest' passed at 2026-10-07 11:02:59.373 pm.
+	 Executed 68 tests, with 1 test skipped and 0 failures (0 unexpected) in 0.317 (0.328) seconds
+Test Suite 'Selected tests' passed at 2026-10-07 11:02:59.373 pm.
+	 Executed 68 tests, with 1 test skipped and 0 failures (0 unexpected) in 0.317 (0.331) seconds
+Test Suite 'Selected tests' started at 2026-10-07 11:02:59.583 pm.
+Test Suite 'IntentLabResultCaptureTests.xctest' started at 2026-10-07 11:02:59.586 pm.
+Test Suite 'IntentLabResultCaptureTests.xctest' passed at 2026-10-07 11:02:59.586 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-07 11:02:59.586 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+Test Suite 'Selected tests' started at 2026-10-07 11:02:59.798 pm.
+Test Suite 'IntentLabContractsTests.xctest' started at 2026-10-07 11:02:59.800 pm.
+Test Suite 'IntentLabContractsTests.xctest' passed at 2026-10-07 11:02:59.800 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-07 11:02:59.800 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+Test Suite 'Selected tests' started at 2026-10-07 11:03:00.073 pm.
+Test Suite 'FoundationEvalsPortableTests.xctest' started at 2026-10-07 11:03:00.077 pm.
+Test Suite 'FoundationEvalsPortableTests.xctest' passed at 2026-10-07 11:03:00.077 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-07 11:03:00.077 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.004) seconds
+Test Suite 'Selected tests' started at 2026-10-07 11:03:00.365 pm.
+Test Suite 'FoundationEvalsDeveloperTests.xctest' started at 2026-10-07 11:03:00.368 pm.
+Test Suite 'FoundationEvalsDeveloperTests.xctest' passed at 2026-10-07 11:03:00.368 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-07 11:03:00.369 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.004) seconds

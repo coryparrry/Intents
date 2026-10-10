@@ -1,0 +1,88 @@
+import AppIntents
+import Foundation
+
+struct TaskEntity: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Task"
+    static let defaultQuery = TaskQuery()
+    var id: String
+    @Property(title: "Title") var title: String
+    @Property(title: "Account") var owner: String
+    @Property(title: "Completed") var completed: Bool
+    @Property(title: "Control") var control: String
+    var displayRepresentation: DisplayRepresentation { .init(title: "\(title)", subtitle: "\(owner)") }
+    init(_ record: TaskRecord, control: TaskControl) {
+        id = record.id; title = record.title; owner = record.owner; completed = record.completed
+        self.control = control.rawValue
+    }
+}
+struct TaskQuery: EntityStringQuery {
+    func entities(for identifiers: [String]) async throws -> [TaskEntity] {
+        let document = try await TaskRepository.shared.persistedDocument()
+        return document.records.filter { identifiers.contains($0.id) }.map { TaskEntity($0, control: document.control) }
+    }
+    func entities(matching string: String) async throws -> [TaskEntity] {
+        let document = try await TaskRepository.shared.persistedDocument()
+        return document.records.filter { $0.title.localizedCaseInsensitiveContains(string) }.map { TaskEntity($0, control: document.control) }
+    }
+    func suggestedEntities() async throws -> [TaskEntity] {
+        let document = try await TaskRepository.shared.persistedDocument()
+        return document.records.map { TaskEntity($0, control: document.control) }
+    }
+}
+struct CompleteTaskIntent: AppIntent {
+    static let title: LocalizedStringResource = "Complete task"
+    static let openAppWhenRun = false
+    @Parameter(title: "Task") var task: TaskEntity
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        try await TaskRepository.shared.complete(id: task.id)
+        return .result(dialog: "Task marked complete.")
+    }
+}
+
+// Independent installed-SDK codec declarations; compilation only, never business proof.
+struct MetadataCollectionsAndTimeIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata collections and time"
+    @Parameter(title: "Flags") var flags: [Bool]
+    @Parameter(title: "Counts") var counts: [Int]
+    @Parameter(title: "Amounts") var amounts: [Double]
+    @Parameter(title: "Dates") var dates: [Date]
+    @Parameter(title: "Calendar") var calendar: DateComponents
+    @Parameter(title: "Duration") var duration: Duration
+    func perform() async throws -> some IntentResult { .result() }
+}
+struct MetadataDateResultIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata Date result"
+    func perform() async throws -> some IntentResult & ReturnsValue<Date> { .result(value: Date(timeIntervalSince1970: 0)) }
+}
+struct MetadataCalendarResultIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata calendar result"
+    func perform() async throws -> some IntentResult & ReturnsValue<DateComponents> { .result(value: DateComponents(year: 2026, month: 10, day: 6)) }
+}
+struct MetadataDurationResultIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata duration result"
+    func perform() async throws -> some IntentResult & ReturnsValue<Duration> { .result(value: .seconds(1)) }
+}
+struct MetadataBoolArrayResultIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata bool array result"
+    func perform() async throws -> some IntentResult & ReturnsValue<[Bool]> { .result(value: [true, false]) }
+}
+
+struct MetadataIntegerArrayResultIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata integer array result"
+    func perform() async throws -> some IntentResult & ReturnsValue<[Int]> { .result(value: [1, 2]) }
+}
+
+struct MetadataDecimalArrayResultIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata decimal array result"
+    func perform() async throws -> some IntentResult & ReturnsValue<[Double]> { .result(value: [1.25, 2]) }
+}
+
+struct MetadataTextArrayResultIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata text array result"
+    func perform() async throws -> some IntentResult & ReturnsValue<[String]> { .result(value: ["one", "two"]) }
+}
+
+struct MetadataDateArrayResultIntent: AppIntent {
+    static let title: LocalizedStringResource = "Metadata date array result"
+    func perform() async throws -> some IntentResult & ReturnsValue<[Date]> { .result(value: [Date(timeIntervalSince1970: 0)]) }
+}

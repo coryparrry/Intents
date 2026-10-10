@@ -1,0 +1,38 @@
+{
+  "buildLog": {
+    "path": "/private/tmp/intents-automation-physical-fixture-build1.log",
+    "sha256": "8137f980721d528f57bbcf1119472689768381e03882ee8f21348425ea0b1dcb"
+  },
+  "existingProfilesProvisionTarget": true,
+  "installed": false,
+  "launched": false,
+  "products": [
+    {
+      "bundleID": "com.coryparry.IntentLabFixture",
+      "executable": "IntentLabFixture",
+      "executableSHA256": "7feeb3bcdf7e334b6339f13d4eb7106bff765413fbc45a24bbe95664c173bf30",
+      "path": "/private/tmp/intents-automation-physical-fixture-build1/Build/Products/Debug-iphoneos/IntentLabFixture.app"
+    },
+    {
+      "bundleID": "com.coryparry.IntentLabFixtureV2UITests.xctrunner",
+      "executable": "IntentLabFixtureV2UITests-Runner",
+      "executableSHA256": "f4ef3ac47b6be11bf1feb7ea7be54558118748eb22e473e9c01c6010e19c670f",
+      "path": "/private/tmp/intents-automation-physical-fixture-build1/Build/Products/Debug-iphoneos/IntentLabFixtureV2UITests-Runner.app"
+    },
+    {
+      "bundleID": "com.coryparry.IntentLabFixtureV2UITests",
+      "executable": "IntentLabFixtureV2UITests",
+      "executableSHA256": "8f4d8a6b7f63ca6ee3a7065a7f807439265c17e138adcafabfa8786bb54f7446",
+      "path": "/private/tmp/intents-automation-physical-fixture-build1/Build/Products/Debug-iphoneos/IntentLabFixtureV2UITests-Runner.app/PlugIns/IntentLabFixtureV2UITests.xctest"
+    }
+  ],
+  "schemaVersion": 1,
+  "scope": "Existing-profile signed synthetic fixture preparation only",
+  "signaturesVerified": true,
+  "siriQualified": false,
+  "targetUDID": "00008140-000E4D803C0B001C",
+  "xctestrun": {
+    "path": "/private/tmp/intents-automation-physical-fixture-build1/Build/Products/IntentLabFixtureV2_iphoneos27.0-arm64.xctestrun",
+    "sha256": "fe252a9a045f1aad527d31e7fab7c812c366c7bd60e34bb6ae8fe38f05ac3cae"
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-09T18:05:06.916968+00:00",
+  "baseRevision": "2ef58a3d965d5bc79d03ffcf4e04531fc984ac80",
+  "branch": "codex/intents-v3-implementation",
+  "evidenceLevel": "source-and-local-regression-tests",
+  "fullV3Acceptance": false,
+  "checks": {
+    "focusedSwift": {
+      "registered": 1257,
+      "skipped": 39,
+      "failures": 0
+    },
+    "sidecarAndPatches": {
+      "registered": 245,
+      "skipped": 18,
+      "failures": 0
+    },
+    "nativeMCP": {
+      "passed": 31,
+      "failures": 0,
+      "resultBundle": "/private/tmp/intents-v3-pr-mcp-tests-20261009.xcresult"
+    },
+    "python": {
+      "release": 5,
+      "routes": 32,
+      "cli": 31,
+      "packagingContracts": 21
+    }
+  },
+  "sourceSHA256": {
+    "Package.swift": "eab533b4a694bfa0c1099a33b328c5ca61787b9f6cb04589d1ad419c979b1994",
+    "Sources/IntentLabCoreTesting/IntentLabCoreScenarioRunner.swift": "27b6daa0a626bbdc790c2a2e400a78df43e291124e421ee6152096b14ad3215b",
+    "Sources/IntentLabCoreTesting/IntentLabRunnerReceiptWriter.swift": "d5ce90d478d7207326f7800aa252f8bff5682fdee868a5cc4641d2954a8755a2",
+    "Sources/IntentsAutomationCore/AutomationApplicationRunner.swift": "73c6d81012a3a682140d862bbe11ff5f63f32beea37728c962a18d934c8b83b1",
+    "Sources/IntentsAutomationCore/AutomationPreparedPhysicalCampaign.swift": "08e773295c981ec8b33616dc3bce2c2b72ff487e141b98c4f44a6f3ca9fe71db",
+    "Sources/IntentsAutomationCore/AutomationSiriQualification.swift": "ee616fa575b4264b8cda972a5ea6da95f4d06fe1c9da1f35ee21c24a856b6659",
+    "FoundationEvals/FoundationEvals/Services/XcodeTestExecutor.swift": "42f7c41090110a929ef3eea90348b99b669577486654137017c7aa76e0920d78",
+    "FoundationEvals/FoundationEvals/Services/ScenarioPersistence.swift": "db23d5b58943691df897ccb13a24ece51da22aa7f77934575e0f6a3ea35e9c89",
+    "FoundationEvals/FoundationEvals/Services/ScenarioCoordinator.swift": "e53077587be5f42d2aeea64dcabc8eed24e4a0b1691fd13eb1018e6a0308ca06",
+    "FoundationEvals/FoundationEvals/MCP/MCPToolCatalog.swift": "143f407b372e6cadd5debe25c28662e6fbf05c06343508904843bf1c17eed3bc",
+    "FoundationEvals/FoundationEvals/FoundationEvalsApp.swift": "efd1fa9a328b5d0c78d25233329616ced194ba0a5ecd452c249df66fd8d8cb0b",
+    "FoundationEvals/FoundationEvalsTests/AutomationMCPTests.swift": "195e70760d61c8370d60fc296d2f77e0faa6100b3a8f4ab9ee90ad9c088d6ad3",
+    "FoundationEvals/FoundationEvalsTests/ScenarioPhysicalFailureTests.swift": "63d495019ba60193a6a9efa025343da82548d0019af4559a2eb921c5664bd896"
+  },
+  "logs": {
+    "swift": {
+      "path": "/private/tmp/intents-v3-pr-swift-4.log",
+      "sha256": "02e14d28503de971bca8ee2acbedde006c2f45562bc1082a35c502ff8bdfd11f"
+    },
+    "sidecar": {
+      "path": "/private/tmp/intents-v3-pr-sidecar-1.log",
+      "sha256": "5fa4484268c373036e8ba8b4469794034880b62172ada3385c12e76275ec0126"
+    },
+    "release": {
+      "path": "/private/tmp/intents-v3-pr-release-1.log",
+      "sha256": "ca76744327089c276a02427853b9a7935b4f82f470d9f474cac1b12a5c19c0c9"
+    },
+    "routes": {
+      "path": "/private/tmp/intents-v3-pr-routes-2.log",
+      "sha256": "c2327820c6933f3b90f6e186f182a2c1e50c15392365781e230a8fbd68c9c875"
+    },
+    "cli": {
+      "path": "/private/tmp/intents-v3-pr-cli-1.log",
+      "sha256": "00a3f22119f126d436fd80d81367d72c41ab8b493573b7dae27bc33bdb1cfb63"
+    },
+    "contracts": {
+      "path": "/private/tmp/intents-v3-pr-contracts-1.log",
+      "sha256": "b975f21fc36900d09e02e66ed5b8b90f29685e9d834e49485dc354245946626f"
+    },
+    "manifest": {
+      "path": "/private/tmp/intents-v3-pr-manifest-1.log",
+      "sha256": "3884f83255b63480b178b50a1cdd1576f7134f9a64ac130ceed6487a1c8b4e36"
+    },
+    "sdkPatch": {
+      "path": "/private/tmp/intents-v3-pr-sdk-patch-1.log",
+      "sha256": "587c11fc825fbaabd1b7b86835640a35faeaed7049f905fc8b5d652271d7a733"
+    },
+    "budgetPatch": {
+      "path": "/private/tmp/intents-v3-pr-budget-patch-1.log",
+      "sha256": "4e021d7f96e6eac31fb17b93dc383dc118c8843e375054819ae2700fbc7bb5be"
+    },
+    "native": {
+      "path": "/private/tmp/intents-v3-pr-native-tests-1.log",
+      "sha256": "f734911ecf9d9cf103b1cb3b8959b06214d8f6226cfbe4650b41db334d893c50"
+    }
+  },
+  "review": [
+    "legacy physical lifecycle and independent acceptance/release",
+    "native app, MCP, CLI, package and CI wiring"
+  ],
+  "preservation": "Earlier website and UI content is already on GitHub; current main and unrelated primary work are preserved.",
+  "limitations": [
+    "No new live fresh fixture, reproduction or same-oracle comparison pass",
+    "No physical Siri/device qualification",
+    "No clean-host, Intel or distribution qualification",
+    "Earlier live/signing evidence belongs only to the recorded earlier snapshots"
+  ]
+}

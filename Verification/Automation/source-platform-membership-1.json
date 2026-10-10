@@ -1,0 +1,28 @@
+{
+  "slice": "source-platform-membership-1",
+  "date": "2026-10-08",
+  "acceptance": "Selected-target PBX platform filters use exact observed product settings; inactive or unresolved declarations cannot become active source candidates. Coverage remains partial.",
+  "implementation": {
+    "context": "Selected original target/project/configuration, platform/SDK family, exact settings SHA, captured developer path; optional context preserves legacy nil graphs.",
+    "membership": "Known well-formed filters on selected app target only; matching sources parsed, nonmatching input hashes retained inactive. Conflicting/unknown/malformed filters, dependency target filters and unknown SDK variants remain unresolved.",
+    "retainedRecord": "Private raw settings digest checked and reparsed with archived original PBX/package resolution; graph digest and action reconciliation compared. Working PBX rewrite remains allowed.",
+    "authority": "No compiler coverage, declaration execution or capability issued."
+  },
+  "verification": {
+    "regressionCommand": "swift test --jobs 2 --filter AutomationSourceGraphTests|AutomationBuildPlatformTests|AutomationPreparedApplicationRecordTests|AutomationSourceSyntaxTests|AutomationSourceCompilationConditionsTests|AutomationMacInputProbeFixtureTests",
+    "regressionsPassed": 47,
+    "regressionsSkipped": 3,
+    "regressionsFailed": 0,
+    "actualBuildOnlyCommand": "INTENTS_MAC_INPUT_PROBE_FIXTURE_BUILD=1 INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT=<owned-existing-parent> swift test --jobs 2 --filter AutomationMacInputProbeFixtureTests",
+    "actualBuildOnlyChecksPassed": 3,
+    "actualBuildOnlySeconds": 14.443,
+    "actualFixtureSettingsSHA256": "8c475f1581c55ca95f2b7f8cac4201e2101f1e30b994a54a950519a0a9dbedef",
+    "retainedFixtureRecord": "Tools/IntentsAutomation/.runtime/input-probe-fixture-1/intents-input-fixture-E961EADB-E142-43F2-A445-9819E02EEE97/prepare/prepared-application.json",
+    "subjectSHA256": "dcfe50bcb3444245b7ca7e8f286157216940a086c0a275de0735c26ac5884a18",
+    "hostSHA256": "79546ffd0f7004b7169c9541a056f806d6d8874f5b1bc474f21a4dc52d63af86",
+    "nativeAppBuild": "Official Xcode BuildProject succeeded in24.453seconds,0errors; owned workspace closed.",
+    "sourceReviews": "Two disjoint Sol lanes clear after contradictory non-Mac variant guard fix.",
+    "runtimeLaunched": false
+  },
+  "remaining": "Generated/compiler inputs and external local-root ownership remain unresolved; files require complete scoped binary transport; nested metadata rejected by selected extractor. Live UI/probe, device, release and human-trial gates unchanged."
+}

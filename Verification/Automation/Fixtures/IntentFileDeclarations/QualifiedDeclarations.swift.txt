@@ -1,0 +1,26 @@
+import SwiftUI
+import Foundation
+import AppIntents
+import UniformTypeIdentifiers
+@main struct SubjectApp: App {
+    var body: some Scene { WindowGroup { Text("Intents file declaration fixture") } }
+}
+struct FileInputIntent: AppIntent {
+    static let title: LocalizedStringResource = "File input declaration"
+    static let openAppWhenRun = false
+    @Parameter(title: "File") var file: IntentFile
+    func perform() async throws -> some IntentResult {
+        try rejectBusinessDispatch()
+        return .result()
+    }
+}
+struct FileOutputIntent: AppIntent {
+    static let title: LocalizedStringResource = "File output declaration"
+    static let openAppWhenRun = false
+    func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> {
+        try rejectBusinessDispatch()
+        return .result(value: IntentFile(data: Data("authored fixture".utf8), filename: "fixture.txt", type: .plainText))
+    }
+}
+private func rejectBusinessDispatch() throws { throw FilePerformForbidden() }
+private struct FilePerformForbidden: Error {}

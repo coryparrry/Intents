@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T03:04:57.318266+00:00",
+  "scope": "Source-compiled owner steps on four retained actual UI observations; engineering scenario only",
+  "progressChecksPassed": 2,
+  "cases": 4,
+  "legalDecisions": 4,
+  "profileQualified": false,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "results": {
+    "passed": false,
+    "results": [
+      {
+        "bindingName": "approvedText",
+        "exactObservedTarget": true,
+        "expectedClass": true,
+        "expectedTarget": true,
+        "id": "selected-step-initial",
+        "kind": "fill",
+        "nodeID": "node-cd41244f6433093a80f4e243ca21e2d1b52c83c5c611ee21c4737dfa2bf9ef13",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "exactObservedTarget": true,
+        "expectedClass": true,
+        "expectedTarget": false,
+        "id": "selected-step-entered",
+        "kind": "tap",
+        "nodeID": "node-57ea8cd7fa80fd0516df869696fa1fe0cb18eb0aa1bab02b6c5bd0e3276067d6",
+        "nodeName": "Personal",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "exactObservedTarget": true,
+        "expectedClass": false,
+        "expectedTarget": true,
+        "id": "selected-step-one-saved-row",
+        "kind": "tap",
+        "nodeID": "node-57ea8cd7fa80fd0516df869696fa1fe0cb18eb0aa1bab02b6c5bd0e3276067d6",
+        "nodeName": "Personal",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "bindingName": "approvedText",
+        "exactObservedTarget": true,
+        "expectedClass": true,
+        "expectedTarget": true,
+        "id": "protected-step-start-on-retained-Personal",
+        "kind": "fill",
+        "nodeID": "node-cd41244f6433093a80f4e243ca21e2d1b52c83c5c611ee21c4737dfa2bf9ef13",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      }
+    ],
+    "scope": "retained snapshot controller contract; no app actions or recipe qualification"
+  },
+  "limits": [
+    "New-goal boundary is an engineering scenario, not an observed live step transition: approvedBindingUses resets to 0 for protected step as the source grant contract requires",
+    "No Work-selected or Work-saved observation exists; no full workflow or recipe qualification",
+    "Expected node IDs remain grader-only and are not sent to the controller",
+    "Selected owner step keeps tapping the already selected Personal button rather than saving/completing; safe action legality is not progress",
+    "No fresh device/subject operation, recipe token or qualification obtained; earlier eval3 retained unchanged",
+    "Per-owner decomposition preserves independent final query and both unique owner/state predicates; local-model profile remains unqualified"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-controller-contract-eval4/planning-profile.json",
+      "sha256": "8901fa08a2564680520a4a7b8c69c7d0c69d2ad9ef3c1cfd56f73fc1555b8e35"
+    },
+    {
+      "path": "/private/tmp/intents-controller-contract-eval4/compiled-plan.json",
+      "sha256": "ee968915b79e6060f581d36b7456ab8786f7497ac04235f308b9c866af656a2c"
+    },
+    {
+      "path": "/private/tmp/intents-controller-contract-eval4/planning-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/intents-controller-contract-eval4/profile.json",
+      "sha256": "9291ef6bb1804d50ba5cf9e24606c1573f44abf8b199b9b22ebe4a07eca810c8"
+    },
+    {
+      "path": "/private/tmp/intents-controller-contract-eval4/results.json",
+      "sha256": "281aef301311f8443e41623855cc4bdca4b0252d3cfd2136e1d2833af656b56a"
+    },
+    {
+      "path": "/private/tmp/intents-controller-contract-eval4/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/intents-automation-probe-build34.log",
+      "sha256": "3ae57023fec1cbd0d0708d5f227c1f67430aed08a60e5bd6f471150640f3724a"
+    },
+    {
+      "path": "/private/tmp/intents-controller-probe-build7.log",
+      "sha256": "073d03b868f8cd1b755fe1716f8b9fd1b557942a615548b1d75a058878fb515d"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-1.json",
+      "sha256": "dbc237a76354cc7e164eb2aed6868b0d0d1f320db4375fe0ef88f2251620f4bf"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-2.json",
+      "sha256": "ffacac40bc309e454a24546edbc6ef4ca24e74ecbc6f1029b995dbbca97c48fa"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-3.json",
+      "sha256": "d3a97579408fedf9588c1eea5932f1df6ddc8a564775368aa48354b859225d4e"
+    }
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFreshEntityPlanner.swift",
+      "sha256": "4250faec7b5ad69e2833303592e72c272889e002f556f5ea5d6097b41a84246f"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "8ecbb27efafb21dd355a7c9887a0692e69adc896bd508697fe1c4cb3e8bcea78"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationGuidedNavigationDecision.swift",
+      "sha256": "81529271de781b6bfb4ccbc9e51f2ccf0a48dabb00c9530ef27b2f0ef928f020"
+    },
+    {
+      "path": "Tools/IntentsAutomationApplicationProbe/ApplicationProbe.swift",
+      "sha256": "3b6a995ddcb6532383441c3749726733ef8376c93d2e343b5a47f03ff40c8242"
+    },
+    {
+      "path": "Tools/IntentsAutomationControllerProbe/ControllerProbe.swift",
+      "sha256": "d71a3d88252be7ca7e2bcf779f050bc9e86d374be14a82e1068413096b7b6578"
+    }
+  ]
+}

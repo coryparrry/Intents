@@ -97,6 +97,24 @@ struct Options {
       foundation-evals check --project <id|name|repository-path> --suite <id|name> [options]
       foundation-evals scenario-report --run-id <uuid> [--endpoint <url>]
       foundation-evals scenario-execution-report --execution-id <uuid> [--endpoint <url>]
+      foundation-evals automation-apps [options]
+    foundation-evals automation-select --app-id <listed-id> --digest <listing-sha256> [options]
+    foundation-evals automation-cases [--limit <1..50>] [--cursor <cursor>] [options]
+    foundation-evals automation-report --case-id <id> --revision <n> --digest <sha256> --attempt-id <id> [options]
+    foundation-evals automation-preview [options]
+    foundation-evals automation-fix-preview [options]
+    foundation-evals automation-check-fix --request-id <uuid> --digest <preview-sha256> [options]
+    foundation-evals automation-reproduction-preview [options]
+    foundation-evals automation-reproduce --request-id <uuid> --digest <preview-sha256> [options]
+    foundation-evals automation-run --request-id <uuid> --digest <preview-sha256> [options]
+    foundation-evals automation-status --request-id <uuid> [options]
+    foundation-evals automation-cancel --request-id <uuid> [options]
+
+    automation-run queues native confirmation; confirm Run in Intents.
+    Execution request exit codes: 10 pending, 20 completed without a proved pass or stopped.
+    automation-reproduce queues Reproduce failure confirmation. Exit 0 means the complete five-attempt campaign reproduced the saved failure; 20 means incomplete or not reproduced.
+
+    automation-check-fix queues native Check fix confirmation for 30 attempts per build. Exit 0 means baseline failures and only assessed candidate passes were observed in the complete comparison; it does not guarantee reliability.
 
     check options:
       --project <id|name|repository-path>
@@ -448,6 +466,322 @@ func runScenarioReport(_ options: ScenarioReportOptions) throws -> Int32 {
     return outcome == "passed" ? 0 : 30
 }
 
+struct AutomationCommandOptions {
+    var tool: String
+    var arguments: [String: Any] = [:]
+    var endpoint = URL(string: "http://127.0.0.1:17873/mcp")!
+    var credentialFile: URL?
+    init(_ command: String, _ input: [String]) throws {
+        var values: [String: String] = [:]; var index = 1
+        while index < input.count {
+            let option = input[index]
+            guard option.hasPrefix("--"), index + 1 < input.count, values[option] == nil else { throw CLIError.usage("Invalid or duplicate automation option") }
+            values[option] = input[index + 1]; index += 2
+        }
+        if let value = values.removeValue(forKey: "--endpoint") {
+            guard let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else { throw CLIError.usage("Invalid MCP endpoint") }
+            endpoint = url
+        }
+        credentialFile = values.removeValue(forKey: "--credential-file").map { URL(fileURLWithPath: $0) }
+        if command == "automation-apps" {
+            tool = "eval_list_automation_apps"
+        } else if command == "automation-select" {
+            guard let id = values.removeValue(forKey: "--app-id"), !id.isEmpty, id.utf16.count <= 4096, !id.contains("\0"),
+                  let digest = values.removeValue(forKey: "--digest"), digest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw CLIError.usage("A listed --app-id and its current --digest are required") }
+            tool = "eval_select_automation_app"; arguments = ["appID": id, "snapshotDigest": digest]
+        } else if command == "automation-cases" {
+            tool = "eval_list_automation_cases"
+            if let value = values.removeValue(forKey: "--limit") {
+                guard let limit = Int(value), (1...50).contains(limit) else { throw CLIError.usage("--limit must be 1 through 50") }
+                arguments["limit"] = limit
+            }
+            if let cursor = values.removeValue(forKey: "--cursor") {
+                guard cursor.range(of: #"^[a-f0-9]{64}:[0-9]{1,4}$"#, options: .regularExpression) != nil else { throw CLIError.usage("Invalid saved-case cursor") }
+                arguments["cursor"] = cursor
+            }
+        } else if ["automation-preview", "automation-reproduction-preview", "automation-fix-preview"].contains(command) {
+            tool = command == "automation-fix-preview" ? "eval_preview_automation_fix" : command == "automation-preview" ? "eval_preview_automation" : "eval_preview_automation_reproduction"
+        } else if ["automation-run", "automation-reproduce", "automation-check-fix", "automation-status", "automation-cancel"].contains(command) {
+            guard let value = values.removeValue(forKey: "--request-id"), let id = UUID(uuidString: value) else { throw CLIError.usage("A valid --request-id UUID is required") }
+            arguments["requestID"] = id.uuidString
+            if ["automation-run", "automation-reproduce", "automation-check-fix"].contains(command) {
+                tool = command == "automation-check-fix" ? "eval_request_automation_fix" : command == "automation-run" ? "eval_request_automation_run" : "eval_request_automation_reproduction"
+                guard let digest = values.removeValue(forKey: "--digest"), digest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw CLIError.usage("The execution request requires the exact --digest from its corresponding preview") }
+                arguments["digest"] = digest
+            } else { tool = command == "automation-status" ? "eval_get_automation_request" : "eval_cancel_automation_request" }
+        } else {
+            tool = "eval_get_automation_attempt"
+            guard let caseID = values.removeValue(forKey: "--case-id"), let attemptID = values.removeValue(forKey: "--attempt-id"),
+                  let version = values.removeValue(forKey: "--revision"), let revision = Int(version), (1...100000).contains(revision),
+                  let digest = values.removeValue(forKey: "--digest"), digest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+                  [caseID, attemptID].allSatisfy({ $0.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"#, options: .regularExpression) != nil }) else { throw CLIError.usage("automation-report requires a valid case ID, revision, digest and attempt ID") }
+            arguments = ["caseID": caseID, "revision": revision, "digest": digest, "attemptID": attemptID]
+        }
+        guard values.isEmpty else { throw CLIError.usage("Unknown automation option") }
+    }
+}
+private struct AutomationApplicationListingResponse: Decodable {
+    struct Listing: Decodable {
+        struct Application: Decodable { var id: String; var name: String; var kind: String; var bundleID: String?; var platform: String?; var configurations: [String] }
+        var applications: [Application]; var snapshotDigest: String; var selectedID: String?; var total: Int; var truncated: Bool
+        func validate() throws {
+            let ids = applications.map(\.id)
+            guard snapshotDigest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+                  total >= 0, applications.count == min(total, 200), truncated == (total > applications.count),
+                  Set(ids).count == ids.count, ids.allSatisfy({ !$0.isEmpty && $0.utf16.count <= 4096 && !$0.contains("\0") }),
+                  applications.allSatisfy({ !$0.name.isEmpty && ["sourceTarget", "installedProduct"].contains($0.kind) }),
+                  selectedID == nil || ids.contains(selectedID!) || truncated else { throw CLIError.protocolFailure("Invalid admitted-app listing") }
+        }
+    }
+    var listing: Listing
+}
+private struct AutomationSavedListing: Decodable {
+    struct Case: Decodable { var caseID: String; var revision: Int; var digest: String; var action: String; var bundleID: String }
+    var cases: [Case]; var total: Int; var truncated: Bool; var nextCursor: String?
+}
+private struct AutomationSavedAttempt: Decodable {
+    struct Result: Decodable {
+        var summary: String; var assessed: Bool; var evidenceComplete: Bool
+        var subjectDispatched: Bool; var subjectCompleted: Bool; var subjectDispatchUncertain: Bool
+        var failedObservations: [String]?
+    }
+    var attemptID: String; var caseDigest: String; var resourcesReleased: Bool; var result: Result
+}
+private struct AutomationNativePreviewResponse: Decodable {
+    struct Preview: Decodable {
+        var digest: String; var bundleID: String; var targetID: String; var environmentID: String
+        var action: String; var effects: [String]; var maximumActions: Int; var installApproved: Bool; var disposable: Bool
+    }
+    var preview: Preview
+}
+private struct AutomationNativeRequestResponse: Decodable {
+    struct Request: Decodable {
+        var requestID: UUID; var digest: String; var state: String; var attemptID: String?
+        var result: AutomationSavedAttempt.Result?; var resourcesReleased: Bool?
+        var caseID: String?; var revision: Int?; var caseDigest: String?
+        var kind: String?; var originalAttemptID: String?; var reproduction: AutomationNativeReproductionResult?; var comparison: AutomationNativeFixResult?
+    }
+    var request: Request
+}
+private func automationIdentifier(_ value: String) -> Bool {
+    value.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"#, options: .regularExpression) != nil
+}
+private struct AutomationNativeReproductionPreviewResponse: Decodable {
+    struct Preview: Decodable {
+        var digest: String; var bundleID: String; var targetID: String; var environmentID: String
+        var caseID: String; var revision: Int; var caseDigest: String; var originalAttemptID: String
+        var requestedAttempts: Int; var installApproved: Bool; var disposable: Bool
+    }
+    var preview: Preview
+}
+private struct AutomationNativeReproductionResult: Decodable {
+    struct Attempt: Decodable { var attemptID: String; var result: AutomationSavedAttempt.Result; var resourcesReleased: Bool }
+    struct Interruption: Decodable { var attemptID: String; var caseDigest: String; var dispatchMayHaveOccurred: Bool; var reason: String }
+    var requestedAttempts: Int; var complete: Bool; var reproduced: Bool
+    var matchingFailures: Int; var assessedPasses: Int; var otherFailures: Int; var unassessed: Int
+    var signature: [String]; var attempts: [Attempt]; var interruption: Interruption?; var stopReason: String?
+    func validate(original: String, caseDigest: String, released: Bool) throws {
+        let ids = attempts.map(\.attemptID) + (interruption.map { [$0.attemptID] } ?? [])
+        guard requestedAttempts == 5, ids.count <= 5, Set(ids).count == ids.count, ids.allSatisfy(automationIdentifier),
+              !ids.contains(original), !signature.isEmpty, signature == Array(Set(signature)).sorted(),
+              signature.allSatisfy(automationIdentifier),
+              interruption == nil || (interruption?.caseDigest == caseDigest && interruption?.reason.isEmpty == false),
+              stopReason == nil || stopReason?.isEmpty == false else { throw CLIError.protocolFailure("Invalid reproduction scope") }
+        var matches = 0, passes = 0, others = 0, unknown = 0
+        for attempt in attempts {
+            let r = attempt.result
+            guard let failures = r.failedObservations, failures == Array(Set(failures)).sorted(), failures.allSatisfy(automationIdentifier) else { throw CLIError.protocolFailure("Missing reproduction failure signature") }
+            if !r.assessed || !r.evidenceComplete { unknown += 1 }
+            else if r.summary == "passed" {
+                guard failures.isEmpty, r.subjectDispatched, r.subjectCompleted, !r.subjectDispatchUncertain else { throw CLIError.protocolFailure("Incomplete reproduction pass evidence") }
+                passes += 1
+            } else if r.summary == "assertionFailed" {
+                guard !failures.isEmpty, r.subjectDispatched, r.subjectCompleted, !r.subjectDispatchUncertain else { throw CLIError.protocolFailure("Incomplete reproduction failure evidence") }
+                if failures == signature { matches += 1 } else { others += 1 }
+            } else { unknown += 1 }
+        }
+        let computedComplete = attempts.count == 5 && interruption == nil && stopReason == nil && attempts.allSatisfy {
+            $0.resourcesReleased && !$0.result.subjectDispatchUncertain && !["cancelled", "invalidFixture"].contains($0.result.summary)
+        }
+        guard matches == matchingFailures, passes == assessedPasses, others == otherFailures, unknown == unassessed,
+              complete == computedComplete, reproduced == (computedComplete && matches > 0),
+              released == (attempts.allSatisfy(\.resourcesReleased) && interruption?.dispatchMayHaveOccurred != true) else {
+            throw CLIError.protocolFailure("Contradictory reproduction evidence")
+        }
+    }
+}
+private struct AutomationNativeFixPreviewResponse: Decodable {
+    struct Preview: Decodable {
+        var digest: String; var bundleID: String; var targetID: String; var environmentID: String
+        var caseID: String; var revision: Int; var caseDigest: String; var candidateCaseDigest: String
+        var beforeProductDigest: String; var afterProductDigest: String; var originalAttemptID: String
+        var requestedAttemptsPerBuild: Int; var installApproved: Bool; var disposable: Bool
+    }
+    var preview: Preview
+}
+private struct AutomationNativeFixResult: Decodable {
+    typealias Attempt = AutomationNativeReproductionResult.Attempt
+    typealias Interruption = AutomationNativeReproductionResult.Interruption
+    struct Counters: Decodable, Equatable {
+        var planned = 0, dispatched = 0, completed = 0, assessed = 0, failed = 0, unassessed = 0, notRun = 0, unresolved = 0
+        mutating func record(_ r: AutomationSavedAttempt.Result) {
+            planned += 1; dispatched += r.subjectDispatched ? 1 : 0; completed += r.subjectCompleted ? 1 : 0
+            assessed += r.assessed ? 1 : 0; failed += r.summary == "assertionFailed" ? 1 : 0
+            unassessed += r.subjectDispatched && !r.assessed ? 1 : 0
+            notRun += r.subjectDispatched || r.subjectDispatchUncertain ? 0 : 1
+            unresolved += r.summary == "unresolved" || r.subjectDispatchUncertain || (r.subjectDispatched && !r.subjectCompleted) ? 1 : 0
+        }
+    }
+    var requestedAttemptsPerBuild: Int; var complete: Bool; var contractDigest: String; var oracleDigest: String
+    var candidateCaseDigest: String; var beforeProductDigest: String; var afterProductDigest: String
+    var before: [Attempt]; var after: [Attempt]; var beforeCounters: Counters; var afterCounters: Counters
+    var interruption: Interruption?; var stopReason: String?; var environmentQualificationComplete: Bool
+    func validate(original: String, baselineCaseDigest: String, released: Bool) throws {
+        let ids = (before + after).map(\.attemptID) + (interruption.map { [$0.attemptID] } ?? [])
+        guard requestedAttemptsPerBuild == 30, before.count <= 30, after.count <= 30,
+              after.isEmpty || before.count == 30, Set(ids).count == ids.count, ids.allSatisfy(automationIdentifier), !ids.contains(original),
+              [contractDigest, oracleDigest, candidateCaseDigest, beforeProductDigest, afterProductDigest].allSatisfy({ $0.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil }),
+              candidateCaseDigest != baselineCaseDigest, beforeProductDigest != afterProductDigest, !environmentQualificationComplete,
+              stopReason == nil || (!stopReason!.isEmpty && stopReason!.utf16.count <= 4096) else { throw CLIError.protocolFailure("Invalid comparison scope") }
+        var beforeComputed = Counters(), afterComputed = Counters()
+        for (reports, isBefore) in [(before, true), (after, false)] {
+            for (index, attempt) in reports.enumerated() {
+                let r = attempt.result
+                guard let failures = r.failedObservations, failures == Array(Set(failures)).sorted(), failures.allSatisfy(automationIdentifier),
+                      !r.subjectCompleted || r.subjectDispatched,
+                      !r.assessed || (r.evidenceComplete && r.subjectDispatched && r.subjectCompleted && !r.subjectDispatchUncertain),
+                      r.summary != "passed" || (r.assessed && failures.isEmpty),
+                      r.summary != "assertionFailed" || (r.assessed && !failures.isEmpty) else { throw CLIError.protocolFailure("Incomplete comparison attempt") }
+                if isBefore { beforeComputed.record(r) } else { afterComputed.record(r) }
+                if !attempt.resourcesReleased || r.subjectDispatchUncertain || ["cancelled", "invalidFixture"].contains(r.summary) {
+                    guard index == reports.count - 1, interruption == nil, stopReason != nil, !isBefore || after.isEmpty else { throw CLIError.protocolFailure("Comparison continued after unresolved execution") }
+                }
+            }
+        }
+        if let interrupted = interruption {
+            guard automationIdentifier(interrupted.attemptID), !interrupted.reason.isEmpty, interrupted.reason.utf16.count <= 4096, stopReason != nil else { throw CLIError.protocolFailure("Incomplete comparison interruption") }
+            if interrupted.caseDigest == baselineCaseDigest {
+                guard after.isEmpty, before.count < 30 else { throw CLIError.protocolFailure("Invalid baseline interruption") }
+                beforeComputed.planned += 1
+                if interrupted.dispatchMayHaveOccurred { beforeComputed.unresolved += 1 } else { beforeComputed.notRun += 1 }
+            } else {
+                guard interrupted.caseDigest == candidateCaseDigest, before.count == 30, after.count < 30 else { throw CLIError.protocolFailure("Invalid candidate interruption") }
+                afterComputed.planned += 1
+                if interrupted.dispatchMayHaveOccurred { afterComputed.unresolved += 1 } else { afterComputed.notRun += 1 }
+            }
+        }
+        let computedComplete = before.count == 30 && after.count == 30 && interruption == nil && stopReason == nil && (before + after).allSatisfy {
+            $0.resourcesReleased && !$0.result.subjectDispatchUncertain && !["cancelled", "invalidFixture"].contains($0.result.summary)
+        }
+        guard complete == computedComplete, complete || stopReason != nil,
+              beforeCounters == beforeComputed, afterCounters == afterComputed,
+              released == ((before + after).allSatisfy(\.resourcesReleased) && interruption?.dispatchMayHaveOccurred != true) else { throw CLIError.protocolFailure("Contradictory comparison evidence") }
+    }
+    var observedFix: Bool { complete && beforeCounters.failed > 0 && after.allSatisfy { $0.result.summary == "passed" && $0.result.assessed && $0.result.evidenceComplete } }
+}
+func runAutomationCommand(_ options: AutomationCommandOptions) throws -> Int32 {
+    let client = try MCPClient(endpoint: options.endpoint, credentialFile: options.credentialFile)
+    try client.initialize()
+    let report = try client.call(tool: options.tool, arguments: options.arguments)
+    let mutating = ["eval_select_automation_app", "eval_request_automation_run", "eval_request_automation_reproduction", "eval_request_automation_fix", "eval_cancel_automation_request"].contains(options.tool)
+    guard report["outcome"] as? String == (mutating ? "committed" : "read") else { throw CLIError.protocolFailure("The app did not return a canonical automation response") }
+    let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+    let status: Int32
+    if ["eval_list_automation_apps", "eval_select_automation_app"].contains(options.tool) {
+        let listing = try JSONDecoder().decode(AutomationApplicationListingResponse.self, from: data).listing
+        try listing.validate()
+        if options.tool == "eval_select_automation_app" {
+            guard listing.applications.contains(where: { $0.id == options.arguments["appID"] as? String }),
+                  listing.selectedID == options.arguments["appID"] as? String,
+                  listing.snapshotDigest == options.arguments["snapshotDigest"] as? String else { throw CLIError.protocolFailure("Mismatched app selection") }
+        }
+        status = 0
+    } else if options.tool == "eval_list_automation_cases" {
+        let listing = try JSONDecoder().decode(AutomationSavedListing.self, from: data)
+        guard listing.total >= listing.cases.count, listing.total >= 0, listing.cases.count <= 50,
+              !listing.truncated || listing.nextCursor?.range(of: #"^[a-f0-9]{64}:[0-9]{1,4}$"#, options: .regularExpression) != nil else { throw CLIError.protocolFailure("Incomplete saved-case listing") }
+        status = 0
+    } else if options.tool == "eval_preview_automation" {
+        let preview = try JSONDecoder().decode(AutomationNativePreviewResponse.self, from: data).preview
+        guard preview.digest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+              !preview.bundleID.isEmpty, !preview.targetID.isEmpty, !preview.environmentID.isEmpty, !preview.action.isEmpty,
+              (1...1000).contains(preview.maximumActions), !preview.effects.isEmpty else { throw CLIError.protocolFailure("Incomplete native action preview") }
+        status = 0
+    } else if options.tool == "eval_preview_automation_fix" {
+        let preview = try JSONDecoder().decode(AutomationNativeFixPreviewResponse.self, from: data).preview
+        guard [preview.digest, preview.caseDigest, preview.candidateCaseDigest, preview.beforeProductDigest, preview.afterProductDigest].allSatisfy({ $0.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil }),
+              preview.caseDigest != preview.candidateCaseDigest, preview.beforeProductDigest != preview.afterProductDigest,
+              !preview.bundleID.isEmpty, !preview.targetID.isEmpty, !preview.environmentID.isEmpty,
+              [preview.caseID, preview.originalAttemptID].allSatisfy(automationIdentifier), (1...100000).contains(preview.revision),
+              preview.requestedAttemptsPerBuild == 30, preview.installApproved else { throw CLIError.protocolFailure("Incomplete fix comparison preview") }
+        status = 0
+    } else if options.tool == "eval_preview_automation_reproduction" {
+        let preview = try JSONDecoder().decode(AutomationNativeReproductionPreviewResponse.self, from: data).preview
+        guard [preview.digest, preview.caseDigest].allSatisfy({ $0.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil }),
+              !preview.bundleID.isEmpty, !preview.targetID.isEmpty, !preview.environmentID.isEmpty,
+              [preview.caseID, preview.originalAttemptID].allSatisfy(automationIdentifier),
+              (1...100000).contains(preview.revision), preview.requestedAttempts == 5 else { throw CLIError.protocolFailure("Incomplete reproduction preview") }
+        status = 0
+    } else if ["eval_request_automation_run", "eval_request_automation_reproduction", "eval_request_automation_fix", "eval_get_automation_request", "eval_cancel_automation_request"].contains(options.tool) {
+        let request = try JSONDecoder().decode(AutomationNativeRequestResponse.self, from: data).request
+        guard request.requestID == UUID(uuidString: options.arguments["requestID"] as? String ?? ""),
+              request.digest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+              options.arguments["digest"] == nil || request.digest == options.arguments["digest"] as? String,
+              ["awaitingApproval", "running", "cancelling", "completed", "cancelled", "failed", "invalidated"].contains(request.state) else { throw CLIError.protocolFailure("Mismatched or incomplete native execution request") }
+        guard request.kind == nil || ["reproduction", "fixComparison"].contains(request.kind!),
+              options.tool != "eval_request_automation_reproduction" || request.kind == "reproduction",
+              options.tool != "eval_request_automation_run" || request.kind == nil,
+              options.tool != "eval_request_automation_fix" || request.kind == "fixComparison",
+              request.kind == "reproduction" || request.reproduction == nil,
+              request.kind == "fixComparison" || request.comparison == nil,
+              request.kind != nil || request.originalAttemptID == nil else { throw CLIError.protocolFailure("Mismatched native request kind") }
+        if request.kind == "fixComparison" {
+            guard let original = request.originalAttemptID, let caseID = request.caseID, let revision = request.revision,
+                  [original, caseID].allSatisfy(automationIdentifier), (1...100000).contains(revision),
+                  let caseDigest = request.caseDigest, caseDigest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+                  request.result == nil, request.attemptID == nil else { throw CLIError.protocolFailure("Incomplete comparison identity") }
+            if request.state == "completed" {
+                guard let outcome = request.comparison, let released = request.resourcesReleased else { throw CLIError.protocolFailure("Missing both comparison populations") }
+                try outcome.validate(original: original, baselineCaseDigest: caseDigest, released: released)
+                status = outcome.observedFix && released ? 0 : 20
+            } else {
+                guard request.comparison == nil, request.resourcesReleased == nil else { throw CLIError.protocolFailure("Comparison evidence on a nonterminal request") }
+                status = ["awaitingApproval", "running", "cancelling"].contains(request.state) ? 10 : 20
+            }
+        } else if request.kind == "reproduction" {
+            guard let original = request.originalAttemptID, let caseID = request.caseID, let revision = request.revision,
+                  [original, caseID].allSatisfy(automationIdentifier), (1...100000).contains(revision),
+                  let caseDigest = request.caseDigest, caseDigest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+                  request.result == nil, request.attemptID == nil else { throw CLIError.protocolFailure("Incomplete reproduction identity") }
+            if request.state == "completed" {
+                guard let outcome = request.reproduction, let released = request.resourcesReleased else { throw CLIError.protocolFailure("Missing five-attempt reproduction evidence") }
+                try outcome.validate(original: original, caseDigest: caseDigest, released: released)
+                status = outcome.complete && outcome.reproduced && released ? 0 : 20
+            } else {
+                guard request.reproduction == nil, request.resourcesReleased == nil else { throw CLIError.protocolFailure("Reproduction evidence on a nonterminal request") }
+                status = ["awaitingApproval", "running", "cancelling"].contains(request.state) ? 10 : 20
+            }
+        } else if ["awaitingApproval", "running", "cancelling"].contains(request.state) { status = 10 }
+        else {
+            if request.state == "completed" {
+                guard let attemptID = request.attemptID, let caseID = request.caseID, let revision = request.revision,
+                      [attemptID, caseID].allSatisfy({ $0.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"#, options: .regularExpression) != nil }),
+                      (1...100000).contains(revision),
+                      request.caseDigest?.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+                      request.result != nil, request.resourcesReleased != nil else { throw CLIError.protocolFailure("Incomplete terminal attempt evidence") }
+            }
+            let result = request.result
+            status = request.state == "completed" && result?.summary == "passed" && result?.assessed == true && result?.evidenceComplete == true && result?.subjectDispatched == true && result?.subjectCompleted == true && result?.subjectDispatchUncertain == false && request.resourcesReleased == true ? 0 : 20
+        }
+    } else {
+        let attempt = try JSONDecoder().decode(AutomationSavedAttempt.self, from: data)
+        guard attempt.attemptID == options.arguments["attemptID"] as? String, attempt.caseDigest == options.arguments["digest"] as? String else { throw CLIError.protocolFailure("Mismatched saved attempt") }
+        let result = attempt.result
+        status = result.summary == "passed" && result.assessed && result.evidenceComplete && result.subjectDispatched && result.subjectCompleted && !result.subjectDispatchUncertain && attempt.resourcesReleased ? 0 : 20
+    }
+    print(String(decoding: data, as: UTF8.self)); return status
+}
+
 func run() throws -> Int32 {
     let arguments = Array(CommandLine.arguments.dropFirst())
     guard let command = arguments.first else { throw CLIError.usage(Options.help) }
@@ -458,6 +792,9 @@ func run() throws -> Int32 {
             return 0
         }
         return try runCheck(Options(arguments: arguments))
+    case "automation-apps", "automation-select", "automation-cases", "automation-report", "automation-preview", "automation-fix-preview", "automation-check-fix", "automation-reproduction-preview", "automation-reproduce", "automation-run", "automation-status", "automation-cancel":
+        if arguments.dropFirst().elementsEqual(["--help"]) { print(Options.help); return 0 }
+        return try runAutomationCommand(AutomationCommandOptions(command, arguments))
     case "scenario-report", "scenario-execution-report":
         if arguments.dropFirst().elementsEqual(["--help"]) || arguments.dropFirst().elementsEqual(["-h"]) {
             print(Options.help)

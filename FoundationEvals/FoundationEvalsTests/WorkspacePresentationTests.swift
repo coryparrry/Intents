@@ -438,6 +438,37 @@ struct WorkspacePresentationTests {
         #expect(!SuiteHistoryPoint.recent(legacy).contains { $0.id == legacy[24].id })
     }
 
+    @Test func recentTimelineKeepsNewestSavedRunAfterClockMovesBackward() {
+        let date = Date(timeIntervalSince1970: 1_000)
+        var summary = SuiteOverviewSummary(record: .init(id: UUID(), name: "Clock changes", createdAt: date,
+            updatedAt: date, archivedAt: nil, repositoryDefinitionPath: nil, lastRepositoryRevision: nil))
+        summary.history = (1...7).map { sequence in
+            .init(id: UUID(), date: sequence == 7 ? date : date.addingTimeInterval(Double(sequence)),
+                  rate: 1, hasFailures: false, state: .passed, historySequence: UInt64(sequence))
+        }
+        let recent = RecentRunsTimeline.recentItems(in: [summary])
+        #expect(recent.count == 6)
+        #expect(recent.map(\.id) == Array(summary.history.reversed().prefix(6)).map(\.id))
+        #expect(recent.first?.id == summary.history.last?.id)
+        #expect(!recent.contains { $0.id == summary.history.first?.id })
+    }
+
+    @Test func recentTimelineOrdersAcrossSuitesAndFallsBackForLegacyRuns() {
+        let date = Date(timeIntervalSince1970: 1_000)
+        var first = SuiteOverviewSummary(record: .init(id: UUID(), name: "First", createdAt: date, updatedAt: date,
+            archivedAt: nil, repositoryDefinitionPath: nil, lastRepositoryRevision: nil))
+        var second = SuiteOverviewSummary(record: .init(id: UUID(), name: "Second", createdAt: date, updatedAt: date,
+            archivedAt: nil, repositoryDefinitionPath: nil, lastRepositoryRevision: nil))
+        first.history = [.init(id: UUID(), date: date, rate: 1, hasFailures: false, state: .passed, historySequence: 2)]
+        second.history = [.init(id: UUID(), date: date.addingTimeInterval(60), rate: 0, hasFailures: true,
+                               state: .failed, historySequence: 1)]
+        #expect(RecentRunsTimeline.recentItems(in: [second, first]).map { $0.suite.id } == [first.id, second.id])
+        first.history[0].historySequence = nil
+        second.history[0].historySequence = nil
+        #expect(RecentRunsTimeline.recentItems(in: [first, second]).map { $0.suite.id } == [second.id, first.id])
+        #expect(RecentRunsTimeline.recentItems(in: []).isEmpty)
+    }
+
     @Test func sameNamedSuitesKeepSeparateTrendSeries() {
         let date = Date(timeIntervalSince1970: 1_000)
         var first = SuiteOverviewSummary(record: .init(id: UUID(), name: "Smoke", createdAt: date, updatedAt: date,

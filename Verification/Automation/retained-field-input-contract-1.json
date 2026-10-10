@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T02:12:38.976559+00:00",
+  "scope": "One approved shared-name fill plus unchanged independent two-owner predicates",
+  "sourceVerified": true,
+  "actualLatestControllerQualified": false,
+  "fullPlanComplete": false,
+  "finding": "Actual grounded2 observations retain the populated name after saves; two fill approvals cannot represent two saved records",
+  "change": "Fresh planner requires one approvedText fill; both unique-owner initial-state predicates and selected/protected business requirements retained; controller no longer treats populated value as proof of an unsaved record",
+  "tests": [
+    {
+      "log": "/private/tmp/intents-automation-tests160.log",
+      "passed": 66
+    },
+    {
+      "log": "/private/tmp/intents-automation-tests161.log",
+      "passed": 63
+    }
+  ],
+  "review": "Fresh Sol v14: no concrete regression or weakened business oracle",
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-tests160.log",
+      "sha256": "86b55814b71265bd444121d62c9ac0d2b45b9d8eaa2aeaafab685e43c68bc0e7"
+    },
+    {
+      "path": "/private/tmp/intents-automation-tests161.log",
+      "sha256": "4abe76736f7bd684bd6f8c63da0a19ab9b66f4cd1b9bba892b5b214a7a1bc977"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFreshEntityPlanner.swift",
+      "sha256": "cf537d2fd48ccb98a0081dbd875e891fe217003e5078f72414e6a81fab010d32"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "8ecbb27efafb21dd355a7c9887a0692e69adc896bd508697fe1c4cb3e8bcea78"
+    },
+    {
+      "path": "Verification/Automation/protected-record-runtime-14.json",
+      "sha256": "bb6cad77d24d832fe041102e4216096fffbc077be8aacd5ecc20f23a58d82e91"
+    }
+  ]
+}

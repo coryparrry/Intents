@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "scope": "selected-Xcode SwiftSyntax candidates bound to frozen target inputs",
+  "systemDiscoveryComplete": false,
+  "verification": {
+    "focusedSwift": {
+      "registered": 34,
+      "passed": 34,
+      "skipped": 0,
+      "filter": "AutomationSourceSyntaxTests|AutomationSourceGraphTests|AutomationBuildPlatformTests|AutomationCodecTests|AutomationPreparedApplicationRecordTests|AutomationMacHostPreparationTests/testExplicit"
+    },
+    "actualScanner": "nested types, trivia-qualified extensions and conformances, literals and forged-input SHA rejection passed",
+    "explicitStop": "cancel without Task.cancel; joined CancellationError; no settings/build/record produced",
+    "savedRestore": "exact index reload; tamper, missing index, detached digest and candidate alteration rejected; legacy graph-only reload passed",
+    "actualMacBuildOnly": {
+      "passed": true,
+      "launched": false,
+      "record": "Tools/IntentsAutomation/.runtime/source-syntax-1/prepare-41203B68-5018-4311-B085-06C5BA2E4345/prepared-application.json",
+      "recordSHA256": "c5988ff3ad755d6a98cd2e4f12ce8dc0aa9a2951eea4fbc7df979423fcc5981d",
+      "sourceManifestDigest": "ba0ee0677845e367ce7842a25f2febaf483d748e156c2b80a918b1b287c24dec",
+      "graphDigest": "e0f0dbe1d4bafbe85d4f15dbaf07911bea02328f821f8fba18eb1c5629c4db06",
+      "syntaxIndexDigest": "879c55897cf88de8499571d6b62b353e3502ae61d517aadb4bfc495d876f530d",
+      "inputCount": 1,
+      "declarationCount": 1,
+      "owningModule": "Subject",
+      "reconciliation": "syntaxCandidate",
+      "subjectProductDigest": "b67afeaa0c33ce959b7284e1a5df58a8c2eb004c6578b8fe750f25f66ba54f90",
+      "hostProductDigest": "75d12e4708e36d99103c425ad296869d5f9854f586ed015571c7337fd2b69284"
+    },
+    "reviews": [
+      "Sol ownership, fallback, restore and Stop: clear after fixes",
+      "Sol syntax and selected-owner candidate reconciliation: clear after fixes"
+    ]
+  },
+  "scanner": {
+    "templateSHA256": "c57093ca2d6f16eea3ac01aba8d43a3f963103aaba4b1a9f64e4c3351e91afc7",
+    "helperSHA256": "8b5f5a6a313a2098a9ce4baa6c2e105c6f7d00fd0b96b7917ddfe1cd518845d9",
+    "selectedToolchainComponents": [
+      {
+        "relativePath": "Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+        "sha256": "cf81104bf554eef05e28a8bb5285c763f1323b4511b944d755d8bdd6cb8db717"
+      },
+      {
+        "relativePath": "Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/libSwiftSyntax.dylib",
+        "sha256": "77a605fa87a2ee99a953eb3194db8b360d8c02a950e3b1e31f52eb23e05acd14"
+      },
+      {
+        "relativePath": "Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/libSwiftParser.dylib",
+        "sha256": "f10b3749b43ad055a513548062b2040f7ca9bf219d64457b01fd76e7f71340f4"
+      },
+      {
+        "relativePath": "Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/libSwiftParserDiagnostics.dylib",
+        "sha256": "a45d21afd22a5b1d0d2985210ea133dc97bf5d32f63072778db28683f363b63c"
+      }
+    ]
+  },
+  "limits": [
+    "Partial candidates do not prove active compilation, registration or execution.",
+    "Compiler conditions, aliases, macro/generated inputs and package module ownership unresolved.",
+    "Four direct scanner toolchain components are fingerprinted; full SDK/dependency closure is not qualified.",
+    "Native rendered/user-flow evidence remains blocked by recorded automation-mode timeout."
+  ],
+  "failureLessons": [
+    "Resolve the real Swift module from validated selected-target settings; dependency declarations cannot borrow it.",
+    "Normalize qualified syntax through tokens, excluding trivia.",
+    "Explicit Stop must revoke preparation before optional scanner fallback."
+  ],
+  "log": {
+    "path": "Tools/IntentsAutomation/.runtime/source-syntax-1/swift-final1.log",
+    "sha256": "02c0150726bad92f4d623eb6cd8fb440c0fbf028af3335f9a7e3cff2fcdef128"
+  }
+}

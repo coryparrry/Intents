@@ -6,6 +6,7 @@ private enum WorkspaceDestination: Hashable {
     case evaluations
     case batchRuns
     case traces
+    case appAutomation
     case suite(UUID)
     case run(UUID)
 }
@@ -36,6 +37,7 @@ struct WorkspaceSidebar: View {
                 case .evaluations: .evaluations
                 case .batchRuns: .batchRuns
                 case .traces: .traces
+                case .appAutomation: .appAutomation
                 case .suite: .suite(store.selectedSuiteID)
                 case .run(let id): .run(id)
                 }
@@ -49,6 +51,7 @@ struct WorkspaceSidebar: View {
                     case .evaluations: store.selection = .evaluations
                     case .batchRuns: store.selection = .batchRuns
                     case .traces: store.selection = .traces
+                    case .appAutomation: store.selection = .appAutomation
                     case .suite(let id):
                         guard !isBusy || id == store.selectedSuiteID else { return }
                         if id != store.selectedSuiteID { try store.switchSuite(id: id) }
@@ -87,6 +90,8 @@ struct WorkspaceSidebar: View {
                 Label { Text("Traces") } icon: { WorkspaceIcon(symbol: "point.3.connected.trianglepath.dotted", size: 18) }
                     .accessibilityIdentifier("Sidebar traces")
                     .tag(WorkspaceDestination.traces)
+                Label { Text("App automation") } icon: { WorkspaceIcon(symbol: "play", size: 18) }
+                    .tag(WorkspaceDestination.appAutomation)
             }
 
             Section("Suites") {
