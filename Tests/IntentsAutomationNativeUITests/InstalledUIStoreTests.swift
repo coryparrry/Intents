@@ -108,6 +108,50 @@ import XCTest
         do { _ = try await model.capsuleExportSelection(frozen); XCTFail("Exported an unselected case") } catch {}
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.path))
     }
+    func testCapsuleExportRequiresExplicitReviewForEachSelection() async throws {
+        let (model, root, _) = try fixture()
+        let cases = try AutomationCaseStore(root: model.support.appendingPathComponent("Cases"))
+        let plan = AutomationCase(id: "reviewed-capsule", app: .init(logicalID: "synthetic", bundleID: "example.Fixture", platform: "ios"),
+            target: .init(id: "fixture", kind: .simulator), environmentID: "synthetic",
+            execution: .init(id: "subject", kind: .systemIntent, phase: .subject, operation: "Echo"))
+        let frozen = try await cases.freeze(plan)
+        let result = AutomationAssessment.assess(plan: plan, attemptID: "recorded", subjectDispatched: false, subjectCompleted: false, observations: [], termination: .unresolved)
+        let report = AutomationAttemptReport(attemptID: "recorded", result: result, receipts: [], resourcesReleased: true)
+        try await cases.saveAttempt(report, for: frozen); model.savedCases = [frozen]
+        let first = try await model.capsuleExportSelection(frozen)
+        var selection = AutomationCapsuleExportSelection(frozen: first.0, attempts: first.1, exposure: first.2)
+        let other = AutomationCapsuleExportSelection(frozen: first.0, attempts: first.1, exposure: first.2)
+        XCTAssertNotEqual(selection.id, other.id)
+        XCTAssertFalse(model.canSaveCapsuleExport(selection))
+        XCTAssertFalse(selection.approval.syntheticDataAndMetadataReviewed)
+        let rejected = root.appendingPathComponent("unreviewed.intentscase")
+        do { try await model.exportCapsule(selection, to: rejected); XCTFail("Exported an unreviewed capsule") } catch {}
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rejected.path))
+        selection.reviewed = true
+        XCTAssertTrue(model.canSaveCapsuleExport(selection))
+        XCTAssertFalse(model.canSaveCapsuleExport(other), "Another window must not inherit this review")
+        do { try await model.exportCapsule(other, to: rejected); XCTFail("Exported another window's unreviewed capsule") } catch {}
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rejected.path))
+        let next = try await model.capsuleExportSelection(frozen)
+        let repeated = AutomationCapsuleExportSelection(frozen: next.0, attempts: next.1, exposure: next.2)
+        XCTAssertFalse(repeated.reviewed)
+        XCTAssertTrue(selection.reviewed, "A later preview must not invalidate an approved pending save")
+        model.progress = "Running"
+        XCTAssertFalse(model.canSaveCapsuleExport(selection))
+        do { try await model.exportCapsule(selection, to: rejected); XCTFail("Exported during a run") } catch {}
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rejected.path))
+        model.progress = nil
+        let saved = root.appendingPathComponent("reviewed.intentscase")
+        try await model.exportCapsule(selection, to: saved)
+        let imported = try AutomationCaseCapsule.read(saved)
+        XCTAssertEqual(imported.frozen, frozen); XCTAssertEqual(imported.historicalAttempts, [report]); XCTAssertFalse(imported.liveAccepted)
+        do { try await model.exportCapsule(selection, to: saved); XCTFail("Replaced an existing capsule") } catch {}
+        model.close()
+        XCTAssertFalse(model.canSaveCapsuleExport(selection))
+        do { try await model.exportCapsule(selection, to: rejected); XCTFail("Exported after closing") } catch {}
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rejected.path))
+        XCTAssertNil(model.report); XCTAssertNil(model.savedViewedReport); XCTAssertNil(model.canonicalEvidence)
+    }
     func testLearnedRetentionAndNewProposalInvalidateApprovalAndChangedContext() throws {
         let (model, root, _) = try fixture(); try selectFreshSource(model: model, root: root)
         let original = try model.makeNativeRunRequest(runID: "source"), prepared = try XCTUnwrap(model.prepared)
