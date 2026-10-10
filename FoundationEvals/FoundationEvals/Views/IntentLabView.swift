@@ -27,6 +27,7 @@ struct IntentLabView: View {
                                 ScenarioEditorView(coordinator: coordinator, projects: projects, diagnosticLanes: $diagnosticLanes)
                                     .workspacePage()
                             }
+                            .accessibilityIdentifier("Intent Lab scenario scroll")
                             .frame(minHeight: 0, maxHeight: .infinity)
                         case .collections:
                             ScenarioCollectionView(coordinator: coordinator)

@@ -88,22 +88,29 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.typeKey("2", modifierFlags: .command)
         app.radioButtons["Create test"].click()
+        let window = app.windows.firstMatch
+        let editor = app.scrollViews["Intent Lab scenario scroll"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        func reveal(_ element: XCUIElement) {
+            XCTAssertTrue(element.waitForExistence(timeout: 3))
+            for _ in 0..<12 {
+                let viewport = editor.frame.intersection(window.frame)
+                if element.isHittable && viewport.contains(element.frame) { return }
+                // macOS swipes can jump past a control; wheel steps can recover in either direction.
+                let delta: CGFloat = element.frame.minY < viewport.minY ? 180 : -180
+                editor.scroll(byDeltaX: 0, deltaY: delta)
+            }
+            let viewport = editor.frame.intersection(window.frame)
+            XCTAssertTrue(element.isHittable && viewport.contains(element.frame),
+                          "Parameter control \(element.frame) must be visible inside editor \(viewport) before clicking")
+        }
         let inputs = app.disclosureTriangles.matching(NSPredicate(format: "label BEGINSWITH %@", "Inputs ·")).firstMatch
-        for _ in 0..<12 where !inputs.isHittable { app.scrollViews.element(boundBy: app.scrollViews.count - 1).swipeUp() }
+        reveal(inputs)
         inputs.click()
 
         let names = app.textFields.matching(identifier: "Parameter name")
         XCTAssertEqual(names.count, 1)
         let addButton = app.buttons["Add parameter"]
-        let editor = app.scrollViews.containing(.button, identifier: "Add parameter").firstMatch
-        XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        func reveal(_ element: XCUIElement) {
-            for _ in 0..<12 where !element.isHittable || !editor.frame.contains(element.frame) {
-                editor.swipeUp()
-            }
-            XCTAssertTrue(element.isHittable && editor.frame.contains(element.frame),
-                          "Parameter controls must be visible inside the editor before clicking")
-        }
         for expectedCount in 2...3 {
             reveal(addButton)
             addButton.click()
