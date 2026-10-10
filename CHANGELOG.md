@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.5.0](https://github.com/coryparrry/Intents/compare/v1.4.0...v1.5.0) (2026-10-10)
+
+
+### Features
+
+* **automation:** add a native workspace for owned app workflows and saved attempts ([f8de88e](https://github.com/coryparrry/Intents/commit/f8de88e13738fec413cbfa8ea59605d15503de0e))
+* **automation:** add controlled Siri state-check preparation with live qualification gates ([f8de88e](https://github.com/coryparrry/Intents/commit/f8de88e13738fec413cbfa8ea59605d15503de0e))
+* **distribution:** install Intents through Homebrew with release updates ([4a5ac5b](https://github.com/coryparrry/Intents/commit/4a5ac5b8114df7cd6df6ffbdb5496ede69df3871))
+
+
+### Bug Fixes
+
+* **release:** keep release PRs current and include missing changelog categories ([c5fcc17](https://github.com/coryparrry/Intents/commit/c5fcc170f89882f015641f848373b322b436f453))
+* **ui:** highlight the latest saved scored run in suite sparklines ([0265653](https://github.com/coryparrry/Intents/commit/0265653283c3bd4e174609f5339d4f237e7b8cf4))
+* **ui:** keep recent runs ordered across suites after restart ([0265653](https://github.com/coryparrry/Intents/commit/0265653283c3bd4e174609f5339d4f237e7b8cf4))
+* **ui:** restore workspace navigation, tab transitions, and clear saved-run results ([0265653](https://github.com/coryparrry/Intents/commit/0265653283c3bd4e174609f5339d4f237e7b8cf4))
+* **ui:** retain recent saved runs, separate suite trends, and preserve completed case failures ([0265653](https://github.com/coryparrry/Intents/commit/0265653283c3bd4e174609f5339d4f237e7b8cf4))
+
+
+### Documentation
+
+* **release:** explain changelog coverage and maintenance release versions ([c5fcc17](https://github.com/coryparrry/Intents/commit/c5fcc170f89882f015641f848373b322b436f453))
+* **site:** clarify downloads and first evaluation ([#73](https://github.com/coryparrry/Intents/issues/73)) ([caada4a](https://github.com/coryparrry/Intents/commit/caada4a65de0ea1ea2ca570680bb89c71bcdf1a3))
+
+
+### Tests
+
+* **automation:** cover qualification evidence verifier ([#76](https://github.com/coryparrry/Intents/issues/76)) ([d1712d7](https://github.com/coryparrry/Intents/commit/d1712d78a78c2ff7abb4982fa31de4781993ecc6))
+* **intent-lab:** cover executor kill escalation after journal failure and connection deadline ([#104](https://github.com/coryparrry/Intents/issues/104)) ([b17cb76](https://github.com/coryparrry/Intents/commit/b17cb767d336db7e8537ffbfc8ddbae4b8d297ab))
+* **mcp:** cover parse validation for attachment, start-run, list-runs and project release tools ([#81](https://github.com/coryparrry/Intents/issues/81)) ([e6a1e29](https://github.com/coryparrry/Intents/commit/e6a1e299424025a04797ba89ff9aa04f26bed510))
+
 ## [1.4.0](https://github.com/coryparrry/Intents/compare/v1.3.0...v1.4.0) (2026-10-03)
 
 
