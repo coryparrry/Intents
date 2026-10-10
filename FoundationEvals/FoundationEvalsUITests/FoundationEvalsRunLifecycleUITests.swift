@@ -48,6 +48,9 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         openRunReport()
         XCTAssertTrue(runStatus.waitForExistence(timeout: 3))
         XCTAssertEqual(runStatus.label, "Completed")
+        let performance = app.radioButtons["Performance"]
+        XCTAssertTrue(performance.waitForExistence(timeout: 3))
+        performance.click()
         XCTAssertTrue(app.staticTexts["Scored pass rate"].exists, app.debugDescription)
         XCTAssertTrue(app.staticTexts["100%"].firstMatch.exists, app.debugDescription)
 
@@ -102,6 +105,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         launchedApp.launchArguments += [
             "--disable-mcp-autostart",
             "--evaluation-storage", storage.path,
+            "--evaluation-window-width", "1000", "--evaluation-window-height", "700",
             "-SUEnableAutomaticChecks", "NO", "-SUAutomaticallyUpdate", "NO"
         ]
         launchedApp.launch()

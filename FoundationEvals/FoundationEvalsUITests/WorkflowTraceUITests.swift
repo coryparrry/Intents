@@ -71,7 +71,7 @@ final class WorkflowTraceUITests: XCTestCase {
 
     @MainActor
     func testWorkspaceResetConfirmationAndPersistence() throws {
-        try withFixtureApplication { app in
+        try withFixtureApplication(windowWidth: 1000) { app in
             func choose(_ title: String) {
                 app.descendants(matching: .any).matching(identifier: "Start from Scratch").firstMatch.click()
                 app.menuItems[title].click()
@@ -80,6 +80,7 @@ final class WorkflowTraceUITests: XCTestCase {
             let dialog = app.sheets.firstMatch
             XCTAssertTrue(dialog.waitForExistence(timeout: 3), app.debugDescription)
             dialog.buttons["Cancel"].click()
+            app.radioButtons["Workflow trace"].click()
             XCTAssertTrue(app.popUpButtons["Trace case"].exists)
 
             choose("Clear This Suite’s Runs and Traces")

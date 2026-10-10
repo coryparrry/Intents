@@ -7,7 +7,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testDebugAppDoesNotOfferSelfUpdates() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -29,7 +29,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testIntentLabOpensWithScenarioAndConnectionControls() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -78,7 +78,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testDuplicateParameterDraftsRemoveOneAtATime() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -117,7 +117,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testRunCommandsMatchInvalidSuiteControls() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -127,6 +127,7 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         let prompt = app.textViews["Case prompt"]
         XCTAssertTrue(prompt.waitForExistence(timeout: 5))
         prompt.click()
@@ -154,7 +155,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testSuiteEditorShowsPrimaryRunControls() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -170,6 +171,7 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "The editor command must present the main window")
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
 
@@ -177,6 +179,7 @@ final class FoundationEvalsUITests: XCTestCase {
         XCTAssertTrue(app.windows.firstMatch.waitForNonExistence(timeout: 2))
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "The editor command must recover a closed main window")
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Add Case"].exists)
@@ -248,7 +251,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testSetupPagesRenderInDarkAppearance() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -264,6 +267,7 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
 
         app.radioButtons["Setup"].click()
@@ -287,7 +291,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testCaseSelectionSurvivesSetupNavigation() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -297,9 +301,10 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 5))
 
-        app.buttons["Add Case"].click()
+        addCaseToVisibleList(in: app)
         let caseName = app.textFields["Case name"]
         XCTAssertTrue(caseName.waitForExistence(timeout: 2))
         caseName.click()
@@ -322,7 +327,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testSameNamedCasesHaveDistinctAccessibilityLabels() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -332,9 +337,10 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 5))
 
-        app.buttons["Add Case"].click()
+        addCaseToVisibleList(in: app)
         let name = app.textFields["Case name"]
         XCTAssertTrue(name.waitForExistence(timeout: 2))
         name.click()
@@ -350,7 +356,7 @@ final class FoundationEvalsUITests: XCTestCase {
 
     @MainActor
     func testCaseSearchKeepsEditorAndScoringSelectionAligned() throws {
-        let app = XCUIApplication()
+        let app = verificationApplication()
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -360,8 +366,9 @@ final class FoundationEvalsUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 5))
-        app.buttons["Add Case"].click()
+        addCaseToVisibleList(in: app)
         let name = app.textFields["Case name"]
         name.click()
         app.typeKey("a", modifierFlags: .command)
@@ -406,6 +413,29 @@ final class FoundationEvalsUITests: XCTestCase {
         } else {
             app.buttons[title].click()
         }
+    }
+
+    @MainActor
+    private func addCaseToVisibleList(in app: XCUIApplication) {
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "Select case "))
+        let previousCount = rows.count
+        let add = app.buttons["Add Case"]
+        app.activate()
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in add.isHittable }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
+                       "The case action must be reachable before clicking")
+        add.click()
+        let added = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in rows.count == previousCount + 1 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 5), .completed,
+                       "Adding a case must create a row before its editor is changed")
+    }
+
+    @MainActor
+    private func verificationApplication() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["--evaluation-window-width", "1000", "--evaluation-window-height", "700"]
+        return app
     }
 
     private func uiTestStorage(name: String) -> URL {

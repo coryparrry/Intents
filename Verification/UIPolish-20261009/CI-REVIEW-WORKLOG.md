@@ -77,6 +77,30 @@ an older saved run having a later date. Regression coverage also checks newer un
 legacy date fallback, and no scored runs. Reviewed the final diff; git diff checks passed.
 No persistence format or scoring behavior changes. The new point metadata is only presentation data.
 
+## Hosted UI qualification
+
+The native CI job on 8f6f024e4 built successfully and passed core tests, then failed 6 of 18 UI tests.
+Full logs and exported accessibility hierarchies identify stale Report chart assertions and
+viewport/focus problems on the preview runner's 1024x768 display. A reset test explicitly requested
+a 1400-point window and attempted to click the toolbar at x=1323, outside the display. Footer case
+actions did not activate: subsequent hierarchy showed the edited original case and no added case.
+
+Update lifecycle checks to open Performance for charts, use 1000x700 verification windows, activate
+the app after the menu command presents its window, and auto-hide the Dock in the disposable CI
+runner. Reset cancellation now explicitly reopens Workflow trace before checking trace controls.
+These changes retain every original assertion and do not alter production behavior or local Dock settings.
+Added an explicit case-row increment check before editing a newly added case, so a failed footer
+action cannot silently turn into an edit of the previous case. Local build-for-testing succeeded
+for the final UI test source. Pinned actionlint 1.7.12 passed, and 51 CI routing/xctestrun tests passed.
+Local targeted UI execution could not initialize: Xcode timed out enabling automation mode before
+any tests ran. Hosted UI execution remains the qualification gate for these test-harness changes.
+
 ```sh
 INTENTS_SNAPSHOT_DIR=/private/tmp/intents-pr131-review-screens TEST_RUNNER_INTENTS_SNAPSHOT_DIR=/private/tmp/intents-pr131-review-screens xcodebuild -project FoundationEvals/FoundationEvals.xcodeproj -scheme FoundationEvals -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/intents-pr131-native-derived -clonedSourcePackagesDirPath /private/tmp/intents-ui-pr-derived/SourcePackages -jobs 2 -parallel-testing-enabled NO -resultBundlePath /private/tmp/intents-pr131-sparkline.xcresult -only-testing:FoundationEvalsTests/WorkspacePresentationTests -only-testing:FoundationEvalsTests/UISnapshotTests test
+```
+
+```sh
+xcodebuild -project FoundationEvals/FoundationEvals.xcodeproj -scheme FoundationEvals -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/intents-pr131-native-derived -clonedSourcePackagesDirPath /private/tmp/intents-ui-pr-derived/SourcePackages -jobs 2 -parallel-testing-enabled NO build-for-testing
+python3 -m unittest script.tests.test_ci_routes script.tests.test_ci_ui_xctestrun
+go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -ignore 'label "xcode-27" is unknown'
 ```
