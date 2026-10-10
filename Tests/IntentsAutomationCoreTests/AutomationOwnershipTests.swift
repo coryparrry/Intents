@@ -108,6 +108,71 @@ final class AutomationOwnershipTests: XCTestCase, @unchecked Sendable {
         do { _ = try await journal.begin(operationID: "subject", digest: String(repeating: "a", count: 64)); XCTFail("Recovery never authorises repetition") }
         catch { XCTAssertEqual(error as? AutomationContractError, .ambiguousDispatch) }
     }
+    func testTamperedLeaseStoreFailsClosedForEveryDurableInvariant() async throws {
+        let root = try root(); defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("target-leases.json"), target = TargetIdentity(id: "simulator", kind: .simulator)
+        let manager = try AutomationDeviceLeaseManager(storeURL: url)
+        let lease = try await manager.acquire(runID: "run", target: target, control: .ui)
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "setup", leaseGeneration: lease.generation)
+        let dispatch = AutomationDeviceLeaseManager.Dispatch(scope: scope, operationID: "setup", payloadDigest: String(repeating: "a", count: 64))
+        try await manager.recordDispatch(dispatch, lease: lease)
+        try await manager.recordRunner(.init(scope: scope, process: .current(), role: .nativeCommand, executablePath: "/usr/bin/true"), lease: lease)
+        let original = try Data(contentsOf: url), key = target.leaseKey
+        let valid = try JSONDecoder().decode(AutomationLeaseState.self, from: original)
+        XCTAssertEqual(valid.generations[key], lease.generation)
+        let runner = try XCTUnwrap(valid.campaigns[key]?.runners.first); XCTAssertEqual(valid.campaigns[key]?.runners.count, 1)
+        let payload = AutomationDeviceLeaseManager.PrivatePayload(scope: scope, path: root.appendingPathComponent("host.xctestrun").path,
+            frozenDigest: String(repeating: "b", count: 64), cleanDigest: String(repeating: "c", count: 64))
+        func tampered(_ mutate: (inout AutomationLeaseState) -> Void) -> AutomationLeaseState { var state = valid; mutate(&state); return state }
+        // Boundary controls: each rejected case below differs from an accepted state by one field.
+        XCTAssertNoThrow(try tampered { $0.campaigns[key]?.privatePayload = payload }.validate())
+        XCTAssertNoThrow(try tampered { $0.generations[key] = Int.max - 1; $0.campaigns[key]?.lease?.generation = Int.max - 1 }.validate())
+        XCTAssertNoThrow(try tampered { $0.campaigns[key]?.runners = Array(repeating: runner, count: 16) }.validate())
+        let cases: [(String, (inout AutomationLeaseState) -> Void)] = [
+            ("unsupported schema version", { $0.schemaVersion = 2 }),
+            ("campaign stored under another target's key", { $0.campaigns["ios:other"] = $0.campaigns.removeValue(forKey: key); $0.generations["ios:other"] = lease.generation }),
+            ("missing generation entry", { $0.generations.removeValue(forKey: key) }),
+            ("non-positive generation", { $0.generations[key] = 0 }),
+            ("generation cannot be incremented", { $0.generations[key] = Int.max; $0.campaigns[key]?.lease?.generation = Int.max }),
+            ("empty generation key", { $0.generations[""] = 1 }),
+            ("lease generation differs from durable generation", { $0.campaigns[key]?.lease?.generation += 1 }),
+            ("lease for another run", { $0.campaigns[key]?.lease?.runID = "other" }),
+            ("lease for another target", { $0.campaigns[key]?.lease?.target = .init(id: "other", kind: .simulator) }),
+            ("empty owner token", { $0.campaigns[key]?.ownerToken = "" }),
+            ("missing owner process", { $0.campaigns[key]?.owner.pid = 0 }),
+            ("empty owner start identity", { $0.campaigns[key]?.owner.startIdentity = "" }),
+            ("private payload without a lease", { $0.campaigns[key]?.lease = nil; $0.campaigns[key]?.privatePayload = payload }),
+            ("private payload for another lease generation", { $0.campaigns[key]?.privatePayload = .init(scope: .init(runID: "run", attemptID: "attempt", segmentID: "setup", leaseGeneration: lease.generation + 1), path: payload.path, frozenDigest: payload.frozenDigest, cleanDigest: payload.cleanDigest) }),
+            ("private payload for another run", { $0.campaigns[key]?.privatePayload = .init(scope: .init(runID: "other", attemptID: "attempt", segmentID: "setup", leaseGeneration: lease.generation), path: payload.path, frozenDigest: payload.frozenDigest, cleanDigest: payload.cleanDigest) }),
+            ("private payload outside an xctestrun", { $0.campaigns[key]?.privatePayload = .init(scope: scope, path: root.appendingPathComponent("host.plist").path, frozenDigest: payload.frozenDigest, cleanDigest: payload.cleanDigest) }),
+            ("dispatch for another run", { $0.campaigns[key]?.lastDispatch?.scope.runId = "other" }),
+            ("dispatch scope above the current generation", { $0.campaigns[key]?.lastDispatch?.scope.leaseGeneration = lease.generation + 1 }),
+            ("dispatch with a non-hex digest", { $0.campaigns[key]?.lastDispatch?.payloadDigest = String(repeating: "g", count: 64) }),
+            ("dispatch without an operation", { $0.campaigns[key]?.lastDispatch?.operationID = "" }),
+            ("runner scope above the current generation", { $0.campaigns[key]?.runners[0].scope.leaseGeneration = lease.generation + 1 }),
+            ("runner for another run", { $0.campaigns[key]?.runners[0].scope.runId = "other" }),
+            ("missing runner process", { $0.campaigns[key]?.runners[0].process.pid = 0 }),
+            ("empty runner start identity", { $0.campaigns[key]?.runners[0].process.startIdentity = "" }),
+            ("runner with a relative executable", { $0.campaigns[key]?.runners[0].executablePath = "usr/bin/true" }),
+            ("seventeen runners", { $0.campaigns[key]?.runners = Array(repeating: runner, count: 17) }),
+        ]
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        for (name, mutate) in cases {
+            let state = tampered(mutate)
+            XCTAssertThrowsError(try state.validate(), name) { XCTAssertEqual($0 as? AutomationContractError, .invalidIdentity, name) }
+            let bytes = try encoder.encode(state)
+            try bytes.write(to: url); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            XCTAssertThrowsError(try AutomationDeviceLeaseManager(storeURL: url), name) { XCTAssertEqual($0 as? AutomationContractError, .invalidIdentity, name) }
+            let current = await manager.isCurrent(lease); XCTAssertFalse(current, name)
+            do { _ = try await manager.recoveryRecords(); XCTFail(name) }
+            catch { XCTAssertEqual(error as? AutomationContractError, .invalidIdentity, name) }
+            do { try await manager.recordDispatch(dispatch, lease: lease); XCTFail(name) }
+            catch { XCTAssertEqual(error as? AutomationContractError, .invalidIdentity, name) }
+            XCTAssertEqual(try Data(contentsOf: url), bytes, "A rejected transaction must not rewrite the tampered store: \(name)")
+            try original.write(to: url)
+            let restored = await manager.isCurrent(lease); XCTAssertTrue(restored, name)
+        }
+    }
     func testPrivateStoreRejectsSymlinksOversizeAndForeignLockPermissions() async throws {
         let root = try root(); defer { try? FileManager.default.removeItem(at: root) }
         let victim = root.appendingPathComponent("victim.json"); try Data("{}".utf8).write(to: victim)
