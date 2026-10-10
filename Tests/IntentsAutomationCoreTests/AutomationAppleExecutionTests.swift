@@ -6,8 +6,9 @@ import XCTest
 extension AutomationAppleRouteDriverTests {
     actor CommandFixture {
         let harness: Harness
+        let runner: AutomationLiveRunnerFixture.Runner?
         var calls: [String] = [], stops = 0
-        init(_ harness: Harness) { self.harness = harness }
+        init(_ harness: Harness, runner: AutomationLiveRunnerFixture.Runner? = nil) { self.harness = harness; self.runner = runner }
         func run(_ arguments: [String], root: URL, timeout: Duration) throws -> AutomationOwnedCommand.Result {
             calls.append(arguments[0])
             if arguments[0] == "xcresulttool" {
@@ -15,7 +16,8 @@ extension AutomationAppleRouteDriverTests {
                 let output = URL(fileURLWithPath: arguments[index + 1]); try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
                 let h = harness
                 let receipt: [String: Any] = ["schemaVersion": 2,
-                    "runner": ["pid": Int32.max, "startIdentity": "100:0", "executablePath": h.host.hostBundlePath + "/OwnedHost-Runner"],
+                    "runner": ["pid": runner?.identity.pid ?? Int32.max, "startIdentity": runner?.identity.startIdentity ?? "100:0",
+                               "executablePath": runner?.executable.path ?? h.host.hostBundlePath + "/OwnedHost-Runner"],
                     "runID": h.scope.runId, "attemptID": h.scope.attemptId, "segmentID": h.scope.segmentId, "leaseGeneration": h.scope.leaseGeneration,
                     "bundleID": h.host.app.bundleID, "productDigest": h.host.app.productDigest!, "productDigestVersion": 1, "complete": true,
                     "operations": [["operationID": "probe", "dispatched": true, "value": ["kind": "noValue"]]]]

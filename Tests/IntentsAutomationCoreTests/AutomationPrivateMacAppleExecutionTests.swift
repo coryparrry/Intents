@@ -7,8 +7,11 @@ extension AutomationPrivateMacAppleRouteDriverTests {
     actor CommandFixture {
         let harness: Harness
         let includeRuntimeObservation: Bool
+        let runner: AutomationLiveRunnerFixture.Runner?, claimedExecutable: String?
         var calls: [String] = [], stops = 0
-        init(_ harness: Harness, includeRuntimeObservation: Bool = false) { self.harness = harness; self.includeRuntimeObservation = includeRuntimeObservation }
+        init(_ harness: Harness, includeRuntimeObservation: Bool = false, runner: AutomationLiveRunnerFixture.Runner? = nil, claimedExecutable: String? = nil) {
+            self.harness = harness; self.includeRuntimeObservation = includeRuntimeObservation; self.runner = runner; self.claimedExecutable = claimedExecutable
+        }
         func run(_ arguments: [String], root: URL, timeout: Duration) throws -> AutomationOwnedCommand.Result {
             calls.append(arguments[0])
             if arguments[0] == "xcresulttool" {
@@ -16,7 +19,8 @@ extension AutomationPrivateMacAppleRouteDriverTests {
                 let output = URL(fileURLWithPath: arguments[index + 1]); try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
                 let h = harness
                 var receipt: [String: Any] = ["schemaVersion": 2,
-                    "runner": ["pid": Int32.max, "startIdentity": "100:0", "executablePath": h.host.hostBundlePath + "/Contents/MacOS/OwnedHost-Runner"],
+                    "runner": ["pid": runner?.identity.pid ?? Int32.max, "startIdentity": runner?.identity.startIdentity ?? "100:0",
+                               "executablePath": claimedExecutable ?? runner?.executable.path ?? h.host.hostBundlePath + "/Contents/MacOS/OwnedHost-Runner"],
                     "runID": h.scope.runId, "attemptID": h.scope.attemptId, "segmentID": h.scope.segmentId, "leaseGeneration": h.scope.leaseGeneration,
                     "bundleID": h.host.app.bundleID, "productDigest": h.host.app.productDigest!, "productDigestVersion": 2, "complete": true,
                     "operations": [["operationID": "probe", "dispatched": true, "value": ["kind": "noValue"]]]]
