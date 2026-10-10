@@ -22,13 +22,75 @@ final class AutomationSidecarStopTests: XCTestCase, @unchecked Sendable {
     private static func cleanup(_ process: AutomationSidecarProcess) async {
         _ = await process.stop()
         guard let owned = await process.processIdentity else { return }
-        if owned.presence() == .matching { kill(owned.pid, SIGKILL) }
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-        while owned.presence() == .matching && ContinuousClock.now < deadline {
+        let finalPresence = await waitForRelease(presence: {
+            let observed = owned.presence()
+            if observed == .matching { kill(owned.pid, SIGKILL) }
+            return observed
+        }, retry: {
+            guard ContinuousClock.now < deadline else { return false }
             try? await Task.sleep(for: .milliseconds(20))
-        }
-        XCTAssertTrue([.absent, .replaced].contains(owned.presence()), "Fixture child was not released during teardown")
+            return true
+        })
+        XCTAssertTrue([.absent, .replaced].contains(finalPresence),
+                      "Fixture child was not released during teardown: \(finalPresence)")
     }
+
+    private static func waitForRelease(
+        presence: @Sendable () -> AutomationProcessIdentity.Presence,
+        retry: @Sendable () async -> Bool
+    ) async -> AutomationProcessIdentity.Presence {
+        var observed = presence()
+        while ![.absent, .replaced].contains(observed) {
+            guard await retry() else { return observed }
+            observed = presence()
+        }
+        return observed
+    }
+
+    private final class PresenceScript: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [AutomationProcessIdentity.Presence]
+        private var calls = 0
+
+        init(_ values: [AutomationProcessIdentity.Presence]) { self.values = values }
+        func next() -> AutomationProcessIdentity.Presence {
+            lock.lock()
+            defer { lock.unlock() }
+            calls += 1
+            return values.count > 1 ? values.removeFirst() : values[0]
+        }
+        var probeCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return calls
+        }
+    }
+
+    func testFixtureCleanupWaitsThroughUncertainIdentityUntilRelease() async {
+        for terminal in [AutomationProcessIdentity.Presence.absent, .replaced] {
+            let script = PresenceScript([.matching, .unknown, terminal, .unknown])
+            let final = await Self.waitForRelease(presence: { script.next() }, retry: { script.probeCount < 4 })
+            XCTAssertEqual(final, terminal)
+            XCTAssertEqual(script.probeCount, 3, "Retain the terminal observation without probing again")
+        }
+    }
+
+    func testFixtureCleanupFailsClosedWhenIdentityRemainsUnknown() async {
+        let script = PresenceScript([.unknown])
+        let final = await Self.waitForRelease(presence: { script.next() }, retry: { false })
+        XCTAssertEqual(final, .unknown)
+        XCTAssertEqual(script.probeCount, 1)
+    }
+
+    func testFixtureCleanupAcceptsReplacementWithoutRetrying() async {
+        let final = await Self.waitForRelease(presence: { .replaced }, retry: {
+            XCTFail("A replaced process already proves the fixture child is gone")
+            return false
+        })
+        XCTAssertEqual(final, .replaced)
+    }
+
     private func helloResponder(protocolVersion: String, adapterVersion: String) -> String {
         """
         IFS= read -r line || exit 1
