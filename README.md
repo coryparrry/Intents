@@ -49,6 +49,17 @@ Requirements:
 
 The app is signed with Developer ID and notarized by Apple.
 
+Or install the same signed app with [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask coryparrry/tap/intents
+```
+
+The cask requires Apple Silicon and macOS 27 or later. New published releases
+update the tap automatically. To upgrade through Homebrew, run
+`brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
+The app also includes **Check for Updates**.
+
 Xcode is needed to build from source or use Intent Lab. It is not needed for a normal on-device suite.
 
 ## Run your first evaluation

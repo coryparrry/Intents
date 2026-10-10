@@ -27,3 +27,17 @@
   @media(prefers-reduced-motion:reduce){:root{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}.timeline-playhead{display:none}.trace-card{transform:none}}
   html.motion-paused{scroll-behavior:auto}html.motion-paused .timeline-playhead{display:none}
 }
+
+@layer components {
+  .release-note{max-width:670px;margin:18px auto 0;padding:0 22px;font-size:14px;line-height:1.7;color:#606773}.release-note strong{font-weight:600}.release-note a,.development-note a,.start-grid a,.guide-body a,.documentation-links a{color:#2265b8;text-decoration:underline;text-underline-offset:3px}
+  .start-section{padding:0 0 96px}.start-section .eyebrow{margin-bottom:20px}.start-section h2{font-size:42px;letter-spacing:-1.8px}.start-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;margin-top:36px}.start-grid h3{font-size:20px;font-weight:580;letter-spacing:-.5px}.start-grid p{font-size:16px;line-height:1.75;color:#616773;margin:15px 0}.start-grid a{font-size:14px;line-height:1.6}
+  .development-note{max-width:800px;font-size:14px;line-height:1.8;color:#606773;margin:24px auto 0}.open-source-inner>p.development-note{font-size:16px}.documentation-links{display:flex;gap:24px;justify-content:center;flex-wrap:wrap;margin:22px 0;font-size:14px}
+  .guide-body{max-width:820px;margin:45px auto 90px;padding:0 24px;font-size:17px;line-height:1.8}.guide-body h1{font-size:clamp(36px,5vw,54px);line-height:1.1;letter-spacing:-2px;margin:18px 0 24px}.guide-body h2{font-size:29px;letter-spacing:-.7px;margin:44px 0 18px}.guide-body h3{font-size:22px;margin:24px 0 12px}.guide-body p{margin:14px 0}.guide-body li{margin:10px 0}.guide-body code{font-size:.94em;overflow-wrap:anywhere}.guide-body pre{padding:18px;border:1px solid #dce2eb;border-radius:9px;background:#f0f4fa;overflow:auto;line-height:1.5}.guide-body .build-choice{padding:8px 22px 20px;border-left:3px solid #007aff;margin:22px 0}.guide-body .guide-note{color:#606773;font-size:15px}.guide-body .eyebrow{font-size:14px}
+}
+@layer responsive {
+  @media(max-width:760px){.start-section{padding-bottom:65px}.start-section h2{font-size:34px}.start-grid{grid-template-columns:1fr;gap:26px;margin-top:28px}.release-note{font-size:14px;max-width:480px}.development-note{font-size:14px}.guide-body{margin-top:25px}.guide-body h2{font-size:27px}.documentation-links{gap:15px}}
+}
+
+@layer responsive {
+  @media(max-width:760px){.hero h1{font-size:clamp(36px,9.6vw,52px);letter-spacing:-2px}.hero-actions{padding-inline:18px}.hero-description{padding-inline:18px}}
+}
