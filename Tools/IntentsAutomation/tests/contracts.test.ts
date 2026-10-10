@@ -60,6 +60,45 @@ test('oversized completion cannot poison the persisted journal',async()=>{
  const reopened=new OperationJournal(path);await reopened.load();await assert.rejects(()=>reopened.dispatch('large','a'.repeat(64),async()=>true));
  assert.equal(await reopened.dispatch('small','b'.repeat(64),async()=>true),true);
 });
+test('C05 malformed journal files are rejected without dispatch or overwrite',async()=>{
+ const {writeFile}=await import('node:fs/promises');const a='a'.repeat(64);
+ const cases:[string,RegExp|{name:string}][]=[
+  ['[]',/Invalid journal object/],['null',/Invalid journal object/],['"journal"',/Invalid journal object/],['42',/Invalid journal object/],
+  [JSON.stringify({'../x':{digest:a,state:'completed'}}),{name:'ZodError'}],
+  [JSON.stringify({op:{digest:'not-a-digest',state:'completed'}}),{name:'ZodError'}],
+  [JSON.stringify({op:{digest:a,state:'pending'}}),{name:'ZodError'}],
+  [JSON.stringify({op:{digest:a,state:'completed',extra:true}}),{name:'ZodError'}],
+  [JSON.stringify({op:'completed'}),{name:'ZodError'}],
+ ];
+ for(const [content,expected] of cases){
+  const dir=await mkdtemp(join(tmpdir(),'intents-journal-malformed-')),path=join(dir,'journal.json');await writeFile(path,content);let calls=0;
+  const journal=new OperationJournal(path);await assert.rejects(()=>journal.load(),expected,content);
+  await assert.rejects(()=>journal.dispatch('fresh','b'.repeat(64),async()=>{calls++;return true}),expected,content);
+  assert.equal(calls,0,content);assert.equal(await readFile(path,'utf8'),content,content);
+ }
+});
+test('C05 journal count limit rejects new IDs without dispatch and keeps existing replay',async()=>{
+ const {writeFile}=await import('node:fs/promises');const dir=await mkdtemp(join(tmpdir(),'intents-journal-count-')),path=join(dir,'journal.json');
+ const seeded:Record<string,unknown>={};for(let i=0;i<9999;i++)seeded[`seed-${i}`]={digest:'a'.repeat(64),state:'completed',response:i};
+ await writeFile(path,JSON.stringify(seeded));let calls=0;const journal=new OperationJournal(path);await journal.load();
+ assert.equal(await journal.dispatch('edge','b'.repeat(64),async()=>{calls++;return 'edge'}),'edge');assert.equal(calls,1);
+ await assert.rejects(()=>journal.dispatch('overflow','c'.repeat(64),async()=>{calls++;return true}),/Operation journal count limit/);assert.equal(calls,1);
+ assert.equal(await journal.dispatch('seed-7','a'.repeat(64),async()=>{calls++;return 'redo'}),7);assert.equal(calls,1);
+ const persisted=JSON.parse(await readFile(path,'utf8'));assert.equal(Object.keys(persisted).length,10000);assert.equal(persisted.overflow,undefined);
+ const reopened=new OperationJournal(path);await reopened.load();
+ await assert.rejects(()=>reopened.dispatch('overflow','c'.repeat(64),async()=>{calls++;return true}),/Operation journal count limit/);assert.equal(calls,1);
+});
+test('C05 completion rejects when another owner changes the entry mid-dispatch',async()=>{
+ const {writeFile}=await import('node:fs/promises');const a='a'.repeat(64);
+ const rewrites:Record<string,unknown>[]=[{},{op:{digest:'b'.repeat(64),state:'dispatched'}},{op:{digest:a,state:'completed',response:'other owner'}}];
+ for(const rewrite of rewrites){
+  const dir=await mkdtemp(join(tmpdir(),'intents-journal-completion-')),path=join(dir,'journal.json');let calls=0;
+  const journal=new OperationJournal(path);await journal.load();
+  await assert.rejects(()=>journal.dispatch('op',a,async()=>{calls++;
+   assert.equal(JSON.parse(await readFile(path,'utf8')).op.state,'dispatched');await writeFile(path,JSON.stringify(rewrite));return 'mine';}),/Conflicting completion/);
+  assert.equal(calls,1);assert.deepEqual(JSON.parse(await readFile(path,'utf8')),rewrite);
+ }
+});
 
 test('C01 Unicode limits use the same UTF-16 code units as Swift',()=>{
  assert.equal(validateValue({kind:'text',value:'😀'.repeat(16384)}).kind,'text');
@@ -123,4 +162,40 @@ test('C01 prototype-name binding keys are preserved rather than silently removed
  const {payloadDigest:claimed,...checked}=parsed;assert.equal(segmentPayloadDigest(checked),claimed);
  assert.throws(()=>segmentSchema.parse({...body,bindings:Array(1),payloadDigest:claimed}));
  assert.throws(()=>segmentSchema.parse({...body,bindings:Object.fromEntries(Array.from({length:31},(_,i)=>['binding'+i,'literal'])),payloadDigest:claimed}));
+});
+
+test('segment superRefine rejects ambiguous, unbound or mutating operations with positive controls',()=>{
+ const scope={protocolVersion:1,runId:'run',attemptId:'attempt',segmentId:'setup',leaseGeneration:1};
+ const base={scope,operationId:'run:attempt:setup',payloadDigest:'a'.repeat(64),phase:'setup',bindings:{},timeoutMs:1000};
+ const goal={id:'create',instruction:'Create',endpoint:{kind:'testId',value:'done'},maximumCalls:12,maximumActions:30};
+ const field={kind:'testId',value:'field'};
+ const tap=(id:string)=>({kind:'tap',id,locator:{kind:'testId',value:'button'}});
+ const fill=(binding:string,locator:object=field)=>({kind:'fillBinding',id:'fill',locator,binding});
+ const navigate=(id='create',goalId='create')=>({kind:'navigateGoal',id,goal:{...goal,id:goalId}});
+ const messages=(segment:object)=>{const result=segmentSchema.safeParse(segment);return result.success?[]:result.error.issues.map(issue=>issue.message);};
+ const cases:{name:string,rejected:object,accepted:object,message:string}[]=[
+  {name:'duplicate operation IDs',message:'Duplicate operation IDs',
+   rejected:{...base,operations:[tap('same'),tap('same')]},accepted:{...base,operations:[tap('first'),tap('second')]}},
+  {name:'unbound fill',message:'Missing frozen fill binding',
+   rejected:{...base,bindings:{other:'value'},operations:[fill('approved')]},accepted:{...base,bindings:{approved:'value'},operations:[fill('approved')]}},
+  {name:'observe-phase fill',message:'Observation cannot fill inputs',
+   rejected:{...base,phase:'observe',bindings:{approved:'value'},operations:[fill('approved')]},
+   accepted:{...base,phase:'observe',operations:[{kind:'observeProperty',id:'observe',locator:field,property:'text'}]}},
+  {name:'goal beside another operation',message:'Ambiguous goal or observer inputs',
+   rejected:{...base,operations:[navigate(),tap('extra')]},accepted:{...base,operations:[navigate()]}},
+  {name:'goal id differs from operation id',message:'Ambiguous goal or observer inputs',
+   rejected:{...base,operations:[navigate('create','other')]},accepted:{...base,operations:[navigate('other','other')]}},
+  {name:'observe-phase goal with bindings',message:'Ambiguous goal or observer inputs',
+   rejected:{...base,phase:'observe',bindings:{approved:'value'},operations:[navigate()]},accepted:{...base,phase:'observe',operations:[navigate()]}},
+  {name:'role locator on tap',message:'Role locators support only ordinary textbox or searchbox fill',
+   rejected:{...base,operations:[{kind:'tap',id:'tap',locator:{kind:'role',value:'textbox'}}]},
+   accepted:{...base,bindings:{approved:'value'},operations:[fill('approved',{kind:'role',value:'textbox'})]}},
+  {name:'secure field role fill',message:'Role locators support only ordinary textbox or searchbox fill',
+   rejected:{...base,bindings:{approved:'value'},operations:[fill('approved',{kind:'role',value:'AXSecureTextField'})]},
+   accepted:{...base,bindings:{approved:'value'},operations:[fill('approved',{kind:'role',value:'searchbox'})]}}
+ ];
+ for(const {name,rejected,accepted,message} of cases){
+  assert.deepEqual(messages(rejected),[message],name+' rejected');
+  assert.deepEqual(messages(accepted),[],name+' positive control');
+ }
 });

@@ -60,12 +60,16 @@ import SwiftUI
         if !finished { closing = true; panel?.orderOut(nil); Task { await cancelAndDrain() } }
     }
     private func approve(_ request: AutomationSecretFillRequest) {
-        guard !closing, !finished, panel?.isKeyWindow == true, model.state == .approved,
-              request.scope == model.review.scope, request.sinkID == model.review.sinkID,
-              request.sinkFingerprint == model.review.sinkFingerprint else {
+        guard !closing, !finished,
+              Self.accepts(request, review: model.review, state: model.state, panelIsKey: panel?.isKeyWindow == true) else {
             Task { await cancelAndDrain() }; return
         }
         finish(.success(request))
+    }
+    static func accepts(_ request: AutomationSecretFillRequest, review: AutomationSecretConsentReview,
+                        state: AutomationSecretConsentModel.State, panelIsKey: Bool) -> Bool {
+        panelIsKey && state == .approved && request.scope == review.scope
+            && request.sinkID == review.sinkID && request.sinkFingerprint == review.sinkFingerprint
     }
     private func finish(_ result: Result<AutomationSecretFillRequest, Error>) {
         guard !finished else { return }; finished = true

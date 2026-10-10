@@ -80,6 +80,62 @@ final class AutomationUIProgramTests: XCTestCase, @unchecked Sendable {
         let operations = (0..<30).map { AutomationUIProgram.Operation(id: "fill\($0)", kind: .fillBinding, locator: .init(.testId, "field\($0)"), binding: "value\($0)") }
         let bindings = Dictionary(uniqueKeysWithValues: (0..<30).map { ("value\($0)", String(repeating: "\n", count: 32768)) })
         let program = AutomationUIProgram(operations: operations, bindings: bindings)
-        XCTAssertThrowsError(try program.payload(scope: .init(runID: "run", attemptID: "attempt", segmentID: "setup", leaseGeneration: 1), phase: .setup, operationID: "setup"))
+        XCTAssertThrowsError(try program.payload(scope: .init(runID: "run", attemptID: "attempt", segmentID: "setup", leaseGeneration: 1), phase: .setup, operationID: "setup")) { error in
+            XCTAssertEqual(error as? AutomationContractError, .invalidPlan("UI payload exceeds frame budget"))
+        }
+    }
+    func testFrameBudgetAdmitsExactSerializedLimitAndRejectsOneByteAbove() throws {
+        let operations = (0..<16).map { AutomationUIProgram.Operation(id: "fill\($0)", kind: .fillBinding,
+            locator: .init(.testId, "field\($0)"), binding: "value\($0)") }
+        var bindings = Dictionary(uniqueKeysWithValues: (0..<15).map { ("value\($0)", String(repeating: "\n", count: 32768)) })
+        bindings["value15"] = ""
+        var program = AutomationUIProgram(operations: operations, bindings: bindings)
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "setup", leaseGeneration: 1)
+        let baseline = try program.payload(scope: scope, phase: .setup, operationID: "setup")
+        let remainingBytes = 1_047_552 - (try JSONEncoder().encode(baseline).count)
+        XCTAssertGreaterThan(remainingBytes, 0)
+        // JSON escapes each newline as two bytes; the optional ASCII byte handles odd overhead.
+        let padding = String(repeating: "\n", count: remainingBytes / 2) + String(repeating: "x", count: remainingBytes % 2)
+        XCTAssertLessThan(padding.utf16.count, 32768)
+        program.bindings["value15"] = padding
+        try program.validate(phase: .setup)
+        let admitted = try program.payload(scope: scope, phase: .setup, operationID: "setup")
+        XCTAssertEqual(try JSONEncoder().encode(admitted).count, 1_047_552)
+
+        program.bindings["value15"] = padding + "x"
+        try program.validate(phase: .setup)
+        // Independently measure the candidate so rejection cannot come from another bound.
+        var oversized = try XCTUnwrap(admitted.object)
+        var oversizedBindings = try XCTUnwrap(oversized["bindings"]?.object)
+        oversizedBindings["value15"] = .string(padding + "x")
+        oversized["bindings"] = .object(oversizedBindings)
+        XCTAssertEqual(try JSONEncoder().encode(AutomationJSON.object(oversized)).count, 1_047_553)
+        XCTAssertThrowsError(try program.payload(scope: scope, phase: .setup, operationID: "setup")) { error in
+            XCTAssertEqual(error as? AutomationContractError, .invalidPlan("UI payload exceeds frame budget"))
+        }
+    }
+    func testCanonicalJSONRejectsNumbersThatAreNotExactSafeIntegers() throws {
+        let rejected: [AutomationJSON] = [
+            .number(1.5), .number(-0.5), .number(.infinity), .number(-.infinity), .number(.nan),
+            .number(9_007_199_254_740_992), .number(-9_007_199_254_740_992), .number(1e300),
+            .array([.number(1), .number(2.25)]), .object(["timeoutMs": .number(120_000.5)])]
+        for value in rejected {
+            for legacy in [true, false] {
+                XCTAssertThrowsError(try AutomationCanonicalJSON.encode(value, legacyObjectKeyOrder: legacy), "\(value)") { error in
+                    XCTAssertEqual(error as? AutomationContractError, .invalidIdentity)
+                }
+            }
+        }
+    }
+    func testCanonicalJSONRendersSafeIntegersWithoutFractionOrExponent() throws {
+        let cases: [(AutomationJSON, String)] = [
+            (.number(0), "0"), (.number(-0.0), "0"), (.number(2), "2"), (.number(-42), "-42"), (.number(120_000), "120000"),
+            (.number(9_007_199_254_740_991), "9007199254740991"), (.number(-9_007_199_254_740_991), "-9007199254740991"),
+            (.array([.number(1), .number(-0.0)]), "[1,0]"), (.object(["b": .number(2), "a": .number(1)]), #"{"a":1,"b":2}"#)]
+        for (value, expected) in cases {
+            XCTAssertEqual(String(decoding: try AutomationCanonicalJSON.encode(value), as: UTF8.self), expected)
+            XCTAssertEqual(String(decoding: try AutomationCanonicalJSON.encode(value, legacyObjectKeyOrder: true), as: UTF8.self), expected)
+        }
+        XCTAssertNotEqual(try AutomationCanonicalJSON.encode(.number(1)), try AutomationCanonicalJSON.encode(.number(2)))
     }
 }

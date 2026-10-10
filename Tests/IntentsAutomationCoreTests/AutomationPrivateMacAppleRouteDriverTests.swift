@@ -26,7 +26,7 @@ final class AutomationPrivateMacAppleRouteDriverTests: XCTestCase, @unchecked Se
         let leases: AutomationDeviceLeaseManager, lease: AutomationDeviceLeaseManager.Lease, scope: AutomationScope
         let release: Release
     }
-    func fixture() async throws -> Harness {
+    func fixture(liveHost: Bool = false) async throws -> Harness {
         let root = URL(fileURLWithPath: "/private/tmp/private-mac-apple-" + UUID().uuidString)
         let host = root.appendingPathComponent("OwnedHost-Runner.app"), subject = root.appendingPathComponent("Subject.app")
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -36,6 +36,7 @@ final class AutomationPrivateMacAppleRouteDriverTests: XCTestCase, @unchecked Se
             try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: bundle.appendingPathComponent("Contents/Info.plist"))
             try Data([0xcf,0xfa,0xed,0xfe,0x0c,0,0,1,0,0,0,0]).write(to: bundle.appendingPathComponent("Contents/MacOS/" + name))
         }
+        if liveHost { try AutomationLiveRunnerFixture.installExecutable(at: host.appendingPathComponent("Contents/MacOS/OwnedHost-Runner")) }
         try FileManager.default.createDirectory(at: host.appendingPathComponent("Contents/PlugIns/OwnedHost.xctest"), withIntermediateDirectories: true)
         let entry: [String: Any] = ["BlueprintName": "OwnedHost", "TestHostPath": "__TESTROOT__/OwnedHost-Runner.app",
                                   "TestBundlePath": "__TESTHOST__/Contents/PlugIns/OwnedHost.xctest", "UITargetAppPath": "__TESTROOT__/Subject.app", "IsUITestBundle": true]

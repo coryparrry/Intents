@@ -49,6 +49,7 @@ jobs:
           export PATH="$PWD/Tools/IntentsAutomation/.runtime/node-v24.21.0-darwin-arm64/bin:$PATH"
           npm ci --prefix Tools/IntentsAutomation --ignore-scripts --no-audit --no-fund
           script/automation_test.sh --scope sidecar
+          script/automation_test.sh --scope staging
           python3 Tools/IntentsAutomation/tests/integration_contracts_test.py
           python3 Tools/IntentsAutomation/tests/bundle_manifest_test.py
           python3 Tools/IntentsAutomation/tests/sdk_lifecycle_patch_test.py
