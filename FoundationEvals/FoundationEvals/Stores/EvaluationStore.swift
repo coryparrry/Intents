@@ -52,6 +52,8 @@ final class EvaluationStore {
     var isProcessingFiles = false
     private(set) var activeRun: EvaluationActiveRun?
 
+    @ObservationIgnored let telemetry: TelemetryController?
+    @ObservationIgnored private var evaluationTelemetry: TelemetrySpan?
     private let runner = EvaluationRunner()
     private let experimentRunner = EvaluationExperimentRunner()
     private let featureAdapterRunner = EvaluationFeatureAdapterRunner()
@@ -100,6 +102,7 @@ final class EvaluationStore {
 
     init(
         supportDirectory customSupportDirectory: URL? = nil,
+        telemetry: TelemetryController? = nil,
         suiteLocalStateWriter: @escaping (Data, URL) throws -> Void = {
             try $0.write(to: $1, options: .atomic)
         },
@@ -117,12 +120,16 @@ final class EvaluationStore {
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                 .appending(path: "FoundationEvals", directoryHint: .isDirectory)
         supportDirectory = base
+        self.telemetry = telemetry
         self.suiteLocalStateWriter = suiteLocalStateWriter
         self.workspaceCatalogWriter = workspaceCatalogWriter
         self.runWriter = runWriter
         self.pendingCompletedRunsWriter = pendingCompletedRunsWriter
 
+        let startupDiagnostic = telemetry?.begin(.workspaceLoad)
         var startupNotice: String?
+        var startupDiagnosticFailure: TelemetryFailure?
+        defer { telemetry?.end(startupDiagnostic, failure: startupDiagnosticFailure ?? (startupNotice == nil ? nil : .storage)) }
         do {
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         } catch {
@@ -136,6 +143,7 @@ final class EvaluationStore {
         do {
             bootstrap = try EvaluationWorkspacePersistence.bootstrap(in: base, legacySuite: legacySuite.suite)
         } catch {
+            startupDiagnosticFailure = .storage
             catalogRecoveryAttempted = true
             let catalogURL = base.appending(path: EvaluationWorkspacePersistence.catalogFilename)
             catalogRecoveryCanPublish = !FileManager.default.fileExists(atPath: catalogURL.path)
@@ -2121,17 +2129,20 @@ final class EvaluationStore {
 
     func loadCoreAIModel() async {
         guard !isRunning, draftSuite.modelConfiguration.provider == .coreAI else { return }
+        let diagnostic = telemetry?.begin(.modelLoad)
         let configuration = draftSuite.modelConfiguration.coreAISettings
         loadedCoreAI = nil
         loadedCoreAIConfiguration = configuration
         coreAILoadStatus = .loading
         do {
             let result = try await CoreAIModelLoader.shared.load(configuration: configuration)
-            guard loadedCoreAIConfiguration == configuration else { return }
+            guard loadedCoreAIConfiguration == configuration else { telemetry?.end(diagnostic, failure: .cancelled); return }
             loadedCoreAI = result
             coreAILoadStatus = .loaded(CoreAIModelDescriptor(result: result))
+            telemetry?.end(diagnostic)
         } catch {
-            guard loadedCoreAIConfiguration == configuration else { return }
+            guard loadedCoreAIConfiguration == configuration else { telemetry?.end(diagnostic, failure: .cancelled); return }
+            telemetry?.end(diagnostic, failure: .classify(error))
             coreAILoadStatus = .failed(error.localizedDescription)
         }
     }
@@ -2143,18 +2154,22 @@ final class EvaluationStore {
     func refreshCloudMetadata() async {
         guard !isRunning, !isRefreshingCloud,
               Self.hasAuthorizedPrivateCloudComputeSignature else { return }
+        let diagnostic = telemetry?.begin(.cloudMetadata)
         isRefreshingCloud = true
         cloudMetadataError = nil
         defer { isRefreshingCloud = false }
         do {
             let size = try await PrivateCloudComputeLanguageModel().contextSize
             guard size > 0 else {
+                telemetry?.end(diagnostic, failure: .modelUnavailable)
                 cloudContextSize = nil
                 cloudMetadataError = "The cloud model reported an invalid context capacity."
                 return
             }
             cloudContextSize = size
+            telemetry?.end(diagnostic)
         } catch {
+            telemetry?.end(diagnostic, failure: .classify(error))
             cloudContextSize = nil
             cloudMetadataError = "Could not load cloud metadata: \(error.localizedDescription)"
         }
@@ -2759,7 +2774,11 @@ final class EvaluationStore {
 
     @discardableResult
     func saveSuite() -> Bool {
+        let diagnostic = telemetry?.begin(.suiteSave)
+        var diagnosticFailure: TelemetryFailure?
+        defer { telemetry?.end(diagnostic, failure: diagnosticFailure) }
         if let workspacePersistenceBlocker {
+            diagnosticFailure = .storage
             notice = workspacePersistenceBlocker
             draftSaveFailed = true
             return false
@@ -2772,9 +2791,11 @@ final class EvaluationStore {
             try commitSuite(draftSuite)
             return true
         } catch EvaluationStoreError.invalidSuite {
+            diagnosticFailure = .validation
             persistCurrentDraft(fallbackNotice: nil)
             return false
         } catch {
+            diagnosticFailure = .classify(error)
             persistCurrentDraft(fallbackNotice: "Could not save the suite: \(error.localizedDescription)")
             return false
         }
@@ -2834,6 +2855,11 @@ final class EvaluationStore {
 
     @discardableResult
     func startRun(id: UUID, expectedRevision: String) throws -> EvaluationRunOperation {
+        do { return try beginRun(id: id, expectedRevision: expectedRevision) }
+        catch { telemetry?.issue(.evaluation, .classify(error)); throw error }
+    }
+
+    private func beginRun(id: UUID, expectedRevision: String) throws -> EvaluationRunOperation {
         try retryUnsavedRun()
         if let existing = runStatus(id: id) {
             guard existing.suiteRevision == expectedRevision else {
@@ -2888,6 +2914,7 @@ final class EvaluationStore {
                 )
                 throw error
             }
+            evaluationTelemetry = telemetry?.begin(.evaluation)
             activeRun = active
             activeRunSuite = suiteSnapshot
             activeRunEvidence = evidence
@@ -3074,6 +3101,8 @@ final class EvaluationStore {
     private func finish(_ run: EvaluationRun) {
         guard activeRun?.id == run.id else { return }
         let run = runPreparedForHistory(run)
+        telemetry?.end(evaluationTelemetry, failure: TelemetryFailure.evaluationFailure(results: run.results, cancelled: run.cancelled))
+        evaluationTelemetry = nil
         do {
             try persistRun(run)
             runs.removeAll { $0.id == run.id }
@@ -3818,10 +3847,13 @@ final class EvaluationStore {
     }
 
     private func persistRun(_ run: EvaluationRun) throws {
+        let diagnostic = telemetry?.begin(.runSave)
         do {
             try runWriter(CanonicalJSON.data(for: run),
                 runsDirectory.appending(path: "\(run.id.uuidString).json"))
+            telemetry?.end(diagnostic)
         } catch {
+            telemetry?.end(diagnostic, failure: .classify(error))
             throw EvaluationStoreError.persistence(error.localizedDescription)
         }
     }

@@ -1,0 +1,8 @@
+{
+  "FoundationEvals/FoundationEvals/Services/TelemetryController.swift": "bfb5248dd373be9b36c13fe1d693ebaabccdea35f85d4212c0eb9d9fa0ba8e40",
+  "FoundationEvals/FoundationEvals/Support/TelemetryCrashPrivacy.swift": "2ea791b03ffcd702593cdbc2cb5d594ee3206cced7044e11e0664ada19357e9d",
+  "FoundationEvals/FoundationEvals/Support/TelemetryPendingCrashReports.swift": "e912458b97ed3593d9b1c495be2735fbc62d7f2812e4dfe54d7edf13c66e070b",
+  "FoundationEvals/FoundationEvals/Support/TelemetryPrivacy.swift": "fabd907c83f6e2eee2c23c8afff24992ca835edf7ebaae4737b9c1677df561ce",
+  "FoundationEvals/FoundationEvals/Support/TelemetryEvent.swift": "fc9ddd5931db09079641434947ac138c12bb6160135ad4146b620ae3f08f5150",
+  "FoundationEvals/FoundationEvalsTests/TelemetryCrashTests.swift": "aa39ddce022af371495e0bee10439c4a98f5e6ff28f965410ab40bc069ed6559"
+}

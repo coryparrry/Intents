@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -6,6 +7,7 @@ struct ContentView: View {
     @State private var automationStore: AppAutomationStore
     @State private var scenarioCoordinator: ScenarioCoordinator
     @Environment(DeveloperRunnerStore.self) private var runners
+    @Environment(\.controlActiveState) private var windowActivity
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     init(store: EvaluationStore, control: EvaluationAppControl? = nil, automationStore: AppAutomationStore? = nil) {
@@ -13,7 +15,7 @@ struct ContentView: View {
         let control = control ?? EvaluationAppControl(store: store)
         _productionWorkspace = State(initialValue: control.production)
         _scenarioCoordinator = State(initialValue: control.scenarios)
-        _automationStore = State(initialValue: automationStore ?? AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation")))
+        _automationStore = State(initialValue: automationStore ?? AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"), telemetry: store.telemetry))
     }
 
     var body: some View {
@@ -38,6 +40,11 @@ struct ContentView: View {
         .onChange(of: automationStore.evidenceImportRevision) { _, _ in
             Task { await scenarioCoordinator.refreshAutomationEvidence() }
         }
+        .onChange(of: store.telemetry?.isEnabled) { _, _ in recordScreen() }
+        .onChange(of: store.selection, initial: true) { _, _ in recordScreen() }
+        .onChange(of: windowActivity, initial: true) { _, activity in
+            if activity == .key { recordScreen() }
+        }
         .onChange(of: runners.activeRuns) { previous, current in
             for status in current.values where [.failed, .timedOut, .disconnected].contains(status.phase) {
                 guard previous[status.id] != status else { continue }
@@ -56,6 +63,11 @@ struct ContentView: View {
         } message: {
             Text(store.notice ?? "")
         }
+    }
+
+    private func recordScreen() {
+        guard windowActivity == .key else { return }
+        store.telemetry?.screen(TelemetryScreen(selection: store.selection))
     }
 
     private var workspaceNavigation: some View {

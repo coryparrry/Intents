@@ -26,11 +26,11 @@ struct FoundationEvalsApp: App {
         let storeDirectory: URL?
         do { storeDirectory = ProductionNativeWorkerCommand.isRequested ? try ProductionNativeWorkerCommand.prepareScratch() : Self.acceptanceStorageDirectory }
         catch { FileHandle.standardError.write(Data(("Native eval worker: \(error.localizedDescription)\n").utf8)); ProductionNativeWorkerCommand.finish(30) }
-        let store = EvaluationStore(supportDirectory: storeDirectory)
+        let store = EvaluationStore(supportDirectory: storeDirectory, telemetry: telemetry)
         let control = EvaluationAppControl(store: store)
         appControl = control
         let nativeEvidence = ScenarioPersistence(rootDirectory: store.overviewStorageDirectory.appendingPathComponent("IntentLab"))
-        let automationStore = AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"),
+        let automationStore = AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"), telemetry: telemetry,
             evidenceImporter: { plan, report, source, exposure in
                 try await nativeEvidence.importAutomationEvidence(plan: plan, report: report, sourceRoot: source, exposure: exposure)
             })
@@ -41,11 +41,12 @@ struct FoundationEvalsApp: App {
                 stop: { await runtime.stop() }
             ),
             credentialStore: Self.launchCredentialStore,
-            existingCredentialOnly: ProductionNativeWorkerCommand.isRequested || Self.readOnlyMCPCredentialRequest
+            existingCredentialOnly: ProductionNativeWorkerCommand.isRequested || Self.readOnlyMCPCredentialRequest,
+            telemetry: telemetry
         )
         runtime.settingsController = settings
         _telemetry = State(initialValue: telemetry)
-        telemetry.capture(.appOpened)
+        telemetry.appBecameActive()
         _store = State(initialValue: store)
         _runnerStore = State(initialValue: control.runners)
         _automationStore = State(initialValue: automationStore)

@@ -140,6 +140,7 @@ final class AppAutomationStore {
     }
     private var hasSecurityScope = false
     var closing = false
+    @ObservationIgnored private let telemetry: TelemetryController?
     private var task: Task<Void, Never>?
     var commandRequests: [UUID: AutomationNativeCommandStatus] = [:]
     var commandHistory = AutomationCommandHistory()
@@ -152,7 +153,7 @@ final class AppAutomationStore {
     private let simulatorInventoryReader: AutomationNativeSimulatorInventoryReader
     private var simulatorInventoryRevision = 0
     private let developerDirectory: URL
-    init(supportDirectory: URL, developerDirectory: URL = AutomationNativeToolchain.developerDirectory(),
+    init(supportDirectory: URL, telemetry: TelemetryController? = nil, developerDirectory: URL = AutomationNativeToolchain.developerDirectory(),
          savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])? = nil,
          savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil, runExecutor: AutomationNativeRunExecutor? = nil,
          uiRuntimeProvider: (@Sendable () throws -> AutomationNativeUIRuntime)? = nil,
@@ -174,6 +175,7 @@ final class AppAutomationStore {
         self.macSavedRuntimeProvider = macSavedRuntimeProvider
         self.nativeMacTargetReader = nativeMacTargetReader
         self.evidenceImporter = evidenceImporter
+        self.telemetry = telemetry
         support = supportDirectory; self.entityQueryExecutor = entityQueryExecutor; self.comparisonExecutor = comparisonExecutor; self.savedAttemptsReader = savedAttemptsReader
         self.savedCasesReader = savedCasesReader; self.runExecutor = runExecutor; self.uiRuntimeProvider = uiRuntimeProvider; self.searchExecutor = searchExecutor; self.reproductionExecutor = reproductionExecutor; self.reproductionPreflightReader = reproductionPreflightReader
     }
@@ -712,6 +714,7 @@ final class AppAutomationStore {
             commandRequests[commandID]?.revision = request.plan.revision
             commandRequests[commandID]?.caseDigest = request.caseDigest
         }
+        let diagnostic = telemetry?.begin(.automationRun)
         task = Task {
             defer { progress = nil; task = nil; activeCommand = nil; releaseScopeIfClosing() }
             do {
@@ -728,6 +731,7 @@ final class AppAutomationStore {
                         retainLearnedSetup(captured)
                     }
                 }
+                telemetry?.end(diagnostic, failure: TelemetryFailure.automationFailure(result))
                 report = result
                 if let commandID {
                     commandRequests[commandID]?.state = "completed"
@@ -737,6 +741,7 @@ final class AppAutomationStore {
                 await importEvidence(plan: request.plan, report: result)
                 await refreshSavedCases()
             } catch {
+                telemetry?.end(diagnostic, failure: .classify(error))
                 message = errorText(error)
                 if let commandID { commandRequests[commandID]?.state = error is CancellationError ? "cancelled" : "failed" }
                 await refreshSavedCases()

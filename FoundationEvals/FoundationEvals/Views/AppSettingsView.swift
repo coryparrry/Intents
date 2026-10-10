@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private enum AppSettingsPage: String, Hashable {
@@ -10,6 +11,7 @@ struct AppSettingsView: View {
     @Bindable var store: EvaluationStore
     @Bindable var mcpSettings: MCPSettingsController
     @Bindable var telemetry: TelemetryController
+    @Environment(\.controlActiveState) private var windowActivity
     @AppStorage("settingsPage") private var selectedPage = AppSettingsPage.mcp
 
     var body: some View {
@@ -22,35 +24,19 @@ struct AppSettingsView: View {
                 .tabItem { Label("Judges", systemImage: "checkmark.seal") }
                 .tag(AppSettingsPage.judges)
 
-            Form {
-                Section("Optional telemetry") {
-                    Toggle("Share usage statistics", isOn: Binding(
-                        get: { telemetry.isEnabled },
-                        set: { telemetry.setEnabled($0) }
-                    ))
-                    .disabled(!telemetry.isConfigured)
-                    .accessibilityIdentifier("Share usage statistics")
-
-                    Text("Share anonymous app-open statistics with PostHog. Includes only app and macOS versions and a random installation identifier, not your name, email, or Apple account.")
-                        .foregroundStyle(.secondary)
-
-                    Text("On by default. You can turn this off at any time. AI evaluations, inputs, outputs, results, and evaluation activity are not tracked. No files, credentials, screen recordings, or automatic interaction tracking.")
-                        .foregroundStyle(.secondary)
-
-                    Text("Turning this off stops new telemetry and clears queued events. Data already received by PostHog is not deleted.")
-                        .foregroundStyle(.secondary)
-
-                    if !telemetry.isConfigured {
-                        Text("Telemetry is unavailable in this build.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .formStyle(.grouped)
-            .frame(width: 620, height: 440)
+            TelemetrySettingsView(telemetry: telemetry)
             .tabItem { Label("Privacy", systemImage: "hand.raised") }
             .tag(AppSettingsPage.privacy)
         }
         .padding(12)
+        .onChange(of: telemetry.isEnabled) { _, _ in recordScreen() }
+        .onChange(of: selectedPage, initial: true) { _, _ in recordScreen() }
+        .onChange(of: windowActivity, initial: true) { _, activity in
+            if activity == .key { recordScreen() }
+        }
+    }
+    private func recordScreen() {
+        guard windowActivity == .key else { return }
+        telemetry.screen(selectedPage == .privacy ? .privacySettings : (selectedPage == .judges ? .judgeSettings : .mcpSettings))
     }
 }

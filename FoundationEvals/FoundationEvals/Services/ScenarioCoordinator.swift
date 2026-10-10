@@ -220,6 +220,7 @@ final class ScenarioCoordinator {
 
     func load() async {
         guard !hasLoaded else { return }
+        let diagnostic = evaluationStore.telemetry?.begin(.scenarioLoad)
         do {
             try await persistence.prepare()
             definitions = try await persistence.loadDefinitions()
@@ -274,8 +275,10 @@ final class ScenarioCoordinator {
                 notice = "A previous device test ended without proven cleanup. Its destination is quarantined until termination and fixture readiness are confirmed."
             }
             hasLoaded = true
+            evaluationStore.telemetry?.end(diagnostic)
             await refreshDevices()
         } catch {
+            evaluationStore.telemetry?.end(diagnostic, failure: .classify(error))
             notice = "Intent Lab storage could not be loaded: \(error.localizedDescription)"
         }
     }
@@ -1054,7 +1057,12 @@ final class ScenarioCoordinator {
     }
 
     func run() async {
+        guard !isRunning else { return }
+        let diagnostic = evaluationStore.telemetry?.begin(.scenarioRun)
+        var diagnosticFailure: TelemetryFailure? = .evidence
+        defer { evaluationStore.telemetry?.end(diagnostic, failure: diagnosticFailure) }
         guard hasLoaded else {
+            diagnosticFailure = .storage
             notice = "Intent Lab storage must load successfully before a device scenario can run."
             return
         }
@@ -1063,6 +1071,7 @@ final class ScenarioCoordinator {
         do {
             try acquireExecutionOwner(executionOwnerID)
         } catch {
+            diagnosticFailure = .classify(error)
             notice = error.localizedDescription
             return
         }
@@ -1085,10 +1094,15 @@ final class ScenarioCoordinator {
         let changedDimensions = statedChangedDimensions
         let linkedRun = linkedFeatureRun(for: draft)
         if draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+            let previousRecords = Set(executionRecords.map(\.id))
             await runStableExecution(
                 ownerID: executionOwnerID, runConfiguration: runConfiguration,
                 runTrusted: runTrusted, backend: runFeatureBackend
             )
+            if cancellationRequested { diagnosticFailure = .cancelled }
+            else if let record = executionRecords.first(where: { !previousRecords.contains($0.id) }) {
+                diagnosticFailure = record.aggregateOutcome == .passed ? nil : .evidence
+            }
             await refreshPreflight()
             return
         }
@@ -1140,6 +1154,7 @@ final class ScenarioCoordinator {
                     do {
                         run = try await ScenarioResponseAssessmentService.assess(run, definition: definition)
                     } catch {
+                        evaluationStore.telemetry?.issue(.scenarioAssessment, .classify(error), relatedTo: diagnostic)
                         notice = "The run was retained, but semantic assessment needs review: \(error.localizedDescription)"
                     }
                 }
@@ -1188,6 +1203,7 @@ final class ScenarioCoordinator {
             }
             try await persistence.clearPendingOrdinarySave(invocationID: pending.invocationID)
             pendingOrdinarySaves.removeAll { $0.invocationID == pending.invocationID }
+            diagnosticFailure = cancellationRequested ? .cancelled : (result.processExitCode != 0 ? .testFailure : (accepted ? nil : .evidence))
             pendingJournal = nil
             recoveryJournals = try await executor.currentRecoveryJournals()
             journals = try await persistence.loadJournals()
@@ -1200,6 +1216,7 @@ final class ScenarioCoordinator {
                     : "The UI test failed (exit \(result.processExitCode)); its available evidence was retained as \($0.outcome.rawValue)."
             }
         } catch {
+            diagnosticFailure = .classify(error)
             if let pendingJournal, !pendingOrdinaryStaged {
                 try? await executor.finishEvidenceValidation(journal: pendingJournal, accepted: false)
             }
