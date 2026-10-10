@@ -163,3 +163,39 @@ test('C01 prototype-name binding keys are preserved rather than silently removed
  assert.throws(()=>segmentSchema.parse({...body,bindings:Array(1),payloadDigest:claimed}));
  assert.throws(()=>segmentSchema.parse({...body,bindings:Object.fromEntries(Array.from({length:31},(_,i)=>['binding'+i,'literal'])),payloadDigest:claimed}));
 });
+
+test('segment superRefine rejects ambiguous, unbound or mutating operations with positive controls',()=>{
+ const scope={protocolVersion:1,runId:'run',attemptId:'attempt',segmentId:'setup',leaseGeneration:1};
+ const base={scope,operationId:'run:attempt:setup',payloadDigest:'a'.repeat(64),phase:'setup',bindings:{},timeoutMs:1000};
+ const goal={id:'create',instruction:'Create',endpoint:{kind:'testId',value:'done'},maximumCalls:12,maximumActions:30};
+ const field={kind:'testId',value:'field'};
+ const tap=(id:string)=>({kind:'tap',id,locator:{kind:'testId',value:'button'}});
+ const fill=(binding:string,locator:object=field)=>({kind:'fillBinding',id:'fill',locator,binding});
+ const navigate=(id='create',goalId='create')=>({kind:'navigateGoal',id,goal:{...goal,id:goalId}});
+ const messages=(segment:object)=>{const result=segmentSchema.safeParse(segment);return result.success?[]:result.error.issues.map(issue=>issue.message);};
+ const cases:{name:string,rejected:object,accepted:object,message:string}[]=[
+  {name:'duplicate operation IDs',message:'Duplicate operation IDs',
+   rejected:{...base,operations:[tap('same'),tap('same')]},accepted:{...base,operations:[tap('first'),tap('second')]}},
+  {name:'unbound fill',message:'Missing frozen fill binding',
+   rejected:{...base,bindings:{other:'value'},operations:[fill('approved')]},accepted:{...base,bindings:{approved:'value'},operations:[fill('approved')]}},
+  {name:'observe-phase fill',message:'Observation cannot fill inputs',
+   rejected:{...base,phase:'observe',bindings:{approved:'value'},operations:[fill('approved')]},
+   accepted:{...base,phase:'observe',operations:[{kind:'observeProperty',id:'observe',locator:field,property:'text'}]}},
+  {name:'goal beside another operation',message:'Ambiguous goal or observer inputs',
+   rejected:{...base,operations:[navigate(),tap('extra')]},accepted:{...base,operations:[navigate()]}},
+  {name:'goal id differs from operation id',message:'Ambiguous goal or observer inputs',
+   rejected:{...base,operations:[navigate('create','other')]},accepted:{...base,operations:[navigate('other','other')]}},
+  {name:'observe-phase goal with bindings',message:'Ambiguous goal or observer inputs',
+   rejected:{...base,phase:'observe',bindings:{approved:'value'},operations:[navigate()]},accepted:{...base,phase:'observe',operations:[navigate()]}},
+  {name:'role locator on tap',message:'Role locators support only ordinary textbox or searchbox fill',
+   rejected:{...base,operations:[{kind:'tap',id:'tap',locator:{kind:'role',value:'textbox'}}]},
+   accepted:{...base,bindings:{approved:'value'},operations:[fill('approved',{kind:'role',value:'textbox'})]}},
+  {name:'secure field role fill',message:'Role locators support only ordinary textbox or searchbox fill',
+   rejected:{...base,bindings:{approved:'value'},operations:[fill('approved',{kind:'role',value:'AXSecureTextField'})]},
+   accepted:{...base,bindings:{approved:'value'},operations:[fill('approved',{kind:'role',value:'searchbox'})]}}
+ ];
+ for(const {name,rejected,accepted,message} of cases){
+  assert.deepEqual(messages(rejected),[message],name+' rejected');
+  assert.deepEqual(messages(accepted),[],name+' positive control');
+ }
+});
