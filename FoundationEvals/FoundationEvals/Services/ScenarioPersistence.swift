@@ -683,6 +683,7 @@ actor ScenarioPersistence {
         )
         guard [.stopped, .recoveryRequired].contains(journal.phase),
               journal.evidenceAccepted == true,
+              journal.physicalRunner?.receiptError == nil,
               journal.id == run.invocation.id,
               journal.scenarioID == run.scenarioID,
               journal.scenarioVersion == run.scenarioVersion,
@@ -695,6 +696,8 @@ actor ScenarioPersistence {
               [.stopped, .recoveryRequired].contains(persistedJournal.phase),
               persistedJournal.phase == journal.phase,
               persistedJournal.evidenceAccepted == true,
+              persistedJournal.physicalRunner?.receiptError == nil,
+              persistedJournal.physicalRunner == journal.physicalRunner,
               persistedJournal.scenarioID == persisted.scenarioID,
               persistedJournal.scenarioVersion == persisted.scenarioVersion,
               persistedJournal.invocation == persisted.invocation,
@@ -763,8 +766,12 @@ actor ScenarioPersistence {
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
               ) else { return ([], false, 0) }
-        let files = enumerator.compactMap { $0 as? URL }
-            .filter { $0.lastPathComponent == "run.json" }
+        var candidates: [URL] = []
+        for case let url as URL in enumerator {
+            if url.path == runsDirectory.appending(path: "AppAutomation").path { enumerator.skipDescendants(); continue }
+            if url.lastPathComponent == "run.json" { candidates.append(url) }
+        }
+        let files = candidates
             .sorted {
                 let lhs = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 let rhs = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
@@ -795,6 +802,38 @@ actor ScenarioPersistence {
             to: journalURL(journal.id),
             options: .atomic
         )
+    }
+
+    /// Cancellation can resume after host registration or release. Preserve those durable facts.
+    func saveCancellationJournal(_ proposed: ScenarioExecutionJournal) throws -> ScenarioExecutionJournal {
+        var journal = proposed
+        let url = journalURL(journal.id)
+        if fileManager.fileExists(atPath: url.path) {
+            let latest = try loadJournal(at: url)
+            // Compare the frozen wire representation; the legacy ISO date encoding stores whole seconds.
+            guard try Self.encoder.encode(latest.invocation) == Self.encoder.encode(journal.invocation) else {
+                throw ScenarioPersistenceError.invalidJournal(journal.id.uuidString)
+            }
+            if let saved = latest.physicalRunner {
+                if var incoming = journal.physicalRunner {
+                    guard saved.lease == incoming.lease, saved.runnerProduct == incoming.runnerProduct,
+                          saved.hostProcess == nil || incoming.hostProcess == nil || saved.hostProcess == incoming.hostProcess,
+                          saved.receipt == nil || incoming.receipt == nil || saved.receipt == incoming.receipt else {
+                        throw ScenarioPersistenceError.invalidJournal(journal.id.uuidString)
+                    }
+                    incoming.hostProcess = saved.hostProcess ?? incoming.hostProcess
+                    incoming.receipt = saved.receipt ?? incoming.receipt
+                    incoming.receiptError = saved.receiptError ?? incoming.receiptError
+                    incoming.dispatched = saved.dispatched || incoming.dispatched
+                    incoming.hostLaunchPrevented = incoming.hostProcess == nil && (saved.hostLaunchPrevented || incoming.hostLaunchPrevented)
+                    incoming.released = saved.released || incoming.released
+                    incoming.releaseObservation = saved.releaseObservation ?? incoming.releaseObservation
+                    journal.physicalRunner = incoming
+                } else { journal.physicalRunner = saved }
+            }
+        }
+        try saveJournal(journal)
+        return journal
     }
 
     func loadJournals() throws -> [ScenarioExecutionJournal] {
@@ -941,6 +980,7 @@ actor ScenarioPersistence {
                receipt.scope == journal.scope,
                [.stopped, .recoveryRequired].contains(journal.phase),
                journal.evidenceAccepted == true,
+               journal.physicalRunner?.receiptError == nil,
                journal.scenarioID == run.scenarioID,
                journal.scenarioVersion == run.scenarioVersion,
                journal.invocation == run.invocation,
@@ -998,7 +1038,12 @@ actor ScenarioPersistence {
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
-        return enumerator.compactMap { $0 as? URL }.filter { $0.pathExtension == "json" }
+        var files: [URL] = []
+        for case let url as URL in enumerator {
+            if url.path == runsDirectory.appending(path: "AppAutomation").path { enumerator.skipDescendants(); continue }
+            if url.pathExtension == "json" { files.append(url) }
+        }
+        return files
     }
 
     private static let encoder: JSONEncoder = {

@@ -1,0 +1,72 @@
+{
+  "evidence": {
+    "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+    "path": "Verification/Automation/Evidence/2026-10-07-shared-apple-lifecycle/swift-shared7.log",
+    "rawPath": "Tools/IntentsAutomation/.runtime/shared-apple-lifecycle-1/swift-shared7.log",
+    "rawSHA256": "dbf57c3e2e6b0f531e4c43799c80a20257c8b6cfd8cc8b474a5ee9528ce8cab3",
+    "sha256": "dbf57c3e2e6b0f531e4c43799c80a20257c8b6cfd8cc8b474a5ee9528ce8cab3"
+  },
+  "failureTrace": [
+    {
+      "errors": [
+        "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationAttemptText.swift:43: error: -[IntentsAutomationCoreTests.AutomationAppleRouteDriverTests testCoordinatorPassesBoundInputsAndAttemptQueriesToRealSimulatorDriver] : failed: caught error: \"invalidPlan(\"Fresh lookup requires preceding UI fixture setup\")\"",
+        "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationAttemptText.swift:43: error: -[IntentsAutomationCoreTests.AutomationPrivateMacAppleRouteDriverTests testCoordinatorPassesBoundInputsAndAttemptQueriesThroughMixedMacRoute] : failed: caught error: \"invalidPlan(\"Fresh lookup requires preceding UI fixture setup\")\""
+      ],
+      "rawPath": "Tools/IntentsAutomation/.runtime/shared-apple-lifecycle-1/swift-shared2.log",
+      "rawSHA256": "df22858f08ce2efd9d35f1db1dcf497a37c7aaf3cc5756cbb8cdf8085c8ef422"
+    },
+    {
+      "errors": [
+        "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationAppleResolutionTests.swift:16:60: error: overlapping accesses to 'changed.hostProgram', but modification requires exclusive access; consider copying to a local variable [#ExclusivityViolation]"
+      ],
+      "rawPath": "Tools/IntentsAutomation/.runtime/shared-apple-lifecycle-1/swift-shared3.log",
+      "rawSHA256": "da225f947a666c6ee01a18c2c22e11f766a9f39738c4665cbe9aa57881c74582"
+    },
+    {
+      "errors": [
+        "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPlan.swift:141: error: -[IntentsAutomationCoreTests.AutomationAppleRouteDriverTests testCoordinatorPassesBoundInputsAndAttemptQueriesToRealSimulatorDriver] : failed: caught error: \"invalidPlan(\"UI activation needs approved navigation and persisted-state lifecycle\")\"",
+        "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPlan.swift:141: error: -[IntentsAutomationCoreTests.AutomationPrivateMacAppleRouteDriverTests testCoordinatorPassesBoundInputsAndAttemptQueriesThroughMixedMacRoute] : failed: caught error: \"invalidPlan(\"UI activation needs approved navigation and persisted-state lifecycle\")\""
+      ],
+      "rawPath": "Tools/IntentsAutomation/.runtime/shared-apple-lifecycle-1/swift-shared4.log",
+      "rawSHA256": "1c212e056fc0553eb01523e7c53a80a99c3721f584a5a618f9af11aa962928a9"
+    }
+  ],
+  "limits": [
+    "Source and simulated command integration only",
+    "Actual XCTest child-process closure, Mac GUI/customer route and physical lifecycle remain unqualified"
+  ],
+  "qualification": {
+    "actualCoordinatorAndDriverActors": true,
+    "actualXCTestChildClosureObserved": false,
+    "appLaunched": false,
+    "commandExecutionSimulated": true,
+    "customerMacQualified": false,
+    "simulatorLaunched": false,
+    "uiFixtureExecutionSimulated": true
+  },
+  "reviewFixes": [
+    "Preserve scope-bound Stop, one-use dispatch, frozen launch bytes and unresolved release proof on iOS",
+    "Resolve approved templates through in-memory noncodable authority bound to plan, exact resolved bytes, run and attempt",
+    "Preserve valid host bindings and attempt queries through coordinator and mixed driver",
+    "Require resolver authority for unresolved templates even when optional/defaulted host parameters are otherwise valid"
+  ],
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "Sources/IntentsAutomationCore/AutomationAppleRouteDriver.swift": "83b376c1f802f88ab3801cfe62093d177148be0d4f61f204c03083a81848d0d6",
+    "Sources/IntentsAutomationCore/AutomationCoordinator.swift": "b53400ec03d4aa6a61b0a8fe28914a0508a68c609671ef75a63f8a5dcd88154b",
+    "Sources/IntentsAutomationCore/AutomationInputBinding.swift": "5e1b8f260c778304475a78494c4fede8cadffd1b38d95fcadf430f4de38153cc",
+    "Sources/IntentsAutomationCore/AutomationMixedRouteDriver.swift": "52c8a64b267522165f19f6d9f7067abdcb9e16ac218810fbbed101be436e1eb0",
+    "Sources/IntentsAutomationCore/AutomationPrivateMacAppleRouteDriver.swift": "8aa4c452d98a05487efabc4e9205c7513186ca1a673b15fe861b7b72880eba24",
+    "Tests/IntentsAutomationCoreTests/AutomationAppleExecutionTests.swift": "d537c19c98b8fcdb0828edeecbe7af7e5c53f3ccd694d997e307fcfcc0241d2f",
+    "Tests/IntentsAutomationCoreTests/AutomationAppleResolutionTests.swift": "a32a310a1bf68f2606f8f81259cca1a3d11e6ff2078f1914aa69105d771938ff",
+    "Tests/IntentsAutomationCoreTests/AutomationAppleRouteDriverTests.swift": "8e68be51e189b79f0cc7c3ee114f6565a01df9ff964e189d6f66caebc4edbc4b"
+  },
+  "status": "shared-associated-host-lifecycle-and-resolved-authority-source-verified",
+  "verification": {
+    "command": "swift test --disable-sandbox -j 2 --filter 'AutomationAppleRouteDriverTests|AutomationPrivateMacAppleRouteDriverTests|AutomationSegmentResolutionAuthorityTests|AutomationHostTests|AutomationCoordinatorTests|AutomationCampaignTests|AutomationInputBindingTests|AutomationMixedRouteDriverTests|AutomationFreshEntityPlannerTests'",
+    "failed": 0,
+    "passed": 71,
+    "skipped": 0,
+    "sourceReview": "distinct authority/Stop and provenance/drain Sol lanes clear after compatibility and unresolved-template findings fixed"
+  }
+}

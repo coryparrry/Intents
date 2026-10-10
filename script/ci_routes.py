@@ -16,6 +16,12 @@ UI_SUITES = {
 }
 
 # Include shared dependencies, not just the file named after a suite.
+PHYSICAL_SCENARIO_SUITES = {
+    "ScenarioPhysicalLeaseTests",
+    "ScenarioPhysicalFailureTests",
+    "ScenarioPhysicalSiriQualificationTests",
+}
+SCENARIO_EXECUTION_SUITES = {"ScenarioContractsTests"} | PHYSICAL_SCENARIO_SUITES
 SWIFT_DEPENDENCIES = {
     "MCP/Installer/CodexMCPInstaller.swift": {"CodexMCPInstallerTests"},
     "Models/EvaluationFieldAssertion.swift": {"EvaluationFieldAssertionTests"},
@@ -25,6 +31,7 @@ SWIFT_DEPENDENCIES = {
     },
     "Models/ScenarioModels.swift": {
         "ScenarioContractsTests", "ScenarioActionParityTests", "ScenarioV3HarnessBridgeTests",
+        *PHYSICAL_SCENARIO_SUITES, "ScenarioAutomationEvidenceTests", "XcodeBundleLayoutTests",
     },
     "Models/ScenarioExecutionModels.swift": {
         "ScenarioExecutionPlanTests", "ScenarioExecutionComparisonTests",
@@ -32,7 +39,7 @@ SWIFT_DEPENDENCIES = {
     "Models/ScenarioCollectionModels.swift": {"ScenarioCollectionTests"},
     "Services/ScenarioComparison.swift": {"ScenarioContractsTests"},
     "Services/ScenarioExecutionComparison.swift": {"ScenarioExecutionComparisonTests"},
-    "Services/ScenarioExecutionRecovery.swift": {"ScenarioContractsTests"},
+    "Services/ScenarioExecutionRecovery.swift": {"ScenarioContractsTests", "ScenarioPhysicalSiriQualificationTests"},
     "Services/ScenarioExpectationAuthoring.swift": {
         "ScenarioExpectationAuthoringTests", "ScenarioV3HarnessBridgeTests",
     },
@@ -42,20 +49,23 @@ SWIFT_DEPENDENCIES = {
     "Services/IntentEvidenceQualification.swift": {
         "IntentEvidenceBundleTests", "ScenarioActionParityTests",
     },
-    "Services/ScenarioPersistence.swift": {"ScenarioContractsTests"},
+    "Services/ScenarioPersistence.swift": SCENARIO_EXECUTION_SUITES | {"ScenarioAutomationEvidenceTests"},
     "Services/ScenarioValidation.swift": {
         "ScenarioContractsTests", "ScenarioNoMutationTests", "ScenarioV3HarnessBridgeTests",
     },
     "Services/IntentLabProjectInstaller.swift": {"IntentLabProjectInstallerTests"},
     "Services/OpenStepProjectDocument.swift": {"IntentLabProjectInstallerTests"},
     "Services/XCTestEvidenceImporter.swift": {
-        "ScenarioContractsTests", "ScenarioV3HarnessBridgeTests",
+        "ScenarioContractsTests", "ScenarioV3HarnessBridgeTests", *PHYSICAL_SCENARIO_SUITES,
     },
-    "Services/XCTestRunInvocationTransport.swift": {"ScenarioContractsTests"},
-    "Services/XcodeConnectionDiscovery.swift": {"ScenarioContractsTests"},
+    "Services/XCTestRunInvocationTransport.swift": SCENARIO_EXECUTION_SUITES,
+    "Services/XcodeConnectionDiscovery.swift": SCENARIO_EXECUTION_SUITES,
     "Services/XcodeTestExecutor.swift": {
-        "ScenarioContractsTests", "ExecutorSimplificationTests", "XcodeBundleLayoutTests",
+        "ScenarioContractsTests", "ExecutorSimplificationTests", "XcodeBundleLayoutTests", "XcodeSyntheticReadinessTests", *PHYSICAL_SCENARIO_SUITES,
     },
+    "Services/ScenarioPersistence+AutomationEvidence.swift": {"ScenarioAutomationEvidenceTests"},
+    "Services/ScenarioPhysicalRunnerLease.swift": PHYSICAL_SCENARIO_SUITES,
+    "Services/ScenarioRunnerReceiptImporter.swift": PHYSICAL_SCENARIO_SUITES,
     "Services/EvaluationFieldAssertions.swift": {"EvaluationFieldAssertionTests"},
     "Services/MetricScorer.swift": {"MetricScorerTests"},
     "Models/WorkflowTimelineInterval.swift": {

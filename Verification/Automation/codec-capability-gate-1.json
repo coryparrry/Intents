@@ -1,0 +1,31 @@
+{
+  "slice": "codec-capability-gate-1",
+  "date": "2026-10-08",
+  "acceptance": "Core Runner and Coordinator execution require every active invoke input, deferred parameter and projected result family; structural review never grants runtime availability.",
+  "implementation": {
+    "requirements": "Literal, structured, collection, entity, result and deferred producer families frozen before case digest; omission is inactive; active null retains its parameter-specific catalog family.",
+    "review": "Explicit structural review skips only runtime codec availability; nullable annotations, declarations, bindings, identities and approvals remain required. Native review/save paths use structural review; real execution stays strict.",
+    "profiles": "No production codec availability minted. Synthetic fixtures explicitly declare their tested family states.",
+    "formats": "Existing schema and decoded saved-case bytes preserved; old execution plans may need explicit rebuild/review to retain required families."
+  },
+  "verification": {
+    "core": "750 automation core tests passed;27 environment-dependent skips;0 failures",
+    "native": "20 native store tests and47 private-driver tests passed",
+    "nullableFinal": "6 final codec gate regressions passed",
+    "dispatch": "Direct Coordinator unannotated-null rejected before driver acquisition; prepared Mac reviewed plan without entity conversion rejected before UI or Apple dispatch",
+    "applicationBuild": "Official Xcode My Mac FoundationEvals passed,21.533seconds,0 errors",
+    "review": "Two independent Sol lanes; nullable bypass fixed and rechecked; no additional material findings",
+    "diffCheck": "git diff --check passed",
+    "diagnostics": "Ignored Tools/IntentsAutomation/.runtime/codec-capability-gate-1/"
+  },
+  "failureTrace": {
+    "initialBroadRun": "750 tests,27 skips,35 assertion failures in synthetic fixtures previously declaring only generic invocation support",
+    "correction": "Added explicit synthetic requirements and family states rather than weakening production gates; rerun passed"
+  },
+  "limits": [
+    "Unit/injected-driver/build evidence only; no new real runtime conversion qualification.",
+    "Public low-level Apple route driver profile admission and exact-context runtime projection facts remain concrete follow-up source work.",
+    "Native GUI journey and existing hardware/distribution/user qualification blockers unchanged; full M0-M6 incomplete.",
+    "Owned Xcode workspace closed; no owned app/simulator opened; local commit only."
+  ]
+}

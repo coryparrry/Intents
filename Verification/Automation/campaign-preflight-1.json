@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-09",
+  "scope": "Prepared simulator campaign codec preflight; adapter evidence only",
+  "tests": {
+    "nativeStore": 112,
+    "core": 43,
+    "coreOptInSkipped": 2,
+    "failures": 0,
+    "releaseToolchainPython": 5,
+    "liveProduction": 1,
+    "liveProductionSeconds": 72.592
+  },
+  "production": {
+    "attemptID": "52E9FBE6-5141-4490-95A5-809FA3BD9163",
+    "result": "executedUnassessed",
+    "exactOutput": "integerArray [1]",
+    "resourcesReleased": true,
+    "targetLeasesEmpty": true,
+    "templateDigest": "3d754425fdbc87d8fb542b5e930bcc4b055af679caed5344c6f7cf16abe5eb77"
+  },
+  "review": {
+    "reviewer": "Sol 6.1",
+    "finding": "Cached codec grants skipped per-attempt verification",
+    "resolution": "Prior verifier grants revoked before checking current authority and environment",
+    "recheck": "No remaining material findings; read-only source review"
+  },
+  "artifacts": {
+    "production-report.json": {
+      "path": "Tools/IntentsAutomation/.runtime/campaign-preflight-1/production-report.json",
+      "sha256": "d00e7779ec983a6581f51c0fd7ef295258b1219e96e884f468927515b15ddf51"
+    },
+    "production-test.log": {
+      "path": "Tools/IntentsAutomation/.runtime/campaign-preflight-1/production-test.log",
+      "sha256": "2c1299fe475c81bf9dc974f0389c9290958e097c446ce86add935b2bc7e21fa9"
+    },
+    "focused-tests.log": {
+      "path": "Tools/IntentsAutomation/.runtime/campaign-preflight-1/focused-tests.log",
+      "sha256": "741fb07ba887561a34efc49a5be462934a527c25b819a2ea4ab43b9e8d067740"
+    },
+    "release-toolchain-tests.log": {
+      "path": "Tools/IntentsAutomation/.runtime/campaign-preflight-1/release-toolchain-tests.log",
+      "sha256": "3ab10285b6b4143c7c9b17635f8d7d71e5f9765c679d4da89099642e922fbcf0"
+    }
+  },
+  "limitations": [
+    "Pure echo adapter does not assess business correctness",
+    "Native fresh-record UI test failed to initialize on locked Mac",
+    "Physical-device and Siri qualification still pending"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "intents-automation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/tests/*.test.js"
+  },
+  "dependencies": { "agent-device": "0.21.20", "e2e": "0.17.0", "zod": "4.1.12" },
+  "devDependencies": { "@types/node": "24.10.0", "typescript": "5.9.3" }
+}

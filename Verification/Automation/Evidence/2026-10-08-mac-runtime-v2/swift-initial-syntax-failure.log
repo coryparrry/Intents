@@ -1,0 +1,150 @@
+warning: /Users/coryparry/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/coryparry/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/coryparry/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'intents': failed storing manifest for 'intents' in cache: attempt to write a readonly database
+warning: 'intents': found 28 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/AttachmentStorageDirectorySafetyTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/AutomationMCPTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/CaseImportBoundedReadTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/DeveloperRunPresentationTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EditorPerformanceTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationCompatibleJudgeClientTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationDevelopmentWorkflowTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationExperimentRunnerFatalStopTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationJudgeIntegrityTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationWorkspaceRepairTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/EvaluationWorkspaceStateMigrationTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/ExternalJudgeFailureTraceTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/IntentLabArrayInputTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/IntentLabRegressionTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/JudgmentCorrectionPersistenceTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/PromptTextEditorTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/QuickActionsPillViewModelTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/ReferenceSharedAdmissionTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/ResultPresentationTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/ScenarioAcceptanceTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/ScoringAttributionTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/SelectedAssessmentCoverageTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/StructuredFeatureEvidenceTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/SubjectEvidenceCompletenessTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/SuiteRunActionTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/UISnapshotTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/WorkspacePresentationTests.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvalsTests/WorkspaceResetTests.swift
+warning: 'intents': found 8 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/EditorSection.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/PromptQuickActionsSection.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/QuickActionsPill.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/QuickActionsPillMotion.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/QuickActionsPillPhaseLayout.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/WorkspaceIcon.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/WorkspacePaneLayout.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Views/Components/WorkspaceStyle.swift
+warning: 'intents': found 19 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Models/DevelopmentWorkflowModels.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Models/WorkspacePresentation.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationCaseImporter.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationCompatibleJudgeClient.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationCompatibleJudgeResponse.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationDeveloperFeatureAdapter.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationDevelopmentAnalysis.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationExperimentRunner.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationFeatureAdapter.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationReassessmentService.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationStarterPacks.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/EvaluationWorkspacePersistence.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/ModelContextSizeCache.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/QuickActionsRewriteService.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/ScenarioCoordinator.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/ScenarioFeatureEvidence.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/ScenarioResponseAssessmentService.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/ScenarioSuggestionService.swift
+    /Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Services/WorkspaceOverviewLoader.swift
+Building for debugging...
+[Computing dependencies]
+[1 / 32] IntentsAutomationExecutionProbe-product
+[2 / 42] IntentsAutomationCore
+[5 / 46] IntentsAutomationCore
+[6 / 49] IntentsAutomationCore
+[7 / 49] IntentsAutomationCore
+[9 / 49] IntentsAutomationCore
+[11 / 51] IntentsAutomationCore
+[16 / 75] IntentsAutomationOwnershipProbe
+[18 / 79] IntentsAutomationOwnershipProbe-product
+[20 / 81] IntentsAutomationOwnershipProbe
+[24 / 92] IntentsAutomationNativeUI
+[26 / 96] IntentsAutomationControllerProbe-product
+[28 / 96] IntentsAutomationApplicationProbe-product
+[29 / 98] IntentsAutomationControllerProbe
+[32 / 100] IntentsAutomationApplicationProbe-product
+[34 / 100] IntentsAutomationOwnershipProbe-product
+[37 / 113] IntentsAutomationOwnershipProbe-product
+[41 / 114] IntentsAutomationOwnershipProbe
+[43 / 114] FoundationEvals
+[49 / 114] IntentsAutomationNativeUI
+[52 / 116] IntentsAutomationNativeUI
+[53 / 116] IntentsAutomationNativeUI
+[54 / 116] IntentsAutomationNativeUI
+[55 / 116] IntentsAutomationNativeUI
+[56 / 116] IntentsAutomationExecutionProbe-product
+[57 / 116] IntentsAutomationExecutionProbe-product
+/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationUIFailureSearchArchive.swift:76:57: warning: trailing closure in this context is confusable with the body of the statement; pass as a parenthesized argument to silence this warning
+ 74 |         let confirmationIDs = report.confirmations.flatMap(\.attempts)
+ 75 |         guard Set(confirmationIDs).count == confirmationIDs.count,
+ 76 |               confirmationIDs == report.attempts.filter { $0.stage == .confirmation }.map({ $0.report.attemptID }) else { throw AutomationContractError.conflictingOperation }
+    |                                                         `- warning: trailing closure in this context is confusable with the body of the statement; pass as a parenthesized argument to silence this warning
+ 77 |         let finalIDs = report.finalReproduction?.attempts ?? []
+ 78 |         guard finalIDs == report.attempts.filter { $0.stage == .finalConfirmation }.map({ $0.report.attemptID }) else { throw AutomationContractError.conflictingOperation }
+
+/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationUIFailureSearchArchive.swift:78:50: warning: trailing closure in this context is confusable with the body of the statement; pass as a parenthesized argument to silence this warning
+ 76 |               confirmationIDs == report.attempts.filter { $0.stage == .confirmation }.map({ $0.report.attemptID }) else { throw AutomationContractError.conflictingOperation }
+ 77 |         let finalIDs = report.finalReproduction?.attempts ?? []
+ 78 |         guard finalIDs == report.attempts.filter { $0.stage == .finalConfirmation }.map({ $0.report.attemptID }) else { throw AutomationContractError.conflictingOperation }
+    |                                                  `- warning: trailing closure in this context is confusable with the body of the statement; pass as a parenthesized argument to silence this warning
+ 79 |         if let best = report.bestConfirmedCaseDigest {
+ 80 |             guard byDigest[best] != nil, let selected = report.confirmations.first(where: { $0.caseDigest == best && $0.confirmed }),
+[61 / 116] IntentsAutomationCore
+[62 / 116] IntentsAutomationCore
+[63 / 116] IntentsAutomationCore
+[64 / 116] IntentsAutomationCore
+[65 / 116] IntentsAutomationCore
+[66 / 116] IntentsAutomationCore
+[67 / 116] IntentsAutomationCore
+[68 / 116] IntentsAutomationCore
+[69 / 118] IntentsAutomationControllerProbe-product
+[72 / 118] IntentsAutomationControllerProbe
+[76 / 117] IntentsAutomationApplicationProbe-product
+[80 / 117] FoundationEvals
+[81 / 117] FoundationEvals
+[83 / 117] FoundationEvals
+[84 / 117] FoundationEvals
+[85 / 117] FoundationEvals
+[86 / 117] FoundationEvals
+[87 / 117] FoundationEvals
+[87 / 117]
+[92 / 118] IntentsAutomationHostContractTests-product
+[94 / 119] IntentsAutomationHostContractTests-product
+[96 / 122] IntentsAutomationHostContractTests-product
+[98 / 123] IntentsAutomationControllerProbe-product
+[103 / 122] IntentsAutomationOwnershipProbe-product
+[105 / 123] IntentsAutomationOwnershipProbe-product
+[108 / 129] IntentsAutomationNativeUITests-product
+[111 / 129] IntentsAutomationNativeUITests-product
+[117 / 131] IntentsAutomationHostContractTests-product
+[119 / 135] IntentsAutomationHostContractTests-product
+[122 / 148] IntentsAutomationHostContractTests-product
+[123 / 148] IntentsAutomationHostContractTests-product
+[127 / 148] FoundationEvalsPortableTests-product
+[129 / 148] FoundationEvalsPortableTests-product
+[130 / 148] FoundationEvalsPortableTests-product
+[131 / 148] FoundationEvalsPortableTests-product
+[132 / 148] FoundationEvalsPortableTests-product
+[133 / 148] FoundationEvalsPortableTests-product
+[133 / 148]
+[138 / 146] FoundationEvalsPortableTests-product
+[140 / 146] IntentsAutomationCoreTests-product
+error: /Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationMacInputPermitTests.swift:47:6 consecutive declarations on a line must be separated by ';': FixIt(sourceRange: XCBuild.SwiftBuildMessage.DiagnosticInfo.SourceRange(path: "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationMacInputPermitTests.swift", startLine: 47, startColumn: 6, endLine: 47, endColumn: 6), textToInsert: ";")
+error: SwiftDriver IntentsAutomationCoreTests normal arm64 com.apple.xcode.tools.swift.compiler failed with a nonzero exit code. Command line:     cd /Users/coryparry/Developer/Projects
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name IntentsAutomationCoreTests -Onone @/Users/coryparry/Developer/Projects/Intents/.build/out/Intermediates.noindex/FoundationEvalsPortable.build/Debug/IntentsAutomationCoreTests-p.build/Objects-normal/arm64/IntentsAutomationCoreTests.SwiftFileList -DSWIFT_PACKAGE -DDEBUG -DSWIFT_MODULE_RESOURCE_BUNDLE_AVAILABLE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos26.0 -g -module-cache-path /Users/coryparry/Developer/Projects/Intents/.build/out/ModuleCache.noindex -Xfrontend -serialize-debugging-options -disable-sandbox -enable-testing -index-store-path /Users/coryparry/Developer/Projects/Intents/.build/out -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 6 -I /Users/coryparry/Developer/Projects/Intents/.build/out/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /Users/coryparry/Developer/Projects/Intents/.build/out/Products/Debug/PackageFrameworks -F /Users/coryparry/Developer/Projects/Intents/.build/out/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/coryparry/Developer/Projects/Intents/.build/out/SDKStatCaches.noindex/macosx27.0-26A425-a0facfad118c1a7a18f0aad9463f65497231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /Users/coryparry/Developer/Projects/Intents/.build/out/Intermediates.noindex/FoundationEvalsPortable.build/Debug/IntentsAutomationCoreTests-p.build/Objects-normal/arm64/IntentsAutomationCoreTests-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/coryparry/Developer/Projects/Intents/.build/out/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/coryparry/Developer/Projects/Intents/.build/out/ModuleCache.noindex -sdk-module-cache-path /Users/coryparry/Developer/Projects/Intents/.build/out/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/coryparry/Developer/Projects/Intents/.build/out/Intermediates.noindex/FoundationEvalsPortable.build/Debug/IntentsAutomationCoreTests-p.build/Objects-normal/arm64/IntentsAutomationCoreTests.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/coryparry/Developer/Projects/Intents/.build/out/Intermediates.noindex/FoundationEvalsPortable.build/Debug/IntentsAutomationCoreTests-p.build/Objects-normal/arm64/IntentsAutomationCoreTests-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/coryparry/Developer/Projects/Intents/.build/out/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name intents -emit-const-values -const-gather-protocols-list /Users/coryparry/Developer/Projects/Intents/.build/out/Intermediates.noindex/FoundationEvalsPortable.build/Debug/IntentsAutomationCoreTests-p.build/Objects-normal/arm64/IntentsAutomationCoreTests_const_extract_protocols.json -Xcc -I/Users/coryparry/Developer/Projects/Intents/.build/out/Products/Debug/include -Xcc -I/Users/coryparry/Developer/Projects/Intents/.build/out/Intermediates.noindex/FoundationEvalsPortable.build/Debug/IntentsAutomationCoreTests-p.build/DerivedSources-normal/arm64 -Xcc -I/Users/coryparry/Developer/Projects/Intents/.build/out/Intermediates.noindex/FoundationEvalsPortable.build/Debug/IntentsAutomationCoreTests-p.build/DerivedSources/arm64 -Xcc -I/Users/coryparry/Developer/Projects/Intents/.build/out/Intermediates.noindex/FoundationEvalsPortable.build/Debug/IntentsAutomationCoreTests-p.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -working-directory /Users/coryparry/Developer/Projects -experimental-emit-module-separately -disable-cmo
+error: Build failed
+error: fatalError

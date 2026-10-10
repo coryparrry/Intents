@@ -1,0 +1,13 @@
+# Private Mac SDK ownership integration
+
+The SDK source experiment now carries the selected application through exact-path open, daemon session state, capture/touch execution context, fresh snapshot responses, public client normalization, JSON serialization and digest responses. The tuple contains bundle ID, canonical `.app` path, PID and process-start identity. Each owned snapshot and press requires the native helper to echo the complete matching tuple. Press additionally checks coordinates, release submission and `submittedUnconfirmed`; that status does not establish app handling.
+
+Owned sessions refuse unsupported commands before runtime binding. Reopen requires the same explicit selection. Owned snapshots bypass deferred results and automatic unscoped screenshot fallback. Open and input transport failures retain uncertainty without retry. The public client forwards `macBundlePath` through its actual request flag projection, rather than merely declaring it in a type.
+
+`stage_mac_sdk_ownership.py` guards 32 existing SDK files before and after copying, adds four source/test/config files, and stages the native extension in a new private directory. It never changes the installed published SDK or enables customer execution. Its file guards are not a whole-source commit attestation; the retained official archive establishes acquisition separately.
+
+SDK8 passed 51 focused tests using injected providers and built 466 JavaScript/declaration files with pinned Node24.21.0, pnpm11.17.0 and the frozen upstream lock. Ten wire-data tests, four SDK staging tests and six native staging tests also passed. The native source matches SDK1, whose 25 focused Swift tests passed. No GUI, device, app or daemon was launched by these tests. The bounded Vitest configuration keeps upstream hermetic setup and omits its host-wide process-inventory hook; the original attempt failed with `spawnSync ps EPERM`. SDK7's test syntax failure remains retained and is corrected in SDK8.
+
+Fresh Sol reviews found dropped client path forwarding and missing post-dispatch transport uncertainty. Both were fixed, exercised by integration tests and checked by a new reviewer. A daemon regression verifies refusal before binding for nine unsupported command families.
+
+[Checkpoint](mac-sdk-ownership-source-1.json) binds the source and logs; [generated file inventory](mac-sdk-build-files-1.json) binds the 466 outputs. Installed package15 remains unchanged. Actual Mac GUI targeting, recipient handling, generation races, GUI-session lease integration, packaging and customer enablement remain unqualified. Physical preparation/execution and the full M0–M6 outcome remain incomplete.

@@ -1,0 +1,183 @@
+warning: /Users/coryparry/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/coryparry/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/coryparry/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'macos-helper': failed storing manifest for 'macos-helper' in cache: attempt to write a readonly database
+Building for debugging...
+[Computing dependencies]
+[Planning deferred tasks]
+[41 / 100] AgentDeviceMacOSHelper
+[47 / 100]
+[48 / 101] AgentDeviceMacOSInput
+[51 / 139]
+[55 / 139]
+[57 / 139]
+[60 / 139]
+[63 / 139]
+[65 / 139]
+[67 / 139]
+[70 / 139]
+[71 / 139]
+[73 / 139]
+[74 / 139]
+[76 / 139]
+[79 / 139]
+[81 / 139]
+[82 / 139]
+[83 / 139]
+[86 / 139] AgentDeviceMacOSInput
+[87 / 139] AgentDeviceMacOSInput
+[99 / 140]
+[100 / 141]
+[103 / 201]
+[105 / 201]
+[107 / 201]
+[109 / 201]
+[111 / 201]
+[113 / 201]
+[115 / 201]
+[117 / 201]
+[118 / 201]
+[120 / 201]
+[122 / 201]
+[124 / 201]
+[125 / 201]
+[126 / 201]
+[128 / 201]
+[131 / 201]
+[133 / 201]
+[135 / 201]
+[136 / 201]
+[137 / 201]
+[140 / 202] AgentDeviceMacOSInputTests-product
+[141 / 202]
+[143 / 202] AgentDeviceMacOSHelper
+[146 / 210]
+[148 / 210] AgentDeviceMacOSHelper
+[150 / 210] AgentDeviceMacOSHelper
+[157 / 210] agent-device-macos-helper-product
+[160 / 210] agent-device-macos-helper-product
+[162 / 210] AgentDeviceMacOSInputTests-product
+[162 / 210] agent-device-macos-helper-product
+[164 / 210] AgentDeviceMacOSInputTests-product
+[170 / 210] agent-device-macos-helper-product
+[172 / 210] AgentDeviceMacOSInputTests-product
+[173 / 210] AgentDeviceMacOSInputTests-product
+[175 / 210] AgentDeviceMacOSInputTests-product
+[177 / 210] AgentDeviceMacOSInputTests-product
+[178 / 210] agent-device-macos-helper-product
+[180 / 210] AgentDeviceMacOSHelperTests-product
+[181 / 210] AgentDeviceMacOSInputTests-product
+[184 / 210] AgentDeviceMacOSHelper
+[185 / 210] AgentDeviceMacOSHelper
+[186 / 210] AgentDeviceMacOSHelper
+[187 / 210] AgentDeviceMacOSHelper
+[187 / 210]
+[193 / 210]
+[200 / 211] AgentDeviceMacOSHelperTests-product
+[203 / 220] AgentDeviceMacOSHelperTests-product
+[205 / 220] AgentDeviceMacOSHelperTests-product
+[211 / 220] AllIncludingTests
+[212 / 220] AllIncludingTests
+[213 / 220] AllIncludingTests
+[214 / 220] AgentDeviceMacOSHelperTests-product
+[216 / 220] AgentDeviceMacOSHelperTests-product
+Build complete! (27.14 secs)
+Test Suite 'Selected tests' started at 2026-10-07 6:06:00.920 pm.
+Test Suite 'AgentDeviceMacOSInputTests.xctest' started at 2026-10-07 6:06:00.922 pm.
+Test Suite 'AgentDeviceMacOSInputTests.xctest' passed at 2026-10-07 6:06:00.922 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-07 6:06:00.922 pm.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+Test Suite 'Selected tests' started at 2026-10-07 6:06:01.005 pm.
+Test Suite 'AgentDeviceMacOSHelperTests.xctest' started at 2026-10-07 6:06:01.006 pm.
+Test Suite 'MacApplicationTargetTests' started at 2026-10-07 6:06:01.006 pm.
+Test Case '-[AgentDeviceMacOSHelperTests.MacApplicationTargetTests testAliasAndPartialTargetCannotBeAccepted]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacApplicationTargetTests testAliasAndPartialTargetCannotBeAccepted]' passed (0.003 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacApplicationTargetTests testArgumentIdentityIsCompleteCanonicalAndDoesNotResolveByBundleAlone]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacApplicationTargetTests testArgumentIdentityIsCompleteCanonicalAndDoesNotResolveByBundleAlone]' passed (0.002 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacApplicationTargetTests testKernelStartTokenUsesCurrentProcessAndRejectsInvalidPID]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacApplicationTargetTests testKernelStartTokenUsesCurrentProcessAndRejectsInvalidPID]' passed (0.000 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacApplicationTargetTests testOwnedTargetArgumentsCannotEnterAnyLegacyMutation]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacApplicationTargetTests testOwnedTargetArgumentsCannotEnterAnyLegacyMutation]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacApplicationTargetTests testPathBundleAndStartIdentityDriftAreRejected]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacApplicationTargetTests testPathBundleAndStartIdentityDriftAreRejected]' passed (0.001 seconds).
+Test Suite 'MacApplicationTargetTests' passed at 2026-10-07 6:06:01.015 pm.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.008 (0.008) seconds
+Test Suite 'MacHelperOwnershipGateTests' started at 2026-10-07 6:06:01.015 pm.
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testCanonicalAcknowledgementBindsNonceAndKernelIdentity]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testCanonicalAcknowledgementBindsNonceAndKernelIdentity]' passed (0.000 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testInputEOFAndFragmentedAcknowledgement]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testInputEOFAndFragmentedAcknowledgement]' passed (0.021 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testInputTimeoutOversizeAndInvalidDescriptor]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testInputTimeoutOversizeAndInvalidDescriptor]' passed (0.072 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testReadySchemaWhitespaceAndOversizeCannotAcknowledge]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testReadySchemaWhitespaceAndOversizeCannotAcknowledge]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testStalledOutputHonoursDeadlineAndRestoresFlags]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testStalledOutputHonoursDeadlineAndRestoresFlags]' passed (0.033 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testStrictSchemaAndIdentityEncoding]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacHelperOwnershipGateTests testStrictSchemaAndIdentityEncoding]' passed (0.000 seconds).
+Test Suite 'MacHelperOwnershipGateTests' passed at 2026-10-07 6:06:01.142 pm.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.127 (0.128) seconds
+Test Suite 'MacOwnedFillTests' started at 2026-10-07 6:06:01.142 pm.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testCanonicalFrameBindsNonceExactTargetAndPointWithoutNormalizingText]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testCanonicalFrameBindsNonceExactTargetAndPointWithoutNormalizingText]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testCanonicallyEquivalentDifferentReadbackFailsWithoutEcho]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testCanonicallyEquivalentDifferentReadbackFailsWithoutEcho]' passed (0.000 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testCanonicallyEquivalentDifferentTargetPathIsRejected]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testCanonicallyEquivalentDifferentTargetPathIsRejected]' passed (0.000 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testFrameRejectsExtrasDuplicatesIncompleteUnicodeOversizeAndNulWithoutEchoing]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testFrameRejectsExtrasDuplicatesIncompleteUnicodeOversizeAndNulWithoutEchoing]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testInvalidFieldFailsBeforeSetterAndUncertainSetterIsNeverRetried]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testInvalidFieldFailsBeforeSetterAndUncertainSetterIsNeverRetried]' passed (0.000 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testMissingOrUnterminatedFrameFailsAtDeadlineOrEOF]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testMissingOrUnterminatedFrameFailsAtDeadlineOrEOF]' passed (0.022 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testReplacementChecksFreshElementBeforeSetterAndReadbackWithoutValueReceipt]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testReplacementChecksFreshElementBeforeSetterAndReadbackWithoutValueReceipt]' passed (0.000 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testTwoCoalescedFramesAreReadSeparatelyAndBounded]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedFillTests testTwoCoalescedFramesAreReadSeparatelyAndBounded]' passed (0.000 seconds).
+Test Suite 'MacOwnedFillTests' passed at 2026-10-07 6:06:01.167 pm.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.024 (0.025) seconds
+Test Suite 'MacOwnedMouseDeliveryTests' started at 2026-10-07 6:06:01.167 pm.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testCancellationDuringHoldSubmitsReleaseOnlyToOriginalRecipient]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testCancellationDuringHoldSubmitsReleaseOnlyToOriginalRecipient]' passed (0.002 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testCancellationOrCreationFailureBeforeSubmissionPostsNothing]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testCancellationOrCreationFailureBeforeSubmissionPostsNothing]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testDispatcherCannotDowngradeOwnedPressOrSnapshotToLegacyMode]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testDispatcherCannotDowngradeOwnedPressOrSnapshotToLegacyMode]' passed (0.000 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testExactRecipientReceivesEveryPairAndSuccessRemainsUnconfirmed]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testExactRecipientReceivesEveryPairAndSuccessRemainsUnconfirmed]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testFrontmostChangeAllowsOriginalRecipientReleaseButNoFurtherDown]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testFrontmostChangeAllowsOriginalRecipientReleaseButNoFurtherDown]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testOwnedPressGrammarRejectsMissingIdentityDuplicateAndUnboundSurface]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testOwnedPressGrammarRejectsMissingIdentityDuplicateAndUnboundSurface]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testReusedPIDNeverReceivesCleanupRelease]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testReusedPIDNeverReceivesCleanupRelease]' passed (0.002 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testUnboundedOrNonfiniteRequestsNeverReachBackend]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testUnboundedOrNonfiniteRequestsNeverReachBackend]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testUnknownDownSubmissionGetsStructuredCleanupWithoutRetry]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testUnknownDownSubmissionGetsStructuredCleanupWithoutRetry]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testUnknownReleaseSubmissionIsNeverRetried]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedMouseDeliveryTests testUnknownReleaseSubmissionIsNeverRetried]' passed (0.001 seconds).
+Test Suite 'MacOwnedMouseDeliveryTests' passed at 2026-10-07 6:06:01.181 pm.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 0.014 (0.014) seconds
+Test Suite 'MacOwnedScrollTests' started at 2026-10-07 6:06:01.181 pm.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testDirectionsHaveSmallSignedDeltasAndReceiptIsUnconfirmed]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testDirectionsHaveSmallSignedDeltasAndReceiptIsUnconfirmed]' passed (0.002 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testInvalidBoundsCreationAndFreshOwnershipFailureNeverSubmit]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testInvalidBoundsCreationAndFreshOwnershipFailureNeverSubmit]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testSecureUnknownAndInheritedTextContentIsSuppressedBeforeSnapshot]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testSecureUnknownAndInheritedTextContentIsSuppressedBeforeSnapshot]' passed (0.000 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testSharedNodeRevisitedUnderProtectedAncestryCannotProduceAResponse]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testSharedNodeRevisitedUnderProtectedAncestryCannotProduceAResponse]' passed (0.000 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testStrictArgumentsRequireExactTargetAndRejectDuplicatesAndLegacyOptions]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testStrictArgumentsRequireExactTargetAndRejectDuplicatesAndLegacyOptions]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testSubmissionFailureIsUnknownAndNeverRetries]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testSubmissionFailureIsUnknownAndNeverRetries]' passed (0.001 seconds).
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testSuppressedUntitledWindowNeverReadsOrSerializesSensitiveTitle]' started.
+Test Case '-[AgentDeviceMacOSHelperTests.MacOwnedScrollTests testSuppressedUntitledWindowNeverReadsOrSerializesSensitiveTitle]' passed (0.000 seconds).
+Test Suite 'MacOwnedScrollTests' passed at 2026-10-07 6:06:01.188 pm.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.006 (0.006) seconds
+Test Suite 'AgentDeviceMacOSHelperTests.xctest' passed at 2026-10-07 6:06:01.188 pm.
+	 Executed 36 tests, with 0 failures (0 unexpected) in 0.178 (0.181) seconds
+Test Suite 'Selected tests' passed at 2026-10-07 6:06:01.188 pm.
+	 Executed 36 tests, with 0 failures (0 unexpected) in 0.178 (0.182) seconds

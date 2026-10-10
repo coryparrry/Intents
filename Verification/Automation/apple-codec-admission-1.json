@@ -1,0 +1,24 @@
+{
+  "slice": "apple-codec-admission-1",
+  "date": "2026-10-08",
+  "acceptance": "Direct Apple drivers require original and resolved program codec availability before any controller work, and release authenticated local denials without retaining a lease.",
+  "implementation": {
+    "profiles": "Immutable constructor profile; simulator ApplicationRunner and internal Mac factory forward their execution profile; empty default cannot enable typed conversion",
+    "resolution": "Shared codec validation checks both frozen original plan and actual resolved segment, including nullable families and legacy collection shape",
+    "cleanup": "Exact authenticated no-work admission retained before synchronous preflight; matching release proves no work and wrong scope remains denied"
+  },
+  "verification": {
+    "contracts": "85 relevant direct-driver, resolution, codec gate, coordinator and prepared mixed/fresh checks passed",
+    "regressions": "Both platforms:unknown/unavailable/consentRequired and removed/null families denied with zero controller preparation; actual empty-query-result resolver denied legacy array setter; coordinator profile mismatch released and next lease acquired",
+    "applicationBuild": "Official Xcode My Mac FoundationEvals passed,16.428seconds,0 errors",
+    "review": "Two independent Sol reviews,material resolved-array/cleanup findings fixed and rechecked clear",
+    "diffCheck": "git diff --check passed",
+    "diagnostics": "Ignored Tools/IntentsAutomation/.runtime/apple-codec-admission-1/"
+  },
+  "limits": [
+    "Synthetic driver/command and source/build evidence; no real runtime codec conversion or release qualification minted.",
+    "Runtime facts still need exact context and direction; next source work is query projection proof.",
+    "Full M0-M6 incomplete; native GUI and existing physical/distribution/user gates unchanged.",
+    "Owned Xcode workspace closed;local commit only."
+  ]
+}

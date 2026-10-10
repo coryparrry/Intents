@@ -1,0 +1,64 @@
+{
+  "evidence": {
+    "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+    "path": "Verification/Automation/Evidence/2026-10-07-mac-native-saved-store/swift-store3.log",
+    "rawPath": "Tools/IntentsAutomation/.runtime/mac-native-saved-store-1/swift-store3.log",
+    "rawSHA256": "897ee62c64ecf16483e8b7ffe4b42dddd55a1e1feacae5749790eefe80dfe150",
+    "sha256": "897ee62c64ecf16483e8b7ffe4b42dddd55a1e1feacae5749790eefe80dfe150"
+  },
+  "failureTrace": [
+    {
+      "observation": "Test tried mutating immutable evidence and implicit non-Sendable optional closure; replaced evidence value and explicit Sendable closure.",
+      "path": "Tools/IntentsAutomation/.runtime/mac-native-saved-store-1/swift-store1.log",
+      "sha256": "3ce453f1db91074a4ee4e7727b7d73085cf31d5f615970a318cb21d1ce22cee4"
+    },
+    {
+      "observation": "Fixture inherited global install default and expected failed instead of invalidated on digest drift; use explicit no-install fixture and actual request invalidation outcome.",
+      "path": "Tools/IntentsAutomation/.runtime/mac-native-saved-store-1/swift-store2.log",
+      "sha256": "7d0c025debc059aa2191cce7c3b78eeab4bb2367793cffd1544c296084694c99"
+    },
+    {
+      "observation": "Alert edit selector used wrong title; aborted before file write. Corrected exact title and independently reviewed final Mac text."
+    }
+  ],
+  "limits": [
+    "Native view compiled but not rendered; pending Xcode workspace approval unchanged",
+    "Production Mac runtime dependency remains nil and default runner route remains gated",
+    "Mutating Mac saved fixtures remain unqualified and refused",
+    "Raw unsigned build is not an enclosing runtime, installed or release artifact"
+  ],
+  "qualification": {
+    "actualGUIVerified": false,
+    "appLaunched": false,
+    "customerMacQualified": false,
+    "productionMacDependencyAbsent": true,
+    "testRuntimeSessionAndCampaignProvidersSynthetic": true
+  },
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift": "63c37867c5a8a37daf68eb95ac592d041ff1b8703f5efcebb08e879f68178a0e",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeMacSavedRuntime.swift": "1059cd667117a7579582fb687abae80eccc5e0a80b5ef7280028cf165e87b3f6",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFixComparisonCommand.swift": "5aa2d463f76bbac8cd7b55e86dfc4eecba986cf1d3158dfa5de1bbc7a988c183",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIReproduction.swift": "19c6b839e3a56b0f66e3d7802a2a0a08553798dc54cdbbd3314bcfab3b59cb29",
+    "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift": "01032d1d5ebf0117771a3d1cbdaa5e936f3dcff2a683c397490857f73de47815",
+    "Package.swift": "a31edc7637565cbdb0b4ba0ba9fce2000924794174c4c712b814de578ebdfdb4",
+    "Tests/IntentsAutomationNativeUITests/MacSavedProposalTests.swift": "ccbf1aa9cb0918bf0075b536d46b4e91dcd3e62e78258e9c918cc1750ab9c909"
+  },
+  "status": "native-saved-mac-store-admission-source-verified",
+  "verification": {
+    "command": "swift test --disable-sandbox -j 2 --filter 'MacSavedProposalTests|InstalledUIStoreTests|MacWorkflowStoreTests'",
+    "failed": 0,
+    "nativeBuild": {
+      "artifactInventory": "Verification/Automation/Evidence/2026-10-07-mac-native-saved-store/native-artifact1.json",
+      "command": "xcodebuild -project FoundationEvals/FoundationEvals.xcodeproj -scheme FoundationEvals -configuration Debug -destination platform=macOS -derivedDataPath <owned-temporary-directory> -jobs 2 -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO build",
+      "rawPath": "Tools/IntentsAutomation/.runtime/mac-native-saved-store-1/native-build3.log",
+      "rawSHA256": "5eaa1212c196e2b7bd88ecdfa968d4b067be57aab9152a60c2dee09862192cae",
+      "result": "BUILD SUCCEEDED",
+      "sourceInventory": "Verification/Automation/Evidence/2026-10-07-mac-native-saved-store/native-source1.json"
+    },
+    "newStoreTests": 5,
+    "passed": 57,
+    "skipped": 0,
+    "sourceReview": "distinct provenance/replay and authority/confirmation lanes clear after conditional Mac alert wording fix"
+  }
+}

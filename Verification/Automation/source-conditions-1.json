@@ -1,0 +1,28 @@
+{
+  "slice": "source-conditions-1",
+  "date": "2026-10-08",
+  "acceptance": "Only declarations in resolved active branches of known selected-target membership may syntax-match compiled metadata; unknown branches stay explicit gaps.",
+  "implementation": {
+    "conditionSupport": "Bounded Boolean operators, literals and custom identifiers from exact final selected-target active conditions and simple -D flags",
+    "unknown": "Platform/import/compiler/feature predicates, dependency conditions, unsupported or missing flag fields and parser recovery",
+    "nestedBranches": "Retained enclosing predicates and negated preceding #if/#elseif conditions",
+    "membership": "Target/project configurations, target/project xcconfig references and conditional build-file settings are conservatively fenced",
+    "binding": "Exact final product-settings SHA256 retained in syntax index, private raw settings checked on prepared-record reload",
+    "versions": "Source graph and syntax index schema2; older source preparations require explicit re-preparation. Frozen case formats and digests remain unchanged."
+  },
+  "verification": {
+    "sourceContracts": "36 selected tests: 33 passed, 3 explicit build/cancellation fixtures skipped; actual selected-Xcode scanner executed",
+    "sourceFollowup": "29 selected checks passed including one actual build-only Mac preparation, custom-condition, alias and membership regressions",
+    "retainedSettingsTamper": "One actual build-only Mac preparation passed; altered retained settings denied, restored settings reloads",
+    "nativeContracts": "20 native draft/preparation and 5 fix-comparison checks passed",
+    "applicationBuild": "Official Xcode My Mac FoundationEvals build passed: 11.832 seconds, zero errors",
+    "review": "Two independent Sol lanes; inherited membership, comment-prefixed directives, legacy-version policy and path-alias findings repaired and rechecked",
+    "diffCheck": "git diff --check passed",
+    "diagnostics": "Ignored Tools/IntentsAutomation/.runtime/source-conditions-1/"
+  },
+  "limits": [
+    "This establishes parser, build-only and retained source contracts; no intent execution, input route or rendered native UI proof.",
+    "Source coverage stays partial. External/generated/platform/compiler conditions and real M0-M6 qualification remain incomplete.",
+    "Owned Xcode workspace closed; no subject app or simulator launched. No push, PR, publication or release."
+  ]
+}

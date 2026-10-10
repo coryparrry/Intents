@@ -1,0 +1,76 @@
+{
+  "evidence": [
+    {
+      "path": "Verification/Automation/Evidence/2026-10-07-public-digest-v2/swift2.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/public-digest-v2-1/swift2.log",
+      "rawSHA256": "141aa8ba121e7c14e1035481411816eab96719b3c235a13f8b32dd599ec238d2",
+      "sha256": "141aa8ba121e7c14e1035481411816eab96719b3c235a13f8b32dd599ec238d2"
+    },
+    {
+      "path": "Verification/Automation/Evidence/2026-10-07-public-digest-v2/tsc5.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/public-digest-v2-1/tsc5.log",
+      "rawSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "Verification/Automation/Evidence/2026-10-07-public-digest-v2/node2.log",
+      "rawPath": "Tools/IntentsAutomation/.runtime/public-digest-v2-1/node2.log",
+      "rawSHA256": "e1de173938701287816fb9954a775a3299462b20abb4277d0574b143640c69af",
+      "sha256": "e1de173938701287816fb9954a775a3299462b20abb4277d0574b143640c69af"
+    }
+  ],
+  "failureTrace": [
+    "Review found Zod record skips prototype key and Mac normalized outputs used prototype setter; own-entry parser and safe dictionaries fix both",
+    "Initial Node run70pass2failure compared internal dictionary prototypes rather than wire; key/wire assertions corrected",
+    "Public default kept v1 to avoid breaking previously pinned receivers while staging separate v2 runtime"
+  ],
+  "limits": [
+    "Pinned runner fixtures use synthetic backends; no hardware/native recipient claim",
+    "Old runtime unit7 does not support v2; private source cannot qualify against it",
+    "No historical golden, plan Codable or journal schema rewritten"
+  ],
+  "mechanisms": [
+    "Public v1 absent version stays exact legacy hash; Swift numeric object keys now match JavaScript index enumeration",
+    "Explicit v2 envelope includes version in hash and UTF16 lexical canonical bytes; all source digest ingresses dispatch by version without fallback",
+    "Public default remains v1 for existing verified runtime compatibility; private Mac source requests v2 requiring new runtime candidate",
+    "Own-entry typed dictionaries preserve prototype IDs for public/opaque bindings and Mac receipts; extra keys rejected",
+    "Ordinary e2e output storage preserves prototype operation IDs; journal caches exact digest and rejects version change under same ID"
+  ],
+  "qualification": {
+    "actualGUIExecuted": false,
+    "customerSecretExecutionEnabled": false,
+    "frozenUnit7Changed": false,
+    "privateV2RuntimePackaged": false
+  },
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "Sources/IntentsAutomationCore/AutomationMacOwnedDaemonSession.swift": "c1c425bbf3355afeaf66e7a7020f6a553fcaccf9da25d4d00ba07716d9a0c16c",
+    "Sources/IntentsAutomationCore/AutomationUIProgram.swift": "78c87d8fc9d2e6dbdc62524dd3a7837110ad9715d1796ddc7b2561b44e087ccb",
+    "Tests/IntentsAutomationCoreTests/AutomationUIProgramTests.swift": "4f02a37e1d7ca4c59b4df04e027f2ffd9893e429824c0e96f978bbc0e189ca77",
+    "Tests/IntentsAutomationCoreTests/Fixtures/ui-program-v1-numeric.json": "69968889a4a996bedf05920baa729e1e8491ab5b7704e162dab65ec1084b73bc",
+    "Tests/IntentsAutomationCoreTests/Fixtures/ui-program-v2.json": "bc823e2a5d902f1cd6c35e564ca212522c446c8605efc7f6e4a5df20b29306f9",
+    "Tools/IntentsAutomation/src/e2e/segment.e2e.ts": "145799d4994e0a821f0fe482b785fea5bef2e7df7a8fed946833e42985d15793",
+    "Tools/IntentsAutomation/src/macOwnedProgram.ts": "cc8a0e8b1197e97bf38d2455b0133d7963ad6d480c4657529b05be7919633149",
+    "Tools/IntentsAutomation/src/main.ts": "e98d235490d9c389fb16bcea41cee64c93e9125ad68aa6b81f9a5b0c58945d4e",
+    "Tools/IntentsAutomation/src/ownRecord.ts": "13a18741c260a436b155e0b7aca4c6a3e81e16c1d6b3d1f7b7b1332698590a00",
+    "Tools/IntentsAutomation/src/payloadDigest.ts": "164eaa758359720114549baf9df8abd910a15317bbdfac2caee5c282a0f89d17",
+    "Tools/IntentsAutomation/src/qualificationUI.ts": "d5bcb34af1535070bc37a192707270fa3f91fcd4d46f197933563487d8b5f28c",
+    "Tools/IntentsAutomation/src/secretFillProgram.ts": "94c3c2b7bec3ad74948af575d49123535fd29554d2404a8b09d7e912c5377eb3",
+    "Tools/IntentsAutomation/src/segment.ts": "9d4867509735acc2004d5f6e1b690832f78e6c69daa994d13a048b3d8e535f98",
+    "Tools/IntentsAutomation/src/workerRunner.ts": "bdefea2de4e4df853f28393711dfbc717d8f5f8a0b0f932cac7563ef9f24eefe",
+    "Tools/IntentsAutomation/tests/contracts.test.ts": "bb86346e8c118c26efedd78c784f4438c5e67589e00de1e12afd707c9dac163d",
+    "Tools/IntentsAutomation/tests/macOwnedProgram.test.ts": "58b233bc3f9fbfdcec9f103ef4c079827fa37264126070cbeca7b9aa2ca5538f",
+    "Tools/IntentsAutomation/tests/macOwnedProgramController.test.ts": "4fda5fbd4617e2b8abd916f3515ff271564c107cd84bc4d8bb1da1c10f7e4b88",
+    "Tools/IntentsAutomation/tests/runner.test.ts": "d7f4e0be8e7e84064bc3f864117be2dc5379625673d3c85cee48b860cb474aca",
+    "Tools/IntentsAutomation/tests/secretFillProgram.test.ts": "73f387366023367f6738724390912dac6d24b90009a2eb62ef0c52588ef22511"
+  },
+  "status": "public-versioned-digest-and-own-receipts-source-verified",
+  "verification": {
+    "newRegressions": 9,
+    "nodeFailed": 0,
+    "nodePassed": 72,
+    "review": "distinct canonical-wire and journal/receipt rechecks clear",
+    "swiftPassed": 35,
+    "typescript": "passed"
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-08",
+  "scope": "Remove account-wide live preflight and scope helper/host observations to exact owned executable paths",
+  "fullV3Complete": false,
+  "implementation": {
+    "wholeUIDPreflightRemoved": true,
+    "unrelatedIdentityAndAncestryReadsRequired": false,
+    "unrelatedPIDChurnAllowed": true,
+    "unreadableTerminalProcessRequiresKernelProof": true,
+    "unknownLivePathStillFails": true,
+    "ownedIdentityAndExecChangesStillFail": true,
+    "scopedSnapshotCannotValidateAsFullCensus": true,
+    "ownedPIDStartDrainReapingAndLeaseChecksPreserved": true
+  },
+  "verification": {
+    "focused": {
+      "registered": 64,
+      "skipped": 2,
+      "failures": 0,
+      "newRegressionTests": 6,
+      "realTestOwnedZombieRegressionPassed": true
+    },
+    "reviews": [
+      "Core kernel/scope review: no material findings.",
+      "Caller/owned-release integration review: no material findings."
+    ],
+    "diffCheck": "passed",
+    "postTestSourceChange": "API documentation comment only"
+  },
+  "liveProbe": {
+    "passed": true,
+    "elapsedSeconds": 24.932,
+    "actionID": "HostProbeIntent",
+    "parameter": {
+      "family": "text",
+      "name": "sample",
+      "samples": [
+        {
+          "kind": "text",
+          "value": "Intents adapter probe"
+        }
+      ]
+    },
+    "setterAndReadbackAsserted": true,
+    "businessIntentDispatched": false,
+    "ownedRunnerReleaseAsserted": true,
+    "leaseCampaignsEmpty": true,
+    "evidenceRoot": "Tools/IntentsAutomation/.runtime/intents-input-fixture-5561FFDE-D8DB-4BB3-B6E4-DD492A5506D7",
+    "subjectSHA256": "d0720a1b3f6b348a998e86a20bb1be8b5f10b16c450ada2cd07059aa41afc831",
+    "hostSHA256": "d9152175d04f6193bd259fc2d984610881b4fab67d8e4eeb10d3d47d05d5fcc3",
+    "runtimeContext": {
+      "architecture": "arm64",
+      "frameworkCPUSubtype": 2147483650,
+      "frameworkCPUType": 16777228,
+      "frameworkPath": "/Applications/Xcode-27.2.0-Beta.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/AppIntentsTesting.framework/Versions/A/AppIntentsTesting",
+      "frameworkSHA256": "424ed654dda864529a8528ef67b588a33460478866ebaceda59753ef3d9640aa",
+      "frameworkUUID": "f80956e87bf2342b9ba9133325cd80db",
+      "processOSBuild": "26B5101f",
+      "processOSVersion": "Version 27.2 (Build 26B5101f)",
+      "sdkBuild": "26A393",
+      "sdkPlatform": "macosx",
+      "xcodeBuild": "27B5028c"
+    },
+    "toolchainSelection": "/Applications/Xcode-27.2.0-Beta.2.app/Contents/Developer",
+    "installedXcodeBuild": "27B5028f"
+  },
+  "unrelatedCodex": {
+    "parentPID": 96912,
+    "zombiePID": 97070,
+    "presentBeforeAndAfter": true,
+    "resetOrTerminationAttempted": false
+  },
+  "sourceSHA256": {
+    "Sources/IntentsAutomationCore/AutomationMacExecutableInventory.swift": "28b6a68eabe6152cf2867eeea1d2d5469a494819a3cfcc617a5a0841a91ff8fe",
+    "Sources/IntentsAutomationCore/AutomationMacProcessInventory.swift": "f5d8183e7aa4d31fbf62d787aab077719933bc5d6a59f77a879a37e73007f907",
+    "Sources/IntentsAutomationCore/AutomationMacAssociatedHostReleaseVerifier.swift": "fe3dbb76c6f900376570c55b10fe8225dcf9b9d4a4e98b4b41fbdf25077459ad",
+    "Sources/IntentsAutomationCore/AutomationMacHelperReleaseVerifier.swift": "2ebff8e4801cbd7eedb23a50bf21e1da212bfe17075f11dbcb0ca68f0dae58c1",
+    "Tests/IntentsAutomationCoreTests/AutomationMacExecutableInventoryTests.swift": "b0d76658260238051ab228f5e3857b735de28ff5cc220123825f7cbc3d246a48",
+    "Tests/IntentsAutomationCoreTests/AutomationMacInputProbeFixtureTests.swift": "fb15acc576d294099895ee563fadfb0ffbeb0e0ad797db46285c6e5e137cebcc"
+  },
+  "evidenceRoot": "Tools/IntentsAutomation/.runtime/scoped-process-inventory-1",
+  "evidenceSHA256": {
+    "focused-tests.log": "f32f2c942dddb79f449d9eb780e6a5656169bd1e2dd952c45cd3b811979c45c7",
+    "live-probe.log": "4846b95dbf4c299f10c9446f1c398656dac8bd05152039062e3452a4f5e33817",
+    "unrelated-processes-after.log": "a458ed4be85adb492f267396e87409d33df603cc239bb5d72f970b84f2d52cf3",
+    "unrelated-processes-before.log": "a458ed4be85adb492f267396e87409d33df603cc239bb5d72f970b84f2d52cf3"
+  },
+  "probeArtifactSHA256": {
+    "artifacts/input-adapter-receipt.json": "7e08a3bdce9c6e271f9ddc22cfeb45d57dedf4be96c50b6071dcacce6344c87f",
+    "artifacts/input-adapter-log.txt": "2d866b5c8ddb2cbbe830a6717c6693428ba4d6ecb2bc601be1bd84e75a98af4d",
+    "leases.json": "5c2eeb74d0b855a9807bd2326a381ab1c6d3eb60474de37eb241c7323c34a46c"
+  },
+  "limits": [
+    "This live result qualifies only the authored String setter/readback probe on this exact host/toolchain.",
+    "Complete unobserved XCTest descendant closure, other codec families, physical Siri and full v3 remain unqualified.",
+    "Prior failed live attempt lease/payload remains quarantined; this successful attempt has its own empty campaign lease store.",
+    "Native Intents app bundle has not been rebuilt with these latest source changes."
+  ]
+}

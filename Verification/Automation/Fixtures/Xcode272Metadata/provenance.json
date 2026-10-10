@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "scope": "Compiled macOS SDK metadata only; no app, query or intent execution",
+  "toolchain": "/Applications/Xcode-27.2.0-Beta.2.app/Contents/Developer",
+  "xcodeBuild": "27B5028f",
+  "sdk": "macosx27.2",
+  "generator": {
+    "name": "xcode-tools",
+    "version": "27B5028f"
+  },
+  "evidenceRoot": "Tools/IntentsAutomation/.runtime/intents-metadata-xcode272-1",
+  "buildCommand": "DEVELOPER_DIR=/Applications/Xcode-27.2.0-Beta.2.app/Contents/Developer xcodebuild -project Source/Subject.xcodeproj -target Subject -configuration Debug -sdk macosx -jobs 1 CONFIGURATION_BUILD_DIR=<evidenceRoot>/Products OBJROOT=<evidenceRoot>/Intermediates CODE_SIGNING_ALLOWED=NO build",
+  "buildLog": "build-final-2.log",
+  "buildLogSHA256": "6d00768f7fcd90bc85a0c9cfe11dffd1de4cd1c687bbdd9e5e207a22d80661dc",
+  "capturedFiles": {
+    "extract.actionsdata": "79dc8fffa75707b1a95545ffd3d80899f3666bcf4745f1dd964be53ad5b2acbc",
+    "QualifiedDeclarations.swift.txt": "8f704defe1b4762f9737911af356a7024fe4043f99a25d96da3c6a9e82c7693c",
+    "project.pbxproj": "7493afdd2630d3e7094af4133cea4f8e638fa4096e42d5668a51d6697527ba1f"
+  },
+  "executableSHA256": "a0d5ca3c02e9487ffd19dc4b72be6264fe5665ea393b651674a8fddd24aac4a1",
+  "initialBuildFailure": "Copied comment fragment was not commented; corrected before successful capture.",
+  "runtimeQualified": false,
+  "identifierOnlyQueryCapture": {
+    "metadata": "identifier-query-capture/extract.actionsdata",
+    "sha256": "489bb9823cb7a8972ec5bad4dcfebc441574eb83d7eef4e836ef878279040ff5",
+    "capabilities": 66,
+    "readerSupport": false
+  },
+  "qualifiedStringQueryCapabilities": 70
+}

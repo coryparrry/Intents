@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "artifactVariant": "private-owned-mac-source",
+  "customerRuntimeEnabled": false,
+  "hardwareQualified": false,
+  "helperInvoked": false,
+  "publishedNpmIntact": true,
+  "checks": {
+    "privatePatchTests": 10,
+    "publishedPatchTests": 7,
+    "nodeDisposalTests": 10,
+    "private466FileStaging": "passed",
+    "reapplication": "identical receipt and output",
+    "originalPrivate466BuildFiles": "unchanged",
+    "publishedProvenance": "passed",
+    "freshReviews": "Sol22 cleanup finding fixed; Sol23 clear after two failure tests",
+    "shellSyntax": "passed",
+    "scopedDiffWhitespace": "passed"
+  },
+  "files": [
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/scripts/apply_private_sdk_lifecycle_patch.py",
+      "SHA256": "06f4523a9a2fd518e5269c5547d84bfc07f97cafe107f41c6de70936d9002ba9"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/private_sdk_lifecycle_patch_test.py",
+      "SHA256": "7a956d534600d0e1702bcf0b52df9147172340bf3eb4643fa15c585cd0c0b5ca"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/private-lifecycle-lock.json",
+      "SHA256": "bd9832901dab131d6d5f5d982b12fa53179e6e277848b1a335882c30925b2663"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/script/automation_test.sh",
+      "SHA256": "849075e79ae72121b878ff60088f47fda765bd6a12f1df5611c662342dfabaad"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Verification/Automation/private-sdk-lifecycle-files-1.json",
+      "SHA256": "872fd17f3a397e7b058813dd1ed2132e18834a47733c880acb6cfeb88dc56105"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-lifecycle-tests2.log",
+      "SHA256": "0e6726d50e803379d5dba8bffa695156ec8dd968c17d4b7aceb115bede57015c"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/published-lifecycle-tests-recheck1.log",
+      "SHA256": "241cc9082c83d984731b53f41545cad3c6b096bfe0c9fb86a478828ea495fcbc"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-disposal-node-tests1.log",
+      "SHA256": "455ef71061817ba2e9b94e7df7e6f30591876176a64c6c5cbd4c979bb4c1709e"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-lifecycle-apply1.log",
+      "SHA256": "7dc4de050cb688d873ee869a68db443fda63647fc9298c70dcea014f9fbb0d62"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-lifecycle-reapply1.log",
+      "SHA256": "7dc4de050cb688d873ee869a68db443fda63647fc9298c70dcea014f9fbb0d62"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/published-provenance-recheck1.log",
+      "SHA256": "84b32d1819021fc053a193faaf38ae54cc37a2da65d94571c737a451c7634691"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:19:49.470649+00:00",
+  "scope": "Second actual protected-record UI setup after adapter/reference repair",
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "result": "invalidFixture",
+  "modelCalls": 1,
+  "uiActions": 0,
+  "subjectDispatched": false,
+  "resourcesReleasedInOriginalReport": false,
+  "controllerOutcome": "noSafeAction",
+  "capturedObservationComplete": true,
+  "capturedNodes": 86,
+  "contextGap": "First48 model projection omitted task input/account controls at observed positions55-64",
+  "recovery": "Exact recorded owner19424/start1791328308:364892 and sidecar19768/start1791328334:965860 absent; owned simulator Shutdown; native Core reconciled generation70; original report and journal byte-identical; common campaigns empty",
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-correct2/report.json",
+      "sha256": "392b9db0ae4c48d853319a4fffd7d75d6570c4f234fa2e166807d921ce3899a2",
+      "bytes": 464
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-correct2/journal.json",
+      "sha256": "da39852f4f0b2ff45525def0b0fefeb3356f94cb4d9d92edbd3a6b78447d7e80",
+      "bytes": 719
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-correct2/ui/control-70/runs/fresh-owner-correct-run2/fresh-owner-correct2:fixture.create/e2e/report.json",
+      "sha256": "5478731b1ff3e538966c907183a737a85fa519243fb9bb82f038d5e8798ea546",
+      "bytes": 6508
+    },
+    {
+      "path": "/private/tmp/intents-fresh-owner-runtime-qualification1/recovery2-reconcile.log",
+      "sha256": "77b155a7618185671d1c3796a06bab7590b1728053a298527b2f4a3b5160c473",
+      "bytes": 66
+    }
+  ]
+}

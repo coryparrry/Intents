@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:31:09.619137+00:00",
+  "scope": "Bounded scoped controller denial diagnostics distinguish native gates and caught provider failures without error descriptions or invalid request payloads",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "tests134": {
+    "passed": 13,
+    "failures": 0,
+    "log": "/private/tmp/intents-automation-tests134.log"
+  },
+  "probeBuild21": "passed",
+  "review": "fresh isolated Sol6.1 clear",
+  "nativeBuild": "pending",
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationRunAuthority.swift",
+      "sha256": "75e56ffd3360e8cb5a581e195bdc97a1a0b4f60030f2f4476bd36ff1c98319c5",
+      "bytes": 15380
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationControllerTests.swift",
+      "sha256": "dc7861b0c5f25fa4a8234d9ac75576006e55dc6e773da56c88acd37b18bf7c4b",
+      "bytes": 15144
+    }
+  ],
+  "limits": [
+    "A reverse controller request counter does not prove provider or model invocation",
+    "Provider-stage diagnostic identifies caught wrapper error type only",
+    "No successful mixed setup/readback yet"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "generator": "Xcode 27A266a",
+  "scope": "Actual compiler metadata extraction failure, not a supported codec declaration",
+  "exception": "NSInternalInconsistencyException: Invalid parameter not satisfying: ![memberValueType isKindOfClass:[LN_TYPE(ArrayValueType) class]]",
+  "sourceSHA256": "dd732a4feb6a19da3990d42fca0198e425db4987ae6736cd24f41d8cd703d936",
+  "logPath": "/private/tmp/intents-codec-metadata-qualification2/build2.log",
+  "logSHA256": "8d7ab187373ad1e2ab07965d669999b2f8a10845a7545b0fc8e3503af647a453",
+  "lesson": "Nested IntentValueConvertible does not prove @Parameter metadata support; admit only successful complete extractor output."
+}

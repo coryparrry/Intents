@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:46:24.273267+00:00",
+  "scope": "Preserve absent native editability and qualify a separate bounded text-entry action with fresh dispatch validation",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "sidecar40": {
+    "passed": 62,
+    "failures": 0
+  },
+  "sidecar41": {
+    "passed": 29,
+    "failures": 0
+  },
+  "tests138": {
+    "passed": 18,
+    "failures": 0
+  },
+  "nativeBuild27": "passed",
+  "probeBuild23": "passed",
+  "reviews": "fresh Sol6.1 design and implementation clear; coverage observations addressed",
+  "contract": "Unknown editable remains absent; ios native TextField/TextView/SearchField with exact normalizedkind +positiveenabled/hittable, no explicit negative or secret evidence. SDK predicate is broader; successful input outcome requires fresh execution/readback.",
+  "limits": [
+    "No new complete live fixture setup yet",
+    "Native interface rendered flow remains blocked by UI service failure"
+  ],
+  "sources": [
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/semanticTree.ts",
+      "sha256": "a4688193cd15aa06cb4b386493b4993b6dbf35c7f01f56c18b749a7e0aca70bc",
+      "bytes": 5491
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/engine.ts",
+      "sha256": "f52ecc96238b11268d60404c5f935297f187d5444894a41c760026aef68b1821",
+      "bytes": 5400
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/nativeController.ts",
+      "sha256": "f50231cb1ede37f638b3edb1ec83e2798892f6da2ee4df00b03075cf06a0ec12",
+      "bytes": 6920
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/controllerProtocol.ts",
+      "sha256": "c807231736886c3bf0c48adceb5d698f874bf9926ab477335c39475bbf635384",
+      "bytes": 2104
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/engine.test.ts",
+      "sha256": "83d0a16c1e04e636b6034ff696d8e4880e31396114afaab4edd5098bb1804dab",
+      "bytes": 13356
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/controller.test.ts",
+      "sha256": "a8f3e86009129877d56399ce207a4963b6fb3d8006e8850c82677d0b3fcc0d41",
+      "bytes": 9664
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationNavigationController.swift",
+      "sha256": "1a6eb203eba764e4ddfbb99607617dfa84dc37cf7c0f7dd79a03043994c37e82",
+      "bytes": 6874
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationControllerContextSelection.swift",
+      "sha256": "03e8b96bdf08537c5b4ae8ea4f78110ac9a2a15cde97f321fb7e584abab508dc",
+      "bytes": 1391
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "f909eff1e4ca006fee75d1914e8326c92f4e0617f9d68dde4a42d509499f761e",
+      "bytes": 5016
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationControllerTests.swift",
+      "sha256": "de6f87d4f8e9c560c9c893cdb154a481f419844a81c41ee0bf0493d064bba39c",
+      "bytes": 18032
+    }
+  ]
+}

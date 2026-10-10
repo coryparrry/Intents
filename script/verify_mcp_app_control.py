@@ -121,7 +121,7 @@ def verify(client, native=False):
     client.check("eval_find_actions" in init["instructions"], "on-demand discovery instructions")
     discovery = client.call("eval_find_actions", dict(query="upload", domain="production", limit=3))
     metrics = discovery["catalog"]
-    client.check(len(discovery["actions"]) <= 3 and metrics["actionCount"] == 111, "bounded full capability discovery")
+    client.check(len(discovery["actions"]) <= 3 and metrics["actionCount"] == 123, "bounded full capability discovery")
     client.check(metrics["defaultSchemaBytes"] * 2 < metrics["fullSchemaBytes"], "upfront schema size reduced by more than half")
     client.call("eval_read_action", dict(action="eval_project_create", arguments={}), failure=True)
     client.call("eval_apply_action", dict(action="eval_intent_state", arguments={}), failure=True)

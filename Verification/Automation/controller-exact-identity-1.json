@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:41:19.120306+00:00",
+  "scope": "Observed control identifier context, complete unique identified controller refs and one-shot exact action target",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "checks": {
+    "tests147": "27 passed",
+    "sidecar50": "18 passed",
+    "sidecar53": "46 passed including real pinned runner/broker replacement rejection and identified geometry/index churn"
+  },
+  "review": "Fresh Sol identifier projection clear; exact dispatch clear; stable identity hidden-content finding corrected and rechecked clear",
+  "limits": [
+    "Actual fixture rerun pending",
+    "Anonymous, duplicate or partial capture targets cannot gain stable identified refs",
+    "Fingerprint uniqueness, fresh accessibility and native exact-node policy checks remain active",
+    "No cached navigation replay enabled"
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationNavigationController.swift",
+      "sha256": "02d43c27d88bdfc4f586a223e7f438a507431bb2bf6988716d5f89a361274f15"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "ad4c7a6a7b99cf5060bbdda598bcfa37f062438ea4d18ded67354400bcb131ca"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/controllerProtocol.ts",
+      "sha256": "d61f3396333d7764f6d6e30dcd3693c124589b2e18a9cb2bfa24acdcfcbadde6"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/nativeController.ts",
+      "sha256": "d768627dfd958bb20837a81e96c3bca3b941e8c34c86642721c928a0b9b2adea"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/semanticTree.ts",
+      "sha256": "a26ccac7a2c5f061bfe3e0a001d807978d52e16ad7a821694b09636a3918b1aa"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/engine.ts",
+      "sha256": "725a406ed994ee87018d03e16aa84e76af2012a05ae23b9e3d0477a87f754732"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/e2e/config.ts",
+      "sha256": "3087502ec5d94155764391bfa8ca54f9f27e0daab1bd4005ccd13d8035aa008d"
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/controller.test.ts",
+      "sha256": "1a82a9df5fc2058b80062a9c010ff290d9bdbe3edc492c1efd96b2ac7fcb3d57"
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/engine.test.ts",
+      "sha256": "34e395feb935293e379cf794b6f55c1e4b001131d8e31a0e68e5e355bbcf4d96"
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/runner.test.ts",
+      "sha256": "5178ee1665f05da18d0d627fbb1578071cfaca5cb56eaf51d4e9e7cc3ddfde82"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationControllerTests.swift",
+      "sha256": "16cd76fcd40717abe8a4668854dca29f146baf44c4e12e74270138938dbf6a95"
+    }
+  ]
+}

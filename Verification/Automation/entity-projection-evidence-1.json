@@ -1,0 +1,25 @@
+{
+  "slice": "entity-projection-evidence-1",
+  "date": "2026-10-08",
+  "acceptance": "A completed owned query retains exact typed property projection facts without enabling intent input/result conversion or claiming unobserved runtime context.",
+  "implementation": {
+    "issuer": "Non-Codable proof with private initializer,issued internally after exact read-only approval,catalog,complete released receipt and typed output validation",
+    "scope": "App/product,target/session,host/xctestrun,source/catalog/template digests,environment,entity/observed properties,source attempt and canonical receipt digest",
+    "limits": "Empty and identity-only reads issue no property proof;provider accepts only exact preparation and observed subset;property-only records remain unknown until independent runtime context proof"
+  },
+  "verification": {
+    "contracts": "31 core and28 native-store checks passed",
+    "negativeCases": "16 incomplete/foreign/malformed/catalog/approval variants denied;changed app,target,host,xctestrun,template,source,catalog/environment and unobserved projections cannot reuse;plausible unobserved platform labels remain unknown",
+    "direction": "Property records cannot satisfy apple.codec.text/bool or authorize intent setter/result conversion",
+    "applicationBuild": "Official Xcode My Mac FoundationEvals passed,22.016seconds,0 errors",
+    "review": "Two independent Sol lanes;unobserved nonempty context promotion fixed,rechecked clear",
+    "diffCheck": "git diff --check passed",
+    "diagnostics": "Ignored Tools/IntentsAutomation/.runtime/entity-projection-evidence-1/"
+  },
+  "limits": [
+    "Synthetic structural/issuer and app-build evidence;no real query or runtime platform/codec qualification minted.",
+    "Independent observed runtime context and no-dispatch input roundtrip adapter are next concrete source work.",
+    "Full M0-M6 remains incomplete;known native GUI,UID census,physical and distribution/user gates unchanged.",
+    "Owned Xcode workspace closed;local commit only."
+  ]
+}

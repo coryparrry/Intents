@@ -1,0 +1,104 @@
+name: Automation contracts
+
+on:
+  pull_request:
+    paths:
+      - 'Sources/IntentsAutomationCore/**'
+      - 'Tests/IntentsAutomationCoreTests/**'
+      - 'Tools/IntentsAutomation/**'
+      - 'Integration/AutomationHost/**'
+      - 'Integration/AutomationRuntime/**'
+      - 'script/automation_*.sh'
+      - 'script/ci_skip_guard.py'
+      - 'Package.swift'
+      - '.github/workflows/automation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Sources/IntentsAutomationCore/**'
+      - 'Tests/IntentsAutomationCoreTests/**'
+      - 'Tools/IntentsAutomation/**'
+      - 'Integration/AutomationHost/**'
+      - 'Integration/AutomationRuntime/**'
+      - 'script/automation_*.sh'
+      - 'script/ci_skip_guard.py'
+      - 'Package.swift'
+      - '.github/workflows/automation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automation-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sidecar:
+    name: Pinned sidecar and packaging contracts
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Provision the exact builder runtime
+        run: |
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
+          python3 Tools/IntentsAutomation/scripts/provision_runtime.py
+      - name: Compile the pinned public APIs and run contract tests
+        run: |
+          export PATH="$PWD/Tools/IntentsAutomation/.runtime/node-v24.21.0-darwin-arm64/bin:$PATH"
+          npm ci --prefix Tools/IntentsAutomation --ignore-scripts --no-audit --no-fund
+          script/automation_test.sh --scope sidecar
+          script/automation_test.sh --scope staging
+          python3 Tools/IntentsAutomation/tests/integration_contracts_test.py
+          python3 Tools/IntentsAutomation/tests/bundle_manifest_test.py
+          python3 Tools/IntentsAutomation/tests/sdk_lifecycle_patch_test.py
+          python3 Tools/IntentsAutomation/tests/e2e_action_budget_patch_test.py
+          python3 -m unittest discover -s script/tests -p test_automation_release_pipeline.py
+          # Device profiles and signing/notarization are separate qualification gates.
+
+  provisioned:
+    name: Provisioned runtime suites (no unexpected skips)
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Provision the exact builder runtime
+        run: |
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
+          python3 Tools/IntentsAutomation/scripts/provision_runtime.py
+      - name: Build the sidecar and owned fixtures
+        run: |
+          export PATH="$PWD/Tools/IntentsAutomation/.runtime/node-v24.21.0-darwin-arm64/bin:$PATH"
+          npm ci --prefix Tools/IntentsAutomation --ignore-scripts --no-audit --no-fund
+          npm --prefix Tools/IntentsAutomation run build
+      - name: Run runtime-dependent Swift suites and fail on unexpected skips
+        run: |
+          tools="$PWD/Tools/IntentsAutomation"
+          export INTENTS_SECRET_TEST_NODE="$tools/.runtime/node-v24.21.0-darwin-arm64/bin/node"
+          export INTENTS_SECRET_TEST_ENTRY="$tools/dist/tests/fixtures/secretFillWorkerFixture.js"
+          export INTENTS_SECRET_PROGRAM_TEST_ENTRY="$tools/dist/src/secretProgramMain.js"
+          export INTENTS_SECRET_SILENT_TEST_ENTRY="$tools/dist/tests/fixtures/secretSilentHandshake.js"
+          export INTENTS_SECRET_DIAGNOSTIC_TEST_ENTRY="$tools/dist/tests/fixtures/secretDiagnosticFixture.js"
+          export INTENTS_MAC_READ_ONLY_INVENTORY=1
+          export INTENTS_SOURCE_SYNTAX_TEST=1
+          # Allowed skips need frozen private artifacts that CI never holds.
+          python3 script/ci_skip_guard.py \
+            --suite AutomationMacOwnedDaemonSessionTests \
+            --suite AutomationMacNativeHelperBridgeTests \
+            --suite AutomationMacNativeHelperBridgeValidationTests \
+            --suite AutomationMacGatedCommandTests \
+            --suite AutomationSecretFillTests \
+            --suite AutomationMacSecretConsentContextTests \
+            --suite AutomationMacProcessInventoryTests \
+            --suite AutomationMacProcessInventoryLiveTests \
+            --suite AutomationSourceSyntaxTests \
+            --suite AutomationSourceSyntaxResponseTests \
+            --suite AutomationPreparationGuardTests \
+            --allow-skip AutomationMacNativeHelperBridgeTests/testActualPrivateDaemonClientUsesAuthenticatedNativePipeAndOwnedChildren \
+            --allow-skip AutomationMacNativeHelperBridgeTests/testAvailableFillHelperRequiresItsExactVariantDigestWithoutLaunching \
+            --allow-skip AutomationMacSecretConsentContextTests/testFrozenOwnedSecretFactoryUsesDurableLeaseWithoutCredentialInJournal

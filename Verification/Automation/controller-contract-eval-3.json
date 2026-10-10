@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T02:42:25.223040+00:00",
+  "scope": "retained snapshot controller contract; no app actions or recipe qualification",
+  "progressChecksPassed": 2,
+  "cases": 5,
+  "legalDecisions": 5,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "results": {
+    "passed": false,
+    "results": [
+      {
+        "bindingName": "approvedText",
+        "exactObservedTarget": true,
+        "expectedClass": true,
+        "expectedTarget": true,
+        "id": "initial-placeholder",
+        "kind": "fill",
+        "nodeID": "node-cd41244f6433093a80f4e243ca21e2d1b52c83c5c611ee21c4737dfa2bf9ef13",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "exactObservedTarget": true,
+        "expectedClass": true,
+        "expectedTarget": true,
+        "id": "entered-name-before-save",
+        "kind": "tap",
+        "nodeID": "node-5aa9b54efe6b401f67195f82278d7c04ec5abbb3260816350e18a265e6b9a891",
+        "nodeName": "Add task",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "exactObservedTarget": true,
+        "expectedClass": false,
+        "expectedTarget": false,
+        "id": "one-saved-Personal-row",
+        "kind": "finish",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "exactObservedTarget": true,
+        "expectedClass": false,
+        "expectedTarget": true,
+        "id": "two-Personal-rows",
+        "kind": "finish",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      },
+      {
+        "exactObservedTarget": true,
+        "expectedClass": false,
+        "expectedTarget": true,
+        "id": "three-Personal-rows-reselected",
+        "kind": "finish",
+        "permittedBinding": true,
+        "requiredActivityRespected": true
+      }
+    ],
+    "scope": "retained snapshot controller contract; no app actions or recipe qualification"
+  },
+  "limits": [
+    "Actual grounded2 snapshots, nodes, revisions and recent actions retained; no fabricated UI state",
+    "The goal minimum uses the current one-fill shared-name contract; approvedBindingUses is 0 then 1 based on the actual accepted fill",
+    "Exact expected target IDs are grading data only and never reach the controller or authorise an action",
+    "One saved Personal row requires navigation to Work; duplicate Personal rows cannot satisfy the two unique-owner setup predicate and must stop safely",
+    "No saved Work state or durable independent readback exists in this attempt; controller finish is not a business assertion",
+    "No device/UI actions or recipe qualification; no new live retry justified by 2/5 progress"
+  ],
+  "review": "Fresh Luna v16 found retained owner/selected facts and post-save rows; no missing-data explanation established",
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-controller-contract-eval3/profile.json",
+      "sha256": "0f3e97fd298ef3cd2ae41a5d34eaa48f8be66823027953b2f30984cc4d19e3ed"
+    },
+    {
+      "path": "/private/tmp/intents-controller-contract-eval3/results.json",
+      "sha256": "1419d5956672a4bee5e55d50d1d90dea32bc220a69c66fce69caed7a052cbdca"
+    },
+    {
+      "path": "/private/tmp/intents-controller-contract-eval3/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-1.json",
+      "sha256": "dbc237a76354cc7e164eb2aed6868b0d0d1f320db4375fe0ef88f2251620f4bf"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-2.json",
+      "sha256": "ffacac40bc309e454a24546edbc6ef4ca24e74ecbc6f1029b995dbbca97c48fa"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-3.json",
+      "sha256": "d3a97579408fedf9588c1eea5932f1df6ddc8a564775368aa48354b859225d4e"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-4.json",
+      "sha256": "ae3f703bf3e6253d0061c9d6fa3a5154f221cde4b326623a82cad0354ec7447f"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-grounded2/artifacts/controller-127-6.json",
+      "sha256": "493f8129b81efb002f2d01686c4b1774d1da6ab21d6ae6a11edc947d5d895baa"
+    }
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "8ecbb27efafb21dd355a7c9887a0692e69adc896bd508697fe1c4cb3e8bcea78"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationGuidedNavigationDecision.swift",
+      "sha256": "81529271de781b6bfb4ccbc9e51f2ccf0a48dabb00c9530ef27b2f0ef928f020"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationControllerContextSelection.swift",
+      "sha256": "b76a959325eeb00e5d9f792fce904fc90eb5a0c18967b2e879b3478a70c753df"
+    },
+    {
+      "path": "Tools/IntentsAutomationControllerProbe/ControllerProbe.swift",
+      "sha256": "d71a3d88252be7ca7e2bcf779f050bc9e86d374be14a82e1068413096b7b6578"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/ControllerSnapshotTargetExpectationTests.swift",
+      "sha256": "b78c938a61342d31c71477b8e6b99a381deead67270e4898ae72ef9d80478076"
+    }
+  ]
+}

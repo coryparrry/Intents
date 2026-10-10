@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "date": "2026-10-08",
+  "scope": "prepared Mac source mixed route through internal application runner qualification seam",
+  "behavior": [
+    "Both prepared and generic subject entry points forward to the existing exact prepared Mac mixed qualifier only when it is internally injected",
+    "Public initializer keeps the qualifier absent; product run gates remain closed",
+    "Installation, simulator runtime, fixture trackers and qualifying bindings are denied before dispatch",
+    "UI and associated Apple drivers share runner-owned durable leases, journal, artifacts, budget and saved reports"
+  ],
+  "verification": {
+    "command": "swift test --jobs 2 --filter AutomationPrivateMacAppleRouteDriverTests|AutomationMacUIQualificationTests|MacFreshDraftStoreTests",
+    "tests": 49,
+    "failures": 0,
+    "reviews": [
+      "Sol authority/fail-closed lane: clear",
+      "Sol route ownership lane: clear after shared-manager fixture correction"
+    ],
+    "diffCheck": "passed"
+  },
+  "failurePreserved": "Initial runner tests asserted the direct harness in-memory lease manager. Corrected witness captures and compares the runner manager across both drivers, with independent durable lease absence check.",
+  "unverified": [
+    "All route results are synthetic injected qualification tests; no real GUI/controller, associated-host child closure or live Mac state was qualified",
+    "No clean-host, Intel, signing/notary, device or release evidence was added"
+  ],
+  "runtime": "Tools/IntentsAutomation/.runtime/prepared-mac-runner-1"
+}

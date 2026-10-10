@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T22:55:42.146760+00:00",
+  "scope": "Private native fresh-record package and attempted ordinary UI flow",
+  "nativeBuild": "BUILD SUCCEEDED",
+  "runtimeBundleVerification": "passed; pinned offline runtime and existing Developer ID signature",
+  "customerReleaseQualified": false,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "observedUI": [
+    "Viewed actual App automation empty-selection screen",
+    "Opened file picker and selected synthetic DuplicateTasks.xcodeproj"
+  ],
+  "unobserved": [
+    "Main screen after project selection",
+    "Preparation",
+    "Fresh setup/action/readback",
+    "Reproduction and fix comparison"
+  ],
+  "blocker": {
+    "process": "SkyComputerUseService",
+    "exception": "EXC_BREAKPOINT SIGTRAP; Array.remove(at:) assertion",
+    "firstFailure": "Native pipe closed after Choose app",
+    "boundedReconnect": "Native pipe closed again",
+    "appCrashed": false
+  },
+  "cleanup": "Sent SIGTERM only to verified task-owned private app PID 6804; no campaign active",
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-native24.log",
+      "sha256": "f2afc144a9e27db0e6b0d8c0c620b4c2d905b8be801e0e04518b0ea7dd8eda4b",
+      "bytes": 324550
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-workflow-package1.log",
+      "sha256": "c709f6302bf274d931544a471e169d9a328ac95988115e0abc1c1586f4b12276",
+      "bytes": 1332
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-workflow-sign1.log",
+      "sha256": "fe7df5d6c29d3c7bcf3e5637215512bc9e220202c83ff8bd858ca10d72159ebb",
+      "bytes": 714
+    },
+    {
+      "path": "/private/tmp/intents-automation-native-workflow-seal1.log",
+      "sha256": "684203d318330b8ba080a5c5a4d08f5b6dc33c7561c6bdfafd93b40b510b4651",
+      "bytes": 4591
+    },
+    {
+      "path": "/Users/coryparry/Library/Logs/DiagnosticReports/SkyComputerUseService-2026-10-06-235113.ips",
+      "sha256": "41e82588d78d79a87338b6419d6ec36450071edf36439f48f01852969e8b8ce2",
+      "bytes": 45892
+    }
+  ]
+}

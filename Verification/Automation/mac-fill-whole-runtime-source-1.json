@@ -1,0 +1,110 @@
+{
+  "artifactVariant": "private-owned-mac-fill-whole-runtime-source",
+  "credentialFillImplemented": false,
+  "customerRuntimeEnabled": false,
+  "evidenceSHA256": {
+    "Verification/Automation/Evidence/2026-10-07-mac-fill-runtime/native-tests.log": "0c3d54f0793c51753f9e55597b93cb3f562db107eaaa35e2d8631426f4ff8e4d",
+    "Verification/Automation/Evidence/2026-10-07-mac-fill-runtime/npm-archive-recovery.log": "000c1c4a0ccdeb6a6a5891ea96be9d5902223f53c69c2affde3347f9c47dcd21",
+    "Verification/Automation/Evidence/2026-10-07-mac-fill-runtime/runtime-seal.log": "186bfe666ce64e1556a45ae5931cb137867bd49a04fc7b0367c38ef106bcb012",
+    "Verification/Automation/Evidence/2026-10-07-mac-fill-runtime/runtime-stage.log": "75c708bdf47011f3e6fb8c21da21cd1b0c42b9921c50e5040356ee57e621b114",
+    "Verification/Automation/Evidence/2026-10-07-mac-fill-runtime/runtime-verify.log": "186bfe666ce64e1556a45ae5931cb137867bd49a04fc7b0367c38ef106bcb012",
+    "Verification/Automation/Evidence/2026-10-07-mac-fill-runtime/sdk-build.log": "21d231ff18b815b27d8a1975da5a54f9de85f768e83107eeb1bccd36ed55a514",
+    "Verification/Automation/Evidence/2026-10-07-mac-fill-runtime/sdk-source-stage.log": "47690d32dbb73a8622d7a9d8de50858de23569c5f85e686b7ff94f79713bb41b",
+    "Verification/Automation/Evidence/2026-10-07-mac-fill-runtime/sealed-entry-tests.log": "cb41ef4ef05742cbefa9a23d22374ad16930ede89d944d380b7e86bd7228f26d",
+    "Verification/Automation/Evidence/2026-10-07-mac-fill-runtime/staging-tests.log": "3d05864adaa7a067c6dd8f488b76741afad7cdf90e6cdbe6566339424de57b0f",
+    "Verification/Automation/Evidence/2026-10-07-mac-fill-runtime/typescript-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "hardwareQualified": false,
+  "limits": [
+    "No helper GUI input or actual subject app launch; native permissions tested with synthetic sessions",
+    "Sealed entry uses actual pinned SDK/e2e plus synthetic native channel; no hardware/session/event-delivery qualification",
+    "Immutable packaging receipt retains pre-execution false flags; separate evidence records synthetic execution only",
+    "Native application UI render/build remains a separate qualification step",
+    "Whole-user release census and physical iOS ABI gates remain unresolved; unchanged failing probes were not retried"
+  ],
+  "preservedFailureArtifactsSHA256": {
+    "Tools/IntentsAutomation/.runtime/mac-source-recovery-1/failures/intents-fill-whole-entry-tests2.log": "fe1cc212e458c129ca372261388b66c6551a08f8b425ac58aa2b32324c8de462",
+    "Tools/IntentsAutomation/.runtime/mac-source-recovery-1/failures/intents-fill-whole-native-tests1.log": "3045aaa3346cace155178e87ea6598bff797e308d74c65cf7a1a53f12638b737",
+    "Tools/IntentsAutomation/.runtime/mac-source-recovery-1/failures/test-diagnostics.json": "717de13c4531296ae9020d7a38eb888d499e5f189d35c2c66a8cc4bbc9ac22c3"
+  },
+  "rawBuildLog": {
+    "available": true,
+    "path": "Tools/IntentsAutomation/.runtime/mac-source-recovery-1/sdk-build.log",
+    "sha256": "0509b799f63f8b1d6c69d63600a6bd0baecd684efb5e3bd8b0ae615650bbaeca",
+    "trackedEvidenceNormalization": "Trailing line whitespace removed; original full bytes preserved here"
+  },
+  "remainingSource": [
+    "Mac AppIntents host preparation and mixed system/UI route",
+    "saved Mac Reproduce/Check fix campaigns",
+    "opaque credential program/worker/broker mapping and native consent UI"
+  ],
+  "runtime": {
+    "available": true,
+    "checkpointPath": "Verification/Automation/mac-private-entry-source-7.json",
+    "checkpointSHA256": "67d9447037c980891bb31ff4c856deecd5650fb794ddf7cd859ef4118e52df6e",
+    "fileCount": 5475,
+    "helperABI": "startup-gate-v2-private-input",
+    "helperSHA256": "e1a073e759f643fa6f04799b4a492fc7cf0ef63d8fd13959e5aca7bbcbd4f576",
+    "nodeSHA256": "e4b5a3af0e05c75de2eae013904145f40fe7fc2a6e6f17510128bf45cca4e79b",
+    "profile": "ordinaryFillAndScroll",
+    "receiptPath": "Tools/IntentsAutomation/.runtime/mac-owned-daemon-unit7/intents-native-daemon-runtime.json",
+    "receiptSHA256": "9efc31cf525273c2727a01fde61f7870e01d9e0a6fe060fb2522ee035b733a7f",
+    "root": "Tools/IntentsAutomation/.runtime/mac-owned-daemon-unit7",
+    "stageSealAndPostExecutionVerifyPassed": true
+  },
+  "schemaVersion": 1,
+  "signedOrInstalledQualified": false,
+  "sourceRecovery": {
+    "archiveSHA256": "2dadf033c359810e0623479206048c6d4696874d1cf6aa03f1b0090a531b2e48",
+    "authenticatedNpmArchiveBytes": 13194635,
+    "authenticatedNpmArchives": 34,
+    "globalConfigurationChanged": false,
+    "installScriptsExecuted": false,
+    "root": "Tools/IntentsAutomation/.runtime/mac-source-recovery-1",
+    "sdkGeneratedFilesExactlyMatchSource6": 475,
+    "sourceReceiptSHA256": "b879f9fe56421918649b96ae665e4413ee9e43c53197c5a6713a46d043f20f77"
+  },
+  "sourceSHA256": {
+    "Sources/IntentsAutomationCore/AutomationInstalledMacUIApplication.swift": "62a94ff134c124113b549c7b1ee9d5e72cb0eafa91e5005458090d18b029b0e4",
+    "Sources/IntentsAutomationCore/AutomationInstalledUIApplication.swift": "c135d1537a49643c74a8ce34e246b50613d89dbc70e731e515ccef2ca6f981a9",
+    "Sources/IntentsAutomationCore/AutomationMacInputCapabilities.swift": "97ebb8b826f6d9720bfd44510554fad8e8993a2a912883d87f815bb2d956f1ca",
+    "Sources/IntentsAutomationCore/AutomationMacInputPermit.swift": "4268b29d13681be83b1c2a676fdb4123164d6bfa489ac675b10322dbff1a1c49",
+    "Sources/IntentsAutomationCore/AutomationMacOwnedDaemonSession.swift": "dcfc7308dc49d5fb7113ec3697334cd3d3b562f78b2651ee5e2af88cf4b18f0b",
+    "Sources/IntentsAutomationCore/AutomationMacUIQualification.swift": "32c603377d7faa1d400ba1fc0e987bfda7a46d345e995a7a44f04c069aa25b9f",
+    "Sources/IntentsAutomationCore/AutomationMacUIRouteDriver.swift": "4f0465eaaa71fed533a7cf2749251ed9101fdbfce56f9fd887a20bd7f65c22ec",
+    "Sources/IntentsAutomationCore/AutomationPrivateMacDaemonUnit.swift": "08bbe6ad57429e56c20e167f57687676cede223b2c5a851a8ab2d2f876fa990f",
+    "Tests/IntentsAutomationCoreTests/AutomationMacInputPermitTests.swift": "badfe1e683a8fad6c12fa335f71b32d0f930f120ce91e47c9aec835a4b51624b",
+    "Tests/IntentsAutomationCoreTests/AutomationMacUIQualificationTests.swift": "65d49a2092c5e29a6654716b1154b361b96eac9a10ce87e0b0aa1780457c62ab",
+    "Tests/IntentsAutomationCoreTests/AutomationPrivateMacDaemonUnitTests.swift": "de2e63c089510a26952165272b6211f76d1d9606bc742efb23194408f45ab66d",
+    "Tools/IntentsAutomation/scripts/stage_private_mac_daemon_runtime.py": "8a15ef140b5850b6fdfdbfede9e43e2fa23baf99484f48d30496882dc7995556",
+    "Tools/IntentsAutomation/src/macOwnedDaemonMain.ts": "ca8b7b859cbae45fc5c45cb4cdef68328fadae72d218e95c41d3a8b37f9e9bf9",
+    "Tools/IntentsAutomation/tests/macOwnedDaemonProgramEntry.test.ts": "ad473fdfad2f3472e00ede43efb858cda6461c7776874148c5deada58df4cf2f"
+  },
+  "verification": {
+    "distinctSolReviewsClear": true,
+    "native": {
+      "actualWholeRuntimeReadOnlyLoaderPassed": true,
+      "failed": 0,
+      "passed": 42,
+      "registered": 43,
+      "skipped": 1
+    },
+    "sdkBuildPassed": true,
+    "sealedEntry": {
+      "actualSDKAndE2EWorkerExecuted": true,
+      "failed": 0,
+      "guiHostCalls": 0,
+      "nativeChannelSynthetic": true,
+      "ownedWorkersReaped": true,
+      "passed": 7,
+      "registered": 7,
+      "skipped": 0
+    },
+    "staging": {
+      "failed": 0,
+      "passed": 8,
+      "registered": 8
+    },
+    "typescriptBuildPassed": true
+  }
+}

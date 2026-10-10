@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "date": "2026-10-08",
+  "scope": "native Search and Build prompts bind context before presentation",
+  "behavior": [
+    "Search review freezes request, baseline/oracle, ordered mutation digests, campaign limits and selection epoch",
+    "Build review freezes candidate, configuration, exact target/session and epoch; consumes review once and passes expected target into preparation",
+    "Search cannot consume a queued Run; changed phrases/oracle/destination/permissions or ABA deny before execution",
+    "Build preserves the retained saved failure baseline and clears orphaned asynchronous attempt loading"
+  ],
+  "verification": {
+    "command": "swift test --jobs 2 --filter InstalledUIStoreTests|SourcePreparationStoreTests|MacWorkflowStoreTests|MacFreshDraftStoreTests",
+    "tests": 79,
+    "failures": 0,
+    "appBuild": "Official Xcode BuildProject, FoundationEvals / My Mac: passed, 10.442 seconds, no errors",
+    "reviews": [
+      "Sol exact approval lane: clear",
+      "Sol source/search compatibility lane: clear after join-only test wait correction"
+    ],
+    "diffCheck": "passed"
+  },
+  "failuresPreserved": [
+    "New test initially referenced nonexistent search report complete/id fields; corrected to actual attempts/report contract",
+    "Review found prepareAndWait could dispatch a second preparation in consumed-once test; replaced with non-mutating task join and added destination fence regression"
+  ],
+  "unverified": [
+    "Native prompt rendering/interaction and actual source execution/search remain unqualified; prior environment failures were not retried",
+    "No device, clean-host, distribution or release qualification"
+  ],
+  "runtime": "Tools/IntentsAutomation/.runtime/native-local-confirmation-1"
+}

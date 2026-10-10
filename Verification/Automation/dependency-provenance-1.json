@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T04:18:19.154378+00:00",
+  "scope": "M0 published artifact correspondence and offline builder provenance checks; package14 signed qualification",
+  "fullPlanComplete": false,
+  "exactDesignSourceCommitProven": false,
+  "runtimeArtifactKind": "published-plus-intents-patches",
+  "verification": {
+    "actualArchives": {
+      "agent-device": {
+        "archiveBytesVerified": true,
+        "declarationsVerified": 29,
+        "sourceCorrespondence": "publishedRevisionDiffersFromDesign",
+        "version": "0.21.20"
+      },
+      "e2e": {
+        "archiveBytesVerified": true,
+        "declarationsVerified": 248,
+        "sourceCorrespondence": "publishedGitHeadAbsent",
+        "version": "0.17.0"
+      }
+    },
+    "dependencyRegressionTests": 10,
+    "sidecar62": "Strict TypeScript;85 Node regressions;10 disposal-patch regressions; all passed",
+    "releasePipeline4": "3 passed",
+    "package14": "Signed/sealed nested hashes and signatures verified; no notarization or release"
+  },
+  "limitations": [
+    "e2e publication has no gitHead; exact source correspondence unproven",
+    "agent-device publication gitHead differs design; absent design-only plugins export not consumed",
+    "Installed declarations and relevant module metadata checked, not whole installed JS semantics",
+    "No directory-fd anchored ancestor replacement protection; private builder workspace boundary",
+    "Package14 predates later selection grammar/native-Mac admission changes; retain historical artifact"
+  ],
+  "sha256": {
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/dependencies.lock.json": "c1651beb80fa7ec9b1343c3c6804ad9a03c30e6ef9b2e4d9e8a2c889803d51a8",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/package-lock.json": "69fa7019ce384fec0914dcc7806ec9129f0de1ebe4a0e3bd23cb8635d9375561",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/provenance/e2e-0.17.0-npm.json": "008bd0cbc9eccfa8082073cc8228295806d8215d9007ac2417ea17d18bb013a1",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/provenance/agent-device-0.21.20-npm.json": "a0c15d39c37a641b01199a26be87c5602e78938dbec546aeadb679dafe784156",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/scripts/verify_dependency_provenance.py": "4a58b3b4fb00418bd97e866ba4bb44b9bf381b118fb9a86d59bfb82d84ca927c",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/dependency_provenance_test.py": "c607e0c4cd4db1a8fd1e0d8bc2dd7af589af8e66744d13054b138dad935fe00b",
+    "/Users/coryparry/Developer/Projects/Intents/script/automation_package.sh": "ce97542d7d2b5faa8160744d70246865176145b509c1c771a82191aae036031b",
+    "/Users/coryparry/Developer/Projects/Intents/script/automation_verify_bundle.sh": "9548c55d95bcc89635366769ba7b62665934f7db604a42c4f37a37644bedd9ae",
+    "/Users/coryparry/Developer/Projects/Intents/script/automation_test.sh": "e3c47616b69bcf41769a6bf6f8c8b7d982002c51e92dc15b96feacc4fb51b116",
+    "/private/tmp/intents-dependency-provenance-qualification1/e2e-0.17.0.tgz": "524a59d5c41b108152c6f4c24d8e8d3dc0d60d9e5e59da706412737feca47ecf",
+    "/private/tmp/intents-dependency-provenance-qualification1/agent-device-0.21.20.tgz": "a1fa4092a5ab033e13fbb72d80c43c24ae986cf5acf477410fc2ddbd91bc5064",
+    "/private/tmp/intents-dependency-provenance-qualification1/e2e-design-package.json": "533e2b31a9533bda7125e4b71b6c7c137c5ee6a939912647e86f3b6c90f6ef08",
+    "/private/tmp/intents-dependency-provenance-qualification1/agent-device-design-package.json": "eb910b0b01ba7541eda073e5fba778fd50826e7854204d76e2ec377814edb7d2",
+    "/private/tmp/intents-dependency-provenance-qualification1/agent-device-published-package.json": "c1503f3ddd74fa61065fdc0d9a8535bdfaecc0741f484339ee8d63005ce2e207",
+    "/private/tmp/intents-dependency-provenance-qualification1/verification2.json": "913180b6941788f72de40a8abfb3d4c584ca8222996983770adb40d51173f936",
+    "/private/tmp/intents-dependency-provenance-qualification1/regressions3.log": "cada3762e25245d62177780da594f7c6a5f57865e078cd34beaa94c028e6dc07",
+    "/private/tmp/intents-dependency-provenance-qualification1/regressions4.log": "ab03365d757719edda094af9f3447097ac2c9e0d955ca0a34c8d7c7ab648a1d0",
+    "/private/tmp/intents-automation-sidecar62.log": "c113dcb23bfaed07f7b84c5bdae32dcc4583af438e454f3fa7434c727369e8b9",
+    "/private/tmp/intents-automation-release-pipeline-regressions4.log": "38c0f4fdc6aca752146184cdb08d2adb6b8983ff48028f6c86fbec6fc9215e2a",
+    "/private/tmp/intents-automation-package14.log": "6845fdb5afd8074c90039710c76d4f8777b4207685dd767ad9538d689da3b0c6",
+    "/private/tmp/IntentsAutomationNativeWorkflowQualification14.app/Contents/Resources/Automation/runtime-manifest.json": "1826adab247d846a2dd95744f37f2aef8ed70eca6c176eb267dda7cf39991b81",
+    "/private/tmp/IntentsAutomationNativeWorkflowQualification14.app/Contents/MacOS/FoundationEvals": "f5bf332b9890b68571e494fa97ac2179ec8679afe507817a18d53f1d9b73e8cf"
+  }
+}

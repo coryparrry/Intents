@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:34:56.529072+00:00",
+  "scope": "Scoped diagnostic actual protected-record UI setup",
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "result": "invalidFixture",
+  "providerReturned": true,
+  "controllerFailureStage": "decisionValidation",
+  "uiActions": 0,
+  "subjectDispatched": false,
+  "resourcesReleased": true,
+  "commonCampaignsEmptyAfterAttempt": true,
+  "limits": [
+    "Rejected provider decision not retained in first diagnostic shape",
+    "No UI fixture records/readback or fresh authority"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-diagnostic1/report.json",
+      "sha256": "d2f64f3c44e2d34654195e72ac7e0b81d44468521092fc2c90e3ceceb6bebf69",
+      "bytes": 466
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-diagnostic1/journal.json",
+      "sha256": "6ec618cded2ae76c1c9536676ce26a5d7198b60da0275cc005b1fd0ffd9d1c93",
+      "bytes": 990
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-diagnostic1/artifacts/controller-denied-79-1.json",
+      "sha256": "0d0e605a2d15d55ba7a793dd8558f1792868cdd2ee1d7b3be483c196916818f1",
+      "bytes": 14550
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "artifactVariant": "private-owned-mac-source",
+  "customerRuntimeEnabled": false,
+  "sourceRevision": "35f407e6e9352544847732d3b8aa74b7b3d34d51",
+  "sourceCheckpointSHA256": "bb0044464ad96055da2ac83b377d8f0da8afd55511ac75d1e86d088ef0e2a834",
+  "buildInventorySHA256": "766ccbbe679ed2d10a30474f63e9ba96997c3696b8e6ccab4c112fb430f388af",
+  "packageManifestSHA256": "c1503f3ddd74fa61065fdc0d9a8535bdfaecc0741f484339ee8d63005ce2e207",
+  "patchVersion": "intents-private-owned-disposal-1",
+  "helperSHA256": "1fe982738668be029d4ab6f3b7b361eb26afe36801188927e7ce8ebeb9b8d180",
+  "files": {
+    "dist/src/runner-disposal.js": {
+      "originalSHA256": "7482d986259e9357bfbf5c2f6cada1f1231d5aa1e8cfbdec695dcd84ca37e9f7",
+      "patchedSHA256": "993634d10b001139abc7d4b3b4af97b3a8bc042edd3b8df9c55d43f3ad1d5656"
+    },
+    "dist/src/session2.js": {
+      "originalSHA256": "b5147307e2d1d8c168c42ae314ba11526c6d7d07d04ad0e136ccfe91637ec0c5",
+      "patchedSHA256": "b25fe9c3a23080c6a14d1306caf75d1b4a2a3daf808026b6f40779844f8a1c5a"
+    },
+    "dist/src/runner-client.js": {
+      "originalSHA256": "e857c629409998d5412820e64ba859f2204bc56f574184425214a21bcdfdd7af",
+      "patchedSHA256": "a2d15079189083c31838771aabe438462e7a68076e48e11558cddb7bc34ca9ba"
+    }
+  }
+}

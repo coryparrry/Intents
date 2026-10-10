@@ -1,0 +1,183 @@
+{
+  "checkpoint": "mac-sdk-ownership-source-1",
+  "customerRuntimeEnabled": false,
+  "privateSourceExperiment": true,
+  "baselineRevision": "35f407e6e9352544847732d3b8aa74b7b3d34d51",
+  "wholeSourceCommitVerifiedByStager": false,
+  "nativeCompiledStage": "/private/tmp/intents-agent-device-native-ownership-source1/source-owned-sdk1",
+  "sdkCompiledStage": "/private/tmp/intents-agent-device-native-ownership-source1/source-owned-sdk8",
+  "nativeSourceMatchesCompiledStage": true,
+  "checks": {
+    "nativeFocusedTests": 25,
+    "sdkInjectedIntegrationAndUpstreamTests": 51,
+    "wireDataTests": 10,
+    "sdkStagingTests": 4,
+    "nativeStagingTests": 6,
+    "sdkBuild": "passed: 466 JavaScript/declaration files"
+  },
+  "unverified": [
+    "actual Mac GUI ownership/delivery",
+    "customer runtime packaging/enablement",
+    "full physical preparation/execution",
+    "full M0-M6 qualification"
+  ],
+  "files": [
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/mac-owned-wire.ts",
+      "SHA256": "788182967a22cbd5d45b8822fb64d404b2d9dfb3de75e5acadcb9060c818cd2c"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/intents-mac-vitest.config.ts",
+      "SHA256": "a1b3b6dc283fd5b153742677109f85d104b74ee68db9baff0a80f77f4b64ec74"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/mac-application-target.test.mjs",
+      "SHA256": "a33d854eb2f565df3487c54aa9e6584fb848e202dc759671286ff5f249c8aa48"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/mac-application-target.ts",
+      "SHA256": "876931217be08cbcba5a2f701dc377330e1212eb11ab764eb91585664f8631cb"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacApplicationOwnershipTests.swift",
+      "SHA256": "36997a67ffb0de0f85b7942487915b2aa8ed1f90d43bbb23faf19416ab59326d"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/mac-owned-wire.test.mjs",
+      "SHA256": "ba0409c8e6764f5deeb3ae946e63d14b2172f70a1f3c52f93adc5e65d8e02213"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacApplicationTarget.swift",
+      "SHA256": "3fbe5c565799fc3da4fc0c16d983ae7665075f1a26cc6dd5d245acad8101e2c6"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/sdk-session-baseline.json",
+      "SHA256": "aceab201effd89220e815f7eb276b619b39d28d014c0164488c8b94c9c8b139b"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacOwnedMouseDeliveryTests.swift",
+      "SHA256": "b83f3f8f9dbddfb3b807971b8e3b328826d0b20626f17172861eb31da85bbf49"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacOwnedMouseDelivery.swift",
+      "SHA256": "67ec193bea841b2df5492018a35ab61c54aa5fe696f836ea5a210952d99c8399"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/intents-mac-sdk-ownership.test.ts",
+      "SHA256": "2467fb843a4d0fc260e7396d9b1c37d4e306f402098ec1bef1ad0632b9fce9cd"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacOwnedPressArguments.swift",
+      "SHA256": "c223f339c98ea8c1b3c16aba3a5b758bdc779e3f56409c3194cd7e49ceee1736"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacApplicationOwnership.swift",
+      "SHA256": "2ee58123d50fa9895e398e016861cbfb8667eed3bdf45389c496106babeb539b"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacApplicationTargetTests.swift",
+      "SHA256": "668842e47c36e7b9371185aec868ea0f8e5d93a695eaf11194eb69fcffb47fb6"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/scripts/stage_mac_sdk_ownership.py",
+      "SHA256": "23f1d26f5d60b20dbae249d48ae0192f21e78b74bc4abaf40566c62cf5e08fa6"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/scripts/mac_sdk_session_patch.py",
+      "SHA256": "e78fd10815afd4e402efc7178e1447380f61d4f8d0b3571f872b339e08c85f1e"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/mac_sdk_staging_test.py",
+      "SHA256": "bdb28f85f20c1a930f41914586367ca1d454e4029ef3c6220c9e804478f0d0f6"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/script/automation_test.sh",
+      "SHA256": "2a9b2db11ee6cddf006a136a4676bdb3bccbce7d15db24d230b4815430788595"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Verification/Automation/mac-sdk-build-files-1.json",
+      "SHA256": "766ccbbe679ed2d10a30474f63e9ba96997c3696b8e6ccab4c112fb430f388af"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/swift-sdk-tests1.log",
+      "SHA256": "34c2f8180a861cf063a05ce7404d992e50e1d93cc60fa778a4e0b16ad42dd99b"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/sdk-build3.log",
+      "SHA256": "554e895e378401f25c4335448df2cd398c9d9ba737e2c420378416d9583d033c"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/sdk-integration-tests4.log",
+      "SHA256": "4ac45205cdee49e417ece7ef87eac2546a0e34ba4b774b75dc2aa485c790053d"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/sdk-wire-unit-tests2.log",
+      "SHA256": "e9de0c26c4965fad5690d386626d238db6cc84bed1f0b76e2cb04c4a0eb26e58"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/sdk-staging-regressions2.log",
+      "SHA256": "d094b1bd2c8318c96097f80c50da282add5b2972970a77046de8db6c8935f6ca"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/native-staging-regressions6.log",
+      "SHA256": "c1de396add63b60b7739446ae754c9af4d1c4c8af85083ffc8071726ef9e4e98"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/source-owned-sdk8/intents-mac-sdk-extension.json",
+      "SHA256": "e4ae563a4de25b5cfb9e4158607d87d31013aac24de9dca94d429e7ebdfd07a1"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/source-owned-sdk8/intents-mac-snapshot-extension.json",
+      "SHA256": "362deac8d6b2df9642210ee8b86f0e258c1a1fedff42659af548f8172f36721a"
+    }
+  ],
+  "sdkPatchedSourceSHA256": {
+    "intents-mac-vitest.config.ts": "a1b3b6dc283fd5b153742677109f85d104b74ee68db9baff0a80f77f4b64ec74",
+    "packages/contracts/package.json": "f88c940ab58b9dfa89ecca892e808dadaf1b6679c6cb23149011f311246ed64b",
+    "packages/contracts/src/application-lifecycle-runtime.ts": "e428369839ddebfa51f76c29d471910818fa12c8131fd35d496a6981db28108c",
+    "packages/contracts/src/client-app.ts": "48d0fb8f870b9ed9d6ade346a2f4c2f806dfdd0509f4983fb44f047d11633345",
+    "packages/contracts/src/client-capture.ts": "97631f58f1b60f5d55b79f4aeae4a46173d872fac4efe98aa68824d3a883ea6d",
+    "packages/contracts/src/command-flags.ts": "64d04a0dd87b3b2223954ae2dab4418a7f98b1ad6740c0c863e088bc6a29d786",
+    "packages/contracts/src/interactor-types.ts": "8f93a7747f7cdec433d3bd2aa8f5bfe6b09e4bfd3c50c17249d796c08c1775db",
+    "packages/contracts/src/mac-application-target.ts": "876931217be08cbcba5a2f701dc377330e1212eb11ab764eb91585664f8631cb",
+    "packages/contracts/src/mac-owned-wire.ts": "788182967a22cbd5d45b8822fb64d404b2d9dfb3de75e5acadcb9060c818cd2c",
+    "packages/contracts/src/request-envelope.ts": "6056b2fa2efe74131ed76f96ddf20dd59dabae675e6d520149439ada14f5be09",
+    "packages/contracts/src/snapshot-types.ts": "b746323d7135a178d2d00700230b47a046f193c61ef99244c6712c4475e23ec1",
+    "packages/platform-apple/src/interactions.ts": "8eaf7da8768fe05cf185d0bfc09d4ae49c4d815902291133fb91124ef3691716",
+    "packages/platform-apple/src/lifecycle.ts": "0a6cfc10e4f2deefc61718abf0bfe70c81dca0bd02638a5ec762a15f767cdf35",
+    "packages/platform-apple/src/os/macos/helper.ts": "9338e6b0fd6acc56eddca7eb728c0deca2899346a8430a45721a14128c9243ba",
+    "packages/platform-apple/src/os/macos/surface-snapshot.ts": "7896ec967da0d1294d8aa577d16672dc7ec40949e5cc4a5c445483e15e20f679",
+    "src/agent-device-client.ts": "72a90373af658f99bbe425fc50416be5583300a56f0f055e1725769d814128c2",
+    "src/commands/capture/runtime/snapshot.ts": "d34de65808a2c1c5cea79df5cd4934f00189791865104cbb7d314433e3a2af41",
+    "src/commands/command-flags.ts": "bcc2db679bb186153bfba6a57c16414f31e6973079b41cf9eb239cc430b4bbc1",
+    "src/commands/management/app.ts": "ff6bb3475616f4b1b41b8b2684ac3c257d54634c23366628b883fa30d42c8661",
+    "src/commands/output/result-serialization.ts": "5d180f2064896745fc7debd0bac65f6876c49fc8e3b139d567ad2fb4e375b990",
+    "src/core/dispatch-context.ts": "70e7b57389fb440f9dd10e74e1e49a59936a066500e5341732cdbfd5cd9f4d23",
+    "src/daemon/interaction/internal/interaction-touch-prepare.ts": "06dcbc85e06e187ca117c922eb3cb81e0afb6164d2487c1dae1897c2a608e096",
+    "src/daemon/request-execution-scope.ts": "7ea38f44ca1c79c21bee3655ff290c0af367fb500c9246f17699c3d9af26763d",
+    "src/daemon/request-generic-dispatch.ts": "76a5c0cda448c1ff7024803e37cf000429cf531cee8adb8f72533632c795f5e3",
+    "src/daemon/response-views.ts": "3c409a67b96a6781333cb979d9901e34a0a83a0c78f234a16f14693f3ada5efa",
+    "src/daemon/runtime-session.ts": "4b854ebb02678a3889c26fe3849b2b76037a63f5380ad93bc96d9ce0ca9510b9",
+    "src/daemon/session-lifecycle/internal/session-open-execution.ts": "4aef1216f43f57a41cbc9736b514e5bc055e647f39370d6a9a5a4128ad6e290f",
+    "src/daemon/session-lifecycle/internal/session-open-prepare.ts": "1047b0c63b812973e7a03d35c40a81dd0c390f49c26b2779f93311bd62107b25",
+    "src/daemon/session-lifecycle/internal/session-open-surface.ts": "689f9bfb219dfe447256c19ef5a3be3628e114b4fc272eaea394e59a66050a5c",
+    "src/daemon/session-lifecycle/internal/session-open.ts": "c772f8379591c0eb58dd73ca0adfe277db3cd30809cfb5c69120d663693f83f2",
+    "src/daemon/session-state.ts": "edf4e01b8df0e16763e998208b9e15cfa62e07674fe3e5fb70710ad34ac580c1",
+    "src/daemon/snapshot-capture.ts": "f7a8a2ee86dd9c76156344b5edb5c6156163efb8eb24027bcd0109c4c533c80c",
+    "src/daemon/snapshot-command-runtime.ts": "f3f3c66aaa9afebf455f640874335b57d8b32d87687382861fe082ccc3f79fb3",
+    "src/daemon/snapshot-runtime-capture-input.ts": "bd28c58297117ce4135dbd6fc1c365140d8bbf36c035ccdc237f193777659b4a",
+    "src/daemon/snapshot-runtime.ts": "844c65e17b8b1b06114abafa7c836c891c9450a5afa29912c3b0c0bf32d883ef",
+    "src/intents-mac-sdk-ownership.test.ts": "2467fb843a4d0fc260e7396d9b1c37d4e306f402098ec1bef1ad0632b9fce9cd"
+  },
+  "nativePatchedSourceSHA256": {
+    "apple/macos-helper/Sources/AgentDeviceMacOSHelper/main.swift": "f3817b639521312c928e7946d5e77ea87319721364a0cfa292aef5abaf127f40",
+    "apple/macos-helper/Sources/AgentDeviceMacOSHelper/SnapshotTraversal.swift": "71d013f5b3051310d2b2fb032fdcc88bf373697b46c19ab20cb12e49816d0e27",
+    "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacApplicationTarget.swift": "3fbe5c565799fc3da4fc0c16d983ae7665075f1a26cc6dd5d245acad8101e2c6",
+    "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacApplicationTargetTests.swift": "b647a8ba11bf10a4b6a40e896115c73a5511a18e152f02f606772134d6047c3c",
+    "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacApplicationOwnership.swift": "2ee58123d50fa9895e398e016861cbfb8667eed3bdf45389c496106babeb539b",
+    "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacApplicationOwnershipTests.swift": "36997a67ffb0de0f85b7942487915b2aa8ed1f90d43bbb23faf19416ab59326d",
+    "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacOwnedMouseDelivery.swift": "67ec193bea841b2df5492018a35ab61c54aa5fe696f836ea5a210952d99c8399",
+    "apple/macos-helper/Sources/AgentDeviceMacOSHelper/MacOwnedPressArguments.swift": "c223f339c98ea8c1b3c16aba3a5b758bdc779e3f56409c3194cd7e49ceee1736",
+    "apple/macos-helper/Tests/AgentDeviceMacOSHelperTests/MacOwnedMouseDeliveryTests.swift": "b83f3f8f9dbddfb3b807971b8e3b328826d0b20626f17172861eb31da85bbf49"
+  }
+}

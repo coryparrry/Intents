@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "evidenceScope": "actual-private-sdk-client-with-injected-daemon-and-cleanup",
+  "customerRuntimeEnabled": false,
+  "customerRouteWired": false,
+  "hardwareQualified": false,
+  "helperInvoked": false,
+  "nativeCleanupVerifierImplemented": false,
+  "checks": {
+    "strictTypeScript": "build4 passed",
+    "focusedConnectorSessionEngineTests": 42,
+    "actualPrivateSDKClient": "open/snapshot/snapshot/press with synthetic providers;472 files identical before/after",
+    "interceptedProcessLaunchAttempts": 0,
+    "interceptedFetchAttempts": 0,
+    "freshReviews": "Sol34 connector clear; Sol35 actual-client fixture and deferred cleanup clear",
+    "scopedWhitespace": "passed"
+  },
+  "boundaries": [
+    "Constructor variant label is not SDK provenance verification; caller must validate packaged unit",
+    "Cleanup remains injected; no app-targeted close/sessionclose and no real native release proof",
+    "No GUI,helper,Mac subject or physical device execution; no broad network-sandbox qualification"
+  ],
+  "preservedFailures": [
+    "focusedTests1 object-reference equality assumption corrected to structural equality",
+    "actualAdapter1 fake open envelope nested device mismatch; corrected to SDK flat metadata in adapter2/3"
+  ],
+  "files": [
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/src/macOwnedSDKTransport.ts",
+      "SHA256": "7aadd2a7edaf86f5233c2d02d045fafe88c9655ae772b109e53c29141dab0bb4"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/macOwnedSDKTransport.test.ts",
+      "SHA256": "f9909181e1a4adacd83166fb07beef7b1e04189142e0716f442458fc47c70c04"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/private_mac_sdk_adapter_test.mjs",
+      "SHA256": "23591583d1370e2421f14d381eecfc49c963c5f302cbf1bd9d64f5fd32103276"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/src/macOwnedSession.ts",
+      "SHA256": "2aaad89bb59ba0e410957dd630d09754ebb7305f53fe20339b34e7b95bc23a10"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/mac-sdk-transport-build4.log",
+      "SHA256": "fb71c85ee45189f1c61f0b5f02dd8ec0879662aca10892adc7258b046e6d3eb5"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/mac-sdk-transport-tests1.log",
+      "SHA256": "d699706d4ba4c17c05d4a5a10f2f603a19ebd0c8ca4d69d3fb1247e07da389cb"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/mac-sdk-transport-tests3.log",
+      "SHA256": "56dc1c756eff8b854959268068be8f1d8b57ed1a98096a14beec0887760dda8f"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-mac-sdk-adapter1.log",
+      "SHA256": "68fb30adf08c303ec7bb8264b1883dac7c7f6c71c45b4113cfd5bfd9608a42e6"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-mac-sdk-adapter3.log",
+      "SHA256": "753bdcc10d7702aeebedf99622ac908bfb739b5c4cdd54f1e4fa40f7bbf87a39"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-mac-sdk-package1/intents-private-runtime.json",
+      "SHA256": "9fda71ac61b4d2428e4a08f6a9afb4ad363bd8fb20b8bc3dc10f03cc8f608bb3"
+    }
+  ]
+}

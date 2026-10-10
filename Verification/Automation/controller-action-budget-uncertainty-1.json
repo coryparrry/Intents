@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:54:49.447323+00:00",
+  "scope": "Pinned private e2e targeted-action ceiling and broker mutation uncertainty",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "checks": {
+    "sidecar54": "77 passed",
+    "sidecar55": "78 passed",
+    "sidecar56": "14 runner tests passed after malformed response fix",
+    "e2ePatch1": "4 passed",
+    "releasePipeline5": "3 passed",
+    "shellSyntax": "passed",
+    "gitDiffCheck": "passed"
+  },
+  "review": "Fresh Sol dependency patch clear, CI omission added; broker EngineError identity and incomplete response findings fixed, fresh final response review clear",
+  "limits": [
+    "Actual fixture budget rerun pending",
+    "120s private ceiling remains bounded by config actionTimeout and step deadline",
+    "No mutation retry on submitted timeout or explicit backend uncertainty",
+    "e2e published-to-reference source correspondence remains unverified"
+  ],
+  "sources": [
+    {
+      "path": "Tools/IntentsAutomation/scripts/apply_e2e_action_budget_patch.py",
+      "sha256": "105f12c10150fe20a9e45e6224218c16cede3600c99c3cf9852abfcf6c52919c"
+    },
+    {
+      "path": "Tools/IntentsAutomation/dependencies.lock.json",
+      "sha256": "fbba266393ab48036d7f7f840066002384562a7fcba6760ded3a9ffa47be7de9"
+    },
+    {
+      "path": "Tools/IntentsAutomation/src/segmentBroker.ts",
+      "sha256": "7df7169862feac668c07590985bebd0ee21e4262163f1d3e06522c000b9f3e15"
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/e2e_action_budget_patch_test.py",
+      "sha256": "18dff9aab170942ea7ee72109bf9cf2b033587910e6924f07370be5a312f685f"
+    },
+    {
+      "path": "Tools/IntentsAutomation/tests/runner.test.ts",
+      "sha256": "28af02f1e6441fe146db3b52a9c45e71e6d51b247fd7d308d9fdacfdc2b6210a"
+    },
+    {
+      "path": "script/automation_build.sh",
+      "sha256": "99d630bb170b74ed697ae8eb9902b7e526ecaa87c7ec2af86f7c16cd3e2b7d65"
+    },
+    {
+      "path": "script/automation_test.sh",
+      "sha256": "f1f624a04d555f9f5edc44d9bea9b1e36352b52628452b151b93adbcd7d1ac63"
+    },
+    {
+      "path": "script/automation_package.sh",
+      "sha256": "5bd491c16d4cffc2cc7c19bcef856b7de543725d3ff96de07751ab3fa65564d0"
+    },
+    {
+      "path": ".github/workflows/automation.yml",
+      "sha256": "d94d83b84f73dbbad12bc748d1ba6b9f379049faaab43330040236a1a4c5eb14"
+    }
+  ]
+}

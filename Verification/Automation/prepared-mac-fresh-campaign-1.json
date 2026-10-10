@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "date": "2026-10-08",
+  "scope": "internal prepared Mac fresh-fixture campaign bridge",
+  "behavior": [
+    "Injected prepared Mac runner carries fresh qualification fence or live fixture tracker into the shared coordinator",
+    "Fixture context binds exact app, catalog, host, session, environment, locale and whole sealed Mac runtime receipt",
+    "Two distinct released eligible persisted live attempts mint non-Codable authority; failed latest attempt cannot reuse older evidence",
+    "Deferred fresh names validate for their actual attempt before input; execution still resolves correlated producer receipts",
+    "Existing campaign executor supports guarded synthetic Mac reproduction and fix comparison; public default route remains unavailable"
+  ],
+  "verification": {
+    "coreCommand": "swift test --jobs 2 --filter 'AutomationPrivateMacAppleRouteDriverTests|AutomationFreshFixtureTests|AutomationFreshEntityPlannerTests|AutomationFixComparisonTests'",
+    "coreTests": 72,
+    "nativeCommand": "swift test --jobs 2 --filter 'MacFreshDraftStoreTests|MacWorkflowStoreTests|SourcePreparationStoreTests|InstalledUIStoreTests'",
+    "nativeTests": 83,
+    "failures": 0,
+    "integration": "Synthetic five fresh reproductions preserve the original failure oracle; separately qualified retained synthetic products compare two failing before and two passing after attempts",
+    "appBuild": "Official Xcode BuildProject, FoundationEvals / My Mac: passed, 16.204 seconds, no errors",
+    "reviews": ["Sol fixture authority lane: clear", "Sol composition and compatibility lane: clear"],
+    "diffCheck": "passed"
+  },
+  "failuresPreserved": [
+    "Test initially omitted required developerDirectory constructor argument; corrected",
+    "Five tests exposed raw deferred-name Mac UI preflight rejection; validate the per-attempt name in a copy and retain coordinator binding"
+  ],
+  "unverified": [
+    "Synthetic drivers do not prove real GUI input, private helper, associated-host execution or child closure",
+    "Normal native Mac Run/Reproduce/Check fix remains gated; no actual five replays or 30+30 comparison qualification",
+    "No device, clean-host, distribution or release qualification"
+  ],
+  "runtime": "Tools/IntentsAutomation/.runtime/prepared-mac-fresh-campaign-1"
+}

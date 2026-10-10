@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:07:29.711629+00:00",
+  "scope": "First actual same-name owner workflow, production planner/runner on owned disposable simulator",
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "result": "invalidFixture",
+  "subjectDispatched": false,
+  "modelCalls": 0,
+  "uiActions": 0,
+  "resourcesReleased": true,
+  "observations": [
+    "Actual fixture AX capture reached",
+    "Repeated structural-node refs triggered ambiguous node guard",
+    "Pinned e2e rejected unsupported blocked code, masking the underlying setup gap"
+  ],
+  "next": "Fix ephemeral node ref collisions without weakening fresh fingerprint action uniqueness; validate every blocked verdict against pinned runner before another run",
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-correct1/report.json",
+      "sha256": "db23fd185ee26c5f59660a90b59a7db9c8077919426b0a664df966922a92c0bb",
+      "bytes": 463
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-correct1/journal.json",
+      "sha256": "3c893c62f3c5cb4cd48f298c919508207d1a580ed54757359498608bc9278855",
+      "bytes": 960
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-correct1/ui/control-65/runs/fresh-owner-correct-run1/fresh-owner-correct1:fixture.create/e2e/report.json",
+      "sha256": "850d229a2e9715750ab1d479e6c68ddd79fae732b6d7cf67dcb857d2b0705028",
+      "bytes": 6353
+    },
+    {
+      "path": "/private/tmp/intents-fresh-owner-runtime-qualification1/correct-profile.json",
+      "sha256": "0ff2095f418d2eeabde63c08069104f8bc2df51ed3f2d5335455bbb9c0df33ad",
+      "bytes": 3859
+    }
+  ]
+}

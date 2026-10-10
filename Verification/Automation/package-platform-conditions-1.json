@@ -1,0 +1,46 @@
+{
+  "slice": "package-platform-conditions-1",
+  "date": "2026-10-08",
+  "acceptance": "Literal local-package target and product platform conditions use retained selected destination facts, with conservative ownership boundaries and exact saved-graph replay.",
+  "implementation": {
+    "conditions": "Exact .when(platforms:) literals for six installed-SDK Apple platforms only; computed/traits/configuration/unknown/duplicate conditions remain gaps.",
+    "ownership": "Observed mode stops opaque macro/plugin/test target closures and package closures rooted in non-selected Xcode targets before helper/product traversal. Independent normal runtime paths still expand.",
+    "replay": "Optional graph algorithm version1; nil preserves prior traversal/gap semantics even with retained platform context. Unknown versions and v1 missing raw context are rejected.",
+    "limits": "Existing depth/work/input/byte/cancellation bounds retained; compiler consumption/generated sources/plugins/macros/external packages remain partial."
+  },
+  "verification": {
+    "focusedCommand": "swift test --jobs 2 --filter 'AutomationPackageManifestTests|AutomationSourceGraphTests|AutomationSourceCompilationConditionsTests|AutomationMacInputProbeFixtureTests|AutomationMacPackagePlatformFixtureTests'",
+    "registered": 48,
+    "passed": 45,
+    "skipped": 3,
+    "failures": 0,
+    "focusedLog": "/private/tmp/intents-package-platform-final-20261008.log",
+    "authoredBuild": {
+      "command": "INTENTS_MAC_PACKAGE_PLATFORM_BUILD=1 INTENTS_MAC_PACKAGE_PLATFORM_ROOT=<owned-parent> swift test --jobs 2 --filter AutomationMacPackagePlatformFixtureTests",
+      "passed": 1,
+      "seconds": 16.933,
+      "root": "Tools/IntentsAutomation/.runtime/package-platform-1/package-platform-fixture-B362C4C5-D643-4DA4-B444-3563DEDD6594",
+      "subjectSHA256": "53030052782f389fbac951752f9447d2d3c2ddaa52987ebcd9574236f4d4a169",
+      "hostSHA256": "8ce972896a3bf47f29ace8c14200ddd205a21f34c444cce9d1bac08ecb822821",
+      "sourceGraphSHA256": "91291c8e2f1a3c5b3a4e7e7eb4b20e142739ed08b1c89060bbacd542188deaa8",
+      "log": "/private/tmp/intents-package-platform-build-final-20261008.log",
+      "membership": [
+        "PlatformPackage/Sources/MacMarker/Mac.swift",
+        "PlatformPackage/Sources/PlatformMain/Member.swift"
+      ],
+      "runtimeLaunched": false
+    },
+    "retainedInitialFailure": "First authored fixture used Main.swift, interpreted by SwiftPM as an executable entry point; library resolution rejected it. Fixture renamed Member.swift; original failed build log retained under package-platform-fixture-EABD2016-5011-44E0-877A-A4E3DA5C164E/prepare/platform-settings.log.",
+    "reviews": "Two disjoint Sol source reviews clear after fixing host-helper transitive ownership; no reviewer builds or live qualification.",
+    "officialAppBuild": {
+      "tool": "Xcode MCP BuildProject",
+      "project": "FoundationEvals/FoundationEvals.xcodeproj",
+      "destination": "My Mac",
+      "seconds": 18.119,
+      "errors": 0,
+      "workspaceClosed": true,
+      "appLaunched": false
+    }
+  },
+  "remaining": "Compiler/generated/external source provenance and file transport incomplete; native GUI, complete UID admission/child closure, physical Siri and distribution/trials remain unqualified."
+}

@@ -1,0 +1,80 @@
+{
+  "artifactVariant": "private-owned-mac-v2-runtime-source",
+  "credentialRuntimeHandlerImplemented": false,
+  "customerRuntimeEnabled": false,
+  "developerIDSigned": false,
+  "enclosingApplicationVerified": false,
+  "evidenceSHA256": {
+    "Verification/Automation/Evidence/2026-10-08-mac-runtime-v2/runtime-seal.log": "7395f3409b20b298ef60da205df1849197c1885f68f851ee0dd225c34f9073b9",
+    "Verification/Automation/Evidence/2026-10-08-mac-runtime-v2/runtime-stage.log": "aca9a459fb81828cc42626ae234944f66bc569a07393afbba442e4685bf5e002",
+    "Verification/Automation/Evidence/2026-10-08-mac-runtime-v2/runtime-verify.log": "7395f3409b20b298ef60da205df1849197c1885f68f851ee0dd225c34f9073b9",
+    "Verification/Automation/Evidence/2026-10-08-mac-runtime-v2/sealed-v1-entry-tests.log": "1edd9d4543a8eb5b8b9bdffe414415daf1fb22dc1b5327a2529882110c33e60a",
+    "Verification/Automation/Evidence/2026-10-08-mac-runtime-v2/sealed-v2-entry-tests.log": "086937a33b36154018ac0b359c6d818626c6e3e904b4f67b2241a839de44bd88",
+    "Verification/Automation/Evidence/2026-10-08-mac-runtime-v2/staging-tests.log": "542478c5e228cffe15731b293460e1c4bc97eab58d811a31f3775a96f09a3ee3",
+    "Verification/Automation/Evidence/2026-10-08-mac-runtime-v2/swift-initial-syntax-failure.log": "a7ec5892275bff05ae9bc24b4b29bed48c86e0b197e1fd174a669c1339f5343d",
+    "Verification/Automation/Evidence/2026-10-08-mac-runtime-v2/swift-tests.log": "a391ef26f4c6b21d02897a50016aec04e9c7acfea81ed738614271994ded8c01",
+    "Verification/Automation/Evidence/2026-10-08-mac-runtime-v2/typescript-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "hardwareQualified": false,
+  "limits": [
+    "Synthetic native callbacks qualify only source/entry contracts; no GUI, AX, secure consent, real input or app launch occurred.",
+    "Immutable receipt retains all pre-execution qualification flags false; synthetic entry execution is recorded separately.",
+    "New secret modules provide no credential handler or customer authority in this ordinary-input runtime.",
+    "SDK, Node, helper and dependencies reuse exact verified unit7 bytes; no SDK rebuild, install, signing or enclosing app staging occurred.",
+    "Strict current-UID census, Xcode MCP UI approval, physical ABI and remaining original-spec qualification remain unresolved."
+  ],
+  "runtime": {
+    "bootstrapSHA256": "ecf6f6679cf41cc226a17eed6ee5decb4345a1ecac3aac0ae04338f1f7d162b6",
+    "checkpointSHA256": "ac3976b29f533cbf5804c1a96a029a2ee3f3b4d79a004c7829c1d26d16e54fb0",
+    "dependencyInstallationPerformed": false,
+    "files": 5481,
+    "offlineDependencyArchiveBytes": 13194635,
+    "offlineDependencyArchivesVerified": 34,
+    "predecessorReceiptSHA256": "9efc31cf525273c2727a01fde61f7870e01d9e0a6fe060fb2522ee035b733a7f",
+    "receiptSHA256": "631f7d60b4f56a76f145533dd278f1752f2b3e91b2903e6b6767f06c3930deb8",
+    "root": "Tools/IntentsAutomation/.runtime/mac-owned-daemon-unit8",
+    "sdkGeneratedFilesReusedFromFrozenUnit7": 475,
+    "sidecarGeneratedFiles": 64,
+    "unchangedPredecessorFiles": 5416
+  },
+  "schemaVersion": 1,
+  "sourceSHA256": {
+    "Sources/IntentsAutomationCore/AutomationMacOwnedDaemonSession.swift": "18f50ec34d9fb09e4e109bd2f88a890cf9d48bd95d493bb630190cdf5398bdae",
+    "Sources/IntentsAutomationCore/AutomationPrivateMacDaemonUnit.swift": "6db13791b9f3ae2d10fe5655fbc0f4c60d6474e508bd2d7890a46b733fd3dc31",
+    "Sources/IntentsAutomationCore/AutomationUIProgram.swift": "080f4b6e5efbf3730cabaf7066a755d6fe5dd72515284262a3f8338fc8220af8",
+    "Tests/IntentsAutomationCoreTests/AutomationMacInputPermitTests.swift": "6a03480f0285b3277fbcdb6e081a2c0aa52570fb3a2b77dbc2f562d048f6b43a",
+    "Tests/IntentsAutomationCoreTests/AutomationPrivateMacDaemonUnitTests.swift": "7f230c9b619aa4883517b509e4c2a9ff9d720f0a7578397dd5641710248fa29e",
+    "Tools/IntentsAutomation/scripts/stage_private_mac_daemon_runtime.py": "548661758ebc45e66695160ca32fa70dfb621aac1adff3e84e05b989c1777b44",
+    "Tools/IntentsAutomation/tests/macOwnedDaemonProgramEntry.test.ts": "a2db716ad461490760c6bae6d182241ef971632efffe60fb6c43af5c881f79d3",
+    "Tools/IntentsAutomation/tests/private_mac_daemon_runtime_staging_test.py": "7c9832a88bbb35a0b88e056d59f7202bea15a8772635b9f61aac8a913be6e81d"
+  },
+  "verification": {
+    "freshCompiledSidecarMatchesFrozenCheckpoint": true,
+    "pythonStaging": {
+      "failed": 0,
+      "passed": 9
+    },
+    "sealedV1EntryCompatibility": {
+      "failed": 0,
+      "nativeChannelSynthetic": true,
+      "passed": 7
+    },
+    "sealedV2Entry": {
+      "actualSDKAndE2EWorkerExecuted": true,
+      "failed": 0,
+      "guiHostCalls": 0,
+      "nativeChannelSynthetic": true,
+      "passed": 7
+    },
+    "swift": {
+      "actualFrozenUnit7AndUnit8ReadOnlyVerification": true,
+      "failed": 0,
+      "passed": 34,
+      "registered": 35,
+      "skipped": 1
+    },
+    "twoIndependentSolReviewsClear": true,
+    "typescriptPassed": true,
+    "wholeInventoryRechecked": true
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-09",
+  "completion": "incomplete; native workflow awaits unlocked Mac; physical/Siri source and qualification remain open",
+  "nativeBuild": {
+    "path": "/private/tmp/intents-v3-native-20261008/Build/Products/Debug/Intents.app",
+    "xcodeBuild": "27B5028f",
+    "architecture": "arm64",
+    "buildForTesting": "passed",
+    "nestedRuntimeAndOuterSigning": "passed",
+    "strictDeepSignature": "passed",
+    "notarization": "not attempted"
+  },
+  "verification": {
+    "portableCore": {
+      "registered": 892,
+      "skipped": 38,
+      "failures": 0
+    },
+    "nativeStore": {
+      "registered": 112,
+      "failures": 0
+    },
+    "newFixtureVetoRegressionSuite": {
+      "registered": 23,
+      "failures": 0
+    },
+    "existingPackageXCTestBeforeFinalNativeVeto": {
+      "registered": 1067,
+      "skipped": 38,
+      "failures": 0
+    },
+    "existingAppSwiftTesting": {
+      "tests": 152,
+      "failures": 0,
+      "note": "Initial broad run failed marker wait; isolated original passed; bounded wait5s within command10s; affected full target then passed"
+    },
+    "developerProtocolSwiftTesting": {
+      "tests": 14,
+      "failures": 0
+    },
+    "sidecar": "passed",
+    "automationBuild": "passed",
+    "diffCheck": "passed"
+  },
+  "review": "Final campaign propagation recheck clear; read-only Sol6.1 review",
+  "nativeUI": {
+    "test": "FreshRecordAutomationUITests/testFreshDuplicateRecordsPreserveTheOtherOwner",
+    "status": "failed before body; locked Mac, authentication cancelled",
+    "optInProfile": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/automation-native-fresh-approved-profile.json"
+  },
+  "cleanup": {
+    "bothTaskSimulators": "Shutdown",
+    "taskNativeAppAndRunner": "none observed",
+    "approvedFixtureSource": "unchanged"
+  },
+  "remaining": [
+    "Native fresh-record execution and inspected screenshots",
+    "Saved reproduction and same-oracle fix comparison",
+    "App-first Siri submission harness/receipt, physical associated-host preparation and driver",
+    "Physical device, controller/live-AI, broad compatibility and unfamiliar-user evidence",
+    "Release clean-host/Intel/notarization qualification"
+  ],
+  "artifacts": {
+    "automation-native-fresh-approved-profile.json": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/automation-native-fresh-approved-profile.json",
+      "sha256": "1a256a40867b3a421699ffa1bae352e843f76186c20c4dd2825f4c9cc61a2280"
+    },
+    "intents-campaign-veto-and-physical-tests.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-campaign-veto-and-physical-tests.log",
+      "sha256": "3dbe655ca20dd6c0eea1b401f52deb651d75ab6d3f99cce9a5465773cd3035a4"
+    },
+    "intents-v3-automation-build-27.2.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-v3-automation-build-27.2.log",
+      "sha256": "9ac5b7f7464983c07b0acb9a94740fd03987239f474d512c339b0f3ab1fc8fca"
+    },
+    "intents-v3-existing-app-regressions-3.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-v3-existing-app-regressions-3.log",
+      "sha256": "89a71b38a5fed0ddbd248f07bdc603afce5a7add9c49c2138854c6d68bed2b0a"
+    },
+    "intents-v3-existing-app-regressions.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-v3-existing-app-regressions.log",
+      "sha256": "ac83c100a54eab94a3b142b2b6dae484e05a4a33443af96a5a222f76a6128920"
+    },
+    "intents-v3-native-build-2.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-v3-native-build-2.log",
+      "sha256": "e1c8808164e7c29ad6367b85dfcfcfb2bb53a7c1ce4fa51a767e4aceda11fd33"
+    },
+    "intents-v3-native-build-3.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-v3-native-build-3.log",
+      "sha256": "43269229d9488b3db4637dfc4667888316028849b3a17f0f5b67ddd25d8d1b0f"
+    },
+    "intents-v3-native-fresh-1.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-v3-native-fresh-1.log",
+      "sha256": "3fb5d0652d2dd844e95962d2dfabfcf008516cff4bb848a3181e25d31c6916d6"
+    },
+    "intents-v3-native-seal-3.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-v3-native-seal-3.log",
+      "sha256": "076d0a257e4136f88da011addfbffb3719c5d7b4291826e793da4684ec488a47"
+    },
+    "intents-v3-native-seal-4.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-v3-native-seal-4.log",
+      "sha256": "c8c0647e2e5d5afc526d6da0fea2bdea860930db9920707213debc2309625f8a"
+    },
+    "intents-v3-portable-tests.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-v3-portable-tests.log",
+      "sha256": "ef067dd31477132b5c9499bbb5a771557f8f044cd5a3031f4bbf40e22a327f1d"
+    },
+    "intents-v3-sidecar-tests.log": {
+      "path": "Tools/IntentsAutomation/.runtime/native-fresh-pending-20261009/intents-v3-sidecar-tests.log",
+      "sha256": "d5d6a78eabf69038e9f5d485fade7f2a9394986cb6d0585ecb28fd8b87567481"
+    }
+  }
+}

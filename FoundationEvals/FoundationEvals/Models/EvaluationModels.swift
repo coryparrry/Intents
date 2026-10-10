@@ -591,6 +591,7 @@ enum SidebarSelection: Hashable {
     case evaluations
     case batchRuns
     case traces
+    case appAutomation
     case suite
     case run(UUID)
 }

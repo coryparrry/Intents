@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:32:43.367029+00:00",
+  "scope": "Actual protected-record setup with control-first context selection",
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "result": "invalidFixture",
+  "controllerReverseRequests": 1,
+  "providerOrModelInvocationProved": false,
+  "uiActions": 0,
+  "subjectDispatched": false,
+  "resourcesReleased": true,
+  "controllerOutcome": "noSafeAction",
+  "commonCampaignsEmptyAfterAttempt": true,
+  "limits": [
+    "No controller success artifact exists; reverse request count does not establish model invocation",
+    "No real record created/read back or fixture authority minted"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-seeded1/report.json",
+      "sha256": "ab685dd21eb469a17ace8b80b7495589b28d6eb8da5ded393b82f532c160adc2",
+      "bytes": 462
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-seeded1/journal.json",
+      "sha256": "a71c8bc66c47425217cd5e3bfa25839e63a39fd3511d23fad7705c6817b50f2e",
+      "bytes": 950
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-seeded1/ui/control-74/runs/fresh-owner-seeded-run1/fresh-owner-seeded1:fixture.create/e2e/report.json",
+      "sha256": "09d1e55e646a3717ad2805b173a4921eedd8e64771a0ccffe7a8f365cfcfc3c5",
+      "bytes": 6514
+    }
+  ]
+}

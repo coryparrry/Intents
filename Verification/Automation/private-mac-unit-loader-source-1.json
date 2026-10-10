@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "evidenceScope": "production-loader-validation-only-private-sdk-unit",
+  "fullPlanComplete": false,
+  "customerRuntimeEnabled": false,
+  "customerRouteWired": false,
+  "helperInvoked": false,
+  "guiQualified": false,
+  "nativeCleanupQualified": false,
+  "enclosingIntentsRuntimePackaged": false,
+  "developerIDSigned": false,
+  "checks": {
+    "finalSwift199Registered": 30,
+    "passed": 29,
+    "skippedHostProbe": 1,
+    "actualFrozenUnitPayloadFilesVerified": 472,
+    "native54Build": "passed; preserved; not launched",
+    "freshReviews": "Sol43 loader and Sol44 contract clear"
+  },
+  "boundaries": [
+    "Public loader pins frozen receipt and exact payload hashes; no arbitrary receipt pin or executable launch configuration returned",
+    "Unit excludes Node and enclosing app; evidence is not launch authority or installed host qualification",
+    "Published npm runtime loader and customer Mac fence preserved",
+    "No child/helper/app/device activation in the unit validation test"
+  ],
+  "files": [
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPrivateMacSDKUnit.swift",
+      "SHA256": "1fe8ffd2a41977e8f423b2e76b7d5cb81c8aa102e3f4c86c0506e06406d216bb"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationRuntimeBundle.swift",
+      "SHA256": "871a769ae7e7e38d83da8c5bcc66aed58acb38d69da8d27bf6f6262968cdb797"
+    },
+    {
+      "path": "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationPrivateMacSDKUnitTests.swift",
+      "SHA256": "4ba491c5648db5038e9f3f2fc67f72bb8f02ebecb1544ab63c9a18f848dc45c8"
+    },
+    {
+      "path": "/private/tmp/intents-automation-swift-tests196.log",
+      "SHA256": "ff08c9182811e76e3923720c20e81d122cbc88263cd3956f4fc1969840c0c651"
+    },
+    {
+      "path": "/private/tmp/intents-agent-device-native-ownership-source1/private-mac-sdk-package1/intents-private-runtime.json",
+      "SHA256": "9fda71ac61b4d2428e4a08f6a9afb4ad363bd8fb20b8bc3dc10f03cc8f608bb3"
+    },
+    {
+      "path": "/private/tmp/intents-automation-swift-tests199.log",
+      "SHA256": "311c3f475026c047e2b91c856db99b7cf95ca205b68a449569b9c31debb12e65"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native54.log",
+      "SHA256": "2c4b3436a34d562326c38710ded1c250b01be354b1ba215c6516e867c8250ca4"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native54-artifact/preservation.json",
+      "SHA256": "483949480678df3f794a6609f02bcef697049fee34c05ce662a2023cea4f2436"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native54-artifact/Intents.app/Contents/MacOS/FoundationEvals",
+      "SHA256": "d81140c6be3709014ebd24f94fdb09b32366d87061194cb456a530b2a1e168d0"
+    }
+  ]
+}

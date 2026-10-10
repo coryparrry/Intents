@@ -1,0 +1,49 @@
+{
+  "actualCurrentGUIIdentityReadOnlyExecuted": true,
+  "actualNativeGUIHelperLaunched": false,
+  "apiReferences": [
+    "https://developer.apple.com/documentation/coregraphics/cgsessioncopycurrentdictionary()",
+    "https://developer.apple.com/documentation/coregraphics/window-server-session-properties",
+    "https://developer.apple.com/documentation/security/sessiongetinfo(_:_:_:)"
+  ],
+  "appsLaunched": false,
+  "consoleFieldIsOptionalNotInvented": true,
+  "consoleHardwareFieldAbsentOnActualHost": true,
+  "currentUIDInventoryExecuted": false,
+  "customerMacRouteEnabled": false,
+  "diagnosticSecondSampleCannotProveAbsence": true,
+  "failures": 0,
+  "foreignZombieReapedOrSkipped": false,
+  "kernelESRCHStillRequired": true,
+  "limits": [
+    "Helper/recipient same-session and actual event delivery remain unqualified; current source validates the native caller and dispatch admission",
+    "Default complete UID release inventory still fails for persistent foreign zombie; typed failure retains PID/parent/state and does not make release positive",
+    "Tap-only family; fill/scroll/binding use remain unsupported",
+    "Read-only GUI identity does not prove accessibility permission, app focus, input completion or release qualification"
+  ],
+  "releaseEligibilityUnchanged": true,
+  "review": {
+    "sessionAndFinalStartupGate": "Fresh Sol recheck clear after delayed-readiness fix",
+    "strictFailureDiagnostics": "Fresh Sol review clear; no acceptance criteria relaxed"
+  },
+  "schemaVersion": 1,
+  "scope": "Actual caller UID/security session and active local Quartz admission; retained exact app bytes/process tuple; final context check after helper readiness and before ACK",
+  "sourceFilesSHA256": {
+    "Sources/IntentsAutomationCore/AutomationMacGUIIdentity.swift": "0e1b11ed0400c662a1c7f98a89f526458f50378a10390e6666b1d5014eb27778",
+    "Sources/IntentsAutomationCore/AutomationMacHelperReleaseVerifier.swift": "44d4c46c29714f9cb78fec976a4cd9cf2ec8a2175bfadd36a4658c67836631a7",
+    "Sources/IntentsAutomationCore/AutomationMacNativeHelperBridge.swift": "d2ecd5d3c97e20e8a462a898c786a0303c559ffecfc3657c988ae5d6438461df",
+    "Sources/IntentsAutomationCore/AutomationMacOwnedDaemonSession.swift": "7657cb451c7d697f54b3ca09590f5582733f97d82a6258850db3e22a9443111d",
+    "Sources/IntentsAutomationCore/AutomationMacProcessInventory.swift": "dfa5c7c4236794224f6d45664059f198b929ef88fb7d06eb6bcd03f9cb7cb01c",
+    "Sources/IntentsAutomationCore/AutomationMacUIQualification.swift": "3545d810dc1212095e844fadec4dea16debdb2498af60e46960149df9735b44c",
+    "Sources/IntentsAutomationCore/AutomationMacUIRouteDriver.swift": "f16426e1af021a0e7db385a9e016091b8243311fe4346c9d97ca1fdb59255ff1",
+    "Sources/IntentsAutomationCore/AutomationOwnedCommand.swift": "98bcda622cef54d5a6b51ebe3e4ba23a2a0def6f00e1a1391b053721276e4910",
+    "Tests/IntentsAutomationCoreTests/AutomationMacGUIIdentityTests.swift": "45a57d3ef3a6c46bd3f88775de9195d430dd1bf7234afa410357cca5554214b9",
+    "Tests/IntentsAutomationCoreTests/AutomationMacHelperReleaseVerifierTests.swift": "3ca85f15509f95268840142c06ebe458c32f7566cfb5413370d1c7a01c5d36cf",
+    "Tests/IntentsAutomationCoreTests/AutomationMacInventoryReconciliationTests.swift": "4e8801bbf8ec61722057025e1c5b848649da514210cc5c55255dd7412cfd3b75",
+    "Tests/IntentsAutomationCoreTests/AutomationMacNativeHelperBridgeTests.swift": "b966673e0c792871d27841a891853ed11712e7a5a5ea5847afc9beb3bf09f8e9"
+  },
+  "testLogSHA256": "c0c26ee01e14a2319ec700db778a61c7eb822a7acad070bcfa6d2821033468af",
+  "testsPassed": 83,
+  "testsRegistered": 86,
+  "testsSkipped": 3
+}

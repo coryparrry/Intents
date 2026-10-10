@@ -1,9 +1,11 @@
 import AppKit
 import SwiftUI
+import IntentsAutomationCore
 
 struct ScenarioReportView: View {
     @Bindable var coordinator: ScenarioCoordinator
     @Bindable var store: EvaluationStore
+    @State private var automationLimit = 50
     var onSetup: () -> Void = {}
     @State private var showsHistoricalRun = false
     @State private var currentQualification: IntentEvidenceCaseDecision?
@@ -20,6 +22,18 @@ struct ScenarioReportView: View {
                 if !coordinator.executionRecords.isEmpty {
                     executionPicker
                 }
+                if !coordinator.automationEvidence.isEmpty {
+                    GroupBox("App checks · \(coordinator.automationEvidence.count) saved attempts") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(Array(coordinator.automationEvidence.prefix(automationLimit))) { presentation in
+                                DisclosureGroup(presentation.document.frozen.plan.execution.operation + " · " + presentation.document.report.attemptID) {
+                                    NativeAutomationEvidenceView(presentation: presentation).padding(.top, 8)
+                                }
+                            }
+                            if coordinator.automationEvidence.count > automationLimit { Button("Show more app checks") { automationLimit += 50 } }
+                        }.padding(10)
+                    }
+                }
                 if coordinator.isRunning {
                     runningState
                 } else if let plan = coordinator.selectedExecutionPlan,
@@ -28,7 +42,7 @@ struct ScenarioReportView: View {
                     coordinatedReport(plan: plan, record: record)
                 } else if let run = coordinator.selectedRun {
                     if !coordinator.runs.isEmpty { runPicker }
-                    report(run)
+                    report(run).id(run.id)
                 } else {
                     emptyState
                 }
@@ -43,6 +57,8 @@ struct ScenarioReportView: View {
         .task(id: coordinator.selectedExecutionID) {
             await reloadAssessmentDecision()
         }
+        .task { await coordinator.refreshAutomationEvidence() }
+        .onDisappear { coordinator.clearAutomationEvidence() }
     }
 
     private var executionPicker: some View {

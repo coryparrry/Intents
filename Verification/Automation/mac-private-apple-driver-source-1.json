@@ -1,0 +1,49 @@
+{
+  "evidence": {
+    "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+    "path": "Verification/Automation/Evidence/2026-10-07-private-mac-apple-driver/swift-driver4.log",
+    "rawPath": "Tools/IntentsAutomation/.runtime/private-mac-apple-driver-1/swift-driver4.log",
+    "rawSHA256": "8fd670c2c7e64e2653794d4381038665ed6ef4e99ae297f27e5e8fb955f35cdf",
+    "sha256": "8fd670c2c7e64e2653794d4381038665ed6ef4e99ae297f27e5e8fb955f35cdf"
+  },
+  "failureLessons": [
+    "Bind full pending scope and lease before revocation",
+    "Compare reviewed payload bytes rather than canonical String equality",
+    "Authenticate the actual frozen launch file",
+    "Revalidate authority after final awaits",
+    "Keep failed preparation proof until verified release",
+    "Consume one-use execution before the first await"
+  ],
+  "limits": [
+    "Separate internal actor; public prepared Mac route explicitly fenced before simulator infrastructure",
+    "Actual XCTest child-process closure is unobserved; exact host absence alone does not qualify route release",
+    "No live census retried or foreign processes terminated",
+    "Existing iOS associated-host lifecycle needs the corresponding authority fixes"
+  ],
+  "qualification": {
+    "actualKernelInventoryObserved": false,
+    "actualXCTestChildClosureObserved": false,
+    "appLaunched": false,
+    "customerQualified": false,
+    "intentExecuted": false,
+    "mixedRouteQualified": false,
+    "simulatedCommandExecution": true
+  },
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "Sources/IntentsAutomationCore/AutomationApplicationRunner.swift": "fca7ef98dc33a23c993f43fe368c037eb5d55402e43b143c2c498bb2f0831029",
+    "Sources/IntentsAutomationCore/AutomationMacAssociatedHostReleaseVerifier.swift": "c561a1ce36ea6fb90dd2fd785d47c8e565b5ad4d18c6920b9987bde95bd43bfe",
+    "Sources/IntentsAutomationCore/AutomationPrivateMacAppleRouteDriver.swift": "29ccc5ebf23911bd743aa9cbda1997e3edf173be66ab187666a489f0b78afb02",
+    "Tests/IntentsAutomationCoreTests/AutomationPrivateMacAppleExecutionTests.swift": "5952e18698c3f41d7bd33428740b839270764f064120d3426ba19498ae2693f7",
+    "Tests/IntentsAutomationCoreTests/AutomationPrivateMacAppleRouteDriverTests.swift": "358a6ac5960c5f9252b971aa0351628ab3c319f1371584d3c2fc46a24f81a057"
+  },
+  "status": "private-mac-associated-host-driver-source-and-simulated-execution-verified",
+  "verification": {
+    "command": "swift test --disable-sandbox -j 2 --filter 'AutomationPrivateMacAppleRouteDriverTests|AutomationMacAssociatedHostReleaseVerifierTests|AutomationHostTests|AutomationMacUIQualificationTests'",
+    "driverSyntheticTests": 15,
+    "failed": 0,
+    "passed": 43,
+    "skipped": 0,
+    "sourceReview": "distinct Sol authority/Stop and provenance/drain lanes clear after fixes"
+  }
+}

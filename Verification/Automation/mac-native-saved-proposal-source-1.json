@@ -1,0 +1,46 @@
+{
+  "evidence": {
+    "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+    "path": "Verification/Automation/Evidence/2026-10-07-mac-native-saved-proposal/swift-native3.log",
+    "rawPath": "Tools/IntentsAutomation/.runtime/mac-native-saved-proposal-1/swift-native3.log",
+    "rawSHA256": "1c410277e7ba483ce003287bd04813b1c04417af98c91f043deb4a6a6fabe4fc",
+    "sha256": "1c410277e7ba483ce003287bd04813b1c04417af98c91f043deb4a6a6fabe4fc"
+  },
+  "failureTrace": [
+    {
+      "observation": "Test expected raw route error; campaign correctly sanitizes stop reason. Assert canonical interruption instead.",
+      "path": "Tools/IntentsAutomation/.runtime/mac-native-saved-proposal-1/swift-native1.log",
+      "sha256": "905827e3be59e83002859903e5b56cd4e9d7e57584941b4ff63e82c9277ba07f"
+    },
+    {
+      "observation": "Review found inherited simulator install flag on Mac comparison; derive install only for simulator and add forwarding regression."
+    }
+  ],
+  "limits": [
+    "Native saved store admission remains pending",
+    "Actual Mac route, GUI and runtime ownership are unqualified",
+    "All new campaign facts and runtime/session providers are synthetic"
+  ],
+  "qualification": {
+    "appLaunched": false,
+    "campaignPopulationsSynthetic": true,
+    "customerMacQualified": false,
+    "defaultRunnerGatePreserved": true,
+    "nativeUIRendered": false
+  },
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFixComparison.swift": "de1cef2ca50d2d36a0e68cc154270eeac34aaf6db34b20ad810f264fc12aa49e",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIReproduction.swift": "6f7fb34d91ec4f4165ba64e57c4da90220190ad6a570b1f7398ddda152fce37d",
+    "Tests/IntentsAutomationNativeUITests/MacSavedProposalTests.swift": "84e2b4d196ce1d8a097e5fb388d46b35733f6ad25522824a0ac062772c13e4f7"
+  },
+  "status": "native-saved-mac-proposal-source-verified",
+  "verification": {
+    "command": "swift test --disable-sandbox -j 2 --filter 'MacSavedProposalTests|InstalledUIStoreTests|MacWorkflowStoreTests|AutomationSubjectCampaignExecutorTests'",
+    "failed": 0,
+    "newNativeTests": 5,
+    "passed": 57,
+    "skipped": 0,
+    "sourceReview": "distinct provenance/forwarding and authority/effects Sol lanes clear after Mac install flag fix"
+  }
+}
