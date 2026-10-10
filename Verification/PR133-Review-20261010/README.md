@@ -8,6 +8,7 @@ Reviewed PR head `c6fbee2408a44ae15d7244fdf451643b6b3d4390` and integrated main 
 - A diagnostics-only consent change revokes queued events and old spans without recounting an active usage session or the current screen. Normal SDK session rotation and usage opt-out/re-enable still count opens. Tests exercise fresh SDK-client identities and the fallback session identity.
 - If feature capture rotates the SDK session before a diagnostics change, the next visit still records its screen. Only screen state belonging to the active usage session survives the restart; both consent-toggle directions have regression coverage.
 - The Settings conflict keeps the extracted usage/diagnostics Privacy view and main's page transition.
+- The portable native-automation module now depends on a shared run-reporting contract rather than app-only telemetry types. Span creation, outcome classification and consent checks remain in the app controller; portable clients can omit telemetry.
 
 ## Verification
 
@@ -19,6 +20,9 @@ Reviewed PR head `c6fbee2408a44ae15d7244fdf451643b6b3d4390` and integrated main 
 - `bash -n script/upload_posthog_symbols.sh script/disable_local_telemetry.sh`, `git diff origin/main --check`, and `git diff --cached --check`: passed. No unresolved Git conflict entries remain.
 - Two independent read-only Sol 6.1 reviews covered privacy/transport/native crashes/symbol helper and integration/operation/session/Settings contracts. No additional material findings. The corrected nominal regression fixture and final session-rotation repair were separately rechecked.
 - Added the repository-required curated release-note override to the PR description. `python3 script/release_notes.py validate-event --event <PR-event fixture>` passed with four entries; the subsequent GitHub release-note step passed. `shellcheck script/*.sh` also passed.
+- The portable Swift package and all test bundles compiled successfully after the reporting-contract repair. `NativeHistoryRefreshTests`: **2 tests passed**, using SwiftPM's testing helper directly with Xcode framework/library paths, exit 0. The ordinary package test command hit an unrelated local `AppIntentsTesting`/system-framework symbol mismatch during discovery; running the affected bundle directly avoids that incompatible bundle.
+- The independent integration reviewer verified the shared reporting contract and callback isolation. A new test expectation was corrected to distinguish local diagnostics retained after consent revocation from completions allowed to upload; duplicate completion and original-span consent checks are covered.
+- Final reporting-contract snapshot: rebuilt the Debug app/test bundles and ran `TelemetryControllerTests`, `TelemetryDiagnosticsTests`, `TelemetryUsageTests`, and `AutomationMCPTests`. **41 tests in 4 suites passed**, `xcodebuild` exit 0, including actual automation outcomes and the new callback consent/cancellation regressions.
 
 Builds used two jobs and serial tests. Initial attempts encountered a full disk; one new fixture also needed a required observable assertion before it could reach the intended trust guard. The final native and UI runs passed after correcting the fixture and disabling verbose test failure diagnostics. No unrelated files or caches were deleted.
 
@@ -26,4 +30,4 @@ Builds used two jobs and serial tests. Initial attempts encountered a full disk;
 
 These changes update the existing PR only. No merge, release, distribution, new crash generation or symbol upload was performed. Historical signed-candidate and symbol evidence in `Verification/TelemetryPR-20261010/` belongs to its recorded source, not this updated app source. A later release needs its own archive and matching symbols; live hosted crash delivery remains unverified on this excluded development Mac.
 
-`source-hashes.json` records the changed app source and privacy manifest tested in this follow-up. See `worklog.md` for the compact working record.
+`source-hashes.json` records the changed app source, shared reporting contract and privacy manifest tested in this follow-up. See `worklog.md` for the compact working record.

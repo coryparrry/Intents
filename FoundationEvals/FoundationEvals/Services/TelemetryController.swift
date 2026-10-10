@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import IntentsAutomationCore
 import PostHog
 import OSLog
 
@@ -57,7 +58,7 @@ struct TelemetryDiagnosticRecord: Codable {
 }
 
 @Observable @MainActor
-final class TelemetryController {
+final class TelemetryController: AutomationRunTelemetry {
     static let consentKey = "optionalTelemetryEnabled"
     static let diagnosticsConsentKey = "optionalDiagnosticsEnabled"
     static let consentEpochKey = "telemetryConsentEpoch"
@@ -198,6 +199,16 @@ final class TelemetryController {
         lastScreen = screen
         lastScreenSession = client?.analyticsSessionID ?? sessionID.uuidString
         lastScreenRecordedAt = .now
+    }
+
+    func beginAutomationRun() -> AutomationRunTelemetryCompletion {
+        let span = begin(.automationRun)
+        return { [weak self] result in
+            switch result {
+            case .success(let report): self?.end(span, failure: .automationFailure(report))
+            case .failure(let error): self?.end(span, failure: .classify(error))
+            }
+        }
     }
 
     func begin(_ operation: TelemetryOperation) -> TelemetrySpan {

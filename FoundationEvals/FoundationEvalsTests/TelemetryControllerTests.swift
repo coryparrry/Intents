@@ -7,6 +7,33 @@ import Testing
     private func defaults() -> UserDefaults { UserDefaults(suiteName: "TelemetryTests.\(UUID().uuidString)")! }
     private let configuration = TelemetryConfiguration(projectToken: "phc_test", host: "https://us.i.posthog.com")
 
+    @Test(arguments: [false, true])
+    func automationCallbackClassifiesCancellationAndRejectsRevokedSpan(revoke: Bool) {
+        let defaults = defaults()
+        defaults.set(true, forKey: TelemetryController.diagnosticsConsentKey)
+        var clients: [RecordingTelemetryClient] = []
+        let controller = TelemetryController(defaults: defaults, configuration: configuration) { _ in
+            let client = RecordingTelemetryClient()
+            clients.append(client)
+            return client
+        }
+        let completion = controller.beginAutomationRun()
+        if revoke {
+            controller.setDiagnosticsEnabled(false)
+            controller.setDiagnosticsEnabled(true)
+        }
+        completion(.failure(CancellationError()))
+        completion(.failure(CancellationError()))
+        let outcomes = controller.recentDiagnostics.filter {
+            $0.properties["operation"] == "automation_run" && $0.properties["outcome"] != nil
+        }
+        #expect(outcomes.count == 1)
+        #expect(outcomes.first?.properties["outcome"] == "cancelled")
+        #expect(outcomes.first?.properties["error_code"] == "cancelled")
+        let uploads = clients.flatMap(\.events).filter { $0 == "foundation_evals_operation_finished" }
+        #expect(uploads.count == (revoke ? 0 : 1))
+    }
+
     @Test func freshStartupEnablesAnonymousTelemetry() {
         let client = RecordingTelemetryClient()
         var creations = 0
