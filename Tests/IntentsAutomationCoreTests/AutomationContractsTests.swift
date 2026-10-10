@@ -18,6 +18,100 @@ final class AutomationContractsTests: XCTestCase {
         for _ in 0..<20 { value = "{\"kind\":\"array\",\"value\":[\(value)]}" }
         XCTAssertThrowsError(try JSONDecoder().decode(AutomationValue.self, from: Data(value.utf8)))
     }
+    func testC01RejectsMalformedTagsKeysAndDigestsWhileDecoding() throws {
+        let digest = String(repeating: "a", count: 64)
+        let cases: [(json: String, reason: String)] = [
+            (#"{"kind":"weird"}"#, "Unknown value tag"),
+            (#"{"kind":"weird","value":1}"#, "Unknown value tag"),
+            (#"{"kind":"null","value":1}"#, "Unknown value key"),
+            (#"{"kind":"omission","value":null}"#, "Unknown value key"),
+            (#"{"kind":"enum","typeId":"Priority","value":"high","timeZone":"UTC"}"#, "Unknown value key"),
+            (#"{"kind":"date","value":"2026-10-05T21:00:00Z","timeZone":"Mars/Base"}"#, "Invalid timezone"),
+            (#"{"kind":"artifact","value":"snapshot-1","sha256":"ABC"}"#, "Invalid digest"),
+            ("{\"kind\":\"artifact\",\"value\":\"snapshot-1\",\"sha256\":\"\(String(repeating: "A", count: 64))\"}", "Invalid digest"),
+            ("{\"kind\":\"artifact\",\"value\":\"snapshot-1\",\"sha256\":\"\(digest)a\"}", "Invalid digest"),
+            ("{\"kind\":\"artifact\",\"value\":\"snapshot-1\",\"sha256\":\"\(digest.dropLast())g\"}", "Invalid digest"),
+            (Self.nullArrayJSON(count: 1001), "Array limit"),
+        ]
+        for (json, reason) in cases {
+            XCTAssertThrowsError(try JSONDecoder().decode(AutomationValue.self, from: Data(json.utf8)), json) { error in
+                guard case DecodingError.dataCorrupted(let context) = error else { return XCTFail("\(json): \(error)") }
+                XCTAssertEqual(context.debugDescription, reason, json)
+            }
+        }
+        XCTAssertThrowsError(try JSONDecoder().decode(AutomationValue.self, from: Data(#"{"value":"x"}"#.utf8))) { error in
+            guard case DecodingError.keyNotFound = error else { return XCTFail("\(error)") }
+        }
+    }
+    func testC01RejectsInvalidIdentifiersDatesAndNodeBudget() throws {
+        let digest = String(repeating: "a", count: 64)
+        let invalid: [(json: String, value: AutomationValue)] = [
+            (#"{"kind":"date","value":"2026-13-01","timeZone":"Europe/London"}"#, .date("2026-13-01", timeZone: "Europe/London")),
+            (#"{"kind":"date","value":"2026-10-05","timeZone":"UTC"}"#, .date("2026-10-05", timeZone: "UTC")),
+            (#"{"kind":"enum","typeId":"x y","value":"high"}"#, .enumeration(typeID: "x y", value: "high")),
+            (#"{"kind":"enum","typeId":"Priority","value":"a/b"}"#, .enumeration(typeID: "Priority", value: "a/b")),
+            (#"{"kind":"enum","typeId":"","value":"high"}"#, .enumeration(typeID: "", value: "high")),
+            (#"{"kind":"entity","typeId":"x/y","value":"id"}"#, .entity(typeID: "x/y", value: "id")),
+            (#"{"kind":"entity","typeId":"Task","value":""}"#, .entity(typeID: "Task", value: "")),
+            ("{\"kind\":\"artifact\",\"value\":\"a/b\",\"sha256\":\"\(digest)\"}", .artifact(handle: "a/b", sha256: digest)),
+            ("{\"kind\":\"artifact\",\"value\":\"\",\"sha256\":\"\(digest)\"}", .artifact(handle: "", sha256: digest)),
+            (#"{"kind":"object","value":{"a b":{"kind":"null"}}}"#, .object(["a b": .null])),
+            (#"{"kind":"object","value":{"":{"kind":"null"}}}"#, .object(["": .null])),
+            (#"{"kind":"object","value":{"../etc":{"kind":"null"}}}"#, .object(["../etc": .null])),
+            (#"{"kind":"array","value":[{"kind":"object","value":{"ok":{"kind":"enum","typeId":"x y","value":"v"}}}]}"#,
+             .array([.object(["ok": .enumeration(typeID: "x y", value: "v")])])),
+        ]
+        for (json, value) in invalid {
+            XCTAssertThrowsError(try JSONDecoder().decode(AutomationValue.self, from: Data(json.utf8)), json) { error in
+                XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Invalid tagged value"), json)
+            }
+            XCTAssertThrowsError(try JSONEncoder().encode(value), json) { error in
+                XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Invalid tagged value"), json)
+            }
+        }
+        for value: AutomationValue in [.date("2026-10-05T21:00:00Z", timeZone: "Mars/Base"), .artifact(handle: "snapshot-1", sha256: "ABC"),
+                                       .artifact(handle: "snapshot-1", sha256: String(repeating: "A", count: 64)),
+                                       .array(Array(repeating: .null, count: 1001))] {
+            XCTAssertThrowsError(try JSONEncoder().encode(value)) { error in
+                XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Invalid tagged value"))
+            }
+        }
+        let overBudget = Self.wideArrayJSON(lastCount: 990)
+        XCTAssertThrowsError(try JSONDecoder().decode(AutomationValue.self, from: Data(overBudget.utf8))) { error in
+            XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Value nesting/node limit"))
+        }
+        let wide = AutomationValue.array(Array(repeating: .array(Array(repeating: .null, count: 1000)), count: 9) + [.array(Array(repeating: .null, count: 990))])
+        XCTAssertThrowsError(try JSONEncoder().encode(wide)) { error in
+            XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Value nesting/node limit"))
+        }
+    }
+    func testC01AcceptsTaggedValueBoundaries() throws {
+        let digest = String(repeating: "0123456789abcdef", count: 4)
+        let boundaries: [AutomationValue] = [
+            .array(Array(repeating: .null, count: 1000)),
+            .artifact(handle: "snapshot_1.v2:part-3", sha256: digest),
+            .enumeration(typeID: String(repeating: "T", count: 256), value: "A-z_0.9:x"),
+            .object(["a.b:c-d_1": .null]),
+            .date("2026-10-05T21:00:00.123Z", timeZone: "America/New_York"),
+            .date("2026-10-05T21:00:00+01:00", timeZone: "UTC"),
+        ]
+        for value in boundaries {
+            XCTAssertEqual(try JSONDecoder().decode(AutomationValue.self, from: JSONEncoder().encode(value)), value)
+        }
+        XCTAssertThrowsError(try JSONEncoder().encode(AutomationValue.enumeration(typeID: String(repeating: "T", count: 257), value: "v")))
+        let atBudget = try JSONDecoder().decode(AutomationValue.self, from: Data(Self.wideArrayJSON(lastCount: 989).utf8))
+        guard case .array(let groups) = atBudget else { return XCTFail("Expected array") }
+        XCTAssertEqual(groups.count, 10)
+        XCTAssertEqual(try JSONDecoder().decode(AutomationValue.self, from: JSONEncoder().encode(atBudget)), atBudget)
+    }
+    private static func nullArrayJSON(count: Int) -> String {
+        "{\"kind\":\"array\",\"value\":[\(Array(repeating: #"{"kind":"null"}"#, count: count).joined(separator: ","))]}"
+    }
+    /// One outer array, ten inner arrays and their nulls: 11 + 9_000 + lastCount nodes at depth 2.
+    private static func wideArrayJSON(lastCount: Int) -> String {
+        let groups = Array(repeating: nullArrayJSON(count: 1000), count: 9) + [nullArrayJSON(count: lastCount)]
+        return "{\"kind\":\"array\",\"value\":[\(groups.joined(separator: ","))]}"
+    }
     func testC01UnicodeLimitsMatchJavaScriptCodeUnits() throws {
         let boundary = AutomationValue.text(String(repeating: "😀", count: 16_384))
         XCTAssertEqual(try JSONDecoder().decode(AutomationValue.self, from: JSONEncoder().encode(boundary)), boundary)
@@ -138,5 +232,99 @@ extension AutomationContractsTests {
         for value in [AutomationValue.integer("1e3"), .date("invalid", timeZone: "UTC"), .artifact(handle: "/etc/passwd", sha256: String(repeating: "a", count: 64))] {
             XCTAssertThrowsError(try JSONEncoder().encode(value))
         }
+    }
+}
+
+extension AutomationContractsTests {
+    private static let digestA = String(repeating: "a", count: 64), digestB = String(repeating: "b", count: 64)
+    private func journalURL() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("journal.json")
+    }
+    private func assertContractError<T>(_ expected: AutomationContractError, _ body: () async throws -> T,
+                                        file: StaticString = #filePath, line: UInt = #line) async {
+        do { _ = try await body(); XCTFail("Expected \(expected)", file: file, line: line) }
+        catch { XCTAssertEqual(error as? AutomationContractError, expected, file: file, line: line) }
+    }
+    private func writeJournal(_ json: String, to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try? FileManager.default.removeItem(at: url)
+        XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: Data(json.utf8), attributes: [.posixPermissions: 0o600]))
+    }
+    private func entryJSON(key: String, operationID: String? = nil, digest: String = digestA, state: String, response: Bool) -> String {
+        let value = response ? #","response":{"kind":"bool","value":true}"# : ""
+        return #"{"\#(key)":{"operationID":"\#(operationID ?? key)","payloadDigest":"\#(digest)","state":"\#(state)"\#(value)}}"#
+    }
+
+    func testJournalCompleteWithoutPriorBeginIsConflictingAndRecordsNothing() async throws {
+        let url = journalURL(), journal = try AutomationJournal(url: url)
+        await assertContractError(.conflictingOperation) { try await journal.complete(operationID: "never", digest: Self.digestA, response: .bool(true)) }
+        let unresolved = try await journal.unresolvedEntries()
+        XCTAssertEqual(unresolved, [])
+        let first = try await AutomationJournal(url: url).begin(operationID: "never", digest: Self.digestA)
+        XCTAssertNil(first, "A rejected completion must not leave a cached response behind")
+    }
+    func testJournalCompleteWithDifferentDigestIsConflictingAndLeavesDispatchUnresolved() async throws {
+        let url = journalURL(), journal = try AutomationJournal(url: url)
+        _ = try await journal.begin(operationID: "op", digest: Self.digestA)
+        await assertContractError(.conflictingOperation) { try await journal.complete(operationID: "op", digest: Self.digestB, response: .bool(true)) }
+        let unresolved = try await AutomationJournal(url: url).unresolvedEntries()
+        XCTAssertEqual(unresolved, [.init(operationID: "op", payloadDigest: Self.digestA, state: .dispatched, response: nil)])
+        await assertContractError(.ambiguousDispatch) { try await journal.begin(operationID: "op", digest: Self.digestA) }
+    }
+    func testJournalRepeatedCompletionIsIdempotentButConflictingResponseIsRejectedAcrossReopen() async throws {
+        let url = journalURL(), journal = try AutomationJournal(url: url)
+        _ = try await journal.begin(operationID: "op", digest: Self.digestA)
+        try await journal.complete(operationID: "op", digest: Self.digestA, response: .text("original"))
+        try await journal.complete(operationID: "op", digest: Self.digestA, response: .text("original"))
+        await assertContractError(.conflictingOperation) { try await journal.complete(operationID: "op", digest: Self.digestA, response: .text("forged")) }
+        let reopened = try AutomationJournal(url: url)
+        await assertContractError(.conflictingOperation) { try await reopened.complete(operationID: "op", digest: Self.digestA, response: .bool(false)) }
+        let cached = try await reopened.begin(operationID: "op", digest: Self.digestA)
+        XCTAssertEqual(cached, .text("original"))
+        let unresolved = try await reopened.unresolvedEntries()
+        XCTAssertEqual(unresolved, [])
+    }
+    func testJournalUnresolvedEntriesListsOnlyIncompleteDispatchesSorted() async throws {
+        let url = journalURL(), journal = try AutomationJournal(url: url)
+        for id in ["zeta", "alpha", "done"] { _ = try await journal.begin(operationID: id, digest: Self.digestA) }
+        try await journal.complete(operationID: "done", digest: Self.digestA, response: .null)
+        let unresolved = try await AutomationJournal(url: url).unresolvedEntries()
+        XCTAssertEqual(unresolved.map(\.operationID), ["alpha", "zeta"])
+        XCTAssertEqual(Set(unresolved.map(\.state)), [.dispatched])
+        XCTAssertTrue(unresolved.allSatisfy { $0.response == nil && $0.payloadDigest == Self.digestA })
+    }
+    func testJournalLoadAcceptsWellFormedPersistedEntries() async throws {
+        let url = journalURL()
+        try writeJournal(entryJSON(key: "op", state: "completed", response: true), to: url)
+        let cached = try await AutomationJournal(url: url).begin(operationID: "op", digest: Self.digestA)
+        XCTAssertEqual(cached, .bool(true))
+        try writeJournal(entryJSON(key: "op", state: "unresolved", response: false), to: url)
+        let unresolved = try await AutomationJournal(url: url).unresolvedEntries()
+        XCTAssertEqual(unresolved.map(\.state), [.unresolved])
+    }
+    func testJournalLoadRejectsTamperedEntries() throws {
+        let tampered: [(String, String)] = [
+            ("key differs from operationID", entryJSON(key: "op", operationID: "other", state: "dispatched", response: false)),
+            ("empty operationID", entryJSON(key: "", state: "dispatched", response: false)),
+            ("oversized operationID", entryJSON(key: String(repeating: "x", count: 1025), state: "dispatched", response: false)),
+            ("short digest", entryJSON(key: "op", digest: String(repeating: "a", count: 63), state: "dispatched", response: false)),
+            ("uppercase digest", entryJSON(key: "op", digest: String(repeating: "A", count: 64), state: "dispatched", response: false)),
+            ("completed without response", entryJSON(key: "op", state: "completed", response: false)),
+            ("dispatched with response", entryJSON(key: "op", state: "dispatched", response: true)),
+            ("unresolved with response", entryJSON(key: "op", state: "unresolved", response: true)),
+        ]
+        for (label, json) in tampered {
+            let url = journalURL()
+            try writeJournal(json, to: url)
+            XCTAssertThrowsError(try AutomationJournal(url: url), label) { XCTAssertEqual($0 as? AutomationContractError, .invalidIdentity, label) }
+        }
+    }
+    func testJournalTamperedAfterOpenRejectsFurtherTransactions() async throws {
+        let url = journalURL(), journal = try AutomationJournal(url: url)
+        _ = try await journal.begin(operationID: "op", digest: Self.digestA)
+        try writeJournal(entryJSON(key: "op", state: "completed", response: false), to: url)
+        await assertContractError(.invalidIdentity) { try await journal.begin(operationID: "op", digest: Self.digestA) }
+        await assertContractError(.invalidIdentity) { try await journal.complete(operationID: "op", digest: Self.digestA, response: .bool(true)) }
+        await assertContractError(.invalidIdentity) { try await journal.unresolvedEntries() }
     }
 }

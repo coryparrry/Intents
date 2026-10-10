@@ -25,6 +25,11 @@ def selections(plan):
 
 
 class CoverageTests(unittest.TestCase):
+    def test_homebrew_updater_and_workflow_select_their_regressions(self):
+        for path in ("script/update_homebrew.py", ".github/workflows/update-homebrew.yml"):
+            with self.subTest(path=path):
+                self.assert_selection([path], python=("script.tests.test_update_homebrew",))
+
     def assert_selection(
         self, paths, native=False, ui=False, swift=(), python=(), macos=()
     ):

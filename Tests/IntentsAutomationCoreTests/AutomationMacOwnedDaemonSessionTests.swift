@@ -356,4 +356,39 @@ final class AutomationMacOwnedDaemonSessionTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.marker.path))
     }
 }
+extension AutomationMacOwnedDaemonSessionTests {
+    private struct UnitLoaded: Error {}
+    private func guardedSession(durable: Bool = true, targetID: String = "host-macos-local", generationOffset: Int = 0,
+                                aliasState: Bool = false, productDigest: String? = String(repeating: "a", count: 64)) async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/intents-daemon-session-guard-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = root.appendingPathComponent("Fixture.app"); try FileManager.default.createDirectory(at: app, withIntermediateDirectories: false)
+        let target = TargetIdentity(id: targetID, kind: .nativeMac, loginSession: "synthetic-login")
+        var identity = AppIdentity(logicalID: "fixture", bundleID: "example.Fixture", platform: "macos", productDigest: productDigest)
+        identity.canonicalBundlePath = app.path
+        let leases = durable ? try AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("leases.json")) : AutomationDeviceLeaseManager()
+        let lease = try await leases.acquire(runID: "run", target: target, control: .ui)
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "segment", leaseGeneration: lease.generation + generationOffset)
+        let state = aliasState ? URL(fileURLWithPath: root.path.replacingOccurrences(of: "/private/tmp/", with: "/tmp/")) : root
+        let dependencies = AutomationMacOwnedDaemonSession.Dependencies(unit: { _ in throw UnitLoaded() },
+            bridge: { _ in throw UnitLoaded() }, release: { _, _ in Release(absent: true) }, subject: Subject(fail: false, suspendAt: nil))
+        _ = try await AutomationMacOwnedDaemonSession(unitRoot: root, app: identity, target: target, scope: scope,
+            lease: lease, leases: leases, state: state, authorize: { _ in }, dependencies: dependencies)
+    }
+    func testInvalidLeaseTargetGenerationOrStateRejectsBeforeLoadingTheUnit() async throws {
+        do { try await guardedSession(); XCTFail("Unit dependency was not reached") } catch is UnitLoaded {}
+        let cases: [(String, () async throws -> Void)] = [
+            ("ephemeral lease", { try await self.guardedSession(durable: false) }),
+            ("foreign target", { try await self.guardedSession(targetID: "fixture-mac") }),
+            ("lease generation", { try await self.guardedSession(generationOffset: 1) }),
+            ("noncanonical state", { try await self.guardedSession(aliasState: true) }),
+            ("missing product digest", { try await self.guardedSession(productDigest: nil) })]
+        for (label, body) in cases {
+            do { try await body(); XCTFail("Admitted: " + label) }
+            catch is UnitLoaded { XCTFail("Loaded unit despite " + label) }
+            catch {}
+        }
+    }
+}
 #endif

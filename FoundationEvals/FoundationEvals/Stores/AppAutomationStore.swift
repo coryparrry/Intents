@@ -96,6 +96,7 @@ final class AppAutomationStore {
     var savedViewedDirectory: URL?
     var selectionEpoch = 0
     var savedViewRequestID: UUID?
+    func canSaveCapsuleExport(_ selection: AutomationCapsuleExportSelection) -> Bool { selection.reviewed && !busy && !closing }
     let savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])?
     private let savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])?
     private let runExecutor: AutomationNativeRunExecutor?
@@ -813,6 +814,14 @@ final class AppAutomationStore {
         guard !busy, !closing, savedCases.contains(frozen), attempts.count <= 100 else { throw AutomationContractError.invalidIdentity }
         let exposure = try reserveEvidenceExposure(frozen, attempts: attempts)
         return (frozen, attempts, exposure)
+    }
+    /// The approval reflects the review toggle, so the core export rejects an unreviewed selection.
+    func exportCapsule(_ selection: AutomationCapsuleExportSelection, to url: URL) async throws {
+        guard !busy, !closing else { throw AutomationContractError.targetBusy }
+        try await Task.detached {
+            try AutomationCaseCapsule.exportCompressed(frozen: selection.frozen, attempts: selection.attempts,
+                approval: selection.approval, exposure: selection.exposure, to: url)
+        }.value
     }
     private func reserveEvidenceExposure(_ frozen: AutomationFrozenCase, attempts: [AutomationAttemptReport]) throws -> AutomationEvidenceExposure {
         try AutomationEvidenceExposureAuthority(supportRoot: support).reserve(frozen: frozen, attempts: attempts)

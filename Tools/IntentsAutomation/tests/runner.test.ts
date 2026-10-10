@@ -198,3 +198,201 @@ test('real pinned runner preserves prototype-name and numeric operation receipts
   for(const id of ['constructor','2','10'])assert.equal(saved.outputs[id],1);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+const cancellationTarget={id:'exact',platform:'ios',kind:'simulator',bundleId:'com.example.App',bundlePath:null,loginSession:null} as const;
+function cancellationSegment(operationId:string,timeoutMs=50000):Segment{
+ const segment:Segment={scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'s',leaseGeneration:1},operationId,payloadDigest:'a'.repeat(64),phase:'setup',bindings:{},timeoutMs,
+  operations:[{id:'tap',kind:'tap',locator:{kind:'testId',value:'done'}}]};
+ const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);return segment;
+}
+const doneSnapshot=()=>({truncated:false,nodes:[{index:1,ref:'@e1',identifier:'done',role:'button',label:'Done',hittable:true,enabled:true,visibleToUser:true,rect:{x:0,y:0,width:100,height:50}}],
+ refsGeneration:7,identifiers:{udid:'exact'},appBundleId:'com.example.App'});
+async function workerProcessTree(root:string){
+ const {execFileSync}=await import('node:child_process');const configPath=join(root,'e2e.config.mjs');
+ const rows=execFileSync('ps',['-A','-o','pid=,ppid=,args='],{encoding:'utf8'}).trim().split('\n').map(line=>{
+  const [pid,ppid,...args]=line.trim().split(/\s+/);return {pid:Number(pid),ppid:Number(ppid),args:args.join(' ')};});
+ const tree=rows.filter(row=>row.ppid===process.pid && row.args.includes(configPath)).map(row=>row.pid);
+ for(let i=0;i<tree.length;i++)for(const row of rows)if(row.ppid===tree[i] && !tree.includes(row.pid))tree.push(row.pid);
+ return tree;
+}
+async function assertProcessesExit(pids:number[]){
+ const alive=(pid:number)=>{try{process.kill(pid,0);return true;}catch(error){return (error as NodeJS.ErrnoException).code!=='ESRCH';}};
+ for(const started=Date.now();pids.some(alive) && Date.now()-started<10000;)await new Promise(r=>setTimeout(r,50));
+ assert.deepEqual(pids.filter(alive),[]);
+}
+async function spyWorkerKills(t:import('node:test').TestContext,deliverSIGTERM=true){
+ const {ChildProcess}=await import('node:child_process');const signals:(NodeJS.Signals|number|undefined)[]=[];const kill=ChildProcess.prototype.kill;
+ t.mock.method(ChildProcess.prototype,'kill',function(this:InstanceType<typeof ChildProcess>,signal?:NodeJS.Signals|number){
+  // Earlier tests' grace timers may still target already-exited children; Node treats those as no-ops.
+  if(this.exitCode===null && this.signalCode===null)signals.push(signal);return signal==='SIGTERM' && !deliverSIGTERM?true:kill.call(this,signal);});
+ return signals;
+}
+
+test('a segment whose payload digest does not match is rejected before any state, broker or worker exists',async t=>{
+ const signals=await spyWorkerKills(t);let calls=0;
+ const backend:UIBackend={snapshot:async()=>{calls++;return doneSnapshot();},perform:async()=>{calls++;},release:async()=>({released:false,reason:'contract fixture'})};
+ const base=await mkdtemp(join(tmpdir(),'intents-digest-mismatch-'));const root=join(base,'case');
+ try{
+  for(const tamper of [(s:Segment)=>{s.payloadDigest='b'.repeat(64);},(s:Segment)=>{s.operationId='other-op';},(s:Segment)=>{s.timeoutMs=60000;}]){
+   const segment=cancellationSegment('digest-op');tamper(segment);
+   await assert.rejects(runWorker(backend,cancellationTarget,segment,root,new AbortController().signal,async()=>{calls++;return {kind:'finish'};}),/Worker segment digest mismatch/);
+  }
+  await assert.rejects(readFile(root),{code:'ENOENT'});
+ }finally{await rm(base,{recursive:true,force:true});}
+ assert.equal(calls,0);assert.deepEqual(signals,[]);
+});
+
+test('an already-aborted signal terminates the worker before it reaches the device',async t=>{
+ const signals=await spyWorkerKills(t);let calls=0;
+ const backend:UIBackend={snapshot:async()=>{calls++;return doneSnapshot();},perform:async()=>{calls++;},release:async()=>({released:false,reason:'contract fixture'})};
+ const root=await mkdtemp(join(tmpdir(),'intents-pre-aborted-'));const controller=new AbortController();controller.abort();
+ try{
+  await assert.rejects(runWorker(backend,cancellationTarget,cancellationSegment('pre-aborted-op'),root,controller.signal),/^Error: Segment cancelled$/);
+  assert.deepEqual(signals,['SIGTERM']);assert.equal(calls,0);
+  await assert.rejects(readFile(join(root,'receipt.json')),{code:'ENOENT'});await readFile(join(root,'worker.log'),'utf8');
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('aborting during the first snapshot terminates the live worker without any device action',async t=>{
+ const signals=await spyWorkerKills(t);const root=await mkdtemp(join(tmpdir(),'intents-abort-snapshot-'));const controller=new AbortController();
+ let snapshots=0,actions=0,pids:number[]=[],aborted=0;
+ const backend:UIBackend={snapshot:async context=>{snapshots++;pids=await workerProcessTree(root);aborted=Date.now();controller.abort();
+   await new Promise(r=>context!.signal.aborted?r(undefined):context!.signal.addEventListener('abort',r,{once:true}));return doneSnapshot();},
+  perform:async()=>{actions++;},release:async()=>({released:false,reason:'contract fixture'})};
+ try{
+  await assert.rejects(runWorker(backend,cancellationTarget,cancellationSegment('abort-snapshot-op'),root,controller.signal),/^Error: Segment cancelled$/);
+  // SIGTERM, not a worker-side timeout or the SIGKILL grace period, ends the run.
+  assert.ok(Date.now()-aborted<4000);assert.equal(snapshots,1);assert.equal(actions,0);assert.deepEqual(signals,['SIGTERM']);assert.ok(pids.length>0);
+  await assertProcessesExit(pids);await assert.rejects(readFile(join(root,'receipt.json')),{code:'ENOENT'});
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('the segment deadline terminates a worker blocked on a never-answering snapshot',async t=>{
+ const signals=await spyWorkerKills(t);const root=await mkdtemp(join(tmpdir(),'intents-deadline-'));const signal=new AbortController().signal;
+ let snapshots=0,actions=0,pids:number[]=[];
+ const backend:UIBackend={snapshot:async context=>{snapshots++;pids=await workerProcessTree(root);
+   await new Promise(r=>context!.signal.addEventListener('abort',r,{once:true}));return doneSnapshot();},
+  perform:async()=>{actions++;},release:async()=>({released:false,reason:'contract fixture'})};
+ try{
+  // Leave ample room for a slow runner to start the real CLI before the deadline fires.
+  const started=Date.now();
+  await assert.rejects(runWorker(backend,cancellationTarget,cancellationSegment('deadline-op',10000),root,signal),/^Error: Worker failed; see owned log$/);
+  assert.ok(Date.now()-started>=10000);assert.equal(signal.aborted,false);
+  assert.equal(snapshots,1);assert.equal(actions,0);assert.deepEqual(signals,['SIGTERM']);assert.ok(pids.length>0);
+  await assertProcessesExit(pids);await assert.rejects(readFile(join(root,'receipt.json')),{code:'ENOENT'});
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('a worker that survives SIGTERM is killed with SIGKILL after the grace period',async t=>{
+ const signals=await spyWorkerKills(t,false);const root=await mkdtemp(join(tmpdir(),'intents-sigkill-'));const controller=new AbortController();
+ let actions=0,pids:number[]=[],aborted=0;
+ const backend:UIBackend={snapshot:async context=>{pids=await workerProcessTree(root);if(!controller.signal.aborted){aborted=Date.now();controller.abort();}
+   await new Promise(r=>context!.signal.aborted?r(undefined):context!.signal.addEventListener('abort',r,{once:true}));return doneSnapshot();},
+  perform:async()=>{actions++;},release:async()=>({released:false,reason:'contract fixture'})};
+ try{
+  await assert.rejects(runWorker(backend,cancellationTarget,cancellationSegment('sigkill-op'),root,controller.signal),/^Error: Segment cancelled$/);
+  assert.ok(Date.now()-aborted>=5000);assert.equal(actions,0);assert.deepEqual(signals,['SIGTERM','SIGKILL']);assert.ok(pids.length>0);
+  await assertProcessesExit(pids);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('a completed worker receipt for another scope, operation or incomplete run is rejected',async t=>{
+ const {ChildProcess}=await import('node:child_process');const {readFileSync,writeFileSync}=await import('node:fs');
+ const emit=ChildProcess.prototype.emit;let tamper:((receipt:Record<string,unknown>)=>void)|undefined,receiptPath='';
+ t.mock.method(ChildProcess.prototype,'emit',function(this:InstanceType<typeof ChildProcess>,event:string|symbol,...args:unknown[]){
+  // The worker has exited with its genuine receipt; rewrite it before the runner reads it.
+  if(event==='exit' && tamper){const receipt=JSON.parse(readFileSync(receiptPath,'utf8'));assert.equal(receipt.complete,true);tamper(receipt);writeFileSync(receiptPath,JSON.stringify(receipt));}
+  return Reflect.apply(emit,this,[event,...args]) as boolean;});
+ const backend:UIBackend={snapshot:async()=>doneSnapshot(),perform:async()=>{},release:async()=>({released:false,reason:'contract fixture'})};
+ for(const mutate of [(r:Record<string,unknown>)=>{r.scope={...(r.scope as object),leaseGeneration:2};},(r:Record<string,unknown>)=>{r.scope={...(r.scope as object),runId:'other'};},
+  (r:Record<string,unknown>)=>{r.operationId='other-op';},(r:Record<string,unknown>)=>{r.complete=false;}]){
+  const root=await mkdtemp(join(tmpdir(),'intents-receipt-mismatch-'));receiptPath=join(root,'receipt.json');tamper=mutate;
+  try{
+   const segment=cancellationSegment('receipt-op');segment.operations=[{id:'endpoint',kind:'assertEndpoint',locator:{kind:'testId',value:'done'}}];
+   const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);
+   await assert.rejects(runWorker(backend,cancellationTarget,segment,root,new AbortController().signal),/^Error: Missing or mismatched UI receipt$/);
+  }finally{tamper=undefined;await rm(root,{recursive:true,force:true});}
+ }
+ const root=await mkdtemp(join(tmpdir(),'intents-receipt-control-'));
+ try{
+  const segment=cancellationSegment('receipt-op');segment.operations=[{id:'endpoint',kind:'assertEndpoint',locator:{kind:'testId',value:'done'}}];
+  const {payloadDigest:ignored,...body}=segment;segment.payloadDigest=payloadDigest(body);
+  const receipt=await runWorker(backend,cancellationTarget,segment,root,new AbortController().signal) as {operationId:string;complete:boolean};
+  assert.equal(receipt.operationId,'receipt-op');assert.equal(receipt.complete,true);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+const iosTarget={id:'exact',platform:'ios' as const,kind:'simulator' as const,bundleId:'com.example.App',bundlePath:null,loginSession:null};
+const sealed=async(body:Omit<Segment,'payloadDigest'>):Promise<Segment>=>{const {segmentPayloadDigest}=await import('../src/payloadDigest.js');return {...body,payloadDigest:segmentPayloadDigest(body)};};
+const pathExists=async(path:string)=>{const {access}=await import('node:fs/promises');return access(path).then(()=>true,()=>false);};
+
+test('real pinned runner records distinct readProperty value and text outputs and locate cardinality',async()=>{
+ let snapshots=0;const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:++snapshots,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:1,ref:'@e1',identifier:'title',label:'Title label',value:'typed value',hittable:true,enabled:true,visibleToUser:true},
+  {index:2,ref:'@e2',identifier:'row',label:'First',hittable:true,enabled:true,visibleToUser:true},
+  {index:3,ref:'@e3',identifier:'row',label:'Second',hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async()=>{throw new Error('Read-only fixture must not mutate');},release:async()=>({released:false,reason:'SDK contract fixture'})};
+ const segment=await sealed({scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'read',leaseGeneration:1},operationId:'read-op',digestVersion:2,phase:'observe',bindings:{},timeoutMs:50000,
+  operations:[{id:'value',kind:'readProperty',locator:{kind:'testId',value:'title'},property:'value'},
+   {id:'text',kind:'readProperty',locator:{kind:'testId',value:'title'},property:'text'},
+   {id:'rows',kind:'locate',locator:{kind:'testId',value:'row'}},
+   {id:'absent',kind:'locate',locator:{kind:'testId',value:'missing'}}]});
+ const root=await mkdtemp(join(tmpdir(),'intents-read-property-'));
+ try{
+  const receipt=await runWorker(backend,iosTarget,segment,root,new AbortController().signal) as {outputs:Record<string,unknown>};
+  const saved=JSON.parse(await readFile(join(root,'receipt.json'),'utf8')) as typeof receipt;
+  assert.deepEqual(saved,receipt);
+  assert.equal(saved.outputs.value,'typed value');
+  // semanticTree maps label to name and never sets SemanticNode.text, so
+  // textContent() is null on this path; value must not leak into text evidence.
+  assert.equal(saved.outputs.text,null);
+  assert.equal(saved.outputs.rows,2);assert.equal(saved.outputs.absent,0);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('real pinned runner resolves textbox role fills and button-qualified label taps on iOS',async()=>{
+ const performed:{ref:string;action:unknown}[]=[];let snapshots=0;
+ const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:++snapshots,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:1,ref:'@e1',role:'textbox',editable:true,hittable:true,enabled:true,visibleToUser:true},
+  {index:2,ref:'@e2',role:'text',label:'Save',hittable:true,enabled:true,visibleToUser:true},
+  {index:3,ref:'@e3',role:'button',label:'Save',hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async(ref,action)=>{performed.push({ref,action});},release:async()=>({released:false,reason:'SDK contract fixture'})};
+ const segment=await sealed({scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'roles',leaseGeneration:1},operationId:'roles-op',digestVersion:2,phase:'setup',bindings:{title:'approved title'},timeoutMs:50000,
+  operations:[{id:'fill',kind:'fillBinding',locator:{kind:'role',value:'textbox'},binding:'title'},
+   {id:'save',kind:'tap',locator:{kind:'label',value:'Save',role:'button'}}]});
+ const root=await mkdtemp(join(tmpdir(),'intents-role-locators-'));
+ try{
+  await runWorker(backend,iosTarget,segment,root,new AbortController().signal);
+  assert.deepEqual(performed.map(({ref,action})=>({ref:ref.split('~s')[0],action})),
+   [{ref:'@e1',action:{kind:'fill',value:'approved title',sensitive:false}},{ref:'@e3',action:{kind:'tap'}}]);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('real pinned runner refuses a fill whose approved binding is missing before any device action',async()=>{
+ let actions=0;const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:1,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:1,ref:'@e1',identifier:'title',role:'textbox',editable:true,hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async()=>{actions++;},release:async()=>({released:false,reason:'SDK contract fixture'})};
+ const segment=await sealed({scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'fill',leaseGeneration:1},operationId:'missing-binding-op',digestVersion:2,phase:'setup',bindings:{other:'unrelated'},timeoutMs:50000,
+  operations:[{id:'fill',kind:'fillBinding',locator:{kind:'testId',value:'title'},binding:'title'}]});
+ const root=await mkdtemp(join(tmpdir(),'intents-missing-binding-'));
+ try{
+  await assert.rejects(runWorker(backend,iosTarget,segment,root,new AbortController().signal),/Worker failed/);
+  assert.equal(actions,0);assert.equal(await pathExists(join(root,'receipt.json')),false);
+  assert.match(await readFile(join(root,'worker.log'),'utf8'),/Missing frozen fill binding|Missing approved binding/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('real pinned runner rejects a receipt over the evidence budget without writing it',async()=>{
+ const large='x'.repeat(36000);let snapshots=0;
+ const backend:UIBackend={snapshot:async()=>({truncated:false,refsGeneration:++snapshots,identifiers:{udid:'exact'},appBundleId:'com.example.App',nodes:[
+  {index:1,ref:'@e1',identifier:'body',label:'Body',value:large,hittable:true,enabled:true,visibleToUser:true}]}),
+  perform:async()=>{throw new Error('Read-only fixture must not mutate');},release:async()=>({released:false,reason:'SDK contract fixture'})};
+ const segment=await sealed({scope:{protocolVersion:1,runId:'r',attemptId:'a',segmentId:'large',leaseGeneration:1},operationId:'large-op',digestVersion:2,phase:'observe',bindings:{},timeoutMs:110000,
+  operations:Array.from({length:30},(_,i)=>({id:`read${i}`,kind:'readProperty' as const,locator:{kind:'testId' as const,value:'body'},property:'value' as const}))});
+ const root=await mkdtemp(join(tmpdir(),'intents-receipt-budget-'));
+ try{
+  await assert.rejects(runWorker(backend,iosTarget,segment,root,new AbortController().signal),/Worker failed/);
+  assert.ok(snapshots>=30);assert.equal(await pathExists(join(root,'receipt.json')),false);
+  assert.match(await readFile(join(root,'worker.log'),'utf8'),/UI receipt exceeds evidence budget/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});

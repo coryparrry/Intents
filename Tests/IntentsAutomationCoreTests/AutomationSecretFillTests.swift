@@ -528,18 +528,69 @@ final class AutomationSecretFillTests: XCTestCase, @unchecked Sendable {
     }
     func testNativeExecutorRetainsOwnerCleanupAndReturnsNoSuccessAfterStop() async throws {
         let gate = Gate(), drained = Probe()
+        let stopRequested = expectation(description: "Stop cancels the retained owner-cleanup operation")
         let f = try await fixture(adapter: .init(validateSink: { _, _ in }, submit: { _, _, _ in }))
         defer { try? FileManager.default.removeItem(at: f.root) }
         let request = try await bind(f); try await grant(request, fixture: f)
         let program = try secretProgram(f.scope), bindings = AutomationSecretFillBindings(program: try secretProgram(f.scope), session: f.session)
         try await bindings.register(request, operationID: "fill-password")
-        let executor = AutomationNativeSecretExecutor(program: program, bindings: bindings, drainNativeOwner: { await gate.hold() })
+        let executor = AutomationNativeSecretExecutor(program: program, bindings: bindings, drainNativeOwner: {
+            await withTaskCancellationHandler { await gate.hold() } onCancel: { stopRequested.fulfill() }
+        })
         let pending = Task { try await executor.run() }; await gate.wait()
         let stop = Task { await executor.closeAndDrain(); await drained.submit("done") }
-        for _ in 0..<20 { await Task.yield() }
+        // Yielding does not establish that the stop task has begun. The retained
+        // operation's cancellation handler proves the stop crossed that boundary.
+        await fulfillment(of: [stopRequested], timeout: 10)
         let early = await drained.count(); XCTAssertEqual(early, 0)
         await gate.resume(); await stop.value
         await denied { _ = try await pending.value }
+        let final = await drained.count(); XCTAssertEqual(final, 1)
+    }
+
+    func testNativeExecutorDelayedStopStillRetainsOwnerCleanup() async throws {
+        let owner = Gate(), admission = Gate(), drained = Probe()
+        let stopRequested = expectation(description: "Admitted stop cancels the retained operation")
+        let f = try await fixture(adapter: .init(validateSink: { _, _ in }, submit: { _, _, _ in }))
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let request = try await bind(f); try await grant(request, fixture: f)
+        let program = try secretProgram(f.scope), bindings = AutomationSecretFillBindings(program: try secretProgram(f.scope), session: f.session)
+        try await bindings.register(request, operationID: "fill-password")
+        let executor = AutomationNativeSecretExecutor(program: program, bindings: bindings, drainNativeOwner: {
+            await withTaskCancellationHandler { await owner.hold() } onCancel: { stopRequested.fulfill() }
+        })
+        let pending = Task { try await executor.run() }; await owner.wait()
+        let stop = Task {
+            await admission.hold()
+            await executor.closeAndDrain(); await drained.submit("done")
+        }
+        // Explicitly delay stop admission instead of depending on scheduler speed.
+        await admission.wait()
+        let queued = await drained.count(); XCTAssertEqual(queued, 0)
+        await admission.resume()
+        await fulfillment(of: [stopRequested], timeout: 10)
+        let early = await drained.count(); XCTAssertEqual(early, 0)
+        await owner.resume(); await stop.value
+        await denied { _ = try await pending.value }
+        let final = await drained.count(); XCTAssertEqual(final, 1)
+    }
+
+    func testNativeExecutorCompletionBeforeStopRemainsSuccessful() async throws {
+        let gate = Gate(), drained = Probe()
+        let f = try await fixture(adapter: .init(validateSink: { _, _ in }, submit: { _, _, _ in }))
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        let request = try await bind(f); try await grant(request, fixture: f)
+        let program = try secretProgram(f.scope), bindings = AutomationSecretFillBindings(program: try secretProgram(f.scope), session: f.session)
+        try await bindings.register(request, operationID: "fill-password")
+        let executor = AutomationNativeSecretExecutor(program: program, bindings: bindings, drainNativeOwner: {
+            await gate.hold(); await drained.submit("done")
+        })
+        let pending = Task { try await executor.run() }; await gate.wait()
+        await gate.resume()
+        let result = try await pending.value
+        XCTAssertEqual(result.object?["complete"], .bool(true))
+        await executor.closeAndDrain(); await executor.closeAndDrain()
+        let final = await drained.count(); XCTAssertEqual(final, 1)
     }
 
     func testOpaqueTransportMustCorrelateActualNativeCompletion() async throws {

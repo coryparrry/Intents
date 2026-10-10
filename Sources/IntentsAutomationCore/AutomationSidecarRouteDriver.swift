@@ -1,13 +1,31 @@
 #if os(macOS)
 import Foundation
 
+/// Process surface the UI route driver controls; the packaged child process is the production conformer.
+protocol AutomationSidecarRouteProcess: Sendable {
+    var rpc: AutomationRPC { get async }
+    var processIdentity: AutomationProcessIdentity? { get async }
+    func start() async throws
+    func handshake() async throws -> AutomationJSON
+    func stop() async -> Bool
+}
+extension AutomationSidecarProcess: AutomationSidecarRouteProcess {}
+
+struct AutomationSidecarRouteLauncher: Sendable {
+    var configure: @Sendable (_ bundleURL: URL, _ stateDirectory: URL, _ teamID: String, _ developerDirectory: URL?) throws -> AutomationSidecarProcess.Configuration
+    var spawn: @Sendable (AutomationSidecarProcess.Configuration, @escaping AutomationRPC.ReverseHandler) throws -> any AutomationSidecarRouteProcess
+    static let packaged = Self(
+        configure: { try AutomationRuntimeBundle.verifiedConfiguration(bundleURL: $0, stateDirectory: $1, expectedTeamID: $2, developerDirectory: $3) },
+        spawn: { try AutomationSidecarProcess(configuration: $0, reverse: $1) })
+}
+
 /// Concrete native UI driver. The native coordinator retains assertions and verdicts.
 public actor AutomationSidecarRouteDriver: AutomationRouteDriver {
     private struct Control: Sendable {
         var scope: AutomationScope
         var lease: AutomationDeviceLeaseManager.Lease
         var segment: AutomationSegment
-        var process: AutomationSidecarProcess
+        var process: any AutomationSidecarRouteProcess
         var executing = false
         var acquired = false
     }
@@ -23,6 +41,7 @@ public actor AutomationSidecarRouteDriver: AutomationRouteDriver {
     private let releaseVerifier: any AutomationDeviceReleaseVerifier
     private let developerDirectory: URL?
     private let controllerBundleIDs: [String]
+    private let launcher: AutomationSidecarRouteLauncher
     private var control: Control?
     private var releasing = false
     private var acquiringScope: AutomationScope?
@@ -34,6 +53,13 @@ public actor AutomationSidecarRouteDriver: AutomationRouteDriver {
     public init(bundleURL: URL, expectedTeamID: String, stateDirectory: URL, approval: RunApproval,
                 leases: AutomationDeviceLeaseManager, artifacts: AutomationArtifactRegistry, subjectVerifier: any AutomationSubjectVerifier, releaseVerifier: any AutomationDeviceReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil,
                 developerDirectory: URL? = nil, controllerBundleIDs: [String] = []) throws {
+        try self.init(bundleURL: bundleURL, expectedTeamID: expectedTeamID, stateDirectory: stateDirectory, approval: approval, leases: leases, artifacts: artifacts,
+                      subjectVerifier: subjectVerifier, releaseVerifier: releaseVerifier, campaignBudget: campaignBudget, developerDirectory: developerDirectory,
+                      controllerBundleIDs: controllerBundleIDs, launcher: .packaged)
+    }
+    init(bundleURL: URL, expectedTeamID: String, stateDirectory: URL, approval: RunApproval,
+         leases: AutomationDeviceLeaseManager, artifacts: AutomationArtifactRegistry, subjectVerifier: any AutomationSubjectVerifier, releaseVerifier: any AutomationDeviceReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil,
+         developerDirectory: URL? = nil, controllerBundleIDs: [String] = [], launcher: AutomationSidecarRouteLauncher) throws {
         guard !approval.runID.isEmpty else { throw AutomationContractError.invalidIdentity }
         try Self.validateControllerScope(target: approval.target, bundleIDs: controllerBundleIDs, developerDirectory: developerDirectory)
         let selectedDeveloper = try developerDirectory.map(AutomationPath.canonical)
@@ -50,6 +76,7 @@ public actor AutomationSidecarRouteDriver: AutomationRouteDriver {
         self.subjectVerifier = subjectVerifier; self.releaseVerifier = releaseVerifier
         self.developerDirectory = selectedDeveloper
         self.controllerBundleIDs = controllerBundleIDs
+        self.launcher = launcher
     }
     public func acquire(plan: AutomationCase, segment: AutomationSegment, scope: AutomationScope,
                         lease: AutomationDeviceLeaseManager.Lease) async throws {
@@ -70,14 +97,14 @@ public actor AutomationSidecarRouteDriver: AutomationRouteDriver {
         guard acquiringScope == scope, !revokedGenerations.contains(lease.generation) else { throw AutomationContractError.unknownLease }
         let directory = root.appendingPathComponent("control-\(lease.generation)")
         guard !FileManager.default.fileExists(atPath: directory.path) else { throw AutomationContractError.ambiguousDispatch }
-        let configuration = try AutomationRuntimeBundle.verifiedConfiguration(bundleURL: bundleURL, stateDirectory: directory, expectedTeamID: teamID, developerDirectory: developerDirectory)
+        let configuration = try launcher.configure(bundleURL, directory, teamID, developerDirectory)
         try await authority.approve(scope: scope, lease: lease, segment: segment, actions: program.approvedActions(), maximumControllerCalls: plan.budget.controllerCalls, maximumUIActions: plan.budget.uiActions)
         let approvedLeaseCurrent = await leases.isCurrent(lease)
         guard approvedLeaseCurrent, !revokedGenerations.contains(lease.generation), acquiringScope == scope else {
             try? await authority.revoke(scope: scope); throw AutomationContractError.unknownLease
         }
         let authority = self.authority
-        let process = try AutomationSidecarProcess(configuration: configuration, reverse: { method, input in
+        let process = try launcher.spawn(configuration, { method, input in
             await authority.review(method: method, params: input)
         })
         control = .init(scope: scope, lease: lease, segment: segment, process: process)
@@ -144,7 +171,7 @@ public actor AutomationSidecarRouteDriver: AutomationRouteDriver {
         var shutdown: AutomationJSON?
         var shutdownErrorType: String?
         var shutdownErrorCode: String?
-        do { shutdown = try await AutomationSidecarShutdown.request(active.process.rpc) }
+        do { shutdown = try await AutomationSidecarShutdown.request(await active.process.rpc) }
         catch {
             shutdownErrorType = String(reflecting: type(of: error))
             shutdownErrorCode = AutomationSidecarReleaseDiagnostics.errorCode(error)
