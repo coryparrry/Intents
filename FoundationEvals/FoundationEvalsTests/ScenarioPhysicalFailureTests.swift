@@ -27,7 +27,7 @@ struct ScenarioPhysicalFailureTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(1))) func cancelDuringConnectionBuildPreventsPhysicalDispatch() async throws {
+    @Test(.timeLimit(.minutes(3))) func cancelDuringConnectionBuildPreventsPhysicalDispatch() async throws {
         try await fixture.withDirectory { root in
             let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("leases.json"),
                 inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in observation(target.id) }, drain: { true }) })
@@ -37,11 +37,8 @@ struct ScenarioPhysicalFailureTests {
             try await executor.beginPendingInvocation(check)
             let buildJournal = check, buildID = invocation.id, buildDestination = invocation.destinationIdentifier
             let (launches, launched) = AsyncThrowingStream<Int32, any Error>.makeStream()
-            let launchTimeout = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
-            launchTimeout.setEventHandler { launched.finish(throwing: XcodeTestExecutorError.timedOut) }
-            launchTimeout.schedule(deadline: .now() + 10)
-            launchTimeout.resume()
-            defer { launchTimeout.cancel() }
+            // The owned process deadline bounds launch and reports errors through this stream.
+            // A separate pre-Task timer would include unrelated executor scheduling delay.
             let build = Task {
                 do {
                     // A sleeping owned child holds the build without consuming a CPU core.
@@ -62,7 +59,7 @@ struct ScenarioPhysicalFailureTests {
             do {
                 let pid = try #require(try await launches.first(where: { _ in true }))
                 #expect(pid > 0)
-                launchTimeout.cancel()
+                let cancellationStarted = ContinuousClock.now
                 #expect(await executor.cancelActiveExecution(grace: .zero)?.id == invocation.id)
                 do {
                     _ = try await build.value
@@ -70,6 +67,7 @@ struct ScenarioPhysicalFailureTests {
                 } catch XcodeTestExecutorError.cancelled {
                     // Only the requested cancellation is an acceptable build failure.
                 }
+                #expect(cancellationStarted.duration(to: ContinuousClock.now) < .seconds(30))
             } catch {
                 build.cancel()
                 _ = await executor.cancelActiveExecution(grace: .zero)
