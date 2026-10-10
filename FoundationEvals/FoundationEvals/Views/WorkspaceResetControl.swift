@@ -14,10 +14,11 @@ struct WorkspaceResetControl: View {
                 }
             }
         } label: {
-            Label("Start from Scratch", systemImage: "arrow.counterclockwise")
+            Label("More Actions", systemImage: "ellipsis")
         }
+        .menuIndicator(.hidden)
         .accessibilityIdentifier("Start from Scratch")
-        .help("Reset the suite or clear saved runs and traces")
+        .help("Reset the suite or clear its saved runs and traces")
         .disabled(!store.canResetWorkspace)
         .alert(action.title, isPresented: $isConfirming) {
             Button("Cancel", role: .cancel) {}

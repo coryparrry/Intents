@@ -45,10 +45,8 @@ struct DeveloperIntegrationGuideView: View {
 
     private func step<Content: View>(_ number: Int, title: String, detail: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 9) {
-                Text(number.formatted()).font(.caption.weight(.semibold))
-                    .frame(width: 23, height: 23).background(Color.accentColor.opacity(0.1), in: .circle)
-                    .foregroundStyle(Color.accentColor)
+            HStack(spacing: 10) {
+                WorkspaceStepNumber(number: number, isCurrent: true)
                 Text(title).font(.headline)
             }
             Text(detail).font(.callout).foregroundStyle(.secondary)
@@ -109,20 +107,19 @@ struct DeveloperConnectionBanner: View {
     @State private var showsDevices = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                WorkspaceIcon(symbol: "laptopcomputer.and.iphone", size: 32, presentation: .header)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Test inside your app").font(.callout.weight(.semibold))
-                    Text("Connect a Swift app to evaluate the real feature on iPhone, iPad, and Mac.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        HStack(alignment: .center, spacing: 14) {
+            WorkspaceIcon(symbol: "laptopcomputer.and.iphone", size: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Test inside your app").font(.headline)
+                Text("Connect a Swift app to evaluate the real feature on iPhone, iPad, and Mac.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 12)
             Button("Devices & Apps…") { showsDevices = true }
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .controlSize(.large)
         }
-        .padding(18)
+        .padding(.horizontal, 20).padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .workspaceSurface()
         .sheet(isPresented: $showsDevices) { DeveloperDevicesView(runners: runners) }

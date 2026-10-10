@@ -40,6 +40,7 @@ struct ScenarioReportView: View {
             }
             .workspacePage()
         }
+        .accessibilityIdentifier("Intent Lab results scroll")
         .task(id: coordinator.selectedExecutionID) {
             await reloadAssessmentDecision()
         }

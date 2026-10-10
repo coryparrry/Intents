@@ -15,10 +15,10 @@ struct CaseImportView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Import cases").font(.title2.bold())
+                    Text("Import cases").font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
                     Text("Map UTF-8 CSV or JSONL columns before changing the suite.")
                         .foregroundStyle(.secondary)
                 }
@@ -28,69 +28,71 @@ struct CaseImportView: View {
                     isChoosingFile = true
                 }
             }
-
-            if fileSelection.data != nil {
-                LabeledContent("File", value: filename)
-                Picker("Format", selection: $format) {
-                    Text("CSV").tag(EvaluationCaseImportFormat.csv)
-                    Text("JSON Lines").tag(EvaluationCaseImportFormat.jsonLines)
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: format) { _, _ in prepareColumns() }
-
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-                    GridRow { Text("Name"); optionalColumnPicker(selection: $nameColumn) }
-                    GridRow { Text("Prompt"); requiredColumnPicker(selection: $promptColumn) }
-                    GridRow { Text("Expected"); optionalColumnPicker(selection: $expectedColumn) }
-                }
-                .onChange(of: nameColumn) { _, _ in updatePreview() }
-                .onChange(of: promptColumn) { _, _ in updatePreview() }
-                .onChange(of: expectedColumn) { _, _ in updatePreview() }
-
-                if let preview = fileSelection.preview {
-                    if preview.rows.isEmpty {
-                        ContentUnavailableView("No importable rows", systemImage: "exclamationmark.tablecells")
-                    } else {
-                        Table(preview.rows) {
-                            TableColumn("Line") { Text($0.sourceLine.formatted()) }.width(45)
-                            TableColumn("Name", value: \.name)
-                            TableColumn("Prompt", value: \.prompt)
-                            TableColumn("Expected", value: \.expected)
+            .padding(24)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if fileSelection.data != nil {
+                        LabeledContent("File", value: filename)
+                        Picker("Format", selection: $format) {
+                            Text("CSV").tag(EvaluationCaseImportFormat.csv)
+                            Text("JSON Lines").tag(EvaluationCaseImportFormat.jsonLines)
                         }
-                        .frame(minHeight: 190)
+                        .pickerStyle(.segmented)
+                        .onChange(of: format) { _, _ in prepareColumns() }
+
+                        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+                            GridRow { Text("Name"); optionalColumnPicker(selection: $nameColumn) }
+                            GridRow { Text("Prompt"); requiredColumnPicker(selection: $promptColumn) }
+                            GridRow { Text("Expected"); optionalColumnPicker(selection: $expectedColumn) }
+                        }
+                        .onChange(of: nameColumn) { _, _ in updatePreview() }
+                        .onChange(of: promptColumn) { _, _ in updatePreview() }
+                        .onChange(of: expectedColumn) { _, _ in updatePreview() }
+
+                        if let preview = fileSelection.preview {
+                            if preview.rows.isEmpty {
+                                WorkspaceEmptyState(symbol: "tablecells", title: "No importable rows", detail: "Check the column mapping and the issues below.")
+                            } else {
+                                Table(preview.rows) {
+                                    TableColumn("Line") { Text($0.sourceLine.formatted()) }.width(45)
+                                    TableColumn("Name", value: \.name)
+                                    TableColumn("Prompt", value: \.prompt)
+                                    TableColumn("Expected", value: \.expected)
+                                }
+                                .frame(height: 190)
+                            }
+                            ForEach(preview.issues) { issue in
+                                WorkspaceNotice(.warning, message: issue.line.map { "Line \($0): \(issue.message)" } ?? issue.message)
+                            }
+                        }
+                    } else {
+                        WorkspaceEmptyState(symbol: "tablecells", title: "Choose a case file",
+                                            detail: "Preview your prompts and expected answers before adding them to the suite.")
+                            .workspaceSurface()
                     }
-                    ForEach(preview.issues) { issue in
-                        Label(
-                            issue.line.map { "Line \($0): \(issue.message)" } ?? issue.message,
-                            systemImage: "exclamationmark.triangle.fill"
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+
+                    if let errorMessage {
+                        WorkspaceNotice(.failure, message: errorMessage)
                     }
+
                 }
-            } else {
-                ContentUnavailableView(
-                    "Choose a case file",
-                    systemImage: "tablecells",
-                    description: Text("Nothing is imported until the preview validates.")
-                )
+                .padding(24)
             }
-
-            if let errorMessage {
-                Label(errorMessage, systemImage: "xmark.octagon.fill")
-                    .foregroundStyle(.red)
-            }
-
+            .background(WorkspaceStyle.canvas)
+            .accessibilityIdentifier("Case import preview")
+            Divider()
             HStack {
-                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Import \(importCount) Cases") { importCases() }
                     .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(fileSelection.preview?.canImport != true || importCount == 0)
             }
+            .padding(.horizontal, 24).padding(.vertical, 16)
         }
-        .padding(22)
-        .frame(width: 760, height: 590)
+        .frame(width: 760, height: 620)
         .fileImporter(
             isPresented: $isChoosingFile,
             allowedContentTypes: [.commaSeparatedText, .json, .plainText],

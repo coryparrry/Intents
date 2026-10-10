@@ -384,9 +384,16 @@ final class FoundationEvalsUITests: XCTestCase {
         search.typeText("No matching case 582")
         XCTAssertTrue(app.staticTexts["No matching cases"].exists)
         XCTAssertFalse(name.exists, "An invisible case must not remain editable")
+        try app.windows.firstMatch.screenshot().pngRepresentation.write(
+            to: UITestStorage.screenshotURL(name: "empty-case-search"))
+        XCTAssertLessThanOrEqual(app.buttons["Add Case"].frame.maxY, app.windows.firstMatch.frame.maxY,
+                                 "Empty search results must keep the case actions inside the window")
         app.buttons["Add Case"].click()
         XCTAssertTrue(name.waitForExistence(timeout: 2))
         XCTAssertEqual(search.value as? String, "", "Selecting a new case clears an incompatible search")
+        XCTAssertLessThanOrEqual(app.buttons["Add Case"].frame.maxY, app.windows.firstMatch.frame.maxY)
+        try app.windows.firstMatch.screenshot().pngRepresentation.write(
+            to: UITestStorage.screenshotURL(name: "case-search-recovered"))
     }
 
     @MainActor

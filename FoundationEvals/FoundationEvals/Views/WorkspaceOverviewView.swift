@@ -17,6 +17,7 @@ struct WorkspaceOverviewView: View {
     private var records: [EvaluationSuiteRecord] { store.suiteRecords.filter { !$0.isArchived } }
     private var summaries: [SuiteOverviewSummary] { records.compactMap { summary(for: $0) } }
     private var isLoaded: Bool { summaries.count == records.count }
+    private var hasAnyRun: Bool { summaries.contains { $0.lastCheckedAt != nil } }
     private var visibleRecords: [EvaluationSuiteRecord] {
         records.filter { record in
             let value = summary(for: record)
@@ -41,35 +42,44 @@ struct WorkspaceOverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 28) {
                 header
                 if let notice = store.migrationNotice {
-                    Label(notice, systemImage: "tray.and.arrow.down")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .padding(.horizontal, 14).padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .workspaceInset()
+                    WorkspaceNotice(.info, message: notice)
                 }
-                WorkspaceHealthPanel(summaries: summaries, total: records.count, isLoaded: isLoaded, compact: availableWidth < 700)
-                let wide = availableWidth >= 820
-                let layout = wide
-                    ? AnyLayout(HStackLayout(alignment: .top, spacing: 20))
-                    : AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
-                layout {
-                    suitePanel.frame(maxWidth: .infinity)
-                    VStack(spacing: 20) {
-                        WorkspaceActivityCard(summaries: summaries, disabled: isBusy, open: openLatest)
-                        DeveloperConnectionBanner()
+                Group {
+                    if isLoaded, !hasAnyRun {
+                        HomeOnboarding(
+                            hasSuite: !records.isEmpty,
+                            hasCases: summaries.contains { $0.caseCount > 0 },
+                            disabled: isBusy,
+                            primaryTitle: records.first.map { "Open \(summary(for: $0)?.name ?? $0.name)" } ?? "Create a Suite"
+                        ) {
+                            if let first = records.first { open(first.id) } else { isCreatingSuite = true }
+                        }
+                    } else {
+                        HomeHero(summaries: summaries, total: records.count, isLoaded: isLoaded, compact: availableWidth < 760)
                     }
-                    .frame(width: wide ? 300 : nil)
-                    .frame(maxWidth: wide ? 300 : .infinity)
                 }
+                .transition(.blurReplace)
+                gallery
+                if hasAnyRun {
+                    VStack(alignment: .leading, spacing: 14) {
+                        WorkspaceSectionTitle("Recent runs")
+                        RecentRunsTimeline(summaries: summaries, disabled: isBusy, open: openRun)
+                    }
+                    .transition(.opacity)
+                }
+                DeveloperConnectionBanner()
             }
+            .animation(reduceMotion ? nil : WorkspaceStyle.pageMotion, value: isLoaded)
+            .animation(reduceMotion ? nil : WorkspaceStyle.pageMotion, value: hasAnyRun)
             .workspacePage()
         }
         .background(WorkspaceStyle.canvas)
         .onGeometryChange(for: CGFloat.self) { min($0.size.width, WorkspaceStyle.readableWidth) - 2 * WorkspaceStyle.pagePadding } action: { availableWidth = $0 }
         .navigationTitle("Overview")
+        .searchable(text: $search, placement: .toolbar, prompt: "Find a suite")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh", systemImage: "arrow.clockwise") { refresh += 1 }
@@ -100,7 +110,7 @@ struct WorkspaceOverviewView: View {
         WorkspacePageHeader(
             store.selectedProject.name,
             eyebrow: eyebrow,
-            subtitle: "Your Foundation Models evaluations, at a glance."
+            subtitle: "See how Apple’s Foundation Models answer your prompts."
         ) {
             Button { isCreatingSuite = true } label: {
                 Label("New Suite", systemImage: "plus").labelStyle(.titleAndIcon)
@@ -111,50 +121,40 @@ struct WorkspaceOverviewView: View {
         }
     }
 
-    private var suitePanel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            WorkspacePanelHeader("Suites", count: records.count) {
-                WorkspaceSearchField(prompt: "Find a suite", text: $search)
-                    .frame(maxWidth: 200)
-                Button {
-                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { attentionOnly.toggle() }
-                } label: {
-                    Image(systemName: attentionOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                        .font(.title3)
-                        .foregroundStyle(attentionOnly ? Color.accentColor : .secondary)
+    private var gallery: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            WorkspaceSectionTitle("Suites", count: records.count) {
+                Picker("Show", selection: $attentionOnly) {
+                    Text("All").tag(false)
+                    Text("Needs attention").tag(true)
                 }
-                .buttonStyle(.plain)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
                 .accessibilityLabel("Show only suites needing attention")
-                .accessibilityValue(attentionOnly ? "On" : "Off")
-                .help(attentionOnly ? "Show all suites" : "Show suites needing attention")
             }
-            if attentionOnly {
-                Label("Showing suites that need attention", systemImage: "flag.fill")
-                    .font(.caption.weight(.medium)).foregroundStyle(WorkspaceStyle.warning)
-                    .padding(.horizontal, 18).padding(.bottom, 10)
-            }
-            Divider()
-            if visibleRecords.isEmpty {
-                WorkspaceEmptyState(symbol: records.isEmpty ? "square.stack" : search.isEmpty ? "checkmark.circle" : "magnifyingglass",
-                                    title: records.isEmpty ? "Your first evaluation starts here" : search.isEmpty ? "Nothing needs attention" : "No matching suites",
-                                    detail: records.isEmpty ? "Create a suite to organise your test cases and compare results." : search.isEmpty ? "Switch the filter off to see all your suites." : "Try another name or clear the filter.")
+            if visibleRecords.isEmpty, !records.isEmpty {
+                WorkspaceEmptyState(symbol: search.isEmpty ? "checkmark.circle" : "magnifyingglass",
+                                    title: search.isEmpty ? "Nothing needs attention" : "No matching suites",
+                                    detail: search.isEmpty ? "Every suite is passing or waiting for its first run." : "Try another name or clear the search.")
+                    .workspaceSurface()
             } else {
-                LazyVStack(spacing: 0) {
-                    ForEach(visibleRecords) { record in
-                        WorkspaceSuiteRow(summary: summary(for: record), name: record.name,
-                                          isRunning: store.isRunning && record.id == store.selectedSuiteID,
-                                          disabled: isBusy, open: { open(record.id) }, run: { open(record.id, run: true) })
-                        if record.id != visibleRecords.last?.id { Divider().padding(.leading, 64) }
+                VStack(spacing: 0) {
+                    ForEach(Array(visibleRecords.enumerated()), id: \.element.id) { index, record in
+                        SuiteRow(summary: summary(for: record), name: record.name,
+                                 isRunning: store.isRunning && record.id == store.selectedSuiteID,
+                                 disabled: isBusy, open: { open(record.id) }, run: { open(record.id, run: true) })
+                            .transition(.opacity)
+                        if index < visibleRecords.count - 1 {
+                            Divider().padding(.leading, 56)
+                        }
                     }
                 }
+                .padding(.vertical, 4)
+                .workspaceSurface()
+                .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: visibleRecords.map(\.id))
             }
-            Divider()
-            WorkspaceMetaLabel("Suites and evidence are saved on this Mac.", symbol: "internaldrive")
-                .font(.caption).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 18).padding(.vertical, 12)
         }
-        .workspaceSurface()
     }
 
     private func open(_ id: UUID, run: Bool = false) {
@@ -165,29 +165,10 @@ struct WorkspaceOverviewView: View {
         } catch { store.notice = error.localizedDescription }
     }
 
-    private func openLatest(_ summary: SuiteOverviewSummary) {
-        guard let runID = summary.latestRunID else { return }
+    private func openRun(_ summary: SuiteOverviewSummary, _ runID: UUID) {
         do {
             if summary.id != store.selectedSuiteID { try store.switchSuite(id: summary.id) }
             store.selection = .run(runID)
         } catch { store.notice = error.localizedDescription }
-    }
-}
-
-extension SuiteCheckState {
-    var color: Color {
-        switch self {
-        case .passed: WorkspaceStyle.success
-        case .failed: WorkspaceStyle.failure
-        case .changed, .incomplete, .unavailable: WorkspaceStyle.warning
-        case .notRun, .collected: .secondary
-        }
-    }
-
-    var needsAttention: Bool {
-        switch self {
-        case .changed, .failed, .incomplete, .unavailable: true
-        case .notRun, .passed, .collected: false
-        }
     }
 }

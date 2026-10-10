@@ -6,10 +6,10 @@ enum SuiteCheckState: String, Sendable {
     var title: String {
         switch self {
         case .notRun: "Not run"
-        case .changed: "Needs a new check"
-        case .passed: "Responses passed"
-        case .failed: "Needs attention"
-        case .collected: "Awaiting assessment"
+        case .changed: "Out of date"
+        case .passed: "Passed"
+        case .failed: "Failed"
+        case .collected: "Not scored"
         case .incomplete: "Incomplete"
         case .unavailable: "Could not load"
         }
@@ -30,6 +30,11 @@ enum SuiteCheckState: String, Sendable {
     static func evaluate(run: EvaluationRun?, currentRevision: String, hasDraft: Bool) -> Self {
         guard let run else { return .notRun }
         if hasDraft || run.suiteRevision != currentRevision { return .changed }
+        return savedRun(run)
+    }
+
+    /// The outcome at the time of execution, independent of later edits to the suite.
+    static func savedRun(_ run: EvaluationRun) -> Self {
         if run.results.isEmpty || run.cancelled || run.stoppedEarly || run.results.count != run.plannedResultCount
             || run.errorCount > 0 || run.results.contains(where: { $0.status == .error })
             || run.selectedAssessment?.samples.contains(where: { $0.status == .error }) == true { return .incomplete }
@@ -37,6 +42,16 @@ enum SuiteCheckState: String, Sendable {
         if run.scoredCount != run.results.count { return .incomplete }
         return run.failedCount > 0 ? .failed : .passed
     }
+}
+
+/// One saved run reduced to what a trend chart needs.
+struct SuiteHistoryPoint: Identifiable, Hashable, Sendable {
+    var id: UUID
+    var date: Date
+    /// Scored pass rate from 0 to 1, or nil when the run assigned no scores.
+    var rate: Double?
+    var hasFailures: Bool
+    var state: SuiteCheckState
 }
 
 struct SuiteOverviewSummary: Identifiable, Sendable {
@@ -54,6 +69,13 @@ struct SuiteOverviewSummary: Identifiable, Sendable {
     var hasDraft = false
     var loadError: String?
     var repositoryChanged = false
+    /// Recent runs, oldest first.
+    var history: [SuiteHistoryPoint] = []
+
+    var latestPassRate: Double? {
+        let scored = passedCount + failedCount
+        return scored == 0 ? nil : Double(passedCount) / Double(scored)
+    }
 
     init(record: EvaluationSuiteRecord) {
         id = record.id
@@ -76,6 +98,17 @@ struct SuiteOverviewSummary: Identifiable, Sendable {
         errorCount = run?.errorCount ?? 0
         let approval = localState.baselineApprovals.last { $0.isCurrent }
         approvedRunID = BaselinePresentation.approvedRun(approval: approval, runs: runs)?.id
+        history = SuiteHistoryPoint.recent(runs)
+    }
+}
+
+extension SuiteHistoryPoint {
+    static func recent(_ runs: [EvaluationRun], limit: Int = 24) -> [SuiteHistoryPoint] {
+        runs.sorted { $0.startedAt < $1.startedAt }.suffix(limit).map {
+            SuiteHistoryPoint(id: $0.id, date: $0.startedAt, rate: $0.passRate,
+                              hasFailures: $0.failedCount > 0 || $0.errorCount > 0,
+                              state: .savedRun($0))
+        }
     }
 }
 

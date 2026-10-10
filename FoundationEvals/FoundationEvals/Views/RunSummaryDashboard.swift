@@ -61,7 +61,7 @@ struct RunSummaryDashboard: View {
             } else {
                 Chart(Array(run.results.enumerated()), id: \.element.id) { index, result in
                     AreaMark(
-                        x: .value("Sample", index + 1),
+                        x: .value("Sample", Double(index + 1)),
                         y: .value("Seconds", result.durationMilliseconds / 1_000)
                     )
                     .foregroundStyle(LinearGradient(
@@ -70,28 +70,35 @@ struct RunSummaryDashboard: View {
                     ))
                     .interpolationMethod(.monotone)
                     LineMark(
-                        x: .value("Sample", index + 1),
+                        x: .value("Sample", Double(index + 1)),
                         y: .value("Seconds", result.durationMilliseconds / 1_000)
                     )
                     .foregroundStyle(Color.accentColor)
                     .lineStyle(StrokeStyle(lineWidth: 1.75, lineCap: .round, lineJoin: .round))
                     .interpolationMethod(.monotone)
                     if run.results.count == 1 {
-                        PointMark(x: .value("Sample", index + 1), y: .value("Seconds", result.durationMilliseconds / 1_000))
+                        PointMark(x: .value("Sample", Double(index + 1)), y: .value("Seconds", result.durationMilliseconds / 1_000))
                             .foregroundStyle(Color.accentColor)
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 3)) {
+                    AxisMarks(values: sampleAxisValues) {
                         AxisValueLabel().font(.system(size: 9))
                     }
                 }
                 .chartYAxis {
-                    AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) {
+                    AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
-                        AxisValueLabel().font(.system(size: 9))
+                        AxisValueLabel {
+                            if let seconds = value.as(Double.self) {
+                                Text("\(seconds.formatted(.number.precision(.fractionLength(0...2)))) s")
+                                    .font(.system(size: 9))
+                            }
+                        }
                     }
                 }
+                .chartXAxisLabel("Sample", position: .bottom, alignment: .center)
+                .chartXScale(domain: 0.5...(Double(run.results.count) + 0.5))
                 .chartYScale(domain: .automatic(includesZero: true))
                 .accessibilityLabel("Response latency in seconds by sample")
                 .help("Each sample is one attempt to answer a test case. This chart includes attempts that ended with an error.")
@@ -99,6 +106,12 @@ struct RunSummaryDashboard: View {
             }
         }
         .summaryCard()
+    }
+
+    private var sampleAxisValues: [Double] {
+        let count = run.results.count
+        guard count > 3 else { return (1...count).map(Double.init) }
+        return [1, Double((count + 1) / 2), Double(count)]
     }
 
     private var unscoredCount: Int { run.results.count - run.scoredCount }
@@ -135,7 +148,7 @@ struct RunSummaryDashboard: View {
             Spacer(minLength: 0)
             Text("Only scored samples count toward pass rate.")
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .summaryCard()
     }
@@ -147,12 +160,16 @@ struct RunSummaryDashboard: View {
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 16) {
                 GridRow {
                     metric(run.passRate.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—", label: "Scored pass rate")
-                    metric("\(run.results.count) / \(run.plannedResultCount)", label: "Completed")
+                    metric("\(run.results.count) / \(run.plannedResultCount)", label: "Collected")
                 }
                 GridRow {
                     metric(run.totalTokens.formatted(), label: "Total tokens")
                     if let average = run.averageScore {
-                        metric("\(average.formatted(.number.precision(.fractionLength(1)))) / 4", label: "Rubric average")
+                        metric(
+                            "\(average.formatted(.number.precision(.fractionLength(1)))) / 4",
+                            label: "Rubric average",
+                            detail: "Scores 1–4 · ≥\(run.judgePassingScore ?? EvaluationSuite.judgePassingScore) per requirement to pass"
+                        )
                     } else {
                         metric(run.errorCount.formatted(), label: "Issues")
                     }
@@ -173,7 +190,7 @@ struct RunSummaryDashboard: View {
         .font(.callout)
     }
 
-    private func metric(_ value: String, label: LocalizedStringKey) -> some View {
+    private func metric(_ value: String, label: LocalizedStringKey, detail: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
                 .font(.system(size: 22, weight: .semibold, design: .rounded))
@@ -183,6 +200,13 @@ struct RunSummaryDashboard: View {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let detail {
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

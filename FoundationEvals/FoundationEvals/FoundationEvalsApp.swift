@@ -55,7 +55,7 @@ struct FoundationEvalsApp: App {
         #if DEBUG
         // Hosted tests must not inherit a developer's saved telemetry consent.
         let environment = ProcessInfo.processInfo.environment
-        if environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil {
+        if environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil || acceptanceStorageDirectory != nil {
             return nil
         }
         #endif
@@ -110,10 +110,29 @@ struct FoundationEvalsApp: App {
         return nil
     }
 
+    private static func sizeVerificationWindow() async {
+        #if DEBUG
+        guard acceptanceStorageDirectory != nil else { return }
+        let arguments = ProcessInfo.processInfo.arguments
+        func dimension(_ flag: String, within range: ClosedRange<Double>) -> Double? {
+            guard let index = arguments.firstIndex(of: flag),
+                  arguments.indices.contains(index + 1),
+                  let value = Double(arguments[index + 1]), range.contains(value) else { return nil }
+            return value
+        }
+        guard let width = dimension("--evaluation-window-width", within: 1_000...1_600) else { return }
+        let height = dimension("--evaluation-window-height", within: 700...900) ?? 780
+        await Task.yield()
+        guard let window = NSApplication.shared.windows.first(where: { $0.canBecomeMain }) else { return }
+        window.setContentSize(NSSize(width: width, height: height))
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup(id: "evaluation-main", for: String.self) { _ in
             ContentView(store: store, control: appControl)
                 .environment(runnerStore)
+                .task { await Self.sizeVerificationWindow() }
                 .task(id: mcpSettings.installationState) {
                     appDelegate.runtime = mcpRuntime
                     guard !ProductionNativeWorkerCommand.isRequested, !ProcessInfo.processInfo.arguments.contains("--disable-mcp-autostart") else { return }

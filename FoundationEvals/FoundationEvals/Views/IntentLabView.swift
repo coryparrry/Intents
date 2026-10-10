@@ -7,30 +7,37 @@ struct IntentLabView: View {
     @Environment(DeveloperRunnerStore.self) private var runnerStore
     @State private var section: IntentLabSection = .setup
     @State private var diagnosticLanes: Set<ScenarioLane> = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                IntentLabHeader(coordinator: coordinator)
-                switch section {
-                case .setup:
-                    ScrollView {
-                        AppleTestConnectionView(coordinator: coordinator, onContinue: { section = .scenario }).workspacePage()
+                IntentLabHeader(coordinator: coordinator, section: section)
+                ZStack(alignment: .topLeading) {
+                    Group {
+                        switch section {
+                        case .setup:
+                            ScrollView {
+                                AppleTestConnectionView(coordinator: coordinator, onContinue: { section = .scenario })
+                                    .workspacePage()
+                            }
+                            .frame(minHeight: 0, maxHeight: .infinity)
+                        case .scenario:
+                            ScrollView {
+                                ScenarioEditorView(coordinator: coordinator, projects: projects, diagnosticLanes: $diagnosticLanes)
+                                    .workspacePage()
+                            }
+                            .frame(minHeight: 0, maxHeight: .infinity)
+                        case .collections:
+                            ScenarioCollectionView(coordinator: coordinator)
+                        case .results:
+                            ScenarioReportView(coordinator: coordinator, store: store, onSetup: { section = .setup })
+                        }
                     }
-                    .frame(minHeight: 0, maxHeight: .infinity)
-                case .scenario:
-                    ScrollView {
-                        ScenarioEditorView(
-                            coordinator: coordinator, projects: projects,
-                            diagnosticLanes: $diagnosticLanes
-                        ).workspacePage()
-                    }
-                    .frame(minHeight: 0, maxHeight: .infinity)
-                case .collections:
-                    ScenarioCollectionView(coordinator: coordinator)
-                case .results:
-                    ScenarioReportView(coordinator: coordinator, store: store, onSetup: { section = .setup })
+                    .id(section)
+                    .transition(.blurReplace.combined(with: .offset(y: 6)))
                 }
+                .animation(reduceMotion ? nil : WorkspaceStyle.pageMotion, value: section)
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
         }
@@ -106,20 +113,29 @@ private enum IntentLabSection: String, CaseIterable, Identifiable {
     case results = "Results"
 
     var id: Self { self }
+    var subtitle: String {
+        switch self {
+        case .setup: "Connect your app and choose where to run it."
+        case .scenario: "Describe the request and the result you expect."
+        case .collections: "Group saved tests and run them together."
+        case .results: "Review what happened and what needs attention."
+        }
+    }
 }
 
 private struct IntentLabHeader: View {
     @Bindable var coordinator: ScenarioCoordinator
+    let section: IntentLabSection
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            WorkspaceIcon(symbol: "intent-lab", size: 40, presentation: .header)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Intent Lab")
-                    .font(.system(size: 22, weight: .bold)).tracking(-0.2)
+                    .font(.largeTitle.weight(.bold))
                     .accessibilityIdentifier("Intent Lab page title")
-                Text("Connect your app, choose an action, and check that it works.")
-                    .font(.callout)
+                Text(section.subtitle)
+                    .contentTransition(.opacity)
+                    .font(.title3)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -128,10 +144,10 @@ private struct IntentLabHeader: View {
             IntentLabReadiness(coordinator: coordinator)
         }
         .padding(.horizontal, WorkspaceStyle.pagePadding)
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WorkspaceStyle.surface)
-        .overlay(alignment: .bottom) { Divider() }
+        .padding(.top, 14).padding(.bottom, 16)
+        .frame(maxWidth: WorkspaceStyle.readableWidth, alignment: .leading)
+        .frame(maxWidth: .infinity)
+        .overlay(alignment: .bottom) { Divider().opacity(0.6) }
     }
 }
 
@@ -150,7 +166,7 @@ private struct IntentLabReadiness: View {
         } else if coordinator.preflight?.isReady == true {
             WorkspacePill("Ready to run", symbol: "checkmark.circle.fill", color: WorkspaceStyle.success)
         } else {
-            WorkspacePill("Setup needed", symbol: "circle.dashed", color: .secondary)
+            WorkspacePill("Setup needed", symbol: "exclamationmark.circle.fill", color: WorkspaceStyle.warning)
         }
     }
 }
@@ -169,7 +185,6 @@ struct IntentLabCard<Content: View>: View {
     var body: some View {
         EditorSection(
             LocalizedStringResource(stringLiteral: title),
-            systemImage: "checklist",
             description: LocalizedStringResource(stringLiteral: subtitle ?? "")
         ) {
             content

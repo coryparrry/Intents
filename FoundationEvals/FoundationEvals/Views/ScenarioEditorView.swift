@@ -12,11 +12,12 @@ struct ScenarioEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Create a test").font(.title3.weight(.semibold))
-                    Text("Describe the request and the result you expect.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
+                let isSaved = coordinator.definitions.contains(coordinator.draft)
+                Label(isSaved ? "Saved · version \(coordinator.draft.version)" : "Unsaved draft",
+                      systemImage: isSaved ? "checkmark.circle" : "pencil.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
                 Spacer()
                 Menu("Saved tests") {
                     ForEach(coordinator.definitions.indices, id: \.self) { index in

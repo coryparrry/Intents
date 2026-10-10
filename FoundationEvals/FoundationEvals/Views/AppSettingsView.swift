@@ -15,10 +15,12 @@ struct AppSettingsView: View {
     var body: some View {
         TabView(selection: $selectedPage) {
             MCPSettingsView(controller: mcpSettings)
+                .workspacePageTransition(value: selectedPage, animatesOnAppearance: true)
                 .tabItem { Label("MCP Connector", systemImage: "network") }
                 .tag(AppSettingsPage.mcp)
 
             JudgeConnectionsSettingsView(store: store)
+                .workspacePageTransition(value: selectedPage, animatesOnAppearance: true)
                 .tabItem { Label("Judges", systemImage: "checkmark.seal") }
                 .tag(AppSettingsPage.judges)
 
@@ -48,7 +50,8 @@ struct AppSettingsView: View {
             }
             .formStyle(.grouped)
             .frame(width: 620, height: 440)
-            .tabItem { Label("Privacy", systemImage: "hand.raised") }
+            .workspacePageTransition(value: selectedPage, animatesOnAppearance: true)
+                .tabItem { Label("Privacy", systemImage: "hand.raised") }
             .tag(AppSettingsPage.privacy)
         }
         .padding(12)

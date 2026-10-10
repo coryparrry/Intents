@@ -6,8 +6,11 @@ struct RefusalExplanationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: "hand.raised.fill")
-                .fontWeight(.semibold)
+            Label {
+                Text(title).fontWeight(.semibold)
+            } icon: {
+                Image(systemName: "hand.raised.fill").foregroundStyle(WorkspaceStyle.warning)
+            }
 
             if let explanation = trace.explanation {
                 Text(explanation)
@@ -29,12 +32,8 @@ struct RefusalExplanationView: View {
                 }
             }
         }
-        .padding(10)
+        .padding(.horizontal, 14).padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.09), in: .rect(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.orange.opacity(0.25))
-        }
+        .background(.fill.quaternary, in: .rect(cornerRadius: WorkspaceStyle.controlRadius, style: .continuous))
     }
 }

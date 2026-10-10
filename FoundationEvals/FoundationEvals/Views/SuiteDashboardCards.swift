@@ -1,7 +1,12 @@
 import SwiftUI
 
+/// A slim bar along the bottom of the content. At rest it quietly summarises the
+/// current page; while a run is in flight it shows live progress and a Cancel button.
+/// It reserves its own space, so it never covers page content.
 struct WorkbenchStatusBar: View {
     let store: EvaluationStore
+    @Environment(DeveloperRunnerStore.self) private var runners
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var selectedRun: EvaluationRun? {
         guard case .run(let id) = store.selection else { return nil }
@@ -18,48 +23,66 @@ struct WorkbenchStatusBar: View {
         return DeveloperRunPresentation.providerLabel(for: run)
     }
 
-    private var activityColor: Color {
-        if store.isRunning { return .accentColor }
-        return store.hasUnsavedCompletedRun ? WorkspaceStyle.warning : WorkspaceStyle.success
+    private var isRunning: Bool { store.isRunning || runners.executingRunID != nil }
+
+    private var total: Int {
+        let active = runners.executingRunID.flatMap { runners.status(for: $0) }
+        return max(store.totalSamples, active?.totalSamples ?? 0)
+    }
+
+    private var summary: String {
+        if isRunning { return "Evaluation in progress" }
+        if store.hasUnsavedCompletedRun { return "Run waiting to be saved" }
+        switch store.selection {
+        case .overview:
+            let suites = store.suiteRecords.filter { !$0.isArchived }.count
+            return "\(suites) \(suites == 1 ? "suite" : "suites") · Saved on this Mac"
+        case .intentLab, .batchRuns:
+            return "Evidence is saved on this Mac"
+        case .suite, .run, .evaluations, .traces:
+            break
+        }
+        return "\(store.runs.count) saved \(store.runs.count == 1 ? "run" : "runs") · \(caseCount) case\(caseCount == 1 ? "" : "s") · \(provider)"
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            if store.selection == .overview {
-                let suiteCount = store.suiteRecords.filter { !$0.isArchived }.count
-                Image(systemName: "square.stack").accessibilityHidden(true)
-                Text("\(suiteCount) \(suiteCount == 1 ? "suite" : "suites")")
-                Text("·").foregroundStyle(.tertiary)
-                Text("Project overview")
-            } else {
-                if store.isRunning {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    WorkspaceStatusDot(color: activityColor, size: 6)
+        HStack(spacing: 10) {
+            if isRunning {
+                WorkspaceStatusMark(state: .running, size: 14)
+                    .transition(.blurReplace)
+            } else if store.hasUnsavedCompletedRun {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(WorkspaceStyle.warning)
+                    .transition(.blurReplace)
+            }
+            Text(summary)
+                .lineLimit(1)
+                .contentTransition(.numericText())
+            Spacer(minLength: 12)
+            if isRunning {
+                Text("\(store.completedSamples) of \(total) responses")
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .transition(.blurReplace)
+                ProgressView(value: Double(store.completedSamples), total: Double(max(total, 1)))
+                    .progressViewStyle(.linear)
+                    .frame(width: 160)
+                    .transition(.blurReplace)
+                if runners.canCancelRun(for: store) {
+                    Button("Cancel run", systemImage: "stop.fill") { runners.cancelCurrentRun(for: store) }
+                        .labelStyle(.titleAndIcon)
+                        .buttonStyle(.borderless)
+                        .help("Cancel the current run")
+                        .transition(.blurReplace)
                 }
-                Text(
-                    store.isRunning
-                        ? "Evaluation in progress"
-                        : store.hasUnsavedCompletedRun
-                            ? "Run waiting to be saved"
-                            : "\(store.runs.count) saved \(store.runs.count == 1 ? "run" : "runs")"
-                )
-                Text("·").foregroundStyle(.tertiary)
-                Text("\(caseCount) case\(caseCount == 1 ? "" : "s")")
             }
-            Spacer()
-            if store.selection != .overview {
-                WorkspaceMetaLabel(provider, symbol: "cpu")
-                Text("·").foregroundStyle(.tertiary)
-            }
-            WorkspaceMetaLabel("Local workspace", symbol: "internaldrive")
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .font(.subheadline)
+        .foregroundStyle(isRunning ? .primary : .secondary)
+        .padding(.horizontal, 20)
+        .frame(height: 32)
+        .frame(maxWidth: .infinity)
+        .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: isRunning)
+        .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: store.completedSamples)
     }
 }
