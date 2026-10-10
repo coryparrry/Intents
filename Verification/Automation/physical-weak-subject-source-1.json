@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T06:26:20.360511+00:00",
+  "scope": "Observed unreadable physical app identity, owned positive bundle presence, exact-build comparison refusal",
+  "fullPlanComplete": false,
+  "physicalDeviceCommandsExecuted": false,
+  "sourceChecks": {
+    "swift191Tests": 59,
+    "failures": 0,
+    "native51Build": "passed",
+    "freshSourceReviews": "Core and native enum integration reviewed by distinct fresh reviewers; clear"
+  },
+  "failureRetained": "Swift190 compile exposed missing native switch cases for new subject variant; all callers integrated before Swift191/native51",
+  "limits": [
+    "Injected inventory tests are not physical hardware qualification",
+    "Requested target ID, actual device UUID and installed bundle URL are bound separately; installed bytes remain unknown",
+    "Weak physical subjects have no local install path and permit only visible UI observe/navigation effects",
+    "Generic verifier refuses unchecked physical nil-digest success; comparison core requires both build digests",
+    "Product physical routes remain fenced; no customer picker enablement, GUI launch, runtime packaging or publication"
+  ],
+  "sha256": {
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPhysicalInstalledUIApplication.swift": "35a3b91e9c5f9110ff30d937787d39f90c3b4e9848a450e9a33a195921bbf3e6",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPhysicalProcessInventory.swift": "d7248a9fa9841555a5cc97b1081ed05e97ac3ecc21675b0b02bdf50b3f260410",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationInstalledUIApplication.swift": "a54b914aa2a3f1a25a77f786415c8fd7114859cd78d9fff65416d3c56c218d55",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationApplicationRunner.swift": "459be443b8ff1cf793c5f20eddcb2c37155e9a03697653d2fe51cb11f06b966f",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationSubjectVerifier.swift": "29f154dc4cca58caef63a5a64ac33cf3d3cb7b8950f76f48c2c3b088ba002258",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationFixComparison.swift": "890f94fa10a37c0d15f2dcafd26d02a91fe17cd0959ae9b12d58197200d19898",
+    "/Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFailureSearch.swift": "4a68897c01b5cf8cb57f65e61ec6316f8f44b893dacc79981e626dd948b7473a",
+    "/Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Stores/AutomationNativeUIReproduction.swift": "f544c6f72b4459f43b068d2c4116338f665b2d6a1123c426da21532b9a7a4a87",
+    "/Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFixComparison.swift": "19763a8d8bf2a97de8f04dd23175fee68af77385770d76a75587467a6c5efd48",
+    "/Users/coryparry/Developer/Projects/Intents/FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift": "d17bec9e12d3b2574da73bf9eab112103060d4efb37e01a722690d50045c1ad1",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationPhysicalInstalledSubjectTests.swift": "9bd6d510e0b807df06dba558d4e9377a5f915e59f97f94e6a5b6c20079fc1261",
+    "/private/tmp/intents-automation-swift190.log": "793b11adf97bbeb57a7750c06013d1785594aec38a0beed15edceab5751db0c9",
+    "/private/tmp/intents-automation-swift191.log": "bf3e8a524a127681fa3d8577bd1c3276f92a7bbc2c93edf6732b2deddc1c1c21",
+    "/private/tmp/intents-automation-native51.log": "da77009687d40ccb2d90e79ae76d492fc2f1884b0677975c36e42cfc28e64218",
+    "/private/tmp/intents-automation-native51-artifact/preservation.json": "e455c29ee84974fd7efe3c39acce4ff1372829733494efdb08ccb0f0f4076901",
+    "/private/tmp/intents-automation-native51-artifact/Intents.app/Contents/MacOS/FoundationEvals": "9d2637696518ea0e804da64281abc27aff39621d11b01f0b0cfd3736a31a9965",
+    "/private/tmp/intents-physical-weak-subject-source-review.patch": "516abc1ae7660ff084770cea3f21c2ae66cb19213b083dfa97186b3fb25f8832"
+  }
+}

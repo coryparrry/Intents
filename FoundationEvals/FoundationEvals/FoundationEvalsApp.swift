@@ -9,6 +9,7 @@ struct FoundationEvalsApp: App {
     @NSApplicationDelegateAdaptor(FoundationEvalsAppDelegate.self) private var appDelegate
     @State private var store: EvaluationStore
     @State private var runnerStore: DeveloperRunnerStore
+    @State private var automationStore: AppAutomationStore
     @State private var telemetry: TelemetryController
     @State private var mcpSettings: MCPSettingsController
     // Debug builds must retain the exact executable being tested.
@@ -28,7 +29,12 @@ struct FoundationEvalsApp: App {
         let store = EvaluationStore(supportDirectory: storeDirectory)
         let control = EvaluationAppControl(store: store)
         appControl = control
-        let runtime = FoundationEvalsMCPRuntime(store: store, control: control)
+        let nativeEvidence = ScenarioPersistence(rootDirectory: store.overviewStorageDirectory.appendingPathComponent("IntentLab"))
+        let automationStore = AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"),
+            evidenceImporter: { plan, report, source, exposure in
+                try await nativeEvidence.importAutomationEvidence(plan: plan, report: report, sourceRoot: source, exposure: exposure)
+            })
+        let runtime = FoundationEvalsMCPRuntime(store: store, control: control, automationStore: automationStore)
         let settings = MCPSettingsController(
             serverControl: MCPServerControl(
                 start: { configuration in try await runtime.start(configuration) },
@@ -42,6 +48,7 @@ struct FoundationEvalsApp: App {
         telemetry.capture(.appOpened)
         _store = State(initialValue: store)
         _runnerStore = State(initialValue: control.runners)
+        _automationStore = State(initialValue: automationStore)
         _mcpSettings = State(initialValue: settings)
         mcpRuntime = runtime
         if ProductionNativeWorkerCommand.isRequested {
@@ -110,12 +117,32 @@ struct FoundationEvalsApp: App {
         return nil
     }
 
+    private static func sizeVerificationWindow() async {
+        #if DEBUG
+        guard acceptanceStorageDirectory != nil else { return }
+        let arguments = ProcessInfo.processInfo.arguments
+        func dimension(_ flag: String, within range: ClosedRange<Double>) -> Double? {
+            guard let index = arguments.firstIndex(of: flag),
+                  arguments.indices.contains(index + 1),
+                  let value = Double(arguments[index + 1]), range.contains(value) else { return nil }
+            return value
+        }
+        guard let width = dimension("--evaluation-window-width", within: 1_000...1_600) else { return }
+        let height = dimension("--evaluation-window-height", within: 700...900) ?? 780
+        await Task.yield()
+        guard let window = NSApplication.shared.windows.first(where: { $0.canBecomeMain }) else { return }
+        window.setContentSize(NSSize(width: width, height: height))
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup(id: "evaluation-main", for: String.self) { _ in
-            ContentView(store: store, control: appControl)
+            ContentView(store: store, control: appControl, automationStore: automationStore)
                 .environment(runnerStore)
+                .task { await Self.sizeVerificationWindow() }
                 .task(id: mcpSettings.installationState) {
                     appDelegate.runtime = mcpRuntime
+                    appDelegate.automationStore = automationStore
                     guard !ProductionNativeWorkerCommand.isRequested, !ProcessInfo.processInfo.arguments.contains("--disable-mcp-autostart") else { return }
                     if Self.useExistingMCPCredential {
                         await mcpSettings.startServer()
@@ -151,6 +178,12 @@ struct FoundationEvalsApp: App {
                     openWindow(id: "evaluation-main", value: "main")
                 }
                 .keyboardShortcut("2", modifiers: [.command])
+
+                Button("Show App Automation") {
+                    store.selection = .appAutomation
+                    openWindow(id: "evaluation-main", value: "main")
+                }
+                .keyboardShortcut("3", modifiers: [.command])
 
                 Button("Add Test Case") {
                     store.selection = .suite
@@ -193,6 +226,7 @@ struct FoundationEvalsApp: App {
 @MainActor
 private final class FoundationEvalsAppDelegate: NSObject, NSApplicationDelegate {
     weak var runtime: FoundationEvalsMCPRuntime?
+    weak var automationStore: AppAutomationStore?
     private var isTerminating = false
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -200,6 +234,7 @@ private final class FoundationEvalsAppDelegate: NSObject, NSApplicationDelegate 
         guard !isTerminating else { return .terminateLater }
         isTerminating = true
         Task {
+            await automationStore?.closeAndWait()
             await runtime.prepareForTermination()
             sender.reply(toApplicationShouldTerminate: true)
         }

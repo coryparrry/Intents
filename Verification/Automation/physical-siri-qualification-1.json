@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "checkpoint": "physical-siri-qualification-1",
+  "authorization": {
+    "syntheticFixtureResetAndRun": true,
+    "siriLanguage": "en-GB"
+  },
+  "targetUDID": "00008140-000E4D803C0B001C",
+  "xcode": {
+    "version": "27.0",
+    "build": "27A266a",
+    "iphoneSDK": "27.0"
+  },
+  "connection": {
+    "id": "3F59E1DB-5579-4A6A-9C4B-EF270C19BBB9",
+    "exitCode": 65,
+    "outcome": "failed-before-test-bundle-loaded",
+    "reason": "AppIntentsTesting dyld missing AppIntentsServices RunnerServiceDispatcher.resolveValue symbol",
+    "scenarioDispatched": false,
+    "siriAttempts": 0
+  },
+  "ownership": {
+    "dispatched": true,
+    "hostLaunchPrevented": false,
+    "hostProcess": {
+      "pid": 54674,
+      "startIdentity": "1791320907:70314"
+    },
+    "lease": {
+      "control": "system",
+      "generation": 1,
+      "runID": "intent-lab-3F59E1DB-5579-4A6A-9C4B-EF270C19BBB9",
+      "target": {
+        "id": "00008140-000E4D803C0B001C",
+        "kind": "physical"
+      }
+    },
+    "releaseObservation": {
+      "appsSHA256": "683dfa2035b83d3e6512da44ad9f34d63ddf7beb7d979a1cb0cf3f7052e9a1de",
+      "deviceIdentifier": "1AD4F755-6F58-58E5-AC71-B1EDFECADA93",
+      "processesSHA256": "8da508637a86e70fc0fbbbe5ee9eae2629b873b71233e6fbf3de33590d0c2601",
+      "runnerAbsent": true,
+      "targetID": "00008140-000E4D803C0B001C"
+    },
+    "released": true,
+    "runnerProduct": {
+      "bundleIdentifier": "com.coryparry.IntentLabFixtureV2UITests.xctrunner",
+      "executableName": "IntentLabFixtureV2UITests-Runner",
+      "sha256": "2961ef20a837d3796bc2d510477d39cdb0f9a1d7c67196fa4eda2b78def0a8b0"
+    }
+  },
+  "sharedCampaignsAfterExit": 0,
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-physical-siri-qualification1.log",
+      "sha256": "0beffa216680251edb32fc1e0e7dc586d9bd1cb9ab74f785d0e83993b2ec0bb3"
+    },
+    {
+      "path": "/private/tmp/intents-automation-physical-siri-qualification1/IntentLab/Journals/3F59E1DB-5579-4A6A-9C4B-EF270C19BBB9.json",
+      "sha256": "664724b6f65e62d87dc544b584811f26303b0feba21a69812f3428908c15964c"
+    },
+    {
+      "path": "/private/tmp/intents-automation-physical-siri-qualification1/IntentLab/Executor/Connection-3F59E1DB-5579-4A6A-9C4B-EF270C19BBB9/xcodebuild.log",
+      "sha256": "826a69f38a341de26a1d04df14bf52d392c7eb53b72b93461ceddd8babf2a1ae"
+    }
+  ],
+  "qualification": {
+    "physicalSiri": false,
+    "physicalRunnerInvocationReceipt": false,
+    "connectionRunnerAbsence": true,
+    "fullPlanComplete": false
+  }
+}

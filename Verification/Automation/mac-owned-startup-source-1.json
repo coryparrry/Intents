@@ -1,0 +1,70 @@
+{
+  "artifactVariant": "owned-mac-startup-source",
+  "customerRuntimeEnabled": false,
+  "focusedSwiftTests": {
+    "failures": 0,
+    "logSHA256": "18f16832751be971da3582a6be3f7cc4b45d005d4624c609d47a1b17c84e9250",
+    "passed": 25,
+    "registered": 26,
+    "skipped": 1
+  },
+  "hardwareQualified": false,
+  "helperABI": "startup-gate-v1",
+  "helperReleaseReceiptSHA256": "065761b76888943adba6e378ddcdc1cd3d9594f479a577072197bd58afbbb9c6",
+  "nativeBuild": {
+    "appLaunched": false,
+    "appPath": "/private/tmp/intents-automation-native55-artifact/Intents.app",
+    "artifactVariant": "raw-native-build",
+    "buildLogSHA256": "a2c9adad17599cccfa5639b7bfb6454dcf4a657ec71c1a6dda20ef0c6af5987d",
+    "developerIDSigned": false,
+    "executableSHA256": "e6253c7e19997b3cbbf0388f362b5bb80ac2e09d07c6bb15b63f5981878f05e3",
+    "notarized": false,
+    "released": false,
+    "schemaVersion": 1
+  },
+  "nativeHelperStartupProbe": {
+    "directChildReaped": true,
+    "helperInvoked": true,
+    "identityEchoMatchedParentCapture": true,
+    "pipesDrained": true,
+    "scope": "startup-ownership-only",
+    "startupAcknowledged": true,
+    "uiInteracted": false
+  },
+  "nativeHelperTests": {
+    "failures": 0,
+    "passed": 37
+  },
+  "remaining": [
+    "Daemon-to-native helper transport and lease binding",
+    "Actual Mac GUI session and input qualification",
+    "Enclosing customer runtime",
+    "Full current-user inventory remains unqualified because an unrelated persistent zombie cannot be observed completely"
+  ],
+  "reviews": {
+    "nativeABI": "fresh55 clear",
+    "nativeProbe": "fresh62 clear",
+    "postACKDispatcherInteraction": "unqualified; fresh57 coverage limitation",
+    "source": "fresh60 clear after fresh58 cancellation finding fixed",
+    "stager": "fresh54 clear",
+    "test": "fresh61 final wait fixed and fresh63 entry wait fixed"
+  },
+  "schemaVersion": 1,
+  "sourceSHA256": {
+    "Sources/IntentsAutomationCore/AutomationBoundedTask.swift": "ceab9938f4d047a9161d231462f9aaed3c66177908916aee959b5cb74dc82f6e",
+    "Sources/IntentsAutomationCore/AutomationCommandGateInput.swift": "3db35e19eeac3b074299b4b7f4538e4a3f05ca984019e1be10968ad3671d876f",
+    "Sources/IntentsAutomationCore/AutomationMacHelperHandshake.swift": "e98ae732d3a5154e1a882dd162a382a2ed14fadbdf74e19a9f9d5fa8ca3455b3",
+    "Sources/IntentsAutomationCore/AutomationMacProcessInventory.swift": "0956a90127910a239107db046b24310910ed918cd433b0b23f0666dcef7fecc0",
+    "Sources/IntentsAutomationCore/AutomationOwnedCommand.swift": "291b420e0c8a0c7fe23839181691558a236a9ab1a24e3502dd171cb3242104b6",
+    "Tests/IntentsAutomationCoreTests/AutomationCommandCallbackDrainTests.swift": "a30fabefc8ef3446e38d379e279af49080bcbb693558e72bc3045420847d3ae6",
+    "Tests/IntentsAutomationCoreTests/AutomationMacGatedCommandTests.swift": "24bef2545e1ebe7fa969f2555a21a10ea0abef988a48c482058cc2166cbb4d16",
+    "Tests/IntentsAutomationCoreTests/AutomationNativeHelperStartupTests.swift": "0f3b80f9756d0905dbdeccbef669e9aa286cf8e47cc5a1e8a5d17898da91c081",
+    "Tests/IntentsAutomationCoreTests/AutomationProcessTests.swift": "f689a2c88caa6aec8f99893045994f4f914b98bdd7f07017c3cdf053fbb9d18d",
+    "Tools/IntentsAutomation/scripts/stage_mac_helper_startup_gate.py": "e756513bdfb2fbb0572c3f47344a4723bba4052b4fc45366623556bb5d9fbc07",
+    "Tools/IntentsAutomation/tests/mac_helper_startup_staging_test.py": "55a86488b5868d6945c2379b1790635932dc8d6d515e983209677cbd3a9212bb"
+  },
+  "stagerTests": {
+    "failures": 0,
+    "passed": 8
+  }
+}

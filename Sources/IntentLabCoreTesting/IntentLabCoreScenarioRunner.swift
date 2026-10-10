@@ -402,6 +402,7 @@ public enum IntentLabScenarioEngine {
               let testProduct = invocation.testProduct else {
             throw XCTSkip("The host did not embed a fully bound Intent Lab invocation.")
         }
+        IntentLabRunnerReceiptWriter.attachIfAvailable(invocation: invocation, testCase: testCase)
         var results: [IntentLabLaneResult] = []
         var cleanupFailed = false
 

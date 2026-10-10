@@ -1,0 +1,58 @@
+// Authored calibration actions. These return values without mutating application state.
+struct QualificationEchoTextIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo Text"
+    @Parameter(title: "Value") var value: String
+    func perform() async throws -> some IntentResult & ReturnsValue<String> { .result(value: value) }
+}
+struct QualificationEchoBoolIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo Bool"
+    @Parameter(title: "Value") var value: Bool
+    func perform() async throws -> some IntentResult & ReturnsValue<Bool> { .result(value: value) }
+}
+struct QualificationEchoIntegerIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo Integer"
+    @Parameter(title: "Value") var value: Int
+    func perform() async throws -> some IntentResult & ReturnsValue<Int> { .result(value: value) }
+}
+struct QualificationEchoDecimalIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo Decimal"
+    @Parameter(title: "Value") var value: Double
+    func perform() async throws -> some IntentResult & ReturnsValue<Double> { .result(value: value) }
+}
+enum QualificationChoice: String, AppEnum {
+    case first, second
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Qualification choice"
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [.first: "First", .second: "Second"]
+}
+struct QualificationEchoEnumIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo Enum"
+    @Parameter(title: "Value") var value: QualificationChoice
+    func perform() async throws -> some IntentResult & ReturnsValue<String> { .result(value: value.rawValue) }
+}
+struct QualificationReference: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Qualification reference"
+    static let defaultQuery = QualificationReferenceQuery()
+    var id: String
+    @Property(title: "Label") var label: String
+    init(id: String) { self.id = id; self.label = id }
+    var displayRepresentation: DisplayRepresentation { .init(title: "\(id)") }
+}
+struct QualificationReferenceQuery: EntityStringQuery {
+    func entities(matching string: String) async throws -> [QualificationReference] {
+        ["canary-1", "canary-2"].filter { $0.contains(string) }.map { QualificationReference(id: $0) }
+    }
+    func entities(for identifiers: [String]) async throws -> [QualificationReference] {
+        identifiers.filter { ["canary-1", "canary-2"].contains($0) }.map { QualificationReference(id: $0) }
+    }
+    func suggestedEntities() async throws -> [QualificationReference] { [.init(id: "canary-1"), .init(id: "canary-2")] }
+}
+struct QualificationEchoEntityIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo Entity"
+    @Parameter(title: "Value") var value: QualificationReference
+    func perform() async throws -> some IntentResult & ReturnsValue<String> { .result(value: value.id) }
+}
+struct QualificationEchoOptionalTextIntent: AppIntent {
+    static let title: LocalizedStringResource = "Qualification echo Optional text"
+    @Parameter(title: "Value") var value: String?
+    func perform() async throws -> some IntentResult & ReturnsValue<String> { .result(value: value ?? "<nil>") }
+}

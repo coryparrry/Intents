@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "checkpoint": "duration-codec-1",
+  "sources": [
+    {
+      "path": "Package.swift",
+      "sha256": "752a3b78582e3ee65cf259b9fd0fb2882beb94c7677c329631f360fb1e1932f0"
+    },
+    {
+      "path": "Integration/AutomationHost/AutomationDurationCodec.swift",
+      "sha256": "d965eb9b0b76e5909a7ee9cb74433cf65c946b2ce3ff38f45e9281dee8150fbf"
+    },
+    {
+      "path": "Integration/AutomationHost/HostPlan.swift",
+      "sha256": "350becaf18ab70df28f309f77853b6acbc3be6649eff9d8e5d0c561b000b8c4b"
+    },
+    {
+      "path": "Integration/AutomationHost/IntentDefinitionsHost.swift",
+      "sha256": "2ab785187e0db48677b545d43fbb8a8cee30b279952ccb825c1b52a33d78e3d9"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationDurationValue.swift",
+      "sha256": "cb1179043ec3fa0d51d49bdc2a97d310a904282b5b599802e71570f0affd80ed"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCodecMetadata.swift",
+      "sha256": "57684df8c872ad84b6d319f13764169eceaef4896aa7af8ff0d8fe452d35e516"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCodecRegistry.swift",
+      "sha256": "b3c6a6813c7c148b4dbb6d36ac29b2910aab78a97e88336cae8714871e64abd6"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationSurfaceCatalog.swift",
+      "sha256": "42eb2218e5376b261418547b271468f0f52dc720d0b833e5cb0d84abb73505f5"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostProgram.swift",
+      "sha256": "1aac904e4609c42ec312b44052187df5cb75dfac2a21f6be29422c3abe0fe062"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostReceiptImporter.swift",
+      "sha256": "5d313137d5e2cef04d3afc9a3b5d3f79cd8e128e1e0dd72d7f65a358d0390946"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostGenerator.swift",
+      "sha256": "30433081fa49e3dba53ac601a7ac62a9c7a4b58756efb043292baff14b91f9b2"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationTemplatePlanner.swift",
+      "sha256": "815dc9fdb9f877d6dab85997be39c52a2d11692935552e4f5085a80f37f2c85e"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationEntityActionPlanner.swift",
+      "sha256": "1d2923876f2904d98494363e61daad22e96254a4aaa4efc40f2d6992ae2bc98a"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift",
+      "sha256": "311e9209b1c3b48ddf5d3c16dce4c25b1ce64059a02b6e44a9f76896fe457c7b"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationCollectionCodecTests.swift",
+      "sha256": "13df8be5c79ed6d36ab01215918f89a03b1d28dbda15e5289a5c3a0659e4937e"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationGeneratorTests.swift",
+      "sha256": "f64b9ed00bc677ecb13e2037b7483ce9b313f9a0be476f43ee77b3b3dc409a66"
+    },
+    {
+      "path": "Tests/IntentsAutomationHostContractTests/HostCodecContractTests.swift",
+      "sha256": "ba087e899e0351fb4abd977de6b63b7d7bf0c1acdf5daa034ef9c3466f567ab8"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-duration-tests112.log",
+      "sha256": "84fdff9349bc23cc36bc637c35757ef97c506e68d044f99458a3c36417e233c3"
+    },
+    {
+      "path": "/private/tmp/intents-automation-host-duration-typecheck12.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "validation": {
+    "focused112": {
+      "checks": 33,
+      "failures": 0
+    },
+    "fullSixSourceHostSDK12": "passed",
+    "bothScopedSourceReviews": "clear"
+  },
+  "scope": {
+    "exactCanonicalInt64SecondsAndFraction": true,
+    "frozenStructuredCodec": true,
+    "publicTypedInputAndResultAdapters": true,
+    "unrepresentableNativeRangeRejectedBeforeComponentsAccess": true,
+    "deviceConversionQualified": false,
+    "nativeUIQualified": false,
+    "fullPlanComplete": false
+  }
+}

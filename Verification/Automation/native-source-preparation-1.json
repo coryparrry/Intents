@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "qualification": "native-source-preparation-1",
+  "date": "2026-10-08",
+  "baseCommit": "6d2bbff52",
+  "behavior": [
+    "Explicit source preparation destination: iOS Simulator or This Mac.",
+    "Native Mac preparation binds current session and exact configuration; stale, cancelled, closed or foreign results cannot publish.",
+    "Simulator inventory uses a separate selection key and request revision; config changes retain results, stale or cancelled completions cannot publish.",
+    "Mac source products remain inspection-only; execution and entity-query gates are preserved."
+  ],
+  "checks": {
+    "command": "swift test --jobs 2 --filter 'SourcePreparationStoreTests|MacWorkflowStoreTests|InstalledUIStoreTests|AutomationMacHostGeneratorTests'",
+    "passed": 57,
+    "failures": 0,
+    "skips": 0,
+    "log": "Tools/IntentsAutomation/.runtime/native-source-preparation-1/swift3.log",
+    "logDigest": "56ed0da3f0ce3d6663c6cb1384186f889be91acef354c4cc359957775cc337b0",
+    "nativeBuild": {
+      "tool": "official Xcode BuildProject",
+      "scheme": "FoundationEvals",
+      "destination": "My Mac",
+      "seconds": 15.775,
+      "errors": 0,
+      "log": "Tools/IntentsAutomation/.runtime/native-source-preparation-1/xcode-final-build.log",
+      "logDigest": "6243ccd6424f3e6c3dc578acc615631a5bc7b90b2a6ed8572500d79d4e78135f"
+    }
+  },
+  "reviews": [
+    "Sol approval, session and asynchronous selection: clear after shared-contract recheck.",
+    "Sol view, inventory lifecycle and execution gates: two inventory findings fixed; final recheck clear."
+  ],
+  "visual": {
+    "status": "unverified",
+    "officialPreview": "Control source compiled; render failed with PreviewsFoundationHost TaskTimeoutError.",
+    "localFallback": "Exact control source plus tested modules compiled; ImageRenderer and offscreen NSHostingView probes both produced blank images. No visual or full app-flow proof.",
+    "cleanup": "Both offscreen windows closed, snapshot process exited, and both Xcode workspaces opened for this slice closed."
+  },
+  "limitations": [
+    "State integration regressions use an injected preparation executor; actual controlled SDK preparation is independently retained in entity-integer-1.json.",
+    "No prepared Mac workflow, subject intent or simulator launched. No publication, release, push or distribution qualification."
+  ],
+  "failureLessons": [
+    "Inventory lifecycle must not borrow the broader workflow/configuration selection epoch.",
+    "Guard stale failures using the same request identity as successful inventory results.",
+    "Correct test fixtures to use the actual AppIdentity initializer.",
+    "Blank snapshot output never qualifies rendered controls."
+  ],
+  "sourceDigests": {
+    "Package.swift": "9716dd9806875f69518475d89a974c4a18b87ec0d8cb11beb03d8227f2778139",
+    "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift": "6e7422e83c5b48e34be8103335f8ae9d702e1fd00ef620e626c58358fc2ebbb1",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativePreparation.swift": "8882a580a9aa2c09843ef4a03626ad30f0d1dd5fe5262c2502a2a6b029dd6e5f",
+    "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift": "9190c1ac249d92d7942d6943598277ce920f24d3ade3d4f0e51cc4bcea91b12c",
+    "FoundationEvals/FoundationEvals/Views/AutomationSourcePreparationControls.swift": "5770f0c332ba8574d09a5e6d9acd3c0480b7cfd6abdd7c9fef9405a42408a5bc",
+    "Tests/IntentsAutomationNativeUITests/SourcePreparationStoreTests.swift": "fc3ec54faf4b25cd74a0b47104e7f370a3ac6798d9b27b62ed1a0ec5928e62e6"
+  }
+}

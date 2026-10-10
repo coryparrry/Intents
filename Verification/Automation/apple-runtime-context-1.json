@@ -1,0 +1,41 @@
+{
+  "slice": "apple-runtime-context-1",
+  "date": "2026-10-08",
+  "acceptance": "Only an ephemeral owned Mac execution token, bound to a completed released query, can qualify named entity property projection; imported labels and retained JSON cannot mint it.",
+  "implementation": {
+    "host": "Mac schema3 observes after operations; iOS schema2 retained. Loaded AppIntentsTesting UUID/CPU/subtype and path plus disk SHA, kernel build and host build fields.",
+    "validation": "Exact selected framework slice and SHA, host/Xcode/SDK Info fields and digests, current Mac kernel/GUI session; canonical subject/host/xctestrun bytes rechecked on every use.",
+    "authority": "Fileprivate non-Codable token excludes injected commands; exact plan/attempt/scope/segment receipt binds forwarding after successful release; resets before each new run.",
+    "capabilities": "Only apple.entity.propertyProjection.<type>.<field>; generic input/result codec keys remain denied."
+  },
+  "verification": {
+    "focusedCore": "87 passed",
+    "nativeStore": "102 passed; previous synthetic campaign fixture now asserts real conversion denial before explicit synthetic entity capability",
+    "buildOnly": "1 actual self-contained Mac preparation passed14.082seconds; no app/intent/test execution launched",
+    "appBuild": "Official Xcode My Mac FoundationEvals passed22.072seconds,0errors; owned workspace closed",
+    "review": "Two Sol source lanes; retained subject/xctestrun disk drift fixed and rechecked clear",
+    "diff": "git diff --check passed"
+  },
+  "limits": [
+    "No live query or actual loaded-image qualification performed; production Mac execution remains gated.",
+    "UUID identifies image, not resident code pages; no simulator/device context authority.",
+    "Initial build-only fixture reuse was denied by external-input fence; self-contained fixture passed.",
+    "Full M0-M6 remains incomplete with prior native GUI,child-closure,physical,controller,distribution and independent-user gates unchanged.",
+    "Next separate no-dispatch setter/readback harness; no results/default/null qualification inferred."
+  ],
+  "sourceSHA256": {
+    "Integration/AutomationHost/HostReceipt.swift": "ac6dad9ff757646368e81db5307fbbf61fdcc3ccb5ac07b509019b3503a62a0a",
+    "Integration/AutomationHost/SegmentTests.swift": "b0c1f02d878b0fd586ea7cfcffe44a6969ae1fd285793060ca5d17b93e58a892",
+    "Sources/IntentsAutomationCore/AutomationAppleRuntimeObservation.swift": "248ce4fd142786c5571913853a24572ff55c9dfdff72e3f0eb1f6dabf69315d5",
+    "Sources/IntentsAutomationCore/AutomationMacAppleRuntimeSnapshot.swift": "c9f4479f8a181c1fe111280e680e9e0556a19befa0d6e5e8e1348c38b123c246",
+    "Sources/IntentsAutomationCore/AutomationPrivateMacAppleRouteDriver.swift": "07d50bd354b1c970c33714d2d655e284ca8bd1a5f153248b42b55641d12ddbe6",
+    "Sources/IntentsAutomationCore/AutomationHostReceiptImporter.swift": "0331f6e9659647f3db3b279881805181b27fda9ae8f31ab1b539525a61fe3b08",
+    "Sources/IntentsAutomationCore/AutomationMacUIQualification.swift": "918a44a0cffaaeef1115cbcb694d15e5a873f274c822cce2eff86cbc72fef09f",
+    "Sources/IntentsAutomationCore/AutomationApplicationRunner.swift": "1a714327b4198a9e928a8f26abc36a558eb1f37afd08d8deb13ae30df9a2e4d2",
+    "Sources/IntentsAutomationCore/AutomationEntityProjectionEvidence.swift": "87208ba66279012e64275b9dc434891ddd595fe937910eb3ce6e89ef11a7b8c4",
+    "Sources/IntentsAutomationCore/AutomationEntityQuery.swift": "16e9123f05dbaf64b33b2a3fbd40f74af522b919bfa4acf11d2aa6ba6515eff6",
+    "Tests/IntentsAutomationCoreTests/AutomationAppleRuntimeContextTests.swift": "86188923a26a5067abbc1580d72ad5fa3a8a1e3b7f3cfb303dc599130187dc12",
+    "Tests/IntentsAutomationCoreTests/AutomationPrivateMacAppleExecutionTests.swift": "e0ac5cdaf11e0a12eaf66367268ef24a5a3dd18c0bc2346c13b3d7cd0cd52041",
+    "Tests/IntentsAutomationNativeUITests/InstalledUIStoreTests.swift": "9107c441e1697fb3e1b6c3b74f4f178670bb597ace2cc3a821697d752ae28b14"
+  }
+}

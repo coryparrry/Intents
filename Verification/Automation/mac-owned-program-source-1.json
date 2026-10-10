@@ -1,0 +1,41 @@
+{
+  "actualPinnedE2EExecuted": true,
+  "customerRuntimeEnabled": false,
+  "failures": 0,
+  "frozenUnit4ContainsThisSource": false,
+  "limits": [
+    "Internal library composition only; private daemon entry and Swift authority/product integration still required",
+    "Owned worker admission is a callback seam; actual native durable worker recording is not implemented yet",
+    "Tap/read/observe/locate/endpoint paths reuse the existing semantic engine; fill/scroll fail capability preflight",
+    "Real SDK/helper/GUI ownership and distribution remain unqualified"
+  ],
+  "nativeGUIQualified": false,
+  "newMacProgramTests": 8,
+  "newWorkerTests": 9,
+  "privateEntryIntegrated": false,
+  "productRunnerIntegrated": false,
+  "realNativeHelperLaunched": false,
+  "realSDKExecutedByNewProgramTests": false,
+  "review": {
+    "ownershipLifecycle": "Fresh scoped Sol recheck clear after UTF8 log-bound fix",
+    "programBoundary": "Fresh scoped Sol recheck clear after action-budget and typed-evidence fixes"
+  },
+  "schemaVersion": 1,
+  "sessionCommit": "eee120c4d",
+  "sourceFilesSHA256": {
+    "Tools/IntentsAutomation/src/e2e/config.ts": "4fc2a37c4d971cde64ec0b9adc776c4dcc00a5fa5ebdc3c228f8cb4ceeae41c1",
+    "Tools/IntentsAutomation/src/e2e/engine.ts": "b235f15a2f8d677bae7270630f55543e21420b684e4e8c62412ef317b2f1067d",
+    "Tools/IntentsAutomation/src/macOwnedProgram.ts": "0e425da983c487afc064a4a0992d0ee7983f13c9139bcfebe1847d355a48b17a",
+    "Tools/IntentsAutomation/src/ownedUIWorker.ts": "dc336fb43ddf3d7cdb4d62a064ce96ecbac89b721cbf02dc2560c563948b7f3b",
+    "Tools/IntentsAutomation/src/ownedUIWorkerGate.ts": "0dde89ca146bacf8339f43430f2aaf9d9fed477b53911efd13bbcf60de5b6384",
+    "Tools/IntentsAutomation/src/workerRunner.ts": "fe175298ac5a6eb419f1a9b5743be95e909ce725e0f3789cb6063755e6d27483",
+    "Tools/IntentsAutomation/tests/macOwnedProgram.test.ts": "c34b7bcdd1537a44d4b462a7ae6ac1aaf77a88e9823703f860118856b31d1e6f",
+    "Tools/IntentsAutomation/tests/ownedUIWorker.test.ts": "c2cbacb77dd5ea5b93f249b28d68a27e9e8961ec6a91c1ed317ba40218870b79"
+  },
+  "syntheticMacTransport": true,
+  "testLogSHA256": "037e507b08ddea082c9fb9e3bda1880b85626dbbc8df8421ae213e3e1c714342",
+  "testsPassed": 69,
+  "testsRegistered": 69,
+  "testsSkipped": 0,
+  "typecheckBuildLogSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

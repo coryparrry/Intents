@@ -150,19 +150,43 @@ class CoverageTests(unittest.TestCase):
             "XcodeConnectionDiscovery.swift",
         ):
             with self.subTest(source=source):
+                expected = ["ScenarioContractsTests", "ScenarioPhysicalSiriQualificationTests"]
+                if source != "ScenarioExecutionRecovery.swift":
+                    expected += ["ScenarioPhysicalLeaseTests", "ScenarioPhysicalFailureTests"]
+                if source == "XcodeTestExecutor.swift":
+                    expected += ["XcodeBundleLayoutTests"]
                 self.assert_selection(
                     [routes.APP + "Services/" + source],
                     native=True,
-                    swift=("ScenarioContractsTests",),
+                    swift=expected,
+                )
+
+    def test_new_migration_and_physical_sources_select_their_regressions(self):
+        self.assert_selection(
+            [routes.APP + "Services/ScenarioPersistence+AutomationEvidence.swift"],
+            native=True, swift=("ScenarioAutomationEvidenceTests",),
+        )
+        for source in ("ScenarioPhysicalRunnerLease.swift", "ScenarioRunnerReceiptImporter.swift"):
+            with self.subTest(source=source):
+                self.assert_selection(
+                    [routes.APP + "Services/" + source], native=True,
+                    swift=("ScenarioPhysicalLeaseTests", "ScenarioPhysicalFailureTests", "ScenarioPhysicalSiriQualificationTests"),
+                )
+        for source in ("IntentLabProjectInstaller.swift", "OpenStepProjectDocument.swift"):
+            with self.subTest(source=source):
+                self.assert_selection(
+                    [routes.APP + "Services/" + source], native=True,
+                    swift=("IntentLabProjectInstallerTests",),
                 )
 
     def test_executor_changes_select_contract_and_helper_regressions(self):
         self.assert_selection(
             [routes.APP + "Services/XcodeTestExecutor.swift"],
             native=True,
-            swift=("ScenarioContractsTests", "ExecutorSimplificationTests", "XcodeBundleLayoutTests"),
+            swift=("ScenarioContractsTests", "ExecutorSimplificationTests", "XcodeBundleLayoutTests", "XcodeSyntheticReadinessTests",
+                   "ScenarioPhysicalLeaseTests", "ScenarioPhysicalFailureTests", "ScenarioPhysicalSiriQualificationTests"),
         )
-        for suite in ("ExecutorSimplificationTests", "XcodeBundleLayoutTests"):
+        for suite in ("ExecutorSimplificationTests", "XcodeBundleLayoutTests", "XcodeSyntheticReadinessTests"):
             with self.subTest(suite=suite):
                 self.assert_selection(
                     [routes.TESTS + suite + ".swift"],

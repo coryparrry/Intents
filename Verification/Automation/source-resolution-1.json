@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "scope": "captured project lockfile facts and original-byte archive; no resolver or checkout authority",
+  "coverage": "partial",
+  "verification": {
+    "focusedSwift": {
+      "passed": 38,
+      "skipped": 0,
+      "failed": 0,
+      "filter": "AutomationPackageResolutionTests|AutomationSourceGraphTests|AutomationPackageManifestTests|AutomationSourceSyntaxTests|AutomationPreparedApplicationRecordTests|AutomationMacHostPreparationTests/testExplicit"
+    },
+    "exactURL": "composed/decomposed UTF8 mismatch rejected; equal bytes retained",
+    "metadataValidation": "duplicate and escaped duplicate keys, malformed versions/branches, unsafe URLs and ambiguous states rejected",
+    "savedRestore": "working lockfile rewrite/delete accepted with exact private original archive; altered/missing archive and edited pins rejected",
+    "actualMacBuildOnly": "passed; no app or intent launched; Stop and saved reload passed",
+    "reviews": [
+      "Sol JSON/pin facts and requirement grammar: clear after fixes",
+      "Sol graph ownership, exact URL, original archive and saved restore: clear after fixes"
+    ]
+  },
+  "repositoryGraphQualification": {
+    "fixture": "actual selected FoundationEvals PBX and lockfile metadata with copied reachable core package sources; no product built from this fixture",
+    "graph": "Tools/IntentsAutomation/.runtime/source-resolution-1/repository-remote-graph.json",
+    "graphFileSHA256": "0a608691d9f29fffd421df60774934ead19334669105117f6aa3b95ebe5600e7",
+    "sourceManifestDigest": "4d9056fc9b130a282d995e38792d6407fe9271ad6fe0b91bfeab25236ab31b5f",
+    "remotePins": [
+      {
+        "identity": "hummingbird",
+        "revision": "55bc9025a4825ee2a234b1f82b51b87be6ef74e4",
+        "version": "2.26.0",
+        "requirementState": "unresolved",
+        "resolutionDigest": "0963ba311d638ece6cb88be8e55f77cfce487b1a0a8d817e8a16536177c2e40b"
+      },
+      {
+        "identity": "coreai-models",
+        "revision": "684ae8e6a6766ff1dcb3dfa9c598b7eef44d2b43",
+        "version": null,
+        "requirementState": "satisfied",
+        "resolutionDigest": "0963ba311d638ece6cb88be8e55f77cfce487b1a0a8d817e8a16536177c2e40b"
+      },
+      {
+        "identity": "sparkle",
+        "revision": "ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a",
+        "version": "2.9.6",
+        "requirementState": "satisfied",
+        "resolutionDigest": "0963ba311d638ece6cb88be8e55f77cfce487b1a0a8d817e8a16536177c2e40b"
+      },
+      {
+        "identity": "posthog-ios",
+        "revision": "8551035fe72d8d6605cb077dd853867dc04283ec",
+        "version": "3.71.4",
+        "requirementState": "satisfied",
+        "resolutionDigest": "0963ba311d638ece6cb88be8e55f77cfce487b1a0a8d817e8a16536177c2e40b"
+      }
+    ],
+    "localPackageSwiftInputs": 145,
+    "synchronizedMembership": "unresolved"
+  },
+  "limits": [
+    "Observed pins do not establish checkout bytes, transitive source closure, actual build consumption or cache validity.",
+    "Version ranges and dependency origin hashes remain unresolved; exact version/revision/branch satisfaction is metadata only.",
+    "Only schema2/3 safe HTTPS remote-source-control records are admitted; other formats/locations stay gaps.",
+    "One selected-project workspace lockfile is archived; broader workspace resolution ownership remains unresolved.",
+    "Actual native rendered UI and package-intent execution remain unqualified."
+  ],
+  "failureLessons": [
+    "Exact external URL binding requires byte equality rather than Swift canonical-equivalent string equality.",
+    "Validate SemVer identifiers and static Git branch constraints before recording satisfaction.",
+    "Archive original lockfile bytes before an approved build can rewrite its private working copy."
+  ],
+  "sources": [
+    "https://semver.org/",
+    "https://git-scm.com/docs/git-check-ref-format"
+  ],
+  "log": {
+    "path": "Tools/IntentsAutomation/.runtime/source-resolution-1/swift-final1.log",
+    "sha256": "195e0bd633a9771603a2aa73f11b26ae859dd23e21a6506a9f0f754ad2ee1454"
+  }
+}

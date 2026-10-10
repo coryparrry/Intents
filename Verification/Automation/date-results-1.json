@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "checkpoint": "date-results-1",
+  "sources": [
+    {
+      "path": "Integration/AutomationHost/AutomationDateCodec.swift",
+      "sha256": "db41e4125b3654ab19a01cb217175eec89cf1b0a89ae19c219aaf4c460f62c25"
+    },
+    {
+      "path": "Integration/AutomationHost/HostPlan.swift",
+      "sha256": "77ef5d77ef68990ed2250620af4eae3896df9ded9e4b1c603674878d6de0c811"
+    },
+    {
+      "path": "Integration/AutomationHost/IntentDefinitionsHost.swift",
+      "sha256": "cecf4f04354443f2c899b343e59ef81655885051dd4fb904fdda3d4a1fd37c90"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCodecMetadata.swift",
+      "sha256": "3f39ea08bdbd21db8acc421af2e1164ac3de24c6f8e519a7a88fa21f21f39438"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostProgram.swift",
+      "sha256": "103236a50b184c6d7fa29ae69b60b69f1cb008ed8260e70215f9709b2a0fbb61"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostReceiptImporter.swift",
+      "sha256": "6264ad929f27b7d487abd5ed418442f18dec34df8d83d61e6961fae4eee1da63"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationCodecTests.swift",
+      "sha256": "1c5dda89810b93134423ebbc296e7fa1013b1bdb4d91dd1759cf8218f59cab7b"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationCollectionCodecTests.swift",
+      "sha256": "a29e69370bd16d8e5ec2c86e1e6408108e3f74b7bc479e1e49d57694ae0cc082"
+    },
+    {
+      "path": "Tests/IntentsAutomationHostContractTests/HostCodecContractTests.swift",
+      "sha256": "994417f7b33a160a03c4784937a0a515e5c87cc5f1b63a6cdf415d65cc525ce0"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-date-result-tests110.log",
+      "sha256": "d3e76c39ecfd6ba7454f57e2578050cf21c033bdd0cba52109d2033261f0c110"
+    },
+    {
+      "path": "/private/tmp/intents-automation-host-date-result-typecheck11.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native21.log",
+      "sha256": "da715772a307757c0e74355c253530b0c02f34841dcc67680dc94fa7744f8b84"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native21-summary.json",
+      "sha256": "4652d9a126db758bb2a4c614ddf7bf749c8c8c776cf6c1ffcac943810b4c6ab6"
+    }
+  ],
+  "validation": {
+    "focused110": {
+      "checks": 27,
+      "failures": 0,
+      "allMillisecondValues": 1000
+    },
+    "fullHostSDK11": "passed",
+    "native21": {
+      "checks": 26,
+      "failures": 0
+    },
+    "bothScopedSourceReviews": "clear after canonical receipt fix"
+  },
+  "scope": {
+    "dateAndDateArrayResults": true,
+    "canonicalUTC": true,
+    "exactStoredInstantRetained": true,
+    "lossyPrecisionRejected": true,
+    "historicalDateInputsRetained": true,
+    "deviceConversionQualified": false,
+    "fullPlanComplete": false
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:22:26.798346+00:00",
+  "scope": "Bounded local-model prompt keeps observed inputs/buttons after structural AX ancestors",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "tests133": {
+    "contextProjection": 2,
+    "controller": 9,
+    "failures": 0
+  },
+  "probeBuild20": "passed",
+  "review": "fresh isolated Sol6.1 clear",
+  "nativeBuild": "pending",
+  "limits": [
+    "No new completed live setup/readback yet",
+    "Selected model context remains partial and grants no observation completeness or action authority"
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationControllerContextSelection.swift",
+      "sha256": "c81ac6eddce604d89b9974f3274ca814d7fb76356ed4322ffb6448b14690c421",
+      "bytes": 1309
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "842b0f74c0642cc3869fb35aae47596cb94737c30ec41c7dfa3077d034578e83",
+      "bytes": 4150
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationControllerContextSelectionTests.swift",
+      "sha256": "f0a25f3a380b463e3f22a2b20ce86ad351f64771ea3c0c6c3aa18ea1d46c2621",
+      "bytes": 1969
+    }
+  ]
+}

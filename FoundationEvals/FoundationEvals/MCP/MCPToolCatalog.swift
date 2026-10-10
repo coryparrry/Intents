@@ -94,6 +94,18 @@ enum MCPToolCall: Sendable {
     case getState
     case actionCatalog(MCPActionCatalogCall)
     case control(MCPControlCall)
+    case listAutomationApplications
+    case selectAutomationApplication(MCPSelectAutomationApplicationArguments)
+    case listAutomationCases(MCPListAutomationCasesArguments)
+    case getAutomationAttempt(MCPGetAutomationAttemptArguments)
+    case previewAutomation
+    case previewAutomationFixComparison
+    case requestAutomationFixComparison(MCPRequestAutomationRunArguments)
+    case previewAutomationReproduction
+    case requestAutomationReproduction(MCPRequestAutomationRunArguments)
+    case requestAutomationRun(MCPRequestAutomationRunArguments)
+    case getAutomationRequest(MCPAutomationRequestArguments)
+    case cancelAutomationRequest(MCPAutomationRequestArguments)
     case listProjects
     case listReviewSamples(MCPReviewSamplesArguments)
     case proposeReview(MCPReviewProposalArguments)
@@ -305,6 +317,17 @@ struct MCPListScenarioRunsArguments: Codable, Sendable {
     var limit: Int?
 }
 
+struct MCPSelectAutomationApplicationArguments: Codable, Sendable { var appID: String; var snapshotDigest: String }
+struct MCPListAutomationCasesArguments: Codable, Sendable { var limit: Int?; var cursor: String? }
+struct MCPRequestAutomationRunArguments: Codable, Sendable { var requestID: UUID; var digest: String }
+struct MCPAutomationRequestArguments: Codable, Sendable { var requestID: UUID }
+struct MCPGetAutomationAttemptArguments: Codable, Sendable {
+    var caseID: String
+    var revision: Int
+    var digest: String
+    var attemptID: String
+}
+
 struct MCPGetScenarioReportArguments: Codable, Sendable {
     var runID: UUID
 }
@@ -449,6 +472,29 @@ enum MCPToolCatalog {
             ], required: [], readOnly: true
         ),
         tool(
+            "eval_list_automation_apps", "List apps admitted by native selection",
+            "Read the app candidates already admitted through the native file picker and their current population digest. Does not scan new paths, build, install or execute.",
+            properties: [:], required: [], readOnly: true
+        ),
+        tool(
+            "eval_select_automation_app", "Select an admitted app candidate",
+            "Select one candidate from the exact current listing. Clears previous preparation and action approval when selection changes; cannot admit a new path or start execution. Busy, pending or unresolved execution blocks selection.",
+            properties: ["appID": string("Exact candidate ID from eval_list_automation_apps."), "snapshotDigest": string("Exact current population SHA-256.")],
+            required: ["appID", "snapshotDigest"], readOnly: false
+        ),
+        tool(
+            "eval_list_automation_cases", "List saved app automation cases",
+            "Read immutable saved case summaries. Does not build, install, control a device or execute a case. Truncation is explicit.",
+            properties: ["limit": integer("Maximum summaries to return.", minimum: 1, maximum: 50), "cursor": string("Opaque snapshot-bound cursor returned by this tool.")], required: [], readOnly: true
+        ),
+        tool(
+            "eval_get_automation_attempt", "Read saved app automation attempt",
+            "Read a saved attempt's canonical status and route completion, scoped to its exact frozen case. Does not execute or promote imported history.",
+            properties: ["caseID": string("Saved case identifier."), "revision": integer("Frozen case revision.", minimum: 1, maximum: 100000),
+                         "digest": string("Exact frozen case SHA-256."), "attemptID": string("Saved attempt identifier.")],
+            required: ["caseID", "revision", "digest", "attemptID"], readOnly: true
+        ),
+        tool(
             "eval_get_scenario_report", "Get Intent Lab scenario report",
             "Read a saved scenario run, its lane evidence, diagnostic classification, and fail-closed release check. Artifact paths remain local metadata.",
             properties: [
@@ -460,6 +506,49 @@ enum MCPToolCatalog {
             "Qualify an immutable stable execution using its frozen plan, requirement, retained assessment selection and frozen semantic policy. Uses the GUI and offline evidence qualifier without recovery, model calls or history changes.",
             properties: ["executionID": uuid("Saved stable execution record UUID.")],
             required: ["executionID"], readOnly: true
+        ),
+        tool(
+            "eval_preview_automation", "Preview selected app action",
+            "Read the currently prepared native action, target, permitted effects and exact request digest. Does not build, install or execute. Inputs and effects must first be selected in the native app.",
+            properties: [:], required: [], readOnly: true
+        ),
+        tool(
+            "eval_request_automation_run", "Request native app action confirmation",
+            "Queue one exact preview for confirmation with Run in the native app. Returns awaitingApproval; no device dispatch occurs until native confirmation. Repeating the same request ID and digest returns its existing status and never retries execution.",
+            properties: ["requestID": uuid("Unique execution request UUID."), "digest": string("Exact digest returned by eval_preview_automation.")],
+            required: ["requestID", "digest"], idempotent: true
+        ),
+        tool(
+            "eval_preview_automation_reproduction", "Preview saved failure reproduction",
+            "Read the saved failure selected in the native app and its exact five-attempt request digest. Preserves the frozen oracle and verifies the original app, host, runtime and simulator. Does not execute.",
+            properties: [:], required: [], readOnly: true
+        ),
+        tool(
+            "eval_request_automation_reproduction", "Request native failure reproduction confirmation",
+            "Queue the exact saved-failure preview for Reproduce failure confirmation in the native window. Never dispatches remotely. Status returns all five attempt outcomes and explicit incomplete or unresolved evidence, never a last-attempt verdict.",
+            properties: ["requestID": uuid("Unique reproduction request UUID."), "digest": string("Exact digest from eval_preview_automation_reproduction.")],
+            required: ["requestID", "digest"], idempotent: true
+        ),
+        tool(
+            "eval_preview_automation_fix", "Preview retained-build fix comparison",
+            "Read the saved failure and separately selected changed app build for 30 attempts per build under the unchanged case. Does not build, install or execute.",
+            properties: [:], required: [], readOnly: true
+        ),
+        tool(
+            "eval_request_automation_fix", "Request native fix comparison confirmation",
+            "Queue the exact comparison preview for native Check fix confirmation. No dispatch occurs until confirmation; includes both fresh 30-attempt populations, and repeated IDs never retry execution.",
+            properties: ["requestID": uuid("Unique comparison request UUID."), "digest": string("Exact digest from eval_preview_automation_fix.")],
+            required: ["requestID", "digest"], readOnly: false
+        ),
+        tool(
+            "eval_get_automation_request", "Read native app execution request",
+            "Read this app session's execution request state and eventual canonical attempt status. Unknown or expired requests are unavailable; saved attempts remain accessible through eval_get_automation_attempt.",
+            properties: ["requestID": uuid("Execution request UUID.")], required: ["requestID"], readOnly: true
+        ),
+        tool(
+            "eval_cancel_automation_request", "Cancel native app execution request",
+            "Dismiss the identified pending request or cooperatively cancel only its active native run. Cancellation is not release proof; poll its status and inspect retained attempt evidence.",
+            properties: ["requestID": uuid("Execution request UUID.")], required: ["requestID"], idempotent: true
         ),
         tool(
             "eval_cancel_run", "Cancel evaluation run",
@@ -569,6 +658,32 @@ enum MCPToolCatalog {
                 let value = try arguments.decode(MCPListScenarioRunsArguments.self)
                 try validatePage(cursor: value.cursor, limit: value.limit)
                 return .listScenarioRuns(value)
+            case "eval_list_automation_apps": return .listAutomationApplications
+            case "eval_select_automation_app":
+                let value = try arguments.decode(MCPSelectAutomationApplicationArguments.self)
+                guard !value.appID.isEmpty, value.appID.utf16.count <= 4096, !value.appID.contains("\0"),
+                      value.snapshotDigest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw MCPToolInputError.invalidArguments }
+                return .selectAutomationApplication(value)
+            case "eval_list_automation_cases":
+                let value = try arguments.decode(MCPListAutomationCasesArguments.self)
+                guard (1...50).contains(value.limit ?? 50), value.cursor == nil || value.cursor?.range(of: #"^[a-f0-9]{64}:[0-9]{1,4}$"#, options: .regularExpression) != nil else { throw MCPToolInputError.invalidArguments }
+                return .listAutomationCases(value)
+            case "eval_get_automation_attempt":
+                let value = try arguments.decode(MCPGetAutomationAttemptArguments.self)
+                guard (1...100000).contains(value.revision),
+                      [value.caseID, value.attemptID].allSatisfy({ $0.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"#, options: .regularExpression) != nil }),
+                      value.digest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw MCPToolInputError.invalidArguments }
+                return .getAutomationAttempt(value)
+            case "eval_preview_automation": return .previewAutomation
+            case "eval_preview_automation_reproduction": return .previewAutomationReproduction
+            case "eval_preview_automation_fix": return .previewAutomationFixComparison
+            case "eval_request_automation_run", "eval_request_automation_reproduction", "eval_request_automation_fix":
+                let value = try arguments.decode(MCPRequestAutomationRunArguments.self)
+                guard value.digest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw MCPToolInputError.invalidArguments }
+                if name == "eval_request_automation_fix" { return .requestAutomationFixComparison(value) }
+                return name == "eval_request_automation_run" ? .requestAutomationRun(value) : .requestAutomationReproduction(value)
+            case "eval_get_automation_request": return .getAutomationRequest(try arguments.decode(MCPAutomationRequestArguments.self))
+            case "eval_cancel_automation_request": return .cancelAutomationRequest(try arguments.decode(MCPAutomationRequestArguments.self))
             case "eval_get_scenario_report":
                 return .getScenarioReport(try arguments.decode(MCPGetScenarioReportArguments.self))
             case "eval_get_scenario_execution_report":

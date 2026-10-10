@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:41:01.088557+00:00",
+  "scope": "Typed mutually exclusive controller decisions, current-node aliases, and privacy-safe rejected-decision shape diagnostics",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "tests137": {
+    "passed": 17,
+    "failures": 0,
+    "log": "/private/tmp/intents-automation-tests137.log"
+  },
+  "nativeBuild26": "passed",
+  "review": "fresh isolated Sol6.1 clear for decision-shape and generated decision scopes",
+  "reference": "https://developer.apple.com/videos/play/wwdc2025/301/",
+  "limits": [
+    "New typed format has not yet completed live setup",
+    "Native iOS snapshot missing optional editability fact remains distinct unresolved input capability gap"
+  ],
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFoundationController.swift",
+      "sha256": "24b6ae99d2e6a206fe5474650fb7ce4447e4cd19ea06530cd95600814d721336",
+      "bytes": 4861
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationGeneratedNavigationDecisionTests.swift",
+      "sha256": "67d2b5246ba6e03ac08c364bf8dcf8af2ce061a01f99bad16b1d5f597e5b50b9",
+      "bytes": 1520
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationNavigationController.swift",
+      "sha256": "ac1a57f96216abb69a0153c89e15aeae88109da8eb0336223cfe7b82e8ec37bb",
+      "bytes": 6648
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationRunAuthority.swift",
+      "sha256": "acdf3d508741c1e061c2d4321146a47e04f76e7fe29adc369b1f39f6034d046a",
+      "bytes": 15669
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationControllerTests.swift",
+      "sha256": "54858802f687e9b10c9cccfd82e730a3c3e1bf5ac6907e5e4fc71b777960defe",
+      "bytes": 17037
+    }
+  ]
+}

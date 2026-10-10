@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "qualification": "integer-entity-property-1",
+  "date": "2026-10-08",
+  "baseCommit": "d504d77a8",
+  "behavior": [
+    "Captured primitive 2 admits required integer entity properties; existing entity/query guards and partial discovery remain.",
+    "Entity getter requests SDK-declared Int and writes an exact decimal string.",
+    "Selection and imported query properties reject integers outside signed 64-bit range."
+  ],
+  "checks": [
+    {
+      "command": "swift test --jobs 2 --filter 'AutomationEntityIntegerTests|AutomationCatalogTests|AutomationEntityBindingTests|AutomationEntityPropertyTests|AutomationEntityQueryTests'",
+      "passed": 23,
+      "failures": 0,
+      "skips": 0,
+      "log": "Tools/IntentsAutomation/.runtime/entity-integer-1/swift3.log",
+      "logDigest": "f46969ae476e5d3bceed9b7863735c436229b80bed14a10ab4e5f222f7706eec"
+    },
+    {
+      "test": "AutomationMacHostPreparationTests/testExplicitIntegerEntityPreparationBuildsAndCapturesMetadataWithoutLaunching",
+      "passed": 1,
+      "failures": 0,
+      "scope": "Passed within swift1.log; that aggregate failed because of synthetic test-fixture mistakes, corrected in swift3.log. Production/host source did not change after this successful build.",
+      "log": "Tools/IntentsAutomation/.runtime/entity-integer-1/swift1.log",
+      "logDigest": "55cba2bdc39f2efe325dd99dcbf48c7d0a48a97818ed6a8db09c5a821a533d90"
+    }
+  ],
+  "controlledSDK": {
+    "source": "Tools/IntentsAutomation/.runtime/entity-integer-1/Source/Subject.swift",
+    "sourceDigest": "cb44cc01bc3f2c190258f0810f81806863e117fdea6fe125235a66388d3d5a42",
+    "record": "Tools/IntentsAutomation/.runtime/entity-integer-1/prepare-26197F99-B91E-46DE-B18E-FD4FAEA296E1/prepared-application.json",
+    "recordDigest": "954c67bf7eded94479c91b87b25e6a1b12c7ebf9e8d8a494343e747ccf7a43da",
+    "metadata": "Tools/IntentsAutomation/.runtime/entity-integer-1/prepare-26197F99-B91E-46DE-B18E-FD4FAEA296E1/DerivedData/Build/Products/Debug/Subject.app/Contents/Resources/Metadata.appintents/extract.actionsdata",
+    "metadataDigest": "5020b891d3276b92ea259ea89477d2c455dd515f7beb0614a8e4b8759efaa928",
+    "generator": "xcode-tools 27A266a",
+    "propertyDescriptor": {
+      "sequence": 2
+    },
+    "hostProductDigest": "b24c3e4f4ec049bc08d31e282645f645df38b6f68639bd71ec410bfcbd2c218c",
+    "hostTemplateDigest": "28b688fa7e53456382201ff97e37c0c260772709277f514b9de057212383b415",
+    "sourceManifestDigest": "935b3449f48ea14c988c02075851560486a8f50653b50d7a5104ad526970682e",
+    "planAndSavedRecord": "Integer query property retained; frozen plan and prepared-record reload validated."
+  },
+  "reviews": [
+    "Sol catalog, query/binding and receipt contracts: clear.",
+    "Sol SDK extraction, exact wire and range/failure coverage: clear."
+  ],
+  "limitations": [
+    "Compiler and extracted metadata evidence do not qualify actual dynamic getter execution.",
+    "No app, intent, test runner or simulator launched for the controlled SDK fixture.",
+    "No native GUI, customer runtime, physical-device or release qualification."
+  ],
+  "failureLessons": [
+    "Match synthetic product platform to its metadata layout.",
+    "Evaluate a throwing test operation before XCTUnwrap so expected rejection does not record an unexpected XCTest failure."
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "date": "2026-10-08",
+  "scope": "versioned prepared Mac associated-build artifacts and fix comparison",
+  "behavior": [
+    "New prepared Mac drafts freeze typed version-1 host, xctestrun, catalog, catalog-surface and host-template fingerprints",
+    "Exact case/runtime validation retains all fingerprints; comparison varies only bound build artifacts and source syntax identity while preserving declared schema, template, workflow and oracle",
+    "Candidate construction binds exact after preparation; typed and legacy proof representations cannot coexist",
+    "Legacy cases keep original projection/encoding/digests; saved preparation matching supports either representation"
+  ],
+  "verification": {
+    "command": "swift test --jobs 2 --filter 'AutomationPrivateMacAppleRouteDriverTests|AutomationFreshFixtureTests|AutomationFreshEntityPlannerTests|AutomationFixComparisonTests|AutomationCaseStoreTests|MacFreshDraftStoreTests|MacWorkflowStoreTests|InstalledUIStoreTests|SourcePreparationStoreTests'",
+    "coreTests": 85,
+    "nativeTests": 84,
+    "failures": 0,
+    "integration": "Synthetic comparison changes subject, host, xctestrun, app syntax and catalog graph/syntax fingerprints; two failing before and two passing after attempts preserve contract/oracle",
+    "negatives": "Changed template/entity/parameter/oracle, conflicting legacy proof, unsupported artifact version and exact host/test/catalog mismatch reject; legacy frozen digest projection and omitted optional field verified",
+    "appBuild": "Official Xcode BuildProject, FoundationEvals / My Mac: passed, 25.849 seconds, no errors",
+    "reviews": ["Sol authority/digest lane: clear after syntax fingerprint fix", "Sol compatibility lane: clear after syntax fingerprint fix"],
+    "diffCheck": "passed"
+  },
+  "failuresPreserved": [
+    "Changed-build test initially redeclared local executable identifier; corrected",
+    "Review identified actual app sourceSyntaxIndexDigest retained in comparison; normalized only for typed Mac projections and covered with nonnil differing fingerprints"
+  ],
+  "unverified": [
+    "Synthetic products/drivers do not qualify actual associated-host execution, GUI input or release",
+    "Normal source Mac execution/replay/fix UI remains gated; actual five replays and 30+30 are outstanding",
+    "No device, clean-host, distribution or release qualification"
+  ],
+  "runtime": "Tools/IntentsAutomation/.runtime/mac-associated-build-binding-1"
+}

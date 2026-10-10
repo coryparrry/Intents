@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-08",
+  "scope": "Bounded concurrent read-only Mac process inventory; full v3 remains unqualified",
+  "fullV3Complete": false,
+  "implementation": {
+    "maximumConcurrentProcessReads": 4,
+    "matchingFullObservations": 2,
+    "reconciliationAttemptsMaximum": 3,
+    "identityAndExecutableChecksPreserved": true,
+    "helperObservationBeforeErrorSelection": true,
+    "multipleFailuresRefuseReconciliation": true,
+    "cancellationDrainsCurrentBatch": true,
+    "newRuntimeOrInputAuthority": false
+  },
+  "verification": {
+    "focusedSwift": {
+      "registered": 55,
+      "skipped": 1,
+      "failures": 0,
+      "newConcurrencyTestsPassed": 7
+    },
+    "review": "Independent read-only source and initial regression review found no material issue; final positive single-exit regression additionally verified by main agent and test run.",
+    "diffCheck": "passed",
+    "baselineLive": {
+      "passed": false,
+      "elapsedSeconds": 62.496,
+      "stage": "metadata",
+      "pid": 88531,
+      "errno": 3
+    },
+    "changedLive": {
+      "passed": false,
+      "elapsedSeconds": 1.091,
+      "stage": "absenceUnconfirmed",
+      "pid": 93503,
+      "errno": 0,
+      "followUpObservation": {
+        "pid": 93503,
+        "parentPID": 93363,
+        "status": "Z",
+        "parentExecutable": "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT",
+        "authority": "Read-only ps; no process terminated",
+        "parentBundleID": "com.openai.codex"
+      }
+    },
+    "comparisonLimit": "Different live process populations; elapsed times do not establish a benchmark or successful admission.",
+    "nativeApplicationBuild": "Not repeated for this core-only change; Swift package compilation and affected inventory/release suites passed. Prior native app build predates this change.",
+    "postUserResetLive": {
+      "passed": true,
+      "registered": 1,
+      "failures": 0,
+      "records": 817,
+      "matchingObservations": 2,
+      "elapsedSeconds": 0.14,
+      "atomic": false,
+      "log": "Tools/IntentsAutomation/.runtime/process-inventory-concurrency-1/intents-v3-inventory-after-reset.log"
+    }
+  },
+  "remaining": [
+    "Process inventory success is not complete child-closure or runtime capability proof.",
+    "The subsequent authored probe could not load AppIntentsTesting against the OS framework; see input-probe-live-1.json.",
+    "Controller/reproduction, native UI, physical device and release qualification remain open."
+  ],
+  "sourceSHA256": {
+    "Sources/IntentsAutomationCore/AutomationMacProcessInventory.swift": "742089d9bce7f4febc8f954135b167c74b3e3a117562f6ad61d87eb6f6c82dff",
+    "Tests/IntentsAutomationCoreTests/AutomationMacConcurrentInventoryTests.swift": "596f3346908229956033a995ad94d6d02186105cc1868024a027f48090102408"
+  },
+  "logs": "Tools/IntentsAutomation/.runtime/process-inventory-concurrency-1"
+}

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T01:00:37.225729+00:00",
+  "scope": "Actual bounded native controller actions after explicit e2e patch",
+  "attemptID": "fresh-owner-budget1",
+  "runtimeBundle": "/private/tmp/IntentsAutomationNativeWorkflowQualification9.app",
+  "probe": "probe28",
+  "fullPlanComplete": false,
+  "fixtureSetupQualified": false,
+  "controllerCalls": 4,
+  "sdkFillActionsCompleted": 3,
+  "workerResult": "navigationStalled",
+  "sdkActionBudgetQualifiedForObservedLongFill": true,
+  "completeUIReceipt": false,
+  "independentQuery": false,
+  "subjectDispatched": false,
+  "resourcesReleased": true,
+  "campaignsEmpty": true,
+  "generation": 118,
+  "limits": [
+    "Model repeated same fill instead of saving new records",
+    "Visible title/input activity do not establish record creation",
+    "No same-attempt mutation retry after an uncertain outcome"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-budget1/report.json",
+      "sha256": "d4430f66fc1c3c89cc0f5a4d69d5452ea0f2f7fa3898a1e9d062680b79dbcd7e"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-budget1/journal.json",
+      "sha256": "32857a5d5ca63e211106be443a717a5cd084d9a975b50a5956b3074baea2685d"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-budget1/artifacts/sidecar-release-117-1.json",
+      "sha256": "be21ba07b67d564009efa8ec91f971e9ac7eafa4e87ddec14b19e84f3b7e02f0"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-budget1/artifacts/controller-117-1.json",
+      "sha256": "2facd8348bf7c6af7a8b6f0264e36ec8f02492981189270a10ac8ceb40ae58ef"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-budget1/artifacts/controller-117-2.json",
+      "sha256": "f1226dd13c421c4f9033e04a1c77940f75554eacc7685b0b221aaa1f97e54145"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-budget1/artifacts/controller-117-3.json",
+      "sha256": "bb2ab44ab35370599060c0a5eb1b12e302f647e79bc9d94fa07e0fe85dc1c4f4"
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-budget1/artifacts/controller-117-4.json",
+      "sha256": "f951bca7cf6ce3527b7b77b4b2e5ca8f6337e541d4d0815d584aeb877c984457"
+    }
+  ]
+}

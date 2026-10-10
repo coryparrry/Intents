@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T22:45:26.775982+00:00",
+  "scope": "Native fresh-record workflow and reproduction/fix campaign integration; source/contract tests only",
+  "sourceComplete": true,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "checks": {
+    "core": {
+      "registered": 265,
+      "hardwareSkipped": 5,
+      "failures": 0
+    },
+    "nativeStore": {
+      "registered": 44,
+      "failures": 0
+    },
+    "generatedHost": {
+      "registered": 18,
+      "failures": 0
+    },
+    "sourceReview": "two fresh Sol 6.1 reviewers; material findings fixed and narrow rechecks clear",
+    "nativeBuild24": "pending"
+  },
+  "sources": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationAttemptText.swift",
+      "sha256": "bec77c76644c9cd13f0a98bdd0324c48646a7003e3363dc98e5ec2107417d37f",
+      "bytes": 3126
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFreshEntityPlanner.swift",
+      "sha256": "252abe2221632d1670c86bed17851ae37b4cdcfc4746292eb9ebe0077753e505",
+      "bytes": 6238
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationPlan.swift",
+      "sha256": "b96ad1ce250a0b5560db083b9095f86b6aea9e6938d1d124ae0490c1dffb54c2",
+      "bytes": 11184
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostProgram.swift",
+      "sha256": "3d8434e8eceaaf1fdc4ca594c863b317fd397e655e11dd3e4a615782b6518e4d",
+      "bytes": 10272
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationInputBinding.swift",
+      "sha256": "c3252f22910930f27bbed75fcd15ae46a74e05b427c2002a9ebd09ff6b2c88fc",
+      "bytes": 8805
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationEntitySelection.swift",
+      "sha256": "74e57c1a032f4ccc713cd3545ceeb952e82e6e92909c8dcbd19341d5f22b282a",
+      "bytes": 4163
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationEntityPropertyPredicate.swift",
+      "sha256": "3aca602afb71484d6dd78628c517032f031759717dd68b922b7591e94bb98fdd",
+      "bytes": 6191
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationFreshFixture.swift",
+      "sha256": "ea8d73ea73e2e188437710dd86f9caf744438ba6f1fc7712e5407f3cc0727748",
+      "bytes": 21402
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationEvidence.swift",
+      "sha256": "5c0103a55aed91ab995e51d79d20f8c644da6133b4ff737eb04ea39859fa13c3",
+      "bytes": 5910
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationRecordedEvidence.swift",
+      "sha256": "e5a5a31f70a0ac0831d8351fbab34d8a9ecf80fed44e42afda0afb8e435aa421",
+      "bytes": 4433
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCoordinator.swift",
+      "sha256": "d93f310f49b4c73fb5096f60388fcb505b10ec24624766add18dd2f0828b5259",
+      "bytes": 14565
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationApplicationRunner.swift",
+      "sha256": "bed0b730158b7d6f7db0d4613ebb47a44517351acdcddb9f77b62a07150becf6",
+      "bytes": 21452
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationDeviceReleaseVerifier.swift",
+      "sha256": "8243e81b3af0485f595dcd2775d6e590a8c235e573cdd0cf6a4104b08d8e2fae",
+      "bytes": 7477
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift",
+      "sha256": "a3472f053b85816d8dae0224c15c546af9b51dd68f19708897fc6dadc9254845",
+      "bytes": 61693
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Stores/AutomationNativeRunPlanning.swift",
+      "sha256": "c1ac10d17588235ebadbab73262c8489b8e7e3e7222f18d4eefe5b6d7806dfab",
+      "bytes": 10569
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Stores/AutomationNativeFreshFixtures.swift",
+      "sha256": "d3b941f8b98e97a686ca6237482c61c0629a3c008e7291cfb487e4e17549af75",
+      "bytes": 2520
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIReproduction.swift",
+      "sha256": "81cf5f88ce6c8e43f0950eef3424748f968af2c720e4c62f020e310288317276",
+      "bytes": 7733
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFixComparison.swift",
+      "sha256": "1428f94e29a59e2dd560638abe624cde8f8998a8fe662c9efc7b22fad8e32792",
+      "bytes": 7583
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift",
+      "sha256": "c9f7a1b40bc96ddbdee63c084595da62f9d3c1c3284b8ff91806f3ef1fb76a1b",
+      "bytes": 36945
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationFreshEntityPlannerTests.swift",
+      "sha256": "0ee3b59aecac491b9ece94e24e785561bdf4247e37bd84bc9ee5f761816f5ac9",
+      "bytes": 13986
+    },
+    {
+      "path": "Tests/IntentsAutomationNativeUITests/InstalledUIStoreTests.swift",
+      "sha256": "c801814ed4352c585593ddfe6094214acd8da7bf6285c4b6dc5d08b57f082fcc",
+      "bytes": 62523
+    },
+    {
+      "path": "Package.swift",
+      "sha256": "4b7277bf9b9fd9b61b5516a1cd9f39a78e4f02e367733632990892b613134c60",
+      "bytes": 11384
+    }
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-tests129.log",
+      "sha256": "123c29317a904d66fbf374fd07901d0e2b2164f1ad6ff8f86fb0a309f0d7b0ee",
+      "bytes": 115878
+    },
+    {
+      "path": "/private/tmp/intents-automation-tests130-host.log",
+      "sha256": "7f40595fe9c5c41718724167dfbe3facbb19537b7fec6ab48ae093c7f7f0e4d9",
+      "bytes": 16461
+    }
+  ],
+  "remaining": [
+    "View actual native screen and exercise normal private preparation and mixed execution",
+    "Qualify fresh fixture reproduction/source comparison with actual live attempts",
+    "Recipe promotion/replay and held-out/corpus/platform/migration/package qualification"
+  ],
+  "externalBlocker": "Physical Siri qualification stopped before scenario by AppIntentsTesting/AppIntentsServices missing symbol; no unchanged retry"
+}

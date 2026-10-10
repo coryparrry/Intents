@@ -1,0 +1,24 @@
+{
+  "binary": {
+    "path": "/private/tmp/intents-codec-metadata-qualification2/DerivedData/Build/Products/Debug-iphonesimulator/DuplicateTasks.app/DuplicateTasks",
+    "sha256": "b004d76d25f77ec7f3777724e3cdec86d60b76ed5938a39adff2e732b1c6257b"
+  },
+  "declaration": {
+    "path": "/private/tmp/intents-codec-metadata-qualification2/Source/App/TaskIntents.swift",
+    "sha256": "820193923a9f562cbfa8f394e075ce699598b69808e98be2829be3859c896163"
+  },
+  "generator": {
+    "name": "xcode-tools",
+    "version": "27A266a"
+  },
+  "log": {
+    "path": "/private/tmp/intents-codec-metadata-qualification2/build4.log",
+    "sha256": "8c6cbbb5fceb5c7bec8c3e6702eb6aa45393923184de41ecf8dd663222586fc1"
+  },
+  "metadata": {
+    "path": "/private/tmp/intents-codec-metadata-qualification2/DerivedData/Build/Products/Debug-iphonesimulator/DuplicateTasks.app/Metadata.appintents/extract.actionsdata",
+    "sha256": "434ec7fb7e99a4238a184dea407bac3165f41cb96fea996868b57af5c64832f7"
+  },
+  "scope": "Actual compiled metadata only; no Apple host conversion, subject or device execution proof",
+  "unsupported": "Nested parameters and results were rejected by the same installed extractor; preserved separate errors."
+}

@@ -1,0 +1,31 @@
+{
+  "actualPinnedUnitReadOnlyVerified": true,
+  "customerRuntimeEnabled": false,
+  "foundationCommit": "87cc704eb8ebf86442ed4125790a784c29c5f728",
+  "limits": [
+    "Internal low-level ownership composition only; no UI-program or product runner route yet",
+    "Exact SDK and native GUI composition is unqualified",
+    "Hardware bridge opt-in skipped; no unchanged physical/helper inventory attempt",
+    "Native artifact checkpoint1 predates this session source"
+  ],
+  "loaderCommit": "df5415672",
+  "nativeGUIQualified": false,
+  "realNativeHelperLaunched": false,
+  "realSDKExecutedBySessionTests": false,
+  "schemaVersion": 1,
+  "sourceFilesSHA256": {
+    "Sources/IntentsAutomationCore/AutomationMacOwnedDaemonSession.swift": "f09878d1331b5bdebe762d8572c2c6e143254b9d9573474846fd407ada3ce82f",
+    "Tests/IntentsAutomationCoreTests/AutomationMacOwnedDaemonSessionTests.swift": "63c5cad54683edb7bbe25864f2e8d24ba43106270d09cc5772d56dbac345f789"
+  },
+  "syntheticProtocolOwner": true,
+  "unitReceiptSHA256": "0dbd9f8b9a83181d94cbbe47103c1b55daeb147c211994ce3b0d571f7e5c8aaf",
+  "verification": {
+    "failures": 0,
+    "logSHA256": "3158b3726e2745b98d3693b381aaeffcc46a93e1e3cc004c9fa9e14afa6135b3",
+    "review": "Fresh scoped Sol recheck clear after final subject-check race fix",
+    "sessionTestsPassed": 8,
+    "sharedTestsPassed": 31,
+    "sharedTestsRegistered": 32,
+    "sharedTestsSkipped": 1
+  }
+}

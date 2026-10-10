@@ -1,0 +1,47 @@
+{
+  "scope": {
+    "protocolVersion": 1,
+    "runId": "run",
+    "attemptId": "attempt",
+    "segmentId": "setup",
+    "leaseGeneration": 1
+  },
+  "operationId": "attempt:setup",
+  "phase": "setup",
+  "operations": [
+    {
+      "kind": "fillBinding",
+      "id": "first",
+      "locator": {
+        "kind": "testId",
+        "value": "first"
+      },
+      "binding": "10"
+    },
+    {
+      "kind": "fillBinding",
+      "id": "second",
+      "locator": {
+        "kind": "label",
+        "value": "é / 💫"
+      },
+      "binding": "2"
+    },
+    {
+      "kind": "readProperty",
+      "id": "__proto__",
+      "locator": {
+        "kind": "label",
+        "value": "Read"
+      },
+      "property": "text"
+    }
+  ],
+  "bindings": {
+    "10": "quote\"\n /",
+    "2": "é 💫 "
+  },
+  "timeoutMs": 120000,
+  "digestVersion": 2,
+  "payloadDigest": "67a832b23cf41ccbf88a8f1d41961954c7c18aaf10d4c140921c8cc931272b94"
+}

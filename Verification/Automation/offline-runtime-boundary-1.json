@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T03:34:09.853140+00:00",
+  "scope": "Network-denied packaged bootstrap; separate failed synthetic SDK subject",
+  "cleanMacQualified": false,
+  "offlineDeterministicSubjectQualified": false,
+  "bootstrap": {
+    "scope": "Current signed private bundle bootstraps from packaged dependencies with off-host outbound denied; no device/UI session",
+    "exitCode": 0,
+    "networkDenialErrno": 1,
+    "hello": {
+      "protocolVersion": 1,
+      "adapterVersion": "0.1.0",
+      "nodeVersion": "24.21.0",
+      "methods": [
+        "hello",
+        "inventory",
+        "probe",
+        "ui.acquire",
+        "ui.runSegment",
+        "ui.release",
+        "cancel",
+        "status",
+        "shutdown"
+      ],
+      "mixedHandoffQualified": false,
+      "navigationReplay": false
+    },
+    "shutdown": {
+      "shutdownRequested": true,
+      "resourcesReleased": true,
+      "cleanupReason": "complete"
+    },
+    "childTerminated": true,
+    "cleanMacQualified": false,
+    "offlineDeterministicSubjectQualified": false
+  },
+  "subject": {
+    "attemptID": "integer-list-offline1",
+    "receipts": [],
+    "resourcesReleased": true,
+    "result": {
+      "assessed": false,
+      "evidenceComplete": false,
+      "failedObservations": [],
+      "missingObservations": [],
+      "subjectCompleted": false,
+      "subjectDispatchUncertain": true,
+      "subjectDispatched": false,
+      "summary": "unresolved"
+    },
+    "schemaVersion": 1
+  },
+  "failure": "Test-manager Unix socket Operation not permitted before completed receipt; no codec conclusion",
+  "cleanupEvidence": {
+    "reportResourcesReleased": true,
+    "observedCommonRegistryEmptyGeneration": 138,
+    "ownedSimulatorID": "09D3C36B-7A4C-406A-91E5-0A99A429F7D3",
+    "observedState": "Shutdown",
+    "processAuditBeyondReportedRelease": false
+  },
+  "sha256": {
+    "/private/tmp/intents-offline-runtime-qualification1/runtime.sb": "3a89b1451ca096f59b53abd7d5e0e8b6d9c183cd469af7d6cb882188c71bdcdc",
+    "/private/tmp/intents-offline-runtime-qualification1/network-denial.txt": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "/private/tmp/intents-offline-runtime-qualification1/summary.json": "6bcaa3cbfc6d1860ab05880deaf724181eca610753afcd2c4bdc8524e12b6877",
+    "/private/tmp/intents-offline-runtime-qualification1/subject-stdout.json": "51af821fa2c45bf499d2bf647fb33336fd403f12c3cdc3cd5c27083eb2db5667",
+    "/private/tmp/intents-automation-canonical-campaign/integer-list-offline1/report.json": "491dfd611dccae9a1e23cb562432848d313a84c839b9b904f2c82a72df247bd1",
+    "/private/tmp/intents-automation-canonical-campaign/integer-list-offline1/journal.json": "5d33fe2b3ae292fc476a4baf46e972d52a9e9eeeb59f8b18c2579aadc56c8ad6",
+    "/private/tmp/intents-automation-canonical-campaign/integer-list-offline1/artifacts/apple-log-137.txt": "123dbb6e4f04a576673102bda2123d01afbbe6db68e23640bb089a0104a1c952"
+  }
+}

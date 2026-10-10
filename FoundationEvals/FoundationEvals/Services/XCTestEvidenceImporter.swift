@@ -28,6 +28,7 @@ struct ScenarioExecutionJournal: Codable, Equatable, Identifiable, Sendable {
     var evidenceAccepted: Bool? = nil
     /// v3-only native coordinate; nil retains the historical all-routes test.
     var scope: ScenarioNativeExecutionScope? = nil
+    var physicalRunner: ScenarioPhysicalRunnerRecord? = nil
 }
 
 struct ScenarioImportLedger: Codable, Equatable, Sendable {

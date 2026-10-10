@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-08",
+  "fullV3Complete": false,
+  "customerRuntimeEnabled": false,
+  "hardwareQualified": false,
+  "changes": [
+    "Versioned synchronized Xcode source membership with immutable saved replay; unsupported wrappers, ownership and conditional membership remain explicit gaps.",
+    "One input/declaration for overlapping explicit and synchronized membership.",
+    "Closed policy-denial reasons through native authority, broker, normal/owned worker exit, RPC, saved result and native result explanation; no arbitrary error/input text retained.",
+    "Immutable private runtime entry11, preserving predecessor entry10 and all customer/hardware/signing gates."
+  ],
+  "verification": {
+    "broadAutomationSwift": {
+      "registered": 861,
+      "skipped": 35,
+      "failures": 0,
+      "scope": "Before final diagnostic propagation; later focused checks cover changes."
+    },
+    "fullSourceWorkerSuite": {
+      "registered": 222,
+      "skipped": 18,
+      "failures": 0,
+      "scope": "Before worker-exit propagation."
+    },
+    "diagnosticWorkerSuite": {
+      "passed": 29,
+      "failures": 0
+    },
+    "focusedSwift": {
+      "registered": 81,
+      "skipped": 1,
+      "failures": 0
+    },
+    "actualSynchronizedBuildReload": {
+      "passed": 1,
+      "runtimeLaunched": false
+    },
+    "runtimeSwift": {
+      "registered": 14,
+      "skipped": 3,
+      "failures": 0,
+      "bothNewAndPredecessorAuthenticated": true
+    },
+    "pythonStaging": {
+      "passed": 11,
+      "failures": 0
+    },
+    "finalSealedPolicyWorker": {
+      "passed": 3,
+      "failures": 0,
+      "target": "Synthetic controls; real pinned e2e child processes."
+    },
+    "initialSealedPolicyWorker": {
+      "passed": 2,
+      "failed": 1,
+      "note": "15-second test budget expired during concurrent compilation. Unchanged diagnostic rerun passed; final test uses existing standard 50-second worker budget and passed serially."
+    },
+    "nativeUI": {
+      "launchVerified": true,
+      "overviewScreenshotInspected": true,
+      "appAutomationFlowVerified": false,
+      "reason": "Exact final temporary bundle launched and exposed App automation in the expected sidebar. Native UI control pipe closed on navigation and subsequent observation; full flow remains unverified. Exact task-launched process then closed.",
+      "finalBuildLaunchVerified": true,
+      "appAutomationEntryVisible": true
+    },
+    "reviews": [
+      "Independent Sol source review: wrapper/overlap issues fixed and rechecked.",
+      "Independent Sol diagnostic review: worker/saved-result propagation and private runtime packaging fixed; all 5487 files/source/generated mappings independently verified."
+    ],
+    "finalArchiveAndSourceSwift": {
+      "registered": 85,
+      "skipped": 1,
+      "failures": 0,
+      "scope": "Final case-store diagnostic save/load, result validation and synchronized source/replay changes."
+    },
+    "initialNativeBuild": {
+      "errors": 0,
+      "elapsedSeconds": 78.916,
+      "note": "Passed before final loader pin and archive diagnostic guard; superseded by final successful build."
+    },
+    "nativeBuild": {
+      "succeeded": true,
+      "exitCode": 0,
+      "errors": 0,
+      "productDirectory": "/private/tmp/intents-v3-final-products",
+      "log": "Tools/IntentsAutomation/.runtime/v3-completion-1/intents-v3-final-native-build.log",
+      "note": "Final source state; locked package versions, fresh output directory, one build job. Earlier existing-output permission failure preserved; no permission attributes changed."
+    }
+  },
+  "runtime": {
+    "checkpoint": "867b2d1ffad2eda87739fc42609f1a7ab8c2676bbf106939ed97b40b2f9ea528",
+    "bootstrap": "c7a949142719a7d94c9875fb70d2edd8dbbd515ae8aa1a619ab001a18fb63ad1",
+    "receipt": "5ff1f0e74f8474882340e5f68c3dfc2b1abc8882f4224df365c990818438f354",
+    "files": 5487
+  },
+  "remaining": [
+    "Live current-UID process admission and owned child closure: prior blocking PID14398 still present; unchanged census not retried.",
+    "Actual generated host input probes, two-owner mixed fixture/controller execution, saved Reproduce and same-oracle comparisons.",
+    "Physical-device/Siri toolchain qualification, clean-host/Intel/update/signing/notary checks, independent-app matrix and unfamiliar-user trials.",
+    "Compiler/generated/dependency ownership discovery remains honestly partial; no complete enumeration or unsupported nested-array capability is claimed."
+  ],
+  "logs": "Tools/IntentsAutomation/.runtime/v3-completion-1"
+}

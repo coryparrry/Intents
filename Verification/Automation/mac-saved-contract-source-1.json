@@ -1,0 +1,38 @@
+{
+  "evidence": {
+    "normalization": "trim horizontal trailing whitespace, normalise line endings and remove blank lines at EOF",
+    "path": "Verification/Automation/Evidence/2026-10-07-mac-saved-contract/swift-saved1.log",
+    "rawPath": "Tools/IntentsAutomation/.runtime/mac-saved-contract-1/swift-saved1.log",
+    "rawSHA256": "4a15dcc1744d6d210a042129d4f3f4b5c7a6c8cea2280c9718a298f540d8d485",
+    "sha256": "4a15dcc1744d6d210a042129d4f3f4b5c7a6c8cea2280c9718a298f540d8d485"
+  },
+  "limits": [
+    "Native saved request and store admission remain pending",
+    "Actual runner qualification fences unchanged",
+    "Read-only bounded UI programs only; no secret fill, dynamic goals or prepared Mac setup/reset",
+    "Comparison preserves separately retained build paths and unchanged contract and oracle"
+  ],
+  "qualification": {
+    "actualGUIVerified": false,
+    "actualRuntimeVerified": false,
+    "appLaunched": false,
+    "customerMacQualified": false,
+    "reviewDataOnly": true,
+    "testRuntimeAndGUIProvidersSynthetic": true
+  },
+  "schemaVersion": 1,
+  "sourceInputs": {
+    "Sources/IntentsAutomationCore/AutomationInstalledMacUIApplication.swift": "2f3ba57048a604f75ced914a419ac4e6c84e8ab0d27d3209c61719431b59d156",
+    "Sources/IntentsAutomationCore/AutomationMacSavedWorkflowContract.swift": "b1619db6ad709fb838f06ea9efbd02f672509075f405ccae58410f19468c691b",
+    "Tests/IntentsAutomationCoreTests/AutomationMacSavedWorkflowContractTests.swift": "b9823db99b62a18a308cbccd03ae05f4ab38b49e258cb86fa663dccdcd6894f7"
+  },
+  "status": "saved-mac-workflow-review-contracts-source-verified",
+  "verification": {
+    "command": "swift test --disable-sandbox -j 2 --filter 'AutomationMacSavedWorkflowContractTests|AutomationSubjectCampaignExecutorTests|AutomationReproductionTests|AutomationFixComparisonTests|AutomationInstalledMacUI'",
+    "failed": 0,
+    "newContractTests": 6,
+    "passed": 22,
+    "skipped": 0,
+    "sourceReview": "distinct provenance/session and authority/effects Sol lanes clear"
+  }
+}

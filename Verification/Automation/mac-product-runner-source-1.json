@@ -1,0 +1,42 @@
+{
+  "acquiredInstanceRetainedInArtifacts": true,
+  "actualGUIQualified": false,
+  "failures": 0,
+  "frozenUnit6Unchanged": true,
+  "hardwareOptInSkipped": true,
+  "internalMacProductRunnerComposed": true,
+  "limits": [
+    "Tap-only input; fill, scroll and goal binding-use requirements fail before activation",
+    "Actual current console/GUI session validation still requires source work",
+    "Default UID release inventory remains conservatively unresolved for persistent zombie",
+    "Public Mac/physical paths stay fenced; native rendered journey, mixed fixture, release/platform qualification remain open"
+  ],
+  "newMacRunnerTestsPassed": 14,
+  "pinnedProgramReceiptSHA256": "44e1c9e8282104212da918a393539d1d8a7d8e66e73c711a7ae88076716590e0",
+  "publicRunnerMacRouteEnabled": false,
+  "reviews": {
+    "campaignComposition": "Fresh Sol review clear",
+    "ownershipAndAuthority": "Fresh Sol recheck clear after acquisition factory/pre-control join and cancelled catch fixes"
+  },
+  "schemaVersion": 1,
+  "sharedSwiftLogSHA256": "342a2ee1fcb1b85ee35ade57e1ebf1eb36efc55a4aeb00ee2c6ef801359f38e7",
+  "sourceFilesSHA256": {
+    "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift": "548d3992e20e8b7719025815575a8c6d76aea276427d4a8c6ab8d4a7f3399c02",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFailureSearch.swift": "d77b16c8ad5ca6f8376116e24858a99c16e51ed84082e850a4824220db120b8c",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIFixComparison.swift": "a53bb2efb71574ed27550b7e783b306eb0544ae2564f9904a4e56dc7585f26f1",
+    "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIReproduction.swift": "3fe7a3fb03f6af567b6e98f9d8b64ba17156da100b818b17a90ae40dbafb9981",
+    "Sources/IntentsAutomationCore/AutomationApplicationRunner.swift": "c9d59e6e0b3fc2957c5c13dad7e0c4b3ba0a8368c516ec95a9bcb218809be149",
+    "Sources/IntentsAutomationCore/AutomationCoordinator.swift": "bd103224516b3fd65e0b1677064be1fbe20808bb7b10a826ef10e263ffb1186b",
+    "Sources/IntentsAutomationCore/AutomationInstalledMacUIApplication.swift": "a691efe0036597520145d9b3347df741478b78847a6f24e2da6ab68b75e569a2",
+    "Sources/IntentsAutomationCore/AutomationInstalledUIApplication.swift": "6e6c654fea7993c14c669c3bc973e3a1d6784cd33b03242013d5a9afb6f903c2",
+    "Sources/IntentsAutomationCore/AutomationMacNativeHelperBridge.swift": "6cdc14dd34f3582f7672cf320314285b37d314631f4a04edba95b648211c0c7d",
+    "Sources/IntentsAutomationCore/AutomationMacOwnedDaemonSession.swift": "8d07970a5c266978d5f697f0727b22e0d1ecfb1953b0af1936f851c25156942e",
+    "Sources/IntentsAutomationCore/AutomationMacUIQualification.swift": "222cb1f15871c50e37681e0c4ba6ee1fb7567cd163e1c0de664c4736bbf4f858",
+    "Sources/IntentsAutomationCore/AutomationMacUIRouteDriver.swift": "49af37e9c5090b239a2cf25e47369c7473a1cfb21c5ca5636bccb0190d3084ca",
+    "Tests/IntentsAutomationCoreTests/AutomationMacUIQualificationTests.swift": "616fa8cb631f290907443dd82e5bd6d7ca8776fc884a3db3f0088890f9dd904d"
+  },
+  "syntheticSessions": true,
+  "testsPassed": 80,
+  "testsRegistered": 81,
+  "testsSkipped": 1
+}

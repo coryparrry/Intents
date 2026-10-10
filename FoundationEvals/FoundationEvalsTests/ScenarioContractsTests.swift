@@ -3200,14 +3200,38 @@ struct ScenarioContractsTests {
         })
     }
 
-    @Test func cancelledConnectionCheckStopsTermResistantHostAndReportsCancellation() async throws {
+    @Test func connectionStartupBudgetBeginsAtExecutorEntry() {
+        let start = ContinuousClock.now
+        let startup = ConnectionHostStartupObservation(now: start)
+        #expect(startup.snapshot.deadline == start.advanced(by: .seconds(90)))
+        let delayedEntry = start.advanced(by: .seconds(50))
+        startup.enterLaunch(now: delayedEntry)
+        #expect(startup.snapshot.deadline == delayedEntry.advanced(by: .seconds(30)))
+        startup.enterLaunch(now: delayedEntry.advanced(by: .seconds(10)))
+        #expect(startup.snapshot.deadline == delayedEntry.advanced(by: .seconds(30)))
+    }
+
+    @Test func connectionStartupObservesEarlyTaskFailure() {
+        let startup = ConnectionHostStartupObservation()
+        startup.complete(.failure(XcodeTestExecutorError.activeExecution))
+        guard case .failure(let error)? = startup.snapshot.completion,
+              let executorError = error as? XcodeTestExecutorError, case .activeExecution = executorError else {
+            Issue.record("The host's early launch failure was lost.")
+            return
+        }
+        #expect(!startup.snapshot.enteredLaunch)
+    }
+
+    @Test(.timeLimit(.minutes(3))) func cancelledConnectionCheckStopsTermResistantHostAndReportsCancellation() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
+        let startup = ConnectionHostStartupObservation()
         let executor = XcodeTestExecutor(
             workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory),
             persistence: ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab", directoryHint: .isDirectory)),
             destinationStatusReader: { identifier, _ in
                 #expect(identifier == "cancelled-connection-device")
+                startup.enterLaunch()
                 return (true, "Synthetic local process", .macOS)
             }
         )
@@ -3216,29 +3240,52 @@ struct ScenarioContractsTests {
         let logURL = root.appending(path: "connection-cancel.log")
         let arguments = termResistantHostArguments
         let task = Task {
-            try await executor.runJournaledConnectionTest(
-                definition: definition, configuration: configuration,
-                methodName: "testIntentLabReadiness", derivedData: root.appending(path: "DerivedData"),
-                resultBundle: root.appending(path: "Readiness.xcresult"), arguments: arguments,
-                logURL: logURL, appendLog: false, deadline: .seconds(90)
-            )
+            do {
+                let code = try await executor.runJournaledConnectionTest(
+                    definition: definition, configuration: configuration,
+                    methodName: "testIntentLabReadiness", derivedData: root.appending(path: "DerivedData"),
+                    resultBundle: root.appending(path: "Readiness.xcresult"), arguments: arguments,
+                    logURL: logURL, appendLog: false, deadline: .seconds(90)
+                )
+                startup.complete(.success(code))
+                return code
+            } catch {
+                startup.complete(.failure(error))
+                throw error
+            }
         }
-        // Parallel suites can stall task scheduling for several seconds on CI runners.
-        let launchDeadline = ContinuousClock.now.advanced(by: .seconds(30))
-        while Self.readyProcessID(logURL) == nil && ContinuousClock.now < launchDeadline {
-            try await Task.sleep(for: .milliseconds(20))
+        // Give scheduling/persistence its own bounded budget. Trap readiness
+        // starts only when the executor enters the actual host launch path.
+        do {
+            while Self.readyProcessID(logURL) == nil {
+                let state = startup.snapshot
+                if let completion = state.completion {
+                    Issue.record("The connection host completed before trap readiness: \(completion).")
+                    break
+                }
+                if ContinuousClock.now >= state.deadline { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+        } catch {
+            task.cancel()
+            _ = await executor.cancelConnectionCheck()
+            _ = await task.result
+            throw error
         }
         guard let processID = Self.readyProcessID(logURL) else {
             Issue.record("The connection host did not acknowledge its signal traps before cancellation.")
             task.cancel()
-            _ = try? await task.value
+            _ = await executor.cancelConnectionCheck()
+            _ = await task.result
             return
         }
         #expect(await executor.connectionDeviceTestIsRunning())
+        let cancellationStarted = ContinuousClock.now
         guard case .recoveryRequired = await executor.cancelConnectionCheck() else {
             Issue.record("Cancelling a launched connection host did not require recovery.")
             task.cancel()
-            _ = try? await task.value
+            _ = await executor.cancelConnectionCheck()
+            _ = await task.result
             return
         }
         do {
@@ -3249,6 +3296,8 @@ struct ScenarioContractsTests {
         } catch {
             Issue.record("A cancelled connection check was reported as \(error).")
         }
+        #expect(cancellationStarted.duration(to: ContinuousClock.now) < .seconds(30),
+                "Cancellation must drain the host before the 90-second command deadline.")
         expectHostStopped(processID)
         #expect(!(await executor.hasActiveExecution()))
     }
@@ -3923,6 +3972,40 @@ struct ScenarioContractsTests {
         let hostStillRunning = Darwin.kill(processID, 0) == 0
         if hostStillRunning { _ = Darwin.kill(processID, SIGKILL) }
         #expect(!hostStillRunning, sourceLocation: sourceLocation)
+    }
+
+    private final class ConnectionHostStartupObservation: @unchecked Sendable {
+        struct State {
+            var deadline: ContinuousClock.Instant
+            var enteredLaunch = false
+            var completion: Result<Int32, any Error>?
+        }
+        private let lock = NSLock()
+        private var state: State
+
+        init(now: ContinuousClock.Instant = ContinuousClock.now) {
+            state = State(deadline: now.advanced(by: .seconds(90)))
+        }
+
+        var snapshot: State {
+            lock.lock()
+            defer { lock.unlock() }
+            return state
+        }
+
+        func enterLaunch(now: ContinuousClock.Instant = ContinuousClock.now) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !state.enteredLaunch else { return }
+            state.enteredLaunch = true
+            state.deadline = now.advanced(by: .seconds(30))
+        }
+
+        func complete(_ result: Result<Int32, any Error>) {
+            lock.lock()
+            defer { lock.unlock() }
+            state.completion = result
+        }
     }
 
     private final class ProcessIDRecorder: @unchecked Sendable {

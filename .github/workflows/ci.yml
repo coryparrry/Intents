@@ -79,11 +79,14 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.regression == 'true' }}
     runs-on: xcode-27
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Prepare verified runtime for portable automation fixtures
+        if: needs.changes.outputs.swift_suites != '[]'
+        run: bash script/automation_prepare_runtime.sh
       - name: Run selected portable Swift suites
         if: needs.changes.outputs.swift_suites != '[]'
         env:
@@ -148,6 +151,10 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO
+      - name: Prepare measured UI desktop
+        if: ${{ needs.changes.outputs.ui == 'true' }}
+        timeout-minutes: 3
+        run: python3 script/ci_ui_display.py
       - name: Run selected UI tests
         if: ${{ needs.changes.outputs.ui == 'true' }}
         timeout-minutes: 14
@@ -179,6 +186,8 @@ jobs:
             -only-testing:FoundationEvalsUITests/SimplificationUITests \
             -only-testing:FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration \
             -only-testing:FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence \
+            -only-testing:FoundationEvalsUITests/AppAutomationUITests/testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled \
+            -only-testing:FoundationEvalsUITests/AppAutomationUITests/testEmptyAutomationAndPickerCancellationRemainReadOnly \
             CODE_SIGNING_ALLOWED=NO
       - name: Export UI test attachments
         if: ${{ always() && needs.changes.outputs.ui == 'true' }}

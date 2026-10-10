@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T05:12:26.715941+00:00",
+  "scope": "Physical release adapter and exact read-only inventory command boundary",
+  "fullPlanComplete": false,
+  "deviceOperationsExecuted": false,
+  "sourceChecks": {
+    "focusedSwiftTests": 20,
+    "native46Build": "passed",
+    "freshSourceReview": "Inventory output correlation and shared validation fixed; subsequent rechecks clear"
+  },
+  "failuresRetained": [
+    "Swift179: fixture used Foundation canonicalization instead of realpath",
+    "Swift180: parser Foundation standardization rewrote /private/var; exact requested path comparison fixed",
+    "Native45: build-cache access denied; native46 authorized normal-cache compile passed"
+  ],
+  "limits": [
+    "No physical preparation/install/UI/system execution implemented or enabled",
+    "Injected commands/observations in tests do not qualify real device inventory or release",
+    "Native46 is compile only; private signed package15 still corresponds to earlier native44",
+    "SDK Mac session propagation, product Mac route and actual input ownership remain open"
+  ],
+  "nativeBuild": {
+    "appPath": "/private/tmp/intents-automation-ui-test-build/Build/Products/Debug/Intents.app",
+    "executable": "FoundationEvals",
+    "bundleID": "com.coryparry.Intents.AutomationUIVerification"
+  },
+  "sha256": {
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPhysicalDeviceReleaseVerifier.swift": "a29c3810a20eae05634243a531c49ed9c507d523b56a48731846bae4f499939c",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPhysicalRunnerVerifier.swift": "3e2415fe291806769efc855f4c295b18c9c2181d179e45b5cb61d12d313c9345",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPhysicalProcessInventory.swift": "b7395f7c7d8069d0fa6c8d4a30e3adc4e0d3204117604e4a0373b539eb3fd649",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationPhysicalDeviceReleaseTests.swift": "03da42c10121a4b836e39a75290ee8ea85346d7f8de94db1bc14b00f3ad3d7ac",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationPhysicalRunnerVerifierTests.swift": "8c404ae12fc28e3839aef86098adb6dd78458e04a75bb49740e50f3199078dc5",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationPhysicalInventoryTests.swift": "7828ba546a2479084c513ebc604840ae5b83fb4cde2b9e47de0bf5f8b5ebce79",
+    "/private/tmp/intents-automation-swift177.log": "4f0fbb53ab9afd51ee320f1ee306f8d9c757924f2dbb09aadcd0aeb1d7c59e8a",
+    "/private/tmp/intents-automation-swift178.log": "e761b79a3d73987d8ccc4388a26ac200bbc36089a2bd53e585c774e9d33b677c",
+    "/private/tmp/intents-automation-swift179.log": "1b4e0d1fb93bb68c1a254662d732ffbbb18a275cb0a1dd0bccf0ee467a79dd2c",
+    "/private/tmp/intents-automation-swift180.log": "c984a88ee7498d7ae70900446600e8b4def2ae32c4dd5a6ea119897ee7863536",
+    "/private/tmp/intents-automation-swift181.log": "89801b8f325f48cbcfe699f196077658ec2c9bbc96ef2d333b311c609734d142",
+    "/private/tmp/intents-automation-native45.log": "8b5aaf3ba4a0f7ead946e824948f2f9246dc864be2877c393ff08dc7d528e15c",
+    "/private/tmp/intents-automation-native46.log": "9bdcb432ea503c9e7e027f72ee6a7d731d3643813cd6cefe3e20c638cf6363de",
+    "/private/tmp/intents-automation-ui-test-build/Build/Products/Debug/Intents.app/Contents/Info.plist": "e07da181611acccad0722778c980b6359dcae058e10cee733096c8e9b00b942f",
+    "/private/tmp/intents-automation-ui-test-build/Build/Products/Debug/Intents.app/Contents/MacOS/FoundationEvals": "90b13aee62de8b92a69df4da247794f9c4e87cbb186d2b88c667acfa14e82d98"
+  }
+}

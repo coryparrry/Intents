@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-10-09",
+  "gitHead": "af0fec0b3a9d161062afb043e9b294eb35719232",
+  "sourceState": "dirty scoped implementation; unrelated changes preserved",
+  "fullV3Complete": false,
+  "implemented": [
+    "Approved Save control requires an actual successful tap before setup completion and cannot be repeated or used by an observer",
+    "Physical associated-host preparation pins iphoneos and validates arm64 device app, runner and test bundle",
+    "Owned physical Apple and Siri drivers share campaign leases, frozen payloads, independent device inventory and release checks",
+    "Physical aliases cannot create concurrent campaigns in the same durable lease store",
+    "Siri recognised-text submission uses actual XCUIDevice Siri API and strictly scoped returned receipt; API compilation authority does not grant actual routing",
+    "Native submission-only form freezes full plan identity, exact request and effect/install approval"
+  ],
+  "checks": {
+    "core": {
+      "registered": 130,
+      "skipped": 1,
+      "failures": 0
+    },
+    "nativeStores": {
+      "tests": 20,
+      "failures": 0
+    },
+    "saveSwift": {
+      "tests": 53,
+      "failures": 0
+    },
+    "saveNode": {
+      "tests": 26,
+      "failures": 0
+    },
+    "physicalSiriSDKTypecheck": "passed; no device execution",
+    "nativeBuild": "passed",
+    "runtimeSeal": "passed",
+    "outerDeepStrictSignature": "passed",
+    "packagedJS": {
+      "files": 35,
+      "mismatches": 0
+    },
+    "unpreparedSiriUI": {
+      "tests": 1,
+      "seconds": 23.598,
+      "failures": 0,
+      "screenshotInspected": true
+    },
+    "independentReviews": "two final scoped reviews clear"
+  },
+  "candidate": "/private/tmp/intents-v3-native-01a11d93-20261009/Build/Products/Debug/Intents.app",
+  "evidence": {
+    "coreAndNativeTests": {
+      "path": "/private/tmp/intents-v3-01a11d93-siri-native-7.log",
+      "sha256": "a13c799444e419e5fb9fd91e7a39a5265e26a666437a40e76712a590c62ff1b4"
+    },
+    "saveSwiftTests": {
+      "path": "/private/tmp/intents-v3-01a11d93-save-controller-swift-tests-2.log",
+      "sha256": "012e1c96378aad594109814f3362fe6b398dd33917d0dfe190f8a3af535e121f"
+    },
+    "saveNodeTests": {
+      "path": "/private/tmp/intents-v3-01a11d93-save-controller-node-tests-2.log",
+      "sha256": "220e81a557fdfbd6cc9b7e269b30816ae743db9e2f64c0e5be23ad9c0cd9ba7e"
+    },
+    "physicalSDKTypecheck": {
+      "path": "/private/tmp/intents-v3-01a11d93-siri-ios-sdk-typecheck.log",
+      "sha256": "cfb6e869c53ea9f8161b2d65a4c4b28dbce09e43aabc312c0e9b16940d228845"
+    },
+    "nativeBuild": {
+      "path": "/private/tmp/intents-v3-native-01a11d93-build-6.log",
+      "sha256": "21eb8cd375f98f54f30fac85850aad212d18268a8a8cf350f1b50a496d83ff31"
+    },
+    "runtimeSeal": {
+      "path": "/private/tmp/intents-v3-native-01a11d93-seal-7.log",
+      "sha256": "9d1e2c7329104c9ef4b8466488b64426c02c999ed2b41a4e5d9b5013673beb67"
+    },
+    "appSignature": {
+      "path": "/private/tmp/intents-v3-native-01a11d93-signature-7.log",
+      "sha256": "b027155e67e24e2d8ad3802cc41ec62cc99b03f8f13ee45408f0210a288fed60"
+    },
+    "unpreparedSiriUI": {
+      "path": "/private/tmp/intents-v3-native-01a11d93-siri-form-1.log",
+      "sha256": "f2df86ae4d391c2162fc0f0dd04b62026e9cc2cb3079e0f7edb7b42aa984aba7"
+    },
+    "unpreparedSiriScreenshot": {
+      "path": "/private/tmp/foundation-evals-ui-tests/unqualified-physical-siri-form.png",
+      "sha256": "9b2ea2e20e93d58f6bf34a7d5834deb8547d04d6dec387c72a55cd3c395e3b89"
+    }
+  },
+  "unverified": [
+    "Fresh valid two-owner native workflow and saved result",
+    "Live saved reproduction and same-oracle comparisons",
+    "Physical installation, trust, Siri routing/outcome and controller release on hardware",
+    "Siri business-route qualification and authority mechanism",
+    "Clean-host/offline, Intel and distribution qualification",
+    "Twelve independent applications and three unfamiliar-developer trials"
+  ],
+  "claimBoundaries": [
+    "Siri submission is unassessed and proves neither speech recognition, app routing nor requested outcome",
+    "Physical installed-byte equivalence and fix comparisons remain denied",
+    "No commit, push, publication or notarization"
+  ]
+}

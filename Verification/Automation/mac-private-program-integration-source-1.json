@@ -1,0 +1,87 @@
+{
+  "customerRuntimeEnabled": false,
+  "developerIDSigned": false,
+  "durableWorkerRecordedBeforeImport": true,
+  "frozenProgramUnit": {
+    "checkpoint": "mac-private-entry-source-6.json",
+    "files": 5473,
+    "receiptSHA256": "44e1c9e8282104212da918a393539d1d8a7d8e66e73c711a7ae88076716590e0"
+  },
+  "limits": [
+    "Swift tests use synthetic protocol owner and harmless actual gated Node workers",
+    "Sealed entry uses real SDK/e2e with synthetic native pipe replies",
+    "No enclosing unit6 application has been built or launched",
+    "Default conservative Mac release inventory, live exact instance/input/release, physical route and rendered journey remain unqualified"
+  ],
+  "nativeGUIQualified": false,
+  "preservedFailedCandidate": {
+    "loaderAllowlisted": false,
+    "reason": "Placeholder broker run/attempt IDs rejected by the real SDK; corrected in separately frozen unit6",
+    "receiptSHA256": "7b969e09312824efb85a280f7687cd3fc0a5a88dd0e1c4099d4a667fb16ad104",
+    "unit": 5
+  },
+  "privateEntryIntegrated": true,
+  "productRunnerIntegrated": false,
+  "realNativeHelperLaunched": false,
+  "review": {
+    "programAndBroker": "Fresh Sol recheck clear after cached receipt, parent-directory fsync and frozen scope fixes",
+    "runtimeOwnership": "Fresh Sol recheck clear after final one-worker admission fix; two-pin loader/stager recheck clear"
+  },
+  "schemaVersion": 1,
+  "sourceFilesSHA256": {
+    "Sources/IntentsAutomationCore/AutomationDeviceLeaseManager.swift": "af045b119468d444a63aa40314219a87dfa9d41c1028daf0ca76c42f30111162",
+    "Sources/IntentsAutomationCore/AutomationMacOwnedDaemonSession.swift": "d7a2057928ac060b0985bd4e1c6d58188f6433316e4947f43dd237c00fe0a555",
+    "Sources/IntentsAutomationCore/AutomationPrivateMacDaemonUnit.swift": "64099b159934696c4a9050821e3ee6e9923a70a68c158f4ad14368d33630aad8",
+    "Sources/IntentsAutomationCore/AutomationRPC.swift": "6e36d79e730438906a595b6c63e011e7f7bc9554befa6e2e0b337ccc159c5604",
+    "Tests/IntentsAutomationCoreTests/AutomationMacOwnedDaemonSessionTests.swift": "6c14671d9a1b70e46ebd419143b59e60178f781b48d022735882b1e89e7ff2c5",
+    "Tests/IntentsAutomationCoreTests/AutomationPrivateMacDaemonUnitTests.swift": "39f290c50e5b22b7a9dd9a6b592ec037b9288b2bc6c9f503c776f0800e21347f",
+    "Tools/IntentsAutomation/scripts/stage_private_mac_daemon_runtime.py": "71715e49baf5f07627c0bfb3cdbbebaa10b43eef51cfdcf7bb23b8ffe3c47a1b",
+    "Tools/IntentsAutomation/src/macOwnedDaemonMain.ts": "c9bb3f96e3b7bdb9f63c739a1170acc5c92c1b2f079d7d4c5693efde549908bf",
+    "Tools/IntentsAutomation/src/macOwnedProgramController.ts": "4f0c845cb4219c5e1cf6a28e181d6462bb355fb0526e073ad48f141d74aca0d9",
+    "Tools/IntentsAutomation/src/operationJournal.ts": "cf7945641aac31b1905f5ca4b3ba38ed9e637a25261f2c9141ccb50ed92e3275",
+    "Tools/IntentsAutomation/src/rpc.ts": "bea13d77b87498f0619c1748ed5849660676e11620020a3ebce334463b4c7e3e",
+    "Tools/IntentsAutomation/src/segmentBroker.ts": "1a6c577d95d51bc134ac75f871acbe78b8ac0a6309a6dea0d552d320dc43b4cc",
+    "Tools/IntentsAutomation/src/workerRunner.ts": "e8e8984bfefe9be5ea5774fc39b3af1df755bf604917f085948b2c1125c71ce8",
+    "Tools/IntentsAutomation/tests/brokerScope.test.ts": "7eaf42d9b7dd80f78671d6f58b2a8b5efb47a30de9b8e396c7e9a451ee97b3a9",
+    "Tools/IntentsAutomation/tests/fixtures/macDaemonEntryGuard.ts": "fc8301d4faf47d139b2d2b85cf63059803ba8900fa0bf141ff4741a4158342ad",
+    "Tools/IntentsAutomation/tests/fixtures/macDaemonHostGuard.ts": "489588ecc7d8336486414cdb2b08d23c1a8d4be37bf933ce2a9c3f7b95894cf4",
+    "Tools/IntentsAutomation/tests/macOwnedDaemonProgramEntry.test.ts": "d72e3271e6c545dc3344d794a1fb67f1eb10cd0e130a49608381aa02fca1dbe7",
+    "Tools/IntentsAutomation/tests/macOwnedProgram.test.ts": "83da85ce4cf9449a06164e7fe197d55ad3c48fe7811f62374baea52919fafe5d",
+    "Tools/IntentsAutomation/tests/macOwnedProgramController.test.ts": "5904f0d541c3b16866d07d7da277b635bd4266ee97ce88bf292461d78b83e346",
+    "Tools/IntentsAutomation/tests/operationJournalDurability.test.ts": "02ebc28dbe96a216552cd8f1b5294ff996bed7f0ea4360d002557db39ccc05ec"
+  },
+  "testLogsSHA256": {
+    "intents-automation-private-program-entry-tests2": "3ff0ed22e73cac2247225aa501bbe958514f1c559cdeecca709cd7ffae4dd532",
+    "intents-automation-private-program-staging-tests9": "77d39d232626e3e59e6a916819491f0ba13a87739af70ac3ae4468c1f8dea0c8",
+    "intents-automation-program-build7": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "intents-automation-program-shared-tests5b": "fdb8753922f7c0a0d17a36cdf062bdf5fa9e5b88fed9c50a80ae0942c4f06d82",
+    "intents-automation-swift-tests240b": "8163dcf7b3348a5010054d0823966fa99901e5e62df657ea79d2be73f02f166c"
+  },
+  "verification": {
+    "privateStager": {
+      "failures": 0,
+      "passed": 8
+    },
+    "sealedEntry": {
+      "actualSDK": true,
+      "passed": 18,
+      "registered": 18,
+      "skipped": 0,
+      "syntheticNativeReplies": true
+    },
+    "sharedNode": {
+      "failures": 0,
+      "passed": 142,
+      "registered": 148,
+      "skipped": 6,
+      "skips": "Source SDK opt-ins; all18 sealed SDK/entry scenarios executed separately"
+    },
+    "swift": {
+      "failures": 0,
+      "passed": 29,
+      "registered": 30,
+      "skipped": 1,
+      "skips": "Hardware helper opt-in; actual unit6 read-only verification and12 synthetic owner tests pass"
+    }
+  }
+}

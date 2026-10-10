@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "date": "2026-10-08",
+  "scope": "native Run, Reproduce and Check fix confirmation bound before presentation",
+  "behavior": [
+    "Native buttons queue the existing immutable command request before opening the dialog",
+    "Confirmation requires the same awaiting request ID, digest and kind; no direct-execution fallback",
+    "Dialogs capture exact app/destination, selected original attempt or both build fingerprints and campaign limits",
+    "Cancellation affects only the captured request; matching remote requests may be reviewed without replacement"
+  ],
+  "verification": {
+    "command": "swift test --jobs 2 --filter InstalledUIStoreTests|MacWorkflowStoreTests|MacFreshDraftStoreTests|SourcePreparationStoreTests",
+    "tests": 73,
+    "failures": 0,
+    "appBuild": "Official Xcode BuildProject, FoundationEvals / My Mac: passed, 17.226 seconds, no errors",
+    "reviews": [
+      "Sol exact-approval authority lane: clear",
+      "Sol UI wiring/copy/limits lane: clear"
+    ],
+    "diffCheck": "passed"
+  },
+  "regressions": [
+    "Late inventory replaces target A with B; no executor call",
+    "Cancelled/invalidated request does not fall back despite canRun remaining true",
+    "Changed saved attempt or selected build invalidates confirmation",
+    "Wrong request kind and duplicate confirmation denied",
+    "Matching remote request reused and executor called once"
+  ],
+  "unverified": [
+    "Actual native dialogs/user interaction remain unverified; prior AX/UI-runner/preview/blank-render failures unchanged and not retried",
+    "No live Mac, replay/comparison, clean-host, device or release qualification"
+  ],
+  "runtime": "Tools/IntentsAutomation/.runtime/native-confirmation-1"
+}

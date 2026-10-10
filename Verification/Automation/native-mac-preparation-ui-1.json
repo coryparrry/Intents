@@ -1,0 +1,79 @@
+{
+  "id": "native-mac-preparation-ui-1",
+  "date": "2026-10-08",
+  "status": "passed",
+  "changes": [
+    "Explicit accessible labels for preparation destination and workflow effects",
+    "Opt-in UI integration regression verifies the actual selected Xcode metadata and reviewed draft persistence"
+  ],
+  "sources": {
+    "FoundationEvals/FoundationEvalsUITests/MacPreparationUITests.swift": "236aeb56b2069f2892d240766c84f14de2e66a551c507029d219e3cd9e7d1ac1",
+    "FoundationEvals/FoundationEvals/Views/AutomationSourcePreparationControls.swift": "c6ca0d71eb187af062ac53867730af8faff7bf4d104d83693d6a3b807cf693a2",
+    "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift": "6dddf62e91cdbc20fd4da9b9eaf8451b0cdc3f0c11acc7f06e8e5e7e20965bd9"
+  },
+  "tests": {
+    "registered": 3,
+    "passed": 3,
+    "failed": 0,
+    "durationSeconds": 76.056,
+    "macPreparationDurationSeconds": 45.432,
+    "resultBundle": "/private/tmp/intents-native272-preparation-ui-retry2.xcresult",
+    "log": "Tools/IntentsAutomation/.runtime/native-mac-preparation-ui-1/intents-native272-preparation-ui-retry2.log"
+  },
+  "coverage": [
+    "empty state, picker and capsule cancellation",
+    "source selection across sidebar navigation",
+    "This Mac destination selection and real build approval",
+    "actual associated host preparation",
+    "generated metadata proves DEVELOPER_DIR override",
+    "native workflow review and saved unexecuted draft",
+    "source and project bytes unchanged"
+  ],
+  "fixture": {
+    "sourceProject": "/private/tmp/foundation-evals-ui-tests/approved-mac-source-4f91dbff-163a-43c0-9327-1bc7a097317b/Subject.xcodeproj",
+    "sourceDigest": "dc1a7b533d555f255f3a26760835c069645c03e500acb47c357030adca7df003",
+    "projectDigest": "7493afdd2630d3e7094af4133cea4f8e638fa4096e42d5668a51d6697527ba1f",
+    "developerDirectory": "/Applications/Xcode-27.2.0-Beta.2.app/Contents/Developer",
+    "metadataGeneratorVersion": "27B5028f"
+  },
+  "runtime": {
+    "subjectBundleID": "com.intents.fixture.mac-host",
+    "subjectProductDigest": "b6460565ee9d2df8d59bcfb3abc915a453d8bf79dd41275db59a1640ac95c169",
+    "hostProductDigest": "3d97a654c7329ce40059e848a283b4194b5472ff4111abe6f2fcd78e72e16566",
+    "metadataGenerator": {
+      "name": "xcode-tools",
+      "version": "27B5028f"
+    },
+    "savedCaseDigest": "609650530d0220d71379fe6bd9e06c22f51a70bd2240c47de25aed4e3203fc31",
+    "savedDefinitionCount": 1,
+    "savedAttemptCount": 0
+  },
+  "visualInspection": {
+    "screenshots": [
+      "Tools/IntentsAutomation/.runtime/native-mac-preparation-ui-1/build-review.png",
+      "Tools/IntentsAutomation/.runtime/native-mac-preparation-ui-1/workflow-review.png",
+      "Tools/IntentsAutomation/.runtime/native-mac-preparation-ui-1/saved-draft.png"
+    ],
+    "result": "Build details and buttons visible; review shows selected copy, destination, effects and unexecuted-draft notice without clipping. Saved case controls appear. No visual changes required."
+  },
+  "finalApp": {
+    "path": "/private/tmp/intents-native272-products/Intents.app",
+    "debugDylibSHA256": "88a8ba227e3bf14583cd74720084348a6fd5d359e49bfc96d3db5e9c6be6059d",
+    "codesignVerify": "passed"
+  },
+  "cleanup": {
+    "taskOwnedProcessesRemaining": [],
+    "simulatorsBooted": false,
+    "activeOptInProfile": "archived after completion"
+  },
+  "limits": [
+    "Business workflow execution was not attempted or qualified",
+    "Saved Reproduce and same-oracle comparisons remain unverified in the real UI",
+    "No full v3 or release qualification; existing hardware and compatibility gaps remain",
+    "CUA click pipe still disconnects; actual UI evidence is from XCTest"
+  ],
+  "priorTestFailures": [
+    "Initial test compared temporary-directory aliases inconsistently; fixed before UI work",
+    "First UI attempt exposed missing popup accessibility labels; labels fixed and complete three-test suite passed"
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "slice": "intent-file-input-probe-1",
+  "date": "2026-10-08",
+  "acceptance": "Fixed synthetic no-dispatch IntentFile calibration can produce scoped opaque binary readback; declaration and fixture proof never enable file runtime capability.",
+  "implementation": {
+    "canary": "One immutable data/filename/type sample; both core and generated-host plan decoders reject caller changes. It is a calibration payload, never an AutomationCase.",
+    "host": "SDK setter then IntentFile getter; exact data and metadata comparison; no perform/run dispatch. Separate binary XCTAttachment and descriptor-only receipt JSON.",
+    "import": "Retained strict export schema, pinned test identifier, exact attachment inventory, private bounded reads, sample hash/count/metadata and full scoped receipt validation before native artifact persistence.",
+    "privacy": "Only opaque references escape. Binary and file-bearing runner logs occupy native-only reserved paths; ordinary artifact resolution denies access. Ownership drain and exact payload sanitation precede publication."
+  },
+  "verification": {
+    "focused": {
+      "registered": 110,
+      "passed": 109,
+      "skipped": 1,
+      "failures": 0,
+      "log": "/private/tmp/intents-file-probe-initial-20261008.log",
+      "command": "swift test --jobs 2 --filter 'InputAdapterProbeContractTests|IntentFileTransportTests|AutomationPrivateMacAppleRouteDriverTests|AutomationAppleRouteDriverTests|AutomationAppleFileDeclarationBuildTests'"
+    },
+    "installedSDKBuildOnly": {
+      "passed": 1,
+      "seconds": 14.945,
+      "fixture": "Tools/IntentsAutomation/.runtime/file-probe-1/file-declaration-fixture-9631B0D7-F76F-4B38-9AB9-B985A94C9FCC",
+      "subjectSHA256": "46503e3cefcda5bb037149a4eb17a2249209ae06d2a9e5cd2c3bc24529fb3c53",
+      "hostSHA256": "526f5903799538e13b79ca7f2323bdc517400f7aa7c756fa018e7b91c665e2fd",
+      "runtimeLaunched": false,
+      "log": "/private/tmp/intents-file-probe-sdk-build-20261008.log"
+    },
+    "officialAppBuild": {
+      "tool": "Xcode MCP BuildProject",
+      "seconds": 23.788,
+      "errors": 0,
+      "workspaceClosed": true,
+      "runtimeLaunched": false
+    },
+    "reviews": "Two distinct Sol read-only reviews found no material defects: immutable input/binary privacy and host/manifest/resource lifecycle."
+  },
+  "limitations": "Synthetic command fixtures mint no live-context authority or codec availability. Actual SDK setter/readback, xcresult test/attachment naming and child closure still require admitted runtime qualification. apple.codec.intentFile remains unavailable. No runtime launch, push, publication or full M0-M6 completion."
+}

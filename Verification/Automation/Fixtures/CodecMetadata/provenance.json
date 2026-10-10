@@ -1,0 +1,18 @@
+{
+  "scope": "Compiled SDK metadata and declaration evidence only; not host registration, live parameter conversion or device result proof",
+  "generator": {
+    "name": "xcode-tools",
+    "version": "27A266a"
+  },
+  "metadataPath": "/private/tmp/intents-codec-metadata-qualification1/DerivedData/Build/Products/Debug-iphonesimulator/DuplicateTasks.app/Metadata.appintents/extract.actionsdata",
+  "metadataSHA256": "2d7006f4c3183a1d395458e6083bdee6953bb5592e13a18a67bfd8f3df154128",
+  "declarationPath": "/private/tmp/intents-codec-metadata-qualification1/Source/App/TaskIntents.swift",
+  "declarationSHA256": "a79880c4ddf04ff87cb11dacce4864fb12196a1eab8d03ed71bf4915fab9ce82",
+  "buildLogPath": "/private/tmp/intents-codec-metadata-qualification1/build.log",
+  "buildLogSHA256": "8fe68cee1ea7ec7b7fbaba8d2e9233ad8403f692814a8fda9f7fb4d8de0bd2c2",
+  "buildCommand": "xcodebuild -project /private/tmp/intents-codec-metadata-qualification1/Source/DuplicateTasks.xcodeproj -scheme DuplicateTasks -configuration Debug -destination generic/platform=iOS Simulator -derivedDataPath /private/tmp/intents-codec-metadata-qualification1/DerivedData -jobs 2 CODE_SIGNING_ALLOWED=NO build",
+  "sourceBase": "Verification/Automation/Fixtures/DuplicateTasks copied privately; original unchanged",
+  "productDigest": "0b9105e47f3d37e6b30d18721adfb86226cec813ae6f6476b3d81cbb9dd653e7",
+  "manifestSHA256": "0b9105e47f3d37e6b30d18721adfb86226cec813ae6f6476b3d81cbb9dd653e7",
+  "manifestImplementation": "AutomationProductDigest.manifestData / compute from the built IntentsAutomationCore; read-only capture helper"
+}

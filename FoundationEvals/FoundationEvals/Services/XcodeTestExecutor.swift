@@ -1,6 +1,8 @@
 import CryptoKit
 import Darwin
 import Foundation
+import IntentsAutomationCore
+import IntentLabContracts
 
 /// Covers both builds and use of their products, across executor instances.
 /// Nonblocking acquisition keeps cancellation responsive when another owner is busy.
@@ -305,6 +307,7 @@ struct ScenarioVerifiedConnection: Sendable {
     var productMetadataDigest: String
     var runtimeProfile: ScenarioRuntimeProfileIdentity? = nil
     var readinessProbe: ScenarioReadinessProbeEvidence? = nil
+    var runnerProduct: ScenarioProductIdentity? = nil
 
     var derivedDataURL: URL {
         testRunURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -518,17 +521,17 @@ enum XcodeTestDeadlineBudget {
 }
 
 actor XcodeTestExecutor {
-    private struct ActiveExecution {
+    private struct ActiveExecution: Sendable {
         var invocationID: UUID
         var destinationIdentifier: String
         var process: Process
         var journal: ScenarioExecutionJournal
+        var identity: AutomationProcessIdentity?
     }
 
     private let workDirectory: URL
     private let persistence: ScenarioPersistence
     private let fileManager: FileManager
-    private let destinationStatusReader: (@Sendable (String, Bool) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?))?
     private var active: ActiveExecution?
     private var inFlightJournal: ScenarioExecutionJournal?
     private var awaitingValidationJournal: ScenarioExecutionJournal?
@@ -543,13 +546,24 @@ actor XcodeTestExecutor {
     private var connectionDeviceTestLaunched = false
     private var verifiedConnection: ScenarioVerifiedConnection?
     private var connectionStageFailure: ScenarioConnectionStageFailure?
+    private let physicalLeaseStoreURL: URL
+    private var physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager?
+    private var physicalRunnerRecords: [UUID: ScenarioPhysicalRunnerRecord] = [:]
+    private var dispatchedDeviceInvocations: Set<UUID> = []
+    private let destinationStatusReader: (@Sendable (String, Bool) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?))?
+    private var pendingInvocation: ScenarioExecutionJournal? {
+        get { inFlightJournal }
+        set { inFlightJournal = newValue }
+    }
 
-    init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default,
+    init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default, physicalLeaseStoreURL: URL? = nil, physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager? = nil,
          destinationStatusReader: (@Sendable (String, Bool) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?))? = nil) {
         self.workDirectory = workDirectory
         self.persistence = persistence
         self.fileManager = fileManager
+        self.physicalLeaseManager = physicalLeaseManager
         self.destinationStatusReader = destinationStatusReader
+        self.physicalLeaseStoreURL = physicalLeaseStoreURL ?? workDirectory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Automation/target-leases.json")
     }
 
     func reconcileInterruptedJournals() async throws -> [ScenarioExecutionJournal] {
@@ -582,8 +596,9 @@ actor XcodeTestExecutor {
     ) async throws {
         var finished = journal
         let destination = journal.invocation.destinationIdentifier
-        var canAccept = accepted && !cancelledInvocationIDs.contains(journal.id)
-        var canRelease = (deviceReady ?? accepted) && !cancelledInvocationIDs.contains(journal.id)
+        var canAccept = accepted && journal.physicalRunner?.receiptError == nil && !cancelledInvocationIDs.contains(journal.id)
+        var canRelease = (deviceReady ?? accepted) && journal.physicalRunner?.released != false
+            && journal.physicalRunner?.receiptError == nil && !cancelledInvocationIDs.contains(journal.id)
         finished.phase = canRelease ? .stopped : .recoveryRequired
         finished.recoveryReason = canRelease ? nil
             : "Device execution or fixture readiness has not been proven after evidence capture."
@@ -692,6 +707,10 @@ actor XcodeTestExecutor {
         for var journal in journals where
             journal.invocation.destinationIdentifier == destinationIdentifier
                 && [.preparing, .running, .cancelling, .recoveryRequired].contains(journal.phase) {
+            if let record = journal.physicalRunner, !record.released {
+                journal.physicalRunner = try await sharedPhysicalLeases().finish(record, invocation: journal.invocation,
+                    workspace: URL(fileURLWithPath: journal.buildLogPath).deletingLastPathComponent())
+            }
             journal.phase = .stopped
             journal.recoveryReason = nil
             // Explicit readiness confirmation does not accept pending evidence.
@@ -1301,7 +1320,8 @@ actor XcodeTestExecutor {
                 sourceLocations: fingerprint.sourceLocations, buildInputsDigest: fingerprint.digest
             ),
             productMetadataDigest: Self.productMetadataDigest(products: paths),
-            runtimeProfile: Self.runtimeProfile(configuration: configuration, appBundleURL: paths.appBundleURL)
+            runtimeProfile: Self.runtimeProfile(configuration: configuration, appBundleURL: paths.appBundleURL),
+            runnerProduct: try? runnerProduct(paths: paths)
         )
         guard Self.validatedReusableConnection(
             verified, definition: definition, configuration: configuration,
@@ -2448,6 +2468,68 @@ actor XcodeTestExecutor {
         return paths
     }
 
+    /// A connection check launches the same device XCTest runner as a scenario and shares its fence.
+    func runPhysicalConnectionCommand(journal original: ScenarioExecutionJournal, runner: ScenarioProductIdentity,
+                                      workspace: URL, deadline: Duration) async throws -> Int32 {
+        guard active == nil, pendingInvocation == nil || (pendingInvocation?.id == original.id && pendingInvocation?.invocation.nonce == original.invocation.nonce) else {
+            throw XcodeTestExecutorError.activeExecution
+        }
+        let ownsPending = pendingInvocation == nil
+        var journal = original
+        let id = journal.id, manager = try sharedPhysicalLeases()
+        try checkInvocationCancellation(id)
+        pendingInvocation = journal
+        defer {
+            if ownsPending {
+                if pendingInvocation?.id == id { pendingInvocation = nil }
+                cancelledInvocationIDs.remove(id)
+            }
+            physicalRunnerRecords[id] = nil
+            dispatchedDeviceInvocations.remove(id)
+        }
+        do {
+            let record = try await manager.acquire(invocation: journal.invocation, runner: runner, workspace: workspace)
+            journal.physicalRunner = record; physicalRunnerRecords[id] = record; pendingInvocation = journal
+            try await persistence.saveJournal(journal)
+            try checkInvocationCancellation(id)
+            try await manager.prepare(record)
+            try checkInvocationCancellation(id)
+            journal.physicalRunner = try await manager.recordDispatch(record, invocation: journal.invocation)
+            physicalRunnerRecords[id] = journal.physicalRunner; pendingInvocation = journal
+            try await persistence.saveJournal(journal)
+            try checkInvocationCancellation(id)
+            let code = try await runProcess(executable: journal.intendedExecutable, arguments: journal.intendedArguments,
+                logURL: URL(fileURLWithPath: journal.buildLogPath), invocationID: id,
+                destinationIdentifier: journal.invocation.destinationIdentifier, journal: journal, appendLog: true, deadline: deadline)
+            journal.physicalRunner = physicalRunnerRecords[id] ?? journal.physicalRunner
+            guard let launched = journal.physicalRunner else { throw AutomationContractError.unknownLease }
+            journal.physicalRunner = try await manager.finish(launched, invocation: journal.invocation, workspace: workspace)
+            physicalRunnerRecords[id] = journal.physicalRunner
+            try checkInvocationCancellation(id)
+            journal.phase = .stopped; journal.updatedAt = Date(); pendingInvocation = journal
+            try await persistence.saveJournal(journal)
+            return code
+        } catch {
+            journal.physicalRunner = physicalRunnerRecords[id] ?? journal.physicalRunner
+            if var record = journal.physicalRunner, record.dispatched, record.hostProcess == nil,
+               !dispatchedDeviceInvocations.contains(id) {
+                record.hostLaunchPrevented = true; journal.physicalRunner = record
+            }
+            if let record = journal.physicalRunner, !record.released, !Task.isCancelled {
+                journal.physicalRunner = (try? await manager.finish(record, invocation: journal.invocation, workspace: workspace)) ?? record
+                physicalRunnerRecords[id] = journal.physicalRunner
+            }
+            journal.phase = journal.physicalRunner?.released == false ? .recoveryRequired : .stopped
+            if journal.phase == .recoveryRequired {
+                journal.recoveryReason = "Connection test runner release remains unverified: " + error.localizedDescription
+                reservations[journal.invocation.destinationIdentifier] = .quarantined(reason: journal.recoveryReason!)
+            }
+            journal.updatedAt = Date(); pendingInvocation = journal
+            _ = try? await persistence.saveCancellationJournal(journal)
+            throw error
+        }
+    }
+
     func runJournaledConnectionTest(
         definition: ScenarioDefinition,
         configuration: XcodeTestConfiguration,
@@ -2499,10 +2581,26 @@ actor XcodeTestExecutor {
             throw error
         }
         do {
-            let code = try await runConnectionCommand(
-                configuration: configuration, arguments: arguments, logURL: logURL,
-                appendLog: appendLog, deadline: deadline
-            )
+            let code: Int32
+            let liveDestination = availableDestination(configuration.destinationIdentifier, requiresSiri: false)
+            if try Self.physicalLeaseRequired(ready: liveDestination.ready, platform: liveDestination.platform, detail: liveDestination.detail) {
+                let paths = try XCTestRunInvocationTransport.resolveProducts(
+                    derivedData: derivedData, testTarget: configuration.testTarget,
+                    owningProjectURL: verifiedConnection?.selectedTestProjectURL,
+                    containerURL: URL(filePath: configuration.containerPath), fileManager: fileManager
+                )
+                code = try await runPhysicalConnectionCommand(
+                    journal: journal, runner: runnerProduct(paths: paths),
+                    workspace: logURL.deletingLastPathComponent(), deadline: deadline
+                )
+                journal = try await persistence.loadJournals().first(where: { $0.id == id }) ?? journal
+                connectionTestJournal = journal
+            } else {
+                code = try await runConnectionCommand(
+                    configuration: configuration, arguments: arguments, logURL: logURL,
+                    appendLog: appendLog, deadline: deadline
+                )
+            }
             if connectionCancellationRequested { throw XcodeTestExecutorError.cancelled }
             journal = connectionTestJournal ?? journal
             journal.phase = .stopped
@@ -2514,8 +2612,8 @@ actor XcodeTestExecutor {
             if reservations[destination] == reservation { reservations[destination] = nil }
             return code
         } catch {
-            journal = connectionTestJournal ?? journal
-            let requiresRecovery = connectionDeviceTestLaunched
+            journal = (try? await persistence.loadJournals().first(where: { $0.id == id })) ?? connectionTestJournal ?? journal
+            let requiresRecovery = connectionDeviceTestLaunched || journal.physicalRunner?.released == false
             journal.phase = requiresRecovery ? .recoveryRequired : .stopped
             journal.recoveryReason = requiresRecovery
                 ? "The \(methodName) device test was interrupted; prove test termination and fixture readiness before using this destination."
@@ -2607,6 +2705,13 @@ actor XcodeTestExecutor {
     func cancelConnectionCheck() async -> ScenarioConnectionCancellation {
         guard connectionCheckInProgress || connectionTestJournal != nil else { return .notRunning }
         connectionCancellationRequested = true
+        if let journal = connectionTestJournal {
+            cancelledInvocationIDs.insert(journal.id)
+            if active?.invocationID == journal.id || inFlightJournal?.id == journal.id {
+                let cancelled = await cancelActiveExecution()
+                connectionTestJournal = cancelled ?? connectionTestJournal
+            }
+        }
         if let connectionProcess, connectionProcess.isRunning {
             // Wake this process's wait so a TERM-resistant host is drained now,
             // rather than waiting for the command's unrelated deadline.
@@ -2746,6 +2851,8 @@ actor XcodeTestExecutor {
         var deviceTestLaunched = false
         var invocationTestRunURL: URL?
         defer {
+            physicalRunnerRecords[invocationID] = nil
+            dispatchedDeviceInvocations.remove(invocationID)
             if let invocationTestRunURL {
                 try? fileManager.removeItem(at: invocationTestRunURL)
             }
@@ -2850,6 +2957,27 @@ actor XcodeTestExecutor {
             journal.updatedAt = Date()
             inFlightJournal = journal
             try await persistence.saveJournal(journal)
+            let launchDestination = availableDestination(configuration.destinationIdentifier, requiresSiri: scope?.lane == .siri || (scope == nil && definition.coverage.siri != .notApplicable))
+            if try Self.physicalLeaseRequired(ready: launchDestination.ready, platform: launchDestination.platform, detail: launchDestination.detail) {
+                let runner = try runnerProduct(paths: productPaths)
+                if let selectedConnection, selectedConnection.runnerProduct != runner {
+                    throw XcodeTestExecutorError.resourceMismatch("The physical test runner changed after the connection check. Check the connection again.")
+                }
+                let manager = try sharedPhysicalLeases()
+                let record = try await manager.acquire(invocation: journal.invocation, runner: runner, workspace: invocationDirectory)
+                journal.physicalRunner = record
+                physicalRunnerRecords[invocationID] = record
+                pendingInvocation = journal
+                try await persistence.saveJournal(journal)
+                try checkInvocationCancellation(invocationID)
+                try await manager.prepare(record)
+                try checkInvocationCancellation(invocationID)
+                journal.physicalRunner = try await manager.recordDispatch(record, invocation: journal.invocation)
+                physicalRunnerRecords[invocationID] = journal.physicalRunner
+                pendingInvocation = journal
+                try await persistence.saveJournal(journal)
+            }
+            try checkInvocationCancellation(invocationID)
             deviceTestLaunched = true
             let testDeadline = Duration.seconds(XcodeTestDeadlineBudget.seconds(for: definition, scope: scope))
             let testExit = try await runProcess(
@@ -2862,6 +2990,7 @@ actor XcodeTestExecutor {
                 appendLog: true,
                 deadline: testDeadline
             )
+            journal.physicalRunner = physicalRunnerRecords[invocationID] ?? journal.physicalRunner
             if testExit != 0 {
                 invalidateRuntimeReadiness(
                     lane: scope?.lane,
@@ -2881,6 +3010,21 @@ actor XcodeTestExecutor {
                 outputDirectory: attachments,
                 invocationID: invocationID
             )
+            if var record = journal.physicalRunner {
+                let ownership = ScenarioRunnerReceiptImporter.loadForOwnership(directory: attachments, invocation: journal.invocation, runner: record.runnerProduct)
+                record.receipt = ownership.receipt
+                record.receiptError = ownership.error
+                journal.physicalRunner = record
+                physicalRunnerRecords[invocationID] = record
+                do {
+                    guard record.receiptError == nil else { throw AutomationContractError.terminationUnverified }
+                    journal.physicalRunner = try await sharedPhysicalLeases().finish(record, invocation: journal.invocation, workspace: invocationDirectory)
+                    physicalRunnerRecords[invocationID] = journal.physicalRunner
+                } catch {
+                    journal.recoveryReason = "Physical runner release remains unverified: " + error.localizedDescription
+                }
+                try await persistence.saveJournal(journal)
+            }
             let testCount = resultBundleTestCount(configuration: configuration, resultBundle: resultBundle)
             guard !evidenceAttachments.isEmpty else { throw XcodeTestExecutorError.evidenceMissing }
             guard !cancelledInvocationIDs.contains(invocationID) else {
@@ -2899,6 +3043,15 @@ actor XcodeTestExecutor {
                 measurementImplementation: measurement
             )
         } catch {
+            journal.physicalRunner = physicalRunnerRecords[invocationID] ?? journal.physicalRunner
+            if var record = journal.physicalRunner, record.dispatched, record.hostProcess == nil,
+               !dispatchedDeviceInvocations.contains(invocationID) {
+                record.hostLaunchPrevented = true
+                journal.physicalRunner = record
+            }
+            if let record = journal.physicalRunner, !record.released, record.receiptError == nil, !Task.isCancelled {
+                journal.physicalRunner = (try? await sharedPhysicalLeases().finish(record, invocation: journal.invocation, workspace: invocationDirectory)) ?? record
+            }
             if deviceTestLaunched {
                 invalidateRuntimeReadiness(
                     lane: scope?.lane,
@@ -2908,7 +3061,7 @@ actor XcodeTestExecutor {
             active = nil
             let failure = cancelledInvocationIDs.contains(invocationID)
                 ? ScenarioRecoveryFailure.cancellation : recoveryFailure(for: error)
-            if ScenarioExecutionRecoveryPolicy.requiresQuarantine(
+            if journal.physicalRunner?.released == false || ScenarioExecutionRecoveryPolicy.requiresQuarantine(
                 deviceTestLaunched: deviceTestLaunched,
                 failure: failure
             ) || failure == .cancellation {
@@ -2939,12 +3092,10 @@ actor XcodeTestExecutor {
         if inFlightJournal?.id == invocationID { inFlightJournal = journal }
         if awaitingValidationJournal?.id == invocationID { awaitingValidationJournal = journal }
         reservations[destination] = .quarantined(reason: journal.recoveryReason!)
-        if let process = active?.process, active?.invocationID == invocationID {
-            process.interrupt()
-            try? await Task.sleep(for: grace)
-            if process.isRunning { process.terminate() }
+        if let execution = active, execution.invocationID == invocationID {
+            _ = await Task.detached { await self.drainOwnedHost(execution, grace: grace) }.value
         }
-        try? await persistence.saveJournal(journal)
+        journal = (try? await persistence.saveCancellationJournal(journal)) ?? journal
         return journal
     }
 
@@ -3053,6 +3204,11 @@ actor XcodeTestExecutor {
         ] + configuration.signingArguments
     }
 
+    static func physicalLeaseRequired(ready: Bool, platform: IntentLabDestinationPlatform?, detail: String) throws -> Bool {
+        guard ready, let platform else { throw XcodeTestExecutorError.deviceUnavailable(detail) }
+        return platform == .iOS
+    }
+
     func runProcess(
         executable: String,
         arguments: [String],
@@ -3082,17 +3238,43 @@ actor XcodeTestExecutor {
             case deadline
         }
         let (outcomes, continuation) = AsyncStream.makeStream(of: ProcessOutcome.self)
+        let clock = ContinuousClock()
+        let cutoff = deadline.map { clock.now.advanced(by: $0) }
         process.terminationHandler = { terminated in
-            continuation.yield(.exited(terminated.terminationStatus))
+            if let cutoff, clock.now >= cutoff {
+                continuation.yield(.deadline)
+            } else {
+                continuation.yield(.exited(terminated.terminationStatus))
+            }
             continuation.finish()
         }
         var runningJournal = journal
         runningJournal.processStartedAt = Date()
         do {
+            try checkInvocationCancellation(invocationID)
             try process.run()
         } catch {
             continuation.finish()
             throw XcodeTestExecutorError.processLaunch(error.localizedDescription)
+        }
+        // The command budget starts at launch, before journal publication or
+        // cooperative executor scheduling can delay timeout observation.
+        let timeout = cutoff.map { cutoff in
+            let components = clock.now.duration(to: cutoff).components
+            let seconds = Double(components.seconds) + Double(components.attoseconds) / 1e18
+            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+            timer.setEventHandler {
+                continuation.yield(.deadline)
+                continuation.finish()
+            }
+            timer.schedule(deadline: .now() + max(0, seconds))
+            timer.resume()
+            return timer
+        }
+        defer { timeout?.cancel() }
+        if arguments.first == "test-without-building" {
+            dispatchedDeviceInvocations.insert(invocationID)
+            if connectionTestJournal?.id == invocationID { connectionDeviceTestLaunched = true }
         }
         runningJournal.processIdentifier = process.processIdentifier
         onProcessLaunched?(process.processIdentifier)
@@ -3101,15 +3283,23 @@ actor XcodeTestExecutor {
             invocationID: invocationID,
             destinationIdentifier: destinationIdentifier,
             process: process,
-            journal: runningJournal
+            journal: runningJournal,
+            identity: AutomationProcessIdentity.inspect(pid: process.processIdentifier)
         )
         defer {
             if active?.invocationID == invocationID,
-               active?.process === process {
+               active?.process === process, !process.isRunning {
                 active = nil
             }
         }
         do {
+            if let record = runningJournal.physicalRunner {
+                guard let identity = active?.identity else { throw AutomationContractError.terminationUnverified }
+                runningJournal.physicalRunner = try await sharedPhysicalLeases().recordHost(record, process: identity, executable: executable)
+                physicalRunnerRecords[invocationID] = runningJournal.physicalRunner
+                active?.journal = runningJournal
+                inFlightJournal = runningJournal
+            }
             try await persistence.saveJournal(runningJournal)
         } catch {
             // A launched child must be stopped before the executor can release its
@@ -3122,19 +3312,10 @@ actor XcodeTestExecutor {
             process.waitUntilExit()
             throw error
         }
-        let timeoutTask = deadline.map { deadline in
-            Task { @concurrent in
-                do {
-                    try await Task.sleep(for: deadline)
-                    continuation.yield(.deadline)
-                    continuation.finish()
-                } catch { }
-            }
-        }
         let outcome = await outcomes.first { _ in true }
-        timeoutTask?.cancel()
+        timeout?.cancel()
         guard case .some(.exited(let code)) = outcome else {
-            process.interrupt()
+            if process.isRunning { process.interrupt() }
             try? await Task.sleep(for: .seconds(2))
             if process.isRunning { process.terminate() }
             try? await Task.sleep(for: .milliseconds(250))
@@ -3146,6 +3327,32 @@ actor XcodeTestExecutor {
             throw XcodeTestExecutorError.cancelled
         }
         return code
+    }
+
+    func beginPendingInvocation(_ journal: ScenarioExecutionJournal) throws {
+        guard active == nil, inFlightJournal == nil, awaitingValidationJournal == nil, !connectionCheckInProgress else { throw XcodeTestExecutorError.activeExecution }
+        pendingInvocation = journal
+    }
+
+    private func checkInvocationCancellation(_ id: UUID) throws {
+        guard !Task.isCancelled, !cancelledInvocationIDs.contains(id) else { throw XcodeTestExecutorError.cancelled }
+    }
+
+    private func drainOwnedHost(_ execution: ActiveExecution, grace: Duration) async -> Bool {
+        let process = execution.process
+        func canSignal() -> Bool { process.isRunning && execution.identity?.presence() == .matching }
+        if canSignal() { process.interrupt() }
+        for (delay, signal) in [(grace, SIGTERM), (.seconds(2), SIGKILL), (.seconds(2), Int32(0))] {
+            let until = ContinuousClock.now.advanced(by: delay)
+            while process.isRunning && ContinuousClock.now < until { try? await Task.sleep(for: .milliseconds(50)) }
+            if !process.isRunning {
+                if active?.process === process { active = nil }
+                return true
+            }
+            guard canSignal(), let identity = execution.identity else { return false }
+            if signal != 0 { _ = kill(identity.pid, signal) }
+        }
+        return false
     }
 
     private func recoveryFailure(for error: Error) -> ScenarioRecoveryFailure {
@@ -3164,6 +3371,23 @@ actor XcodeTestExecutor {
         default:
             .unexpected
         }
+    }
+
+    private func sharedPhysicalLeases() throws -> ScenarioPhysicalRunnerLeaseManager {
+        if let physicalLeaseManager { return physicalLeaseManager }
+        let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: physicalLeaseStoreURL)
+        physicalLeaseManager = manager
+        return manager
+    }
+
+    private func runnerProduct(paths: XCTestRunProductPaths) throws -> ScenarioProductIdentity {
+        let bundle = XcodeProductBundle(url: paths.testHostURL)
+        guard let identifier = bundle.info?["CFBundleIdentifier"] as? String, !identifier.isEmpty,
+              !bundle.executableName.isEmpty, !bundle.executableName.contains("/"), !bundle.executableName.contains("\0") else {
+            throw XcodeTestExecutorError.productMissing("the exact XCTest runner app identity is missing")
+        }
+        return .init(bundleIdentifier: identifier, executableName: bundle.executableName,
+            sha256: try AutomationLegacyExecutableDigest.hash(bundle.executableURL))
     }
 
     func verifyBuiltProducts(

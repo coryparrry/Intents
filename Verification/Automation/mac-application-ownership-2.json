@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "scope": "Private upstream exact-path app acquisition and recipient mouse submission source",
+  "runtimeEnabled": false,
+  "installedSDKChanged": false,
+  "qualification": {
+    "pythonStagingTests": 6,
+    "swiftFocusedTests": 25,
+    "releasePipelineTests": 3,
+    "bashSyntax": "passed",
+    "freshSourceReview": "Open clear; unknown-up retry corrected; fresh two-file recheck clear"
+  },
+  "limitations": [
+    "No real Mac app launch, activation, snapshot, mouse delivery or termination test",
+    "PID/start preflight and CGEvent PID dispatch are not atomic",
+    "Event posts have no application acknowledgement; independent UI observation required",
+    "No SDK session propagation, product nativeMac route, keyboard/fill/scroll or GUI ownership qualification",
+    "No installed artifact, release or physical execution claim"
+  ],
+  "sha256": {
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacApplicationOwnership.swift": "2ee58123d50fa9895e398e016861cbfb8667eed3bdf45389c496106babeb539b",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacApplicationOwnershipTests.swift": "36997a67ffb0de0f85b7942487915b2aa8ed1f90d43bbb23faf19416ab59326d",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacApplicationTarget.swift": "3920795302723fad7acea7c0360204d575b2d2085911ee0ab59951837073296e",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacApplicationTargetTests.swift": "95db0d116f282ee566d7e5951091e7524ab0bb8a3c96e2525dcc039c7280101d",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacOwnedMouseDelivery.swift": "b64e4fc2dc408ebfc8429de4460d512b676b5d4728f9a136acdcd21348971b76",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacOwnedMouseDeliveryTests.swift": "c01e0dd7a8e54475605c6e8e7afd936eae25fa096156ad69a26c8d827a9912a4",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/patches/mac-ownership/MacOwnedPressArguments.swift": "c223f339c98ea8c1b3c16aba3a5b758bdc779e3f56409c3194cd7e49ceee1736",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/scripts/stage_mac_snapshot_ownership.py": "404073a6a015ab12a4c53c93eaa1d0ade17e53bc515764ef1489ada328078e1d",
+    "/Users/coryparry/Developer/Projects/Intents/Tools/IntentsAutomation/tests/mac_snapshot_staging_test.py": "a667989c7de85c96b742e1d4c6fb0ac7cc45e521b1063daacff6f01ea67266a3",
+    "/Users/coryparry/Developer/Projects/Intents/script/automation_test.sh": "36d514764bdfd1e05b0243cd8b122e623089ccfc47b0e70dc8b8431bc9a6f6b9",
+    "/private/tmp/intents-agent-device-native-ownership-source1/acquisition.json": "dd22823391204c06c2abbe63f810335982d379ce7d92f38f533fdd294d7b66bd",
+    "/private/tmp/intents-agent-device-native-ownership-source1/open-staging1.json": "3b2351701404218c076a72671df922f711543d9af213fcd53335b8295795d316",
+    "/private/tmp/intents-agent-device-native-ownership-source1/input-staging2.json": "9955c314ce5d23d8ddb9eb8e8d512838140d5b5fc64491c239e9156b4385da80",
+    "/private/tmp/intents-agent-device-native-ownership-source1/staging-regressions5.log": "c7898f18dd249b374a1833944d38eeddf70146cd940bf3f3e855c78d64db67d1",
+    "/private/tmp/intents-agent-device-native-ownership-source1/swift-open-tests1.log": "e4ed5c7a7d847f9e1aa62ba593f650fa5d30d282b4fbee2391c4cf65789acd80",
+    "/private/tmp/intents-agent-device-native-ownership-source1/swift-input-tests1.log": "12894da19c1aa272a85ba10c84768a227bf696488c335d586660d171f4cb2565",
+    "/private/tmp/intents-agent-device-native-ownership-source1/swift-input-tests2.log": "f7bee6768f6a997777f459fdf1350a284abf203aabb71ee4da4de952217cb01d",
+    "/private/tmp/intents-agent-device-native-ownership-source1/release-route-tests1.log": "7610588488b4d9d00ac5c22be8d51199b80814b7656fc3d714ddc4c2c76f9c08"
+  }
+}

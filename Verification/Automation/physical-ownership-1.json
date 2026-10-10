@@ -1,0 +1,146 @@
+{
+  "checks": {
+    "broadHardwareSkips": 5,
+    "broadRegisteredXCTest": 311,
+    "broadSwiftTesting": 151,
+    "failures": 0,
+    "focusedSwiftTesting": 16,
+    "focusedXCTest": 10,
+    "iPhoneOS27HarnessCompiled": true,
+    "nativeHostedPassed": 42
+  },
+  "deviceRunnerLaunched": false,
+  "deviceRunnerReleaseQualified": false,
+  "logs": [
+    {
+      "path": "/private/tmp/intents-automation-physical-lease-tests100.log",
+      "sha256": "f49697425254e7d96890e698a659e190bab189c5d8f1f7fe1d93c7eeea6be675"
+    },
+    {
+      "path": "/private/tmp/intents-automation-physical-lease-tests103.log",
+      "sha256": "712c2b6499e6c2d93c030b6a89f3a85fd8c8f8a5c33be376d8cb2e473c66a623"
+    },
+    {
+      "path": "/private/tmp/intents-automation-physical-lease-tests104.log",
+      "sha256": "97ec6d91f58e903a36d1c1360f8f0a7bf28f6c14015f07ca99345edb9fe39fd0"
+    },
+    {
+      "path": "/private/tmp/intents-automation-runner-receipt-iphone-build1.log",
+      "sha256": "9b276fa91ae998f6a483a83b74f5585c48cfea8cb15abfc15cdd7b2322588d94"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native19.log",
+      "sha256": "f2006dc863a22dc80401df76aca7447edf69ffd5748b661021a6506be9bcc04d"
+    },
+    {
+      "path": "/private/tmp/intents-automation-native19-summary.json",
+      "sha256": "690b4d7040c64662dc574edb4b0170e173a71050fc65c9cd5c9c13153e1f1e5e"
+    }
+  ],
+  "physicalProfileAdvertised": false,
+  "readOnlyDevice": {
+    "coreDeviceUUID": "1AD4F755-6F58-58E5-AC71-B1EDFECADA93",
+    "inspectedRunner": "synthetic absent name; no real runner qualification",
+    "inventoryChildrenTrackedAndExited": 2,
+    "udid": "00008140-000E4D803C0B001C"
+  },
+  "releaseQualified": false,
+  "renderedInterfaceVerified": false,
+  "schemaVersion": 1,
+  "scope": "Shared physical XCTest ownership source and actual read-only inventory; no device runner or Siri execution",
+  "siriQualified": false,
+  "sourceFiles": [
+    {
+      "path": "Package.swift",
+      "sha256": "f3131ae514160821672abcaceb720505f448ac42804f10a7a5341ca3d7969683"
+    },
+    {
+      "path": "Sources/IntentLabContracts/IntentLabRunnerReceipt.swift",
+      "sha256": "58790cdc08d02f10fb1c2b2568fa7282a2151c1724db36d632d0eb7f810d8c93"
+    },
+    {
+      "path": "Sources/IntentLabContracts/IntentLabExecutableDigest.swift",
+      "sha256": "db0e8f3cb053a92bbaf2bac4a1192046956e03a33200605f657946ce03babb77"
+    },
+    {
+      "path": "Sources/IntentLabTesting/IntentLabRunnerReceiptWriter.swift",
+      "sha256": "d5ce90d478d7207326f7800aa252f8bff5682fdee868a5cc4641d2954a8755a2"
+    },
+    {
+      "path": "Sources/IntentLabTesting/IntentLabScenarioRunner.swift",
+      "sha256": "bf71c0922594f82dfc688d176a541ccde63f4acea869dfd80acc0b6ebb9e3dea"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationLegacyRunnerReceipt.swift",
+      "sha256": "838e9814ec7f59f8cd684c52f310101848474c2760dc830cdb19bdeecfc51718"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationPhysicalProcessInventory.swift",
+      "sha256": "78a5c177459f86637051dfc27945302456aa090d14d0af10f54651b44a91a931"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationPhysicalRunnerVerifier.swift",
+      "sha256": "59c9c50b280bfd03141e4c70a72312ed58724b1aa64e4b8934a43a2f6b1f93e5"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationDeviceLeaseManager.swift",
+      "sha256": "755569e6f60822d914afcb623209296062c062d4eeb0ba3d89b5ce930902cfbf"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Services/ScenarioPhysicalRunnerLease.swift",
+      "sha256": "0547a0a656e169cfba60118053c242aff859ad933610b2860b5680916e11f978"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Services/ScenarioRunnerReceiptImporter.swift",
+      "sha256": "15abe599b4588a496333a55225c40a2a10fcc7e258c76469ceabffa4fe2d4865"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Services/XCTestEvidenceImporter.swift",
+      "sha256": "6734783d6c7aca759509b90036068c6df69ec15810d8b1d412a272fbda396785"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Services/XcodeTestExecutor.swift",
+      "sha256": "743e105f6497f21c1888ef945ae9c868751789e50cdd8d8ad0318f7fe24ac56a"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Services/ScenarioPersistence.swift",
+      "sha256": "69bab45694ff1ba464adf4231e9d948823102b0e6860d9013b398b8dcc316246"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Services/ScenarioCoordinator.swift",
+      "sha256": "da8eb2885bd07e8b4b15f1e8c16a09d68c6968236bef44a5678c48357d28f486"
+    },
+    {
+      "path": "Tools/IntentsAutomationOwnershipProbe/OwnershipProbe.swift",
+      "sha256": "6bfa5ba0502efdb040dbe86a3b335fdf82f210c8326732999dd9f330c76214a8"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationOwnershipTests.swift",
+      "sha256": "01dbaa83769d6b839f01a3d25de11f6906fa20f2303ee22033cd1d01feea4e3c"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationPhysicalInventoryTests.swift",
+      "sha256": "9e4087bf78b92cfdcbedec923b759a4f990017e1a7ce390378a52efef647c148"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationPhysicalReadOnlyTests.swift",
+      "sha256": "1b53799b98c919487906581011e216d3bb9c01c7525730fe6c1d7c2425532a6c"
+    },
+    {
+      "path": "Tests/IntentLabContractsTests/IntentLabRunnerReceiptTests.swift",
+      "sha256": "67de90e600fc0bdb53ba71f73a432e44e6eb230f514201a8e35250f5a0b8e093"
+    },
+    {
+      "path": "Tests/IntentLabContractsTests/IntentLabExecutableDigestTests.swift",
+      "sha256": "0b9c18b004949dc17ea747f1985090d1e41c2f0b4cf6b31cfdb35afd62cab53d"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvalsTests/ScenarioPhysicalLeaseTests.swift",
+      "sha256": "718970e72495ed89bd0fa527f29b0bc9aa4bec678cfaf6a17659302930ddc3f1"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvalsTests/ScenarioPhysicalFailureTests.swift",
+      "sha256": "ddb876d0bee162d1a17717001ff9b412394a06ace577f8bf163ba98f1bdd3d14"
+    }
+  ]
+}

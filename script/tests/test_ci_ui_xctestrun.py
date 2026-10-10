@@ -248,6 +248,13 @@ class UIXctestrunTests(unittest.TestCase):
             self.assertNotIn(option, step)
         self.assertIn("-only-testing:FoundationEvalsUITests/FoundationEvalsUITests", step)
 
+    def test_portable_fixtures_use_complete_runtime_preparation_before_swift_tests(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        job = workflow.split("  regression:\n", 1)[1].split("  build:\n", 1)[0]
+        preparation = job.index("run: bash script/automation_prepare_runtime.sh")
+        execution = job.index("run: python3 script/ci_run_tests.py swift")
+        self.assertLess(preparation, execution)
+        self.assertNotIn("run: python3 Tools/IntentsAutomation/scripts/provision_runtime.py", job)
 
 
 if __name__ == "__main__":

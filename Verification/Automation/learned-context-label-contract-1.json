@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T02:44:10.632464+00:00",
+  "scope": "Learned setup navigation context labels; source contracts only",
+  "sourceVerified": true,
+  "actualLiveRecipeMinted": false,
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "change": "A text context value may identify only an exact label/button/tap when it is an explicitly non-fill, non-deferred binding in the captured segment and independently participates in the qualified entity selection. Private values and queried IDs remain protected.",
+  "boundaries": [
+    "Two matching live traces and independently qualified fresh owner/entity setup remain required",
+    "The exception grants no execution approval; a changed context or fixture digest is rejected",
+    "All queried entity IDs, generated instance text, other segment values and UUIDs retain their guards",
+    "No actual recipe was minted, executed, replayed or requalified"
+  ],
+  "tests": [
+    {
+      "log": "/private/tmp/intents-automation-tests164.log",
+      "passed": 70
+    },
+    {
+      "log": "/private/tmp/intents-automation-tests165.log",
+      "passed": 70,
+      "failed": 1,
+      "finding": "New invalid deferred/static collision test expected recipe rejection, but token construction correctly rejects first with inputUnavailable; regression adjusted to assert that boundary."
+    },
+    {
+      "log": "/private/tmp/intents-automation-tests166.log",
+      "passed": 71,
+      "failed": 0
+    }
+  ],
+  "review": "Fresh Sol v18 read-only review: no material findings; additional deferred/static and other-segment collision coverage added and passed",
+  "evidence": [
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationLearnedSetupRecipe.swift",
+      "sha256": "5ab17d1c104fd654f6cdda609e1ddc94743852421a070d9474a9a737bd0350bc"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationFreshFixtureTests.swift",
+      "sha256": "c88ecd9bb47fde08f2e4001e2ffae2f6e1bb1b61b9d5ab17286e818c61cbcb11"
+    },
+    {
+      "path": "/private/tmp/intents-automation-tests164.log",
+      "sha256": "b8a0f551dfa2a5f6c2d49d499e9c8788b5ad4f3e7fb8c12256bcef393a2a4a2b"
+    },
+    {
+      "path": "/private/tmp/intents-automation-tests165.log",
+      "sha256": "4fc7ffabd27971cb2cc83a8d8a4355bf53c40a5475a1498e832736302b50d517"
+    },
+    {
+      "path": "/private/tmp/intents-automation-tests166.log",
+      "sha256": "3fb9e8ee095b686b99ad5ad8f0dfa0423abffccfe6fe3f4408ba07a970c0b145"
+    }
+  ]
+}

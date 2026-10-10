@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T05:55:34.751364+00:00",
+  "scope": "Local physical iPhoneOS selection and digest-bound plist/executable reads",
+  "fullPlanComplete": false,
+  "deviceOperationsExecuted": false,
+  "sourceChecks": {
+    "registeredSwiftTests": 30,
+    "passed": 29,
+    "existingOptInSkips": 1,
+    "failures": 0,
+    "native48Build": "passed",
+    "freshSourceReview": "Legacy expected digest and plist binding findings fixed; final fresh reviewer clear"
+  },
+  "limits": [
+    "Local payload selection does not prove signing, installability or installed device bytes",
+    "Physical application execution remains refused before inventory, attempt creation and lease",
+    "No UI/device launch, packaging or publication"
+  ],
+  "sha256": {
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationPhysicalExecutable.swift": "4b487f2943de536b687be616f5e0414f598784ba8843041c7fc11ab0c2f7039a",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationInstalledUIApplication.swift": "10fb4b4209fda9bf7c6f3bab89fbde446824bd49eef537ed25db2320d243898a",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationApplicationRunner.swift": "3caaa7372f03b5dbff61b9926bd45e4f425cee486e7d5dcb3902ffdf20f84f82",
+    "/Users/coryparry/Developer/Projects/Intents/Sources/IntentsAutomationCore/AutomationProductDigest.swift": "1bee728c22ccdedda4fb5d0da0bbca85210912577fc2439fc8cb0f0f51bca8ed",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationPhysicalExecutableTests.swift": "fcdca5fa7066af51d34125604e74be50a26ca34b9ca62b7e8954c41fbc883d37",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationInstalledUIApplicationTests.swift": "92fb1ec7f6de7ba559faaa288a085169e40f1e5cd41fbd1afacec74256f2ef3a",
+    "/Users/coryparry/Developer/Projects/Intents/Tests/IntentsAutomationCoreTests/AutomationLegacyProductReadTests.swift": "10c38f442b195209208f5f6599cb82e701fc199c1a019938092a880a3b735a32",
+    "/private/tmp/intents-automation-swift185.log": "9e7b6450c10f9578b7f9343f541cf559fbe39fadcb0e0c2e0807ab710f924865",
+    "/private/tmp/intents-automation-native48.log": "8bef060b9c8509d40416feb5d146e502db39dbb7df28b8aebc790c4e84b128a3",
+    "/private/tmp/intents-automation-native48-artifact/preservation.json": "52eea3535898e68da2cbfbd37a1eea451d584316ce7706fc7b3fb32a35121f32",
+    "/private/tmp/intents-automation-native48-artifact/Intents.app/Contents/MacOS/FoundationEvals": "6befbab42fa0af1de0af8ae4a074fcb1b4324ef8d5f1629566bb98725176a472"
+  }
+}

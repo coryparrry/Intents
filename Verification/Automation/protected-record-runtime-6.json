@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-06T23:53:13.992537+00:00",
+  "scope": "Actual typed-controller and separated text-entry capability fixture attempt",
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "result": "unresolved",
+  "validProviderDecision": "finish",
+  "capturedTextFieldNativeEditable": "unknown",
+  "capturedTextFieldFillSupported": true,
+  "uiActions": 0,
+  "subjectDispatched": false,
+  "resourcesReleasedInOriginalReport": false,
+  "recovery": "Verified recorded kernel owner39687/start1791330391:637548 and sidecar40213/start1791330418:443816 absent; scoped SDK host/device runner jobs absent; owned simulator Shutdown; guarded native Core reconciled generation89, report and journal byte-identical, common campaigns empty",
+  "limits": [
+    "UI title reached does not prove fixture records were created",
+    "Original release failure remains unqualified; exact gate missing in historical evidence",
+    "No independent query or fixture authority"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-seeded2/report.json",
+      "sha256": "221624caddeccf2bc367ce55a452c32b3754ac58b0afef554fdc3d9e1f055cc4",
+      "bytes": 1877
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-seeded2/journal.json",
+      "sha256": "f45cc6af6d849807c86518f5f3faf7bfe2f9adfa5cccb0d9053bdad3a701fe31",
+      "bytes": 711
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-seeded2/artifacts/controller-89-1.json",
+      "sha256": "388d352884396d2d939cbc490d2ebe73ed2e77b10f79a0c1796e253de02b66be",
+      "bytes": 14888
+    },
+    {
+      "path": "/private/tmp/intents-fresh-owner-runtime-qualification1/recovery6-reconcile.log",
+      "sha256": "9a0472d0d01867b3486b8b2fed6bcbf4048ff652bf778f185246a328ebefeaf1",
+      "bytes": 66
+    }
+  ]
+}

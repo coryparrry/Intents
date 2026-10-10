@@ -1,0 +1,105 @@
+{
+  "dateDefaultsSupported": false,
+  "dateResultsSupported": false,
+  "deviceConversionVerified": false,
+  "inputSupported": true,
+  "logs": [
+    {
+      "path": "/private/tmp/intents-automation-date-tests87.log",
+      "sha256": "9c001944ac0146de24554942ea51165b04b3b1bacb1180f93a73dfa740c5664b"
+    },
+    {
+      "path": "/private/tmp/intents-automation-date-tests88.log",
+      "sha256": "dc2dfc75f2f0822d4ccef65d0f45533a52db25b4a284c610b768df4e13a17530"
+    },
+    {
+      "path": "/private/tmp/intents-automation-host-date-typecheck6.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/intents-automation-date-tests15.log",
+      "sha256": "5fc47b5e1b6cd46cbbd8f718d8886dc04014014b2718d4bbca3b6c6e400dba7c"
+    }
+  ],
+  "renderedInterfaceVerified": false,
+  "schemaVersion": 1,
+  "scope": "explicit Date inputs only; shared strict parser and native compilation",
+  "sourceFiles": [
+    {
+      "path": "Package.swift",
+      "sha256": "026945e1be3d49449c1ff70c1cfc3e5176051bf5ebaf1e9e1b4ebe995463001d"
+    },
+    {
+      "path": "Integration/AutomationHost/AutomationDateCodec.swift",
+      "sha256": "0be9a67c1a14e99e1bcd6e7fa53c9dd101b2932a9295fb27e008009fe0c7621f"
+    },
+    {
+      "path": "Integration/AutomationHost/HostPlan.swift",
+      "sha256": "92cab785615e76f4eec8fcc557f6266200dc9b81b31cda8f82217bbd91ec61f9"
+    },
+    {
+      "path": "Integration/AutomationHost/IntentDefinitionsHost.swift",
+      "sha256": "e3c2a9b67febac938a65e1f4a2c1c7d7537ac786ce04ecf0b9736624cc8b6d8d"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationDateInput.swift",
+      "sha256": "eb8b96618bca8cd2cf9d500f78e93d8181347a5040c2233ca6c23f2fd9e2b75b"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCodecMetadata.swift",
+      "sha256": "3efc23a0aa576a6fb9daba2b24574f3d0104f31e7745e916579b896232645e1b"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationCodecRegistry.swift",
+      "sha256": "e46d37d42bd2290c94c1fa0ab743766accb8533848d21349003f15f29b9b79a9"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostGenerator.swift",
+      "sha256": "df0345cbc1c2c12ab47dbc76b2989087a3582bbb210ed71149c75e5a4829e36d"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationHostProgram.swift",
+      "sha256": "72ebc53132ed5eff305ee7f8f59a2dbeeda46797c5e8c8dacfa09f991a1eac7c"
+    },
+    {
+      "path": "Sources/IntentsAutomationCore/AutomationSurfaceCatalog.swift",
+      "sha256": "da1d785440821dfaf19ce97fd188aff379a7e77de4630d7e592dc4d29de4edad"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Views/AppAutomationDateInput.swift",
+      "sha256": "6eb9d8b54b386f5d79c6840cc7203a9f38409842cde102f40ae79ff81712f4ae"
+    },
+    {
+      "path": "FoundationEvals/FoundationEvals/Views/AppAutomationView.swift",
+      "sha256": "cb28adb6f1c274b74f840790c972747dccf96720369014326663066f34ba7551"
+    },
+    {
+      "path": "Tests/IntentsAutomationCoreTests/AutomationCodecTests.swift",
+      "sha256": "45ad239734d88c822a5941b32ccc3f25163e4061910b3d745a8518ffaa1317f8"
+    },
+    {
+      "path": "Tests/IntentsAutomationHostContractTests/HostCodecContractTests.swift",
+      "sha256": "1c12453aad86219c1dd27e356edc53c874c18d4d93bf1bafd8524b8bad329965"
+    }
+  ],
+  "verification": {
+    "actualSDKHostTypecheck": "passed",
+    "finalTargeted": {
+      "failures": 0,
+      "passed": 25
+    },
+    "legacySwiftTesting": {
+      "failures": 0,
+      "passed": 52
+    },
+    "nativeMCPAuthentication": {
+      "failures": 0,
+      "passed": 26
+    },
+    "relevantXCTest": {
+      "failures": 0,
+      "registered": 282,
+      "skipped": 4
+    }
+  }
+}

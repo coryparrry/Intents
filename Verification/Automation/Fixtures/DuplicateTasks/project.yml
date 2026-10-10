@@ -1,0 +1,28 @@
+name: DuplicateTasks
+options:
+  bundleIdPrefix: com.coryparry.IntentsAutomation
+  deploymentTarget:
+    iOS: '26.0'
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    GENERATE_INFOPLIST_FILE: YES
+    CURRENT_PROJECT_VERSION: '1'
+    MARKETING_VERSION: '1.0'
+    TARGETED_DEVICE_FAMILY: '1,2'
+    CODE_SIGNING_ALLOWED: NO
+    INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+targets:
+  DuplicateTasks:
+    type: application
+    platform: iOS
+    sources: [App, Models]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coryparry.IntentsAutomation.DuplicateTasks
+schemes:
+  DuplicateTasks:
+    build:
+      targets:
+        DuplicateTasks: all

@@ -1,0 +1,46 @@
+{
+  "scope": {
+    "protocolVersion": 1,
+    "runId": "run",
+    "attemptId": "attempt",
+    "segmentId": "setup",
+    "leaseGeneration": 1
+  },
+  "operationId": "attempt:setup",
+  "phase": "setup",
+  "operations": [
+    {
+      "kind": "fillBinding",
+      "id": "first",
+      "locator": {
+        "kind": "testId",
+        "value": "first"
+      },
+      "binding": "A"
+    },
+    {
+      "kind": "fillBinding",
+      "id": "second",
+      "locator": {
+        "kind": "label",
+        "value": "é / 💫"
+      },
+      "binding": "a"
+    },
+    {
+      "kind": "readProperty",
+      "id": "read",
+      "locator": {
+        "kind": "label",
+        "value": "Read"
+      },
+      "property": "text"
+    }
+  ],
+  "bindings": {
+    "A": "quote\"\n /",
+    "a": "é 💫 "
+  },
+  "timeoutMs": 120000,
+  "payloadDigest": "35a696da4d0d55d273bb80c2633a0099be975ddc17e0917b772e32dc2f2c4dd9"
+}

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-08",
+  "scope": "Side-by-side Xcode27.2 installation, framework compatibility, exact generator metadata support and build-only authored probe",
+  "fullV3Complete": false,
+  "runtimeQualified": false,
+  "genericCodecAvailable": false,
+  "toolchain": {
+    "path": "/Applications/Xcode-27.2.0-Beta.2.app/Contents/Developer",
+    "version": "27.2",
+    "build": "27B5028f",
+    "sdk": "macosx27.2",
+    "macOS": "27.2 (26B5101f)",
+    "firstLaunchReady": true,
+    "systemSelection": "/Applications/Xcode.app/Contents/Developer",
+    "originalXcodePreserved": true,
+    "installerClosed": true
+  },
+  "frameworkLoad": {
+    "method": "Independent subprocess ctypes.CDLL with RTLD_NOW; no app or intent dispatch",
+    "oldBuildMissingSymbolReproduced": true,
+    "newBuildLoaded": true,
+    "evidence": "framework-load.json"
+  },
+  "metadata": {
+    "acceptedGeneratorBuilds": [
+      "27A266a",
+      "27B5028f"
+    ],
+    "schemaVersion": 1,
+    "fixture": "Verification/Automation/Fixtures/Xcode272Metadata/provenance.json",
+    "capturedActions": 4,
+    "identifierOnlyQueryUnsupported": true,
+    "unknownBuildsRemainUnsupported": true,
+    "runtimeRegistrationAndExecutionNotClaimed": true
+  },
+  "focusedTests": {
+    "command": "swift test --jobs 1 --filter 'AutomationXcode272MetadataTests|AutomationCatalogTests|AutomationCodecTests|AutomationLinkedProductTests|AutomationMacInputProbeFixtureTests'",
+    "registered": 25,
+    "skipped": 1,
+    "failures": 0,
+    "newRegressionsPassed": 4,
+    "log": "metadata-tests-final.log"
+  },
+  "authoredBuild": {
+    "passed": true,
+    "elapsedSeconds": 22.899,
+    "tests": 1,
+    "evidenceRoot": "Tools/IntentsAutomation/.runtime/intents-input-fixture-01EDE91B-9605-4841-8F08-B440CF13CF66",
+    "subjectSHA256": "540b73b59fa02c7de1d320af8fc416208415c52dc20fb6a38cdd30d4bf1214cf",
+    "hostSHA256": "417c8053a3083c811909af008ad39a413a4c7dcb5b7445e0a8f275193aaebfc1",
+    "macOSSDK": "27.2",
+    "appOrIntentLaunched": false,
+    "log": "build-final.log"
+  },
+  "liveAttempt": {
+    "passed": false,
+    "beforeFixtureCreation": true,
+    "failure": "absenceUnconfirmed",
+    "pid": 97070,
+    "parentPID": 96912,
+    "parentBundleID": "com.openai.codex",
+    "childState": "zombie",
+    "appRestarted": false,
+    "normalSIGCHLDNotificationClearedChild": false,
+    "policyRelaxed": false,
+    "elapsedSeconds": 0.588,
+    "log": "live-admission.log"
+  },
+  "review": "Independent scoped source and updated capture/provenance review: no actionable findings.",
+  "sourceSHA256": {
+    "Sources/IntentsAutomationCore/AutomationSurfaceCatalog.swift": "5b43b44b6f56e74995ce981c793b7e98e598ce2afcff10ed14ea367317539e12",
+    "Tests/IntentsAutomationCoreTests/AutomationMacInputProbeFixtureTests.swift": "1128c0099cf835164d94bacced3024aab2a2286ee5fecc747a661bc7c7ab6d61",
+    "Tests/IntentsAutomationCoreTests/AutomationXcode272MetadataTests.swift": "2a14e47ffb42d041570a651c3224e6d28d1e8853f7a5e41ae7071428422ef4a7"
+  },
+  "evidenceRoot": "Tools/IntentsAutomation/.runtime/toolchain-compatibility-1",
+  "evidenceSHA256": {
+    "framework-load.json": "71d3b2a34fc4aeeb7dec1043705ab8d8dc3b6e345ec93d053421509d7c941f40",
+    "fixture-tests.log": "f55955a942eea08bb97c1e5cf7bc7c3e7817bfe5757052a549d3dea807458cc0",
+    "live-admission.log": "3b6341cccde4aba82fb94a74d2f24a29a82132dc998e354af69d586bed696ef3",
+    "build-before-reader-fix.log": "cd3e0ac728df43a29b522ce4eb8b67fd858515c32416348e15c967d306ed0f9e",
+    "metadata-tests-initial.log": "1c0a6ee42a4e85c3a286361f8e25b5f1cd14ad92e2c3d1646fc693b6ecf13f1e",
+    "metadata-tests-final.log": "202dd104749f1f8eb51c242435a6f115e6c6c44a52363f00a9ef7c6d4539d768",
+    "build-final.log": "8e3d3b6642cc3d9ccdb0f29b9e2cebafbb12dc1baa41723171d11ae5b376a6d6"
+  },
+  "limits": [
+    "No parameter setter/readback, owned child closure, physical Siri or full v3 qualification from this run.",
+    "Original failed live lease and payload remain quarantined.",
+    "Native Intents UI bundle was not rebuilt for these latest changes."
+  ],
+  "resume": "After confirmed current-UID admission is possible, rerun the opt-in authored live test with DEVELOPER_DIR=/Applications/Xcode-27.2.0-Beta.2.app/Contents/Developer. Do not repeat unchanged blocked admission."
+}

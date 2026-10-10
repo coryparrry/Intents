@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-07T00:04:58.445611+00:00",
+  "scope": "Actual required-input guard and release diagnostic fixture attempt",
+  "runtimeQualified": false,
+  "fullPlanComplete": false,
+  "result": "invalidFixture",
+  "uiActions": 0,
+  "subjectDispatched": false,
+  "resourcesReleased": true,
+  "decision": "Native guard rejected fill on a current matched visible enabled node with unknown editable and fillSupported=false; actual approved textfield unknown editable/fillSupported=true was present",
+  "releaseDiagnostics": {
+    "shutdownReceived": true,
+    "shutdownResourcesReleased": true,
+    "shutdownCleanupReason": "complete",
+    "processStopped": true,
+    "deviceReleased": true,
+    "subjectInspectionUnreleased": false,
+    "commandsDrained": true
+  },
+  "limits": [
+    "No actual UI fill or independent query completed",
+    "Historical seeded2 release failure cannot be retroactively explained by this successful cleanup"
+  ],
+  "evidence": [
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-activity1/report.json",
+      "sha256": "60136afd363aeb51c1e4d89d897045b9a36458ca5831ae7ea1ad145f82c664b4",
+      "bytes": 464
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-activity1/journal.json",
+      "sha256": "243651fddaff9e729b4eb61f6119259553ab905cf1a8bfc17656c086d55fe41a",
+      "bytes": 970
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-activity1/artifacts/controller-denied-93-1.json",
+      "sha256": "4987daa27acd1de92a94fae5d7c4aaafd80127c4a856c0399ec19e34b41c9728",
+      "bytes": 15243
+    },
+    {
+      "path": "/private/tmp/intents-automation-canonical-campaign/fresh-owner-activity1/artifacts/sidecar-release-93-1.json",
+      "sha256": "b9eb3cb0527da905236fda73db25c5b7a2c774c582d2b9dac602db3888102e62",
+      "bytes": 348
+    }
+  ]
+}

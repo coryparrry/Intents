@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-08",
+  "scope": "First live authored Mac String setter/readback calibration after successful current-UID admission",
+  "fullV3Complete": false,
+  "runtimeQualified": false,
+  "genericCodecAvailable": false,
+  "admission": {
+    "records": 817,
+    "matchingFullObservations": 2,
+    "elapsedSeconds": 0.14,
+    "afterUserReset": true
+  },
+  "subjectSHA256": "9d734429c7a15481a9cb2363a6f23e0763fad5a92b682298bc8765dc607cc3d9",
+  "hostSHA256": "b423a9b22022931cc2645c6c0a77646557187e1bae3a2f3baa91aebb7b987bd7",
+  "execution": {
+    "elapsedSeconds": 207.392,
+    "registeredTests": 1,
+    "assertionFailures": 3,
+    "subjectAndHostBuilt": true,
+    "testBodyLoaded": false,
+    "observationReceiptProduced": false,
+    "failureStage": "Apple test bundle dynamic loading",
+    "missingSymbol": "_$s18AppIntentsServices23RunnerServiceDispatcherC12resolveValue_2to3appAA0A20EntityRepresentation_pSgx_SSAA0A10IdentifierVtYaKAA06IntentH0RzlF",
+    "referencingFramework": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/AppIntentsTesting.framework/Versions/A/AppIntentsTesting",
+    "expectedFramework": "/System/Library/PrivateFrameworks/AppIntentsServices.framework/Versions/A/AppIntentsServices",
+    "xcodeVersion": "27.0",
+    "xcodeBuild": "27A266",
+    "macOSVersion": "27.2"
+  },
+  "release": {
+    "reportFailure": "terminationUnverified",
+    "resourcesReleased": false,
+    "leaseAndPayloadQuarantined": true,
+    "laterReadOnlyInspectionFoundExactFixtureProcesses": false,
+    "completeChildClosureProved": false,
+    "note": "Later exact PID/path absence does not replace the failed production release proof. No lease reset or quarantine removal."
+  },
+  "nativeUI": {
+    "afterResetRetry": true,
+    "bundle": "/private/tmp/intents-v3-final-products/Intents.app",
+    "includesConcurrentInventoryChange": false,
+    "expectedSidebarObserved": true,
+    "navigationVerified": false,
+    "failure": "Sky Computer Use native pipe closed before response",
+    "taskLaunchedAppClosed": true
+  },
+  "evidenceRoot": "Tools/IntentsAutomation/.runtime/intents-input-fixture-811CFD1B-B89C-438F-87FB-46FC8F2A7175",
+  "files": {
+    "live-test.log": "a06f618a1bbd9b518b5313de218dcb780f4e608679c0e7b3ad922ed7ed48ce3d",
+    "artifacts/input-adapter-log.txt": "6bf382a3a1d9346ba1e0c3cb15ab516fffeeb781edf52fdf77bd0b0e6eb2d686",
+    "leases.json": "7844da6affdc197a0db7ea1be904c1e0d322e9d892535e6e8820413fb23c2610"
+  },
+  "limits": [
+    "No unchanged toolchain retry or install was attempted.",
+    "No business intent dispatch, parameter readback, customer-route enablement, hardware, release or full M0-M6 completion claimed."
+  ]
+}
