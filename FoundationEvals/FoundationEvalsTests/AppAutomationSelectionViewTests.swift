@@ -78,13 +78,11 @@ import XCTest
             containerPath: root.path, bundleID: app.bundleID, platform: app.platform, architectures: ["arm64"], app: app)
         let model = AppAutomationStore(supportDirectory: root.appendingPathComponent("support"),
             savedCasesReader: { activity.viewStarted(); return [] },
-            simulatorInventoryReader: { _, _ in activity.readInventory(); return [simulator] },
-            installedToolchainReader: { _ in [] },
             intakeAssessor: { _ in .init(candidates: [candidate], gaps: [], requiresBuildApproval: false) },
             selectionCatalogReader: { app, _ in
                 gate.hold()
                 return .init(app: app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: [])
-            })
+            }, simulatorInventoryReader: { _, _ in activity.readInventory(); return [simulator] })
         self.model = model
         model.configuration = initialConfiguration
         let hostingView = NSHostingView(rootView: AppAutomationView(model: model)); self.hostingView = hostingView
