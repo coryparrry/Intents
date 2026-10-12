@@ -109,6 +109,8 @@ final class AppAutomationStore {
     var savedCases: [AutomationFrozenCase] = []
     private(set) var retainedUnresolvedNormalReport: AutomationAttemptReport?
     private(set) var retainedUnresolvedNormalTarget: TargetIdentity?
+    /// Actual destinations of finished requests whose reports or reservations remain unresolved.
+    private(set) var retainedUnresolvedRequestTargets: [String: TargetIdentity] = [:]
     @ObservationIgnored var ownershipRecoveryTask: Task<Void, Never>?
     let recoverySimulatorShutdown: @Sendable (TargetIdentity, URL, URL) async throws -> Void
     var recoveryItems: [AutomationNativeRecoveryItem] = []
@@ -297,6 +299,7 @@ final class AppAutomationStore {
         progress = "Verifying the saved failure…"; message = nil
         task = Task {
             defer { progress = nil; task = nil; activeCommand = nil; releaseScopeIfClosing() }
+            var executedRequest: (String, TargetIdentity)?
             do {
                 let request = try await makeReproductionRequest(runID: runID)
                 if let commandID {
@@ -310,10 +313,12 @@ final class AppAutomationStore {
                 let proposal = request.proposal, subject = request.subject, runtime = request.runtime
                 let casesRoot = support.appendingPathComponent("Cases")
                 advanceSelection(); progress = "Reproducing the saved failure five times…"
+                executedRequest = (proposal.approval.runID, proposal.frozen.plan.target)
                 let result: AutomationReproductionReport
                 if let reproductionExecutor { result = try await reproductionExecutor(proposal, subject, runtime, support, request.installApproved) }
                 else { result = try await proposal.execute(subject: subject, runtime: runtime, support: support, developerDirectory: developerDirectory, allowBootAndInstall: request.installApproved) }
                 reproductionReport = result
+                if unresolvedReproduction { retainUnresolvedRequest(runID: proposal.approval.runID, target: proposal.frozen.plan.target) }
                 guard result.frozen == proposal.frozen, result.originalFailure.attemptID == proposal.originalAttemptID,
                       result.runID == proposal.approval.runID else { throw AutomationContractError.conflictingOperation }
                 let outcome = try AutomationNativeReproductionOutcome(result)
@@ -327,6 +332,7 @@ final class AppAutomationStore {
                 try await AutomationReproductionArchive(caseStoreRoot: casesRoot).save(result)
                 await refreshSavedCases()
             } catch {
+                if let (runID, target) = executedRequest { await retainUnresolvedReservation(runID: runID, target: target) }
                 message = errorText(error)
                 if let commandID, !["completed", "invalidated"].contains(commandRequests[commandID]?.state ?? "") {
                     pendingCommand = nil
@@ -384,7 +390,9 @@ final class AppAutomationStore {
         return .init(proposal: proposal, subject: subject, runtime: runtime.runtime, installApproved: install,
             digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)))
     }
-    private var unresolvedNormalAttempt: Bool { retainedUnresolvedNormalReport != nil || report?.result.subjectDispatchUncertain == true || report?.resourcesReleased == false }
+    private var unresolvedNormalAttempt: Bool { !retainedUnresolvedRequestTargets.isEmpty || retainedUnresolvedNormalReport != nil || report?.result.subjectDispatchUncertain == true || report?.resourcesReleased == false }
+    var hasUnresolvedActiveAttempt: Bool { unresolvedNormalAttempt || unresolvedEntityQuery || unresolvedSearch || unresolvedReproduction || unresolvedComparison }
+    var hasUnresolvedOwnership: Bool { !recoveryItems.isEmpty || hasUnresolvedActiveAttempt }
     var canSelectApplicationFromCommand: Bool {
         !busy && !closing && pendingCommandStatus == nil && !unresolvedNormalAttempt && !unresolvedSearch &&
             !unresolvedReproduction && !unresolvedComparison && !unresolvedEntityQuery
@@ -433,6 +441,7 @@ final class AppAutomationStore {
                 guard result.report.attemptID == attemptID else { throw AutomationContractError.conflictingOperation }
                 entityQueryReport = result.report
                 unresolvedEntityQueryAttemptID = nil
+                if unresolvedEntityQuery { retainUnresolvedRequest(runID: approval.runID, target: queryPlan.target) }
                 await importEvidence(plan: queryPlan, report: result.report)
                 try Task.checkCancellation()
                 guard !closing, selectionEpoch == epoch, self.prepared == prepared, actionID == action.id,
@@ -443,7 +452,10 @@ final class AppAutomationStore {
             } catch {
                 // A thrown preparation/persistence failure may have retained target ownership.
                 // Keep its exact ID inspectable and block admission when no report was recovered.
-                if entityQueryReport?.attemptID != attemptID { unresolvedEntityQueryAttemptID = attemptID }
+                if entityQueryReport?.attemptID != attemptID {
+                    unresolvedEntityQueryAttemptID = attemptID
+                    retainUnresolvedRequest(runID: approval.runID, target: queryPlan.target)
+                }
                 message = errorText(error) + " (query attempt " + attemptID + ")"
                 await refreshSavedCases()
             }
@@ -546,6 +558,7 @@ final class AppAutomationStore {
         progress = "Verifying both retained builds…"; message = nil
         task = Task {
             defer { progress = nil; task = nil; activeCommand = nil; clearFixedSelection(); releaseScopeIfClosing() }
+            var executedRequests: [(String, TargetIdentity)] = []
             do {
                 let request = try await makeComparisonRequest(runID: runID)
                 if let commandID {
@@ -556,10 +569,16 @@ final class AppAutomationStore {
                 }
                 try Task.checkCancellation()
                 advanceSelection(); progress = "Checking the unchanged case 30 times on each build…"
+                executedRequests = [(request.proposal.beforeApproval.runID, request.proposal.baseline.plan.target),
+                    (request.proposal.afterApproval.runID, request.proposal.candidate.plan.target)]
                 let result: AutomationFixComparisonReport
                 if let comparisonExecutor { result = try await comparisonExecutor(request.proposal, request.before, request.after, request.runtime, support) }
                 else { result = try await request.proposal.execute(before: request.before, after: request.after, runtime: request.runtime, support: support, developerDirectory: developerDirectory) }
                 comparisonReport = result
+                if unresolvedComparison {
+                    retainUnresolvedRequest(runID: request.proposal.beforeApproval.runID, target: request.proposal.baseline.plan.target)
+                    retainUnresolvedRequest(runID: request.proposal.afterApproval.runID, target: request.proposal.candidate.plan.target)
+                }
                 guard result.baseline == request.proposal.baseline, result.candidate == request.proposal.candidate,
                       result.beforeRunID == request.proposal.beforeApproval.runID, result.afterRunID == request.proposal.afterApproval.runID else { throw AutomationContractError.conflictingOperation }
                 let outcome = try AutomationNativeFixComparisonOutcome(result, originalAttemptID: request.originalAttemptID)
@@ -573,6 +592,7 @@ final class AppAutomationStore {
                 try await AutomationFixComparisonArchive(caseStoreRoot: support.appendingPathComponent("Cases")).save(result)
                 await refreshSavedCases()
             } catch {
+                for (runID, target) in executedRequests { await retainUnresolvedReservation(runID: runID, target: target) }
                 message = errorText(error)
                 if let commandID, !["completed", "invalidated"].contains(commandRequests[commandID]?.state ?? "") {
                     commandRequests[commandID]?.state = error is CancellationError ? "cancelled" : "failed"
@@ -616,6 +636,7 @@ final class AppAutomationStore {
                 else { result = try await proposal.execute(subject: request.subject, runtime: runtime, support: support, developerDirectory: developerDirectory, allowBootAndInstall: request.installApproved) }
                 // Retain uncertain results even if their archive cannot be written.
                 searchReport = result
+                if unresolvedSearch { retainUnresolvedRequest(runID: proposal.approval.run.runID, target: proposal.baseline.plan.target) }
                 for attempt in result.attempts {
                     if let frozen = ([proposal.baseline] + proposal.mutations.map(\.frozen)).first(where: { $0.digest == attempt.caseDigest }) {
                         await importEvidence(plan: frozen.plan, report: attempt.report, announce: false)
@@ -625,7 +646,10 @@ final class AppAutomationStore {
                 let archive = try AutomationUIFailureSearchArchive(caseStoreRoot: support.appendingPathComponent("Cases"))
                 try await archive.save(.init(id: runID, runID: runID, baseline: proposal.baseline, mutations: proposal.mutations, report: result))
                 await refreshSavedCases()
-            } catch { message = errorText(error); await refreshSavedCases() }
+            } catch {
+                await retainUnresolvedReservation(runID: proposal.approval.run.runID, target: proposal.baseline.plan.target)
+                message = errorText(error); await refreshSavedCases()
+            }
         }
         await task?.value
     }
@@ -801,6 +825,10 @@ final class AppAutomationStore {
                 }
                 finishTelemetry?(.success(result))
                 report = result
+                if !result.resourcesReleased || result.result.subjectDispatchUncertain {
+                    retainedUnresolvedNormalTarget = request.plan.target
+                    retainUnresolvedRequest(runID: request.approval.runID, target: request.plan.target)
+                }
                 if let commandID {
                     commandRequests[commandID]?.state = "completed"
                     commandRequests[commandID]?.result = result.result
@@ -810,6 +838,7 @@ final class AppAutomationStore {
                 await refreshSavedCases()
             } catch {
                 finishTelemetry?(.failure(error))
+                await retainUnresolvedReservation(runID: request.approval.runID, target: request.plan.target)
                 message = errorText(error)
                 if let commandID { commandRequests[commandID]?.state = error is CancellationError ? "cancelled" : "failed" }
                 await refreshSavedCases()
@@ -1012,9 +1041,14 @@ final class AppAutomationStore {
     func clearSavedView() { if !busy { clearFixedSelection() }; viewedComparison = nil; savedPreparedBaseline = nil; savedViewRequestID = nil; savedViewedReport = nil; savedViewedAttempts = []; savedAttemptLoading = false; canonicalSavedEvidence = nil; savedViewedCase = nil; savedViewedDirectory = nil; viewedSearch = nil; viewedReproduction = nil }
     private func advanceSelection() { invalidatePendingCommand(); selectionEpoch += 1; clearSavedView() }
     private func clearPrepared() { selectedMacTarget = nil; advanceSelection(); clearEntitySelections(); prepared = nil; siriCapabilities = .init(); siriRequest = ""; siriOracle = .init(); catalog = nil; report = nil; workflowRoute = "ui"; actionID = ""; inputs = [:]; effectChoice = ""; effectsConfirmed = false; uiInstruction = ""; uiEndpoint = ""; freshSaveControl = ""; uiApprovedText = ""; uiExpectedText = ""; uiObservationLabel = ""; uiObservationProperty = "text"; uiAlternatePhrases = ""; freshNamePrefix = ""; freshNameProperty = ""; freshStateProperty = ""; freshInitialState = ""; freshExpectedState = ""; freshProtectOtherRecord = false; freshContextProperty = ""; freshSelectedContext = ""; freshProtectedContext = ""; searchReport = nil }
+    func retainUnresolvedRequest(runID: String, target: TargetIdentity) {
+        retainedUnresolvedRequestTargets[runID] = target
+    }
     func finishOwnershipReset() {
         retainedUnresolvedNormalReport = nil; retainedUnresolvedNormalTarget = nil
-        report = nil; unresolvedEntityQueryAttemptID = nil
+        retainedUnresolvedRequestTargets = [:]
+        report = nil; unresolvedEntityQueryAttemptID = nil; entityQueryReport = nil
+        searchReport = nil; reproductionReport = nil; comparisonReport = nil
     }
     func errorText(_ error: Error) -> String {
         if error is CancellationError { return "Cancelled. Any pending dispatch is retained for review." }

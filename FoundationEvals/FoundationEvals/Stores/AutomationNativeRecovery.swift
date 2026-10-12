@@ -75,16 +75,20 @@ extension AppAutomationStore {
             let leases = try AutomationDeviceLeaseManager(storeURL: support.appendingPathComponent("target-leases.json"))
             let records = try await leases.recoveryRecords().filter { !$0.runID.hasPrefix("intent-lab-") }
             let current = try AutomationProcessIdentity.current()
-            let eligible = records.filter { [.absent, .replaced].contains($0.owner.presence()) || $0.owner == current }
+            let eligible = records.filter {
+                [.absent, .replaced].contains($0.owner.presence()) ||
+                    ($0.owner == current && retainedUnresolvedRequestTargets[$0.runID]?.leaseKey == $0.target.leaseKey)
+            }
+            guard !eligible.isEmpty || hasUnresolvedActiveAttempt || records.isEmpty else { throw AutomationContractError.targetBusy }
             guard eligible.allSatisfy({ $0.runners.allSatisfy { [.absent, .replaced].contains($0.process.presence()) } }) else {
                 throw AutomationContractError.terminationUnverified
             }
-            if let target = retainedUnresolvedNormalTarget,
-               records.contains(where: { $0.target.leaseKey == target.leaseKey && !eligible.contains($0) }) {
-                throw AutomationContractError.targetBusy
-            }
-            var simulatorTargets = eligible.filter { $0.target.kind == .simulator }.map(\.target)
-            if let target = retainedUnresolvedNormalTarget, target.kind == .simulator { simulatorTargets.append(target) }
+            var resetTargets = Array(retainedUnresolvedRequestTargets.values)
+            if let target = retainedUnresolvedNormalTarget { resetTargets.append(target) }
+            guard !records.contains(where: { record in
+                resetTargets.contains(where: { $0.leaseKey == record.target.leaseKey }) && !eligible.contains(record)
+            }) else { throw AutomationContractError.targetBusy }
+            let simulatorTargets = (eligible.map(\.target) + resetTargets).filter { $0.kind == .simulator }
             for target in Dictionary(grouping: simulatorTargets, by: \.leaseKey).values.compactMap(\.first) {
                 try await recoverySimulatorShutdown(target, developerDirectory, support)
             }
@@ -99,6 +103,16 @@ extension AppAutomationStore {
             recoveryItems = try await leases.recoveryRecords().map { .init(record: $0) }
             message = "Device ownership reset. Review the workflow before running again."
         } catch { recoveryError = errorText(error) }
+    }
+
+    /// A thrown finished request can retain a reservation without returning a report.
+    /// Capture only its own exact run and target; other same-process campaigns remain live.
+    func retainUnresolvedReservation(runID: String, target: TargetIdentity) async {
+        guard FileManager.default.fileExists(atPath: support.appendingPathComponent("target-leases.json").path),
+              let leases = try? AutomationDeviceLeaseManager(storeURL: support.appendingPathComponent("target-leases.json")),
+              let records = try? await leases.recoveryRecords(),
+              records.contains(where: { $0.runID == runID && $0.target.leaseKey == target.leaseKey }) else { return }
+        retainUnresolvedRequest(runID: runID, target: target)
     }
 
     nonisolated static func shutdownRecoverySimulator(_ target: TargetIdentity, developerDirectory: URL, workspace: URL) async throws {

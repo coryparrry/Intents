@@ -40,7 +40,9 @@ struct AppAutomationView: View {
                             }.onChange(of: model.candidateID) { model.selectCandidate() }
                             if model.candidate?.kind == .sourceTarget {
                                 DisclosureGroup("Build settings") {
-                                    Picker("Configuration", selection: $model.configuration) {
+                                    Picker("Configuration", selection: Binding(
+                                        get: { model.configuration },
+                                        set: { model.configuration = $0; model.preparationSelectionChanged() })) {
                                         ForEach(model.candidate?.configurations ?? [], id: \.self) { Text($0).tag($0) }
                                     }
                                 }
@@ -323,7 +325,7 @@ struct AppAutomationView: View {
                 if let message = model.message { Text(message).textSelection(.enabled).foregroundStyle(.secondary) }
             }.padding(28).frame(maxWidth: 850, alignment: .leading).frame(maxWidth: .infinity)
         }
-        .task(id: model.simulatorInventorySelection) { await model.refreshTargets() }
+        .task(id: model.simulatorInventorySelection + "|" + String(model.busy)) { await model.refreshTargets() }
         .task { await model.refreshSavedCases(); await model.refreshRecovery() }
         .sheet(item: $macWorkflowReview) { review in
             VStack(alignment: .leading, spacing: 14) {
@@ -353,7 +355,6 @@ struct AppAutomationView: View {
                 }
             }.padding(24).frame(minWidth: 520, idealWidth: 600)
         }
-        .onChange(of: model.configuration) { model.preparationSelectionChanged() }
         .onChange(of: model.simulatorID) { model.preparationSelectionChanged() }
         .onChange(of: model.physicalDeviceID) { model.preparationSelectionChanged() }
         .onChange(of: model.preparationDestination) { model.preparationSelectionChanged() }

@@ -8,3 +8,13 @@
 - Signing correction: UI builds use the existing project Developer ID identity, manual signing, secure timestamps and `ENABLE_DEBUG_DYLIB=NO`. Earlier runners built with Xcode 27.0 were killed before test startup; no security settings changed or tests disabled.
 - In progress: signed Xcode 27.2 UI build and ten-repeat picker tests; real-panel cancellation and Reset confirmation cancellation follow. Local UI acceptance and green CI on main remain pending.
 - Logs and result bundles are task scratch artifacts; no new qualification or evidence schema introduced.
+
+## Final review fixes
+
+Review inventory at the initial PR head: five current inline threads, no other standalone findings. Four findings were verified and fixed: all active unresolved report blockers, busy-state inventory retry, programmatic configuration/catalog invalidation, and unrelated same-process reservation protection. The claimed cross-window reproduction was not established because app windows share one store; the API reservation risk was verified. Startup simulator shutdown was not required: the plan assigns shutdown to confirmed reset and explicitly permits automatic dead-owner reconciliation.
+
+Finished requests retain their actual run IDs and targets; comparison records use their real before/after approvals. Saved evidence is preserved. Independent review of the final fixes found no material issues.
+
+Final focused test run: core XCTest 113 passed and one optional capture skipped; Swift Testing 23 passed. Native tests had one synthetic shutdown fixture failure because it omitted the newly required finished-request scope. The fixture now explicitly identifies that request and checks that its exact report, target and reservation survive shutdown failure. All 10 recovery tests passed on recheck; other native tests passed in the focused run. Hosted CI's synthetic Siri and asynchronous MCP fixture assumptions were also corrected without relaxing assertions.
+
+Final Developer ID signed build is in progress with Xcode 27.2 beta 2. Actual hosted-view tests, Reset/panel cancellation and picker 10/10 remain pending. PR: https://github.com/coryparrry/Intents/pull/134. Phase 0 acceptance is not yet complete.

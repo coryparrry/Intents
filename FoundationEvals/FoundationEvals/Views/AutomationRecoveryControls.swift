@@ -6,7 +6,7 @@ struct AutomationRecoveryControls: View {
     @Bindable var model: AppAutomationStore
     @State private var confirmReset = false
     var body: some View {
-        if !model.recoveryItems.isEmpty || model.recoveryError != nil || model.retainedUnresolvedNormalReport != nil {
+        if model.hasUnresolvedOwnership || model.recoveryError != nil {
             GroupBox("Previous runs need attention") {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(model.recoveryItems) { item in

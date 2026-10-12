@@ -238,7 +238,8 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
         let (plan, approval, capabilities) = try proposal()
         let prepared = physicalHost(for: plan)
         let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
-            simulatorInventory: { _, _ in XCTFail("Siri calibration read simulator inventory"); return [] })
+            simulatorInventory: { _, _ in XCTFail("Siri calibration read simulator inventory"); return [] },
+            physicalAliasReader: { _, _ in [:] })
         var foreign = approval; foreign.disposable = false
         for candidate in [approval, foreign] {
             do {
@@ -256,7 +257,8 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
         let (plan, approval, capabilities) = try proposal()
         let prepared = physicalHost(for: plan)
         let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
-            simulatorInventory: { _, _ in XCTFail("Siri calibration read simulator inventory"); return [] })
+            simulatorInventory: { _, _ in XCTFail("Siri calibration read simulator inventory"); return [] },
+            physicalAliasReader: { _, _ in [:] })
         var otherEnvironment = approval; otherEnvironment.environmentID = "other"
         var retained = approval; retained.disposable = false
         var otherTarget = approval; otherTarget.target = .init(id: "00008140-0000000000000000", kind: .physical)
@@ -290,7 +292,7 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
             simulatorInventory: { _, _ in
                 await gate.hold()
                 throw AutomationContractError.missingEvidence("fixture unavailable")
-            })
+            }, physicalAliasReader: { _, _ in [:] })
         let app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "ios", productDigest: String(repeating: "a", count: 64))
         let simulator = TargetIdentity(id: "nonexistent-simulator", kind: .simulator)
         let simulatorPlan = AutomationCase(id: "busy", app: app, target: simulator, environmentID: "disposable",

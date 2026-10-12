@@ -64,8 +64,11 @@ import Synchronization
         model.report = .init(attemptID: "cancelled", result: .init(summary: .cancelled,
             subjectDispatched: false, subjectCompleted: false, assessed: false, evidenceComplete: false,
             failedObservations: [], missingObservations: []), receipts: [], resourcesReleased: false)
+        let unresolved = model.report
+        model.retainUnresolvedRequest(runID: "cancelled", target: target)
         await model.clearUnresolvedAttempt()
-        XCTAssertNotNil(model.retainedUnresolvedNormalReport); XCTAssertNotNil(model.recoveryError)
+        XCTAssertEqual(model.report, unresolved); XCTAssertNotNil(model.recoveryError)
+        XCTAssertEqual(model.retainedUnresolvedRequestTargets["cancelled"], target)
         let absent = try await owner.campaignAbsent(target: target); XCTAssertFalse(absent)
     }
 
@@ -123,6 +126,76 @@ import Synchronization
         XCTAssertEqual(shutdowns.withLock { $0 }, 0)
         XCTAssertNotNil(model.recoveryError)
         let held = await owner.isCurrent(lease); XCTAssertTrue(held)
+    }
+
+    func testIdleStoreCannotResetAnotherSameProcessCampaignBetweenCommands() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/reset-foreign-same-process-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let shutdowns = Mutex(0)
+        let model = AppAutomationStore(supportDirectory: root, recoverySimulatorShutdown: { _, _, _ in shutdowns.withLock { $0 += 1 } })
+        await model.ownershipRecoveryTask?.value
+        let target = TargetIdentity(id: UUID().uuidString, kind: .simulator)
+        let owner = try AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("target-leases.json"))
+        try await owner.reserveCampaign(runID: "another-live-request", target: target)
+        await model.refreshRecovery()
+        XCTAssertTrue(model.hasUnresolvedOwnership)
+        await model.clearUnresolvedAttempt()
+        XCTAssertEqual(shutdowns.withLock { $0 }, 0)
+        XCTAssertNotNil(model.recoveryError)
+        let absent = try await owner.campaignAbsent(target: target); XCTAssertFalse(absent)
+        try await owner.releaseCampaign(runID: "another-live-request", target: target)
+    }
+
+    func testFinishedCurrentProcessRequestCanResetItsExactCampaign() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/reset-finished-same-process-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let shutdowns = Mutex(0)
+        let model = AppAutomationStore(supportDirectory: root, recoverySimulatorShutdown: { _, _, _ in shutdowns.withLock { $0 += 1 } })
+        await model.ownershipRecoveryTask?.value
+        let target = TargetIdentity(id: UUID().uuidString, kind: .simulator)
+        let owner = try AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("target-leases.json"))
+        let lease = try await owner.acquire(runID: "finished-request", target: target, control: .system)
+        model.retainUnresolvedRequest(runID: "finished-request", target: target)
+        await model.clearUnresolvedAttempt()
+        XCTAssertEqual(shutdowns.withLock { $0 }, 1)
+        XCTAssertNil(model.recoveryError)
+        let current = await owner.isCurrent(lease); XCTAssertFalse(current)
+        XCTAssertTrue(model.retainedUnresolvedRequestTargets.isEmpty)
+    }
+
+    func testEveryActiveUnresolvedReportCanResetWithoutRemovingSavedEvidence() async throws {
+        for kind in ["entity", "search", "reproduction", "comparison", "normal"] {
+            let (model, root, _) = try await InstalledUIStoreTests().fixture()
+            defer { try? FileManager.default.removeItem(at: root) }
+            await model.ownershipRecoveryTask?.value
+            let request = try model.makeNativeRunRequest(runID: "finished-" + kind)
+            let frozen = try AutomationFrozenCase(plan: request.plan)
+            var result = AutomationAssessment.assess(plan: request.plan, attemptID: "uncertain", subjectDispatched: false,
+                subjectCompleted: false, observations: [], termination: .unresolved)
+            result.subjectDispatchUncertain = true
+            let report = AutomationAttemptReport(attemptID: "uncertain", result: result, receipts: [], resourcesReleased: true)
+            let interruption = AutomationSearchInterruption(attemptID: "uncertain", caseDigest: frozen.digest,
+                stage: .baseline, dispatchMayHaveOccurred: true, reason: "simulated uncertain attempt")
+            switch kind {
+            case "entity": model.entityQueryReport = report
+            case "search": model.searchReport = .init(baselineDigest: frozen.digest, interruptions: [interruption])
+            case "reproduction":
+                var reproduction = AutomationReproductionReport(frozen: frozen, runID: request.approval.runID, originalFailure: report)
+                reproduction.interruption = interruption; model.reproductionReport = reproduction
+            case "comparison": model.comparisonReport = .init(contractDigest: "synthetic", baseline: frozen, candidate: frozen,
+                requestedAttemptsPerBuild: 30, beforeRunID: request.approval.runID, afterRunID: "after", interruption: interruption)
+            default: model.report = report
+            }
+            model.retainUnresolvedRequest(runID: request.approval.runID, target: request.plan.target)
+            model.savedViewedReport = report; model.savedViewedCase = frozen
+            XCTAssertTrue(model.hasUnresolvedOwnership); XCTAssertFalse(model.canRun)
+            await model.clearUnresolvedAttempt()
+            XCTAssertNil(model.recoveryError, kind)
+            XCTAssertNil(model.report); XCTAssertNil(model.entityQueryReport); XCTAssertNil(model.searchReport)
+            XCTAssertNil(model.reproductionReport); XCTAssertNil(model.comparisonReport)
+            XCTAssertFalse(model.hasUnresolvedOwnership); XCTAssertTrue(model.canRun)
+            XCTAssertEqual(model.savedViewedReport, report); XCTAssertEqual(model.savedViewedCase, frozen)
+        }
     }
 
     func testStartupLeavesLegacyIntentLabOwnershipForItsJournalRecovery() async throws {
