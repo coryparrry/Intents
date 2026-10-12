@@ -22,3 +22,7 @@ Independent review covered reset races, live children, physical approval drift, 
 ## CI fixture corrections
 
 Hosted CI exposed synthetic physical aliases, an asynchronous selection assertion, a store-constructor fixture mismatch, and a five-second cleanup wait. Fixtures now use their intended readers and await actual tasks; result assertions and shipped tests remain enabled. The latest previous portable regression run passed 1,138 XCTest cases with 41 existing optional skips, plus package Swift Testing suites. Final PR and main CI results are required for acceptance and are recorded in the original plan/worklog after merge.
+
+## Hosted UI selector correction
+
+Final-source CI passed all 1,055 core tests and the portable/script jobs. Of 21 selected UI tests, two cancellation tests selected a Touch Bar button with the same Cancel label. Cancel now queries app-window descendants and verifies the control disappears after each real click, preserving all read-only and exact lease-file assertions. The corrected UI runner built with Developer ID and passed deep verification. Local recheck initially ran zero tests: automation-mode startup timed out while another project's UI runner was active; that job was left untouched. Hosted verification and a local recheck when the runner is free remain required. The overall CI job budget is 45 minutes to include the added ten-repeat picker step; both UI step budgets remain 14 minutes.

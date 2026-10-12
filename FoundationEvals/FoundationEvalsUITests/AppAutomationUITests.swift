@@ -35,8 +35,9 @@ final class AppAutomationUITests: XCTestCase {
         reset.click()
         XCTAssertTrue(app.staticTexts["Reset device ownership?"].waitForExistence(timeout: 5))
         try app.windows.firstMatch.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/private/tmp/foundation-evals-ui-tests/phase0-reset-confirmation.png"))
-        let cancel = app.buttons["Cancel"].firstMatch
+        let cancel = app.windows.buttons["Cancel"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 5)); cancel.click()
+        XCTAssertTrue(cancel.waitForNonExistence(timeout: 5))
         XCTAssertTrue(reset.waitForExistence(timeout: 5))
         XCTAssertEqual(try Data(contentsOf: file), bytes)
     }
@@ -141,16 +142,18 @@ final class AppAutomationUITests: XCTestCase {
         XCTAssertTrue(capsule.exists); XCTAssertTrue(capsule.isHittable)
         captureEmptyFlow(window, name: "Automation empty")
         choose.click()
-        let cancel = app.buttons["Cancel"].firstMatch
+        let cancel = app.windows.buttons["Cancel"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 5)); XCTAssertTrue(cancel.isHittable)
         captureEmptyFlow(window, name: "Choose app panel")
         cancel.click()
+        XCTAssertTrue(cancel.waitForNonExistence(timeout: 5))
         XCTAssertTrue(choose.waitForExistence(timeout: 5)); XCTAssertTrue(choose.isHittable)
         XCTAssertFalse(app.buttons["Prepare app"].exists)
         capsule.click()
         XCTAssertTrue(cancel.waitForExistence(timeout: 5)); XCTAssertTrue(cancel.isHittable)
         captureEmptyFlow(window, name: "Open capsule panel")
         cancel.click()
+        XCTAssertTrue(cancel.waitForNonExistence(timeout: 5))
         XCTAssertTrue(choose.waitForExistence(timeout: 5)); XCTAssertTrue(choose.isHittable)
         captureEmptyFlow(window, name: "Automation after cancellation")
     }
