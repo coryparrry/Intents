@@ -85,15 +85,18 @@ public actor AutomationDeviceLeaseManager {
         _ = try store?.read()
     }
     public var isDurable: Bool { store != nil }
+    /// Records discovered identities without changing any active campaign's target or lease.
+    public func registerPhysicalDeviceAliases(_ aliases: [String: String]) throws {
+        try mutate { state in try Self.registerPhysicalAliases(aliases, state: &state) }
+    }
     func campaignAbsent(target: TargetIdentity) throws -> Bool { try read().campaigns[target.leaseKey] == nil }
     func reserveCampaign(runID: String, target: TargetIdentity) throws {
         guard !runID.isEmpty, runID.utf8.count <= 256, !target.id.isEmpty, target.id.utf8.count <= 256,
               target.kind != .nativeMac || target.loginSession?.isEmpty == false else { throw AutomationContractError.invalidIdentity }
+        try registerPhysicalTarget(target)
         try mutate { state in
             let key = target.leaseKey, previous = state.generations[target.leaseKey] ?? 0
-            // CoreDevice UUID and Xcode UDID can name the same device. Until canonical
-            // alias evidence is available, serialize physical campaigns across both.
-            guard target.kind != .physical || !state.campaigns.values.contains(where: { $0.target.kind == .physical }) else { throw AutomationContractError.targetBusy }
+            guard !Self.physicalConflict(target, excludingKey: nil, state: state) else { throw AutomationContractError.targetBusy }
             guard state.campaigns[key] == nil else { throw AutomationContractError.targetBusy }
             guard previous < Int.max - 1 else { throw AutomationContractError.invalidIdentity }
             // Reserve idle ownership without admitting a retained earlier campaign.
@@ -122,9 +125,10 @@ public actor AutomationDeviceLeaseManager {
     public func acquire(runID: String, target: TargetIdentity, control: Lease.Control) throws -> Lease {
         guard !runID.isEmpty, runID.utf8.count <= 256, !target.id.isEmpty, target.id.utf8.count <= 256,
               target.kind != .nativeMac || target.loginSession?.isEmpty == false else { throw AutomationContractError.invalidIdentity }
+        try registerPhysicalTarget(target)
         return try mutate { state in
             let key = target.leaseKey
-            guard target.kind != .physical || !state.campaigns.values.contains(where: { $0.target.kind == .physical && $0.target.leaseKey != key }) else { throw AutomationContractError.targetBusy }
+            guard !Self.physicalConflict(target, excludingKey: key, state: state) else { throw AutomationContractError.targetBusy }
             if let prior = state.campaigns[key] {
                 guard owns(prior), prior.runID == runID, prior.target == target, prior.lease == nil else { throw AutomationContractError.targetBusy }
             }
@@ -297,7 +301,60 @@ public actor AutomationDeviceLeaseManager {
             state.campaigns.removeValue(forKey: record.target.leaseKey)
         }
     }
+    /// Explicit user recovery for a finished attempt retained by this app process.
+    /// Live runners and changed snapshots keep ownership; this never signals a process.
+    public func resetCurrentProcessCampaign(_ record: RecoveryRecord) throws {
+        guard record.owner == owner, record.owner.presence() == .matching else {
+            throw AutomationContractError.targetBusy
+        }
+        guard record.runners.allSatisfy({ [.absent, .replaced].contains($0.process.presence()) }) else {
+            throw AutomationContractError.terminationUnverified
+        }
+        try mutate { state in
+            guard let campaign = state.campaigns[record.target.leaseKey],
+                  campaign.runID == record.runID, campaign.target == record.target, campaign.owner == record.owner,
+                  campaign.ownerToken == record.ownerToken, campaign.lease?.control == record.control,
+                  campaign.lastDispatch == record.lastDispatch, campaign.runners == record.runners,
+                  campaign.privatePayload == record.privatePayload,
+                  state.generations[record.target.leaseKey] == record.generation else {
+                throw AutomationContractError.unknownLease
+            }
+            try campaign.privatePayload?.verifyClean()
+            state.campaigns.removeValue(forKey: record.target.leaseKey)
+        }
+    }
     private func owns(_ campaign: AutomationLeaseState.Campaign) -> Bool { campaign.owner == owner && campaign.ownerToken == ownerToken }
+    private static func registerPhysicalAliases(_ aliases: [String: String], state: inout AutomationLeaseState) throws {
+        guard aliases.count <= 2048 else { throw AutomationContractError.invalidIdentity }
+        var registered = state.physicalDeviceAliases ?? [:]
+        for (alias, identifier) in aliases {
+            try AutomationPhysicalExecutable.validateTarget(.init(id: alias, kind: .physical))
+            guard let uuid = UUID(uuidString: identifier) else { throw AutomationContractError.invalidIdentity }
+            let key = alias.lowercased(), value = uuid.uuidString
+            guard UUID(uuidString: alias).map({ $0 == uuid }) ?? true else { throw AutomationContractError.invalidIdentity }
+            guard registered[key] == nil || registered[key] == value else { throw AutomationContractError.conflictingOperation }
+            registered[key] = value
+            registered[value.lowercased()] = value
+        }
+        guard registered.count <= 2048 else { throw AutomationContractError.invalidIdentity }
+        state.physicalDeviceAliases = registered.isEmpty ? nil : registered
+    }
+    private func registerPhysicalTarget(_ target: TargetIdentity) throws {
+        guard target.kind == .physical, let identifier = target.physicalDeviceIdentifier ?? UUID(uuidString: target.id)?.uuidString else { return }
+        try mutate { state in try Self.registerPhysicalAliases([target.id: identifier], state: &state) }
+    }
+    private static func physicalConflict(_ target: TargetIdentity, excludingKey: String?, state: AutomationLeaseState) -> Bool {
+        guard target.kind == .physical else { return false }
+        func identity(_ value: TargetIdentity) -> String {
+            value.physicalDeviceIdentifier.flatMap { UUID(uuidString: $0)?.uuidString }
+                ?? state.physicalDeviceAliases?[value.id.lowercased()]
+                ?? UUID(uuidString: value.id)?.uuidString ?? value.id.lowercased()
+        }
+        let selected = identity(target)
+        return state.campaigns.contains { key, campaign in
+            campaign.target.kind == .physical && key != excludingKey && identity(campaign.target) == selected
+        }
+    }
     private func ownedCampaign(_ lease: Lease, state: AutomationLeaseState) throws -> AutomationLeaseState.Campaign {
         guard let campaign = state.campaigns[lease.target.leaseKey], owns(campaign), campaign.lease == lease else {
             throw AutomationContractError.unknownLease

@@ -25,15 +25,21 @@ struct ScenarioPhysicalRunnerInspector: Sendable {
     }
 }
 
-/// Uses the same durable native target fence as App automation. Old evidence does not mint new ownership.
+/// Owns Intent Lab's durable physical target fence independently of App automation.
 actor ScenarioPhysicalRunnerLeaseManager {
     private let leases: AutomationDeviceLeaseManager
+    private let legacyStoreURL: URL?
     private let factory: @Sendable (URL) throws -> ScenarioPhysicalRunnerInspector
+    private let canonicalTargetResolver: (@Sendable (TargetIdentity, URL) async throws -> TargetIdentity)?
     private struct InspectorKey: Hashable { var target: String; var runID: String; var generation: Int }
     private var inspectors: [InspectorKey: ScenarioPhysicalRunnerInspector] = [:]
-    init(storeURL: URL, inspectorFactory: @escaping @Sendable (URL) throws -> ScenarioPhysicalRunnerInspector = ScenarioPhysicalRunnerInspector.live) throws {
+    private var deviceIdentifiers: [String: String] = [:]
+    init(storeURL: URL, legacyStoreURL: URL? = nil, canonicalTargetResolver: (@Sendable (TargetIdentity, URL) async throws -> TargetIdentity)? = nil,
+         inspectorFactory: @escaping @Sendable (URL) throws -> ScenarioPhysicalRunnerInspector = ScenarioPhysicalRunnerInspector.live) throws {
         leases = try AutomationDeviceLeaseManager(storeURL: storeURL)
+        self.legacyStoreURL = legacyStoreURL
         factory = inspectorFactory
+        self.canonicalTargetResolver = canonicalTargetResolver
     }
 
     func acquire(invocation: ScenarioInvocationIdentity, runner: ScenarioProductIdentity, workspace: URL) async throws -> ScenarioPhysicalRunnerRecord {
@@ -43,7 +49,29 @@ actor ScenarioPhysicalRunnerLeaseManager {
             throw AutomationContractError.invalidIdentity
         }
         let inspector = try factory(workspace)
-        let lease = try await leases.acquire(runID: Self.runID(invocation), target: .init(id: invocation.destinationIdentifier, kind: .physical), control: .system)
+        var target = TargetIdentity(id: invocation.destinationIdentifier, kind: .physical)
+        if let identifier = deviceIdentifiers[target.id.lowercased()] {
+            target.physicalDeviceIdentifier = identifier
+        } else {
+            let resolvedIdentifier: String
+            if let canonicalTargetResolver {
+                let resolved = try await canonicalTargetResolver(target, workspace)
+                guard resolved.id == target.id, resolved.kind == .physical, let identifier = resolved.physicalDeviceIdentifier else {
+                    throw AutomationContractError.invalidIdentity
+                }
+                resolvedIdentifier = identifier
+            } else {
+                let observation = try await inspector.inspect(target, runner.bundleIdentifier, runner.executableName, nil) { _ in }
+                guard Self.valid(observation, target: target) else { throw AutomationContractError.invalidIdentity }
+                resolvedIdentifier = observation.deviceIdentifier
+            }
+            guard let uuid = UUID(uuidString: resolvedIdentifier) else { throw AutomationContractError.invalidIdentity }
+            let identifier = uuid.uuidString
+            deviceIdentifiers[target.id.lowercased()] = identifier
+            deviceIdentifiers[identifier.lowercased()] = identifier
+            target.physicalDeviceIdentifier = identifier
+        }
+        let lease = try await leases.acquire(runID: Self.runID(invocation), target: target, control: .system)
         inspectors[Self.key(lease)] = inspector
         return .init(lease: lease, runnerProduct: runner)
     }
@@ -76,7 +104,8 @@ actor ScenarioPhysicalRunnerLeaseManager {
     func finish(_ original: ScenarioPhysicalRunnerRecord, invocation: ScenarioInvocationIdentity, workspace: URL) async throws -> ScenarioPhysicalRunnerRecord {
         var record = original
         guard !record.released else { return record }
-        guard record.lease.runID == Self.runID(invocation), record.lease.target == .init(id: invocation.destinationIdentifier, kind: .physical),
+        guard record.lease.runID == Self.runID(invocation), record.lease.target.kind == .physical,
+              record.lease.target.id == invocation.destinationIdentifier,
               !record.dispatched || (record.hostLaunchPrevented && record.hostProcess == nil)
                 || record.hostProcess.map({ [.absent, .replaced].contains($0.presence()) }) == true else {
             throw AutomationContractError.terminationUnverified
@@ -84,6 +113,13 @@ actor ScenarioPhysicalRunnerLeaseManager {
         let current = await leases.isCurrent(record.lease)
         let recovery = current ? [try await leases.currentRecord(record.lease)] : try await leases.recoveryRecords().filter {
             $0.runID == record.lease.runID && $0.target == record.lease.target && $0.generation == record.lease.generation
+        }
+        // Journals written before lease-store separation still refer to the old
+        // namespace. Only recovery of that exact journal uses it; new acquisitions
+        // always use Intent Lab's own store.
+        if recovery.isEmpty, let legacyStoreURL, FileManager.default.fileExists(atPath: legacyStoreURL.path) {
+            let legacy = try ScenarioPhysicalRunnerLeaseManager(storeURL: legacyStoreURL, inspectorFactory: factory)
+            return try await legacy.finish(record, invocation: invocation, workspace: workspace)
         }
         guard recovery.count == 1, recovery[0].lastDispatch == (record.dispatched ? try Self.dispatch(record, invocation: invocation) : nil),
               recovery[0].runners.allSatisfy({ ($0.process == record.hostProcess || $0.executablePath == "/usr/bin/xcrun") && $0.scope == Self.scope(record) }) else {

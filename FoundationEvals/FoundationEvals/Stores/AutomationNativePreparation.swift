@@ -57,7 +57,8 @@ extension AppAutomationStore {
             guard UUID(uuidString: simulatorID) != nil else { return nil }
             return .init(id: simulatorID, kind: .simulator)
         case .physical:
-            let target = TargetIdentity(id: physicalDeviceID, kind: .physical)
+            var target = TargetIdentity(id: physicalDeviceID, kind: .physical)
+            target.physicalDeviceIdentifier = resolvedPhysicalDeviceIdentifiers[physicalDeviceID.lowercased()]
             guard (try? AutomationPhysicalExecutable.validateTarget(target)) != nil else { return nil }
             return target
         case .macOS:

@@ -6,7 +6,7 @@ import XCTest
 
 extension InstalledUIStoreTests {
     func testFailedSimulatorCandidateReopensAndReproducesAfterRestart() async throws {
-        let (model, root, bundle) = try fixture()
+        let (model, root, bundle) = try await fixture()
         try selectPreparedSource(model: model, root: root)
         let before = try XCTUnwrap(model.prepared)
         let legacy = try await saveFailure(model: model, root: root, legacyPreparedEvidence: true)
@@ -58,7 +58,7 @@ extension InstalledUIStoreTests {
     }
 
     func testTypedSimulatorComparisonVariesBuildSyntaxButFreezesSchemaTemplateRuntimeAndOracle() async throws {
-        let (model, root, _) = try fixture()
+        let (model, root, _) = try await fixture()
         try selectPreparedSource(model: model, root: root)
         model.installApproved = true; model.uiExpectedText = "Complete"
         var before = try XCTUnwrap(model.prepared)

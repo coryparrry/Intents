@@ -7,7 +7,7 @@ import XCTest
 extension InstalledUIStoreTests {
     func testNativeSearchReviewRejectsChangedPhrasesOracleDestinationAndPermission() async throws {
         for mutation in 0..<4 {
-            let (model, _, _) = try fixture(searchExecutor: { _, _, _, _, _ in
+            let (model, _, _) = try await fixture(searchExecutor: { _, _, _, _, _ in
                 XCTFail("Changed search dispatched"); throw AutomationContractError.invalidIdentity
             })
             model.uiExpectedText = "Complete"; model.uiAlternatePhrases = "Show tasks"
@@ -25,7 +25,7 @@ extension InstalledUIStoreTests {
         }
     }
     func testNativeSearchReviewRejectsSelectionABAAndCannotConsumeQueuedRun() async throws {
-        let (model, _, _) = try fixture(searchExecutor: { _, _, _, _, _ in
+        let (model, _, _) = try await fixture(searchExecutor: { _, _, _, _, _ in
             XCTFail("Stale search dispatched"); throw AutomationContractError.invalidIdentity
         })
         model.uiExpectedText = "Complete"; model.uiAlternatePhrases = "Show tasks"
@@ -41,7 +41,7 @@ extension InstalledUIStoreTests {
         XCTAssertEqual(model.pendingCommandStatus?.requestID, id); XCTAssertNil(model.searchReport)
     }
     func testMatchingNativeSearchReviewExecutesFrozenPhrasesAndOracleAndRejectsReuse() async throws {
-        let (model, _, _) = try fixture(searchExecutor: { proposal, _, _, support, _ in
+        let (model, _, _) = try await fixture(searchExecutor: { proposal, _, _, support, _ in
             XCTAssertEqual(proposal.baseline.plan.requirements.first?.expected, .text("Complete"))
             XCTAssertEqual(proposal.mutations.first?.frozen.plan.execution.uiProgram?.operations.first?.goal?.instruction, "Show tasks")
             let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))

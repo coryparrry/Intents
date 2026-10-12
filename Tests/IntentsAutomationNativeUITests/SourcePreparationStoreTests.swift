@@ -15,7 +15,7 @@ import XCTest
                        reader: @escaping @Sendable () throws -> TargetIdentity,
                        grants: AutomationNativeSourceGrants? = nil,
                        developerDirectory: URL = AutomationNativeToolchain.developerDirectory(),
-                       inventory: @escaping AutomationNativeSimulatorInventoryReader = { _, _ in throw AutomationContractError.invalidIdentity }) throws -> AppAutomationStore {
+                       inventory: @escaping AutomationNativeSimulatorInventoryReader = { _, _ in throw AutomationContractError.invalidIdentity }) async throws -> AppAutomationStore {
         let root = URL(fileURLWithPath: "/private/tmp/source-preparation-" + UUID().uuidString)
         let project = root.appendingPathComponent("Subject.xcodeproj")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
@@ -24,8 +24,10 @@ import XCTest
             "LIST": ["buildConfigurations": ["DEBUG"]], "DEBUG": ["name": "Debug"]]
         try PropertyListSerialization.data(fromPropertyList: ["objects": objects], format: .xml, options: 0).write(to: project.appendingPathComponent("project.pbxproj"))
         let model = AppAutomationStore(supportDirectory: root.appendingPathComponent("support"), developerDirectory: developerDirectory, nativeMacTargetReader: reader,
-                                       preparationExecutor: executor, sourceGrants: grants, simulatorInventoryReader: inventory)
-        model.select(project)
+                                       preparationExecutor: executor, sourceGrants: grants, physicalTargetResolver: { target, _, _ in
+                                           var value = target; value.physicalDeviceIdentifier = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"; return value
+                                       }, simulatorInventoryReader: inventory)
+        model.select(project); await model.task?.value
         return model
     }
     func testDeveloperDirectoryHonorsLaunchOverrideAndXcodeBundlePath() {
@@ -38,7 +40,7 @@ import XCTest
     }
     func testPhysicalSourceSelectionAndSiriSubmissionApprovalStayExactAndUnassessed() async throws {
         let box = TargetBox()
-        let model = try model(executor: { candidate, approval, session in
+        let model = try await model(executor: { candidate, approval, session in
             var value = preparedFixture(candidate, approval, session); value.generatedHost.includesSiri = true; return value
         }, reader: { box.read() })
         model.preparationDestination = .physical; model.physicalDeviceID = "iPhone"
@@ -74,7 +76,7 @@ import XCTest
     }
     func testControlledSiriRecordCheckFreezesOracleAndCannotExecuteFromCachedProfile() async throws {
         let box = TargetBox()
-        let model = try model(executor: { candidate, approval, session in
+        let model = try await model(executor: { candidate, approval, session in
             var value = preparedFixture(candidate, approval, session); value.generatedHost.includesSiri = true
             value.catalog.entities = [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "TaskQuery",
                 properties: ["title": "text", "completed": "bool"], propertyTitles: [:])]
@@ -105,7 +107,7 @@ import XCTest
     }
     func testInventoryUsesStoreToolchainAndReportsItsFailureWithoutFallback() async throws {
         let box = TargetBox(), developer = URL(fileURLWithPath: "/private/tmp/Selected Xcode.app/Contents/Developer")
-        let model = try model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity }, reader: { box.read() },
+        let model = try await model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity }, reader: { box.read() },
                               developerDirectory: developer, inventory: { selected, _ in
             XCTAssertEqual(selected, developer)
             throw AutomationContractError.missingEvidence("Selected Xcode unavailable")
@@ -121,7 +123,7 @@ import XCTest
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }; return url
     }
-    func testFolderGrantsRollbackInvalidSelectionsAndRetainExactScopes() throws {
+    func testFolderGrantsRollbackInvalidSelectionsAndRetainExactScopes() async throws {
         let primary = try folder(), extra = try folder(), ledger = SourceScopeLedger()
         let grants = ledger.grants()
         try grants.add(extra, primary: primary)
@@ -139,7 +141,7 @@ import XCTest
         let failed = AutomationNativeSourceGrants(start: { _ in throw AutomationContractError.missingEvidence("Scope unavailable") }, stop: { _ in XCTFail("Unacquired scope released") })
         XCTAssertThrowsError(try failed.add(extra, primary: primary)); XCTAssertTrue(failed.urls.isEmpty)
     }
-    func testFolderGrantLimitAndUnscopedReadableFolders() throws {
+    func testFolderGrantLimitAndUnscopedReadableFolders() async throws {
         let primary = try folder(), ledger = SourceScopeLedger(), grants = ledger.grants()
         for _ in 0..<8 { try grants.add(folder(), primary: primary) }
         XCTAssertThrowsError(try grants.add(folder(), primary: primary)); XCTAssertEqual(ledger.started.count, 8)
@@ -147,9 +149,9 @@ import XCTest
         let unscoped = AutomationNativeSourceGrants(start: { _ in false }, stop: { _ in XCTFail("Ordinary readable URL has no scope to release") })
         try unscoped.add(folder(), primary: primary); unscoped.clear()
     }
-    func testFolderReviewBindsExactGrantsAndRejectsABAAndPrimaryChanges() throws {
+    func testFolderReviewBindsExactGrantsAndRejectsABAAndPrimaryChanges() async throws {
         let box = TargetBox(), ledger = SourceScopeLedger()
-        let model = try model(executor: { _, _, _ in XCTFail("Stale folder review built"); throw AutomationContractError.invalidIdentity }, reader: { box.read() }, grants: ledger.grants())
+        let model = try await model(executor: { _, _, _ in XCTFail("Stale folder review built"); throw AutomationContractError.invalidIdentity }, reader: { box.read() }, grants: ledger.grants())
         model.preparationDestination = .macOS
         let extra = try folder(), before = try model.reviewNativePreparation()
         try model.selectAdditionalSourceFolder(extra)
@@ -158,12 +160,12 @@ import XCTest
         XCTAssertEqual(review.additionalSourceRoots, [extra.path]); XCTAssertTrue(review.message.contains(extra.path))
         model.removeAdditionalSourceFolder(extra); try model.selectAdditionalSourceFolder(extra)
         XCTAssertThrowsError(try model.confirmNativePreparation(review))
-        model.select(URL(fileURLWithPath: try XCTUnwrap(model.candidate).containerPath))
+        model.select(URL(fileURLWithPath: try XCTUnwrap(model.candidate).containerPath)); await model.task?.value
         XCTAssertTrue(model.sourceGrants.urls.isEmpty); XCTAssertEqual(ledger.stopped, [extra, extra])
     }
     func testAdditionalFolderApprovalAndCloseHoldScopesUntilPreparationDrains() async throws {
         let box = TargetBox(), gate = PreparationGate(), ledger = SourceScopeLedger()
-        let model = try model(executor: { candidate, approval, session in
+        let model = try await model(executor: { candidate, approval, session in
             await gate.suspend(approval)
             var value = preparedFixture(candidate, approval, session)
             value.source = try AutomationSourceCaptureLayout.aggregate([value.source] + (approval.additionalSourceRoots ?? []).map {
@@ -184,7 +186,7 @@ import XCTest
     }
     func testAdditionalFolderPreparationPublishesExactCaptureAndRemovalInvalidatesIt() async throws {
         let box = TargetBox(), ledger = SourceScopeLedger()
-        let model = try model(executor: { candidate, approval, session in
+        let model = try await model(executor: { candidate, approval, session in
             var value = preparedFixture(candidate, approval, session)
             value.source = try AutomationSourceCaptureLayout.aggregate([value.source] + (approval.additionalSourceRoots ?? []).map {
                 AutomationSourceManifest(sourceRoot: $0, files: [], directories: [], excludedPaths: [])
@@ -193,7 +195,7 @@ import XCTest
         }, reader: { box.read() }, grants: ledger.grants())
         model.preparationDestination = .macOS
         let extra = try folder(); try model.selectAdditionalSourceFolder(extra)
-        model.selectCandidate(); XCTAssertEqual(model.sourceGrants.urls, [extra])
+        model.selectCandidate(); await model.task?.value; XCTAssertEqual(model.sourceGrants.urls, [extra])
         await model.prepareAndWait()
         XCTAssertEqual(model.prepared?.source.capturedRoots?.map(\.inputPath), [model.selectedSourceRoot!.path, extra.path])
         XCTAssertNotNil(model.catalog); XCTAssertTrue(ledger.stopped.isEmpty)
@@ -203,7 +205,7 @@ import XCTest
     }
     func testMacPreparationNeedsNoSimulatorAndRetainsExactSessionWithoutRunPermission() async throws {
         let box = TargetBox(), gate = PreparationGate()
-        let model = try model(executor: { candidate, approval, session in
+        let model = try await model(executor: { candidate, approval, session in
             await gate.suspend(approval); return preparedFixture(candidate, approval, session)
         }, reader: { box.read() })
         XCTAssertFalse(model.canPrepare)
@@ -227,7 +229,7 @@ import XCTest
     func testReturnedPreparationCannotAddRootGrantsOrChangeTheApprovedPrimaryRoot() async throws {
         for extra in [false, true] {
             let box = TargetBox()
-            let model = try model(executor: { candidate, approval, session in
+            let model = try await model(executor: { candidate, approval, session in
                 var value = preparedFixture(candidate, approval, session)
                 if extra {
                     let unapproved = AutomationSourceManifest(sourceRoot: approval.sourceRoot + "-extra", files: [], directories: [], excludedPaths: [])
@@ -243,7 +245,7 @@ import XCTest
     func testSessionDriftDestinationChangeAndSelectionABARejectBuildCompletion() async throws {
         for mutation in 0..<3 {
             let box = TargetBox(), gate = PreparationGate()
-            let model = try model(executor: { candidate, approval, session in
+            let model = try await model(executor: { candidate, approval, session in
                 await gate.suspend(approval); return preparedFixture(candidate, approval, session)
             }, reader: { box.read() })
             model.preparationDestination = .macOS; model.preparationSelectionChanged()
@@ -260,7 +262,7 @@ import XCTest
     }
     func testSimulatorSelectionAndForeignPreparedTargetFailClosed() async throws {
         let box = TargetBox()
-        let model = try model(executor: { candidate, approval, session in
+        let model = try await model(executor: { candidate, approval, session in
             var result = preparedFixture(candidate, approval, session)
             result.host.target.loginSession = "foreign-session"; return result
         }, reader: { box.read() })
@@ -276,8 +278,8 @@ import XCTest
             .init(sourceRoot: "unused", candidateID: model.candidateID, configuration: "Debug", target: .init(id: "host-macos-local", kind: .nativeMac, loginSession: "source-session-A")), model.support)
         model.preparationSelectionChanged(); XCTAssertNil(model.prepared)
     }
-    func testUnavailableNativeSessionCannotPrepare() throws {
-        let model = try model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity },
+    func testUnavailableNativeSessionCannotPrepare() async throws {
+        let model = try await model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity },
                               reader: { throw AutomationContractError.missingEvidence("No GUI session") })
         model.preparationDestination = .macOS
         XCTAssertFalse(model.canPrepare); XCTAssertNil(model.sourcePreparationTarget)
@@ -286,7 +288,7 @@ import XCTest
     func testConfigurationChangeDuringInventoryStillPopulatesSimulatorSelection() async throws {
         let box = TargetBox(), gate = InventoryGate()
         let simulator = AutomationSimulator(id: UUID().uuidString, name: "Synthetic", runtime: "iOS", state: "Shutdown")
-        let model = try model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity }, reader: { box.read() },
+        let model = try await model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity }, reader: { box.read() },
                               inventory: { _, _ in await gate.suspend(); return [simulator] })
         let task = Task { await model.refreshTargets() }
         await gate.waitForEntry()
@@ -298,7 +300,7 @@ import XCTest
     func testObsoleteAndCancelledInventoryErrorsCannotOverwriteCurrentMessage() async throws {
         for mutation in 0..<2 {
             let box = TargetBox(), gate = InventoryGate()
-            let model = try model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity }, reader: { box.read() },
+            let model = try await model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity }, reader: { box.read() },
                 inventory: { _, _ in await gate.suspend(); throw AutomationContractError.missingEvidence("Old inventory failure") })
             let task = Task { await model.refreshTargets() }
             await gate.waitForEntry()
@@ -312,7 +314,7 @@ import XCTest
     func testNewerInventoryRequestSupersedesAnOlderSuccessfulResult() async throws {
         let box = TargetBox(), first = InventoryGate(), second = InventoryGate()
         let sequence = InventorySequence(first, second)
-        let model = try model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity }, reader: { box.read() },
+        let model = try await model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity }, reader: { box.read() },
                               inventory: { _, _ in try await sequence.read() })
         let old = Task { await model.refreshTargets() }; await first.waitForEntry()
         let current = Task { await model.refreshTargets() }; await second.waitForEntry()
@@ -324,7 +326,7 @@ import XCTest
     func testCancelledAndClosedPreparationCannotPublishAfterAnIgnoringExecutorReturns() async throws {
         for close in [false, true] {
             let box = TargetBox(), gate = PreparationGate()
-            let model = try model(executor: { candidate, approval, session in
+            let model = try await model(executor: { candidate, approval, session in
                 await gate.suspend(approval); return preparedFixture(candidate, approval, session)
             }, reader: { box.read() })
             model.preparationDestination = .macOS
@@ -334,10 +336,10 @@ import XCTest
             XCTAssertNil(model.prepared); XCTAssertNil(model.catalog); XCTAssertFalse(model.busy)
         }
     }
-    func testNativePreparationReviewRejectsConfigurationDestinationSessionAndABADrift() throws {
+    func testNativePreparationReviewRejectsConfigurationDestinationSessionAndABADrift() async throws {
         for mutation in 0..<4 {
             let box = TargetBox()
-            let model = try model(executor: { _, _, _ in XCTFail("Stale preparation started"); throw AutomationContractError.invalidIdentity }, reader: { box.read() })
+            let model = try await model(executor: { _, _, _ in XCTFail("Stale preparation started"); throw AutomationContractError.invalidIdentity }, reader: { box.read() })
             model.preparationDestination = .macOS; model.preparationSelectionChanged()
             let review = try model.reviewNativePreparation()
             switch mutation {
@@ -354,7 +356,7 @@ import XCTest
     }
     func testNativePreparationReviewIsConsumedOnceAndKeepsExactTarget() async throws {
         let box = TargetBox(), gate = PreparationGate()
-        let model = try model(executor: { candidate, approval, session in
+        let model = try await model(executor: { candidate, approval, session in
             await gate.suspend(approval); return preparedFixture(candidate, approval, session)
         }, reader: { box.read() })
         model.preparationDestination = .macOS; model.preparationSelectionChanged()
@@ -366,9 +368,9 @@ import XCTest
         XCTAssertEqual(model.prepared?.host.target, review.target)
         XCTAssertThrowsError(try model.confirmNativePreparation(review)); XCTAssertFalse(model.busy)
     }
-    func testNativePreparationExpectedTargetRejectsSessionDriftBeforeBuild() throws {
+    func testNativePreparationExpectedTargetRejectsSessionDriftBeforeBuild() async throws {
         let box = TargetBox()
-        let model = try model(executor: { _, _, _ in XCTFail("Changed target built"); throw AutomationContractError.invalidIdentity }, reader: { box.read() })
+        let model = try await model(executor: { _, _, _ in XCTFail("Changed target built"); throw AutomationContractError.invalidIdentity }, reader: { box.read() })
         model.preparationDestination = .macOS
         let target = try XCTUnwrap(model.sourcePreparationTarget)
         box.change(); XCTAssertTrue(model.canPrepare)

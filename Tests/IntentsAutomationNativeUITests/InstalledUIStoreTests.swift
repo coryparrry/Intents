@@ -5,7 +5,7 @@ import XCTest
 @testable import IntentsAutomationCore
 
 @MainActor final class InstalledUIStoreTests: XCTestCase {
-    func fixture(runtime: RuntimeIdentity = RuntimeIdentity(), executor: AutomationNativeRunExecutor? = nil, searchExecutor: AutomationNativeSearchExecutor? = nil, comparisonExecutor: AutomationNativeFixComparisonExecutor? = nil, reproductionExecutor: AutomationNativeReproductionExecutor? = nil, reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))? = nil, evidenceImporter: (@Sendable (AutomationCase, AutomationAttemptReport, URL, AutomationEvidenceExposure) async throws -> AutomationNativeEvidenceDocument)? = nil, simulatorInventoryReader: AutomationNativeSimulatorInventoryReader? = nil) throws -> (AppAutomationStore, URL, URL) {
+    func fixture(runtime: RuntimeIdentity = RuntimeIdentity(), executor: AutomationNativeRunExecutor? = nil, searchExecutor: AutomationNativeSearchExecutor? = nil, comparisonExecutor: AutomationNativeFixComparisonExecutor? = nil, reproductionExecutor: AutomationNativeReproductionExecutor? = nil, reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))? = nil, evidenceImporter: (@Sendable (AutomationCase, AutomationAttemptReport, URL, AutomationEvidenceExposure) async throws -> AutomationNativeEvidenceDocument)? = nil, simulatorInventoryReader: AutomationNativeSimulatorInventoryReader? = nil) async throws -> (AppAutomationStore, URL, URL) {
         let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent("native-ui-test-" + UUID().uuidString)
         let bundle = root.appendingPathComponent("Subject.app")
         try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
@@ -16,8 +16,8 @@ import XCTest
         try Data([0xcf,0xfa,0xed,0xfe,0x0c,0,0,1,0,0,0,0]).write(to: bundle.appendingPathComponent("Subject"))
         let model = AppAutomationStore(supportDirectory: root.appendingPathComponent("support"), savedCasesReader: { [] },
             runExecutor: executor ?? { _, _, _, _, _, _ in throw NativeTestError.unexpectedExecution },
-            uiRuntimeProvider: { .init(runtime: .init(bundleURL: root, expectedTeamID: "AAAAAAAAAA"), manifestDigest: runtime.read()) }, searchExecutor: searchExecutor, comparisonExecutor: comparisonExecutor, reproductionExecutor: reproductionExecutor, reproductionPreflightReader: reproductionPreflightReader, evidenceImporter: evidenceImporter, simulatorInventoryReader: simulatorInventoryReader ?? { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) })
-        model.select(bundle); model.simulatorID = UUID().uuidString
+            uiRuntimeProvider: { .init(runtime: .init(bundleURL: root, expectedTeamID: "AAAAAAAAAA"), manifestDigest: runtime.read()) }, searchExecutor: searchExecutor, comparisonExecutor: comparisonExecutor, reproductionExecutor: reproductionExecutor, reproductionPreflightReader: reproductionPreflightReader, evidenceImporter: evidenceImporter, recoverySimulatorShutdown: { _, _, _ in }, simulatorInventoryReader: simulatorInventoryReader ?? { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) })
+        model.select(bundle); await model.task?.value; model.simulatorID = UUID().uuidString
         model.uiInstruction = "Open the tasks screen"; model.uiEndpoint = "Tasks"; model.uiApprovedText = "Approved input"
         model.effectChoice = "navigation"; model.effectsConfirmed = true
         return (model, root, bundle)
@@ -68,7 +68,7 @@ import XCTest
             bindings: AutomationFreshEntityPlanner.bindings(plan: request.plan))
     }
     func testCapsuleSelectionRetainsTrustedCampaignFenceAndDeniesAfterTaint() async throws {
-        let (model, _, _) = try fixture()
+        let (model, _, _) = try await fixture()
         let cases = try AutomationCaseStore(root: model.support.appendingPathComponent("Cases"))
         let plan = AutomationCase(id: "private-capsule", app: .init(logicalID: "synthetic", bundleID: "example.Fixture", platform: "ios"),
             target: .init(id: "fixture", kind: .simulator), environmentID: "synthetic",
@@ -88,7 +88,7 @@ import XCTest
         XCTAssertNil(model.canonicalEvidence); XCTAssertNil(model.savedViewedReport)
     }
     func testCapsuleExportReadsExactSavedSelectionWithoutChangingApprovalOrEvidence() async throws {
-        let (model, root, _) = try fixture()
+        let (model, root, _) = try await fixture()
         let cases = try AutomationCaseStore(root: model.support.appendingPathComponent("Cases"))
         let plan = AutomationCase(id: "capsule", app: .init(logicalID: "synthetic", bundleID: "example.Fixture", platform: "ios"),
             target: .init(id: "fixture", kind: .simulator), environmentID: "synthetic",
@@ -109,7 +109,7 @@ import XCTest
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.path))
     }
     func testCapsuleExportRequiresExplicitReviewForEachSelection() async throws {
-        let (model, root, _) = try fixture()
+        let (model, root, _) = try await fixture()
         let cases = try AutomationCaseStore(root: model.support.appendingPathComponent("Cases"))
         let plan = AutomationCase(id: "reviewed-capsule", app: .init(logicalID: "synthetic", bundleID: "example.Fixture", platform: "ios"),
             target: .init(id: "fixture", kind: .simulator), environmentID: "synthetic",
@@ -152,8 +152,8 @@ import XCTest
         XCTAssertFalse(FileManager.default.fileExists(atPath: rejected.path))
         XCTAssertNil(model.report); XCTAssertNil(model.savedViewedReport); XCTAssertNil(model.canonicalEvidence)
     }
-    func testLearnedRetentionAndNewProposalInvalidateApprovalAndChangedContext() throws {
-        let (model, root, _) = try fixture(); try selectFreshSource(model: model, root: root)
+    func testLearnedRetentionAndNewProposalInvalidateApprovalAndChangedContext() async throws {
+        let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
         let original = try model.makeNativeRunRequest(runID: "source"), prepared = try XCTUnwrap(model.prepared)
         model.retainLearnedSetup(try learnedCapture(original, prepared: prepared, id: "one"))
         XCTAssertNil(model.learnedSetupRecipe)
@@ -180,7 +180,7 @@ import XCTest
         XCTAssertThrowsError(try model.makeNativeRunRequest(runID: "changed-context"))
     }
     func testFakeExecutorAndImportedFreshReportCannotLearnSetup() async throws {
-        let (model, root, _) = try fixture(executor: { _, plan, approval, _, id, _ in
+        let (model, root, _) = try await fixture(executor: { _, plan, approval, _, id, _ in
             nativeFreshFact(plan: plan, approval: approval, attemptID: id, completed: true)
         })
         try selectFreshSource(model: model, root: root)
@@ -193,8 +193,8 @@ import XCTest
         await model.importEvidence(plan: request.plan, report: nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: "imported", completed: true))
         XCTAssertTrue(model.learnedSetupAttempts.isEmpty); XCTAssertNil(model.learnedSetupRecipe)
     }
-    func testFreshRecordPreviewBindsPreparedRuntimeAndExplicitBusinessChoices() throws {
-        let (model, root, _) = try fixture(); try selectFreshSource(model: model, root: root)
+    func testFreshRecordPreviewBindsPreparedRuntimeAndExplicitBusinessChoices() async throws {
+        let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
         XCTAssertTrue(model.canRun)
         let request = try model.makeNativeRunRequest(runID: "preview")
         XCTAssertNotNil(request.uiRuntime); XCTAssertEqual(request.plan.setup.map(\.kind), [.ui, .systemQuery])
@@ -208,12 +208,12 @@ import XCTest
         model.freshExpectedState = "true"; model.disposable = false; XCTAssertFalse(model.canRun)
         model.disposable = true; model.freshNamePrefix = "line\nbreak"; XCTAssertFalse(model.canRun)
         model.freshNamePrefix = "Invoice"; model.uiInstruction = String(repeating: "x", count: 4097); XCTAssertFalse(model.canRun)
-        model.selectCandidate()
+        model.selectCandidate(); await model.task?.value
         XCTAssertEqual(model.freshNamePrefix, ""); XCTAssertEqual(model.freshNameProperty, "")
         XCTAssertEqual(model.freshStateProperty, ""); XCTAssertEqual(model.freshInitialState, ""); XCTAssertEqual(model.freshExpectedState, "")
     }
-    func testProtectedRecordChoicesAreFrozenAndRequireDeclaredDistinctOwnership() throws {
-        let (model, root, _) = try fixture(); try selectFreshSource(model: model, root: root)
+    func testProtectedRecordChoicesAreFrozenAndRequireDeclaredDistinctOwnership() async throws {
+        let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
         var prepared = try XCTUnwrap(model.prepared)
         prepared.catalog.entities?[0].properties["owner"] = "text"
         model.prepared = prepared; model.catalog = prepared.catalog
@@ -234,7 +234,7 @@ import XCTest
         XCTAssertEqual(model.freshContextProperty, ""); XCTAssertEqual(model.freshSelectedContext, ""); XCTAssertEqual(model.freshProtectedContext, "")
     }
     func testSavedFreshFailureRequiresMatchingRouteAndFixtureApproval() async throws {
-        let (model, root, _) = try fixture(); try selectFreshSource(model: model, root: root)
+        let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
         let request = try model.makeNativeRunRequest(runID: "original-run"), cases = try AutomationCaseStore(root: root.appendingPathComponent("support/Cases"))
         let frozen = try await cases.freeze(request.plan)
         try await cases.saveAttempt(nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: "original", completed: false), for: frozen)
@@ -250,7 +250,7 @@ import XCTest
         model.disposable = true; XCTAssertTrue(model.canReproduceSavedFailure)
     }
     func testFreshNativeCampaignDelegationPreservesCapabilitiesAndFrozenChecks() async throws {
-        let (model, root, _) = try fixture(); try selectFreshSource(model: model, root: root)
+        let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
         let request = try model.makeNativeRunRequest(runID: "original-run"), before = try XCTUnwrap(model.prepared)
         let cases = try AutomationCaseStore(root: root.appendingPathComponent("support/Cases")), frozen = try await cases.freeze(request.plan)
         let original = nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: "original", completed: false)
@@ -282,7 +282,7 @@ import XCTest
         XCTAssertEqual(result.beforeCounters.failed, 30); XCTAssertEqual(result.afterCounters.failed, 0)
     }
     private func freshQualificationInputs() async throws -> FreshQualificationInputs {
-        let (model, root, _) = try fixture(); try selectFreshSource(model: model, root: root)
+        let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
         let request = try model.makeNativeRunRequest(runID: "original-run"), prepared = try XCTUnwrap(model.prepared)
         let cases = try AutomationCaseStore(root: root.appendingPathComponent("support/Cases")), frozen = try await cases.freeze(request.plan)
         let original = nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: "original", completed: false)
@@ -397,7 +397,7 @@ import XCTest
         return after
     }
     func testPreparedSourceComparisonRetainsOriginalBuildAndFrozenChecks() async throws {
-        let (model, root, _) = try fixture(comparisonExecutor: { proposal, before, after, _, _ in
+        let (model, root, _) = try await fixture(comparisonExecutor: { proposal, before, after, _, _ in
             guard case .prepared(let retained) = before, case .prepared(let candidate) = after else { throw NativeTestError.unexpectedExecution }
             XCTAssertEqual(retained.host.app, proposal.baseline.plan.app)
             XCTAssertEqual(candidate.host.app, proposal.candidate.plan.app)
@@ -430,7 +430,7 @@ import XCTest
         XCTAssertEqual(try model.commandStatus(id: id).state, "completed")
     }
     func testSourceComparisonRestoresRetainedBaselineAfterStoreRestart() async throws {
-        let (model, root, bundle) = try fixture(); try selectPreparedSource(model: model, root: root)
+        let (model, root, bundle) = try await fixture(); try selectPreparedSource(model: model, root: root)
         var baseline = try XCTUnwrap(model.prepared)
         let support = root.appendingPathComponent("support"), session = support.appendingPathComponent("prepare-" + UUID().uuidString)
         let product = session.appendingPathComponent("DerivedData/Subject.app")
@@ -461,7 +461,7 @@ import XCTest
         XCTAssertFalse(absent.canCheckFix); XCTAssertFalse(absent.canReproduceSavedFailure)
     }
     func testPreparedSourceFixRejectsIdentitySourceTemplateAndTargetChanges() async throws {
-        let (model, root, _) = try fixture(); try selectPreparedSource(model: model, root: root)
+        let (model, root, _) = try await fixture(); try selectPreparedSource(model: model, root: root)
         _ = try await saveFailure(model: model, root: root)
         let baseline = try XCTUnwrap(model.prepared), valid = try changedPreparedSource(baseline)
         for field in 0..<9 {
@@ -486,7 +486,7 @@ import XCTest
     }
     func testQueuedPreparedSourceCandidateDriftNeverDispatches() async throws {
         let calls = NativeDispatchCount()
-        let (model, root, _) = try fixture(comparisonExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution })
+        let (model, root, _) = try await fixture(comparisonExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution })
         try selectPreparedSource(model: model, root: root); _ = try await saveFailure(model: model, root: root)
         model.prepared = try changedPreparedSource(XCTUnwrap(model.prepared)); model.installApproved = true
         let preview = try await model.previewComparisonCommand(), id = UUID()
@@ -496,8 +496,8 @@ import XCTest
         let count = await calls.value; XCTAssertEqual(count, 0)
         XCTAssertEqual(try model.commandStatus(id: id).state, "invalidated"); XCTAssertNil(model.comparisonReport)
     }
-    func testRemoteAppSelectionUsesOnlyCurrentAdmittedPopulationAndClearsAuthority() throws {
-        let (model, root, _) = try fixture(); try selectPreparedSource(model: model, root: root)
+    func testRemoteAppSelectionUsesOnlyCurrentAdmittedPopulationAndClearsAuthority() async throws {
+        let (model, root, _) = try await fixture(); try selectPreparedSource(model: model, root: root)
         let current = try XCTUnwrap(model.intake?.candidates.first)
         var other = current; other.id += "-other"; other.name = "Other target"
         model.intake?.candidates.append(other)
@@ -514,28 +514,28 @@ import XCTest
         var newer = other; newer.name = "Changed source metadata"; model.intake?.candidates[1] = newer
         XCTAssertThrowsError(try model.selectApplication(id: current.id, snapshotDigest: listing.snapshotDigest))
     }
-    func testEmptyAppListingDoesNotTouchFilesystemAndPendingRunBlocksSelection() throws {
+    func testEmptyAppListingDoesNotTouchFilesystemAndPendingRunBlocksSelection() async throws {
         let absent = URL(fileURLWithPath: "/private/tmp").appendingPathComponent("native-list-" + UUID().uuidString)
         let empty = AppAutomationStore(supportDirectory: absent)
         let listing = try empty.listApplications(); XCTAssertTrue(listing.applications.isEmpty); XCTAssertNil(listing.selectedID)
         XCTAssertFalse(FileManager.default.fileExists(atPath: absent.path))
-        let (model, _, _) = try fixture()
+        let (model, _, _) = try await fixture()
         let preview = try model.previewCommand()
         _ = try model.requestCommand(id: UUID(), digest: preview.digest)
         let current = try model.listApplications()
         XCTAssertThrowsError(try model.selectApplication(id: model.candidateID, snapshotDigest: current.snapshotDigest))
         XCTAssertNotNil(model.pendingCommandStatus); XCTAssertFalse(model.busy)
     }
-    func testPreparedSourceUIIgnoresMissingIntentCatalogAndRejectsStaleSelection() throws {
-        let (model, root, _) = try fixture(); try selectPreparedSource(model: model, root: root)
+    func testPreparedSourceUIIgnoresMissingIntentCatalogAndRejectsStaleSelection() async throws {
+        let (model, root, _) = try await fixture(); try selectPreparedSource(model: model, root: root)
         XCTAssertTrue(model.isUIWorkflow); XCTAssertFalse(model.isInstalledUI); XCTAssertTrue(model.canRun)
         let preview = try model.previewCommand(); XCTAssertEqual(preview.action, model.uiInstruction)
         model.workflowRoute = "system"; XCTAssertFalse(model.canRun)
         model.workflowRoute = "ui"; model.configuration = "Release"; XCTAssertFalse(model.canRun)
         model.configuration = "Debug"; model.simulatorID = UUID().uuidString; XCTAssertFalse(model.canRun)
     }
-    func testPreparedSourceHostChangeInvalidatesQueuedUIApproval() throws {
-        let (model, root, _) = try fixture(); try selectPreparedSource(model: model, root: root)
+    func testPreparedSourceHostChangeInvalidatesQueuedUIApproval() async throws {
+        let (model, root, _) = try await fixture(); try selectPreparedSource(model: model, root: root)
         let preview = try model.previewCommand(), requestID = UUID()
         _ = try model.requestCommand(id: requestID, digest: preview.digest)
         model.prepared?.host.hostProductDigest = String(repeating: "f", count: 64)
@@ -565,18 +565,18 @@ import XCTest
     }
     func testDelayedSavedImportFailureCannotPublishAgainstNewSelection() async throws {
         let gate = NativeExecutionGate()
-        let (model, root, _) = try fixture(evidenceImporter: { _, _, _, _ in await gate.enter(); throw NativeTestError.unexpectedExecution })
+        let (model, root, _) = try await fixture(evidenceImporter: { _, _, _, _ in await gate.enter(); throw NativeTestError.unexpectedExecution })
         let viewing = Task { try await self.saveFailure(model: model, root: root) }
         await gate.waitUntilEntered()
         XCTAssertNotNil(model.savedViewedReport)
-        model.selectCandidate(); model.message = "New selection"
+        model.selectCandidate(); await model.task?.value; model.message = "New selection"
         await gate.release(); _ = try await viewing.value
         XCTAssertEqual(model.message, "New selection"); XCTAssertNil(model.evidenceImportMessage)
         XCTAssertNil(model.savedViewedReport); XCTAssertNil(model.canonicalSavedEvidence)
     }
     func testNativeImportFailureRetainsCompletedCommandAndUnknownRelease() async throws {
         let gate = NativeExecutionGate()
-        let (model, _, _) = try fixture(executor: { _, plan, _, _, id, _ in
+        let (model, _, _) = try await fixture(executor: { _, plan, _, _, id, _ in
             var result = AutomationAssessment.assess(plan: plan, attemptID: id, subjectDispatched: false, subjectCompleted: false, observations: [], termination: .unresolved)
             result.subjectDispatchUncertain = true
             return .init(attemptID: id, result: result, receipts: [], resourcesReleased: false)
@@ -595,7 +595,7 @@ import XCTest
         XCTAssertFalse(model.canRun)
     }
     func testSavedFailureReproductionDoesNotRetypeOrChangeTheFrozenOracle() async throws {
-        let (model, root, _) = try fixture(reproductionExecutor: { proposal, _, _, support, _ in
+        let (model, root, _) = try await fixture(reproductionExecutor: { proposal, _, _, support, _ in
             try await AutomationReproduction(cases: .init(root: support.appendingPathComponent("Cases"))).run(
                 frozen: proposal.frozen, originalAttemptID: proposal.originalAttemptID, approval: proposal.approval,
                 limits: proposal.limits, executor: NativeSearchFactExecutor(fails: true))
@@ -613,7 +613,7 @@ import XCTest
     }
     func testQueuedReproductionRequiresItsOwnNativeConfirmationAndReturnsAllFiveOutcomes() async throws {
         let calls = NativeDispatchCount()
-        let (model, root, _) = try fixture(reproductionExecutor: { proposal, _, _, support, _ in
+        let (model, root, _) = try await fixture(reproductionExecutor: { proposal, _, _, support, _ in
             await calls.increment()
             return try await AutomationReproduction(cases: .init(root: support.appendingPathComponent("Cases"))).run(
                 frozen: proposal.frozen, originalAttemptID: proposal.originalAttemptID, approval: proposal.approval,
@@ -638,7 +638,7 @@ import XCTest
     }
     func testConcurrentIdenticalReproductionRequestsReturnTheSamePendingRequest() async throws {
         let gate = NativeDualReadGate(), reads = NativeDispatchCount()
-        let (model, root, _) = try fixture(reproductionPreflightReader: { frozen, id, root in
+        let (model, root, _) = try await fixture(reproductionPreflightReader: { frozen, id, root in
             let cases = try AutomationCaseStore(root: root)
             let saved = try await cases.load(id: frozen.plan.id, revision: frozen.plan.revision, digest: frozen.digest)
             let original = try await cases.loadAttempt(id: id, frozen: saved)
@@ -658,7 +658,7 @@ import XCTest
     }
     func testQueuedReproductionInvalidatesChangedInstallConsentBeforeDispatch() async throws {
         let calls = NativeDispatchCount()
-        let (model, root, _) = try fixture(reproductionExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution })
+        let (model, root, _) = try await fixture(reproductionExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution })
         try await saveFailure(model: model, root: root)
         let preview = try await model.previewReproductionCommand(), id = UUID()
         _ = try await model.requestReproductionCommand(id: id, digest: preview.digest)
@@ -669,7 +669,7 @@ import XCTest
     }
     func testCommandCancellationDrainsHeldReproductionPreflightWithoutDispatch() async throws {
         let gate = NativeExecutionGate(), reads = NativeDispatchCount(), calls = NativeDispatchCount()
-        let (model, root, _) = try fixture(reproductionExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution },
+        let (model, root, _) = try await fixture(reproductionExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution },
             reproductionPreflightReader: { frozen, id, root in
                 let cases = try AutomationCaseStore(root: root)
                 let saved = try await cases.load(id: frozen.plan.id, revision: frozen.plan.revision, digest: frozen.digest)
@@ -696,7 +696,7 @@ import XCTest
         return fixed
     }
     func testNativeCheckFixKeepsOracleAndUsesThirtyFreshAttemptsOnBothRetainedProducts() async throws {
-        let (model, root, bundle) = try fixture(comparisonExecutor: { proposal, before, after, _, support in
+        let (model, root, bundle) = try await fixture(comparisonExecutor: { proposal, before, after, _, support in
             guard case .installedUI(let beforeProduct) = before, case .installedUI(let afterProduct) = after else { throw NativeTestError.unexpectedExecution }
             XCTAssertNotEqual(beforeProduct.bundleURL, afterProduct.bundleURL)
             XCTAssertNotEqual(before.app.productDigest, after.app.productDigest)
@@ -732,7 +732,7 @@ import XCTest
     }
     func testQueuedComparisonRuntimeDriftNeverDispatchesAndRetainsOriginal() async throws {
         let runtime = RuntimeIdentity(), calls = NativeDispatchCount()
-        let (model, root, bundle) = try fixture(runtime: runtime, comparisonExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution })
+        let (model, root, bundle) = try await fixture(runtime: runtime, comparisonExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution })
         let original = try await saveFailure(model: model, root: root)
         model.selectFixedBundle(try fixedBundle(root: root, baseline: bundle))
         let preview = try await model.previewComparisonCommand(), id = UUID()
@@ -746,7 +746,7 @@ import XCTest
     }
     func testCancelComparisonDuringHeldPreflightNeverDispatches() async throws {
         let gate = NativeExecutionGate(), reads = NativeDispatchCount(), calls = NativeDispatchCount()
-        let (model, root, bundle) = try fixture(comparisonExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution }, reproductionPreflightReader: { frozen, attemptID, root in
+        let (model, root, bundle) = try await fixture(comparisonExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution }, reproductionPreflightReader: { frozen, attemptID, root in
             let cases = try AutomationCaseStore(root: root)
             let stored = try await cases.load(id: frozen.plan.id, revision: frozen.plan.revision, digest: frozen.digest)
             let report = try await cases.loadAttempt(id: attemptID, frozen: stored)
@@ -768,7 +768,7 @@ import XCTest
     }
     func testNativeFixProductAndInstallDriftCannotDispatch() async throws {
         let calls = NativeDispatchCount()
-        let (model, root, bundle) = try fixture(comparisonExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution })
+        let (model, root, bundle) = try await fixture(comparisonExecutor: { _, _, _, _, _ in await calls.increment(); throw NativeTestError.unexpectedExecution })
         try await saveFailure(model: model, root: root)
         let fixed = try fixedBundle(root: root, baseline: bundle)
         model.selectFixedBundle(fixed); model.installApproved = false
@@ -781,7 +781,7 @@ import XCTest
         model.selectFixedBundle(bundle); XCTAssertFalse(model.canCheckFix)
     }
     func testComparisonArchiveFailureRetainsUnresolvedPopulationAndBlocksNewRuns() async throws {
-        let (model, root, bundle) = try fixture(comparisonExecutor: { proposal, _, _, _, support in
+        let (model, root, bundle) = try await fixture(comparisonExecutor: { proposal, _, _, _, support in
             let casesRoot = support.appendingPathComponent("Cases")
             let result = try await AutomationFixComparison(cases: .init(root: casesRoot)).run(
                 baseline: proposal.baseline, candidate: proposal.candidate, attemptsPerBuild: proposal.attemptsPerBuild,
@@ -798,7 +798,7 @@ import XCTest
     }
     func testSavedSelectionChangeDuringHeldReproductionPreflightNeverDispatches() async throws {
         let gate = NativeExecutionGate(), calls = NativeDispatchCount()
-        let (model, root, _) = try fixture(reproductionExecutor: { _, _, _, _, _ in
+        let (model, root, _) = try await fixture(reproductionExecutor: { _, _, _, _, _ in
             await calls.increment(); throw NativeTestError.unexpectedExecution
         }, reproductionPreflightReader: { frozen, attemptID, root in
             let cases = try AutomationCaseStore(root: root)
@@ -820,7 +820,7 @@ import XCTest
         XCTAssertNotNil(model.message)
     }
     func testPreparedSourceReproductionKeepsExactHostContextAndRejectsHostDrift() async throws {
-        let (model, root, _) = try fixture(reproductionExecutor: { proposal, subject, _, support, _ in
+        let (model, root, _) = try await fixture(reproductionExecutor: { proposal, subject, _, support, _ in
             guard case .prepared = subject else { throw NativeTestError.unexpectedExecution }
             return try await AutomationReproduction(cases: .init(root: support.appendingPathComponent("Cases"))).run(
                 frozen: proposal.frozen, originalAttemptID: proposal.originalAttemptID, approval: proposal.approval,
@@ -839,7 +839,7 @@ import XCTest
         XCTAssertFalse(model.canReproduceSavedFailure); XCTAssertEqual(model.reproductionReport?.runID, previousRun)
     }
     func testSavedReproductionRejectsRuntimeDriftBeforeExecution() async throws {
-        let identity = RuntimeIdentity(), (model, root, _) = try fixture(runtime: identity,
+        let identity = RuntimeIdentity(), (model, root, _) = try await fixture(runtime: identity,
             reproductionExecutor: { _, _, _, _, _ in throw NativeTestError.unexpectedExecution })
         try await saveFailure(model: model, root: root); identity.change()
         await model.reproduceSavedFailure()
@@ -848,7 +848,7 @@ import XCTest
     }
     func testCloseDrainsReproductionAndArchiveFailureRetainsUncertainty() async throws {
         let gate = NativeExecutionGate()
-        let (model, root, _) = try fixture(reproductionExecutor: { proposal, _, _, support, _ in
+        let (model, root, _) = try await fixture(reproductionExecutor: { proposal, _, _, support, _ in
             let casesRoot = support.appendingPathComponent("Cases")
             let result = try await AutomationReproduction(cases: .init(root: casesRoot)).run(
                 frozen: proposal.frozen, originalAttemptID: proposal.originalAttemptID, approval: proposal.approval,
@@ -867,8 +867,8 @@ import XCTest
         XCTAssertTrue(model.savedReproductions.isEmpty)
         XCTAssertFalse(model.canRun); XCTAssertFalse(model.canReproduceSavedFailure)
     }
-    func testUISelectionPreviewNeedsNoSystemCatalogAndKeepsOracleSeparate() throws {
-        let (model, _, _) = try fixture()
+    func testUISelectionPreviewNeedsNoSystemCatalogAndKeepsOracleSeparate() async throws {
+        let (model, _, _) = try await fixture()
         XCTAssertTrue(model.isInstalledUI); XCTAssertNil(model.prepared); XCTAssertNil(model.action)
         let navigation = try model.previewCommand()
         model.uiExpectedText = "Personal task complete"
@@ -878,9 +878,9 @@ import XCTest
         let id = UUID(); XCTAssertEqual(try model.requestCommand(id: id, digest: assessed.digest).state, "awaitingApproval")
         XCTAssertFalse(model.busy); XCTAssertNil(model.report)
     }
-    func testChangedWorkflowOracleRuntimeOrInstallChoiceInvalidatesQueuedApproval() throws {
+    func testChangedWorkflowOracleRuntimeOrInstallChoiceInvalidatesQueuedApproval() async throws {
         for change in 0..<7 {
-            let identity = RuntimeIdentity(), (model, _, _) = try fixture(runtime: identity)
+            let identity = RuntimeIdentity(), (model, _, _) = try await fixture(runtime: identity)
             let id = UUID(), preview = try model.previewCommand()
             _ = try model.requestCommand(id: id, digest: preview.digest)
             switch change {
@@ -898,7 +898,7 @@ import XCTest
         }
     }
     func testNativeReadonlyPhraseSearchUsesFixedOracleAndSavesRevalidatedHistory() async throws {
-        let (model, _, _) = try fixture(searchExecutor: { proposal, subject, _, support, _ in
+        let (model, _, _) = try await fixture(searchExecutor: { proposal, subject, _, support, _ in
             guard case .installedUI = subject else { throw NativeTestError.unexpectedExecution }
             let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
             return try await AutomationFailureSearch(cases: cases).run(baseline: proposal.baseline, mutations: proposal.mutations,
@@ -916,8 +916,8 @@ import XCTest
         XCTAssertEqual(saved.baseline.plan.requirements[0].expected, .text("50%"))
         XCTAssertEqual(saved.mutations[0].frozen.plan.requirements, saved.baseline.plan.requirements)
     }
-    func testPhraseSearchCannotEnterFixtureOrExternalWritesOrUnassessedWorkflow() throws {
-        let (model, _, _) = try fixture()
+    func testPhraseSearchCannotEnterFixtureOrExternalWritesOrUnassessedWorkflow() async throws {
+        let (model, _, _) = try await fixture()
         model.uiAlternatePhrases = "Show tasks"; XCTAssertFalse(model.canFindFailures)
         model.uiExpectedText = "Complete"; XCTAssertTrue(model.canFindFailures)
         for effects in ["fixture", "external"] {
@@ -927,8 +927,8 @@ import XCTest
         model.effectChoice = "navigation"; model.uiAlternatePhrases = "A\nB\nC"; XCTAssertFalse(model.canFindFailures)
         model.uiAlternatePhrases = "A\nA"; XCTAssertFalse(model.canFindFailures)
     }
-    func testPropertyChecksRequireAVisibleLocatorAndTextIgnoresHiddenPreviousLabel() throws {
-        let (model, _, _) = try fixture()
+    func testPropertyChecksRequireAVisibleLocatorAndTextIgnoresHiddenPreviousLabel() async throws {
+        let (model, _, _) = try await fixture()
         model.uiExpectedText = "50%"; model.uiObservationProperty = "value"
         XCTAssertFalse(model.canRun)
         model.uiObservationLabel = "Volume"; XCTAssertTrue(model.canRun)
@@ -938,7 +938,7 @@ import XCTest
         XCTAssertEqual(try model.previewCommand().digest, preview.digest)
     }
     func testArchiveFailureRetainsUncertainSearchAndBlocksNewExecution() async throws {
-        let (model, _, _) = try fixture(searchExecutor: { proposal, _, _, support, _ in
+        let (model, _, _) = try await fixture(searchExecutor: { proposal, _, _, support, _ in
             let casesRoot = support.appendingPathComponent("Cases")
             let cases = try AutomationCaseStore(root: casesRoot)
             let result = try await AutomationFailureSearch(cases: cases).run(baseline: proposal.baseline, mutations: proposal.mutations,
@@ -955,7 +955,7 @@ import XCTest
     }
     func testCloseAndWaitDrainsSearchAndRetainsItsInterruptedHistory() async throws {
         let gate = NativeExecutionGate()
-        let (model, _, _) = try fixture(searchExecutor: { proposal, _, _, support, _ in
+        let (model, _, _) = try await fixture(searchExecutor: { proposal, _, _, support, _ in
             try await AutomationFailureSearch(cases: .init(root: support.appendingPathComponent("Cases"))).run(
                 baseline: proposal.baseline, mutations: proposal.mutations, approval: proposal.approval, capabilities: .init(),
                 executor: NativeSearchInterruptedExecutor(gate: gate))
@@ -970,8 +970,8 @@ import XCTest
         await model.findFailures()
         let calls = await gate.calls; XCTAssertEqual(calls, 1)
     }
-    func testChangedProductCannotBeSilentlyAdoptedByPreview() throws {
-        let (model, _, bundle) = try fixture()
+    func testChangedProductCannotBeSilentlyAdoptedByPreview() async throws {
+        let (model, _, bundle) = try await fixture()
         _ = try model.previewCommand()
         try Data("changed".utf8).write(to: bundle.appendingPathComponent("resource.txt"))
         XCTAssertThrowsError(try model.previewCommand())
@@ -979,7 +979,7 @@ import XCTest
     }
     func testCloseAndWaitDrainsCapturedTaskAndRejectsNewWorkAfterDrain() async throws {
         let gate = NativeExecutionGate()
-        let (model, _, _) = try fixture(executor: { subject, plan, approval, _, attemptID, _ in
+        let (model, _, _) = try await fixture(executor: { subject, plan, approval, _, attemptID, _ in
             guard case .installedUI = subject else { throw NativeTestError.unexpectedExecution }
             await gate.enter()
             return .init(attemptID: attemptID, result: AutomationAssessment.assess(plan: plan, attemptID: attemptID,

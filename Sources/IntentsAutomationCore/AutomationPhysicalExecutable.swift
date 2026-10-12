@@ -41,6 +41,7 @@ public enum AutomationPhysicalExecutable {
 
     public static func validateTarget(_ target: TargetIdentity) throws {
         guard target.kind == .physical,
+              target.physicalDeviceIdentifier.map({ UUID(uuidString: $0) != nil }) ?? true,
               target.id.range(of: #"\A(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{8}-[A-Fa-f0-9]{16}|[A-Fa-f0-9]{8}(?:-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12})\z"#,
                               options: .regularExpression) != nil else { throw AutomationContractError.invalidIdentity }
     }

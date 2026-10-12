@@ -4,6 +4,8 @@ struct AutomationLeaseState: Codable {
     var schemaVersion = 1
     var campaigns: [String: Campaign] = [:]
     var generations: [String: Int] = [:]
+    /// Optional for stores written before CoreDevice alias resolution.
+    var physicalDeviceAliases: [String: String]?
     struct Campaign: Codable, Equatable, Sendable {
         var runID: String
         var target: TargetIdentity
@@ -18,6 +20,15 @@ struct AutomationLeaseState: Codable {
         guard schemaVersion == 1, campaigns.count <= 256, generations.count <= 256,
               generations.allSatisfy({ !$0.key.isEmpty && $0.value > 0 && $0.value < Int.max }) else {
             throw AutomationContractError.invalidIdentity
+        }
+        if let aliases = physicalDeviceAliases {
+            guard aliases.count <= 2048 else { throw AutomationContractError.invalidIdentity }
+            for (alias, identifier) in aliases {
+                try AutomationPhysicalExecutable.validateTarget(.init(id: alias, kind: .physical))
+                guard alias == alias.lowercased(), UUID(uuidString: identifier)?.uuidString == identifier else {
+                    throw AutomationContractError.invalidIdentity
+                }
+            }
         }
         for (key, campaign) in campaigns {
             guard key == campaign.target.leaseKey, !campaign.runID.isEmpty, campaign.owner.pid > 0,

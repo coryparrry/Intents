@@ -134,8 +134,8 @@ struct AutomationMCPTests {
             let preview = try model.previewCommand()
             _ = try model.requestCommand(id: UUID(), digest: preview.digest)
             model.run()
-            let deadline = Date().addingTimeInterval(5)
-            while model.busy && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            let runTask = try #require(model.task)
+            await runTask.value
             #expect(!model.busy)
             #expect(model.report != nil)
             #expect(client.events.filter { if case .featureUsed(.automationRun) = $0 { return true }; return false }.count == (released ? 1 : 0))
@@ -228,7 +228,12 @@ struct AutomationMCPTests {
         while !(await reader.started) && Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
         let started = await reader.started; #expect(started)
         model.select(root.appendingPathComponent("unavailable-new-selection.xcodeproj"))
+        // Intake now finishes off the main actor. Preserve its own error before
+        // releasing the stale saved read, which must not overwrite that result.
+        await model.task?.value
+        #expect(!model.busy)
         let selectionMessage = model.message
+        #expect(selectionMessage != nil)
         await reader.finish()
         await task.value
         #expect(model.report == nil); #expect(model.savedViewedReport == nil); #expect(model.message == selectionMessage)

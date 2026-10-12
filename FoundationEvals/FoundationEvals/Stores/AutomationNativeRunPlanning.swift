@@ -2,6 +2,17 @@
 import Foundation
 import IntentsAutomationCore
 
+/// A synchronous verifier must not inherit the native window's executor.
+/// Cancellation is checked on both sides of the immutable, read-only work.
+enum AutomationNativeOffMainVerification {
+    @concurrent static func run<Value: Sendable>(_ verify: @Sendable () throws -> Value) async throws -> Value {
+        try Task.checkCancellation()
+        let value = try verify()
+        try Task.checkCancellation()
+        return value
+    }
+}
+
 extension AppAutomationStore {
     var preparedUISelectionMatches: Bool {
         prepared?.host.app.logicalID == candidateID && prepared?.host.app.platform == "ios" &&

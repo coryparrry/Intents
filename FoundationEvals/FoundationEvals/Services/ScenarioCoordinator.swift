@@ -112,7 +112,8 @@ final class ScenarioCoordinator {
         executor = XcodeTestExecutor(
             workDirectory: root.appending(path: "Executor", directoryHint: .isDirectory),
             persistence: persistence,
-            physicalLeaseStoreURL: supportDirectory.appendingPathComponent("Automation/target-leases.json")
+            physicalLeaseStoreURL: root.appendingPathComponent("target-leases.json"),
+            legacyPhysicalLeaseStoreURL: supportDirectory.appendingPathComponent("Automation/target-leases.json")
         )
         draft = (try? ScenarioDefinition.starter(projectID: evaluationStore.selectedProjectID).frozen())
             ?? ScenarioDefinition.starter(projectID: evaluationStore.selectedProjectID)
