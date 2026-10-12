@@ -134,8 +134,8 @@ struct AutomationMCPTests {
             let preview = try model.previewCommand()
             _ = try model.requestCommand(id: UUID(), digest: preview.digest)
             model.run()
-            let deadline = Date().addingTimeInterval(5)
-            while model.busy && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            let runTask = try #require(model.task)
+            await runTask.value
             #expect(!model.busy)
             #expect(model.report != nil)
             #expect(client.events.filter { if case .featureUsed(.automationRun) = $0 { return true }; return false }.count == (released ? 1 : 0))
