@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var store: EvaluationStore
     @State private var productionWorkspace: ProductionWorkspaceStore
+    @State private var appliedAutomationLaunchSelection = false
     @State private var automationStore: AppAutomationStore
     @State private var scenarioCoordinator: ScenarioCoordinator
     @Environment(DeveloperRunnerStore.self) private var runners
@@ -29,6 +30,15 @@ struct ContentView: View {
         .background { SuiteAutosaveObserver(store: store) }
         .task {
             await automationStore.migrateEvidenceHistory()
+            #if DEBUG
+            if !appliedAutomationLaunchSelection {
+                appliedAutomationLaunchSelection = true
+                let arguments = ProcessInfo.processInfo.arguments
+                if let index = arguments.firstIndex(of: "--automation-select-path"), arguments.indices.contains(index + 1) {
+                    automationStore.select(URL(fileURLWithPath: arguments[index + 1]))
+                }
+            }
+            #endif
             await scenarioCoordinator.refreshAutomationEvidence()
         }
         .onChange(of: automationStore.evidenceImportRevision) { _, _ in

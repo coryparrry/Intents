@@ -6,7 +6,7 @@ import XCTest
 
 extension InstalledUIStoreTests {
     func testNativeConfirmationHistoryExpiresTerminalPayloadsWithoutExhaustingAdmission() async throws {
-        let (model, _, _) = try fixture()
+        let (model, _, _) = try await fixture()
         var reviews: [AutomationNativeConfirmationReview] = []
         for index in 0..<65 {
             let review = try await model.prepareNativeConfirmation(.run)
@@ -37,7 +37,7 @@ extension InstalledUIStoreTests {
     }
 
     func testExternalIdempotentHistoryLimitDoesNotBlockNativeConfirmations() async throws {
-        let (model, _, _) = try fixture()
+        let (model, _, _) = try await fixture()
         let preview = try model.previewCommand()
         var externalIDs: [UUID] = []
         for _ in 0..<50 {
@@ -87,7 +87,7 @@ extension InstalledUIStoreTests {
     func testNativeRunConfirmationRejectsLateInventoryDestinationDriftWithoutFallback() async throws {
         let gate = NativeConfirmationGate(), calls = NativeConfirmationCalls()
         let replacement = AutomationSimulator(id: UUID().uuidString, name: "Replacement", runtime: "iOS", state: "Shutdown")
-        let (model, _, _) = try fixture(executor: { _, _, _, _, _, _ in
+        let (model, _, _) = try await fixture(executor: { _, _, _, _, _, _ in
             await calls.mark(); throw AutomationContractError.invalidIdentity
         }, simulatorInventoryReader: { _, _ in await gate.hold(); return [replacement] })
         let original = model.simulatorID
@@ -104,7 +104,7 @@ extension InstalledUIStoreTests {
     }
     func testNativeRunCancellationAndInvalidatedRequestCannotFallBackToDirectExecution() async throws {
         let calls = NativeConfirmationCalls()
-        let (model, _, _) = try fixture(executor: { _, _, _, _, _, _ in
+        let (model, _, _) = try await fixture(executor: { _, _, _, _, _, _ in
             await calls.mark(); throw AutomationContractError.invalidIdentity
         })
         let cancelled = try await model.prepareNativeConfirmation(.run)
@@ -117,7 +117,7 @@ extension InstalledUIStoreTests {
         let count = await calls.count; XCTAssertEqual(count, 0); XCTAssertFalse(model.busy)
     }
     func testNativeReproductionConfirmationNamesAndRetainsExactAttempt() async throws {
-        let (model, root, _) = try fixture(); let frozen = try await saveFailure(model: model, root: root)
+        let (model, root, _) = try await fixture(); let frozen = try await saveFailure(model: model, root: root)
         let review = try await model.prepareNativeConfirmation(.reproduction)
         XCTAssertTrue(review.message.contains("Saved attempt: original"))
         XCTAssertEqual(model.pendingCommandStatus?.originalAttemptID, "original")
@@ -135,7 +135,7 @@ extension InstalledUIStoreTests {
         XCTAssertEqual(try model.commandStatus(id: review.id).state, "invalidated")
     }
     func testNativeComparisonConfirmationFreezesBothBuildsAndRejectsChangedSelection() async throws {
-        let (model, root, _) = try fixture(); try selectPreparedSource(model: model, root: root)
+        let (model, root, _) = try await fixture(); try selectPreparedSource(model: model, root: root)
         _ = try await saveFailure(model: model, root: root); let before = try XCTUnwrap(model.prepared)
         model.prepared = try changedPreparedSource(before); model.catalog = model.prepared?.catalog; model.installApproved = true
         let review = try await model.prepareNativeConfirmation(.comparison)
@@ -148,7 +148,7 @@ extension InstalledUIStoreTests {
     }
     func testNativeConfirmationReusesMatchingRemoteRequestAndRunsOnlyOnce() async throws {
         let calls = NativeConfirmationCalls()
-        let (model, _, _) = try fixture(executor: { _, _, _, _, _, _ in
+        let (model, _, _) = try await fixture(executor: { _, _, _, _, _, _ in
             await calls.mark(); throw AutomationContractError.invalidIdentity
         })
         let preview = try model.previewCommand(), id = UUID()

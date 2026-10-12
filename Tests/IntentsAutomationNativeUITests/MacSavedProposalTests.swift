@@ -164,7 +164,7 @@ final class MacSavedProposalTests: XCTestCase, @unchecked Sendable {
             }, reproductionPreflightReader: { frozen, _, _ in
                 await gate?.block(); return (frozen, f.original)
             }, nativeMacTargetReader: { selected.target })
-        model.select(selected.bundleURL); model.effectChoice = "navigation"; model.effectsConfirmed = true; model.installApproved = false
+        model.select(selected.bundleURL); await model.task?.value; model.effectChoice = "navigation"; model.effectsConfirmed = true; model.installApproved = false
         let cases = try AutomationCaseStore(root: f.root.appendingPathComponent("support/Cases"))
         _ = try await cases.freeze(f.frozen.plan); try await cases.saveAttempt(f.original, for: f.frozen)
         await model.showSavedCase(f.frozen)

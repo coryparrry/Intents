@@ -30,7 +30,7 @@ struct ScenarioPhysicalFailureTests {
     @Test(.timeLimit(.minutes(3))) func cancelDuringConnectionBuildPreventsPhysicalDispatch() async throws {
         try await fixture.withDirectory { root in
             let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("leases.json"),
-                inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in observation(target.id) }, drain: { true }) })
+                canonicalTargetResolver: canonicalPhysicalTarget, inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in observation(target.id) }, drain: { true }) })
             let executor = XcodeTestExecutor(workDirectory: root.appendingPathComponent("Executor"), persistence: ScenarioPersistence(rootDirectory: root), physicalLeaseManager: manager)
             var invocation = fixture.invocation(); invocation.testIdentity.methodName = "testIntentLabConnection"
             var check = journal(root, invocation: invocation); check.phase = .preparing
@@ -90,7 +90,7 @@ struct ScenarioPhysicalFailureTests {
             try await fixture.withDirectory { root in
                 let inspections = InspectionScript([true, runnerAbsent])
                 let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("leases.json"),
-                    inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in await inspections.next(target.id) }, drain: { true }) })
+                    canonicalTargetResolver: canonicalPhysicalTarget, inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in await inspections.next(target.id) }, drain: { true }) })
                 let persistence = ScenarioPersistence(rootDirectory: root)
                 let executor = XcodeTestExecutor(workDirectory: root.appendingPathComponent("Executor"), persistence: persistence,
                     physicalLeaseManager: manager)
@@ -124,35 +124,31 @@ struct ScenarioPhysicalFailureTests {
         }
     }
 
-    @Test func equalGenerationsOnDifferentTargetsNeverShareInspectorDrain() async throws {
+    @Test func rejectedSecondPhysicalTargetCannotReplaceRetainedInspector() async throws {
         try await fixture.withDirectory { root in
             let a = root.appendingPathComponent("a"), b = root.appendingPathComponent("b")
             for path in [a, b] { try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false) }
-            let drain = InspectorDrainControl()
-            let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("target-leases.json"), inspectorFactory: { workspace in
-                .init(inspect: { target, _, _, _, _ in observation(target.id) }, drain: {
-                    if workspace.lastPathComponent == "b" { return true }
-                    return await drain.value()
-                })
+            let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("target-leases.json"), canonicalTargetResolver: canonicalPhysicalTarget, inspectorFactory: { workspace in
+                .init(inspect: { target, _, _, _, _ in observation(target.id) }, drain: { workspace.lastPathComponent == "b" })
             })
             let first = fixture.invocation()
-            var second = fixture.invocation(); second.destinationIdentifier = "second-physical-device"
+            var second = fixture.invocation(); second.destinationIdentifier = "00008140-000E4D803C0B002C"
             let held = try await manager.acquire(invocation: first, runner: fixture.runner(), workspace: a)
-            await #expect(throws: AutomationContractError.self) { try await manager.acquire(invocation: second, runner: fixture.runner(), workspace: b) }
-            await #expect(throws: AutomationContractError.self) { try await manager.finish(held, invocation: first, workspace: a) }
-            await drain.enable()
-            #expect(try await manager.finish(held, invocation: first, workspace: a).released)
-            let healthy = try await manager.acquire(invocation: second, runner: fixture.runner(), workspace: b)
-            #expect(held.lease.generation == healthy.lease.generation)
-            await #expect(throws: AutomationContractError.self) { try await manager.finish(held, invocation: first, workspace: a) }
-            #expect(try await manager.finish(healthy, invocation: second, workspace: b).released)
+            // Both fixture identifiers resolve to the same phone, so the second
+            // acquisition cannot replace the retained campaign's inspector.
+            await #expect(throws: AutomationContractError.targetBusy) {
+                try await manager.acquire(invocation: second, runner: fixture.runner(), workspace: b)
+            }
+            await #expect(throws: AutomationContractError.commandsPending) { try await manager.finish(held, invocation: first, workspace: a) }
+            let other = try AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("target-leases.json"))
+            await #expect(throws: AutomationContractError.self) { try await other.acquire(runID: "other", target: held.lease.target, control: .ui) }
         }
     }
 
     @Test func cancelDuringHeldPhysicalPreparationPreventsHostLaunch() async throws {
         try await fixture.withDirectory { root in
             let gate = PreparationGate(), invocation = fixture.invocation()
-            let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("target-leases.json"), inspectorFactory: { _ in
+            let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("target-leases.json"), canonicalTargetResolver: canonicalPhysicalTarget, inspectorFactory: { _ in
                 .init(inspect: { target, _, _, _, _ in await gate.hold(); return observation(target.id) }, drain: { true })
             })
             let record = try await manager.acquire(invocation: invocation, runner: fixture.runner(), workspace: root)
@@ -241,7 +237,7 @@ struct ScenarioPhysicalFailureTests {
             try await fixture.withDirectory { root in
                 let persistence = ScenarioPersistence(rootDirectory: root)
                 let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("leases.json"),
-                    inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in observation(target.id) }, drain: { true }) })
+                    canonicalTargetResolver: canonicalPhysicalTarget, inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in observation(target.id) }, drain: { true }) })
                 let invocation = fixture.invocation()
                 var record = try await manager.acquire(invocation: invocation, runner: fixture.runner(), workspace: root)
                 record.receiptError = receiptError
@@ -285,7 +281,7 @@ struct ScenarioPhysicalFailureTests {
         try await fixture.withDirectory { root in
             let persistence = ScenarioPersistence(rootDirectory: root), invocation = fixture.invocation()
             let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("leases.json"),
-                inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in observation(target.id) }, drain: { true }) })
+                canonicalTargetResolver: canonicalPhysicalTarget, inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in observation(target.id) }, drain: { true }) })
             var record = try await manager.acquire(invocation: invocation, runner: fixture.runner(), workspace: root)
             record.dispatched = true
             let captured = journal(root, invocation: invocation, record: record)
@@ -355,4 +351,10 @@ private actor InspectorDrainControl {
     private var ready = false
     func enable() { ready = true }
     func value() -> Bool { ready }
+}
+
+private func canonicalPhysicalTarget(_ target: TargetIdentity, workspace: URL) async throws -> TargetIdentity {
+    var value = target
+    value.physicalDeviceIdentifier = "1AD4F755-6F58-58E5-AC71-B1EDFECADA93"
+    return value
 }

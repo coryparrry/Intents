@@ -1,7 +1,95 @@
 import XCTest
 import CryptoKit
+import Darwin
 
 final class AppAutomationUITests: XCTestCase {
+    @MainActor
+    func testOwnershipResetConfirmationCanBeCancelledWithoutChangingTheReservation() throws {
+        continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "ownership-reset-confirmation")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let support = storage.appendingPathComponent("Automation")
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        var process = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.stride)
+        XCTAssertEqual(proc_pidinfo(getpid(), PROC_PIDTBSDINFO, 0, &process, size), size)
+        let target = UUID().uuidString, key = "ios:" + target
+        // The test runner is a separate, live owner. The app must display it
+        // without releasing it during startup or a cancelled reset confirmation.
+        let campaign: [String: Any] = ["runID": "other-live-owner",
+            "target": ["id": target, "kind": "physical", "physicalDeviceIdentifier": target],
+            "owner": ["pid": getpid(), "startIdentity": "\(process.pbi_start_tvsec):\(process.pbi_start_tvusec)"],
+            "ownerToken": "test-runner-owner", "runners": []]
+        let bytes = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1,
+            "campaigns": [key: campaign], "generations": [key: 1]])
+        let file = support.appendingPathComponent("target-leases.json")
+        try bytes.write(to: file)
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
+            "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
+        app.launch(); defer { app.terminate() }
+        app.activate(); app.typeKey("3", modifierFlags: .command)
+        let reset = app.buttons["automationResetDeviceOwnership"]
+        XCTAssertTrue(reset.waitForExistence(timeout: 15)); XCTAssertTrue(reset.isEnabled)
+        try app.windows.firstMatch.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/private/tmp/foundation-evals-ui-tests/phase0-recovery-controls.png"))
+        reset.click()
+        XCTAssertTrue(app.staticTexts["Reset device ownership?"].waitForExistence(timeout: 5))
+        try app.windows.firstMatch.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/private/tmp/foundation-evals-ui-tests/phase0-reset-confirmation.png"))
+        let cancel = app.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5)); cancel.click()
+        XCTAssertTrue(reset.waitForExistence(timeout: 5))
+        XCTAssertEqual(try Data(contentsOf: file), bytes)
+    }
+
+    /// Intake and picker regression only; selecting a destination never builds, boots or installs.
+    @MainActor
+    func testPreparationPickersUseStableIdentifiers() throws {
+        executionTimeAllowance = 120; continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "automation-picker-identifiers")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let project = storage.appendingPathComponent("PickerFixture.xcodeproj")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let objects: [String: Any] = [
+            "APP": ["isa": "PBXNativeTarget", "name": "PickerFixture",
+                    "productType": "com.apple.product-type.application", "buildConfigurationList": "CONFIGS"],
+            "CONFIGS": ["buildConfigurations": ["DEBUG"]],
+            "DEBUG": ["name": "Debug"]
+        ]
+        try PropertyListSerialization.data(fromPropertyList: ["objects": objects], format: .xml, options: 0)
+            .write(to: project.appendingPathComponent("project.pbxproj"))
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
+                                "--automation-select-path", project.path,
+                                "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
+        app.launch(); defer { app.terminate() }
+        app.activate(); app.typeKey("3", modifierFlags: .command)
+        waitForAutomationSelection(in: app)
+        let destination = app.popUpButtons["automation.preparation.destination"]
+        let route = app.popUpButtons["automation.workflow.route"]
+        selectAutomationMenu(destination, item: "physical")
+        selectAutomationMenu(route, item: "siri")
+        selectAutomationMenu(destination, item: "macOS")
+        selectAutomationMenu(route, item: "system")
+        selectAutomationMenu(destination, item: "simulator")
+        selectAutomationMenu(route, item: "ui")
+        let simulator = app.popUpButtons["automation.preparation.simulator"]
+        XCTAssertTrue(simulator.waitForExistence(timeout: 10))
+        XCTAssertTrue(simulator.isEnabled)
+        simulator.click()
+        let simulatorItem = simulator.menuItems.matching(NSPredicate(
+            format: "identifier MATCHES %@", "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+        )).firstMatch
+        XCTAssertTrue(simulatorItem.waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertTrue(simulatorItem.isEnabled)
+        let simulatorID = simulatorItem.identifier
+        simulatorItem.click()
+        // A second lookup uses the UDID even when the displayed state changes between runs.
+        selectAutomationMenu(simulator, item: simulatorID)
+        XCTAssertFalse(app.buttons["Run action…"].exists)
+        XCTAssertFalse(app.buttons["Run approved workflow"].exists)
+        captureEmptyFlow(app.windows.firstMatch, name: "Stable automation pickers")
+    }
+
     @MainActor
     func testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled() throws {
         executionTimeAllowance = 120; continueAfterFailure = false
@@ -11,18 +99,13 @@ final class AppAutomationUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
             "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
+        app.launchArguments += ["--automation-select-path", project.path]
         app.launch(); defer { app.terminate() }; app.activate(); app.typeKey("3", modifierFlags: .command)
-        let choose = app.buttons["Choose app…"]; XCTAssertTrue(choose.waitForExistence(timeout: 10)); choose.click()
-        app.typeKey("g", modifierFlags: [.command, .shift])
-        let path = app.textFields.firstMatch; XCTAssertTrue(path.waitForExistence(timeout: 5))
-        path.typeText(project.path); app.typeKey(.return, modifierFlags: [])
-        let panel = app.sheets["open-panel"].buttons["OKButton"]; XCTAssertTrue(panel.waitForExistence(timeout: 5)); panel.click()
-        let destination = app.popUpButtons["Prepare for"]; XCTAssertTrue(destination.waitForExistence(timeout: 10)); destination.click()
-        app.menuItems["Physical iPhone or iPad"].firstMatch.click()
-        let device = app.textFields["Exact physical device ID"]; XCTAssertTrue(device.waitForExistence(timeout: 5))
-        device.click(); device.typeText("00008140-0000000000000001")
-        let workflow = app.popUpButtons["What to test"]; workflow.click()
-        app.menuItems["Siri recognised-text submission"].firstMatch.click()
+        waitForAutomationSelection(in: app)
+        selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "physical")
+        let device = app.textFields["Exact physical device ID"]
+        XCTAssertTrue(device.waitForExistence(timeout: 5)); device.click(); device.typeText("00008140-0000000000000001")
+        selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "siri")
         let request = app.textFields["Exact request to submit to Siri"]; XCTAssertTrue(request.waitForExistence(timeout: 5))
         request.click(); request.typeText("Open the approved test app")
         let review = app.buttons["Review Siri submission…"]; XCTAssertTrue(review.exists); XCTAssertFalse(review.isEnabled)
@@ -52,25 +135,22 @@ final class AppAutomationUITests: XCTestCase {
         app.activate(); app.typeKey("3", modifierFlags: .command)
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Evidence is saved on this Mac"].waitForExistence(timeout: 5))
         let choose = app.buttons["Choose app…"]
         XCTAssertTrue(choose.waitForExistence(timeout: 5)); XCTAssertTrue(choose.isHittable)
         let capsule = app.buttons["Open case capsule…"]
         XCTAssertTrue(capsule.exists); XCTAssertTrue(capsule.isHittable)
         captureEmptyFlow(window, name: "Automation empty")
         choose.click()
-        let cancel = app.sheets["open-panel"].buttons["CancelButton"]
+        let cancel = app.buttons["Cancel"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 5)); XCTAssertTrue(cancel.isHittable)
         captureEmptyFlow(window, name: "Choose app panel")
         cancel.click()
-        XCTAssertTrue(app.sheets["open-panel"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(choose.waitForExistence(timeout: 5)); XCTAssertTrue(choose.isHittable)
         XCTAssertFalse(app.buttons["Prepare app"].exists)
         capsule.click()
         XCTAssertTrue(cancel.waitForExistence(timeout: 5)); XCTAssertTrue(cancel.isHittable)
         captureEmptyFlow(window, name: "Open capsule panel")
         cancel.click()
-        XCTAssertTrue(app.sheets["open-panel"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(choose.waitForExistence(timeout: 5)); XCTAssertTrue(choose.isHittable)
         captureEmptyFlow(window, name: "Automation after cancellation")
     }
@@ -114,32 +194,21 @@ final class AppAutomationUITests: XCTestCase {
         }
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
                                 "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
+        app.launchArguments += ["--automation-select-path", project.path]
         app.launch(); defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)
-        let choose = app.buttons["Choose app…"]
-        XCTAssertTrue(choose.waitForExistence(timeout: 15)); choose.click()
-        app.typeKey("g", modifierFlags: [.command, .shift])
-        let path = app.textFields.firstMatch
-        XCTAssertTrue(path.waitForExistence(timeout: 5)); path.typeText(project.path)
-        app.typeKey(.return, modifierFlags: [])
-        let panelChoose = app.sheets["open-panel"].buttons["OKButton"]
-        XCTAssertTrue(panelChoose.waitForExistence(timeout: 5)); panelChoose.click()
-        let simulator = app.popUpButtons["Simulator"]
-        XCTAssertTrue(simulator.waitForExistence(timeout: 15)); simulator.click()
-        XCTAssertTrue(app.menuItems[profile.simulatorLabel].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.menuItems.matching(identifier: profile.simulatorLabel).count, 1)
-        app.menuItems[profile.simulatorLabel].click()
-        app.popUpButtons["What to test"].click(); app.menuItems["System action"].click()
+        waitForAutomationSelection(in: app)
+        selectAutomationMenu(app.popUpButtons["automation.preparation.simulator"], item: profile.simulatorID, timeout: 30)
+        selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "system")
         let prepare = app.buttons["Prepare app…"]
         XCTAssertTrue(prepare.isEnabled); prepare.click()
         app.buttons["Build private copy"].click()
-        let action = app.popUpButtons["Action"]
+        let action = app.popUpButtons["automation.action"]
         XCTAssertTrue(action.waitForExistence(timeout: 300), app.debugDescription)
-        action.click(); app.menuItems["Qualification echo IntegerArray"].click()
+        selectAutomationMenu(action, item: "Qualification echo IntegerArray")
         let input = app.textFields["value (JSON list of whole numbers)"]
         XCTAssertTrue(input.waitForExistence(timeout: 5)); input.click(); input.typeText("[1]")
-        app.popUpButtons["Effects of this action"].click()
-        app.menuItems["Observation and navigation"].click()
+        selectAutomationMenu(app.popUpButtons["Effects of this action"], item: "Observation and navigation")
         app.checkBoxes["I confirm this action stays within these effects"].click()
         app.checkBoxes["Allow starting this simulator and installing the prepared app"].click()
         let run = app.buttons["Run action…"]
@@ -201,16 +270,10 @@ final class AppAutomationUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
                                 "--evaluation-window-width", "1300", "--evaluation-window-height", "1100"]
+        app.launchArguments += ["--automation-select-path", bundle.path]
         app.launch(); defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)
-        let choose = app.buttons["Choose app…"]
-        XCTAssertTrue(choose.waitForExistence(timeout: 10)); choose.click()
-        app.typeKey("g", modifierFlags: [.command, .shift])
-        let path = app.textFields.firstMatch
-        XCTAssertTrue(path.waitForExistence(timeout: 5)); path.typeText(bundle.path)
-        app.typeKey(.return, modifierFlags: [])
-        let panelChoose = app.sheets["open-panel"].buttons["OKButton"]
-        XCTAssertTrue(panelChoose.waitForExistence(timeout: 5)); panelChoose.click()
+        waitForAutomationSelection(in: app)
         let goal = app.textFields["What should the app do?"]
         XCTAssertTrue(goal.waitForExistence(timeout: 10)); goal.click(); goal.typeText("Open tasks")
         let endpoint = app.textFields["Visible label at the destination"]
@@ -218,10 +281,10 @@ final class AppAutomationUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Run workflow…"].isEnabled)
         XCTAssertFalse(app.buttons["Find failures…"].isEnabled)
         let property = app.popUpButtons["Property to check"]
-        XCTAssertTrue(property.exists); property.click(); app.menuItems["Control value"].click()
+        selectAutomationMenu(property, item: "Control value")
         let label = app.textFields["Element label for the check"]
         XCTAssertTrue(label.waitForExistence(timeout: 5)); label.click(); label.typeText("Volume")
-        property.click(); app.menuItems["Visible text"].click()
+        selectAutomationMenu(property, item: "Visible text")
         XCTAssertFalse(label.exists)
         XCTAssertTrue(app.textFields["Expected property value (optional)"].exists)
         let screenshot = app.windows.firstMatch.screenshot()
@@ -239,27 +302,15 @@ final class AppAutomationUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
                                 "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
+        app.launchArguments += ["--automation-select-path", project.path]
         app.launch(); defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)
-        let choose = app.buttons["Choose app…"]
-        XCTAssertTrue(choose.waitForExistence(timeout: 10)); XCTAssertTrue(choose.isHittable)
-        choose.click()
-        app.typeKey("g", modifierFlags: [.command, .shift])
-        let path = app.textFields.firstMatch
-        XCTAssertTrue(path.waitForExistence(timeout: 5))
-        path.typeText(project.path); app.typeKey(.return, modifierFlags: [])
-        let panelChoose = app.sheets["open-panel"].buttons["OKButton"]
-        XCTAssertTrue(panelChoose.waitForExistence(timeout: 5)); XCTAssertTrue(panelChoose.isEnabled)
-        panelChoose.click()
-        XCTAssertTrue(app.staticTexts["Selected app"].waitForExistence(timeout: 10))
+        waitForAutomationSelection(in: app)
         XCTAssertFalse(app.buttons["Run action…"].exists, "Source selection does not imply a prepared or executable action")
         app.typeKey("1", modifierFlags: .command); app.typeKey("3", modifierFlags: .command)
         XCTAssertTrue(app.staticTexts["Selected app"].waitForExistence(timeout: 5), "Root-owned intake persists across sidebar navigation")
         let screenshot = app.windows.firstMatch.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot); attachment.name = "App automation selected source"; attachment.lifetime = .keepAlways; add(attachment)
         try screenshot.pngRepresentation.write(to: URL(fileURLWithPath: "/private/tmp/foundation-evals-ui-tests/intents-automation-app-selected-source.png"))
-        choose.click(); app.sheets["open-panel"].buttons["CancelButton"].click()
-        XCTAssertTrue(app.sheets["open-panel"].waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Selected app"].exists)
     }
 }

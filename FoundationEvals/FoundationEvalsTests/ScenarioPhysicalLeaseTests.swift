@@ -69,6 +69,48 @@ struct ScenarioPhysicalLeaseTests {
         }
     }
 
+    @Test func isolatedIntentLabRecoversAnExactLegacyJournalWithoutUsingLegacyStoreForNewRuns() async throws {
+        try await withDirectory { root in
+            let script = InspectionScript([true, true]), original = try manager(root, script)
+            let legacyURL = root.appendingPathComponent("target-leases.json"), oldInvocation = invocation()
+            var retained = try await original.acquire(invocation: oldInvocation, runner: runner(), workspace: root)
+            try await original.prepare(retained)
+            retained = try await original.recordDispatch(retained, invocation: oldInvocation)
+            retained = try await original.recordHost(retained, process: absentHost(), executable: "/usr/bin/xcodebuild")
+            let automation = try AutomationDeviceLeaseManager(storeURL: legacyURL)
+            let unrelatedTarget = TargetIdentity(id: UUID().uuidString, kind: .physical)
+            let unrelated = try await automation.acquire(runID: "automation-v3", target: unrelatedTarget, control: .ui)
+
+            // Model an app process that exited while its Intent Lab journal stayed unresolved.
+            var state = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: legacyURL)) as? [String: Any])
+            var campaigns = try #require(state["campaigns"] as? [String: Any])
+            var campaign = try #require(campaigns[retained.lease.target.leaseKey] as? [String: Any])
+            campaign["owner"] = ["pid": Int32.max, "startIdentity": "1:0"]
+            campaigns[retained.lease.target.leaseKey] = campaign; state["campaigns"] = campaigns
+            try JSONSerialization.data(withJSONObject: state).write(to: legacyURL)
+
+            let isolated = try ScenarioPhysicalRunnerLeaseManager(storeURL: root.appendingPathComponent("IntentLab/target-leases.json"),
+                legacyStoreURL: legacyURL, canonicalTargetResolver: { target, _ in
+                    var target = target; target.physicalDeviceIdentifier = "1AD4F755-6F58-58E5-AC71-B1EDFECADA93"; return target
+                }, inspectorFactory: { _ in .init(inspect: { target, _, _, _, _ in await script.next(target.id) }, drain: { true }) })
+            let newInvocation = invocation()
+            let fresh = try await isolated.acquire(invocation: newInvocation, runner: runner(), workspace: root)
+            #expect(fresh.lease.target.leaseKey == retained.lease.target.leaseKey)
+            let recovered = try await isolated.finish(retained, invocation: oldInvocation, workspace: root)
+            #expect(recovered.released && recovered.releaseObservation?.runnerAbsent == true)
+            let remaining = try await AutomationDeviceLeaseManager(storeURL: legacyURL).recoveryRecords()
+            #expect(!remaining.contains { $0.runID == retained.lease.runID })
+            #expect(await automation.isCurrent(unrelated), "Recovery must preserve an unrelated App automation campaign")
+            let newStore = try AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("IntentLab/target-leases.json"))
+            await #expect(throws: AutomationContractError.targetBusy) {
+                try await newStore.acquire(runID: "competing", target: fresh.lease.target, control: .ui)
+            }
+            #expect(try await isolated.finish(fresh, invocation: newInvocation, workspace: root).released)
+            try await automation.release(unrelated, commandsDrained: true, ownedRunnerTerminated: true)
+            try await automation.releaseCampaign(runID: "automation-v3", target: unrelatedTarget)
+        }
+    }
+
     @Test func provenPreventedHostLaunchCanReleaseButCannotHideRecordedLiveHost() async throws {
         try await withDirectory { root in
             let manager = try manager(root, InspectionScript([true, true])), invocation = invocation()
@@ -247,7 +289,9 @@ struct ScenarioPhysicalLeaseTests {
     }
 
     func manager(_ root: URL, _ script: InspectionScript) throws -> ScenarioPhysicalRunnerLeaseManager {
-        try .init(storeURL: root.appendingPathComponent("target-leases.json"), inspectorFactory: { _ in
+        try .init(storeURL: root.appendingPathComponent("target-leases.json"), canonicalTargetResolver: { target, _ in
+            var value = target; value.physicalDeviceIdentifier = "1AD4F755-6F58-58E5-AC71-B1EDFECADA93"; return value
+        }, inspectorFactory: { _ in
             .init(inspect: { target, _, _, _, _ in await script.next(target.id) }, drain: { true })
         })
     }

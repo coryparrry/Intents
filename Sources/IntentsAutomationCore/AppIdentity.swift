@@ -29,10 +29,17 @@ public struct TargetIdentity: Codable, Equatable, Sendable {
     public var transport: String?
     public var toolchain: String?
     public var loginSession: String?
+    /// CoreDevice UUID; id remains the approved Xcode destination identifier.
+    public var physicalDeviceIdentifier: String?
     public init(id: String, kind: Kind, loginSession: String? = nil) {
         self.id = id; self.kind = kind; self.loginSession = loginSession
     }
-    public var leaseKey: String { kind == .nativeMac ? "mac:\(loginSession ?? "unknown")" : "ios:\(id)" }
+    public var leaseKey: String {
+        if kind == .nativeMac { return "mac:\(loginSession ?? "unknown")" }
+        // Preserve pre-resolution campaign keys so the original owner can release them.
+        guard kind == .physical, let identifier = physicalDeviceIdentifier else { return "ios:\(id)" }
+        return "ios:\(UUID(uuidString: identifier)?.uuidString ?? identifier)"
+    }
 }
 
 public struct CapabilityProfile: Codable, Equatable, Sendable {

@@ -36,7 +36,7 @@ import XCTest
                                 hostBundlePath: "unused", hostProductDigest: String(repeating: "d", count: 64), hostBundleID: "test.Host", testTarget: "Host"),
                     catalog: catalog, buildLogPath: "unused", buildLogTruncated: false)
             })
-        model.select(project); model.preparationDestination = .macOS; model.preparationSelectionChanged()
+        model.select(project); await model.task?.value; model.preparationDestination = .macOS; model.preparationSelectionChanged()
         await model.prepareAndWait()
         model.workflowRoute = "fresh"; model.actionID = "Complete"
         model.uiInstruction = "Create and save a task using approvedText"; model.uiEndpoint = "Tasks"

@@ -93,7 +93,8 @@ final class AutomationPhysicalUIQualificationTests: XCTestCase, @unchecked Senda
             "apps": [["bundleIdentifier": "example.PhysicalUI", "url": bundleURL]]]])
     }
     private func harness(failRelease: Bool = false, wrongSubjectDevice: Bool = false, failInstallDrain: Bool = false, enabled: Bool = true,
-                         wrongReleaseDevice: Bool = false, afterRelease: @escaping @Sendable () -> Void = {}, cancelDuringInstall: Bool = false) throws -> Harness {
+                         wrongReleaseDevice: Bool = false, afterRelease: @escaping @Sendable () -> Void = {}, cancelDuringInstall: Bool = false,
+                         aliasReader: (@Sendable (URL, URL) async throws -> [String: String])? = nil) throws -> Harness {
         let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent("physical-compose-" + UUID().uuidString)
         let developer = root.appendingPathComponent("Developer"), bundle = root.appendingPathComponent("Source.app")
         try FileManager.default.createDirectory(at: developer, withIntermediateDirectories: true)
@@ -118,7 +119,7 @@ final class AutomationPhysicalUIQualificationTests: XCTestCase, @unchecked Senda
             driver: { context, subject, release in Driver(context: context, subject: subject, release: release, trace: trace) })
         let runner = try AutomationApplicationRunner(supportRoot: root.appendingPathComponent("Support"), developerDirectory: developer,
             simulatorInventory: { _, _ in await trace.record("FORBIDDEN-simulator"); throw AutomationContractError.invalidIdentity },
-            physicalQualification: enabled ? dependencies : nil)
+            physicalQualification: enabled ? dependencies : nil, physicalAliasReader: aliasReader ?? { _, _ in [:] })
         return .init(root: root, payload: payload, runner: runner, trace: trace, runtime: .init(bundleURL: root, expectedTeamID: "synthetic"), installStarted: installStarted)
     }
     private func installApproval(_ h: Harness) -> RunApproval { .init(runID: "run", app: h.payload.app, target: h.payload.target,
@@ -148,6 +149,45 @@ final class AutomationPhysicalUIQualificationTests: XCTestCase, @unchecked Senda
         XCTAssertTrue(trace.contains("subject-presence")); XCTAssertFalse(trace.contains("FORBIDDEN-simulator"))
         let leases = try AutomationDeviceLeaseManager(storeURL: h.root.appendingPathComponent("Support/target-leases.json"))
         let records = try await leases.recoveryRecords(); XCTAssertTrue(records.isEmpty)
+    }
+    private actor AliasDiscoveryGate {
+        private(set) var calls = 0
+        private var released = false
+        func discover() async throws -> [String: String] {
+            calls += 1
+            if calls == 1 {
+                let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+                while !released, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+                guard released else { throw AutomationRPCError.timedOut }
+            }
+            return ["00008140-000E4D803C0B001C": AutomationPhysicalUIQualificationTests.device]
+        }
+        func waitForEntry() async throws {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+            while calls == 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            guard calls > 0 else { throw AutomationRPCError.timedOut }
+        }
+        func resume() { released = true }
+    }
+    func testPhysicalDiscoverySuspensionKeepsRunnerBusyUntilFirstPreparationCompletes() async throws {
+        let gate = AliasDiscoveryGate(), h = try harness(aliasReader: { _, _ in try await gate.discover() })
+        let approval = installApproval(h)
+        let first = Task { try await h.runner.preparePhysicalUI(selected: h.payload, approval: approval,
+            attemptID: "first", allowInstall: true) }
+        defer { first.cancel() }
+        try await gate.waitForEntry()
+        do {
+            _ = try await h.runner.preparePhysicalUI(selected: h.payload, approval: approval, attemptID: "second", allowInstall: true)
+            XCTFail("A second preparation entered while device discovery was suspended")
+        } catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Physical UI qualification route is unavailable")) }
+        let calls = await gate.calls; XCTAssertEqual(calls, 1)
+        let before = await h.trace.snapshot(); XCTAssertFalse(before.contains("owned-install"))
+        await gate.resume()
+        let prepared = try await first.value
+        XCTAssertEqual(prepared.subject.deviceIdentifier, Self.device)
+        let after = await h.trace.snapshot(); XCTAssertEqual(after.filter { $0 == "owned-install" }.count, 1)
+        let leases = try AutomationDeviceLeaseManager(storeURL: h.root.appendingPathComponent("Support/target-leases.json"))
+        let retained = try await leases.recoveryRecords(); XCTAssertTrue(retained.isEmpty)
     }
     func testAlreadyInstalledWeakSubjectNeverRequestsLocalInstallation() async throws {
         let h = try harness(), report = try await run(h, selected: selected(h))

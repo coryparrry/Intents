@@ -31,6 +31,7 @@ struct AppAutomationView: View {
                     Text("Attempt " + unresolved.attemptID + " has unresolved device ownership. Further execution remains blocked.")
                         .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                 }
+                AutomationRecoveryControls(model: model)
                 if let intake = model.intake {
                     GroupBox("Selected app") {
                         VStack(alignment: .leading, spacing: 12) {
@@ -49,19 +50,19 @@ struct AppAutomationView: View {
                                 }
                             } else if model.isInstalledUI {
                                 Picker("Simulator", selection: $model.simulatorID) {
-                                    ForEach(model.simulators) { Text("\($0.name) · \($0.state)").tag($0.id) }
-                                }
+                                    ForEach(model.simulators) { Text("\($0.name) · \($0.state)").tag($0.id).accessibilityIdentifier($0.id) }
+                                }.accessibilityIdentifier("automation.preparation.simulator")
                             }
                             if model.isInstalledMacUI {
                                 Text("Selected Mac app · current login session").font(.callout).foregroundStyle(.secondary)
                             }
                             if model.candidate?.kind == .sourceTarget {
                                 Picker("What to test", selection: $model.workflowRoute) {
-                                    Text("App workflow").tag("ui")
-                                    Text("System action").tag("system")
-                                    Text("Action on a new test record").tag("fresh")
-                                    if model.preparationDestination == .physical { Text("Siri recognised-text submission").tag("siri") }
-                                }.accessibilityLabel("What to test").onChange(of: model.workflowRoute) { model.workflowSelectionChanged() }
+                                    Text("App workflow").tag("ui").accessibilityIdentifier("ui")
+                                    Text("System action").tag("system").accessibilityIdentifier("system")
+                                    Text("Action on a new test record").tag("fresh").accessibilityIdentifier("fresh")
+                                    if model.preparationDestination == .physical { Text("Siri recognised-text submission").tag("siri").accessibilityIdentifier("siri") }
+                                }.accessibilityLabel("What to test").accessibilityIdentifier("automation.workflow.route").onChange(of: model.workflowRoute) { model.workflowSelectionChanged() }
                             }
                             ForEach(intake.gaps, id: \.self) { Text($0).font(.callout).foregroundStyle(.secondary) }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(10).disabled(model.busy)
@@ -130,9 +131,9 @@ struct AppAutomationView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("\(catalog.systemActions.count) compiled declarations · discovery is partial").foregroundStyle(.secondary)
                             Picker("Action", selection: $model.actionID) {
-                                Text("Choose action").tag("")
-                                ForEach(catalog.systemActions) { Text($0.title).tag($0.id) }
-                            }.accessibilityLabel("Action").onChange(of: model.actionID) { model.selectAction() }
+                                Text("Choose action").tag("").accessibilityIdentifier("automationAction-none")
+                                ForEach(catalog.systemActions) { Text($0.title).tag($0.id).accessibilityIdentifier($0.id) }
+                            }.accessibilityLabel("Action").accessibilityIdentifier("automation.action").onChange(of: model.actionID) { model.selectAction() }
                             if let action = model.action {
                                 if model.isFreshRecordWorkflow {
                                     freshRecordInputs
@@ -213,7 +214,7 @@ struct AppAutomationView: View {
                 }
                 if let importMessage = model.evidenceImportMessage { Text(importMessage).font(.callout).foregroundStyle(.secondary) }
                 if let progress = model.progress {
-                    HStack { ProgressView().controlSize(.small); Text(progress); Spacer(); Button("Cancel") { model.cancel() } }
+                    HStack { ProgressView().controlSize(.small); Text(progress).accessibilityIdentifier("automation.progress"); Spacer(); Button("Cancel") { model.cancel() } }
                 }
                 if let report = model.report {
                     GroupBox("Result") {
@@ -323,7 +324,7 @@ struct AppAutomationView: View {
             }.padding(28).frame(maxWidth: 850, alignment: .leading).frame(maxWidth: .infinity)
         }
         .task(id: model.simulatorInventorySelection) { await model.refreshTargets() }
-        .task { await model.refreshSavedCases() }
+        .task { await model.refreshSavedCases(); await model.refreshRecovery() }
         .sheet(item: $macWorkflowReview) { review in
             VStack(alignment: .leading, spacing: 14) {
                 Text("Review Mac workflow").font(.title2)

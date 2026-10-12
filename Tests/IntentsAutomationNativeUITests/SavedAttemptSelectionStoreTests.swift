@@ -16,7 +16,7 @@ extension InstalledUIStoreTests {
         return report
     }
     func testMultipleSavedAttemptsRequireChoiceRegardlessOfLexicalOrInsertionOrder() async throws {
-        let (model, root, _) = try fixture(); let frozen = try await saveFailure(model: model, root: root)
+        let (model, root, _) = try await fixture(); let frozen = try await saveFailure(model: model, root: root)
         _ = try await addSavedAttempt(model: model, frozen: frozen, id: "zzz-earlier-pass", fails: false)
         let failure = try await addSavedAttempt(model: model, frozen: frozen, id: "aaa-later-failure", fails: true)
         await model.showSavedCase(frozen)
@@ -34,7 +34,7 @@ extension InstalledUIStoreTests {
         do { _ = try await model.previewReproductionCommand(); XCTFail("Pass became reproduction oracle") } catch {}
     }
     func testChangingSavedAttemptInvalidatesQueuedReproductionAndOldPreview() async throws {
-        let (model, root, _) = try fixture(); let frozen = try await saveFailure(model: model, root: root)
+        let (model, root, _) = try await fixture(); let frozen = try await saveFailure(model: model, root: root)
         let preview = try await model.previewReproductionCommand(), id = UUID()
         _ = try await model.requestReproductionCommand(id: id, digest: preview.digest)
         let failure = try await addSavedAttempt(model: model, frozen: frozen, id: "other-failure", fails: true)
@@ -46,7 +46,7 @@ extension InstalledUIStoreTests {
         do { _ = try await model.requestReproductionCommand(id: UUID(), digest: preview.digest); XCTFail("Old preview accepted") } catch {}
     }
     func testChangingSavedAttemptInvalidatesQueuedFixComparisonAndBindsNewOracle() async throws {
-        let (model, root, _) = try fixture(); try selectPreparedSource(model: model, root: root)
+        let (model, root, _) = try await fixture(); try selectPreparedSource(model: model, root: root)
         let frozen = try await saveFailure(model: model, root: root), baseline = try XCTUnwrap(model.prepared)
         model.prepared = try changedPreparedSource(baseline); model.catalog = model.prepared?.catalog; model.installApproved = true
         let preview = try await model.previewComparisonCommand(), id = UUID()
@@ -59,7 +59,7 @@ extension InstalledUIStoreTests {
         do { _ = try await model.requestComparisonCommand(id: UUID(), digest: preview.digest); XCTFail("Old comparison preview accepted") } catch {}
     }
     func testUnknownAttemptAndEmptyDraftCannotLeavePriorFailureSelected() async throws {
-        let (model, root, _) = try fixture(); let frozen = try await saveFailure(model: model, root: root)
+        let (model, root, _) = try await fixture(); let frozen = try await saveFailure(model: model, root: root)
         await model.selectSavedAttempt(id: "not-present")
         XCTAssertNil(model.savedViewedReport); XCTAssertNil(model.savedViewedCase); XCTAssertTrue(model.savedViewedAttempts.isEmpty)
         XCTAssertFalse(model.canReproduceSavedFailure)
@@ -73,7 +73,7 @@ extension InstalledUIStoreTests {
         XCTAssertFalse(model.savedAttemptLoading); XCTAssertFalse(model.canReproduceSavedFailure)
     }
     func testOlderLoadCannotOverwriteNewExplicitChoice() async throws {
-        let (owner, root, _) = try fixture(); let frozen = try await saveFailure(model: owner, root: root)
+        let (owner, root, _) = try await fixture(); let frozen = try await saveFailure(model: owner, root: root)
         let original = try XCTUnwrap(owner.savedViewedReport)
         let other = try await addSavedAttempt(model: owner, frozen: frozen, id: "other-failure", fails: true)
         let gate = SavedAttemptReadGate()
@@ -89,7 +89,7 @@ extension InstalledUIStoreTests {
     }
     func testCancelledOrClosedLoadCannotPublishAfterReaderIgnoresCancellation() async throws {
         for close in [false, true] {
-            let (owner, root, _) = try fixture(); let frozen = try await saveFailure(model: owner, root: root)
+            let (owner, root, _) = try await fixture(); let frozen = try await saveFailure(model: owner, root: root)
             let original = try XCTUnwrap(owner.savedViewedReport), gate = SavedAttemptReadGate()
             let model = AppAutomationStore(supportDirectory: owner.support, savedAttemptsReader: { _ in
                 await gate.holdFirstRead(); return [original]
@@ -102,7 +102,7 @@ extension InstalledUIStoreTests {
         }
     }
     func testDuplicateAttemptReaderResultCannotBecomeAnOracle() async throws {
-        let (owner, root, _) = try fixture(); let frozen = try await saveFailure(model: owner, root: root)
+        let (owner, root, _) = try await fixture(); let frozen = try await saveFailure(model: owner, root: root)
         let original = try XCTUnwrap(owner.savedViewedReport)
         let model = AppAutomationStore(supportDirectory: owner.support, savedAttemptsReader: { _ in [original, original] })
         await model.showSavedCase(frozen, attemptID: original.attemptID)
@@ -110,7 +110,7 @@ extension InstalledUIStoreTests {
         XCTAssertFalse(model.savedAttemptLoading); XCTAssertTrue(model.savedViewedAttempts.isEmpty)
     }
     func testCancellationDuringHeldEvidenceImportClearsSelectedReportAndEvidence() async throws {
-        let (owner, root, _) = try fixture(); let frozen = try await saveFailure(model: owner, root: root)
+        let (owner, root, _) = try await fixture(); let frozen = try await saveFailure(model: owner, root: root)
         let gate = SavedAttemptReadGate()
         let model = AppAutomationStore(supportDirectory: owner.support, evidenceImporter: { plan, report, _, _ in
             await gate.holdFirstRead()

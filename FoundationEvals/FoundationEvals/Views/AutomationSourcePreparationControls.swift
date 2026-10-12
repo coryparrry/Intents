@@ -8,12 +8,12 @@ struct AutomationSourcePreparationControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Picker("Prepare for", selection: $model.preparationDestination) {
-                ForEach(AutomationNativePreparationDestination.allCases) { Text($0.title).tag($0) }
-            }.accessibilityLabel("Prepare for")
+                ForEach(AutomationNativePreparationDestination.allCases) { Text($0.title).tag($0).accessibilityIdentifier($0.rawValue) }
+            }.accessibilityLabel("Prepare for").accessibilityIdentifier("automation.preparation.destination")
             if model.preparationDestination == .simulator {
                 Picker("Simulator", selection: $model.simulatorID) {
-                    ForEach(model.simulators) { Text("\($0.name) · \($0.state)").tag($0.id) }
-                }.accessibilityLabel("Simulator")
+                    ForEach(model.simulators) { Text("\($0.name) · \($0.state)").tag($0.id).accessibilityIdentifier($0.id) }
+                }.accessibilityLabel("Simulator").accessibilityIdentifier("automation.preparation.simulator")
             } else if model.preparationDestination == .physical {
                 TextField("Exact physical device ID", text: $model.physicalDeviceID)
                     .accessibilityLabel("Exact physical device ID")

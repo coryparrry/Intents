@@ -546,6 +546,7 @@ actor XcodeTestExecutor {
     private var connectionDeviceTestLaunched = false
     private var verifiedConnection: ScenarioVerifiedConnection?
     private var connectionStageFailure: ScenarioConnectionStageFailure?
+    private let legacyPhysicalLeaseStoreURL: URL?
     private let physicalLeaseStoreURL: URL
     private var physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager?
     private var physicalRunnerRecords: [UUID: ScenarioPhysicalRunnerRecord] = [:]
@@ -556,14 +557,15 @@ actor XcodeTestExecutor {
         set { inFlightJournal = newValue }
     }
 
-    init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default, physicalLeaseStoreURL: URL? = nil, physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager? = nil,
+    init(workDirectory: URL, persistence: ScenarioPersistence, fileManager: FileManager = .default, physicalLeaseStoreURL: URL? = nil, legacyPhysicalLeaseStoreURL: URL? = nil, physicalLeaseManager: ScenarioPhysicalRunnerLeaseManager? = nil,
          destinationStatusReader: (@Sendable (String, Bool) -> (ready: Bool, detail: String, platform: IntentLabDestinationPlatform?))? = nil) {
         self.workDirectory = workDirectory
         self.persistence = persistence
         self.fileManager = fileManager
         self.physicalLeaseManager = physicalLeaseManager
         self.destinationStatusReader = destinationStatusReader
-        self.physicalLeaseStoreURL = physicalLeaseStoreURL ?? workDirectory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Automation/target-leases.json")
+        self.physicalLeaseStoreURL = physicalLeaseStoreURL ?? workDirectory.deletingLastPathComponent().appendingPathComponent("target-leases.json")
+        self.legacyPhysicalLeaseStoreURL = legacyPhysicalLeaseStoreURL
     }
 
     func reconcileInterruptedJournals() async throws -> [ScenarioExecutionJournal] {
@@ -3375,7 +3377,7 @@ actor XcodeTestExecutor {
 
     private func sharedPhysicalLeases() throws -> ScenarioPhysicalRunnerLeaseManager {
         if let physicalLeaseManager { return physicalLeaseManager }
-        let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: physicalLeaseStoreURL)
+        let manager = try ScenarioPhysicalRunnerLeaseManager(storeURL: physicalLeaseStoreURL, legacyStoreURL: legacyPhysicalLeaseStoreURL)
         physicalLeaseManager = manager
         return manager
     }

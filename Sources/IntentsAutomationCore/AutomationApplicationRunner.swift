@@ -25,6 +25,7 @@ public actor AutomationApplicationRunner {
     private var latestFreshFixtureAttemptID: String?
     private var latestAppleRuntimeContext: AutomationLiveAppleRuntimeContext?
     private let simulatorInventory: @Sendable (URL, URL) async throws -> [AutomationSimulator]
+    private let physicalAliasReader: (@Sendable (URL, URL) async throws -> [String: String])?
     private let physicalQualification: AutomationPhysicalUIQualification?
     private let macQualification: AutomationMacUIQualification?
     public init(supportRoot: URL, developerDirectory: URL) throws {
@@ -32,18 +33,21 @@ public actor AutomationApplicationRunner {
         try FileManager.default.createDirectory(at: supportRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         leases = try AutomationDeviceLeaseManager(storeURL: supportRoot.appendingPathComponent("target-leases.json"))
         simulatorInventory = { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) }
+        physicalAliasReader = nil
         physicalQualification = nil
         macQualification = nil
     }
     init(supportRoot: URL, developerDirectory: URL,
          simulatorInventory: @escaping @Sendable (URL, URL) async throws -> [AutomationSimulator],
          physicalQualification: AutomationPhysicalUIQualification.Dependencies? = nil,
-         macQualification: AutomationMacUIQualification.Dependencies? = nil) throws {
+         macQualification: AutomationMacUIQualification.Dependencies? = nil,
+         physicalAliasReader: (@Sendable (URL, URL) async throws -> [String: String])? = nil) throws {
         let developer = try AutomationPath.canonical(developerDirectory)
         self.supportRoot = supportRoot; self.developerDirectory = developer
         try FileManager.default.createDirectory(at: supportRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let manager = try AutomationDeviceLeaseManager(storeURL: supportRoot.appendingPathComponent("target-leases.json"))
         leases = manager
+        self.physicalAliasReader = physicalAliasReader
         self.simulatorInventory = simulatorInventory
         self.physicalQualification = physicalQualification.map { .init(root: supportRoot, developerDirectory: developer,
             leases: manager, dependencies: $0) }
@@ -77,6 +81,7 @@ public actor AutomationApplicationRunner {
         guard !running, allowInstall else { throw AutomationContractError.conflictingOperation }
         let authority = try AutomationSiriRouteAuthority(plan: plan, approval: approval)
         running = true; defer { running = false }
+        try await registerPhysicalAliases(plan.target)
         return try await AutomationPreparedPhysicalCampaign.run(prepared: prepared, plan: plan, approval: approval,
             capabilities: capabilities, attemptID: attemptID, root: supportRoot, developer: developerDirectory,
             leases: leases, runtime: nil, campaignBudget: campaignBudget, siriAuthority: authority)
@@ -87,6 +92,7 @@ public actor AutomationApplicationRunner {
                            allowInstall: Bool, campaignBudget: AutomationCampaignBudget? = nil) async throws -> AutomationPhysicalUIQualification.Preparation {
         guard !running, let physicalQualification else { throw AutomationContractError.missingEvidence("Physical UI qualification route is unavailable") }
         running = true; defer { running = false }
+        try await registerPhysicalAliases(selected.target)
         return try await physicalQualification.prepare(selected: selected, approval: approval, attemptID: attemptID,
             allowInstall: allowInstall, campaignBudget: campaignBudget)
     }
@@ -124,6 +130,7 @@ public actor AutomationApplicationRunner {
             }
             running = true; defer { running = false }
             liveRecipeEvidence = nil
+            try await registerPhysicalAliases(plan.target)
             return try await physicalQualification.run(selected: selected, plan: plan, approval: approval,
                 capabilities: capabilities, attemptID: attemptID, runtime: uiRuntime, campaignBudget: campaignBudget)
         }
@@ -132,6 +139,7 @@ public actor AutomationApplicationRunner {
                 throw AutomationContractError.missingEvidence("Prepared physical execution requires explicit owned installation approval")
             }
             running = true; defer { running = false }
+            try await registerPhysicalAliases(plan.target)
             return try await AutomationPreparedPhysicalCampaign.run(prepared: prepared, plan: plan, approval: approval,
                 capabilities: capabilities, attemptID: attemptID, root: supportRoot, developer: developerDirectory,
                 leases: leases, runtime: uiRuntime, campaignBudget: campaignBudget)
@@ -328,6 +336,15 @@ public actor AutomationApplicationRunner {
             }
             throw error
         }
+    }
+    /// Resolve aliases for comparison while preserving the frozen approved target.
+    private func registerPhysicalAliases(_ target: TargetIdentity) async throws {
+        guard target.kind == .physical else { return }
+        var aliases: [String: String]
+        if let physicalAliasReader { aliases = try await physicalAliasReader(developerDirectory, supportRoot) }
+        else { aliases = try await AutomationPhysicalDeviceInventory.leaseAliases(developerDirectory: developerDirectory, workspace: supportRoot) }
+        if let identifier = target.physicalDeviceIdentifier { aliases[target.id] = identifier }
+        try await leases.registerPhysicalDeviceAliases(aliases)
     }
     /// Recover only a failure persisted by this runner's current invocation. Empty-receipt
     /// reports cannot independently establish their plan/run scope. No filesystem read,

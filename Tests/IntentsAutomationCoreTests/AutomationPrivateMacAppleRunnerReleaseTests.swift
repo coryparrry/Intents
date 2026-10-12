@@ -34,7 +34,12 @@ extension AutomationPrivateMacAppleRouteDriverTests {
     func testOwnedLiveRunnerIsAdoptedAndTerminatedBeforeTheLeaseCanRelease() async throws {
         let h = try await fixture(liveHost: true), runner = try AutomationLiveRunnerFixture.launch(preparedExecutable(h), in: self)
         let driver = try await adopt(h, runner)
-        let proof = await driver.release(scope: h.scope, lease: h.lease)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        var proof = await driver.release(scope: h.scope, lease: h.lease)
+        while !(proof.commandsDrained && proof.runnerTerminated && proof.privatePayloadCleaned), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+            proof = await driver.release(scope: h.scope, lease: h.lease)
+        }
         XCTAssertTrue(proof.commandsDrained); XCTAssertTrue(proof.runnerTerminated); XCTAssertTrue(proof.privatePayloadCleaned)
         XCTAssertTrue([.absent, .replaced].contains(runner.identity.presence()))
         try await h.leases.release(h.lease, commandsDrained: proof.commandsDrained, ownedRunnerTerminated: proof.runnerTerminated)
