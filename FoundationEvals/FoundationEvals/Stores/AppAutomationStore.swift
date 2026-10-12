@@ -1047,8 +1047,12 @@ final class AppAutomationStore {
     func finishOwnershipReset() {
         retainedUnresolvedNormalReport = nil; retainedUnresolvedNormalTarget = nil
         retainedUnresolvedRequestTargets = [:]
-        report = nil; unresolvedEntityQueryAttemptID = nil; entityQueryReport = nil
-        searchReport = nil; reproductionReport = nil; comparisonReport = nil
+        if report?.resourcesReleased == false || report?.result.subjectDispatchUncertain == true { report = nil }
+        unresolvedEntityQueryAttemptID = nil
+        if entityQueryReport?.resourcesReleased == false || entityQueryReport?.result.subjectDispatchUncertain == true { entityQueryReport = nil }
+        if unresolvedSearch { searchReport = nil }
+        if unresolvedReproduction { reproductionReport = nil }
+        if unresolvedComparison { comparisonReport = nil }
     }
     func errorText(_ error: Error) -> String {
         if error is CancellationError { return "Cancelled. Any pending dispatch is retained for review." }

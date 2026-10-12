@@ -163,6 +163,38 @@ import Synchronization
         XCTAssertTrue(model.retainedUnresolvedRequestTargets.isEmpty)
     }
 
+    func testResetPreservesCompletedIndependentReportsWhenOnlyNormalAttemptIsUnresolved() async throws {
+        let (model, root, _) = try await InstalledUIStoreTests().fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        await model.ownershipRecoveryTask?.value
+        let request = try model.makeNativeRunRequest(runID: "later-unresolved-normal")
+        let frozen = try AutomationFrozenCase(plan: request.plan)
+        let result = AutomationAssessment.assess(plan: request.plan, attemptID: "completed", subjectDispatched: true,
+            subjectCompleted: true, observations: [])
+        let completed = AutomationAttemptReport(attemptID: "completed", result: result, receipts: [], resourcesReleased: true)
+        let search = AutomationFailureSearchReport(baselineDigest: frozen.digest,
+            attempts: [.init(stage: .baseline, caseDigest: frozen.digest, report: completed)])
+        var reproduction = AutomationReproductionReport(frozen: frozen, runID: "completed-reproduction", originalFailure: completed)
+        for index in 0..<5 {
+            var attempt = completed; attempt.attemptID = "reproduction-" + String(index)
+            reproduction.record(attempt)
+        }
+        let comparison = AutomationFixComparisonReport(contractDigest: frozen.contractDigest, baseline: frozen, candidate: frozen,
+            requestedAttemptsPerBuild: 1, beforeRunID: "completed.before", afterRunID: "completed.after", before: [completed], after: [completed])
+        model.entityQueryReport = completed; model.searchReport = search
+        model.reproductionReport = reproduction; model.comparisonReport = comparison
+        XCTAssertFalse(model.hasUnresolvedOwnership)
+        model.report = .init(attemptID: "later-unresolved", result: .init(summary: .cancelled,
+            subjectDispatched: false, subjectCompleted: false, assessed: false, evidenceComplete: false,
+            failedObservations: [], missingObservations: []), receipts: [], resourcesReleased: false)
+        model.retainUnresolvedRequest(runID: request.approval.runID, target: request.plan.target)
+        await model.clearUnresolvedAttempt()
+        XCTAssertNil(model.recoveryError); XCTAssertNil(model.report)
+        XCTAssertEqual(model.entityQueryReport, completed); XCTAssertEqual(model.searchReport, search)
+        XCTAssertEqual(model.reproductionReport, reproduction); XCTAssertEqual(model.comparisonReport, comparison)
+        XCTAssertFalse(model.hasUnresolvedOwnership); XCTAssertTrue(model.canRun)
+    }
+
     func testEveryActiveUnresolvedReportCanResetWithoutRemovingSavedEvidence() async throws {
         for kind in ["entity", "search", "reproduction", "comparison", "normal"] {
             let (model, root, _) = try await InstalledUIStoreTests().fixture()

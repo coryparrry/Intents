@@ -1,20 +1,24 @@
 # Phase 0 recovery worklog
 
-- Scope: runner-release deadline polling, confirmed ownership reset and startup recovery, per-device CoreDevice aliases, separate Intent Lab leases, stable picker tests and responsive selection.
-- Delivery branch: `codex/recovery-phase0-20261012`, based on `origin/main` at `4a7b0fc`. The original dirty checkout is preserved. Later-phase execution, codec, telemetry, website and release changes are excluded.
-- Independent review: recovery races, live-child protection, manual physical approval, legacy Intent Lab journal recovery, legacy device aliases and runner admission were reviewed. Material findings were fixed and rechecked by the reviewer.
-- Local verification: focused Swift tests using Xcode 27.2 beta 2 passed: 262 tests passed, one optional real-device inventory capture skipped, no failures. Includes cancelling an unresolved attempt, resetting ownership and running again; live-child protection; startup recovery; selection responsiveness; legacy Intent Lab recovery.
-- Toolchain correction: default Xcode 27.0 cannot load its AppIntentsTesting framework against this Mac's macOS 27.2 framework. Xcode 27.2 beta 2 loads successfully; no global toolchain settings changed.
-- Signing correction: UI builds use the existing project Developer ID identity, manual signing, secure timestamps and `ENABLE_DEBUG_DYLIB=NO`. Earlier runners built with Xcode 27.0 were killed before test startup; no security settings changed or tests disabled.
-- In progress: signed Xcode 27.2 UI build and ten-repeat picker tests; real-panel cancellation and Reset confirmation cancellation follow. Local UI acceptance and green CI on main remain pending.
-- Logs and result bundles are task scratch artifacts; no new qualification or evidence schema introduced.
+Scope: runner-release deadline polling, confirmed ownership reset and startup reconciliation, per-device CoreDevice UUID aliases, separate Intent Lab leases, responsive selection and stable picker tests. No later-phase execution or qualification architecture was changed.
 
-## Final review fixes
+Delivery: [PR 134](https://github.com/coryparrry/Intents/pull/134), branch `codex/recovery-phase0-20261012`, based on main at `4a7b0fc`. The original checkout's unrelated dirty work is preserved.
 
-Review inventory at the initial PR head: five current inline threads, no other standalone findings. Four findings were verified and fixed: all active unresolved report blockers, busy-state inventory retry, programmatic configuration/catalog invalidation, and unrelated same-process reservation protection. The claimed cross-window reproduction was not established because app windows share one store; the API reservation risk was verified. Startup simulator shutdown was not required: the plan assigns shutdown to confirmed reset and explicitly permits automatic dead-owner reconciliation.
+## Recovery and review
 
-Finished requests retain their actual run IDs and targets; comparison records use their real before/after approvals. Saved evidence is preserved. Independent review of the final fixes found no material issues.
+Reset protects live runners and unrelated same-process reservations, and only clears ownership for exact finished requests. All unresolved report blockers clear after successful reset; independently completed results and saved evidence remain available. Startup reconciles dead/replaced owners; simulator shutdown belongs to confirmed Reset. Intent Lab's new store can still recover its exact legacy journal reservation.
 
-Final focused test run: core XCTest 113 passed and one optional capture skipped; Swift Testing 23 passed. Native tests had one synthetic shutdown fixture failure because it omitted the newly required finished-request scope. The fixture now explicitly identifies that request and checks that its exact report, target and reservation survive shutdown failure. All 10 recovery tests passed on recheck; other native tests passed in the focused run. Hosted CI's synthetic Siri and asynchronous MCP fixture assumptions were also corrected without relaxing assertions.
+Independent review covered reset races, live children, physical approval drift, aliases, legacy recovery, asynchronous selection and runner admission. Verified findings were fixed. Actual hosted-view tests cover inventory retry after loading and catalog publication after programmatic configuration. The final review also checks completed-result preservation.
 
-Final Developer ID signed build is in progress with Xcode 27.2 beta 2. Actual hosted-view tests, Reset/panel cancellation and picker 10/10 remain pending. PR: https://github.com/coryparrry/Intents/pull/134. Phase 0 acceptance is not yet complete.
+## Local verification
+
+- Matching Xcode 27.2 beta 2 builds the app and UI runner with the existing Developer ID identity, manual signing, secure timestamps and a standalone executable. Deep signature verification passed. No global toolchain or security setting changed.
+- `xcodebuild test-without-building ... -only-testing:FoundationEvalsUITests/AppAutomationUITests/testPreparationPickersUseStableIdentifiers -test-iterations 10 -parallel-testing-enabled NO`: **10/10 passed, zero failures**. Log: `/tmp/intents-phase0-final-picker-ten.log`; result: `/tmp/intents-phase0-final-picker-ten.xcresult`. The final screenshot was inspected: destination and simulator selection are readable and stable.
+- Signed UI cancellation/form checks: **3/3 passed**, including real file-panel Cancel and ownership Reset confirmation Cancel. Reset screenshots were inspected. Log/result: `/tmp/intents-phase0-final-cancellation`.
+- Actual hosted selection view regressions: **2/2 passed**. MCP tests: **12/12 passed**, including the updated fixture awaiting execution cleanup. Log/result: `/tmp/intents-phase0-final-sync-hosted`.
+- Cancellation/reset/rerun, live-child protection, startup recovery, per-device alias, Intent Lab legacy recovery and selection regressions passed in scoped Swift checks. One existing optional real-device inventory capture is skipped; no attached-device qualification is claimed.
+- Final independent review passed in both checkouts. `swift test --jobs 1 --filter OwnershipRecoveryStoreTests` with matching Xcode: **11 passed, zero failures**, including completed-result preservation. Log: `/tmp/intents-phase0-reset-preservation-swift.log`. Hosted PR checks and CI on the merge into main are tracked through PR 134.
+
+## CI fixture corrections
+
+Hosted CI exposed synthetic physical aliases, an asynchronous selection assertion, a store-constructor fixture mismatch, and a five-second cleanup wait. Fixtures now use their intended readers and await actual tasks; result assertions and shipped tests remain enabled. The latest previous portable regression run passed 1,138 XCTest cases with 41 existing optional skips, plus package Swift Testing suites. Final PR and main CI results are required for acceptance and are recorded in the original plan/worklog after merge.
