@@ -16,14 +16,11 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 
 # Keep only the public guides and release instructions.
 /docs/*
-!/docs/EVAL_REVIEW_SPEC.md
 !/docs/EVAL_REVIEW_GUIDE.md
 !/docs/MCP_CONTROL_GUIDE.md
 !/docs/DEVELOPER_SWIFT_INTEGRATION.md
 !/docs/FEATURE_ADAPTER.md
-!/docs/PRODUCTION_EVALS_SPEC.md
 !/docs/PRODUCTION_EVALS_GUIDE.md
-!/docs/MCP_CONTROL_SPEC.md
 !/docs/coreai-provider.md
 !/docs/custom-provider-protocol.md
 !/docs/foundation-model-features.md
@@ -50,8 +47,21 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 !/Verification/Automation/
 !/Verification/Automation/Fixtures/
 !/Verification/Automation/Fixtures/**
-!/Verification/DeveloperRunnerTestHost/
-!/Verification/DeveloperRunnerTestHost/**
-!/Verification/*.lean
-!/Verification/Lean*.md
-!/Verification/lean-toolchain
+
+# Historical captures with no runtime, build, or test consumer.
+/Verification/Automation/Fixtures/CodecMetadata/QualifiedDeclarations.swift.txt
+/Verification/Automation/Fixtures/CodecMetadata/product-manifest.json
+/Verification/Automation/Fixtures/CodecMetadata/provenance.json
+/Verification/Automation/Fixtures/CollectionMetadata/QualifiedDeclarations.swift.txt
+/Verification/Automation/Fixtures/CollectionMetadata/RejectedNestedInputDeclarations.swift.txt
+/Verification/Automation/Fixtures/CollectionMetadata/RejectedNestedResultDeclaration.swift.txt
+/Verification/Automation/Fixtures/CollectionMetadata/provenance.json
+/Verification/Automation/Fixtures/CollectionMetadata/unsupported-nested-inputs.json
+/Verification/Automation/Fixtures/CollectionMetadata/unsupported-nested-result.json
+/Verification/Automation/Fixtures/RuntimeCodecEcho/echo-actions.swift.txt
+/Verification/Automation/Fixtures/RuntimeCodecEcho/scalar-actions.swift.txt
+/Verification/Automation/Fixtures/Xcode272Metadata/QualifiedDeclarations.swift.txt
+/Verification/Automation/Fixtures/Xcode272Metadata/project.pbxproj
+/Verification/Automation/Fixtures/Xcode272Metadata/provenance.json
+/Verification/Automation/Fixtures/DuplicateTasks/Metadata/provenance.json
+/Verification/Automation/Fixtures/IntentFileDeclarations/xcresult-export-attachments-schema.json

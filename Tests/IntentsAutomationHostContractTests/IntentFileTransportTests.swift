@@ -114,7 +114,8 @@ final class IntentFileTransportTests: XCTestCase, @unchecked Sendable {
         }
     }
     func testAggregatePayloadBudgetAndSecretFenceApplyToTransferredFiles() async throws {
-        let artifacts = try AutomationArtifactRegistry(root: root()), data = Data(repeating: 42, count: 8192)
+        let artifactRoot = try root()
+        let artifacts = try AutomationArtifactRegistry(root: artifactRoot), data = Data(repeating: 42, count: 8192)
         let metadata = try AutomationIntentFileMetadata(filename: "data.bin", typeIdentifier: "public.data", data: data)
         let operations = (0..<3).map { AutomationHostProgram.Operation(id: "make\($0)", kind: .invoke, typeID: "MakeIntent", resultCodec: "intentFile") }
         var plan = plan(.init(operations: operations))
@@ -134,7 +135,7 @@ final class IntentFileTransportTests: XCTestCase, @unchecked Sendable {
         let consumer = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: 2)
         let inputs = try await resolved.authority.fileInputs(plan: plan, segment: resolved.segment, scope: consumer, artifacts: artifacts)
         XCTAssertThrowsError(try resolved.segment.hostProgram!.executionPayload(scope: consumer, app: app, route: .systemIntent, phase: .subject, fileInputs: inputs))
-        try await artifacts.restrictSecretEvidence(scope: scope)
+        try AutomationSecretEvidenceFence(root: artifactRoot).restrict(scope)
         do { _ = try await resolved.authority.fileInputs(plan: plan, segment: resolved.segment, scope: consumer, artifacts: artifacts); XCTFail("Secret-tainted file transferred") } catch {}
     }
     func testArtifactFromDifferentFrozenPlanOrOutputCannotSatisfyTransfer() async throws {

@@ -14,7 +14,6 @@ struct AppAutomationView: View {
     @State private var approveSearch = false
     @State private var approveReproduction = false
     @State private var approveComparison = false
-    @State private var macWorkflowReview: AutomationNativeMacWorkflowReview?
     var body: some View {
         @Bindable var model = model
         ScrollView {
@@ -73,7 +72,9 @@ struct AppAutomationView: View {
                     ContentUnavailableView("Choose an app to begin", systemImage: "app",
                         description: Text("Select an Xcode project, workspace, source folder or packaged app. Selection only inspects files."))
                 }
-                if model.isUIWorkflow {
+                if model.isUIWorkflow && model.isMacWorkflowUnavailable {
+                    Text("Mac workflow execution is unavailable.").font(.callout).foregroundStyle(.secondary)
+                } else if model.isUIWorkflow {
                     GroupBox("UI workflow") {
                         VStack(alignment: .leading, spacing: 12) {
                             TextField("What should the app do?", text: $model.uiInstruction, axis: .vertical)
@@ -89,14 +90,7 @@ struct AppAutomationView: View {
                             if model.isInstalledUI {
                                 Text("Select and prepare this app's Xcode project to run a workflow.").font(.caption).foregroundStyle(.secondary)
                             }
-                            if model.isMacUIReview {
-                                Text("Mac drafts support navigation and visible checks. Text entry awaits qualification.").font(.callout).foregroundStyle(.secondary)
-                                if !model.uiApprovedText.isEmpty {
-                                    Button("Clear text input to review this Mac draft") { model.uiApprovedText = "" }
-                                }
-                            } else {
-                                TextField("Approved text to enter (optional)", text: $model.uiApprovedText)
-                            }
+                            TextField("Approved text to enter (optional)", text: $model.uiApprovedText)
                             Picker("Property to check", selection: $model.uiObservationProperty) {
                                 Text("Visible text").tag("text")
                                 Text("Control value").tag("value")
@@ -115,32 +109,26 @@ struct AppAutomationView: View {
                             }.accessibilityLabel("Effects of this workflow")
                             Toggle("I confirm this workflow stays within these effects", isOn: $model.effectsConfirmed)
                             Toggle("Disposable test environment", isOn: $model.disposable)
-                            if !model.isMacUIReview {
-                                Toggle("Allow starting this simulator and installing the selected app", isOn: $model.installApproved)
-                            }
+                            Toggle("Allow starting this simulator and installing the selected app", isOn: $model.installApproved)
                             Text(model.uiExpectedText.isEmpty ? "Navigation completion will be unassessed. Add a visible-state check to assess a requirement." : "The visible-state check runs separately after navigation.").font(.callout).foregroundStyle(.secondary)
-                            if model.isMacUIReview {
-                                Text("Mac execution is awaiting verification. You can review and save a workflow draft.").font(.callout).foregroundStyle(.secondary)
-                                Button("Review Mac workflow…") {
-                                    do { macWorkflowReview = try model.reviewMacWorkflow() }
-                                    catch { model.message = "The app, Mac session or workflow inputs changed. Reselect the app and review again." }
-                                }.disabled(!model.canReviewMacWorkflow)
-                            } else {
-                                Button("Run workflow…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
-                                Divider()
-                                TextField("Alternative phrases, one per line (up to two)", text: $model.uiAlternatePhrases, axis: .vertical)
-                                Text("Phrase trials keep the destination, inputs and business check fixed. Up to 20 attempts, 1,000 UI actions and 300 controller calls; at most one hour.").font(.callout).foregroundStyle(.secondary)
-                                Button("Find failures…") {
-                                    do { searchReview = try model.reviewNativeSearch(); approveSearch = true }
-                                    catch { model.message = "The workflow or phrases changed. Review them before searching." }
-                                }.disabled(!model.canFindFailures)
-                                if let reason = model.failureSearchUnavailableReason { Text(reason).font(.caption).foregroundStyle(.secondary) }
-                            }
+                            Button("Run workflow…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
+                            Divider()
+                            TextField("Alternative phrases, one per line (up to two)", text: $model.uiAlternatePhrases, axis: .vertical)
+                            Text("Phrase trials keep the destination, inputs and business check fixed. Up to 20 attempts, 1,000 UI actions and 300 controller calls; at most one hour.").font(.callout).foregroundStyle(.secondary)
+                            Button("Find failures…") {
+                                do { searchReview = try model.reviewNativeSearch(); approveSearch = true }
+                                catch { model.message = "The workflow or phrases changed. Review them before searching." }
+                            }.disabled(!model.canFindFailures)
+                            if let reason = model.failureSearchUnavailableReason { Text(reason).font(.caption).foregroundStyle(.secondary) }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(10).disabled(model.busy)
                     }
                 }
                 if model.isSiriWorkflow { AutomationSiriControls(model: model) { presentNativeConfirmation(.run) } }
-                if let catalog = model.catalog, !model.isUIWorkflow, !model.isSiriWorkflow {
+                if model.isFreshRecordWorkflow && model.isMacWorkflowUnavailable {
+                    Text("Mac record workflow execution is unavailable.").font(.callout).foregroundStyle(.secondary)
+                }
+                if let catalog = model.catalog, !model.isUIWorkflow, !model.isSiriWorkflow,
+                   !(model.isFreshRecordWorkflow && model.isMacWorkflowUnavailable) {
                     GroupBox("System actions") {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("\(catalog.systemActions.count) compiled declarations · discovery is partial").foregroundStyle(.secondary)
@@ -170,15 +158,7 @@ struct AppAutomationView: View {
                                     Toggle("Allow starting this simulator and installing the prepared app", isOn: $model.installApproved)
                                 }
                                 Text("Only the expected record states you choose are assessed. Invocation alone remains unassessed.").font(.callout).foregroundStyle(.secondary)
-                                if model.isFreshRecordWorkflow && model.preparationDestination == .macOS {
-                                    Text("Mac execution is awaiting verification. You can review and save a record workflow draft.").font(.callout).foregroundStyle(.secondary)
-                                    Button("Review Mac record workflow…") {
-                                        do { macWorkflowReview = try model.reviewPreparedMacFreshWorkflow() }
-                                        catch { model.message = "The app, Mac session or record workflow changed. Review the selection and inputs again." }
-                                    }.disabled(!model.canReviewPreparedMacFreshWorkflow)
-                                } else {
-                                    Button(model.isFreshRecordWorkflow ? "Run test record workflow…" : "Run action…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
-                                }
+                                Button(model.isFreshRecordWorkflow ? "Run test record workflow…" : "Run action…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
                             }
                             ForEach(catalog.gaps, id: \.self) { Text($0).font(.callout).foregroundStyle(.secondary) }
                             if model.prepared == nil { Text("Prepare an associated host to run this app's system actions.").font(.callout) }
@@ -299,9 +279,10 @@ struct AppAutomationView: View {
                             if let reason = report.result.policyDenial {
                                 Text(reason.explanation).font(.callout)
                             }
-                            if report.result.summary == .assertionFailed {
+                            if report.result.summary == .assertionFailed,
+                               model.savedViewedCase?.plan.target.kind == .simulator, !model.isMacWorkflowUnavailable {
                                 Button("Reproduce failure…") { presentNativeConfirmation(.reproduction) }.disabled(!model.canReproduceSavedFailure)
-                                if model.isInstalledUI || model.isInstalledMacUI {
+                                if model.isInstalledUI {
                                     Button("Choose fixed app…") { chooseFixedApp() }.disabled(!model.canSelectFix)
                                 } else {
                                     Button("Build fixed source…") { model.prepare() }.disabled(!model.canPrepareSourceFix)
@@ -310,7 +291,7 @@ struct AppAutomationView: View {
                                 if let fixed = model.fixedAppName {
                                     Text("Fixed build: \(fixed)")
                                     Button("Check fix…") { presentNativeConfirmation(.comparison) }.disabled(!model.canCheckFix)
-                                    if !model.isInstalledMacUI && !model.installApproved { Text("Allow installation above to compare the two exact builds.").font(.caption) }
+                                    if !model.installApproved { Text("Allow installation above to compare the two exact builds.").font(.caption) }
                                 }
                             }
                             Text("Subject dispatched: \(report.result.subjectDispatched ? "yes" : "no") · completed: \(report.result.subjectCompleted ? "yes" : "no")")
@@ -339,34 +320,6 @@ struct AppAutomationView: View {
         }
         .task(id: model.simulatorInventorySelection + "|" + String(model.busy)) { await model.refreshTargets() }
         .task { await model.refreshSavedCases(); await model.refreshRecovery() }
-        .sheet(item: $macWorkflowReview) { review in
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Review Mac workflow").font(.title2)
-                LabeledContent("App", value: review.plan.app.bundleID)
-                LabeledContent("Selected copy", value: review.bundlePath)
-                Text(review.kind == .freshRecord ? review.plan.setup.first?.operation ?? "" : review.plan.execution.operation).textSelection(.enabled)
-                LabeledContent("Destination", value: (review.kind == .freshRecord ? review.plan.setup.first : review.plan.execution)?.uiProgram?.operations.first?.goal?.endpoint.value ?? "")
-                if review.kind == .freshRecord {
-                    Text("Create test records → query their real identities → run \(review.plan.execution.operation) → independently query the resulting states.").font(.callout)
-                }
-                Text(review.visibleCheck).font(.callout)
-                LabeledContent("Permitted effects", value: review.approval.effects.map(\.rawValue).sorted().joined(separator: ", "))
-                Text("This draft has no execution result. Saving it does not approve or run the app.").font(.callout).foregroundStyle(.secondary)
-                HStack {
-                    Button("Save draft") {
-                        Task {
-                            do { try await model.saveMacWorkflowDraft(review); macWorkflowReview = nil }
-                            catch {
-                                model.message = "The workflow changed or could not be saved. Review it again."
-                                macWorkflowReview = nil
-                            }
-                        }
-                    }.disabled(model.busy)
-                    Spacer()
-                    Button("Done") { macWorkflowReview = nil }.keyboardShortcut(.cancelAction)
-                }
-            }.padding(24).frame(minWidth: 520, idealWidth: 600)
-        }
         .onChange(of: model.simulatorID) { model.preparationSelectionChanged() }
         .onChange(of: model.physicalDeviceID) { model.preparationSelectionChanged() }
         .onChange(of: model.preparationDestination) { model.preparationSelectionChanged() }

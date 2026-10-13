@@ -18,13 +18,11 @@ public actor AutomationOwnedCommand {
         public var ownedIdentity: AutomationProcessIdentity? = nil
         public var directChildReaped = false
         public var pipesDrained = false
-        public var startupAcknowledged = false
         public var callbacksDrained = false
     }
     private var process: Process?
     private var identity: AutomationProcessIdentity?
     private var lastCapturedIdentity: AutomationProcessIdentity?
-    private var lastStartupAcknowledged = false
     private var output = Data(), diagnostics = Data()
     private var truncated = false
     private var launchRevoked = false
@@ -39,22 +37,12 @@ public actor AutomationOwnedCommand {
     /// Available after failure/cancellation as well as success; bounded by the same pipe limits.
     public func retainedLogs() -> Result {
         .init(exitStatus: launched && process?.isRunning == false ? process!.terminationStatus : -1, stdout: output, stderr: diagnostics,
-              logsTruncated: truncated || (lastLogOverflow?.value.withLock { $0 } ?? false), ownedIdentity: lastCapturedIdentity,
-              startupAcknowledged: lastStartupAcknowledged)
+              logsTruncated: truncated || (lastLogOverflow?.value.withLock { $0 } ?? false), ownedIdentity: lastCapturedIdentity)
     }
     public func run(executable: URL, arguments: [String], directory: URL, environment: [String: String],
-                    timeout: Duration, ownershipGateNonce: String? = nil, privateInputFrame: Data? = nil,
-                    willStart: @escaping @Sendable () async throws -> Void = {}, didStart: @escaping @Sendable (AutomationProcessIdentity) async throws -> Void = { _ in },
-                    willAcknowledge: @escaping @Sendable () async throws -> Void = {}) async throws -> Result {
+                    timeout: Duration,
+                    willStart: @escaping @Sendable () async throws -> Void = {}, didStart: @escaping @Sendable (AutomationProcessIdentity) async throws -> Void = { _ in }) async throws -> Result {
         try Task.checkCancellation()
-        if let privateInputFrame {
-            guard ownershipGateNonce != nil else { throw AutomationContractError.invalidIdentity }
-            try AutomationCommandGateInput.validatePrivateFrame(privateInputFrame)
-        }
-        if let nonce = ownershipGateNonce {
-            try AutomationMacHelperHandshake.validateNonce(nonce)
-            guard environment.count < 32, environment["INTENTS_MAC_HELPER_OWNERSHIP_NONCE"] == nil else { throw AutomationContractError.invalidIdentity }
-        }
         guard process == nil, !runInProgress, stopOperations == 0, callback == nil,
               executable.isFileURL, executable.path == (try AutomationPath.canonical(executable)).path,
               arguments.count <= 128, arguments.allSatisfy({ $0.utf8.count <= 65_536 && !$0.contains("\0") }),
@@ -63,13 +51,11 @@ public actor AutomationOwnedCommand {
         }
         let deadline = ContinuousClock.now.advanced(by: timeout)
         guard deadline > ContinuousClock.now else { throw AutomationRPCError.timedOut }
-        output = Data(); diagnostics = Data(); truncated = false; lastCapturedIdentity = nil; lastStartupAcknowledged = false
+        output = Data(); diagnostics = Data(); truncated = false; lastCapturedIdentity = nil
         let child = Process(), stdout = Pipe(), stderr = Pipe()
-        let gateInput = try ownershipGateNonce.map { _ in try AutomationCommandGateInput() }
         child.executableURL = executable; child.arguments = arguments; child.environment = environment
-        if let nonce = ownershipGateNonce { child.environment?["INTENTS_MAC_HELPER_OWNERSHIP_NONCE"] = nonce }
         child.currentDirectoryURL = try AutomationPath.canonical(directory)
-        child.standardInput = gateInput?.childHandle ?? FileHandle.nullDevice; child.standardOutput = stdout; child.standardError = stderr
+        child.standardInput = FileHandle.nullDevice; child.standardOutput = stdout; child.standardError = stderr
         let overflow = LogOverflow()
         lastLogOverflow = overflow
         let out = Self.stream(stdout.fileHandleForReading, overflow: overflow), err = Self.stream(stderr.fileHandleForReading, overflow: overflow)
@@ -84,7 +70,6 @@ public actor AutomationOwnedCommand {
             guard !launchRevoked else { throw CancellationError() }
             try child.run()
             launched = true
-            gateInput?.childStarted()
         } catch {
             let stopped = await Task.detached { await self.stopOwned() }.value
             stdout.fileHandleForReading.readabilityHandler = nil; stderr.fileHandleForReading.readabilityHandler = nil
@@ -97,7 +82,6 @@ public actor AutomationOwnedCommand {
         let outReader = Task { for await data in out { append(data, diagnostic: false) } }
         let errReader = Task { for await data in err { append(data, diagnostic: true) } }
         let waiter = AutomationBoundedTask<Bool>()
-        var acknowledged = false
         do {
             if let started = AutomationProcessIdentity.inspect(pid: child.processIdentifier) {
                 identity = started
@@ -106,34 +90,8 @@ public actor AutomationOwnedCommand {
                 _ = try await pending.run(until: deadline) { try await didStart(started); return true }
                 callback = nil
             } else {
-                guard ownershipGateNonce == nil else { throw AutomationContractError.invalidIdentity }
                 guard Self.permitsUncapturedExit(pid: child.processIdentifier, isRunning: child.isRunning) else {
                     throw AutomationContractError.invalidIdentity
-                }
-            }
-            if let nonce = ownershipGateNonce, let identity, let gateInput {
-                while output.firstIndex(of: 10) == nil {
-                    try Task.checkCancellation()
-                    guard !launchRevoked, child.isRunning, output.count <= 4096, !overflow.value.withLock({ $0 }),
-                          ContinuousClock.now < deadline else { throw AutomationContractError.terminationUnverified }
-                    try await Task.sleep(for: .milliseconds(10))
-                }
-                let ready = output
-                let ack = try AutomationMacHelperHandshake.acknowledgement(ready: ready, nonce: nonce, ownedChild: identity)
-                let pending = AutomationBoundedTask<Bool>(); callback = pending
-                _ = try await pending.run(until: deadline) { try await willAcknowledge(); return true }
-                callback = nil
-                try Task.checkCancellation()
-                guard !launchRevoked, presenceReader(identity) == .matching, ContinuousClock.now < deadline else {
-                    throw AutomationContractError.terminationUnverified
-                }
-                output.removeFirst(ready.count)
-                try await gateInput.acknowledge(ack, keepOpen: privateInputFrame != nil, deadline: deadline,
-                    isolation: self, beforeWrite: { try self.requireGateWrite(identity) })
-                acknowledged = true; lastStartupAcknowledged = true
-                if let privateInputFrame {
-                    try await gateInput.writePrivateFrame(privateInputFrame, deadline: deadline,
-                        isolation: self, beforeWrite: { try self.requireGateWrite(identity) })
                 }
             }
             let exited = try await waiter.run(until: deadline) { await self.waitForExit(child) }
@@ -142,7 +100,7 @@ public actor AutomationOwnedCommand {
             guard exited, terminated(child) else { throw AutomationContractError.terminationUnverified }
             let result = Result(exitStatus: child.terminationStatus, stdout: output, stderr: diagnostics,
                                 logsTruncated: truncated || overflow.value.withLock { $0 }, ownedIdentity: identity,
-                                directChildReaped: true, pipesDrained: true, startupAcknowledged: acknowledged,
+                                directChildReaped: true, pipesDrained: true,
                                 callbacksDrained: true)
             process = nil; identity = nil; output = Data(); diagnostics = Data(); truncated = false
             return result
@@ -172,11 +130,6 @@ public actor AutomationOwnedCommand {
         let stopped = processStopped && callbacksDrained
         if stopped && !runInProgress { process = nil; identity = nil }
         return stopped
-    }
-    private func requireGateWrite(_ expected: AutomationProcessIdentity) throws {
-        guard !launchRevoked, identity == expected, presenceReader(expected) == .matching else {
-            throw AutomationContractError.terminationUnverified
-        }
     }
     private func stopProcess(_ child: Process) async -> Bool {
         if child.isRunning {

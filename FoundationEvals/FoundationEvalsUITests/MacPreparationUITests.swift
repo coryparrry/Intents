@@ -2,9 +2,9 @@ import XCTest
 import CryptoKit
 
 final class MacPreparationUITests: XCTestCase {
-    /// Opt-in: builds only an explicitly supplied authored fixture, then saves an unexecuted draft.
+    /// Opt-in: builds only an explicitly supplied authored fixture and inspects its metadata.
     @MainActor
-    func testSelectedToolchainPreparesMacCopyAndSavesReviewedDraft() throws {
+    func testSelectedToolchainPreparesMacCopyForInspection() throws {
         struct Profile: Decodable {
             let sourceProject: String
             let sourceDigest: String
@@ -29,7 +29,7 @@ final class MacPreparationUITests: XCTestCase {
         XCTAssertEqual(try digest(projectFile), profile.projectDigest)
         let storage = try UITestStorage.makeDirectory(prefix: "native-mac-preparation")
         print("NATIVE_MAC_PREPARATION_STORAGE=\(storage.path)")
-        // Keep build provenance, saved draft and screenshots for inspection.
+        // Keep build provenance and screenshots for inspection.
         let app = XCUIApplication()
         app.launchEnvironment["DEVELOPER_DIR"] = profile.developerDirectory
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
@@ -67,23 +67,10 @@ final class MacPreparationUITests: XCTestCase {
         let generator = try XCTUnwrap(metadata["generator"] as? [String: Any])
         XCTAssertEqual(generator["version"] as? String, profile.metadataGeneratorVersion)
 
-        let instruction = app.textFields["What should the app do?"]
-        instruction.click(); instruction.typeText("Show the input adapter fixture")
-        let endpoint = app.textFields["Visible label at the destination"]
-        endpoint.click(); endpoint.typeText("Intents input adapter fixture")
-        app.popUpButtons["Effects of this workflow"].click()
-        app.menuItems["Observation and navigation"].click()
-        app.checkBoxes["I confirm this workflow stays within these effects"].click()
-        let review = app.buttons["Review Mac workflow…"]
-        XCTAssertTrue(review.isEnabled); review.click()
-        let save = app.buttons["Save draft"]
-        XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertTrue(save.isEnabled)
-        XCTAssertTrue(app.staticTexts["This draft has no execution result. Saving it does not approve or run the app."].exists)
-        try capture(app, storage: storage, name: "workflow-review")
-        save.click()
-        XCTAssertTrue(app.staticTexts["Mac workflow draft saved. It has no execution result or approval."].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Mac workflow execution is unavailable."].exists)
         XCTAssertFalse(app.buttons["Run workflow…"].exists)
-        try capture(app, storage: storage, name: "saved-draft")
+        XCTAssertFalse(app.buttons["Review Mac workflow…"].exists)
+        try capture(app, storage: storage, name: "prepared-mac-copy")
         XCTAssertEqual(try digest(source), profile.sourceDigest)
         XCTAssertEqual(try digest(projectFile), profile.projectDigest)
     }

@@ -4,23 +4,6 @@ import Testing
 @testable import FoundationEvals
 
 struct CustomToolTests {
-    @Test func featureConfigurationDefaultsAndRoundTrips() throws {
-        let configuration = EvaluationFeatureConfiguration()
-
-        #expect(configuration.tools.isEmpty)
-        #expect(configuration.profile == EvaluationProfileConfiguration())
-        #expect(configuration.outputFields.isEmpty)
-        #expect(!configuration.prewarm)
-        #expect(!configuration.streamResponse)
-        #expect(configuration.validationIssue == nil)
-
-        let decoded = try JSONDecoder().decode(
-            EvaluationFeatureConfiguration.self,
-            from: JSONEncoder().encode(configuration)
-        )
-        #expect(decoded == configuration)
-    }
-
     @Test func fixtureToolUsesDynamicArgumentsAndRecordsEvidence() async throws {
         let recorder = EvaluationCustomToolRecorder(maximumCalls: 2)
         let definition = EvaluationCustomToolDefinition(
@@ -250,32 +233,6 @@ struct CustomToolTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(retainedSession == nil)
-    }
-
-    @Test func redirectDelegateNeverFollowsRedirects() throws {
-        let originalURL = try #require(URL(string: "http://127.0.0.1:19093/run"))
-        let redirectedURL = try #require(URL(string: "http://127.0.0.1:19094/other"))
-        let response = try #require(
-            HTTPURLResponse(
-                url: originalURL,
-                statusCode: 302,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Location": redirectedURL.absoluteString]
-            )
-        )
-        let task = URLSession.shared.dataTask(with: originalURL)
-        var followedRequest: URLRequest? = URLRequest(url: redirectedURL)
-
-        EvaluationNoRedirectDelegate().urlSession(
-            .shared,
-            task: task,
-            willPerformHTTPRedirection: response,
-            newRequest: URLRequest(url: redirectedURL)
-        ) { request in
-            followedRequest = request
-        }
-
-        #expect(followedRequest == nil)
     }
 
     @Test func outputOverContextReserveIsRejectedAndRecorded() async throws {

@@ -21,7 +21,7 @@ public struct AutomationFreshEntityContext: Codable, Equatable, Sendable {
 }
 
 public enum AutomationFreshEntityPlanner {
-    public enum Purpose: Equatable, Sendable { case execution, nativeMacDraft, simulatorDraft }
+    public enum Purpose: Equatable, Sendable { case execution, simulatorDraft }
     public static func compile(catalog: ApplicationSurfaceCatalog, actionID: String,
                                instruction: String, endpoint: String, namePrefix: String,
                                nameProperty: String, stateProperty: String, initialState: Bool, expectedState: Bool,
@@ -31,19 +31,7 @@ public enum AutomationFreshEntityPlanner {
                                createControl: AutomationUIProgram.Locator? = nil,
                                nameEntry: AutomationUIProgram.Locator? = nil,
                                contextEntry: AutomationUIProgram.Locator? = nil) throws -> AutomationCase {
-        switch purpose {
-        case .execution, .simulatorDraft:
-            guard approval.target.kind == .simulator else { throw AutomationContractError.invalidIdentity }
-        case .nativeMacDraft:
-            guard catalog.app.platform == "macos", catalog.app.productDigestVersion == 2,
-                  catalog.app.productDigest != nil, catalog.app.canonicalBundlePath != nil,
-                  approval.target.kind == .nativeMac, approval.target.id == "host-macos-local",
-                  let session = approval.target.loginSession, !session.isEmpty, session.utf8.count <= 256,
-                  !session.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
-                  approval.environmentID == "selected-mac-session:" + session else {
-                throw AutomationContractError.invalidIdentity
-            }
-        }
+        guard approval.target.kind == .simulator else { throw AutomationContractError.invalidIdentity }
         guard catalog.app == approval.app, approval.disposable,
               approval.effects == [.observe, .navigate, .fixtureWrite], approval.maximumActions >= 30,
               let action = catalog.systemActions.first(where: { $0.id == actionID }), action.compiled, action.parametersComplete,
@@ -137,10 +125,6 @@ public enum AutomationFreshEntityPlanner {
         plan.provenance = ["ui.backend": "xcuitest", "catalog": try AutomationRecipeContext.catalogDigest(catalog), "ui.locale": localeIdentifier,
             "fixture": "UI-created unique name per attempt; actual entity identity from independent query",
             "expectation": "developer-approved before and after states; positive query evidence only"]
-        if purpose == .nativeMacDraft {
-            plan.provenance["ui.backend"] = "nativeMac"
-            plan.provenance["ui.executionAvailability"] = "unqualified"
-        }
         if purpose == .simulatorDraft { plan.provenance["ui.executionAvailability"] = "unqualified" }
         plan = AutomationCodecRequirements.applying(to: plan, catalog: catalog)
         plan.id = "fresh." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))

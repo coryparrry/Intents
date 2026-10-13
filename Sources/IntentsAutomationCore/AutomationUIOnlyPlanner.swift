@@ -6,16 +6,11 @@ public enum AutomationUIOnlyPlanner {
                                approvedText: String = "", expectedVisibleText: String = "",
                                observationLabel: String = "", observationProperty: String = "text",
                                approval: RunApproval, localeIdentifier: String) throws -> AutomationCase {
-        guard app == approval.app, target == approval.target, [.simulator, .nativeMac].contains(target.kind),
+        guard app == approval.app, target == approval.target, target.kind == .simulator,
               !localeIdentifier.isEmpty, localeIdentifier.utf16.count <= 128,
               expectedVisibleText.utf16.count <= 1024, observationLabel.utf16.count <= 1024,
               ["text", "value", "checked", "selected"].contains(observationProperty), approvedText.utf16.count <= 32768,
               approval.maximumActions >= 30 else { throw AutomationContractError.invalidPlan("Invalid UI workflow approval") }
-        if target.kind == .nativeMac {
-            guard app.platform == "macos", app.productDigestVersion == 2, app.productDigest != nil,
-                  app.canonicalBundlePath != nil, target.id == "host-macos-local", target.loginSession?.isEmpty == false,
-                  approvedText.isEmpty else { throw AutomationContractError.missingEvidence("Mac workflow draft requires an exact app, current session and supported inputs") }
-        }
         let goal = AutomationNavigationGoal(id: "navigate", instruction: instruction,
             endpoint: .init(.label, endpoint), maximumCalls: 12, maximumActions: 30)
         try goal.validate()
@@ -44,12 +39,6 @@ public enum AutomationUIOnlyPlanner {
         var plan = AutomationCase(id: "ui-workflow", app: app, target: target, environmentID: approval.environmentID,
             execution: subject, observations: observers, requirements: requirements, budget: budget)
         plan.provenance = ["ui.locale": localeIdentifier, "inputs": "native approval", "expectation": requirements.isEmpty ? "navigation only; unassessed" : "independent visible-state check"]
-        if target.kind == .nativeMac {
-            plan.provenance["ui.backend"] = "nativeMac"
-            plan.provenance["ui.executionAvailability"] = "unqualified"
-            try AutomationMacUIProgramPreflight.validate(subject)
-            for observer in observers { try AutomationMacUIProgramPreflight.validate(observer) }
-        }
         plan.id = "ui." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
         var validationApproval = approval
         validationApproval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
