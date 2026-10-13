@@ -673,6 +673,7 @@ private actor RunnerLiveResponseRecorder {
 private final class RunningCustomModelFixture {
     let port: Int
     private let process: Process
+    private let termination: DispatchSemaphore
 
     init(streamDelay: Double, gateTextStream: Bool = false) throws {
         let sourceFile = URL(fileURLWithPath: #filePath)
@@ -684,6 +685,9 @@ private final class RunningCustomModelFixture {
         let output = Pipe()
         let errors = Pipe()
         let process = Process()
+        let termination = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in termination.signal() }
+        self.termination = termination
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         process.arguments = [
             script.path,
@@ -707,8 +711,9 @@ private final class RunningCustomModelFixture {
             }
             .first
         guard let port else {
-            process.terminate()
-            process.waitUntilExit()
+            guard Self.stop(process, termination: termination) else {
+                throw RunningCustomModelFixtureError.terminationTimedOut
+            }
             let remainingOutput = output.fileHandleForReading.readDataToEndOfFile()
             let errorOutput = errors.fileHandleForReading.readDataToEndOfFile()
             throw RunningCustomModelFixtureError.invalidReadyMessage(
@@ -721,9 +726,18 @@ private final class RunningCustomModelFixture {
     }
 
     func stop() {
-        guard process.isRunning else { return }
-        process.terminate()
-        process.waitUntilExit()
+        Self.stop(process, termination: termination)
+    }
+
+    @discardableResult
+    private static func stop(_ process: Process, termination: DispatchSemaphore) -> Bool {
+        if process.isRunning { process.terminate() }
+        // Foundation's run-loop wait can hang when cleanup follows cancellation.
+        if termination.wait(timeout: .now() + 5) == .timedOut {
+            Issue.record("The custom model fixture did not terminate within five seconds.")
+            return false
+        }
+        return true
     }
 
     func releaseTextStream() async throws {
@@ -745,10 +759,13 @@ private final class RunningCustomModelFixture {
 }
 
 private enum RunningCustomModelFixtureError: LocalizedError {
+    case terminationTimedOut
     case invalidReadyMessage(stdout: String, stderr: String, terminationStatus: Int32)
 
     var errorDescription: String? {
         switch self {
+        case .terminationTimedOut:
+            "The custom model fixture did not terminate within five seconds."
         case .invalidReadyMessage(let stdout, let stderr, let terminationStatus):
             """
             The custom model fixture did not publish a valid ready endpoint (status \(terminationStatus)).
