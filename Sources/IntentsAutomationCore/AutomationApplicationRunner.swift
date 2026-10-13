@@ -306,6 +306,16 @@ public actor AutomationApplicationRunner {
             return true
         } catch { return false }
     }
+    static func canReleaseBootCommand(arguments: [String], operation: String, target: TargetIdentity,
+                                      result: AutomationOwnedCommand.Result) -> Bool {
+        guard target.kind == .simulator, UUID(uuidString: target.id) != nil,
+              operation == "boot", arguments == ["simctl", "boot", target.id],
+              result.exitStatus == 0, !result.logsTruncated,
+              result.directChildReaped, result.pipesDrained, result.callbacksDrained,
+              let identity = result.ownedIdentity else { return false }
+        return [.absent, .replaced].contains(identity.presence())
+    }
+
     private func mutate(arguments: [String], operation: String, approval: RunApproval, attemptID: String, root: URL,
                         journal: AutomationJournal, release: AutomationSimulatorReleaseVerifier, targetWillBeShutdown: Bool = false,
                         maximumDuration: Duration = .seconds(60), campaignBudget: AutomationCampaignBudget? = nil) async throws {
@@ -328,7 +338,12 @@ public actor AutomationApplicationRunner {
                 didStart: { [leases] process in try await leases.recordRunner(.init(scope: scope, process: process, role: .nativeCommand, executablePath: "/usr/bin/xcrun"), lease: lease) })
             try await journal.complete(operationID: key, digest: digest, response: .integer(String(result.exitStatus)))
             let released: Bool
-            if targetWillBeShutdown && result.exitStatus == 0 {
+            if Self.canReleaseBootCommand(arguments: arguments, operation: operation, target: approval.target, result: result) {
+                // Boot starts only the approved simulator. Keep the campaign reserved while
+                // bootstatus waits for services, before asking launchctl for controller proof.
+                // Lease release still verifies every recorded process and private payload.
+                released = true
+            } else if targetWillBeShutdown && result.exitStatus == 0 {
                 let inventory = try await AutomationSimulatorInventory.read(developerDirectory: developerDirectory, workspace: root)
                 released = inventory.contains { $0.id == approval.target.id && $0.state == "Shutdown" }
             } else { released = await release.verifyReleased(target: approval.target, controllerBundleIDs: []) }

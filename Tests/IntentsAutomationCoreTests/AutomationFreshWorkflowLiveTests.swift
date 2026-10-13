@@ -49,6 +49,10 @@ final class AutomationFreshWorkflowLiveTests: XCTestCase {
         approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
         let runner = try AutomationApplicationRunner(supportRoot: root.appendingPathComponent("run"), developerDirectory: developer)
         capabilities = try await runner.capabilitiesForExecution(subject: .prepared(prepared), plan: plan, capabilities: capabilities)
+        let initialInventory = try await AutomationSimulatorInventory.read(developerDirectory: developer, workspace: root)
+        guard initialInventory.first(where: { $0.id == target.id })?.state == "Shutdown" else {
+            throw XCTSkip("The approved simulator must start Shutdown to verify owned cold-start cleanup")
+        }
         let attempt = UUID().uuidString
         let report = try await runner.run(prepared: prepared, plan: plan, approval: approval, capabilities: capabilities,
             attemptID: attempt, allowBootAndInstall: true)
@@ -58,6 +62,7 @@ final class AutomationFreshWorkflowLiveTests: XCTestCase {
         XCTAssertTrue(report.result.subjectCompleted); XCTAssertFalse(report.result.subjectDispatchUncertain)
         XCTAssertTrue(report.result.assessed); XCTAssertEqual(report.receipts.count, 6)
         try assertSingleInvocation(root: root, attemptID: attempt)
+        try await assertOwnedColdStartShutdown(root: root, attemptID: attempt, target: target, developer: developer)
 
         var assertion = AutomationSegment(id: "subject", kind: .ui, phase: .subject,
             operation: "Verify a failing assertion returns receipts", effects: [.observe, .navigate])
@@ -79,7 +84,20 @@ final class AutomationFreshWorkflowLiveTests: XCTestCase {
         XCTAssertEqual(failed.receipts.first?.dispatched, true)
         XCTAssertEqual(failed.receipts.first?.completed, false)
         try assertSingleInvocation(root: root, attemptID: failingAttempt)
+        try await assertOwnedColdStartShutdown(root: root, attemptID: failingAttempt, target: target, developer: developer)
         XCTAssertEqual(AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(source, maximumBytes: 4_194_304)), before)
+    }
+
+    private func assertOwnedColdStartShutdown(root: URL, attemptID: String, target: TargetIdentity, developer: URL) async throws {
+        let entries = try JSONDecoder().decode([String: AutomationJournal.Entry].self,
+            from: AutomationReadOnlyFile.read(root.appendingPathComponent("run/" + attemptID + "/journal.json"), maximumBytes: 16_777_216))
+        for operation in ["boot", "bootReady", "shutdown"] {
+            let entry = try XCTUnwrap(entries[attemptID + ".prepare." + operation])
+            XCTAssertEqual(entry.state, .completed)
+            XCTAssertEqual(entry.response, .integer("0"))
+        }
+        let inventory = try await AutomationSimulatorInventory.read(developerDirectory: developer, workspace: root)
+        XCTAssertEqual(inventory.first(where: { $0.id == target.id })?.state, "Shutdown")
     }
 
     private func assertSingleInvocation(root: URL, attemptID: String) throws {
