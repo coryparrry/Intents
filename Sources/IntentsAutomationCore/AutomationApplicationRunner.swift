@@ -6,6 +6,51 @@ public struct AutomationPreparationPersistenceFailure: Error {
     public let persistenceError: any Error
 }
 
+/// Local diagnostics only: false drain flags mean proof was not retained, not that a resource is live.
+struct AutomationPreparationCommandDiagnostic: Codable {
+    let schemaVersion: Int
+    let scope: AutomationScope
+    let operation: String
+    let errorDescription: String
+    let exitStatus: Int32
+    let ownedIdentity: AutomationProcessIdentity?
+    let directChildReaped: Bool
+    let pipesDrained: Bool
+    let callbacksDrained: Bool
+    let logsTruncated: Bool
+    let stdout: Data
+    let stderr: Data
+
+    static func save(result: AutomationOwnedCommand.Result, scope: AutomationScope, operation: String,
+                     error: any Error, root: URL) throws -> URL {
+        try scope.validate()
+        let logLimit = 1_048_576
+        let record = Self(schemaVersion: 1, scope: scope, operation: operation,
+            errorDescription: String(String(describing: error).prefix(8192)), exitStatus: result.exitStatus,
+            ownedIdentity: result.ownedIdentity, directChildReaped: result.directChildReaped,
+            pipesDrained: result.pipesDrained, callbacksDrained: result.callbacksDrained,
+            logsTruncated: result.logsTruncated || result.stdout.count > logLimit || result.stderr.count > logLimit,
+            stdout: Data(result.stdout.prefix(logLimit)), stderr: Data(result.stderr.prefix(logLimit)))
+        let path = root.appendingPathComponent("preparation-command-failures").appendingPathComponent(UUID().uuidString + ".json")
+        let file = try AutomationDurableFile(url: path, maximumBytes: 4_194_304)
+        try file.write(JSONEncoder().encode(record))
+        return file.url
+    }
+}
+
+/// The willStart callback runs only after OwnedCommand resets this invocation's retained state.
+actor AutomationPreparationCommandInvocation {
+    private var entered = false
+    func enter() { entered = true }
+    func saveFailure(command: AutomationOwnedCommand, completed: AutomationOwnedCommand.Result? = nil,
+                     scope: AutomationScope, operation: String, error: any Error, root: URL) async throws -> URL? {
+        guard entered else { return nil }
+        let retained = await command.retainedLogs()
+        return try AutomationPreparationCommandDiagnostic.save(result: completed ?? retained,
+            scope: scope, operation: operation, error: error, root: root)
+    }
+}
+
 /// Product entry point for prepared-app campaigns. All routes share the native target lease store.
 public actor AutomationApplicationRunner {
     private let supportRoot: URL
@@ -169,7 +214,7 @@ public actor AutomationApplicationRunner {
             // Never install bytes that differ from the frozen prepared subject.
             guard let productPath = subject.productPath,
                   try AutomationProductDigest.compute(bundle: URL(fileURLWithPath: productPath), version: plan.app.productDigestVersion) == plan.app.productDigest else { throw AutomationContractError.conflictingOperation }
-            try await mutate(arguments: ["simctl", "install", plan.target.id, productPath], operation: "install", approval: approval, attemptID: attemptID, root: root, journal: journal, release: release, campaignBudget: campaignBudget)
+            try await mutate(arguments: ["simctl", "install", plan.target.id, productPath], operation: "install", approval: approval, attemptID: attemptID, root: root, journal: journal, release: release, maximumDuration: .seconds(120), campaignBudget: campaignBudget)
         } else {
             guard simulator.state == "Booted" else { throw AutomationContractError.missingEvidence("Starting the selected simulator requires approval") }
         }
@@ -322,6 +367,8 @@ public actor AutomationApplicationRunner {
         let lease = try await leases.acquire(runID: approval.runID, target: approval.target, control: .system)
         let scope = AutomationScope(runID: approval.runID, attemptID: attemptID, segmentID: "prepare." + operation, leaseGeneration: lease.generation)
         let digest = AutomationArtifactRegistry.digest(try JSONEncoder().encode(arguments)), key = attemptID + ".prepare." + operation
+        var completedCommand: AutomationOwnedCommand.Result?
+        let invocation = AutomationPreparationCommandInvocation()
         do {
             if targetWillBeShutdown { try await campaignBudget?.reserveResourceRelease(id: key) }
             else { try await campaignBudget?.reserveOperations(id: key, phase: .setup, count: 1) }
@@ -332,10 +379,12 @@ public actor AutomationApplicationRunner {
                 environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DEVELOPER_DIR": developerDirectory.path,
                               "HOME": FileManager.default.homeDirectoryForCurrentUser.path, "TMPDIR": NSTemporaryDirectory()], timeout: timeout,
                 willStart: { [leases] in
+                    await invocation.enter()
                     try await leases.validate(lease)
                     if !targetWillBeShutdown { try await campaignBudget?.available() }
                 },
                 didStart: { [leases] process in try await leases.recordRunner(.init(scope: scope, process: process, role: .nativeCommand, executablePath: "/usr/bin/xcrun"), lease: lease) })
+            completedCommand = result
             try await journal.complete(operationID: key, digest: digest, response: .integer(String(result.exitStatus)))
             let released: Bool
             if Self.canReleaseBootCommand(arguments: arguments, operation: operation, target: approval.target, result: result) {
@@ -350,6 +399,8 @@ public actor AutomationApplicationRunner {
             try await leases.release(lease, commandsDrained: true, ownedRunnerTerminated: released)
             guard result.exitStatus == 0 else { throw AutomationContractError.missingEvidence("Approved simulator " + operation + " did not complete") }
         } catch {
+            _ = try? await invocation.saveFailure(command: command, completed: completedCommand,
+                scope: scope, operation: operation, error: error, root: root)
             let drained = await Task.detached { await self.command.stopOwned() }.value
             let released = await release.verifyReleased(target: approval.target, controllerBundleIDs: [])
             try? await leases.release(lease, commandsDrained: drained, ownedRunnerTerminated: released)
