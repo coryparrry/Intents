@@ -11,20 +11,26 @@ struct AutomationSourcePreparationControls: View {
             Picker("Prepare for", selection: $model.preparationDestination) {
                 ForEach(AutomationNativePreparationDestination.allCases) { Text($0.title).tag($0).accessibilityIdentifier($0.rawValue) }
             }.accessibilityLabel("Prepare for").accessibilityIdentifier("automation.preparation.destination")
-            Text("Default Xcode for this destination").font(.caption)
-            TextField("Default Xcode for this destination", text: $model.selectedXcodePath,
-                      prompt: Text("/Applications/Xcode.app"))
-                .accessibilityLabel("Default Xcode for this destination")
-                .accessibilityIdentifier("automation.xcode.default")
-                .onSubmit { Task { await model.refreshTargets() } }
-                .disabled(model.busy)
-            Text("Xcode override for this session").font(.caption)
-            TextField("Xcode override for this run", text: $model.runXcodePathOverride,
-                      prompt: Text("Use destination default"))
-                .accessibilityLabel("Xcode override for this run")
-                .accessibilityIdentifier("automation.xcode.override")
-                .onSubmit { Task { await model.refreshTargets() } }
-                .disabled(model.busy)
+            LabeledContent {
+                TextField("Default Xcode for this destination", text: $model.selectedXcodePath,
+                          prompt: Text("/Applications/Xcode.app"))
+                    .accessibilityLabel("Default Xcode for this destination")
+                    .accessibilityIdentifier("automation.xcode.default")
+                    .onSubmit { Task { await model.refreshTargets() } }
+                    .disabled(model.busy)
+            } label: {
+                Text("Default Xcode for this destination").font(.caption)
+            }
+            LabeledContent {
+                TextField("Xcode override for this run", text: $model.runXcodePathOverride,
+                          prompt: Text("Use destination default"))
+                    .accessibilityLabel("Xcode override for this run")
+                    .accessibilityIdentifier("automation.xcode.override")
+                    .onSubmit { Task { await model.refreshTargets() } }
+                    .disabled(model.busy)
+            } label: {
+                Text("Xcode override for this session").font(.caption)
+            }
             Text("The default is saved separately for simulator, device and Mac. An override applies to preparation and execution in this session.")
                 .font(.caption).foregroundStyle(.secondary)
             if model.preparationDestination == .simulator {
