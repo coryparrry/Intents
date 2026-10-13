@@ -11,12 +11,14 @@ struct AutomationSourcePreparationControls: View {
             Picker("Prepare for", selection: $model.preparationDestination) {
                 ForEach(AutomationNativePreparationDestination.allCases) { Text($0.title).tag($0).accessibilityIdentifier($0.rawValue) }
             }.accessibilityLabel("Prepare for").accessibilityIdentifier("automation.preparation.destination")
+            Text("Default Xcode for this destination").font(.caption)
             TextField("Default Xcode for this destination", text: $model.selectedXcodePath,
                       prompt: Text("/Applications/Xcode.app"))
                 .accessibilityLabel("Default Xcode for this destination")
                 .accessibilityIdentifier("automation.xcode.default")
                 .onSubmit { Task { await model.refreshTargets() } }
                 .disabled(model.busy)
+            Text("Xcode override for this session").font(.caption)
             TextField("Xcode override for this run", text: $model.runXcodePathOverride,
                       prompt: Text("Use destination default"))
                 .accessibilityLabel("Xcode override for this run")

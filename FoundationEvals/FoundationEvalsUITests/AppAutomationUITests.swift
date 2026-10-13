@@ -68,6 +68,8 @@ final class AppAutomationUITests: XCTestCase {
         let saved = app.textFields["automation.xcode.default"]
         let override = app.textFields["automation.xcode.override"]
         XCTAssertTrue(saved.waitForExistence(timeout: 10)); XCTAssertTrue(override.exists)
+        XCTAssertTrue(app.staticTexts["Default Xcode for this destination"].exists)
+        XCTAssertTrue(app.staticTexts["Xcode override for this session"].exists)
         saved.click(); saved.typeText("/Applications/Simulator Xcode.app")
         selectAutomationMenu(destination, item: "physical")
         XCTAssertEqual(saved.value as? String, "")
