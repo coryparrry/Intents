@@ -28,17 +28,20 @@ public actor AutomationInputConversionDiagnostic {
 
     private let runner: AutomationInputAdapterProbeRunner
     private let parameters: [String]
+    /// Exact durable campaign identity, available before the diagnostic starts.
+    public nonisolated let runID: String
     public init(prepared: AutomationPreparedApplication, selection: Selection, supportRoot: URL, developerDirectory: URL) throws {
         guard Self.selection(prepared: prepared, actionID: selection.actionID) == selection else {
             throw AutomationContractError.conflictingOperation
         }
         try AutomationPreparedCodecAuthority.verify(prepared)
         let plan = try AutomationInputAdapterProbePlan(prepared: prepared, actionID: selection.actionID, parameterNames: selection.parameterNames)
-        let runID = "input-conversion-" + UUID().uuidString
-        let root = supportRoot.appendingPathComponent(runID)
+        let diagnosticRunID = "input-conversion-" + UUID().uuidString
+        runID = diagnosticRunID
+        let root = supportRoot.appendingPathComponent(diagnosticRunID)
         let leases = try AutomationDeviceLeaseManager(storeURL: supportRoot.appendingPathComponent("target-leases.json"))
         runner = try AutomationInputAdapterProbeRunner(plan: plan,
-            approval: .init(runID: runID, probeDigest: plan.digest, app: prepared.host.app, target: prepared.host.target),
+            approval: .init(runID: diagnosticRunID, probeDigest: plan.digest, app: prepared.host.app, target: prepared.host.target),
             developerDirectory: developerDirectory, state: root,
             leases: leases, artifacts: AutomationArtifactRegistry(root: root.appendingPathComponent("artifacts")),
             subject: AutomationInstalledSubjectVerifier(developerDirectory: developerDirectory, workspace: root),

@@ -89,6 +89,78 @@ final class AutomationPreparedCodecRegressionTests: XCTestCase {
         try PlanValidator.validate(h.plan, approval: h.approval, capabilities: capabilities)
     }
 
+    private func legacyPrepared(_ h: Fixture) throws -> AutomationPreparedApplication {
+        var prepared = h.prepared
+        let sources = URL(fileURLWithPath: prepared.buildLogPath).deletingLastPathComponent()
+            .appendingPathComponent("generated-host/" + prepared.generatedHost.scheme + "/Sources")
+        for file in ["UIHostPlan.swift", "UIStepTests.swift"] { try FileManager.default.removeItem(at: sources.appendingPathComponent(file)) }
+        var records: [String: String] = [:]
+        for file in try FileManager.default.contentsOfDirectory(atPath: sources.path) {
+            records[file] = AutomationArtifactRegistry.digest(try Data(contentsOf: sources.appendingPathComponent(file)))
+        }
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        prepared.generatedHost.templateDigest = AutomationArtifactRegistry.digest(try encoder.encode(records))
+        return try JSONDecoder().decode(AutomationPreparedApplication.self, from: encoder.encode(prepared))
+    }
+
+    func testDecodedPreUIHostInventoryAdmitsEntityPlanThroughExecutionCapabilities() async throws {
+        let h = try fixture(), prepared = try legacyPrepared(h)
+        let runner = try AutomationApplicationRunner(supportRoot: h.root.appendingPathComponent("attempts"),
+            developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+        let capabilities = try await runner.capabilitiesForExecution(subject: .prepared(prepared), plan: h.plan, capabilities: .init())
+        XCTAssertTrue(capabilities.supports(["apple.codec.entity"]))
+        try PlanValidator.validate(h.plan, approval: h.approval, capabilities: capabilities)
+    }
+
+    func testRetainedPreUISourceInventoryRejectsMutationAdditionAndRemoval() throws {
+        for change in ["mutation", "addition", "removal"] {
+            let h = try fixture(), prepared = try legacyPrepared(h)
+            let sources = URL(fileURLWithPath: prepared.buildLogPath).deletingLastPathComponent()
+                .appendingPathComponent("generated-host/" + prepared.generatedHost.scheme + "/Sources")
+            switch change {
+            case "mutation": try Data("altered".utf8).write(to: sources.appendingPathComponent("HostPlan.swift"))
+            case "addition": try Data("new source".utf8).write(to: sources.appendingPathComponent("Added.swift"))
+            default: try FileManager.default.removeItem(at: sources.appendingPathComponent("HostPlan.swift"))
+            }
+            XCTAssertThrowsError(try AutomationPreparedCodecAuthority.verify(prepared), change) {
+                XCTAssertEqual($0 as? AutomationContractError, .conflictingOperation, change)
+            }
+        }
+    }
+
+    func testRetainedSourceInventoryRejectsNonRegularEntriesUnsafeNamesAndPaths() throws {
+        for change in ["directory", "symlink", "unsafeName", "newlineName", "unsafeScheme", "directorySymlink", "tooManyFiles", "oversizedFile"] {
+            let h = try fixture()
+            var prepared = try legacyPrepared(h)
+            let session = URL(fileURLWithPath: prepared.buildLogPath).deletingLastPathComponent()
+            let sources = session.appendingPathComponent("generated-host/" + prepared.generatedHost.scheme + "/Sources")
+            let file = sources.appendingPathComponent("HostPlan.swift")
+            switch change {
+            case "directory":
+                try FileManager.default.removeItem(at: file)
+                try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
+            case "symlink":
+                let outside = h.root.appendingPathComponent("Outside.swift")
+                try FileManager.default.copyItem(at: file, to: outside)
+                try FileManager.default.removeItem(at: file)
+                try FileManager.default.createSymbolicLink(at: file, withDestinationURL: outside)
+            case "unsafeName": try Data("extra".utf8).write(to: sources.appendingPathComponent(".Hidden.swift"))
+            case "newlineName": try Data("extra".utf8).write(to: sources.appendingPathComponent("Extra.swift\n"))
+            case "unsafeScheme": prepared.generatedHost.scheme = "../escape"
+            case "directorySymlink":
+                let outside = h.root.appendingPathComponent("OutsideSources")
+                try FileManager.default.moveItem(at: sources, to: outside)
+                try FileManager.default.createSymbolicLink(at: sources, withDestinationURL: outside)
+            case "tooManyFiles":
+                for index in 0..<65 { try Data().write(to: sources.appendingPathComponent("Extra\(index).swift")) }
+            default: try Data(repeating: 0, count: 1_048_577).write(to: file)
+            }
+            XCTAssertThrowsError(try AutomationPreparedCodecAuthority.verify(prepared), change) {
+                XCTAssertEqual($0 as? AutomationContractError, .invalidIdentity, change)
+            }
+        }
+    }
+
     func testExplicitVetoAndConsentSurviveDiskVerification() async throws {
         let h = try fixture()
         for state in [CapabilityProfile.State.unavailable, .consentRequired, .available] {

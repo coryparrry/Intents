@@ -26,3 +26,9 @@ Xcode 27.2 initially failed to load Apple’s test framework on iOS 27.0 because
 The optional conversion diagnostic preserves the existing **Mac-only** canary and never grants or revokes execution capabilities. No live diagnostic, iPhone, Mac subject intent/UI workflow, or Intent Lab run was performed in this phase. Every codec family's real echo is still Phase 3 acceptance.
 
 Raw logs, profiles, prepared products and screenshots stay outside git in the temporary verification directory. Only this README, the compact worklog, plan and brief are committed.
+
+## Conditional merge review
+
+PR 136 review found and repaired three issues. Intact hosts now verify against their own saved source inventory; changed files and unsafe paths still fail. A failed or cancelled input diagnostic exposes recovery for its exact campaign without permitting reset of other live runs. A corrupt newest completed preparation now asks the user to prepare again instead of silently restoring an older app or target. Core and native regressions cover these cases, and independent scoped source reviews found no material blockers. The device/Mac SDK major/minor check follows the amended plan and remains.
+
+After the review fixes, direct core XCTest passed 1,087 tests with 33 optional live skips and zero failures. Native direct XCTest passed 170 tests plus two Swift Testing checks, with zero failures; the updated PR checks must be green before merge. These regressions ran on this Mac and do not add iPhone, Mac subject or Intent Lab execution evidence.

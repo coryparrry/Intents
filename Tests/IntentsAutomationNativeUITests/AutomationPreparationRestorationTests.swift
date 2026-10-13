@@ -34,27 +34,59 @@ import XCTest
         XCTAssertTrue(model.sourceGrants.urls.isEmpty)
     }
 
-    func testLatestPreparationSkipsNewerBrokenRecordButRejectsChangedRetainedFiles() throws {
+    func testLatestCompletedPreparationRestoresItsAppAndTargetAndIgnoresUnfinishedDirectories() async throws {
         let fixture = try RetainedPreparationFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let prepared = try fixture.savePreparation()
-        let badSession = fixture.support.appendingPathComponent("prepare-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: badSession, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let record = badSession.appendingPathComponent("prepared-application.json")
-        try Data("broken".utf8).write(to: record)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600, .modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: record.path)
-        XCTAssertEqual(try AutomationPreparedApplicationRecord.loadLatest(supportRoot: fixture.support), prepared)
-        let files = [URL(fileURLWithPath: prepared.host.subjectProductPath).appendingPathComponent("payload"),
-            URL(fileURLWithPath: prepared.host.hostBundlePath).appendingPathComponent("payload"),
-            URL(fileURLWithPath: prepared.host.xctestrunPath),
-            URL(fileURLWithPath: prepared.buildLogPath).deletingLastPathComponent().appendingPathComponent("generated-host/Owned/Sources/HostPlan.swift")]
+        let older = try fixture.savePreparation()
+        let latest = try fixture.savePreparation(appName: "Other")
+        try fixture.orderRecords(older: older, latest: latest)
+        let unfinished = fixture.support.appendingPathComponent("prepare-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: unfinished, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: unfinished.path)
+        XCTAssertNotEqual(older.host.app.logicalID, latest.host.app.logicalID)
+        XCTAssertNotEqual(older.host.target, latest.host.target)
+        XCTAssertEqual(try AutomationPreparedApplicationRecord.loadLatest(supportRoot: fixture.support), latest)
+        let model = AppAutomationStore(supportDirectory: fixture.support)
+        await model.waitForPreparation()
+        XCTAssertEqual(model.prepared, latest)
+        XCTAssertEqual(model.candidateID, latest.host.app.logicalID)
+        XCTAssertEqual(model.sourcePreparationTarget, latest.host.target)
+        await model.closeAndWait()
+    }
+
+    func testDamagedLatestCompletedPreparationNeverRestoresAnOlderAppOrTarget() async throws {
+        let fixture = try RetainedPreparationFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let older = try fixture.savePreparation()
+        let latest = try fixture.savePreparation(appName: "Other")
+        try fixture.orderRecords(older: older, latest: latest)
+        let record = URL(fileURLWithPath: latest.buildLogPath).deletingLastPathComponent().appendingPathComponent("prepared-application.json")
+        let files = [URL(fileURLWithPath: latest.host.subjectProductPath).appendingPathComponent("payload"),
+            URL(fileURLWithPath: latest.host.hostBundlePath).appendingPathComponent("payload"),
+            URL(fileURLWithPath: latest.host.xctestrunPath),
+            URL(fileURLWithPath: latest.buildLogPath).deletingLastPathComponent().appendingPathComponent("generated-host/Owned/Sources/HostPlan.swift"), record]
         for file in files {
             let original = try Data(contentsOf: file)
             try Data("changed".utf8).write(to: file)
             XCTAssertThrowsError(try AutomationPreparedApplicationRecord.loadLatest(supportRoot: fixture.support), file.path)
+            let model = AppAutomationStore(supportDirectory: fixture.support)
+            await model.waitForPreparation()
+            XCTAssertNil(model.prepared, file.path)
+            XCTAssertNil(model.intake, file.path)
+            XCTAssertFalse(model.canRun, file.path)
+            XCTAssertTrue(model.message?.contains("Prepare the app again") == true, file.path)
+            await model.closeAndWait()
             try original.write(to: file)
-            XCTAssertEqual(try AutomationPreparedApplicationRecord.loadLatest(supportRoot: fixture.support), prepared)
+            XCTAssertEqual(try AutomationPreparedApplicationRecord.loadLatest(supportRoot: fixture.support), latest)
         }
+        var drifted = latest; drifted.source.excludedPaths.append("changed")
+        try JSONEncoder().encode(drifted).write(to: record)
+        XCTAssertThrowsError(try AutomationPreparedApplicationRecord.loadLatest(supportRoot: fixture.support))
+        let model = AppAutomationStore(supportDirectory: fixture.support)
+        await model.waitForPreparation()
+        XCTAssertNil(model.prepared)
+        XCTAssertTrue(model.message?.contains("Prepare the app again") == true)
+        await model.closeAndWait()
     }
 
     func testChangedPreparedFilesLeaveLaunchUnpreparedWithUsefulMessage() async throws {
@@ -88,7 +120,17 @@ private struct RetainedPreparationFixture {
             "CONFIGS": ["buildConfigurations": ["DEBUG"]], "DEBUG": ["name": "Debug"]]]
         try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: project.appendingPathComponent("project.pbxproj"))
     }
-    func savePreparation() throws -> AutomationPreparedApplication {
+    func orderRecords(older: AutomationPreparedApplication, latest: AutomationPreparedApplication) throws {
+        let oldRecord = URL(fileURLWithPath: older.buildLogPath).deletingLastPathComponent().appendingPathComponent("prepared-application.json")
+        let newRecord = URL(fileURLWithPath: latest.buildLogPath).deletingLastPathComponent().appendingPathComponent("prepared-application.json")
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-120)], ofItemAtPath: oldRecord.path)
+        try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: newRecord.path)
+    }
+    func savePreparation(appName: String = "Subject") throws -> AutomationPreparedApplication {
+        let selectedProject = source.appendingPathComponent(appName + ".xcodeproj")
+        if selectedProject != project {
+            try FileManager.default.copyItem(at: project, to: selectedProject)
+        }
         let session = support.appendingPathComponent("prepare-" + UUID().uuidString)
         let manifest = try AutomationSourceSnapshot.capture(source: source, sessionRoot: session, additionalRoots: [library])
         let subject = session.appendingPathComponent("Subject.app"), host = session.appendingPathComponent("Owned.app")
@@ -96,7 +138,7 @@ private struct RetainedPreparationFixture {
             try FileManager.default.createDirectory(at: product, withIntermediateDirectories: true)
             try Data("retained payload".utf8).write(to: product.appendingPathComponent("payload"))
         }
-        var app = AppIdentity(logicalID: project.path + "#APP", bundleID: "example.Subject", platform: "ios", productDigest: try AutomationProductDigest.compute(bundle: subject))
+        var app = AppIdentity(logicalID: selectedProject.path + "#APP", bundleID: "example." + appName, platform: "ios", productDigest: try AutomationProductDigest.compute(bundle: subject))
         app.canonicalBundlePath = subject.path; app.sourceManifestDigest = try manifest.digest; app.configuration = "Debug"
         let sources = session.appendingPathComponent("generated-host/Owned/Sources")
         try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
@@ -109,7 +151,7 @@ private struct RetainedPreparationFixture {
         let xctestrun = session.appendingPathComponent("host.xctestrun"), testData = Data("retained test settings".utf8)
         try testData.write(to: xctestrun)
         let prepared = AutomationPreparedApplication(source: manifest,
-            generatedHost: .init(projectPath: project.path, scheme: "Owned", targetID: "HOST", bundleID: "example.Owned", configuration: "Debug", templateDigest: AutomationArtifactRegistry.digest(try encoder.encode(records))),
+            generatedHost: .init(projectPath: selectedProject.path, scheme: "Owned", targetID: "HOST", bundleID: "example.Owned", configuration: "Debug", templateDigest: AutomationArtifactRegistry.digest(try encoder.encode(records))),
             host: .init(app: app, target: .init(id: UUID().uuidString, kind: .simulator), xctestrunPath: xctestrun.path,
                 xctestrunDigest: AutomationArtifactRegistry.digest(testData), subjectProductPath: subject.path, hostBundlePath: host.path,
                 hostProductDigest: try AutomationProductDigest.compute(bundle: host), hostBundleID: "example.Owned", testTarget: "Owned"),
