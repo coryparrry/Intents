@@ -82,8 +82,6 @@ let package = Package(
         .target(name: "IntentsAutomationHostContracts", dependencies: ["IntentsAutomationDateCodec"], path: "Integration/AutomationHost", exclude: ["UIHostPlan.swift", "UIStepTests.swift", "AutomationDateCodec.swift", "AutomationDurationCodec.swift", "AutomationCalendarCodec.swift", "AutomationURLCodec.swift", "AutomationIntentFileCodec.swift", "IntentDefinitionsHost.swift", "HostReceipt.swift", "SegmentTests.swift", "InputAdapterProbeTests.swift"], sources: ["HostPlan.swift", "HostInputAdapterProbePlan.swift"]),
         .testTarget(name: "IntentsAutomationHostContractTests", dependencies: ["IntentsAutomationHostContracts", "IntentsAutomationCore"], path: "Tests/IntentsAutomationHostContractTests"),
         .executableTarget(name: "IntentsAutomationOwnershipProbe", dependencies: ["IntentsAutomationCore"], path: "Tools/IntentsAutomationOwnershipProbe"),
-        .executableTarget(name: "IntentsAutomationPreparationProbe", dependencies: ["IntentsAutomationCore"], path: "Tools/IntentsAutomationPreparationProbe"),
-        .executableTarget(name: "IntentsAutomationApplicationProbe", dependencies: ["IntentsAutomationCore"], path: "Tools/IntentsAutomationApplicationProbe"),
         .executableTarget(name: "IntentsAutomationControllerProbe", dependencies: ["IntentsAutomationCore"], path: "Tools/IntentsAutomationControllerProbe"),
         .testTarget(name: "IntentsAutomationCoreTests", dependencies: ["IntentsAutomationCore", "IntentsAutomationOwnershipProbe", "IntentsAutomationControllerProbe"], path: "Tests/IntentsAutomationCoreTests", resources: [.copy("Fixtures")]),
         // Exercise the native confirmation store without rebuilding the full app.
@@ -222,6 +220,7 @@ let package = Package(
                 "EvaluationStorePersistenceRecoveryTests.swift",
                 "FeaturePersistenceTests.swift",
                 "FoundationEvalsTests.swift",
+                "ClosureFeatureAdapter.swift",
                 "ImageToolTests.swift",
                 "MCPAppControlTests.swift",
                 "JudgeCredentialBindingTests.swift",

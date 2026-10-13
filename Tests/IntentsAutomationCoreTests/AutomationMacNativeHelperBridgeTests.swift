@@ -177,10 +177,17 @@ final class AutomationMacNativeHelperBridgeTests: XCTestCase, @unchecked Sendabl
             request["timeoutMs"] = .number(mode == "hang" ? 500 : 5000)
             request["action"] = .object(["kind": .string("press"), "instance": instance, "x": .number(10), "y": .number(20)])
             do { _ = try await execute(fixture, request: .object(request)); XCTFail("Uncertain submission accepted") } catch {}
-            do { _ = try await execute(fixture, request: .object(request)); XCTFail("Repeated submission accepted") } catch {}
-            XCTAssertEqual(try String(contentsOf: fixture.marker, encoding: .utf8), "app\npress\n")
+            do { _ = try await execute(fixture, request: .object(request)); XCTFail("Repeated submission accepted") }
+            catch { XCTAssertEqual(error as? AutomationContractError, .invalidIdentity) }
             let stopped = await fixture.bridge.stop()
             XCTAssertTrue(stopped)
+            let submitted = try String(contentsOf: fixture.marker, encoding: .utf8)
+            if mode == "hang" {
+                // A timeout may occur before dispatch, but cannot permit a second press.
+                XCTAssertTrue(["app\n", "app\npress\n"].contains(submitted))
+            } else {
+                XCTAssertEqual(submitted, "app\npress\n")
+            }
         }
     }
     func testStopBeforeQueuedCommandAdmissionCannotLaunchOrAcknowledge() async throws {

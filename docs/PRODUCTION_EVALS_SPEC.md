@@ -31,4 +31,4 @@ The CLI requires an explicitly supplied absolute executable path for custom work
 
 Single-machine fixture capacity and native UI/source checks are separate from live Apple model, physical-device matrix and real production ingestion evidence. Capture sanitization is developer-defined and must be reviewed by the integrating team. File-system coordination requires coherent atomic local/shared storage semantics; object stores and eventually consistent mounts are unsupported. Authenticated hosted collaboration, fleet provisioning and customer production deployment are separate operational deployments, not silently created by this feature.
 
-Operating instructions: [Production eval guide](PRODUCTION_EVALS_GUIDE.md). Qualification evidence: [Verification record](../Verification/PRODUCTION_EVALS_VERIFICATION.md).
+Operating instructions: [Production eval guide](PRODUCTION_EVALS_GUIDE.md).

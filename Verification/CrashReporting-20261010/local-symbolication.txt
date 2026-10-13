@@ -1,3 +1,0 @@
-main (in Fixture) + 12
-static Fixture.$main() (in Fixture) + 12
-static Fixture.main() (in Fixture) + 3296

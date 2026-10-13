@@ -148,7 +148,7 @@ final class AutomationSimulatorCodecQualificationTests: XCTestCase {
     }
 
     func testQualificationCitesRetainedCanaryMetadata() throws {
-        let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Verification/Automation/simulator-codec-qualification-2.json")
+        let path = try XCTUnwrap(Bundle.module.url(forResource: "simulator-codec-qualification-2", withExtension: "json", subdirectory: "Fixtures/Qualification"))
         let metadata = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
         let verified = try XCTUnwrap(metadata["verified"] as? [[String: Any]])
         XCTAssertEqual(Set(verified.compactMap { $0["reportSHA256"] as? String }), Set(AutomationSimulatorCodecQualification.qualified.reports))

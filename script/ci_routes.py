@@ -98,7 +98,7 @@ PYTHON_DEPENDENCIES = {
     "script/release_dispatch.sh": RELEASE_VALIDATION,
     "script/verify_release_source.sh": RELEASE_VALIDATION,
     "script/verify_release.sh": RELEASE_VALIDATION,
-    "script/release.sh": RELEASE_VALIDATION | {"script.tests.test_automation_release_pipeline"},
+    "script/release.sh": RELEASE_VALIDATION,
     "script/verify_installer.sh": RELEASE_VALIDATION,
     "script/ci_core_scheme.py": {"script.tests.test_ci_core_scheme"},
     "release-please-config.json": {
@@ -113,7 +113,7 @@ PYTHON_DEPENDENCIES = {
         "script.tests.test_wait_release_ci",
     },
     ".github/workflows/package-installer.yml": RELEASE_VALIDATION
-    | {"script.tests.test_wait_release_ci", "script.tests.test_update_homebrew", "script.tests.test_automation_release_pipeline"},
+    | {"script.tests.test_wait_release_ci", "script.tests.test_update_homebrew"},
     ".github/workflows/release.yml": RELEASE_VALIDATION,
 }
 FULL_COVERAGE_PATHS = {
@@ -239,7 +239,7 @@ def coverage(paths, root=ROOT):
                 f"Full coverage: native project/configuration change in {path}.", root
             )
         elif path in METADATA_PATHS or path.startswith(
-            ("docs/", ".github/assets/", "demo-video/")
+            ("docs/", ".github/assets/")
         ):
             reasons.add(
                 "Documentation, media, and repository metadata need no unit tests or native build."

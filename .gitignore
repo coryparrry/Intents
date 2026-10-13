@@ -3,10 +3,6 @@
 __pycache__/
 dist/
 
-# Local demo recordings, source artwork, and intermediate media.
-/demo-video/public/
-/demo-video/out/
-
 # Keep only the published repository artwork.
 /.github/assets/*
 !/.github/assets/readme-banner.png
@@ -43,19 +39,17 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 *.mobileprovision
 *.provisionprofile
 
-# Local working notes.
-/Verification/LocalReliability-20260930/
-/Verification/PR57-CI-20260930/
-/Verification/IntentLabUX-20261001/
-/Verification/FinalFollowup/
+# Local audit reports, build logs, screenshots, and working notes.
 /worklog.md
+/.codegraph/
+/Verification/**
 
-/Verification/INTENT_LAB_USABILITY_WORKLOG.md
-
-/Verification/PR_SIMPLIFICATION_REVIEW_2026-09-30.md
-
-/Verification/PR_SIMPLIFICATION_REVIEW_COVERAGE_2026-09-30.md
-
-/Verification/REUSABLE_INTENT_LAB_IMPLEMENTATION_LOG.md
-
-!/docs/MCP_CONTROL_GUIDE.md
+# Keep executable verification inputs, developer hosts, and formal models.
+!/Verification/Automation/
+!/Verification/Automation/Fixtures/
+!/Verification/Automation/Fixtures/**
+!/Verification/DeveloperRunnerTestHost/
+!/Verification/DeveloperRunnerTestHost/**
+!/Verification/*.lean
+!/Verification/Lean*.md
+!/Verification/lean-toolchain

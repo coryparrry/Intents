@@ -91,14 +91,6 @@ final class AutomationIntakeTests: XCTestCase {
         XCTAssertEqual(result.candidates.map(\.name), ["Subject"]); XCTAssertEqual(result.candidates.first?.targetID, "APP")
         XCTAssertTrue(result.requiresBuildApproval); XCTAssertNil(result.candidates.first?.app); XCTAssertFalse(result.gaps.isEmpty)
     }
-    func testRealFrozenProductIntakeReadsActualPlatformArchitectureAndProductBytes() throws {
-        guard let path = ProcessInfo.processInfo.environment["INTENTS_AUTOMATION_SUBJECT_BUNDLE"] else { throw XCTSkip("No explicit frozen product profile") }
-        let result = try AutomationApplicationIntake.assess(URL(fileURLWithPath: path))
-        XCTAssertEqual(result.candidates.count, 1); XCTAssertEqual(result.candidates[0].bundleID, "com.coryparry.FlipBook")
-        XCTAssertEqual(result.candidates[0].platform, "ios"); XCTAssertEqual(result.candidates[0].architectures, ["arm64", "x86_64"])
-        XCTAssertEqual(result.candidates[0].app?.productDigest, "6311e6b95db95e606946f48eedb05a2740824a37c7d8004e9b82e8cd8ed3b2f4")
-        XCTAssertFalse(result.requiresBuildApproval)
-    }
     func testMalformedExecutableAndFatArchitectureTableAreNotApps() {
         XCTAssertThrowsError(try AutomationMachOIdentity.architectures(Data("not a MachO application".utf8)))
         XCTAssertThrowsError(try AutomationMachOIdentity.architectures(Data([0xca,0xfe,0xba,0xbe,0,0,0,2,0,0,0,0])))

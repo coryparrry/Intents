@@ -326,6 +326,54 @@ struct EvaluationHTTPLanguageModelTests {
         }
     }
 
+    @Test(.timeLimit(.minutes(1)), arguments: ["text-eof-newline", "text-eof"])
+    func loopbackEOFPreservesObserverOrderAndMeasuresFirstContentOnce(route: String) async throws {
+        let fixture = try RunningCustomModelFixture(streamDelay: 0)
+        defer { fixture.stop() }
+        let caseID = UUID()
+        let recorder = HTTPPartialResponseRecorder()
+        var configuration = EvaluationCustomProviderConfiguration()
+        configuration.endpoint = "http://127.0.0.1:\(fixture.port)/\(route)"
+        let model = EvaluationHTTPLanguageModel(
+            configuration: configuration,
+            liveResponseObserver: EvaluationHTTPLiveResponseObserver { update in
+                await recorder.record(update)
+            }
+        )
+        let executor = try EvaluationHTTPLanguageModelExecutor(configuration: model.executorConfiguration)
+        let channel = LanguageModelExecutorGenerationChannel()
+        // The SDK's events are opaque. These routes emit only two response commands,
+        // so a third channel event is the one first-content metadata measurement.
+        let eventDrain = Task {
+            var count = 0
+            do {
+                for try await _ in channel { count += 1 }
+            } catch {
+                if !Task.isCancelled { throw error }
+            }
+            return count
+        }
+        defer { eventDrain.cancel() }
+        try await executor.respond(
+            to: LanguageModelExecutorGenerationRequest(
+                id: UUID(),
+                transcript: Transcript(),
+                enabledTools: [],
+                generationOptions: GenerationOptions(),
+                contextOptions: ContextOptions(),
+                metadata: ["evalCaseID": caseID.uuidString, "repetition": 1]
+            ),
+            model: model,
+            streamingInto: channel
+        )
+        eventDrain.cancel()
+        let channelEventCount = try await eventDrain.value
+        let updates = await recorder.updates
+        #expect(channelEventCount == 3)
+        #expect(updates.map(\.content) == ["First ", "First last."])
+        #expect(updates.allSatisfy { $0.caseID == caseID && $0.repetition == 1 })
+    }
+
     @Test func recordedFirstResponseSurvivesAnAlreadyElapsedWaitBudget() async throws {
         let recorder = HTTPPartialResponseRecorder()
         let update = EvaluationHTTPLiveResponseUpdate(caseID: UUID(), repetition: 1, content: "first")

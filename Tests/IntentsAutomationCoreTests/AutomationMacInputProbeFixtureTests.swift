@@ -117,8 +117,7 @@ final class AutomationMacInputProbeFixtureTests: XCTestCase {
             print("Authored String input fixture and dedicated SDK host compiled; no app, probe or intent runtime launched")
             return
         }
-        let installed = AutomationInstalledSubjectVerifier(developerDirectory: developer, workspace: root)
-        let subject = AutomationMacGUISubjectVerifier(subject: installed, identity: { try AutomationMacGUIIdentity.validate($0) })
+        let subject = AutomationInstalledSubjectVerifier(developerDirectory: developer, workspace: root)
         let owner = try AutomationInputAdapterProbeRunner(plan: plan,
             approval: .init(runID: "authored-input-fixture", probeDigest: plan.digest, app: prepared.host.app, target: target),
             developerDirectory: developer, state: root.appendingPathComponent("probe-owner"),

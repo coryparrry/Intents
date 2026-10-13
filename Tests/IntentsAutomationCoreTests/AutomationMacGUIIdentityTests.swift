@@ -42,25 +42,6 @@ final class AutomationMacGUIIdentityTests: XCTestCase, @unchecked Sendable {
             else { XCTAssertThrowsError(try AutomationMacGUIIdentity.decode(missing, securitySessionID: 123, attributes: 0x10)) }
         }
     }
-    final class Identity: @unchecked Sendable {
-        private let lock = NSLock(); private var calls = 0
-        func validate(_ target: TargetIdentity) throws {
-            lock.lock(); defer { lock.unlock() }; calls += 1
-            if calls > 1 { throw AutomationContractError.conflictingOperation }
-        }
-    }
-    actor Subject: AutomationSubjectVerifier {
-        var calls = 0
-        func verify(app: AppIdentity, target: TargetIdentity) async throws { calls += 1 }
-        func count() -> Int { calls }
-    }
-    func testSessionChangeDuringSubjectCheckCannotAuthorizeLaterInput() async throws {
-        let underlying = Subject(), identity = Identity()
-        let verifier = AutomationMacGUISubjectVerifier(subject: underlying, identity: { try identity.validate($0) })
-        do { try await verifier.verify(app: .init(logicalID: "fixture", bundleID: "example.Fixture", platform: "macos"),
-            target: .init(id: "host-macos-local", kind: .nativeMac, loginSession: "mac-gui-v1:501:123:0")); XCTFail("Changed GUI identity accepted") } catch {}
-        let count = await underlying.count(); XCTAssertEqual(count, 1)
-    }
     func testCurrentSessionReadOnlyOptIn() throws {
         guard ProcessInfo.processInfo.environment["INTENTS_MAC_GUI_IDENTITY_PROBE"] == "1" else { throw XCTSkip("Read-only current GUI identity opt-in") }
         let selected = try AutomationMacGUIIdentity.currentTarget()

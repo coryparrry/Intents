@@ -18,9 +18,15 @@ func normalizeTitle(_ value: String) -> String {
         .joined(separator: " ")
 }
 
-let adapter = ClosureFeatureAdapter(displayName: "Title normalizer") { input in
-    normalizeTitle(input.prompt)
+struct TitleNormalizerAdapter: EvaluationFeatureAdapter {
+    let displayName = "Title normalizer"
+
+    func evaluate(_ input: EvaluationFeatureInput) async throws -> EvaluationFeatureOutput {
+        EvaluationFeatureOutput(response: normalizeTitle(input.prompt))
+    }
 }
+
+let adapter = TitleNormalizerAdapter()
 
 let run = try await store.runFeatureAdapter(
     expectedRevision: store.suiteRevision,

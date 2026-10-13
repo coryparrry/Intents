@@ -52,7 +52,6 @@ class CoverageTests(unittest.TestCase):
                 ".github/CODEOWNERS",
                 ".github/assets/demo.gif",
                 "docs/releasing.md",
-                "demo-video/src/index.tsx",
                 ".gitignore",
                 "worklog.md",
                 "examples/custom_model_fixture_server.py",
@@ -91,13 +90,17 @@ class CoverageTests(unittest.TestCase):
             python=("script.tests.test_release_pr",),
         )
 
-    def test_release_packaging_selects_its_pipeline_regressions(self):
-        for path in ['script/release.sh', '.github/workflows/package-installer.yml']:
-            with self.subTest(path=path):
-                self.assertIn('script.tests.test_automation_release_pipeline', routes.coverage([path])['python_tests'])
-        for path in ['script/automation_fetch_runtime.sh', 'script/automation_prepare_runtime.sh',
-                     'script/automation_package.sh']:
-            self.assertNotIn(path, routes.PYTHON_DEPENDENCIES)
+    def test_release_packaging_selects_its_validation_and_platform_checks(self):
+        self.assert_selection(
+            ["script/release.sh"],
+            python=routes.RELEASE_VALIDATION,
+            macos=routes.MACOS_TESTS,
+        )
+        self.assert_selection(
+            [".github/workflows/package-installer.yml"],
+            python=routes.RELEASE_VALIDATION
+            | {"script.tests.test_wait_release_ci", "script.tests.test_update_homebrew"},
+        )
 
     def test_signature_code_and_test_run_on_macos_without_xcode_build(self):
         for path in (
@@ -323,6 +326,18 @@ class CoverageTests(unittest.TestCase):
                     plan["python_tests"], sorted(routes.python_test_inventory())
                 )
                 self.assertEqual(plan["macos_tests"], sorted(routes.MACOS_TESTS))
+
+    def test_removed_script_test_routes_only_modules_in_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tests = root / "script/tests"
+            tests.mkdir(parents=True)
+            (tests / "test_remaining.py").touch()
+            plan = routes.coverage(["script/tests/test_deleted.py"], root=root)
+            self.assertEqual(plan["python_tests"], ["script.tests.test_remaining"])
+            self.assertEqual(plan["macos_tests"], sorted(routes.MACOS_TESTS))
+            self.assertFalse(plan["native"])
+            self.assertFalse(plan["ui"])
 
 
 class CatalogTests(unittest.TestCase):

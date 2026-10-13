@@ -137,7 +137,7 @@ supports macOS crash collection. Intents reconstructs its native payload into a 
 
 The SDK native hook cannot be removed during a process lifetime. Intents removes the app-specific pending cache when consent changes, preventing further file writes while diagnostics are off. A persisted consent epoch rejects old reports even if deletion fails. Re-enabling sharing prepares an empty cache and refreshes the native hook context.
 
-Readable function names require dSYMs matching the exact shipping archive. See [native symbol upload](https://posthog.com/docs/error-tracking/upload-source-maps/ios) and [local crash verification](../Verification/CrashReporting-20261010/README.md). Do not include source snippets when uploading symbols. Local builds and fixture tests do not establish live PostHog symbolication.
+Readable function names require dSYMs matching the exact shipping archive. See [native symbol upload](https://posthog.com/docs/error-tracking/upload-source-maps/ios). Do not include source snippets when uploading symbols. Local builds and fixture tests do not establish live PostHog symbolication.
 
 The collection is deliberately bounded and explicitly instrumented: it needs no
 screen capture, customer-content export, provider request tracing or automatic
@@ -152,15 +152,11 @@ with no cross-app advertising tracking. The app does not identify an account or
 link devices. UserDefaults and elapsed-time API reasons cover the telemetry code.
 This local manifest is not an assertion that a store disclosure was submitted.
 
-The [10 October repair evidence](../Verification/Telemetry-20261010/README.md)
-separates source/tests, saved queries, interface checks and release/ingestion status.
 The website privacy notice covers separate website analytics and is unchanged.
 
-## Local exclusion and archive symbols (PR qualification)
+## Local exclusion and archive symbols
 
 Run `bash script/disable_local_telemetry.sh` once on a development Mac and restart any running Intents instances. The current-account/current-host preference in `com.coryparry.Intents.LocalTelemetry` is shared across updated app versions and takes precedence over usage/diagnostics consent, including Release builds. Legacy sharing preferences are also disabled. No hardware identifier or local exclusion marker is included in network payloads. Debug, simulator, tests, previews, demos and verification launches remain excluded independently.
-
-The local block was applied and verified on the development Mac for this PR. It is a local machine policy, not a repository-wide analytics opt-out for other users. Keep it set when installing a distributed build here.
 
 `script/upload_posthog_symbols.sh <archive> --verify-only` checks a Developer ID signed Intents archive and requires exact binary/dSYM UUID and architecture equality. Omit `--verify-only` to upload all archive dSYMs through PostHog CLI 0.18.10 to EU project 266962, binding the bundle identifier and the archive's version/build. Authenticate the CLI or provide `POSTHOG_CLI_API_KEY`; never commit the credential. The helper never includes source files, distributes an app, or publishes a GitHub release. Use it on the exact archive being distributed, never a later rebuild.
 

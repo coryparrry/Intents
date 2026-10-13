@@ -51,26 +51,3 @@ enum AutomationAppleHostFile {
         return plist
     }
 }
-
-/// Both controllers use the same native lease; unsupported routes remain explicit capability gaps.
-public struct AutomationCompositeRouteDriver: AutomationRouteDriver {
-    public var ui: any AutomationRouteDriver
-    public var apple: any AutomationRouteDriver
-    public init(ui: any AutomationRouteDriver, apple: any AutomationRouteDriver) { self.ui = ui; self.apple = apple }
-    private func route(_ kind: AutomationSegment.Kind) throws -> any AutomationRouteDriver {
-        switch kind {
-        case .ui: return ui
-        case .systemIntent, .systemQuery: return apple
-        default: throw AutomationContractError.missingEvidence("No qualified controller for this route")
-        }
-    }
-    public func acquire(plan: AutomationCase, segment: AutomationSegment, scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease) async throws {
-        try await route(segment.kind).acquire(plan: plan, segment: segment, scope: scope, lease: lease)
-    }
-    public func execute(plan: AutomationCase, segment: AutomationSegment, scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease) async throws -> AutomationSegmentReceipt {
-        try await route(segment.kind).execute(plan: plan, segment: segment, scope: scope, lease: lease)
-    }
-    public func release(scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease) async -> AutomationReleaseProof {
-        await (lease.control == .ui ? ui : apple).release(scope: scope, lease: lease)
-    }
-}

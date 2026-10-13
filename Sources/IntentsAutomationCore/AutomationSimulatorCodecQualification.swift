@@ -22,7 +22,7 @@ enum AutomationSimulatorCodecQualification {
         let probeVersion: String
     }
     // Actual no-write App Intent dispatch, exact returned values, and released
-    // ownership are retained in Verification/Automation/simulator-codec-qualification-1.json.
+    // ownership are retained in Tests/IntentsAutomationCoreTests/Fixtures/Qualification/simulator-codec-qualification-1.json.
     static let legacyQualified = Qualification(context: Context(
         hostTemplate: "0f812ac7ade31b1bea3056261569882341ac1df5d6bc21decba5d84f570a29e5",
         macOSBuild: "26B5101f", architecture: "arm64", xcodeBuild: "27A266a",
