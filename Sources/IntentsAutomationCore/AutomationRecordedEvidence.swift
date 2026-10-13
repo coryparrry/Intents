@@ -26,6 +26,7 @@ public enum AutomationRecordedEvidence {
                       observation.stepID == receipt.segmentID, observation.id == receipt.segmentID, observation.route == receipt.route else { throw AutomationContractError.conflictingOperation }
             }
             for value in receipt.verifiedOutputs?.values ?? Dictionary<String, AutomationValue>().values { try value.validate() }
+            if let failure = receipt.terminalUIAssertionFailure { try failure.validate(receipt: receipt, segment: segment, plan: plan) }
         }
         let subject = report.receipts.first { $0.segmentID == plan.execution.id }
         guard report.result.subjectDispatched == (subject?.dispatched ?? false), report.result.subjectCompleted == (subject?.completed ?? false),
@@ -33,7 +34,24 @@ public enum AutomationRecordedEvidence {
         let observationFacts = report.receipts.filter { receipt in plan.observations.contains(where: { $0.id == receipt.segmentID }) }.flatMap(\.observations)
         let derived = AutomationAssessment.assess(plan: plan, attemptID: report.attemptID, subjectDispatched: report.result.subjectDispatched,
             subjectCompleted: report.result.subjectCompleted, observations: observationFacts, receipts: report.receipts, runID: runID)
-        if [.passed, .assertionFailed, .executedUnassessed, .needsReview].contains(report.result.summary) {
+        if report.result.summary == .assertionFailed, report.receipts.contains(where: { $0.terminalUIAssertionFailure != nil }) {
+            guard report.resourcesReleased, !report.result.assessed, !report.result.evidenceComplete,
+                  report.receipts.filter({ $0.terminalUIAssertionFailure != nil }).count == 1,
+                  let terminal = report.receipts.last, terminal.terminalUIAssertionFailure != nil,
+                  !terminal.completed, terminal.dispatched,
+                  let failedSegment = segments.first(where: { $0.id == terminal.segmentID }), failedSegment.phase != .setup,
+                  report.receipts.map(\.segmentID) == Array(segments.prefix(report.receipts.count)).map(\.id),
+                  report.receipts.dropLast().allSatisfy({ $0.dispatched && $0.completed }),
+                  report.result.failedObservations == derived.failedObservations, report.result.missingObservations == derived.missingObservations else {
+                throw AutomationContractError.conflictingOperation
+            }
+            for setup in plan.setup {
+                guard let receipt = report.receipts.first(where: { $0.segmentID == setup.id }), let runID,
+                      AutomationFixtureValidator.validates(receipt: receipt, segment: setup, plan: plan, runID: runID, attemptID: report.attemptID) else {
+                    throw AutomationContractError.conflictingOperation
+                }
+            }
+        } else if [.passed, .assertionFailed, .executedUnassessed, .needsReview].contains(report.result.summary) {
             guard report.receipts.map(\.segmentID) == segments.map(\.id),
                   report.receipts.allSatisfy({ $0.dispatched && $0.completed }),
                   report.resourcesReleased else { throw AutomationContractError.conflictingOperation }

@@ -13,7 +13,6 @@ extension InstalledUIStoreTests {
         let cases = try AutomationCaseStore(root: model.support.appendingPathComponent("Cases"))
         let legacyAttempts = try await cases.attempts(for: legacy)
         let original = try XCTUnwrap(legacyAttempts.first)
-        let runtime = AutomationNativeUIRuntime(runtime: .init(bundleURL: root, expectedTeamID: "AAAAAAAAAA"), manifestDigest: String(repeating: "a", count: 64))
         // Retained preparation fixture; no device execution or signed-runtime claim.
         var after = try changedPreparedSource(before)
         let session = model.support.appendingPathComponent("prepare-" + UUID().uuidString)
@@ -24,13 +23,13 @@ extension InstalledUIStoreTests {
         after.catalog.app = after.host.app
         try JSONEncoder().encode(after).write(to: session.appendingPathComponent("prepared-application.json"))
         let comparison = try AutomationNativeUIFixComparisonProposal.compile(frozen: legacy, original: original,
-            before: .prepared(before), after: .prepared(after), runtime: runtime, runID: "comparison", disposable: false)
+            before: .prepared(before), after: .prepared(after), runID: "comparison", disposable: false)
         XCTAssertEqual(comparison.baseline.plan.id, "comparison." + legacy.digest)
         XCTAssertEqual(comparison.baseline.plan.revision, 1)
         XCTAssertEqual(comparison.baseline.plan.provenance["comparison.sourceCaseDigest"], legacy.digest)
         XCTAssertEqual(comparison.candidate.plan.preparedSimulatorBuildArtifacts, try .init(prepared: after))
-        XCTAssertTrue(AutomationNativeUIRuntime.preparedEvidenceMatches(plan: legacy.plan, prepared: before))
-        XCTAssertFalse(AutomationNativeUIRuntime.preparedEvidenceMatches(plan: legacy.plan, prepared: after))
+        XCTAssertTrue(AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: legacy.plan, prepared: before))
+        XCTAssertFalse(AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: legacy.plan, prepared: after))
         try legacy.validate()
         let candidate = try await cases.freeze(comparison.candidate.plan)
         let failure = try await NativeSearchFactExecutor(fails: true).execute(frozen: candidate, approval: comparison.afterApproval,
@@ -39,18 +38,18 @@ extension InstalledUIStoreTests {
         model.prepared = after
         await model.showSavedCase(candidate)
         XCTAssertTrue(model.canReproduceSavedFailure)
-        let restarted = AppAutomationStore(supportDirectory: model.support, uiRuntimeProvider: { runtime })
+        let restarted = AppAutomationStore(supportDirectory: model.support)
         restarted.intake = model.intake; restarted.candidateID = model.candidateID; restarted.configuration = model.configuration
         restarted.simulatorID = model.simulatorID; restarted.effectChoice = "navigation"; restarted.effectsConfirmed = true
         await restarted.showSavedCase(candidate)
         let retained = try XCTUnwrap(restarted.savedPreparedBaseline)
         XCTAssertEqual(retained, after)
         let reproduction = try AutomationNativeUIReproductionProposal.compile(frozen: candidate, original: failure,
-            subject: .prepared(retained), runtime: runtime, runID: "reproduce-after", disposable: false)
+            subject: .prepared(retained), runID: "reproduce-after", disposable: false)
         XCTAssertEqual(reproduction.frozen, candidate)
         XCTAssertEqual(reproduction.approval.app, after.host.app)
         XCTAssertThrowsError(try AutomationNativeUIReproductionProposal.compile(frozen: candidate, original: failure,
-            subject: .prepared(before), runtime: runtime, runID: "wrong-build", disposable: false))
+            subject: .prepared(before), runID: "wrong-build", disposable: false))
         let unchangedAttempts = try await cases.attempts(for: legacy)
         XCTAssertEqual(unchangedAttempts, [original])
         let unchangedLegacy = try await cases.load(id: legacy.plan.id, revision: legacy.plan.revision, digest: legacy.digest)
@@ -79,7 +78,7 @@ extension InstalledUIStoreTests {
         XCTAssertEqual(baseline.contractDigest, candidate.contractDigest)
         XCTAssertNotEqual(baseline.digest, candidate.digest)
         XCTAssertEqual(candidate.plan.provenance["catalog"], try AutomationRecipeContext.catalogDigest(after.catalog))
-        XCTAssertTrue(AutomationNativeUIRuntime.preparedEvidenceMatches(plan: candidate.plan, prepared: after))
+        XCTAssertTrue(AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: candidate.plan, prepared: after))
         let cases = try AutomationCaseStore(root: model.support.appendingPathComponent("Cases"))
         let savedCandidate = try await cases.freeze(candidate.plan)
         let approval = RunApproval(runID: "after-syntax", app: after.host.app, target: after.host.target,
@@ -91,9 +90,8 @@ extension InstalledUIStoreTests {
         model.prepared = after
         await model.showSavedCase(savedCandidate)
         XCTAssertTrue(model.canReproduceSavedFailure)
-        let runtime = AutomationNativeUIRuntime(runtime: .init(bundleURL: root, expectedTeamID: "AAAAAAAAAA"), manifestDigest: String(repeating: "a", count: 64))
         let reproduction = try AutomationNativeUIReproductionProposal.compile(frozen: savedCandidate, original: failure,
-            subject: .prepared(after), runtime: runtime, runID: "reproduce-syntax", disposable: false)
+            subject: .prepared(after), runID: "reproduce-syntax", disposable: false)
         XCTAssertEqual(reproduction.frozen.plan.app.sourceSyntaxIndexDigest, after.host.app.sourceSyntaxIndexDigest)
         XCTAssertThrowsError(try AutomationFixContract.candidate(from: baseline, app: after.host.app))
         var changed = after; changed.generatedHost.templateDigest = String(repeating: "7", count: 64)
@@ -110,9 +108,9 @@ extension InstalledUIStoreTests {
         altered = candidate.plan; altered.provenance["catalog"] = String(repeating: "8", count: 64)
         XCTAssertThrowsError(try AutomationFrozenCase(plan: altered))
         altered = candidate.plan; altered.target.id = UUID().uuidString
-        XCTAssertFalse(AutomationNativeUIRuntime.preparedEvidenceMatches(plan: altered, prepared: after))
+        XCTAssertFalse(AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: altered, prepared: after))
         changed = after; changed.catalog.app.bundleID = "different.bundle"
-        XCTAssertFalse(AutomationNativeUIRuntime.preparedEvidenceMatches(plan: candidate.plan, prepared: changed))
+        XCTAssertFalse(AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: candidate.plan, prepared: changed))
     }
 }
 #endif

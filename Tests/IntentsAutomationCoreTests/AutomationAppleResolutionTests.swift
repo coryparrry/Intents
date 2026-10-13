@@ -99,6 +99,35 @@ private actor AutomationResolutionUIFixtureDriver: AutomationRouteDriver {
     }
 }
 
+/// Synthetic producer setup is confined to this fixture; production UI uses UIStepTests.
+private actor AutomationResolutionFixtureRouter: AutomationResolvedRouteDriver {
+    private let apple: any AutomationResolvedRouteDriver
+    private let fixture = AutomationResolutionUIFixtureDriver()
+    private var ui = false
+    init(apple: any AutomationResolvedRouteDriver) { self.apple = apple }
+    func acquire(plan: AutomationCase, segment: AutomationSegment, scope: AutomationScope,
+                 lease: AutomationDeviceLeaseManager.Lease) async throws {
+        ui = segment.kind == .ui
+        if ui { try await fixture.acquire(plan: plan, segment: segment, scope: scope, lease: lease) }
+        else { try await apple.acquire(plan: plan, segment: segment, scope: scope, lease: lease) }
+    }
+    func acquireResolved(plan: AutomationCase, segment: AutomationSegment, scope: AutomationScope,
+                         lease: AutomationDeviceLeaseManager.Lease, authority: AutomationSegmentResolutionAuthority) async throws {
+        ui = segment.kind == .ui
+        if ui { try await fixture.acquire(plan: plan, segment: segment, scope: scope, lease: lease) }
+        else { try await apple.acquireResolved(plan: plan, segment: segment, scope: scope, lease: lease, authority: authority) }
+    }
+    func execute(plan: AutomationCase, segment: AutomationSegment, scope: AutomationScope,
+                 lease: AutomationDeviceLeaseManager.Lease) async throws -> AutomationSegmentReceipt {
+        if ui { return await fixture.execute(plan: plan, segment: segment, scope: scope, lease: lease) }
+        return try await apple.execute(plan: plan, segment: segment, scope: scope, lease: lease)
+    }
+    func release(scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease) async -> AutomationReleaseProof {
+        if ui { return await fixture.release(scope: scope, lease: lease) }
+        return await apple.release(scope: scope, lease: lease)
+    }
+}
+
 private func checkResolution(report: AutomationAttemptReport, commands: AutomationResolutionCommands, query: Bool) async throws {
     XCTAssertTrue(report.resourcesReleased); XCTAssertTrue(report.result.subjectCompleted, "\(report.result)")
     let payloads = await commands.payloads
@@ -134,7 +163,7 @@ extension AutomationAppleRouteDriverTests {
                 subjectVerifier: Subject(app: h.host.app, target: h.host.target), releaseVerifier: h.release, capabilities: resolutionCodecs,
                 commands: .init(run: { try await commands.run($0, root: $1, timeout: $2) }, stop: { await commands.stop() }))
             let coordinator = AutomationCoordinator(leases: leases, journal: try AutomationJournal(url: h.root.appendingPathComponent("integration-journal.json")))
-            let report = try await coordinator.run(plan: plan, approval: approval, capabilities: resolutionCodecs, attemptID: "attempt", driver: AutomationMixedRouteDriver(ui: AutomationResolutionUIFixtureDriver(), apple: driver))
+            let report = try await coordinator.run(plan: plan, approval: approval, capabilities: resolutionCodecs, attemptID: "attempt", driver: AutomationResolutionFixtureRouter(apple: driver))
             try await checkResolution(report: report, commands: commands, query: query)
         }
     }
@@ -161,7 +190,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
                 subjectVerifier: Subject(app: h.host.app, target: h.host.target), releaseVerifier: h.release, capabilities: resolutionCodecs, validateTarget: { _ in },
                 commands: .init(run: { try await commands.run($0, root: $1, timeout: $2) }, stop: { await commands.stop() }))
             let coordinator = AutomationCoordinator(leases: leases, journal: try AutomationJournal(url: h.root.appendingPathComponent("integration-journal.json")))
-            let report = try await coordinator.run(plan: plan, approval: approval, capabilities: resolutionCodecs, attemptID: "attempt", driver: AutomationMixedRouteDriver(ui: AutomationResolutionUIFixtureDriver(), apple: driver))
+            let report = try await coordinator.run(plan: plan, approval: approval, capabilities: resolutionCodecs, attemptID: "attempt", driver: AutomationResolutionFixtureRouter(apple: driver))
             try await checkResolution(report: report, commands: commands, query: query)
         }
     }

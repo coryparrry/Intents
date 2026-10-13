@@ -22,7 +22,6 @@ extension AppAutomationStore {
     func makeFreshRecordRequest(runID: String) throws -> AutomationNativeRunRequest {
         guard let prepared, preparedUISelectionMatches, ["true", "false"].contains(freshInitialState),
               ["true", "false"].contains(freshExpectedState) else { throw AutomationContractError.invalidIdentity }
-        let runtime = try uiRuntimeProvider?() ?? AutomationNativeUIRuntime.bundled(stateDirectory: support.appendingPathComponent("ui-preview"))
         var capabilities = AutomationEntityQuery.capabilities(prepared)
         capabilities.records["apple.intent.invoke"] = .init(state: .available, reason: "Associated Apple host; invocation checks registration", probeVersion: "host-v2", evidence: [prepared.host.xctestrunDigest])
         var approval = RunApproval(runID: runID, app: prepared.host.app, target: prepared.host.target,
@@ -31,25 +30,27 @@ extension AppAutomationStore {
             instruction: uiInstruction, endpoint: uiEndpoint, namePrefix: freshNamePrefix, nameProperty: freshNameProperty,
             stateProperty: freshStateProperty, initialState: freshInitialState == "true", expectedState: freshExpectedState == "true",
             approval: approval, capabilities: capabilities, localeIdentifier: Locale.current.identifier, context: freshContext, purpose: .simulatorDraft,
-            saveControl: freshSaveControl.isEmpty ? nil : .init(.label, freshSaveControl))
-        try AutomationNativeUIRuntime.attachPreparedEvidence(to: &plan, prepared: prepared)
-        plan.provenance["ui.runtimeManifestDigest"] = runtime.manifestDigest
-        plan.provenance["ui.runtimeTeamID"] = runtime.runtime.expectedTeamID
-        if useLearnedSetup {
-            guard let learnedSetupRecipe else { throw AutomationContractError.missingEvidence("Complete two matching fresh setup runs first") }
-            let context = AutomationRecipeContext(app: plan.app, target: plan.target, environmentID: plan.environmentID,
-                catalogDigest: try AutomationRecipeContext.catalogDigest(prepared.catalog), hostDigest: prepared.host.hostProductDigest,
-                localeIdentifier: Locale.current.identifier, uiRuntimeManifestDigest: runtime.manifestDigest)
-            plan = try learnedSetupRecipe.propose(plan: plan, context: context)
+            saveControl: try AutomationNativeWorkflowSteps.locator(freshSaveControl),
+            createControl: try AutomationNativeWorkflowSteps.optionalLocator(freshCreateControl),
+            nameEntry: try AutomationNativeWorkflowSteps.locator(freshNameEntryControl),
+            contextEntry: try AutomationNativeWorkflowSteps.optionalLocator(freshContextEntryControl))
+        try AutomationNativePreparedEvidence.attachPreparedEvidence(to: &plan, prepared: prepared)
+        for index in plan.setup.indices {
+            guard var program = plan.setup[index].uiProgram else { continue }
+            for operation in program.operations.indices where program.operations[operation].kind == .assertEndpoint {
+                program.operations[operation].locator = try AutomationNativeWorkflowSteps.locator(uiEndpoint)
+            }
+            plan.setup[index].uiProgram = program
         }
+        try AutomationNativeWorkflowSteps.applyBudget(to: &plan, approval: approval)
         plan.id = "fresh." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
         let digest = try AutomationFrozenCase.planDigest(plan); approval.approvedCaseDigest = digest
-        let fields = ["plan": digest, "runtime": runtime.manifestDigest, "runtimeTeam": runtime.runtime.expectedTeamID,
+        let fields = ["plan": digest,
             "host": prepared.host.hostProductDigest, "xctestrun": prepared.host.xctestrunDigest,
             "catalog": try AutomationRecipeContext.catalogDigest(prepared.catalog), "install": String(installApproved),
             "disposable": String(disposable), "maximumActions": String(approval.maximumActions)]
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return .init(subject: .prepared(prepared), uiRuntime: runtime.runtime, plan: plan, approval: approval, capabilities: capabilities,
+        return .init(subject: .prepared(prepared), plan: plan, approval: approval, capabilities: capabilities,
             installApproved: installApproved, digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: digest)
     }
     func makeNativeRunRequest(runID: String) throws -> AutomationNativeRunRequest {
@@ -100,25 +101,15 @@ extension AppAutomationStore {
             "xctestrun": prepared.host.xctestrunDigest, "catalog": try AutomationRecipeContext.catalogDigest(prepared.catalog),
             "install": String(installApproved), "disposable": String(disposable), "maximumActions": String(approval.maximumActions)]
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return .init(subject: .prepared(prepared), uiRuntime: nil, plan: plan, approval: approval, capabilities: capabilities, installApproved: installApproved,
+        return .init(subject: .prepared(prepared), plan: plan, approval: approval, capabilities: capabilities, installApproved: installApproved,
             digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: caseDigest)
     }
     func makeUIRunRequest(runID: String) throws -> AutomationNativeRunRequest {
         guard let candidate else { throw AutomationContractError.invalidIdentity }
-        let subject: AutomationApplicationSubject
-        if isInstalledUI {
-            let installed = try AutomationInstalledUIApplication(bundleURL: URL(fileURLWithPath: candidate.containerPath),
-                target: .init(id: simulatorID, kind: .simulator))
-            guard installed.app == candidate.app else { throw AutomationContractError.conflictingOperation }
-            subject = .installedUI(installed)
-        } else {
-            guard candidate.kind == .sourceTarget, workflowRoute == "ui", preparedUISelectionMatches, let prepared else {
-                throw AutomationContractError.missingEvidence("Prepare this source app for the selected configuration and simulator")
-            }
-            subject = .prepared(prepared)
+        guard candidate.kind == .sourceTarget, workflowRoute == "ui", preparedUISelectionMatches, let prepared else {
+            throw AutomationContractError.missingEvidence("Prepare this source app for the selected configuration and simulator")
         }
-        // Revalidate the bundled signature and assets at every preview/confirmation.
-        let runtime = try uiRuntimeProvider?() ?? AutomationNativeUIRuntime.bundled(stateDirectory: support.appendingPathComponent("ui-preview"))
+        let subject = AutomationApplicationSubject.prepared(prepared)
         var effects: Set<AutomationEffect> = [.observe, .navigate]
         if effectChoice == "fixture" { effects.insert(.fixtureWrite) }
         if effectChoice == "external" { effects.insert(.externalWrite) }
@@ -128,16 +119,18 @@ extension AppAutomationStore {
             endpoint: uiEndpoint, approvedText: uiApprovedText, expectedVisibleText: uiExpectedText,
             observationLabel: uiObservationProperty == "text" ? "" : uiObservationLabel,
             observationProperty: uiObservationProperty, approval: approval, localeIdentifier: Locale.current.identifier)
-        if case .prepared(let prepared) = subject { try AutomationNativeUIRuntime.attachPreparedEvidence(to: &plan, prepared: prepared) }
-        plan.provenance["ui.runtimeManifestDigest"] = runtime.manifestDigest
-        plan.provenance["ui.runtimeTeamID"] = runtime.runtime.expectedTeamID
+        if case .prepared(let prepared) = subject { try AutomationNativePreparedEvidence.attachPreparedEvidence(to: &plan, prepared: prepared) }
+        plan.execution.uiProgram = try AutomationNativeWorkflowSteps.program(tapControls: uiTapControls, textEntry: uiTextEntryControl,
+            approvedText: uiApprovedText, submitControl: uiSubmitControl, endpoint: uiEndpoint)
+        plan.provenance["ui.backend"] = "xcuitest"
+        try AutomationNativeWorkflowSteps.applyBudget(to: &plan, approval: approval)
         plan.id = "ui." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
         let caseDigest = try AutomationFrozenCase.planDigest(plan)
         approval.approvedCaseDigest = caseDigest
-        let fields = ["plan": caseDigest, "runtime": runtime.manifestDigest, "runtimeTeam": runtime.runtime.expectedTeamID,
+        let fields = ["plan": caseDigest,
             "install": String(installApproved), "disposable": String(disposable), "maximumActions": String(approval.maximumActions)]
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return .init(subject: subject, uiRuntime: runtime.runtime, plan: plan, approval: approval, capabilities: .init(),
+        return .init(subject: subject, plan: plan, approval: approval, capabilities: .init(),
             installApproved: installApproved, digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: caseDigest)
     }
 }

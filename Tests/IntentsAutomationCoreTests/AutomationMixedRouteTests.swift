@@ -12,39 +12,24 @@ final class AutomationMixedRouteTests: XCTestCase, @unchecked Sendable {
         return (plan, .init(runID: "run", app: app, target: plan.target, environmentID: plan.environmentID,
             effects: [.observe], maximumActions: 10, disposable: true, approvedCaseDigest: try! AutomationFrozenCase.planDigest(plan)))
     }
-    private func run(omitObservation: Bool = false, releaseUI: Bool = true) async throws -> (AutomationAttemptReport, [String]) {
-        let (plan, approval) = fixture(), events = MixedEvents()
-        let ui = MixedFixtureDriver(name: "ui", events: events, release: releaseUI)
-        let apple = MixedFixtureDriver(name: "apple", events: events, omitObservation: omitObservation)
-        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let coordinator = AutomationCoordinator(leases: .init(), journal: try .init(url: root.appendingPathComponent("journal.json")))
-        let report = try await coordinator.run(plan: plan, approval: approval, capabilities: .init(), attemptID: "attempt",
-            driver: AutomationMixedRouteDriver(ui: ui, apple: apple))
-        return (report, await events.values)
-    }
-    func testConcreteOwnersReleaseBeforeTheNextRouteAcquires() async throws {
-        let (report, events) = try await run()
-        XCTAssertEqual(report.result.summary, .passed); XCTAssertTrue(report.resourcesReleased)
-        XCTAssertEqual(events, ["ui.acquire.setup", "ui.execute.setup", "ui.release.setup",
-            "apple.acquire.subject", "apple.execute.subject", "apple.release.subject",
-            "apple.acquire.readback", "apple.execute.readback", "apple.release.readback"])
-    }
-    func testUIReleaseFailureBlocksAppleDispatch() async throws {
-        let (report, events) = try await run(releaseUI: false)
-        XCTAssertFalse(report.resourcesReleased); XCTAssertFalse(report.result.subjectDispatched)
-        XCTAssertEqual(events, ["ui.acquire.setup", "ui.execute.setup", "ui.release.setup"])
-    }
-    func testUICompletionDoesNotSubstituteForIndependentBusinessEvidence() async throws {
-        let (report, _) = try await run(omitObservation: true)
-        XCTAssertEqual(report.result.summary, .needsReview); XCTAssertTrue(report.result.subjectCompleted)
+    func testUIRouteCannotAcquireLegacySegmentOwner() async throws {
+        let (plan, _) = fixture(), events = MixedEvents(), leases = AutomationDeviceLeaseManager()
+        let driver = AutomationMixedRouteDriver(apple: MixedFixtureDriver(name: "apple", events: events))
+        let lease = try await leases.acquire(runID: "run", target: plan.target, control: .ui)
+        for kind in [AutomationSegment.Kind.ui] {
+            let segment = AutomationSegment(id: "setup", kind: kind, phase: .setup, operation: "Create")
+            let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: segment.id, leaseGeneration: lease.generation)
+            do { try await driver.acquire(plan: plan, segment: segment, scope: scope, lease: lease); XCTFail("Legacy UI route acquired") }
+            catch { XCTAssertTrue(error is AutomationContractError) }
+        }
+        let history = await events.values; XCTAssertEqual(history, [])
     }
     func testForeignPlanLeaseAndReplayedScopeCannotUseAnAcquiredDriver() async throws {
         let (plan, _) = fixture(), events = MixedEvents(), leases = AutomationDeviceLeaseManager()
-        let driver = AutomationMixedRouteDriver(ui: MixedFixtureDriver(name: "ui", events: events), apple: MixedFixtureDriver(name: "apple", events: events))
-        let lease = try await leases.acquire(runID: "run", target: plan.target, control: .ui)
-        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "setup", leaseGeneration: lease.generation)
-        let segment = plan.setup[0]
+        let driver = AutomationMixedRouteDriver(apple: MixedFixtureDriver(name: "apple", events: events))
+        let lease = try await leases.acquire(runID: "run", target: plan.target, control: .system)
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: lease.generation)
+        let segment = plan.execution
         try await driver.acquire(plan: plan, segment: segment, scope: scope, lease: lease)
         var changed = plan; changed.environmentID = "foreign"
         do { _ = try await driver.execute(plan: changed, segment: segment, scope: scope, lease: lease); XCTFail("Foreign plan executed") }
@@ -55,35 +40,34 @@ final class AutomationMixedRouteTests: XCTestCase, @unchecked Sendable {
         let repeatProof = await driver.release(scope: scope, lease: lease); XCTAssertTrue(repeatProof.runnerTerminated)
         do { try await driver.acquire(plan: plan, segment: segment, scope: scope, lease: lease); XCTFail("Replayed scope acquired") }
         catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
-        let history = await events.values; XCTAssertEqual(history, ["ui.acquire.setup", "ui.release.setup"])
+        let history = await events.values; XCTAssertEqual(history, ["apple.acquire.subject", "apple.release.subject"])
     }
     func testCleanupFailureForwardsProcessProofButRetainsOwner() async throws {
         let (plan, _) = fixture(), events = MixedEvents(), leases = AutomationDeviceLeaseManager()
-        let driver = AutomationMixedRouteDriver(ui: MixedFixtureDriver(name: "ui", events: events, privatePayloadCleaned: false),
-            apple: MixedFixtureDriver(name: "apple", events: events))
-        let lease = try await leases.acquire(runID: "run", target: plan.target, control: .ui)
-        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "setup", leaseGeneration: lease.generation)
-        try await driver.acquire(plan: plan, segment: plan.setup[0], scope: scope, lease: lease)
+        let driver = AutomationMixedRouteDriver(apple: MixedFixtureDriver(name: "apple", events: events, privatePayloadCleaned: false))
+        let lease = try await leases.acquire(runID: "run", target: plan.target, control: .system)
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: lease.generation)
+        try await driver.acquire(plan: plan, segment: plan.execution, scope: scope, lease: lease)
         let proof = await driver.release(scope: scope, lease: lease)
         XCTAssertTrue(proof.commandsDrained); XCTAssertTrue(proof.runnerTerminated); XCTAssertFalse(proof.privatePayloadCleaned)
-        do { try await driver.acquire(plan: plan, segment: plan.setup[0], scope: scope, lease: lease); XCTFail("Uncleaned owner replaced") } catch {}
-        let history = await events.values; XCTAssertEqual(history, ["ui.acquire.setup", "ui.release.setup"])
+        do { try await driver.acquire(plan: plan, segment: plan.execution, scope: scope, lease: lease); XCTFail("Uncleaned owner replaced") } catch {}
+        let history = await events.values; XCTAssertEqual(history, ["apple.acquire.subject", "apple.release.subject"])
     }
     func testReleaseDuringAcquireCannotClaimDrainOrResurrectOwnership() async throws { try await checkLateContinuation(acquiring: true) }
     func testReleaseDuringExecuteCannotClaimDrainOrPromoteLateReceipt() async throws { try await checkLateContinuation(acquiring: false) }
     private func checkLateContinuation(acquiring: Bool) async throws {
         let (plan, _) = fixture(), events = MixedEvents(), leases = AutomationDeviceLeaseManager()
-        let ui = MixedFixtureDriver(name: "ui", events: events, holdAcquire: acquiring, holdExecute: !acquiring)
-        let driver = AutomationMixedRouteDriver(ui: ui, apple: MixedFixtureDriver(name: "apple", events: events))
-        let lease = try await leases.acquire(runID: "run", target: plan.target, control: .ui)
-        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "setup", leaseGeneration: lease.generation)
-        let segment = plan.setup[0]
+        let apple = MixedFixtureDriver(name: "apple", events: events, holdAcquire: acquiring, holdExecute: !acquiring)
+        let driver = AutomationMixedRouteDriver(apple: apple)
+        let lease = try await leases.acquire(runID: "run", target: plan.target, control: .system)
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: lease.generation)
+        let segment = plan.execution
         if !acquiring { try await driver.acquire(plan: plan, segment: segment, scope: scope, lease: lease) }
         let task = Task {
             if acquiring { try await driver.acquire(plan: plan, segment: segment, scope: scope, lease: lease) }
             else { _ = try await driver.execute(plan: plan, segment: segment, scope: scope, lease: lease) }
         }
-        let expected = "ui." + (acquiring ? "acquire" : "execute") + ".setup"
+        let expected = "apple." + (acquiring ? "acquire" : "execute") + ".subject"
         var reached = false
         for _ in 0..<100 {
             if await events.values.contains(expected) { reached = true; break }
@@ -91,7 +75,7 @@ final class AutomationMixedRouteTests: XCTestCase, @unchecked Sendable {
         }
         XCTAssertTrue(reached)
         let early = await driver.release(scope: scope, lease: lease); XCTAssertFalse(early.commandsDrained)
-        await ui.open()
+        await apple.open()
         do { try await task.value; XCTFail("Revoked work became authoritative") }
         catch { XCTAssertEqual(error as? AutomationContractError, .unknownLease) }
         let final = await driver.release(scope: scope, lease: lease); XCTAssertTrue(final.commandsDrained)
@@ -102,8 +86,7 @@ final class AutomationMixedRouteTests: XCTestCase, @unchecked Sendable {
                                                                          AutomationScope, AutomationDeviceLeaseManager.Lease, MixedEvents) {
         var (plan, _) = fixture(); plan.target = target
         let events = MixedEvents(), leases = AutomationDeviceLeaseManager()
-        let driver = AutomationMixedRouteDriver(ui: MixedFixtureDriver(name: "ui", events: events),
-            apple: MixedFixtureDriver(name: "apple", events: events),
+        let driver = AutomationMixedRouteDriver(apple: MixedFixtureDriver(name: "apple", events: events),
             siri: includeSiri ? MixedFixtureDriver(name: "siri", events: events) : nil)
         let lease = try await leases.acquire(runID: "run", target: target, control: control)
         let segment = AutomationSegment(id: "routed", kind: kind, phase: .subject, operation: "Route")

@@ -14,13 +14,12 @@ public actor AutomationMixedRouteDriver: AutomationResolvedRouteDriver {
         var releasing = false
         var revoked = false
     }
-    private let ui: any AutomationRouteDriver
     private let apple: any AutomationRouteDriver
     private let siri: (any AutomationRouteDriver)?
     private var active: Active?
     private var lastReleased: (AutomationScope, AutomationDeviceLeaseManager.Lease)?
-    public init(ui: any AutomationRouteDriver, apple: any AutomationRouteDriver, siri: (any AutomationRouteDriver)? = nil) {
-        self.ui = ui; self.apple = apple; self.siri = siri
+    public init(apple: any AutomationRouteDriver, siri: (any AutomationRouteDriver)? = nil) {
+        self.apple = apple; self.siri = siri
     }
 
     public func acquire(plan: AutomationCase, segment: AutomationSegment, scope: AutomationScope,
@@ -38,7 +37,7 @@ public actor AutomationMixedRouteDriver: AutomationResolvedRouteDriver {
               scope.leaseGeneration == lease.generation, plan.target == lease.target else { throw AutomationContractError.targetBusy }
         let driver: any AutomationRouteDriver
         switch segment.kind {
-        case .ui: guard lease.control == .ui else { throw AutomationContractError.unknownLease }; driver = ui
+        case .ui: guard lease.control == .ui else { throw AutomationContractError.unknownLease }; throw AutomationContractError.missingEvidence("UI workflows execute as a single generated-host XCUITest plan")
         case .systemIntent, .systemQuery: guard lease.control == .system else { throw AutomationContractError.unknownLease }; driver = apple
         case .siriText:
             guard lease.control == .system, plan.target.kind == .physical, let siri else {

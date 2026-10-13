@@ -31,6 +31,12 @@ public struct AutomationFrozenCase: Codable, Equatable, Sendable {
         contract.app.canonicalBundlePath = nil; contract.app.productDigest = nil; contract.app.productDigestVersion = nil
         contract.app.codeDirectoryIdentity = nil; contract.app.sourceManifestDigest = nil
         contract.app.provenanceStrength = "comparisonContract"
+        if plan.provenance["ui.backend"] == "xcuitest" {
+            contract.app.sourceSyntaxIndexDigest = nil
+            for key in ["catalog", "ui.preparedHostDigest", "ui.preparedCatalogDigest", "ui.preparedXctestrunDigest", "firstRun.hostDigest", "firstRun.catalogDigest"] {
+                contract.provenance.removeValue(forKey: key)
+            }
+        }
         if let artifacts = plan.preparedMacBuildArtifacts {
             try artifacts.validate(plan: plan)
             contract.app.sourceSyntaxIndexDigest = nil

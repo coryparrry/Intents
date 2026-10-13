@@ -130,7 +130,7 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
         if qualify { authority = try? AutomationSiriRouteAuthority(plan: plan, approval: approval) }
         return try await AutomationPreparedPhysicalCampaign.run(prepared: prepared ?? h.prepared, plan: plan, approval: approval,
             capabilities: h.capabilities, attemptID: attemptID, root: h.attempts, developer: h.developer, leases: h.leases,
-            runtime: nil, campaignBudget: nil, siriAuthority: authority, components: components)
+            campaignBudget: nil, siriAuthority: authority, components: components)
     }
 
     private func assertNothingReserved(_ h: Harness, _ device: Device, _ installer: Installer, allowStateDirectory: String? = nil,
@@ -186,7 +186,7 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
         try await assertNothingReserved(h, device, installer)
     }
 
-    func testSiriOutsideSubjectAndUIWithoutRuntimeAreRefusedBeforeStateOrDeviceReservation() async throws {
+    func testSiriOutsideSubjectAndUnsupportedUIAreRefusedBeforeStateOrDeviceReservation() async throws {
         let h = try await fixture()
         // Use a valid query subject so Siri qualification cannot reject the plan
         // before the cleanup/observation conditions under test are reached.
@@ -212,7 +212,7 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
 
         let denials: [(String, AutomationCase, AutomationContractError)] = [
             ("Siri cleanup", lateSiri, .invalidPlan("Siri requires one approved physical recognised-text subject request")),
-            ("UI observation without runtime", uiWithoutRuntime, .missingEvidence("Mixed physical checks require the signed UI runtime")),
+            ("UI observation needs the XCUITest route", uiWithoutRuntime, .invalidPlan("Siri may run only as the frozen subject")),
         ]
         for (name, plan, expected) in denials {
             let device = Device(), installer = Installer()
@@ -234,8 +234,7 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
                 _ = try await run(h, plan: plan, approval: try approved(plan, h.approval), attemptID: attemptID, components: components(device, installer))
                 XCTFail("\(key) admitted without a runtime")
             } catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation, key) }
-            try await assertNothingReserved(h, device, installer, allowStateDirectory: attemptID)
-            try FileManager.default.removeItem(at: h.attempts.appendingPathComponent(attemptID))
+            try await assertNothingReserved(h, device, installer)
         }
     }
 

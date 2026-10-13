@@ -30,7 +30,10 @@ public enum AutomationFreshEntityPlanner {
                                nameProperty: String, stateProperty: String, initialState: Bool, expectedState: Bool,
                                approval: RunApproval, capabilities: CapabilityProfile, localeIdentifier: String,
                                context: AutomationFreshEntityContext? = nil, purpose: Purpose = .execution,
-                               saveControl: AutomationUIProgram.Locator? = nil) throws -> AutomationCase {
+                               saveControl: AutomationUIProgram.Locator? = nil, includeProtectedRecord: Bool = true,
+                               createControl: AutomationUIProgram.Locator? = nil,
+                               nameEntry: AutomationUIProgram.Locator? = nil,
+                               contextEntry: AutomationUIProgram.Locator? = nil) throws -> AutomationCase {
         switch purpose {
         case .execution, .simulatorDraft:
             guard approval.target.kind == .simulator else { throw AutomationContractError.invalidIdentity }
@@ -55,37 +58,43 @@ public enum AutomationFreshEntityPlanner {
         }
         try AutomationAttemptText.validatePrefix(namePrefix)
         try context?.validate(entity: entity, nameProperty: nameProperty)
-        // A form may retain its name after saving. Require approved input activity,
-        // while the independent queries below prove both records and their owners.
-        var goal = AutomationNavigationGoal(id: "create", instruction: context?.setupInstruction(instruction) ?? instruction,
-            endpoint: .init(.label, endpoint), maximumCalls: 12, maximumActions: 30, minimumBindingUses: ["approvedText": 1], allowedFillBindings: ["approvedText"])
-        goal.saveControl = saveControl
-        try goal.validate()
+        guard let nameEntry, let saveControl else {
+            throw AutomationContractError.invalidPlan("Choose the name field and Save control")
+        }
+        func creationProgram(contextValue: String?) -> AutomationUIProgram {
+            var operations: [AutomationUIProgram.Operation] = []
+            if let createControl { operations.append(.init(id: "open", kind: .tap, locator: createControl)) }
+            operations.append(.init(id: "name", kind: .fillBinding, locator: nameEntry, binding: "approvedText"))
+            var bindings: [String: String] = [:]
+            if let contextValue {
+                if let contextEntry {
+                    bindings["context"] = contextValue
+                    operations.append(.init(id: "context", kind: .fillBinding, locator: contextEntry, binding: "context"))
+                } else {
+                    operations.append(.init(id: "context", kind: .tap,
+                        locator: .init(.label, contextValue, role: .button)))
+                }
+            }
+            operations.append(.init(id: "save", kind: .tap, locator: saveControl))
+            operations.append(.init(id: "saved", kind: .assertEndpoint, locator: .init(.label, endpoint)))
+            return .init(operations: operations, bindings: bindings)
+        }
         var create = AutomationSegment(id: "fixture.create", kind: .ui, phase: .setup, operation: instruction,
             effects: [.observe, .navigate, .fixtureWrite], lifecycle: .persistedStateAcrossSegments)
-        create.uiProgram = .init(operations: [.init(id: "create", kind: .navigateGoal, goal: goal)])
+        create.uiProgram = creationProgram(contextValue: context?.selectedValue)
         create.attemptTextBindings = ["approvedText": namePrefix]
-        if let context {
-            create.uiProgram?.bindings = ["selectedContext": context.selectedValue, "protectedContext": context.protectedValue]
-            // Both declared values are also in the goal so current visible list
-            // controls can be chosen; query evidence decides whether setup worked.
-        }
         var creationSteps = [create]
         if let context {
             // One bounded goal per record keeps completion of the first UI
             // task from being mistaken for completion of the whole fixture.
             // Neither goal is record evidence: the same query checks both.
-            creationSteps = [("fixture.create", "selectedContext", context.selectedValue),
-                             ("fixture.create.protected", "protectedContext", context.protectedValue)].enumerated().map { index, item in
+            let records = [("fixture.create", "selectedContext", context.selectedValue)] + (includeProtectedRecord ? [("fixture.create.protected", "protectedContext", context.protectedValue)] : [])
+            creationSteps = records.enumerated().map { index, item in
                 let (segmentID, binding, value) = item
                 let stepInstruction = "Approved overall setup: " + instruction +
-                    " Current step \(index + 1) of 2: create and save exactly one new record with the approvedText name and \(context.property) \(binding) (\(value)). Select that existing context using its controls; never type the context into the name field. Finish this step after saving this one record. The other record is handled by a separate step. Preserve existing records and settings."
-                var stepGoal = AutomationNavigationGoal(id: "create", instruction: stepInstruction,
-                    endpoint: goal.endpoint, maximumCalls: 6, maximumActions: 15,
-                    minimumBindingUses: ["approvedText": 1], allowedFillBindings: ["approvedText"], selectionBindings: [binding])
-                stepGoal.saveControl = saveControl
+                    " Current step \(index + 1) of \(records.count): create and save exactly one new record with the approvedText name and \(context.property) \(binding) (\(value)). Select that existing context using its controls; never type the context into the name field. Finish this step after saving this one record. Preserve existing records and settings."
                 var step = create; step.id = segmentID; step.operation = stepInstruction
-                step.uiProgram = .init(operations: [.init(id: "create", kind: .navigateGoal, goal: stepGoal)], bindings: [binding: value])
+                step.uiProgram = creationProgram(contextValue: value)
                 return step
             }
         }
@@ -115,7 +124,7 @@ public enum AutomationFreshEntityPlanner {
             setupChecks: [.init(observationID: lookup.id, expected: .bool(initialState), proof: .appState,
                 justification: "Developer-approved state of the new fixture before the system action",
                 checkID: "fixture.state", entityProperty: predicate)])
-        if let context {
+        if let context, includeProtectedRecord {
             let protectedSelection = AutomationEntitySelection(typeID: entity.typeID,
                 matchingProperties: [context.property: .text(context.protectedValue)], attemptProperties: [nameProperty: namePrefix])
             let protectedPredicate = AutomationEntityPropertyPredicate(operationID: query.id, selection: protectedSelection, property: stateProperty)
@@ -128,7 +137,7 @@ public enum AutomationFreshEntityPlanner {
             plan.requirements.append(.init(observationID: protectedObserver.id, expected: .bool(initialState), proof: .appState,
                 justification: "Developer-approved other same-name record remains unchanged", checkID: "business.protected.state", entityProperty: protectedPredicate))
         }
-        plan.provenance = ["catalog": try AutomationRecipeContext.catalogDigest(catalog), "ui.locale": localeIdentifier,
+        plan.provenance = ["ui.backend": "xcuitest", "catalog": try AutomationRecipeContext.catalogDigest(catalog), "ui.locale": localeIdentifier,
             "fixture": "UI-created unique name per attempt; actual entity identity from independent query",
             "expectation": "developer-approved before and after states; positive query evidence only"]
         if purpose == .nativeMacDraft {

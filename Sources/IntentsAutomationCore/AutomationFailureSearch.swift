@@ -278,14 +278,12 @@ public struct AutomationPreparedCampaignExecutor: AutomationCampaignAttemptExecu
     public let prepared: AutomationPreparedApplication
     public let capabilities: CapabilityProfile
     public let allowBootAndInstall: Bool
-    public let uiRuntime: AutomationUIRuntime?
-    public init(runner: AutomationApplicationRunner, prepared: AutomationPreparedApplication, capabilities: CapabilityProfile, allowBootAndInstall: Bool, uiRuntime: AutomationUIRuntime? = nil) {
+    public init(runner: AutomationApplicationRunner, prepared: AutomationPreparedApplication, capabilities: CapabilityProfile, allowBootAndInstall: Bool) {
         self.runner = runner; self.prepared = prepared; self.capabilities = capabilities; self.allowBootAndInstall = allowBootAndInstall
-        self.uiRuntime = uiRuntime
     }
     public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
         try await runner.run(prepared: prepared, plan: frozen.plan, approval: approval, capabilities: capabilities,
-            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: budget, uiRuntime: uiRuntime)
+            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: budget)
     }
 }
 #endif

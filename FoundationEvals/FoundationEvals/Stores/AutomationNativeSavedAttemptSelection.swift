@@ -29,13 +29,13 @@ extension AppAutomationStore {
             } else { selected = attempts.count == 1 ? attempts.first : nil }
             let fields = frozen.plan.provenance
             let matches = preparedHistory.filter { value in
-                AutomationNativeUIRuntime.preparedEvidenceMatches(plan: frozen.plan, prepared: value)
+                AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: frozen.plan, prepared: value)
             }
             let baseline: AutomationPreparedApplication?
             if matches.count == 1 { baseline = matches[0] }
             else if matches.isEmpty, (fields["ui.preparedHostDigest"] != nil || frozen.plan.preparedMacBuildArtifacts != nil || frozen.plan.preparedSimulatorBuildArtifacts != nil),
                     let retained = try? await loadRetainedPreparation(app: frozen.plan.app),
-                    AutomationNativeUIRuntime.preparedEvidenceMatches(plan: frozen.plan, prepared: retained) { baseline = retained }
+                    AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: frozen.plan, prepared: retained) { baseline = retained }
             else { baseline = nil }
             try Task.checkCancellation()
             guard canLoadSavedAttemptSelection, selectionEpoch == epoch, savedViewRequestID == requestID else { return }

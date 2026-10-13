@@ -41,7 +41,7 @@ final class AutomationPrivateMacSDKUnitTests: XCTestCase {
         let (root, receipt) = try fixture(), evidence = try verify(receipt, root: root)
         XCTAssertEqual(evidence.fileCount, 472); XCTAssertEqual(evidence.artifactVariant, "private-owned-mac-source")
         XCTAssertFalse(evidence.customerRuntimeEnabled); XCTAssertFalse(evidence.hardwareQualified); XCTAssertFalse(evidence.developerIDSigned)
-        XCTAssertThrowsError(try AutomationRuntimeBundle.verifiedPrivateMacSDKUnit(root: root))
+        XCTAssertThrowsError(try AutomationPrivateMacSDKUnit.verify(root: root))
     }
     func testEnabledQualifiedOrRelabelledReceiptsAreRejected() throws {
         let (root, receipt) = try fixture()
@@ -108,7 +108,7 @@ final class AutomationPrivateMacSDKUnitTests: XCTestCase {
         guard let path = ProcessInfo.processInfo.environment["INTENTS_PRIVATE_MAC_SDK_UNIT_ROOT"] else {
             throw XCTSkip("Read-only frozen private SDK unit qualification is opt-in")
         }
-        let evidence = try AutomationRuntimeBundle.verifiedPrivateMacSDKUnit(root: URL(fileURLWithPath: path))
+        let evidence = try AutomationPrivateMacSDKUnit.verify(root: URL(fileURLWithPath: path))
         XCTAssertEqual(evidence.receiptSHA256, AutomationPrivateMacSDKUnit.pinnedReceiptSHA256)
         XCTAssertEqual(evidence.fileCount, 472); XCTAssertFalse(evidence.customerRuntimeEnabled)
     }

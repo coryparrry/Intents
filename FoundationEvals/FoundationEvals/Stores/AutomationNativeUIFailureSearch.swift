@@ -19,26 +19,17 @@ struct AutomationNativeUIFailureSearchProposal: Sendable {
         return .init(baseline: baseline, mutations: mutations,
             approval: .init(run: approval, approvedDigests: digests, limits: .firstCampaign))
     }
-    func execute(subject: AutomationApplicationSubject, runtime: AutomationUIRuntime, support: URL, developerDirectory: URL,
+    func execute(subject: AutomationApplicationSubject, support: URL, developerDirectory: URL,
                  allowBootAndInstall: Bool) async throws -> AutomationFailureSearchReport {
         let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
         let runner = try AutomationApplicationRunner(supportRoot: support,
             developerDirectory: developerDirectory)
-        let executor: any AutomationCampaignAttemptExecutor
-        switch subject {
-        case .installedMacUI: throw AutomationContractError.missingEvidence("Mac installed-app execution is not qualified")
-        case .installedPhysicalUI:
-            throw AutomationContractError.missingEvidence("Physical installed-app execution is not qualified")
-        case .installedUI(let installed):
-            executor = AutomationInstalledUICampaignExecutor(runner: runner, installed: installed,
-                runtime: runtime, allowBootAndInstall: allowBootAndInstall)
-        case .prepared(let prepared):
-            executor = AutomationApplicationCampaignExecutor(runner: runner, prepared: prepared, capabilities: .init(),
-                allowBootAndInstall: allowBootAndInstall, uiRuntime: runtime)
-        }
+        guard subject.target.kind == .simulator else { throw AutomationContractError.missingEvidence("This workflow requires a prepared simulator host") }
+        let executor = AutomationSubjectCampaignExecutor(runner: runner, subject: subject, capabilities: .init(),
+            allowBootAndInstall: allowBootAndInstall)
         return try await AutomationFailureSearch(cases: cases).run(baseline: baseline, mutations: mutations,
             approval: approval, capabilities: .init(), executor: executor)
     }
 }
-typealias AutomationNativeSearchExecutor = @Sendable (AutomationNativeUIFailureSearchProposal, AutomationApplicationSubject, AutomationUIRuntime, URL, Bool) async throws -> AutomationFailureSearchReport
+typealias AutomationNativeSearchExecutor = @Sendable (AutomationNativeUIFailureSearchProposal, AutomationApplicationSubject, URL, Bool) async throws -> AutomationFailureSearchReport
 #endif

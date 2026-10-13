@@ -57,10 +57,16 @@ final class AppAutomationStore {
         freshProtectOtherRecord ? .init(property: freshContextProperty, selectedValue: freshSelectedContext, protectedValue: freshProtectedContext) : nil
     }
     var freshGoalValid: Bool {
-        var goal = AutomationNavigationGoal(id: "create", instruction: freshContext?.setupInstruction(uiInstruction) ?? uiInstruction,
-            endpoint: .init(.label, uiEndpoint), maximumCalls: 12, maximumActions: 30)
-        goal.saveControl = freshSaveControl.isEmpty ? nil : .init(.label, freshSaveControl)
-        return (try? goal.validate()) != nil
+        (try? AutomationNativeWorkflowSteps.locator(freshNameEntryControl)) != nil &&
+        (try? AutomationNativeWorkflowSteps.locator(freshSaveControl)) != nil &&
+        (try? AutomationNativeWorkflowSteps.locator(uiEndpoint)) != nil &&
+        (freshContextEntryControl.isEmpty || (try? AutomationNativeWorkflowSteps.locator(freshContextEntryControl)) != nil) &&
+        (freshCreateControl.isEmpty || (try? AutomationNativeWorkflowSteps.locator(freshCreateControl)) != nil)
+    }
+    var concreteUIWorkflowValid: Bool {
+        guard let program = try? AutomationNativeWorkflowSteps.program(tapControls: uiTapControls, textEntry: uiTextEntryControl,
+            approvedText: uiApprovedText, submitControl: uiSubmitControl, endpoint: uiEndpoint) else { return false }
+        return program.operations.count + 2 + (uiExpectedText.isEmpty ? 0 : 1) <= 30
     }
     var freshContextValid: Bool {
         guard let freshContext else { return true }
@@ -70,6 +76,12 @@ final class AppAutomationStore {
     var uiInstruction = ""
     var uiEndpoint = ""
     var freshSaveControl = ""
+    var freshCreateControl = ""
+    var freshNameEntryControl = ""
+    var freshContextEntryControl = ""
+    var uiTapControls = ""
+    var uiTextEntryControl = ""
+    var uiSubmitControl = ""
     var uiApprovedText = ""
     var uiExpectedText = ""
     var uiObservationLabel = ""
@@ -105,7 +117,6 @@ final class AppAutomationStore {
     private let reproductionExecutor: AutomationNativeReproductionExecutor?
     private let reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))?
     let macSavedRuntimeProvider: (@Sendable () throws -> AutomationNativeMacSavedRuntime)?
-    let uiRuntimeProvider: (@Sendable () throws -> AutomationNativeUIRuntime)?
     var savedCases: [AutomationFrozenCase] = []
     private(set) var retainedUnresolvedNormalReport: AutomationAttemptReport?
     private(set) var retainedUnresolvedNormalTarget: TargetIdentity?
@@ -174,7 +185,6 @@ final class AppAutomationStore {
     init(supportDirectory: URL, telemetry: (any AutomationRunTelemetry)? = nil, developerDirectory: URL = AutomationNativeToolchain.developerDirectory(),
          savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])? = nil,
          savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil, runExecutor: AutomationNativeRunExecutor? = nil,
-         uiRuntimeProvider: (@Sendable () throws -> AutomationNativeUIRuntime)? = nil,
          macSavedRuntimeProvider: (@Sendable () throws -> AutomationNativeMacSavedRuntime)? = nil,
          searchExecutor: AutomationNativeSearchExecutor? = nil,
          entityQueryExecutor: AutomationNativeEntityQueryExecutor? = nil,
@@ -202,7 +212,7 @@ final class AppAutomationStore {
         self.evidenceImporter = evidenceImporter
         self.telemetry = telemetry
         support = supportDirectory; self.entityQueryExecutor = entityQueryExecutor; self.comparisonExecutor = comparisonExecutor; self.savedAttemptsReader = savedAttemptsReader
-        self.savedCasesReader = savedCasesReader; self.runExecutor = runExecutor; self.uiRuntimeProvider = uiRuntimeProvider; self.searchExecutor = searchExecutor; self.reproductionExecutor = reproductionExecutor; self.reproductionPreflightReader = reproductionPreflightReader
+        self.savedCasesReader = savedCasesReader; self.runExecutor = runExecutor; self.searchExecutor = searchExecutor; self.reproductionExecutor = reproductionExecutor; self.reproductionPreflightReader = reproductionPreflightReader
         ownershipRecoveryTask = Task { [weak self] in await self?.reconcileAbandonedOwnership() }
     }
     var busy: Bool { progress != nil }
@@ -221,7 +231,7 @@ final class AppAutomationStore {
         if isSiriWorkflow { return canRunSiriSubmission }
         guard prepared?.host.target.kind != .nativeMac, candidate?.kind != .sourceTarget || preparationDestination == .simulator else { return false }
         if isUIWorkflow {
-            return (isInstalledUI || preparedUISelectionMatches) && !busy && UUID(uuidString: simulatorID) != nil && !uiInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            return preparedUISelectionMatches && concreteUIWorkflowValid && !busy && UUID(uuidString: simulatorID) != nil && !uiInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 uiInstruction.utf16.count <= 4096 && !uiEndpoint.isEmpty && uiEndpoint.utf16.count <= 1024 &&
                 uiExpectedText.utf16.count <= 1024 && uiObservationLabel.utf16.count <= 1024 && uiApprovedText.utf16.count <= 32768 &&
                 ["text", "value", "checked", "selected"].contains(uiObservationProperty) &&
@@ -310,13 +320,13 @@ final class AppAutomationStore {
                         throw AutomationContractError.conflictingOperation
                     }
                 }
-                let proposal = request.proposal, subject = request.subject, runtime = request.runtime
+                let proposal = request.proposal, subject = request.subject
                 let casesRoot = support.appendingPathComponent("Cases")
                 advanceSelection(); progress = "Reproducing the saved failure five times…"
                 executedRequest = (proposal.approval.runID, proposal.frozen.plan.target)
                 let result: AutomationReproductionReport
-                if let reproductionExecutor { result = try await reproductionExecutor(proposal, subject, runtime, support, request.installApproved) }
-                else { result = try await proposal.execute(subject: subject, runtime: runtime, support: support, developerDirectory: developerDirectory, allowBootAndInstall: request.installApproved) }
+                if let reproductionExecutor { result = try await reproductionExecutor(proposal, subject, support, request.installApproved) }
+                else { result = try await proposal.execute(subject: subject, support: support, developerDirectory: developerDirectory, allowBootAndInstall: request.installApproved) }
                 reproductionReport = result
                 if unresolvedReproduction { retainUnresolvedRequest(runID: proposal.approval.runID, target: proposal.frozen.plan.target) }
                 guard result.frozen == proposal.frozen, result.originalFailure.attemptID == proposal.originalAttemptID,
@@ -378,16 +388,14 @@ final class AppAutomationStore {
             guard let baseline = sourceSavedBaseline else { throw AutomationContractError.conflictingOperation }
             subject = .prepared(baseline)
         }
-        let runtime = try uiRuntimeProvider?() ?? AutomationNativeUIRuntime.bundled(stateDirectory: support.appendingPathComponent("ui-preview"))
         let proposal = try AutomationNativeUIReproductionProposal.compile(frozen: stored, original: failure, subject: subject,
-            runtime: runtime, runID: runID, disposable: approvedDisposable)
+            runID: runID, disposable: approvedDisposable)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let fields = ["case": stored.digest, "original": AutomationArtifactRegistry.digest(try encoder.encode(failure)),
-            "runtime": runtime.manifestDigest, "runtimeTeam": runtime.runtime.expectedTeamID,
             "install": String(install), "disposable": String(approvedDisposable), "attempts": "5",
             "uiActions": String(proposal.limits.uiActions), "controllerCalls": String(proposal.limits.controllerCalls),
             "wallClockSeconds": String(proposal.limits.wallClockSeconds)]
-        return .init(proposal: proposal, subject: subject, runtime: runtime.runtime, installApproved: install,
+        return .init(proposal: proposal, subject: subject, installApproved: install,
             digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)))
     }
     private var unresolvedNormalAttempt: Bool { !retainedUnresolvedRequestTargets.isEmpty || retainedUnresolvedNormalReport != nil || report?.result.subjectDispatchUncertain == true || report?.resourcesReleased == false }
@@ -527,16 +535,15 @@ final class AppAutomationStore {
             try AutomationNativeUIFixComparisonProposal.validatePreparedCandidate(before: baseline, after: candidate)
             after = .prepared(candidate)
         }
-        let runtime = try uiRuntimeProvider?() ?? AutomationNativeUIRuntime.bundled(stateDirectory: support.appendingPathComponent("ui-preview"))
         let proposal = try AutomationNativeUIFixComparisonProposal.compile(frozen: request.proposal.frozen, original: original,
-            before: before, after: after, runtime: runtime, runID: runID, disposable: disposable)
+            before: before, after: after, runID: runID, disposable: disposable)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let fields = ["original": AutomationArtifactRegistry.digest(try encoder.encode(original)), "baseline": proposal.baseline.digest,
-            "candidate": proposal.candidate.digest, "runtime": runtime.manifestDigest, "runtimeTeam": runtime.runtime.expectedTeamID,
+            "candidate": proposal.candidate.digest,
             "beforeBuild": try comparisonBuildDigest(before), "afterBuild": try comparisonBuildDigest(after), "install": "true", "disposable": String(disposable),
             "attemptsPerBuild": String(proposal.attemptsPerBuild), "uiActions": String(proposal.limits.uiActions),
             "controllerCalls": String(proposal.limits.controllerCalls), "wallClockSeconds": String(proposal.limits.wallClockSeconds)]
-        return .init(proposal: proposal, before: before, after: after, runtime: runtime.runtime,
+        return .init(proposal: proposal, before: before, after: after,
             digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), originalAttemptID: original.attemptID)
     }
     private func comparisonBuildDigest(_ subject: AutomationApplicationSubject) throws -> String {
@@ -572,8 +579,8 @@ final class AppAutomationStore {
                 executedRequests = [(request.proposal.beforeApproval.runID, request.proposal.baseline.plan.target),
                     (request.proposal.afterApproval.runID, request.proposal.candidate.plan.target)]
                 let result: AutomationFixComparisonReport
-                if let comparisonExecutor { result = try await comparisonExecutor(request.proposal, request.before, request.after, request.runtime, support) }
-                else { result = try await request.proposal.execute(before: request.before, after: request.after, runtime: request.runtime, support: support, developerDirectory: developerDirectory) }
+                if let comparisonExecutor { result = try await comparisonExecutor(request.proposal, request.before, request.after, support) }
+                else { result = try await request.proposal.execute(before: request.before, after: request.after, support: support, developerDirectory: developerDirectory) }
                 comparisonReport = result
                 if unresolvedComparison {
                     retainUnresolvedRequest(runID: request.proposal.beforeApproval.runID, target: request.proposal.baseline.plan.target)
@@ -606,11 +613,10 @@ final class AppAutomationStore {
         if hasFixedSecurityScope { fixedBundleURL?.stopAccessingSecurityScopedResource() }
         hasFixedSecurityScope = false; fixedBundleURL = nil; fixedProduct = nil; fixedMacProduct = nil
     }
-    var canFindFailures: Bool {
-        let phrases = uiAlternatePhrases.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        return canRun && pendingCommandStatus == nil && isUIWorkflow && effectChoice == "navigation" && !uiExpectedText.isEmpty &&
-            (1...2).contains(phrases.count) && Set(phrases).count == phrases.count && phrases.allSatisfy({ $0.utf16.count <= 4096 && $0 != uiInstruction })
+    var failureSearchUnavailableReason: String? {
+        "This workflow follows fixed controls. Alternative navigation instructions do not change its steps."
     }
+    var canFindFailures: Bool { false }
     func findFailures(reviewed: AutomationNativeSearchReview? = nil) async {
         guard canFindFailures else { return }
         let request: AutomationNativeRunRequest
@@ -625,15 +631,14 @@ final class AppAutomationStore {
                 }
             }
         } catch { message = errorText(error); return }
-        guard let runtime = request.uiRuntime else { return }
         advanceSelection(); report = nil; reportDirectory = nil; searchReport = nil; message = nil
         progress = "Exploring the approved UI phrases…"
         task = Task {
             defer { progress = nil; task = nil; releaseScopeIfClosing() }
             do {
                 let result: AutomationFailureSearchReport
-                if let searchExecutor { result = try await searchExecutor(proposal, request.subject, runtime, support, request.installApproved) }
-                else { result = try await proposal.execute(subject: request.subject, runtime: runtime, support: support, developerDirectory: developerDirectory, allowBootAndInstall: request.installApproved) }
+                if let searchExecutor { result = try await searchExecutor(proposal, request.subject, support, request.installApproved) }
+                else { result = try await proposal.execute(subject: request.subject, support: support, developerDirectory: developerDirectory, allowBootAndInstall: request.installApproved) }
                 // Retain uncertain results even if their archive cannot be written.
                 searchReport = result
                 if unresolvedSearch { retainUnresolvedRequest(runID: proposal.approval.run.runID, target: proposal.baseline.plan.target) }
@@ -1040,7 +1045,7 @@ final class AppAutomationStore {
     }
     func clearSavedView() { if !busy { clearFixedSelection() }; viewedComparison = nil; savedPreparedBaseline = nil; savedViewRequestID = nil; savedViewedReport = nil; savedViewedAttempts = []; savedAttemptLoading = false; canonicalSavedEvidence = nil; savedViewedCase = nil; savedViewedDirectory = nil; viewedSearch = nil; viewedReproduction = nil }
     private func advanceSelection() { invalidatePendingCommand(); selectionEpoch += 1; clearSavedView() }
-    private func clearPrepared() { selectedMacTarget = nil; advanceSelection(); clearEntitySelections(); prepared = nil; siriCapabilities = .init(); siriRequest = ""; siriOracle = .init(); catalog = nil; report = nil; workflowRoute = "ui"; actionID = ""; inputs = [:]; effectChoice = ""; effectsConfirmed = false; uiInstruction = ""; uiEndpoint = ""; freshSaveControl = ""; uiApprovedText = ""; uiExpectedText = ""; uiObservationLabel = ""; uiObservationProperty = "text"; uiAlternatePhrases = ""; freshNamePrefix = ""; freshNameProperty = ""; freshStateProperty = ""; freshInitialState = ""; freshExpectedState = ""; freshProtectOtherRecord = false; freshContextProperty = ""; freshSelectedContext = ""; freshProtectedContext = ""; searchReport = nil }
+    private func clearPrepared() { selectedMacTarget = nil; advanceSelection(); clearEntitySelections(); prepared = nil; siriCapabilities = .init(); siriRequest = ""; siriOracle = .init(); catalog = nil; report = nil; workflowRoute = "ui"; actionID = ""; inputs = [:]; effectChoice = ""; effectsConfirmed = false; uiInstruction = ""; uiEndpoint = ""; freshSaveControl = ""; freshCreateControl = ""; freshNameEntryControl = ""; freshContextEntryControl = ""; uiTapControls = ""; uiTextEntryControl = ""; uiSubmitControl = ""; uiApprovedText = ""; uiExpectedText = ""; uiObservationLabel = ""; uiObservationProperty = "text"; uiAlternatePhrases = ""; freshNamePrefix = ""; freshNameProperty = ""; freshStateProperty = ""; freshInitialState = ""; freshExpectedState = ""; freshProtectOtherRecord = false; freshContextProperty = ""; freshSelectedContext = ""; freshProtectedContext = ""; searchReport = nil }
     func retainUnresolvedRequest(runID: String, target: TargetIdentity) {
         retainedUnresolvedRequestTargets[runID] = target
     }
@@ -1097,7 +1102,6 @@ struct AutomationNativeCommandStatus: Codable, Sendable {
 }
 struct AutomationNativeRunRequest {
     var subject: AutomationApplicationSubject
-    var uiRuntime: AutomationUIRuntime?
     var plan: AutomationCase
     var approval: RunApproval
     var capabilities: CapabilityProfile

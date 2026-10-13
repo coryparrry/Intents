@@ -19,9 +19,9 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
     }
     static func compile(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
                         before: AutomationApplicationSubject, after: AutomationApplicationSubject,
-                        runtime: AutomationNativeUIRuntime, runID: String, disposable: Bool) throws -> Self {
+                        runID: String, disposable: Bool) throws -> Self {
         let reproduction = try AutomationNativeUIReproductionProposal.compile(frozen: frozen, original: original,
-            subject: before, runtime: runtime, runID: runID + ".before", disposable: disposable)
+            subject: before, runID: runID + ".before", disposable: disposable)
         guard before.app.productDigest != nil, before.target == after.target else { throw AutomationContractError.conflictingOperation }
         var baseline = frozen
         switch (before, after) {
@@ -36,7 +36,7 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
                 var plan = frozen.plan
                 plan.id = "comparison." + frozen.digest; plan.revision = 1
                 plan.provenance["comparison.sourceCaseDigest"] = frozen.digest
-                try AutomationNativeUIRuntime.attachPreparedEvidence(to: &plan, prepared: retained)
+                try AutomationNativePreparedEvidence.attachPreparedEvidence(to: &plan, prepared: retained)
                 baseline = try AutomationFrozenCase(plan: plan)
             }
         default: throw AutomationContractError.invalidPlan("Compare two installed builds or two prepared source builds")
@@ -76,7 +76,7 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
             before: before, after: after, runtimeRoot: runtimeRoot, runID: runID, disposable: disposable))
     }
     func execute(before: AutomationApplicationSubject, after: AutomationApplicationSubject,
-                 runtime: AutomationUIRuntime?, support: URL, developerDirectory: URL) async throws -> AutomationFixComparisonReport {
+                 support: URL, developerDirectory: URL) async throws -> AutomationFixComparisonReport {
         let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
         let runner = try AutomationApplicationRunner(supportRoot: support,
             developerDirectory: developerDirectory)
@@ -87,13 +87,13 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
             capabilities: afterCapabilities)
         var beforeFixture: AutomationQualifiedFreshFixture?, afterFixture: AutomationQualifiedFreshFixture?
         if usesFreshFixture {
-            guard let runtime, case .prepared(let a) = before, case .prepared(let b) = after else { throw AutomationContractError.invalidIdentity }
-            beforeFixture = try await AutomationNativeFreshFixtures.qualify(frozen: baseline, prepared: a, approval: beforeApproval, capabilities: verified.beforeCapabilities, runner: runner, runtime: runtime, installApproved: true)
-            afterFixture = try await AutomationNativeFreshFixtures.qualify(frozen: candidate, prepared: b, approval: afterApproval, capabilities: verified.afterCapabilities, runner: runner, runtime: runtime, installApproved: true)
+            guard case .prepared(let a) = before, case .prepared(let b) = after else { throw AutomationContractError.invalidIdentity }
+            beforeFixture = try await AutomationNativeFreshFixtures.qualify(frozen: baseline, prepared: a, approval: beforeApproval, capabilities: verified.beforeCapabilities, runner: runner, installApproved: true)
+            afterFixture = try await AutomationNativeFreshFixtures.qualify(frozen: candidate, prepared: b, approval: afterApproval, capabilities: verified.afterCapabilities, runner: runner, installApproved: true)
         }
         return try await verified.runCampaign(cases: cases,
-            beforeExecutor: Self.executor(subject: before, runner: runner, runtime: runtime, capabilities: verified.beforeCapabilities),
-            afterExecutor: Self.executor(subject: after, runner: runner, runtime: runtime, capabilities: verified.afterCapabilities),
+            beforeExecutor: Self.executor(subject: before, runner: runner, capabilities: verified.beforeCapabilities),
+            afterExecutor: Self.executor(subject: after, runner: runner, capabilities: verified.afterCapabilities),
             beforeFixture: beforeFixture, afterFixture: afterFixture)
     }
     func runCampaign(cases: AutomationCaseStore, beforeExecutor: any AutomationCampaignAttemptExecutor,
@@ -117,21 +117,18 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
             throw AutomationContractError.missingEvidence("Prepare changed source for the same app, configuration, simulator and host template; retain both original products")
         }
     }
-    typealias ExecutorFactory = @Sendable (AutomationApplicationSubject, CapabilityProfile, Bool, AutomationUIRuntime?) -> any AutomationCampaignAttemptExecutor
+    typealias ExecutorFactory = @Sendable (AutomationApplicationSubject, CapabilityProfile, Bool) -> any AutomationCampaignAttemptExecutor
     static func executor(subject: AutomationApplicationSubject, runner: AutomationApplicationRunner,
-                         runtime: AutomationUIRuntime?, capabilities: CapabilityProfile,
+                         capabilities: CapabilityProfile,
                          factory: ExecutorFactory? = nil) throws -> any AutomationCampaignAttemptExecutor {
-        guard subject.target.kind == .nativeMac || runtime != nil else {
-            throw AutomationContractError.missingEvidence("Saved simulator campaigns require the reviewed UI runtime")
-        }
         guard subject.target.kind != .physical else {
             throw AutomationContractError.missingEvidence("Unreadable installed apps cannot establish an exact-build comparison")
         }
         let install = subject.target.kind == .simulator
-        if let factory { return factory(subject, capabilities, install, runtime) }
+        if let factory { return factory(subject, capabilities, install) }
         return AutomationSubjectCampaignExecutor(runner: runner, subject: subject, capabilities: capabilities,
-            allowBootAndInstall: install, uiRuntime: runtime)
+            allowBootAndInstall: install)
     }
 }
-typealias AutomationNativeFixComparisonExecutor = @Sendable (AutomationNativeUIFixComparisonProposal, AutomationApplicationSubject, AutomationApplicationSubject, AutomationUIRuntime?, URL) async throws -> AutomationFixComparisonReport
+typealias AutomationNativeFixComparisonExecutor = @Sendable (AutomationNativeUIFixComparisonProposal, AutomationApplicationSubject, AutomationApplicationSubject, URL) async throws -> AutomationFixComparisonReport
 #endif

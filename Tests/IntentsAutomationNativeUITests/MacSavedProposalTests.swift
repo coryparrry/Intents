@@ -89,7 +89,7 @@ final class MacSavedProposalTests: XCTestCase, @unchecked Sendable {
         let proposal = AutomationNativeUIReproductionProposal.fromMacReview(review)
         let cases = try AutomationCaseStore(root: f.root.appendingPathComponent("support/Cases"))
         _ = try await cases.freeze(f.frozen.plan); try await cases.saveAttempt(f.original, for: f.frozen)
-        let report = try await proposal.execute(subject: .installedMacUI(f.selected), runtime: nil,
+        let report = try await proposal.execute(subject: .installedMacUI(f.selected),
             support: f.root.appendingPathComponent("support"), developerDirectory: AutomationNativeToolchain.developerDirectory(), allowBootAndInstall: false)
         XCTAssertFalse(report.complete); XCTAssertTrue(report.attempts.isEmpty)
         XCTAssertEqual(report.stopReason, "Reproduction stopped before canonical evidence could be verified")
@@ -101,9 +101,9 @@ final class MacSavedProposalTests: XCTestCase, @unchecked Sendable {
             developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
         let selected = f.selected
         let executor = try AutomationNativeUIFixComparisonProposal.executor(subject: .installedMacUI(selected), runner: runner,
-            runtime: nil, capabilities: .init(), factory: { subject, _, install, runtime in
+            capabilities: .init(), factory: { subject, _, install in
                 XCTAssertEqual(subject.app, selected.app); XCTAssertEqual(subject.target, selected.target)
-                XCTAssertFalse(install); XCTAssertNil(runtime)
+                XCTAssertFalse(install)
                 return Facts(pass: false)
             })
         let review = try AutomationMacSavedWorkflowContract.reproduction(frozen: f.frozen, original: f.original,
@@ -153,13 +153,13 @@ final class MacSavedProposalTests: XCTestCase, @unchecked Sendable {
         let provider: (@Sendable () throws -> AutomationNativeMacSavedRuntime)? = enabled ? { @Sendable in runtime } : nil
         let model = AppAutomationStore(supportDirectory: f.root.appendingPathComponent("support"),
             macSavedRuntimeProvider: provider,
-            comparisonExecutor: { proposal, before, after, runtime, support in
-                XCTAssertEqual(before.target.kind, .nativeMac); XCTAssertEqual(after.target.kind, .nativeMac); XCTAssertNil(runtime)
+            comparisonExecutor: { proposal, before, after, support in
+                XCTAssertEqual(before.target.kind, .nativeMac); XCTAssertEqual(after.target.kind, .nativeMac)
                 return try await proposal.runCampaign(cases: .init(root: support.appendingPathComponent("Cases")),
                     beforeExecutor: Facts(pass: false), afterExecutor: Facts(pass: true), beforeFixture: nil, afterFixture: nil)
-            }, reproductionExecutor: { proposal, subject, runtime, support, install in
+            }, reproductionExecutor: { proposal, subject, support,  install in
                 await calls?.increment()
-                XCTAssertEqual(subject.target.kind, .nativeMac); XCTAssertFalse(install); XCTAssertNil(runtime)
+                XCTAssertEqual(subject.target.kind, .nativeMac); XCTAssertFalse(install)
                 return try await proposal.runCampaign(cases: .init(root: support.appendingPathComponent("Cases")), executor: Facts(pass: false), fixture: nil)
             }, reproductionPreflightReader: { frozen, _, _ in
                 await gate?.block(); return (frozen, f.original)

@@ -46,7 +46,6 @@ struct AutomationNativeReproductionOutcome: Codable, Sendable {
 struct AutomationNativeReproductionRequest: Sendable {
     var proposal: AutomationNativeUIReproductionProposal
     var subject: AutomationApplicationSubject
-    var runtime: AutomationUIRuntime?
     var installApproved: Bool
     var digest: String
 }
@@ -64,8 +63,7 @@ struct AutomationNativeUIReproductionProposal: Sendable {
         return value
     }
     static func compile(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
-                        subject: AutomationApplicationSubject, runtime: AutomationNativeUIRuntime,
-                        runID: String, disposable: Bool) throws -> Self {
+                        subject: AutomationApplicationSubject, runID: String, disposable: Bool) throws -> Self {
         try frozen.validate()
         try AutomationRecordedEvidence.validate(report: original, plan: frozen.plan)
         let plan = frozen.plan
@@ -79,16 +77,14 @@ struct AutomationNativeUIReproductionProposal: Sendable {
         }
         guard plan.app == subject.app, plan.target == subject.target,
               plan.environmentID == "selected-simulator:" + subject.target.id,
-              plan.provenance["ui.runtimeManifestDigest"] == runtime.manifestDigest,
-              plan.provenance["ui.runtimeTeamID"] == runtime.runtime.expectedTeamID,
               plan.provenance["ui.locale"] == Locale.current.identifier,
               (permitted || segments.allSatisfy({ $0.kind == .ui && $0.uiProgram != nil && $0.effects.isSubset(of: [.observe, .navigate]) })),
               original.result.summary == .assertionFailed, original.result.assessed, original.result.evidenceComplete,
               original.resourcesReleased, !original.result.subjectDispatchUncertain else {
-            throw AutomationContractError.missingEvidence("Select the same app and simulator as an assessed, released UI failure; its prepared host, runtime and locale must still match")
+            throw AutomationContractError.missingEvidence("Select the same app and simulator as an assessed, released UI failure; its prepared host, locale must still match")
         }
         if case .prepared(let prepared) = subject {
-            guard AutomationNativeUIRuntime.preparedEvidenceMatches(plan: plan, prepared: prepared) else { throw AutomationContractError.conflictingOperation }
+            guard AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: plan, prepared: prepared) else { throw AutomationContractError.conflictingOperation }
         }
         let approval = RunApproval(runID: runID, app: subject.app, target: subject.target,
             environmentID: plan.environmentID, effects: freshBindings == nil ? [.observe, .navigate] : [.observe, .navigate, .fixtureWrite], maximumActions: 30,
@@ -110,10 +106,9 @@ struct AutomationNativeUIReproductionProposal: Sendable {
         fromMacReview(try AutomationMacSavedWorkflowContract.reproduction(frozen: frozen, original: original,
             prepared: prepared, runtimeRoot: runtimeRoot, runID: runID, disposable: disposable))
     }
-    func execute(subject: AutomationApplicationSubject, runtime: AutomationUIRuntime?,
-                 support: URL, developerDirectory: URL, allowBootAndInstall: Bool) async throws -> AutomationReproductionReport {
+    func execute(subject: AutomationApplicationSubject, support: URL, developerDirectory: URL, allowBootAndInstall: Bool) async throws -> AutomationReproductionReport {
         if case .installedMacUI = subject {
-            guard runtime == nil, !allowBootAndInstall else { throw AutomationContractError.conflictingOperation }
+            guard !allowBootAndInstall else { throw AutomationContractError.conflictingOperation }
         }
         let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
         let runner = try AutomationApplicationRunner(supportRoot: support,
@@ -123,17 +118,14 @@ struct AutomationNativeUIReproductionProposal: Sendable {
             capabilities: capabilities)
         var fixture: AutomationQualifiedFreshFixture?
         if usesFreshFixture {
-            guard let runtime, case .prepared(let prepared) = subject else { throw AutomationContractError.invalidIdentity }
-            fixture = try await AutomationNativeFreshFixtures.qualify(frozen: frozen, prepared: prepared, approval: approval, capabilities: verified.capabilities, runner: runner, runtime: runtime, installApproved: allowBootAndInstall)
-        }
-        guard subject.target.kind == .nativeMac || runtime != nil else {
-            throw AutomationContractError.missingEvidence("Saved simulator campaigns require the reviewed UI runtime")
+            guard case .prepared(let prepared) = subject else { throw AutomationContractError.invalidIdentity }
+            fixture = try await AutomationNativeFreshFixtures.qualify(frozen: frozen, prepared: prepared, approval: approval, capabilities: verified.capabilities, runner: runner, installApproved: allowBootAndInstall)
         }
         guard subject.target.kind != .physical else {
             throw AutomationContractError.missingEvidence("Physical installed-app execution is not qualified")
         }
         let executor = AutomationSubjectCampaignExecutor(runner: runner, subject: subject, capabilities: verified.capabilities,
-            allowBootAndInstall: allowBootAndInstall, uiRuntime: runtime)
+            allowBootAndInstall: allowBootAndInstall)
         return try await verified.runCampaign(cases: cases, executor: executor, fixture: fixture)
     }
     func runCampaign(cases: AutomationCaseStore, executor: any AutomationCampaignAttemptExecutor,
@@ -143,5 +135,5 @@ struct AutomationNativeUIReproductionProposal: Sendable {
     }
 
 }
-typealias AutomationNativeReproductionExecutor = @Sendable (AutomationNativeUIReproductionProposal, AutomationApplicationSubject, AutomationUIRuntime?, URL, Bool) async throws -> AutomationReproductionReport
+typealias AutomationNativeReproductionExecutor = @Sendable (AutomationNativeUIReproductionProposal, AutomationApplicationSubject, URL, Bool) async throws -> AutomationReproductionReport
 #endif

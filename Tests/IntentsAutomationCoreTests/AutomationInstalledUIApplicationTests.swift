@@ -71,7 +71,7 @@ final class AutomationInstalledUIApplicationTests: XCTestCase, @unchecked Sendab
             })) { XCTAssertEqual($0 as? AutomationContractError, .conflictingOperation) }
     }
     #if os(macOS)
-    func testPhysicalRunnerRequiresInstallationEvidenceBeforeSimulatorInventoryOrAttempt() async throws {
+    func testInstalledPhysicalUIRequiresSourceHostBeforeDeviceAdmissionOrAttempt() async throws {
         let root = try bundle(platform: "iPhoneOS")
         try AutomationPhysicalExecutableTests.binary().write(to: root.appendingPathComponent("Fixture"))
         let selected = try AutomationInstalledUIApplication(bundleURL: root,
@@ -90,9 +90,9 @@ final class AutomationInstalledUIApplicationTests: XCTestCase, @unchecked Sendab
         do {
             _ = try await runner.run(subject: .installedUI(selected), plan: plan, approval: approval,
                 capabilities: .init(), attemptID: "attempt", allowBootAndInstall: true)
-            XCTFail("Physical execution needs installed evidence")
+            XCTFail("Installed UI execution needs its prepared source host")
         } catch {
-            XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Physical execution requires owned installation evidence and its qualified device route"))
+            XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Prepare the source app and its XCUITest host before running this workflow"))
         }
         let count = await calls.value; XCTAssertEqual(count, 0)
         XCTAssertFalse(FileManager.default.fileExists(atPath: support.appendingPathComponent("attempt").path))

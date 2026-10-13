@@ -70,16 +70,6 @@ import Foundation
 }
 
 extension AutomationMacSecretConsentContext where Element == AXUIElement {
-    static func prepareOwnedWorker(approval: RunApproval, program: AutomationSecretFillProgram,
-                                   lease: AutomationDeviceLeaseManager.Lease, leases: AutomationDeviceLeaseManager,
-                                   authority: AutomationRunAuthority, artifacts: AutomationArtifactRegistry,
-                                   unitRoot: URL, state: URL, x: Double, y: Double) async throws -> AutomationMacSecretConsentContext {
-        let transport = try await AutomationMacSecretProgramTransport.owned(unitRoot: unitRoot, state: state, scope: program.scope, lease: lease, leases: leases)
-        do {
-            return try await prepare(approval: approval, program: program, lease: lease, leases: leases, authority: authority, artifacts: artifacts,
-                                     x: x, y: y, transport: await transport.capability())
-        } catch { _ = await transport.closeAndDrain(); throw AutomationSecretFillSession.Failure.denied }
-    }
     static func prepare(approval: RunApproval, program: AutomationSecretFillProgram,
                         lease: AutomationDeviceLeaseManager.Lease, leases: AutomationDeviceLeaseManager,
                         authority: AutomationRunAuthority, artifacts: AutomationArtifactRegistry,

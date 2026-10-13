@@ -8,11 +8,10 @@ public struct AutomationApplicationCampaignExecutor: AutomationFreshFixtureAttem
     private let prepared: AutomationPreparedApplication
     private let capabilities: CapabilityProfile
     private let allowBootAndInstall: Bool
-    private let uiRuntime: AutomationUIRuntime?
     public init(runner: AutomationApplicationRunner, prepared: AutomationPreparedApplication,
-                capabilities: CapabilityProfile, allowBootAndInstall: Bool, uiRuntime: AutomationUIRuntime? = nil) {
+                capabilities: CapabilityProfile, allowBootAndInstall: Bool) {
         self.runner = runner; self.prepared = prepared; self.capabilities = capabilities
-        self.allowBootAndInstall = allowBootAndInstall; self.uiRuntime = uiRuntime
+        self.allowBootAndInstall = allowBootAndInstall
     }
     public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
                         budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
@@ -26,7 +25,7 @@ public struct AutomationApplicationCampaignExecutor: AutomationFreshFixtureAttem
                          budget: AutomationCampaignBudget, tracker: AutomationFreshFixtureTracker?) async throws -> AutomationAttemptReport {
         try frozen.validate()
         return try await runner.run(prepared: prepared, plan: frozen.plan, approval: approval, capabilities: capabilities,
-            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: budget, uiRuntime: uiRuntime, fixtureTracker: tracker)
+            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: budget, fixtureTracker: tracker)
     }
 }
 #endif

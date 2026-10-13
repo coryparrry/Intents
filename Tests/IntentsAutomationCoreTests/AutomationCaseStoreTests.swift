@@ -2,6 +2,79 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationCaseStoreTests: XCTestCase, @unchecked Sendable {
+    private func terminalUIAssertionFacts() throws -> (AutomationCase, AutomationAttemptReport, UIHostStepReceipt) {
+        var plan = plan()
+        plan.execution.kind = .ui; plan.execution.effects = [.navigate, .fixtureWrite]
+        plan.execution.lifecycle = .persistedStateAcrossSegments
+        plan.execution.uiProgram = .init(steps: [
+            .init(id: "save", kind: .tap, query: .init(identifier: "save")),
+            .init(id: "wrong-label", kind: .assert, query: .init(identifier: "title"), property: "label", equals: .init(kind: "text", value: "Wrong"))
+        ])
+        plan.observations[0].kind = .observeOnly
+        plan.observations[0].uiProgram = .init(steps: [.init(id: "ready", kind: .readProperty, query: .init(identifier: "ready"), property: "exists")])
+        plan.requirements[0].expected = .object(["ready": .bool(true)])
+        let approval = RunApproval(runID: "run", app: plan.app, target: plan.target, environmentID: plan.environmentID,
+            effects: [.observe, .navigate, .fixtureWrite], maximumActions: 20, disposable: true, approvedCaseDigest: try AutomationFrozenCase.planDigest(plan))
+        let wire = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval, attemptID: "attempt", leaseGeneration: 1)
+        let failedIndex = try XCTUnwrap(wire.steps.firstIndex { $0.id == "wrong-label" })
+        var data = try wire.steps.indices.prefix(failedIndex).map { index in
+            try JSONEncoder().encode(UIHostStepReceipt(plan: wire, index: index, dispatched: true, completed: true))
+        }
+        let failed = UIHostStepReceipt(plan: wire, index: failedIndex, dispatched: true, completed: false, error: "assertionFailed")
+        data.append(try JSONEncoder().encode(failed))
+        let receipts = try AutomationXCUITestReceiptImporter.importReceipts(data, uiPlan: wire, plan: plan, allowPartial: true)
+        var result = AutomationAssessment.assess(plan: plan, attemptID: "attempt", subjectDispatched: true, subjectCompleted: false,
+            observations: [], receipts: receipts, runID: "run", termination: .assertionFailed)
+        result.subjectDispatchUncertain = true
+        return (plan, .init(attemptID: "attempt", result: result, receipts: receipts, resourcesReleased: true), failed)
+    }
+
+    func testTerminalUIAssertionFailureSavesAndLoadsWithoutClaimingCompletedOracle() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/ui-assertion-case-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try AutomationCaseStore(root: root)
+        let (plan, facts, failed) = try terminalUIAssertionFacts()
+        XCTAssertEqual(AutomationXCUITestRouteDriver.failureReason(error: nil, receipts: facts.receipts, stepReceipts: [failed], plan: plan), .assertionFailed)
+        XCTAssertNotNil(facts.receipts.last?.terminalUIAssertionFailure)
+        XCTAssertTrue(facts.result.subjectDispatchUncertain)
+        XCTAssertFalse(facts.result.assessed); XCTAssertFalse(facts.result.evidenceComplete)
+        XCTAssertFalse(facts.result.subjectCompleted)
+        let frozen = try await store.freeze(plan)
+        try await store.saveAttempt(facts, for: frozen)
+        let loaded = try await store.loadAttempt(id: facts.attemptID, frozen: frozen)
+        XCTAssertEqual(loaded, facts)
+    }
+
+    func testTerminalUIAssertionProofRejectsWrongStepDigestRouteTypeAndSummaryForgeries() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/ui-assertion-forgery-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try AutomationCaseStore(root: root)
+        let (plan, facts, _) = try terminalUIAssertionFacts()
+        let frozen = try await store.freeze(plan)
+        var forgeries: [AutomationAttemptReport] = []
+        var changed = facts; changed.receipts[0].terminalUIAssertionFailure?.stepID = "save"; forgeries.append(changed)
+        changed = facts; changed.receipts[0].terminalUIAssertionFailure?.planDigest = String(repeating: "b", count: 64); forgeries.append(changed)
+        changed = facts; changed.receipts[0].route = .systemIntent; forgeries.append(changed)
+        changed = facts; changed.receipts[0].terminalUIAssertionFailure?.expected = .bool(false); forgeries.append(changed)
+        changed = facts; changed.receipts[0].terminalUIAssertionFailure?.app.bundleID = "foreign.App"; forgeries.append(changed)
+        changed = facts; changed.receipts[0].terminalUIAssertionFailure?.scope.leaseGeneration += 1; forgeries.append(changed)
+        changed = facts
+        var terminal = try JSONDecoder().decode(UIHostStepReceipt.self, from: changed.receipts[0].terminalUIAssertionFailure!.terminalReceipt)
+        terminal.kind = .invokeIntent
+        let altered = try JSONEncoder().encode(terminal)
+        changed.receipts[0].terminalUIAssertionFailure?.terminalReceipt = altered
+        changed.receipts[0].terminalUIAssertionFailure?.terminalReceiptDigest = AutomationArtifactRegistry.digest(altered)
+        forgeries.append(changed)
+        changed = facts; changed.receipts[0].terminalUIAssertionFailure = nil; forgeries.append(changed)
+        changed = facts; changed.result.summary = .passed; forgeries.append(changed)
+        changed = facts; changed.result.assessed = true; changed.result.evidenceComplete = true; forgeries.append(changed)
+        for forged in forgeries {
+            XCTAssertThrowsError(try AutomationRecordedEvidence.validate(report: forged, plan: plan))
+            do { try await store.saveAttempt(forged, for: frozen); XCTFail("Forged terminal UI proof was stored") } catch { }
+        }
+        let attempts = try await store.attempts(for: frozen)
+        XCTAssertTrue(attempts.isEmpty)
+    }
     private func plan() -> AutomationCase {
         .init(id: "business-case", app: .init(logicalID: "app", bundleID: "example.App", platform: "ios", productDigest: String(repeating: "a", count: 64)),
             target: .init(id: "owned", kind: .simulator), environmentID: "synthetic",

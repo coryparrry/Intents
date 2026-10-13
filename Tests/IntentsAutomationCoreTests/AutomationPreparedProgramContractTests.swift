@@ -163,4 +163,20 @@ final class AutomationPreparedProgramContractTests: XCTestCase {
             XCTAssertThrowsError(try AutomationPreparedProgramContract.validate(plan, catalog: wrong), String(index))
         }
     }
+    func testRawUIPropertyBindingsMatchDeclaredIntentParameterFamilies() throws {
+        for (property, family) in [("label", "text"), ("value", "text"), ("exists", "bool"), ("selected", "bool")] {
+            var (plan, catalog) = fixture(family: family)
+            plan.execution.hostProgram?.operations[0].parameters = [:]
+            var producer = AutomationSegment(id: "setup", kind: .ui, phase: .setup, operation: "Read field")
+            producer.uiProgram = .init(steps: [.init(id: "read", kind: .readProperty,
+                query: .init(identifier: "field"), property: property)])
+            plan.setup = [producer]
+            plan.execution.inputBindings = [.init(producerSegmentID: "setup", outputID: "read",
+                destination: .hostParameter, operationID: "invoke", name: "input")]
+            XCTAssertNoThrow(try AutomationPreparedProgramContract.validate(plan, catalog: catalog))
+            catalog.systemActions[0].parameters[0].family = family == "text" ? "bool" : "text"
+            XCTAssertThrowsError(try AutomationPreparedProgramContract.validate(plan, catalog: catalog))
+        }
+    }
+
 }

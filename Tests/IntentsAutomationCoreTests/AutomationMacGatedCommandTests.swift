@@ -9,45 +9,60 @@ final class AutomationMacGatedCommandTests: XCTestCase {
         try FileManager.default.createDirectory(at: requested, withIntermediateDirectories: true)
         let root = try AutomationPath.canonical(requested)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let node = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Tools/IntentsAutomation/.runtime/node-v24.21.0-darwin-arm64/bin/node")
-        let script = root.appendingPathComponent("synthetic-helper.mjs"), ready = root.appendingPathComponent("ready.json")
-        let source = """
-        import fs from 'node:fs';
-        const mode = process.argv[2], readyPath = process.argv[3], marker = process.argv[4];
-        const nonce = process.env.INTENTS_MAC_HELPER_OWNERSHIP_NONCE;
-        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-        if (mode === 'missing') { await sleep(60000); process.exit(1); }
-        while (!fs.existsSync(readyPath)) await sleep(5);
-        let ready = fs.readFileSync(readyPath, 'utf8');
-        if (JSON.parse(ready).identity.pid !== process.pid) process.exit(2);
-        if (mode === 'foreign') ready = ready.replace(nonce, 'aaaaaaaa-1234-1234-1234-123456789abc');
-        process.stdout.write(ready);
-        if (mode === 'block-private') {
-          let line = ''; const byte = Buffer.alloc(1);
-          while (!line.endsWith('\\n')) { if (fs.readSync(0, byte, 0, 1, null) !== 1) process.exit(6); line += byte.toString(); }
-          if (JSON.parse(line).nonce !== nonce) process.exit(7);
-          fs.writeFileSync(marker, 'ack-read'); await sleep(60000); process.exit(1);
-        }
-        let input = ''; for await (const chunk of process.stdin) input += chunk;
-        const lines = input.trimEnd().split('\\n');
-        const ack = JSON.parse(lines[0]);
-        if (mode === 'private-frame') {
-          if (lines.length !== 2 || JSON.parse(lines[1]).value !== 'private-sentinel-' + 'x'.repeat(100000)) process.exit(4);
-          if (process.argv.some(value => value.includes('private-sentinel')) || Object.values(process.env).some(value => value.includes('private-sentinel'))) process.exit(5);
-        }
-        if (ack.kind !== 'ack' || ack.nonce !== nonce || ack.identity.pid !== process.pid) process.exit(3);
-        fs.writeFileSync(marker, 'mutation-after-ack');
-        if (mode === 'hang-after-ack') await sleep(60000);
-        process.stdout.write('synthetic-success\\n');
-        """
+        let python = try AutomationSyntheticPython.executable()
+        let script = root.appendingPathComponent("synthetic-helper.py"), ready = root.appendingPathComponent("ready.json")
+        let source = #"""
+        import json, os, sys, time
+        from pathlib import Path
+        mode, ready_path, marker = sys.argv[1:]
+        nonce = os.environ['INTENTS_MAC_HELPER_OWNERSHIP_NONCE']
+        if mode == 'missing':
+            time.sleep(60)
+            sys.exit(1)
+        while not Path(ready_path).exists():
+            time.sleep(0.005)
+        ready = Path(ready_path).read_text(encoding='utf-8')
+        if json.loads(ready)['identity']['pid'] != os.getpid():
+            sys.exit(2)
+        if mode == 'foreign':
+            ready = ready.replace(nonce, 'aaaaaaaa-1234-1234-1234-123456789abc')
+        sys.stdout.write(ready)
+        sys.stdout.flush()
+        if mode == 'block-private':
+            # Read exactly the ACK, leaving the following private frame backpressured.
+            line = bytearray()
+            while not line.endswith(b'\n'):
+                byte = os.read(0, 1)
+                if not byte:
+                    sys.exit(6)
+                line.extend(byte)
+            if json.loads(line)['nonce'] != nonce:
+                sys.exit(7)
+            Path(marker).write_text('ack-read', encoding='utf-8')
+            time.sleep(60)
+            sys.exit(1)
+        lines = sys.stdin.buffer.read().decode('utf-8').rstrip('\n').split('\n')
+        ack = json.loads(lines[0])
+        if mode == 'private-frame':
+            if len(lines) != 2 or json.loads(lines[1])['value'] != 'private-sentinel-' + 'x' * 100000:
+                sys.exit(4)
+            if any('private-sentinel' in value for value in sys.argv) or any('private-sentinel' in value for value in os.environ.values()):
+                sys.exit(5)
+        if ack['kind'] != 'ack' or ack['nonce'] != nonce or ack['identity']['pid'] != os.getpid():
+            sys.exit(3)
+        Path(marker).write_text('mutation-after-ack', encoding='utf-8')
+        if mode == 'hang-after-ack':
+            time.sleep(60)
+        sys.stdout.write('synthetic-success\n')
+        sys.stdout.flush()
+        """#
         try Data(source.utf8).write(to: script)
-        return (root, try AutomationPath.canonical(node), script, ready)
+        return (root, python, script, ready)
     }
     func testActualSyntheticChildWaitsForOwnedIdentityAcknowledgementAndIsReaped() async throws {
-        let (root, node, script, ready) = try fixture("valid"), marker = root.appendingPathComponent("marker")
+        let (root, python, script, ready) = try fixture("valid"), marker = root.appendingPathComponent("marker")
         let command = AutomationOwnedCommand(), nonce = UUID().uuidString.lowercased()
-        let result = try await command.run(executable: node, arguments: [script.path, "valid", ready.path, marker.path], directory: root,
+        let result = try await command.run(executable: python, arguments: [script.path, "valid", ready.path, marker.path], directory: root,
             environment: [:], timeout: .seconds(5), ownershipGateNonce: nonce, didStart: { identity in
                 guard !FileManager.default.fileExists(atPath: marker.path) else { throw AutomationContractError.invalidIdentity }
                 try AutomationMacHelperHandshake.ready(nonce: nonce, identity: identity).write(to: ready, options: .atomic)
@@ -58,10 +73,10 @@ final class AutomationMacGatedCommandTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "mutation-after-ack")
     }
     func testBoundedPrivateFrameFollowsAcknowledgementWithoutArgvEnvironmentOrOutput() async throws {
-        let (root, node, script, ready) = try fixture("private-frame"), marker = root.appendingPathComponent("marker")
+        let (root, python, script, ready) = try fixture("private-frame"), marker = root.appendingPathComponent("marker")
         let command = AutomationOwnedCommand(), nonce = UUID().uuidString.lowercased()
         let frame = Data(("{\"value\":\"private-sentinel-" + String(repeating: "x", count: 100000) + "\"}\n").utf8)
-        let result = try await command.run(executable: node, arguments: [script.path, "private-frame", ready.path, marker.path], directory: root,
+        let result = try await command.run(executable: python, arguments: [script.path, "private-frame", ready.path, marker.path], directory: root,
             environment: [:], timeout: .seconds(5), ownershipGateNonce: nonce, privateInputFrame: frame, didStart: { identity in
                 try AutomationMacHelperHandshake.ready(nonce: nonce, identity: identity).write(to: ready, options: .atomic)
             })
@@ -70,11 +85,11 @@ final class AutomationMacGatedCommandTests: XCTestCase {
         XCTAssertTrue(result.stderr.isEmpty); XCTAssertTrue(result.directChildReaped); XCTAssertTrue(result.pipesDrained)
     }
     func testStopDuringBackpressuredPrivateFrameIsPromptAndRetainsAcknowledgement() async throws {
-        let (root, node, script, ready) = try fixture("block-private"), marker = root.appendingPathComponent("marker")
+        let (root, python, script, ready) = try fixture("block-private"), marker = root.appendingPathComponent("marker")
         let command = AutomationOwnedCommand(), nonce = UUID().uuidString.lowercased()
         let frame = Data(("{\"value\":\"" + String(repeating: "x", count: 130000) + "\"}\n").utf8)
         let task = Task {
-            try await command.run(executable: node, arguments: [script.path, "block-private", ready.path, marker.path], directory: root,
+            try await command.run(executable: python, arguments: [script.path, "block-private", ready.path, marker.path], directory: root,
                 environment: [:], timeout: .seconds(10), ownershipGateNonce: nonce, privateInputFrame: frame, didStart: { identity in
                     try AutomationMacHelperHandshake.ready(nonce: nonce, identity: identity).write(to: ready, options: .atomic)
                 })
@@ -90,14 +105,14 @@ final class AutomationMacGatedCommandTests: XCTestCase {
         XCTAssertNotNil(logs.ownedIdentity)
     }
     func testPrivateFrameRejectsUngatedOversizedMultipleOrIncompleteInputBeforeLaunch() async throws {
-        let (root, node, script, ready) = try fixture("valid"), marker = root.appendingPathComponent("marker")
+        let (root, python, script, ready) = try fixture("valid"), marker = root.appendingPathComponent("marker")
         for (frame, nonce) in [(Data("{}\n".utf8), Optional<String>.none),
                                (Data("{}".utf8), UUID().uuidString.lowercased()),
                                (Data("{}\n{}\n".utf8), UUID().uuidString.lowercased()),
                                (Data((String(repeating: "x", count: 131072) + "\n").utf8), UUID().uuidString.lowercased())] {
             let command = AutomationOwnedCommand()
             do {
-                _ = try await command.run(executable: node, arguments: [script.path, "valid", ready.path, marker.path], directory: root,
+                _ = try await command.run(executable: python, arguments: [script.path, "valid", ready.path, marker.path], directory: root,
                     environment: [:], timeout: .seconds(1), ownershipGateNonce: nonce, privateInputFrame: frame)
                 XCTFail("Invalid private frame launched")
             } catch {}
@@ -107,10 +122,10 @@ final class AutomationMacGatedCommandTests: XCTestCase {
     }
     func testForeignOrMissingReadinessCannotWriteMutationMarker() async throws {
         for mode in ["foreign", "missing"] {
-            let (root, node, script, ready) = try fixture(mode), marker = root.appendingPathComponent("marker")
+            let (root, python, script, ready) = try fixture(mode), marker = root.appendingPathComponent("marker")
             let command = AutomationOwnedCommand(), nonce = UUID().uuidString.lowercased()
             do {
-                _ = try await command.run(executable: node, arguments: [script.path, mode, ready.path, marker.path], directory: root,
+                _ = try await command.run(executable: python, arguments: [script.path, mode, ready.path, marker.path], directory: root,
                     environment: [:], timeout: .milliseconds(500), ownershipGateNonce: nonce, didStart: { identity in
                         try AutomationMacHelperHandshake.ready(nonce: nonce, identity: identity).write(to: ready, options: .atomic)
                     })
@@ -122,10 +137,10 @@ final class AutomationMacGatedCommandTests: XCTestCase {
         }
     }
     func testFailureAfterAcknowledgementRetainsTheSubmittedStartupPhase() async throws {
-        let (root, node, script, ready) = try fixture("hang-after-ack"), marker = root.appendingPathComponent("marker")
+        let (root, python, script, ready) = try fixture("hang-after-ack"), marker = root.appendingPathComponent("marker")
         let command = AutomationOwnedCommand(), nonce = UUID().uuidString.lowercased()
         do {
-            _ = try await command.run(executable: node, arguments: [script.path, "hang-after-ack", ready.path, marker.path], directory: root,
+            _ = try await command.run(executable: python, arguments: [script.path, "hang-after-ack", ready.path, marker.path], directory: root,
                 environment: [:], timeout: .milliseconds(500), ownershipGateNonce: nonce, didStart: { identity in
                     try AutomationMacHelperHandshake.ready(nonce: nonce, identity: identity).write(to: ready, options: .atomic)
                 })

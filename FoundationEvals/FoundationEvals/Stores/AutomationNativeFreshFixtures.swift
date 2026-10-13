@@ -8,7 +8,7 @@ protocol AutomationFreshFixtureQualifyingRunner: Sendable {
                                   capabilities: CapabilityProfile) async throws -> CapabilityProfile
     func run(prepared: AutomationPreparedApplication, plan: AutomationCase, approval: RunApproval,
              capabilities: CapabilityProfile, attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget?,
-             uiRuntime: AutomationUIRuntime?, fixtureTracker: AutomationFreshFixtureTracker?, qualifyingFreshBindings: [AutomationFreshFixtureBinding]?) async throws -> AutomationAttemptReport
+             fixtureTracker: AutomationFreshFixtureTracker?, qualifyingFreshBindings: [AutomationFreshFixtureBinding]?) async throws -> AutomationAttemptReport
     func validateFreshFixtureAttempt(bindings: [AutomationFreshFixtureBinding]) async throws
     func qualifyFreshFixture(bindings: [AutomationFreshFixtureBinding]) async throws -> AutomationQualifiedFreshFixture
 }
@@ -24,7 +24,7 @@ enum AutomationNativeFreshFixtures {
     /// Requalify through actual execution in this runner. Saved reports can only
     /// exclude historical IDs; they cannot restore this non-Codable authority.
     static func qualify(frozen: AutomationFrozenCase, prepared: AutomationPreparedApplication, approval: RunApproval, capabilities: CapabilityProfile,
-                        runner: some AutomationFreshFixtureQualifyingRunner, runtime: AutomationUIRuntime?, installApproved: Bool) async throws -> AutomationQualifiedFreshFixture {
+                        runner: some AutomationFreshFixtureQualifyingRunner, installApproved: Bool) async throws -> AutomationQualifiedFreshFixture {
         let bindings = try AutomationFreshEntityPlanner.bindings(plan: frozen.plan)
         let capabilities = try await runner.capabilitiesForExecution(subject: .prepared(prepared), plan: frozen.plan,
             capabilities: capabilities)
@@ -37,7 +37,7 @@ enum AutomationNativeFreshFixtures {
             let id = UUID().uuidString
             try await budget.reserveAttempt(id: id)
             let report = try await runner.run(prepared: prepared, plan: frozen.plan, approval: approval, capabilities: capabilities,
-                attemptID: id, allowBootAndInstall: installApproved, campaignBudget: budget, uiRuntime: runtime, fixtureTracker: nil, qualifyingFreshBindings: bindings)
+                attemptID: id, allowBootAndInstall: installApproved, campaignBudget: budget, fixtureTracker: nil, qualifyingFreshBindings: bindings)
             guard report.resourcesReleased, report.result.subjectCompleted, !report.result.subjectDispatchUncertain,
                   [.passed, .assertionFailed, .executedUnassessed].contains(report.result.summary) else {
                 throw AutomationContractError.missingEvidence("Fresh fixture qualification did not complete and release; inspect its saved attempt before continuing")

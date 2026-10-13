@@ -65,8 +65,6 @@ fi
 xcodebuild -version
 mkdir "$work/source"
 git archive "$source_commit" | tar -x -C "$work/source"
-export INTENTS_AUTOMATION_NPM_CACHE="$work/automation-npm-cache"
-"$work/source/script/automation_prepare_runtime.sh"
 xcodebuild archive \
   -jobs 2 \
   -project "$work/source/FoundationEvals/FoundationEvals.xcodeproj" -scheme FoundationEvals \
@@ -92,7 +90,6 @@ mkdir -p "$work/payload"
 app="$work/payload/Intents.app"
 ditto --norsrc --noextattr "$work/export/Intents.app" "$app"
 xattr -cr "$app"
-"$work/source/script/automation_seal_app.sh" --app "$app" --identity "$identity"
 codesign --verify --strict --deep "$app"
 test -f "$app/Contents/Resources/AppIcon.icns"
 ln -s /Applications "$work/payload/Applications"

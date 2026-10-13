@@ -569,7 +569,7 @@ final class AutomationSourceGraphTests: XCTestCase {
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let packageData = try Data(contentsOf: repository.appendingPathComponent("Package.swift"))
         let package = try XCTUnwrap(AutomationPackageManifest.read(packageData))
-        let names = ["IntentsAutomationCore", "IntentsAutomationDateCodec", "IntentLabContracts"]
+        let names = ["IntentsAutomationCore", "IntentsAutomationDateCodec", "IntentLabContracts", "IntentsAutomationUIHostContracts"]
         var contents = ["Package/Package.swift": try XCTUnwrap(String(data: packageData, encoding: .utf8))]
         for name in names {
             let path = try XCTUnwrap(package.targetsByName[name]?.path)
@@ -592,6 +592,9 @@ final class AutomationSourceGraphTests: XCTestCase {
         let core = graph.inputs.filter { $0.owner == "Package/Package.swift#target:IntentsAutomationCore" }
         XCTAssertEqual(core.count, contents.keys.filter { $0.hasPrefix("Package/Sources/IntentsAutomationCore/") }.count)
         XCTAssertTrue(graph.inputs.contains { $0.relativePath == "Package/Integration/AutomationHost/AutomationDateCodec.swift" && $0.role == "packageSwiftMembership" })
+        let uiContracts = graph.inputs.filter { $0.owner == "Package/Package.swift#target:IntentsAutomationUIHostContracts" && $0.role == "packageSwiftMembership" }
+        XCTAssertEqual(uiContracts.map(\.relativePath), ["Package/Integration/AutomationHost/UIHostPlan.swift"])
+        XCTAssertFalse(graph.inputs.contains { $0.relativePath == "Package/Integration/AutomationHost/UIStepTests.swift" && $0.role == "packageSwiftMembership" })
         XCTAssertFalse(graph.inputs.contains { $0.relativePath == "Package/Integration/AutomationHost/IntentDefinitionsHost.swift" && $0.role == "packageSwiftMembership" })
         XCTAssertFalse(graph.inputs.contains { $0.relativePath.hasPrefix("Package/Code/") })
         XCTAssertEqual(graph, try fixture.read()); try AutomationSourceSnapshot.verifyOriginal(fixture.manifest)

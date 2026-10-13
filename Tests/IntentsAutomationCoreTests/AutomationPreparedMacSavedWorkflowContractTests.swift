@@ -5,16 +5,16 @@ import XCTest
 
 extension AutomationPrivateMacAppleRouteDriverTests {
     struct PreparedSavedFixture: Sendable {
-        let harness: MacFreshHarness, frozen: AutomationFrozenCase, original: AutomationAttemptReport
+        let harness: PreparedMacSavedHarness, frozen: AutomationFrozenCase, original: AutomationAttemptReport
         let evidence: AutomationPrivateMacDaemonUnit.Evidence
         var dependencies: AutomationMacSavedWorkflowContract.Dependencies {
             .init(currentTarget: { harness.prepared.host.target }, runtime: { _ in evidence }, locale: { "en_GB" })
         }
     }
     func preparedSavedFixture() async throws -> PreparedSavedFixture {
-        let h = try await macFreshHarness(mode: .noChange)
-        let report = try await h.runner.run(prepared: h.prepared, plan: h.plan, approval: h.approval, capabilities: h.capabilities,
-            attemptID: "original", allowBootAndInstall: false)
+        let h = try await preparedMacSavedHarness(mode: .noChange)
+        let report = try await h.coordinator.run(plan: h.plan, approval: h.approval, capabilities: h.capabilities,
+            attemptID: "original", driver: h.driver)
         XCTAssertEqual(report.result.summary, .assertionFailed); XCTAssertTrue(report.resourcesReleased)
         let evidence = AutomationPrivateMacDaemonUnit.Evidence(receiptSHA256: AutomationPrivateMacDaemonUnit.pinnedFillProgramReceiptSHA256,
             checkpointSHA256: String(repeating: "b", count: 64), fileCount: 5485, customerRuntimeEnabled: false, hardwareQualified: false, developerIDSigned: false)
@@ -74,7 +74,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
         }
     }
     func testPreparedMacSavedComparisonBindsTwoActualArtifactSetsAndSeparateApprovals() async throws {
-        let f = try await preparedSavedFixture(), after = try await macFreshHarness(changedBuild: true)
+        let f = try await preparedSavedFixture(), after = try await preparedMacSavedHarness(changedBuild: true)
         let review = try AutomationMacSavedWorkflowContract.comparison(frozen: f.frozen, original: f.original,
             before: f.harness.prepared, after: after.prepared, runtimeRoot: f.harness.root, runID: "compare", disposable: true, dependencies: f.dependencies)
         XCTAssertEqual(review.baseline, f.frozen); XCTAssertEqual(review.candidate.plan.preparedMacBuildArtifacts, try .init(prepared: after.prepared))

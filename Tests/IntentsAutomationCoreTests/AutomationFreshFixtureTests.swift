@@ -2,6 +2,112 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationFreshFixtureTests: XCTestCase, @unchecked Sendable {
+    private func xcuitestFixture() throws -> FreshFixtureTestData {
+        var plan = try FreshFixtureTestData().plan
+        let original = plan.setup[0]
+        plan.setup[0].uiProgram = .init(operations: [
+            .init(id: "name", kind: .fillBinding, locator: .init(.testId, "task.title"), binding: "title"),
+            .init(id: "owner", kind: .tap, locator: .init(.label, "Personal", role: .button)),
+            .init(id: "save", kind: .tap, locator: .init(.testId, "task.add")),
+            .init(id: "saved", kind: .assertEndpoint, locator: .init(.label, "Duplicate Tasks"))
+        ], bindings: ["title": "Send invoice"])
+        var protected = original; protected.id = "create.protected"
+        protected.uiProgram = plan.setup[0].uiProgram
+        protected.uiProgram?.operations[1].locator = .init(.label, "Work", role: .button)
+        plan.setup.insert(protected, at: 1)
+        plan.provenance["ui.backend"] = "xcuitest"
+        plan.provenance["catalog"] = String(repeating: "c", count: 64)
+        return try .init(plan: plan)
+    }
+    func testXCUITestQualificationUsesTwoPreparedHostAttemptsWithoutRuntimeManifest() async throws {
+        let fixture = try xcuitestFixture(), token = try fixture.qualify()
+        XCTAssertNil(token.context.uiRuntimeManifestDigest)
+        XCTAssertEqual(token.context.catalogDigest, fixture.plan.provenance["catalog"])
+        XCTAssertEqual(token.qualificationAttemptIDs.count, 2)
+        let firstReport = fixture.evidence(id: "first", prefix: "first").report
+        XCTAssertEqual(Set(firstReport.receipts.map { $0.scope.leaseGeneration }), [1])
+        XCTAssertEqual(firstReport.receipts.filter { $0.route == .ui }.count, 2)
+        XCTAssertTrue(fixture.plan.setup.compactMap(\.uiProgram).flatMap(\.operations).allSatisfy { $0.goal == nil })
+        XCTAssertEqual(token.qualifiedEntityIDs, ["TaskEntity:qualification1-Personal", "TaskEntity:qualification1-Work",
+            "TaskEntity:qualification2-Personal", "TaskEntity:qualification2-Work"])
+        try AutomationQualifiedFreshFixture.validateLiveAttempt(bindings: fixture.bindings, evidence: fixture.evidence(id: "first", prefix: "first"))
+        let tracker = AutomationFreshFixtureTracker(fixture: token)
+        try await tracker.preflight(context: token.context, plan: fixture.plan, approval: fixture.approval)
+        let initialExclusions = await tracker.excludedEntityIDs()
+        XCTAssertEqual(initialExclusions, token.qualifiedEntityIDs)
+        let report = fixture.report(id: "fresh", prefix: "fresh", completed: false)
+        try await tracker.reserveBeforeSubject(receipts: Array(report.receipts.prefix(fixture.plan.setup.count)),
+            plan: fixture.plan, approval: fixture.approval, attemptID: report.attemptID)
+        let exclusions = await tracker.excludedEntityIDs()
+        XCTAssertEqual(exclusions, token.qualifiedEntityIDs.union(["TaskEntity:fresh-Personal", "TaskEntity:fresh-Work"]))
+    }
+    func testXCUITestQualificationRejectsMixedBackendAndMismatchedPreparedHostOrCatalog() async throws {
+        let fixture = try xcuitestFixture(), first = fixture.evidence(id: "first", prefix: "first")
+        let second = fixture.evidence(id: "second", prefix: "second")
+        for flag in 0..<4 {
+            let context = AutomationRecipeContext(app: second.context.app, target: second.context.target,
+                environmentID: second.context.environmentID,
+                catalogDigest: flag == 1 ? String(repeating: "f", count: 64) : second.context.catalogDigest,
+                hostDigest: flag == 0 ? String(repeating: "f", count: 64) : second.context.hostDigest,
+                localeIdentifier: second.context.localeIdentifier,
+                uiRuntimeManifestDigest: flag == 2 ? String(repeating: "e", count: 64) : nil)
+            var plan = second.plan
+            if flag == 3 { plan.provenance["ui.backend"] = "legacy" }
+            var approval = second.approval; approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+            let mismatched = AutomationLiveRecipeEvidence(context: context, plan: plan, approval: approval, report: second.report)
+            XCTAssertThrowsError(try AutomationQualifiedFreshFixture(bindings: fixture.bindings, evidence: [first, mismatched]))
+        }
+        let token = try fixture.qualify(), tracker = AutomationFreshFixtureTracker(fixture: token)
+        let changedHost = AutomationRecipeContext(app: token.context.app, target: token.context.target,
+            environmentID: token.context.environmentID, catalogDigest: token.context.catalogDigest,
+            hostDigest: String(repeating: "f", count: 64), localeIdentifier: token.context.localeIdentifier)
+        do { try await tracker.preflight(context: changedHost, plan: fixture.plan, approval: fixture.approval); XCTFail("Changed prepared host admitted") } catch {}
+        for key in ["ui.preparedHostDigest", "ui.preparedCatalogDigest"] {
+            var plan = fixture.plan; plan.provenance[key] = String(repeating: "f", count: 64)
+            let changed = try FreshFixtureTestData(plan: plan)
+            XCTAssertThrowsError(try changed.qualify())
+        }
+    }
+    func testXCUITestQualificationRequiresDeterministicBoundInputAndPositiveCheckedQuery() throws {
+        let fixture = try xcuitestFixture()
+        for flag in 0..<4 {
+            var plan = fixture.plan
+            switch flag {
+            case 0: plan.setup[0].uiProgram?.operations = [.init(id: "create", kind: .navigateGoal,
+                goal: .init(id: "create", instruction: "Create", endpoint: .init(.testId, "done")))]
+            case 1: plan.setup[0].uiProgram?.bindings = [:]
+            case 2: plan.setup[0].uiProgram?.operations.removeFirst()
+            default: plan.setupChecks = []
+            }
+            let changed = try FreshFixtureTestData(plan: plan)
+            XCTAssertThrowsError(try changed.qualify())
+        }
+        let first = fixture.evidence(id: "first", prefix: "first"), original = fixture.evidence(id: "second", prefix: "second")
+        var report = original.report
+        let lookup = try XCTUnwrap(report.receipts.firstIndex(where: { $0.segmentID == "lookup" }))
+        report.receipts[lookup].verifiedOutputs = ["tasks": .array([])]
+        XCTAssertThrowsError(try AutomationQualifiedFreshFixture(bindings: fixture.bindings,
+            evidence: [first, .init(context: original.context, plan: original.plan, approval: original.approval, report: report)]))
+    }
+    func testExclusionSnapshotsIncludeSharedReservationsAndProtectedQualificationIdentities() async throws {
+        let fixture = try xcuitestFixture(), token = try fixture.qualify()
+        let ledger = AutomationFixtureIdentityLedger(fixtures: [token], excludedHistoricalIDs: ["TaskEntity:historical"])
+        let first = AutomationFreshFixtureTracker(fixture: token, ledger: ledger), second = AutomationFreshFixtureTracker(fixture: token, ledger: ledger)
+        let report = fixture.report(id: "new", prefix: "new", completed: false)
+        try await first.reserveBeforeSubject(receipts: Array(report.receipts.prefix(fixture.plan.setup.count)),
+            plan: fixture.plan, approval: fixture.approval, attemptID: report.attemptID)
+        let snapshot = await second.excludedEntityIDs()
+        XCTAssertEqual(snapshot, token.qualifiedEntityIDs.union(["TaskEntity:historical", "TaskEntity:new-Personal", "TaskEntity:new-Work"]))
+        let prior = fixture.evidence(id: "previous", prefix: "previous")
+        let fence = try AutomationFreshFixtureQualificationFence(bindings: fixture.bindings, plan: fixture.plan,
+            approval: fixture.approval, capabilities: syntheticEntityCodecCapabilities, context: prior.context, previous: [prior])
+        let historical = await fence.excludedEntityIDs()
+        XCTAssertEqual(historical, ["TaskEntity:previous-Personal", "TaskEntity:previous-Work"])
+        try await fence.reserveBeforeSubject(receipts: Array(report.receipts.prefix(fixture.plan.setup.count)),
+            plan: fixture.plan, approval: fixture.approval, attemptID: report.attemptID)
+        let all = await fence.excludedEntityIDs()
+        XCTAssertEqual(all, historical.union(["TaskEntity:new-Personal", "TaskEntity:new-Work"]))
+    }
     func testFixtureQualificationRejectsExplicitCodecVetoAndConsentBeforeMutation() throws {
         let fixture = try FreshFixtureTestData()
         for state in [CapabilityProfile.State.unavailable, .consentRequired] {
@@ -424,13 +530,13 @@ struct FreshFixtureTestData: Sendable {
     func report(id: String, prefix: String, completed: Bool) -> AutomationAttemptReport {
         let observation = AutomationObservation(id: "state", app: plan.app, target: plan.target, environmentID: plan.environmentID, attemptID: id, stepID: "state", route: .systemQuery, proof: .appState, value: records(prefix: prefix, completed: completed))
         let segments = plan.setup + [plan.execution] + plan.observations
-        let receipts = segments.enumerated().map { index, segment in AutomationSegmentReceipt(scope: .init(runID: approval.runID, attemptID: id, segmentID: segment.id, leaseGeneration: index + 1),
+        let receipts = segments.enumerated().map { index, segment in AutomationSegmentReceipt(scope: .init(runID: approval.runID, attemptID: id, segmentID: segment.id, leaseGeneration: plan.provenance["ui.backend"] == "xcuitest" ? 1 : index + 1),
             app: plan.app, target: plan.target, segmentID: segment.id, route: segment.kind, dispatched: true, completed: true,
             observations: segment.id == "state" ? [observation] : [], verifiedOutputs: segment.id == "lookup" ? ["tasks": records(prefix: prefix, completed: false)] : nil, environmentID: plan.environmentID) }
         return .init(attemptID: id, result: AutomationAssessment.assess(plan: plan, attemptID: id, subjectDispatched: true, subjectCompleted: true, observations: [observation]), receipts: receipts, resourcesReleased: true)
     }
     func evidence(id: String, prefix: String) -> AutomationLiveRecipeEvidence {
-        .init(context: .init(app: plan.app, target: plan.target, environmentID: plan.environmentID, catalogDigest: String(repeating: "c", count: 64), hostDigest: String(repeating: "d", count: 64), localeIdentifier: "en_GB", uiRuntimeManifestDigest: String(repeating: "e", count: 64)),
+        .init(context: .init(app: plan.app, target: plan.target, environmentID: plan.environmentID, catalogDigest: String(repeating: "c", count: 64), hostDigest: String(repeating: "d", count: 64), localeIdentifier: "en_GB", uiRuntimeManifestDigest: plan.provenance["ui.backend"] == "xcuitest" ? nil : String(repeating: "e", count: 64)),
               plan: plan, approval: approval, report: report(id: id, prefix: prefix, completed: false))
     }
     func qualify(prefix: String = "qualification") throws -> AutomationQualifiedFreshFixture {

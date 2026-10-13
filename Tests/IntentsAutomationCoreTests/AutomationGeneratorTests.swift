@@ -66,6 +66,9 @@ final class AutomationGeneratorTests: XCTestCase {
         let merged = frozen["objects"] as! [String: [String: Any]]
         let dateReference = try XCTUnwrap(merged.values.first { $0["isa"] as? String == "PBXFileReference" && $0["path"] as? String == "AutomationDateCodec.swift" })
         XCTAssertEqual(dateReference["lastKnownFileType"] as? String, "sourcecode.swift")
+        for file in ["UIHostPlan.swift", "UIStepTests.swift"] {
+            XCTAssertTrue(merged.values.contains { $0["isa"] as? String == "PBXFileReference" && $0["path"] as? String == file })
+        }
         let dateSources = merged.values.filter { $0["isa"] as? String == "PBXGroup" }.compactMap { $0["path"] as? String }.filter { $0.hasSuffix("/Sources") }
         XCTAssertEqual(dateSources.count, 1)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: dateSources[0]).appendingPathComponent("AutomationDateCodec.swift")), try Data(contentsOf: templates.appendingPathComponent("AutomationDateCodec.swift")))

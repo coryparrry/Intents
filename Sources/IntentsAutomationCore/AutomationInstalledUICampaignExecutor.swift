@@ -6,11 +6,10 @@ import Foundation
 public struct AutomationInstalledUICampaignExecutor: AutomationCampaignAttemptExecutor {
     private let runner: AutomationApplicationRunner
     private let installed: AutomationInstalledUIApplication
-    private let runtime: AutomationUIRuntime
     private let allowBootAndInstall: Bool
     public init(runner: AutomationApplicationRunner, installed: AutomationInstalledUIApplication,
-                runtime: AutomationUIRuntime, allowBootAndInstall: Bool) {
-        self.runner = runner; self.installed = installed; self.runtime = runtime; self.allowBootAndInstall = allowBootAndInstall
+                allowBootAndInstall: Bool) {
+        self.runner = runner; self.installed = installed; self.allowBootAndInstall = allowBootAndInstall
     }
     public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
                         budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
@@ -20,7 +19,7 @@ public struct AutomationInstalledUICampaignExecutor: AutomationCampaignAttemptEx
             throw AutomationContractError.missingEvidence("Installed UI campaigns require a read-only workflow")
         }
         return try await runner.run(subject: .installedUI(installed), plan: frozen.plan, approval: approval, capabilities: .init(),
-            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: budget, uiRuntime: runtime)
+            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: budget)
     }
 }
 #endif
