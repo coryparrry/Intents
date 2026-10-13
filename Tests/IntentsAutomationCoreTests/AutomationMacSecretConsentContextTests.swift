@@ -50,7 +50,7 @@ import XCTest
         let field: Field
         let root: URL
     }
-    private func fixture(gate: Gate? = nil, environment: String = "synthetic", ownedWorker: Bool = false, frozenWorker: Bool = false) async throws -> Fixture {
+    private func fixture(gate: Gate? = nil, environment: String = "synthetic") async throws -> Fixture {
         var app = AppIdentity(logicalID: "app", bundleID: "test.Secret", platform: "macos", productDigest: String(repeating: "a", count: 64))
         app.productDigestVersion = 2; app.canonicalBundlePath = "/synthetic/Secret.app"
         let target = TargetIdentity(id: "host-macos-local", kind: .nativeMac, loginSession: "synthetic-session")
@@ -58,7 +58,7 @@ import XCTest
             maximumActions: 10, disposable: true, approvedCaseDigest: String(repeating: "b", count: 64))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let artifacts = try AutomationArtifactRegistry(root: root)
-        let leases = frozenWorker ? try AutomationDeviceLeaseManager(storeURL: AutomationPath.canonical(root).appendingPathComponent("leases.json")) : AutomationDeviceLeaseManager()
+        let leases = AutomationDeviceLeaseManager()
         let field = Field()
         let lease = try await leases.acquire(runID: "run", target: target, control: .ui)
         let fence = try await leases.nativeInputFence(for: lease)
@@ -72,21 +72,7 @@ import XCTest
         let session = AutomationSecretFillSession(approval: approval, lease: lease, leases: leases, authority: authority, artifacts: artifacts, adapter: await owner.adapter())
         let model = AutomationSecretConsentModel(review: owner.review, session: session, validateSink: { try await owner.validateConsent($0) })
         let presenter = SyntheticPresenter(model: model, secret: sentinel, gate: gate)
-        var transport: AutomationSecretProgramTransport?
-        if frozenWorker {
-            guard let runtime = ProcessInfo.processInfo.environment["INTENTS_MAC_SECRET_RUNTIME"] else { throw XCTSkip("Requires explicitly selected frozen secret runtime") }
-            let worker = try await AutomationMacSecretProgramTransport.owned(unitRoot: AutomationPath.canonical(URL(fileURLWithPath: runtime)),
-                state: AutomationPath.canonical(root).appendingPathComponent("secret-worker"), scope: scope, lease: lease, leases: leases)
-            transport = await worker.capability()
-        } else if ownedWorker {
-            guard let node = ProcessInfo.processInfo.environment["INTENTS_SECRET_TEST_NODE"],
-                  let entry = ProcessInfo.processInfo.environment["INTENTS_SECRET_PROGRAM_TEST_ENTRY"] else { throw XCTSkip("Requires explicit secret-only owned source entry") }
-            let worker = try AutomationMacSecretProgramTransport(configuration: .init(node: AutomationPath.canonical(URL(fileURLWithPath: node)),
-                entry: AutomationPath.canonical(URL(fileURLWithPath: entry)), stateDirectory: AutomationPath.canonical(root).appendingPathComponent("secret-worker"), retainDiagnostics: false),
-                scope: scope, lease: lease, leases: leases, revalidate: {})
-            transport = await worker.capability()
-        }
-        let context = try AutomationMacSecretConsentContext(program: program, session: session, owner: owner, presenter: presenter, transport: transport)
+        let context = try AutomationMacSecretConsentContext(program: program, session: session, owner: owner, presenter: presenter)
         return .init(approval: approval, program: program, lease: lease, leases: leases, authority: authority, artifacts: artifacts,
             owner: owner, session: session, presenter: presenter, context: context, field: field, root: root)
     }
@@ -111,32 +97,6 @@ import XCTest
         do { _ = try await f.context.run(); XCTFail("Replayed consumed consent") } catch {}
         await f.context.closeAndDrain()
         do { try await f.owner.validateConsent(f.owner.review); XCTFail("Owner remained live") } catch {}
-    }
-    func testActualOwnedSecretEntryFollowsConsentAndReleasesExactRecordedChild() async throws {
-        let f = try await fixture(ownedWorker: true); defer { try? FileManager.default.removeItem(at: f.root) }
-        do { _ = try await f.context.run(); XCTFail("Worker before consent") } catch {}
-        let before = try await f.leases.currentRecord(f.lease); XCTAssertTrue(before.runners.isEmpty)
-        let request = try await f.context.collectConsent(); try await grant(request, fixture: f)
-        let result = try await f.context.run(); XCTAssertEqual(result.object?["complete"], .bool(true)); XCTAssertEqual(f.field.count(), 1)
-        let record = try await f.leases.currentRecord(f.lease); XCTAssertEqual(record.runners.count, 1)
-        XCTAssertEqual(record.runners.first?.role, .sidecar)
-        let presence = record.runners.first!.process.presence()
-        switch presence { case .absent, .replaced: break; case .matching, .unknown: XCTFail("Owned child not gone") }
-        XCTAssertFalse(String(decoding: try JSONEncoder().encode(result), as: UTF8.self).contains(sentinel))
-        await f.context.closeAndDrain()
-        try await f.leases.release(f.lease, commandsDrained: true, ownedRunnerTerminated: true)
-        let current = await f.leases.isCurrent(f.lease); XCTAssertFalse(current)
-    }
-    func testFrozenOwnedSecretFactoryUsesDurableLeaseWithoutCredentialInJournal() async throws {
-        let f = try await fixture(frozenWorker: true); defer { try? FileManager.default.removeItem(at: f.root) }
-        let request = try await f.context.collectConsent(); try await grant(request, fixture: f)
-        let result = try await f.context.run(); XCTAssertEqual(result.object?["complete"], .bool(true)); XCTAssertEqual(f.field.count(), 1)
-        let record = try await f.leases.currentRecord(f.lease); XCTAssertEqual(record.runners.count, 1)
-        XCTAssertEqual(record.lastDispatch?.operationID, f.program.operationID)
-        let journal = try String(contentsOf: AutomationPath.canonical(f.root).appendingPathComponent("secret-worker/opaque-secret-journal.json"), encoding: .utf8)
-        XCTAssertFalse(journal.contains(sentinel)); XCTAssertFalse(journal.contains(request.reference.id.uuidString))
-        await f.context.closeAndDrain()
-        try await f.leases.release(f.lease, commandsDrained: true, ownedRunnerTerminated: true)
     }
     func testConsentAloneCannotDispatchWithoutRunAuthority() async throws {
         let f = try await fixture(); defer { try? FileManager.default.removeItem(at: f.root) }

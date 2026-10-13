@@ -56,7 +56,7 @@ import XCTest
         let first = try model.makeSiriRunRequest(runID: "preview"), second = try model.makeSiriRunRequest(runID: UUID().uuidString)
         XCTAssertEqual(first.digest, second.digest); XCTAssertEqual(first.caseDigest, second.caseDigest)
         XCTAssertEqual(first.plan.execution.kind, .siriText); XCTAssertEqual(first.plan.execution.siriProgram?.request, model.siriRequest)
-        XCTAssertTrue(first.plan.requirements.isEmpty); XCTAssertTrue(first.plan.observations.isEmpty); XCTAssertNil(first.uiRuntime)
+        XCTAssertTrue(first.plan.requirements.isEmpty); XCTAssertTrue(first.plan.observations.isEmpty); XCTAssertNil(first.plan.provenance["ui.runtimeManifestDigest"])
         XCTAssertEqual(first.plan.provenance["physical.installedBytesVerified"], "false")
         let cases = try AutomationCaseStore(root: model.support.appendingPathComponent("siri-cases"))
         _ = try await cases.freeze(first.plan)

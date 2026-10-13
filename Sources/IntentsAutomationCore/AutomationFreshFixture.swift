@@ -40,8 +40,7 @@ public struct AutomationQualifiedFreshFixture: Sendable {
               Set(evidence.map { $0.report.attemptID }).count == 2, evidence[0].context == evidence[1].context else {
             throw AutomationContractError.missingEvidence("Fresh fixtures need two distinct live attempts in one exact environment")
         }
-        let context = evidence[0].context; try context.validate()
-        guard context.uiRuntimeManifestDigest != nil else { throw AutomationContractError.missingEvidence("Fresh UI fixtures need the exact verified runtime manifest") }
+        let context = evidence[0].context; try Self.validateExecutionContext(context, plan: evidence[0].plan)
         let digest = try Self.digest(plan: evidence[0].plan)
         var previousIDs: Set<String> = []
         for live in evidence {
@@ -81,8 +80,8 @@ public struct AutomationQualifiedFreshFixture: Sendable {
     /// Check the first live attempt before authorising a qualification repetition.
     /// This still cannot produce a token from one attempt or from imported data.
     static func validateLiveAttempt(bindings: [AutomationFreshFixtureBinding], evidence live: AutomationLiveRecipeEvidence) throws {
-        try live.context.validate()
-        guard live.context.uiRuntimeManifestDigest != nil, (1...10).contains(bindings.count),
+        try validateExecutionContext(live.context, plan: live.plan)
+        guard (1...10).contains(bindings.count),
               live.approval.disposable, live.plan.app == live.context.app, live.plan.target == live.context.target,
               live.plan.environmentID == live.context.environmentID, live.plan.provenance["ui.locale"] == live.context.localeIdentifier,
               live.approval.app == live.context.app, live.approval.target == live.context.target,
@@ -106,6 +105,7 @@ public struct AutomationQualifiedFreshFixture: Sendable {
     }
 
     func validate(plan: AutomationCase, approval: RunApproval) throws {
+        try Self.validateExecutionContext(context, plan: plan)
         guard approval.disposable, approval.app == context.app, approval.target == context.target,
               approval.environmentID == context.environmentID, plan.app == context.app, plan.target == context.target,
               plan.environmentID == context.environmentID, plan.provenance["ui.locale"] == context.localeIdentifier,
@@ -152,6 +152,36 @@ public struct AutomationQualifiedFreshFixture: Sendable {
                   identities.insert(type + ":" + id).inserted else { throw AutomationFixtureFreshnessError.invalidFixture }
         }
         return identities
+    }
+
+    /// The generated-host backend is identified by the exact prepared context
+    /// minted by the runner. Legacy fixtures retain their sealed-runtime check.
+    fileprivate static func validateExecutionContext(_ context: AutomationRecipeContext, plan: AutomationCase) throws {
+        try context.validate()
+        guard plan.provenance["ui.backend"] == "xcuitest" else {
+            guard context.uiRuntimeManifestDigest != nil else {
+                throw AutomationContractError.missingEvidence("Legacy fresh UI fixtures need the exact verified runtime manifest")
+            }
+            return
+        }
+        guard context.uiRuntimeManifestDigest == nil,
+              plan.provenance["catalog"] == nil || plan.provenance["catalog"] == context.catalogDigest,
+              plan.provenance["ui.preparedCatalogDigest"] == nil || plan.provenance["ui.preparedCatalogDigest"] == context.catalogDigest,
+              plan.provenance["ui.preparedHostDigest"] == nil || plan.provenance["ui.preparedHostDigest"] == context.hostDigest else {
+            throw AutomationContractError.missingEvidence("Fresh XCUITest fixtures need the exact prepared host and catalog")
+        }
+        let uiSegments = (plan.setup + [plan.execution] + plan.observations + plan.cleanup).filter { $0.kind == .ui || $0.kind == .observeOnly }
+        guard !uiSegments.isEmpty else { throw AutomationContractError.missingEvidence("Fresh XCUITest fixtures need an approved deterministic UI program") }
+        for segment in uiSegments {
+            guard var program = segment.uiProgram, !program.operations.isEmpty,
+                  program.operations.allSatisfy({ $0.kind != .navigateGoal && $0.goal == nil }),
+                  !segment.effects.contains(.fixtureWrite) || program.operations.contains(where: { $0.kind == .fillBinding && $0.binding != nil }) else {
+                throw AutomationContractError.missingEvidence("Fresh XCUITest fixtures need explicit bound inputs and exact UI operations")
+            }
+            for name in (segment.attemptTextBindings ?? [:]).keys { program.bindings[name] = "preflight-placeholder" }
+            for binding in segment.inputBindings ?? [] where binding.destination == .uiBinding { program.bindings[binding.name] = "preflight-placeholder" }
+            try program.validate(phase: segment.phase)
+        }
     }
 
     private static func validateBindings(_ bindings: [AutomationFreshFixtureBinding], plan: AutomationCase) throws {
@@ -210,6 +240,7 @@ actor AutomationFixtureIdentityLedger {
         // Historical facts can only prohibit reuse; they cannot qualify a fixture.
         seen = fixtures.reduce(into: excludedHistoricalIDs) { $0.formUnion($1.qualifiedEntityIDs) }
     }
+    func snapshot() -> Set<String> { seen }
     func reserve(_ identities: Set<String>) throws {
         guard !identities.isEmpty, seen.count + identities.count <= 4096, seen.isDisjoint(with: identities) else {
             throw AutomationFixtureFreshnessError.invalidFixture
@@ -228,6 +259,7 @@ public actor AutomationFreshFixtureTracker {
     init(fixture: AutomationQualifiedFreshFixture, ledger: AutomationFixtureIdentityLedger) {
         self.fixture = fixture; self.ledger = ledger
     }
+    func excludedEntityIDs() async -> Set<String> { await ledger.snapshot() }
     func preflight(context: AutomationRecipeContext, plan: AutomationCase, approval: RunApproval) throws {
         guard fixture.context == context else { throw AutomationContractError.missingEvidence("Fresh fixture host, catalog or runtime changed") }
         try fixture.validate(plan: plan, approval: approval)
@@ -264,8 +296,9 @@ public actor AutomationFreshFixtureQualificationFence {
     init(bindings: [AutomationFreshFixtureBinding], plan: AutomationCase, approval: RunApproval,
          capabilities: CapabilityProfile, context: AutomationRecipeContext, previous: [AutomationLiveRecipeEvidence]) throws {
         try AutomationQualifiedFreshFixture.validateProposal(bindings: bindings, plan: plan, approval: approval, capabilities: capabilities)
+        try AutomationQualifiedFreshFixture.validateExecutionContext(context, plan: plan)
         guard context.app == plan.app, context.target == plan.target, context.environmentID == plan.environmentID,
-              context.localeIdentifier == plan.provenance["ui.locale"], context.uiRuntimeManifestDigest != nil else {
+              context.localeIdentifier == plan.provenance["ui.locale"] else {
             throw AutomationFixtureFreshnessError.invalidFixture
         }
         self.bindings = bindings; planDigest = try AutomationFrozenCase.planDigest(plan); runID = approval.runID
@@ -278,6 +311,7 @@ public actor AutomationFreshFixtureQualificationFence {
                 plan: live.plan, runID: live.approval.runID, attemptID: live.report.attemptID))
         }
     }
+    func excludedEntityIDs() async -> Set<String> { seen }
     func reserveBeforeSubject(receipts: [AutomationSegmentReceipt], plan: AutomationCase, approval: RunApproval, attemptID: String) throws {
         guard runID == approval.runID, planDigest == (try AutomationFrozenCase.planDigest(plan)), approval.approvedCaseDigest == planDigest else {
             throw AutomationFixtureFreshnessError.invalidFixture

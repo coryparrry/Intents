@@ -12,25 +12,23 @@ public struct AutomationSubjectCampaignExecutor: AutomationFreshFixtureAttemptEx
         let budget: AutomationCampaignBudget
         let fixtureTracker: AutomationFreshFixtureTracker?
         let allowBootAndInstall: Bool
-        let uiRuntime: AutomationUIRuntime?
     }
     private let subject: AutomationApplicationSubject
     private let capabilities: CapabilityProfile
     private let allowBootAndInstall: Bool
-    private let uiRuntime: AutomationUIRuntime?
     private let run: @Sendable (Invocation) async throws -> AutomationAttemptReport
     public init(runner: AutomationApplicationRunner, subject: AutomationApplicationSubject, capabilities: CapabilityProfile,
-                allowBootAndInstall: Bool = false, uiRuntime: AutomationUIRuntime? = nil) {
-        self.init(subject: subject, capabilities: capabilities, allowBootAndInstall: allowBootAndInstall, uiRuntime: uiRuntime, run: { invocation in
+                allowBootAndInstall: Bool = false) {
+        self.init(subject: subject, capabilities: capabilities, allowBootAndInstall: allowBootAndInstall, run: { invocation in
             try await runner.run(subject: invocation.subject, plan: invocation.frozen.plan, approval: invocation.approval,
                 capabilities: invocation.capabilities, attemptID: invocation.attemptID, allowBootAndInstall: invocation.allowBootAndInstall,
-                campaignBudget: invocation.budget, uiRuntime: invocation.uiRuntime, fixtureTracker: invocation.fixtureTracker)
+                campaignBudget: invocation.budget, fixtureTracker: invocation.fixtureTracker)
         })
     }
     init(subject: AutomationApplicationSubject, capabilities: CapabilityProfile, allowBootAndInstall: Bool = false,
-         uiRuntime: AutomationUIRuntime? = nil, run: @escaping @Sendable (Invocation) async throws -> AutomationAttemptReport) {
+         run: @escaping @Sendable (Invocation) async throws -> AutomationAttemptReport) {
         self.subject = subject; self.capabilities = capabilities; self.allowBootAndInstall = allowBootAndInstall
-        self.uiRuntime = uiRuntime; self.run = run
+        self.run = run
     }
     public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
                         budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
@@ -53,7 +51,7 @@ public struct AutomationSubjectCampaignExecutor: AutomationFreshFixtureAttemptEx
             throw AutomationContractError.missingEvidence("Mac fresh-fixture campaigns require qualified setup and reset equivalence")
         }
         return try await run(.init(subject: subject, frozen: frozen, approval: approval, capabilities: capabilities, attemptID: attemptID,
-            budget: budget, fixtureTracker: tracker, allowBootAndInstall: allowBootAndInstall, uiRuntime: uiRuntime))
+            budget: budget, fixtureTracker: tracker, allowBootAndInstall: allowBootAndInstall))
     }
 }
 #endif

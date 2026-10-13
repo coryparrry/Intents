@@ -2,14 +2,15 @@
 import Foundation
 import XCTest
 @testable import IntentsAutomationCore
+import IntentsAutomationUIHostContracts
 
 final class AutomationFreshWorkflowLiveTests: XCTestCase {
     /// Opt-in real simulator UI -> owned App Intent -> independent entity readback.
-    /// This bypasses only the unavailable Mac UI test driver, not product execution.
+    /// Host templates and the approved disposable fixture are explicit local inputs.
     func testApprovedFreshDuplicateRecordsThroughProductionRunner() async throws {
         guard let profilePath = ProcessInfo.processInfo.environment["INTENTS_FRESH_WORKFLOW_LIVE_PROFILE"],
-              let appPath = ProcessInfo.processInfo.environment["INTENTS_FRESH_WORKFLOW_RUNTIME_APP"] else {
-            throw XCTSkip("Requires the approved disposable fixture/simulator profile and sealed native runtime")
+              let templatesPath = ProcessInfo.processInfo.environment["INTENTS_FRESH_WORKFLOW_HOST_TEMPLATES"] else {
+            throw XCTSkip("Requires the approved disposable fixture/simulator profile and generated-host template directory")
         }
         struct Profile: Decodable {
             let sourceProject: String, sourceDigest: String, simulatorID: String, developerDirectory: String
@@ -21,9 +22,9 @@ final class AutomationFreshWorkflowLiveTests: XCTestCase {
         let source = project.deletingLastPathComponent().appendingPathComponent("App/TaskIntents.swift")
         let before = AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(source, maximumBytes: 4_194_304))
         guard before == profile.sourceDigest else { throw AutomationContractError.conflictingOperation }
-        let app = try AutomationPath.canonical(URL(fileURLWithPath: appPath))
+        let templates = try AutomationPath.canonical(URL(fileURLWithPath: templatesPath, isDirectory: true))
         let developer = try AutomationPath.canonical(URL(fileURLWithPath: profile.developerDirectory))
-        let root = URL(fileURLWithPath: "/private/tmp/intents-v3-independent-fresh-" + UUID().uuidString)
+        let root = URL(fileURLWithPath: "/private/tmp/intents-xcuitest-independent-fresh-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         print("INDEPENDENT_FRESH_ROOT=\(root.path)")
         let intake = try AutomationApplicationIntake.assess(project)
@@ -32,34 +33,64 @@ final class AutomationFreshWorkflowLiveTests: XCTestCase {
         let build = AutomationBuildApproval(sourceRoot: project.deletingLastPathComponent().path,
             candidateID: candidate.id, configuration: "Debug", target: target)
         let prepared = try await AutomationPreparation().prepare(candidate: candidate, approval: build,
-            sessionRoot: root.appendingPathComponent("prepare"), templates: app.appendingPathComponent("Contents/Resources/AutomationHost"), developerDirectory: developer)
+            sessionRoot: root.appendingPathComponent("prepare"), templates: templates, developerDirectory: developer)
         XCTAssertNotEqual(prepared.generatedHost.includesSiri, true, "A simulator host must exclude the physical Siri template")
-        XCTAssertEqual(prepared.generatedHost.templateDigest, AutomationSimulatorCodecQualification.qualified.context.hostTemplate)
+        XCTAssertFalse(prepared.generatedHost.templateDigest.isEmpty)
         var capabilities = AutomationEntityQuery.capabilities(prepared)
         capabilities.records["apple.intent.invoke"] = .init(state: .available, reason: "Invocation checks registration", probeVersion: "host-v2", evidence: [prepared.host.xctestrunDigest])
         var approval = RunApproval(runID: UUID().uuidString, app: prepared.host.app, target: prepared.host.target,
             environmentID: "selected-simulator:" + target.id, effects: [.observe, .navigate, .fixtureWrite], maximumActions: 30, disposable: true)
-        var plan = try AutomationFreshEntityPlanner.compile(catalog: prepared.catalog, actionID: "CompleteTaskIntent",
+        let plan = try AutomationFreshEntityPlanner.compile(catalog: prepared.catalog, actionID: "CompleteTaskIntent",
             instruction: "Create and save a task using the approved test record name and the specified account. Enter the name in Task title, select the specified Account if needed, and press Add task once. Finish when the new task row is visible.",
-            endpoint: "Duplicate Tasks", namePrefix: "Intents v3 record", nameProperty: "title", stateProperty: "completed",
+            endpoint: "Duplicate Tasks", namePrefix: "Intents record", nameProperty: "title", stateProperty: "completed",
             initialState: false, expectedState: true, approval: approval, capabilities: capabilities, localeIdentifier: Locale.current.identifier,
             context: .init(property: "owner", selectedValue: "Personal", protectedValue: "Work"), purpose: .simulatorDraft,
-            saveControl: .init(.label, "Add task"))
-        let manifest = try AutomationReadOnlyFile.read(root: app.appendingPathComponent("Contents/Resources/Automation"), relativePath: "runtime-manifest.json", maximumBytes: 4_194_304)
-        plan.provenance["ui.runtimeManifestDigest"] = AutomationArtifactRegistry.digest(manifest)
-        plan.provenance["ui.runtimeTeamID"] = "3Z3955EFRE"
+            saveControl: .init(.testId, "task.add"), nameEntry: .init(.testId, "task.title"))
         approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
         let runner = try AutomationApplicationRunner(supportRoot: root.appendingPathComponent("run"), developerDirectory: developer)
         capabilities = try await runner.capabilitiesForExecution(subject: .prepared(prepared), plan: plan, capabilities: capabilities)
         let attempt = UUID().uuidString
         let report = try await runner.run(prepared: prepared, plan: plan, approval: approval, capabilities: capabilities,
-            attemptID: attempt, allowBootAndInstall: true, uiRuntime: .init(bundleURL: app, expectedTeamID: "3Z3955EFRE"))
+            attemptID: attempt, allowBootAndInstall: true)
         print("INDEPENDENT_FRESH_REPORT=\(root.appendingPathComponent("run/" + attempt + "/report.json").path)")
         XCTAssertTrue(report.resourcesReleased)
         XCTAssertEqual(report.result.summary, .passed, String(describing: report.result))
         XCTAssertTrue(report.result.subjectCompleted); XCTAssertFalse(report.result.subjectDispatchUncertain)
         XCTAssertTrue(report.result.assessed); XCTAssertEqual(report.receipts.count, 6)
+        try assertSingleInvocation(root: root, attemptID: attempt)
+
+        var assertion = AutomationSegment(id: "subject", kind: .ui, phase: .subject,
+            operation: "Verify a failing assertion returns receipts", effects: [.observe, .navigate])
+        assertion.uiProgram = .init(steps: [.init(id: "title-absent", kind: .assert,
+            query: .init(identifier: "task.title"), property: "exists",
+            equals: .init(kind: "bool", boolValue: false))])
+        var failingPlan = AutomationCase(id: "live.ui.assertion-failure", app: prepared.host.app,
+            target: target, environmentID: approval.environmentID, execution: assertion)
+        failingPlan.budget.subjectOperations = 3
+        failingPlan.budget.wallClockSeconds = 240
+        var failingApproval = approval
+        failingApproval.approvedCaseDigest = try AutomationFrozenCase.planDigest(failingPlan)
+        let failingAttempt = UUID().uuidString
+        let failed = try await runner.run(prepared: prepared, plan: failingPlan, approval: failingApproval,
+            capabilities: capabilities, attemptID: failingAttempt, allowBootAndInstall: true)
+        XCTAssertEqual(failed.result.summary, .assertionFailed)
+        XCTAssertTrue(failed.resourcesReleased)
+        XCTAssertEqual(failed.receipts.count, 1)
+        XCTAssertEqual(failed.receipts.first?.dispatched, true)
+        XCTAssertEqual(failed.receipts.first?.completed, false)
+        try assertSingleInvocation(root: root, attemptID: failingAttempt)
         XCTAssertEqual(AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(source, maximumBytes: 4_194_304)), before)
+    }
+
+    private func assertSingleInvocation(root: URL, attemptID: String) throws {
+        let directory = root.appendingPathComponent("run/" + attemptID + "/artifacts")
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        let invocations = try files.filter { $0.lastPathComponent.hasPrefix("xcuitest-log-") }.reduce(0) { count, file in
+            count + String(decoding: try AutomationReadOnlyFile.read(file, maximumBytes: 4_194_304), as: UTF8.self)
+                .components(separatedBy: "Command line invocation:").count - 1
+        }
+        XCTAssertEqual(invocations, 1)
+        XCTAssertTrue(files.contains { $0.pathExtension == "png" }, "The host must retain an actual screenshot")
     }
 }
 #endif

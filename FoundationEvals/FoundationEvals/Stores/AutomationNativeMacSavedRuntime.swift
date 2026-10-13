@@ -19,7 +19,7 @@ struct AutomationNativeMacSavedRuntime: Sendable {
         fields["case"] = frozen.digest; fields["install"] = "false"; fields["disposable"] = "false"; fields["attempts"] = "5"
         fields["uiActions"] = String(proposal.limits.uiActions); fields["controllerCalls"] = String(proposal.limits.controllerCalls)
         fields["wallClockSeconds"] = String(proposal.limits.wallClockSeconds)
-        return .init(proposal: proposal, subject: .installedMacUI(selected), runtime: nil, installApproved: false, digest: try digest(fields))
+        return .init(proposal: proposal, subject: .installedMacUI(selected), installApproved: false, digest: try digest(fields))
     }
     func comparison(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
                     before: AutomationInstalledMacUIApplication, after: AutomationInstalledMacUIApplication,
@@ -33,7 +33,7 @@ struct AutomationNativeMacSavedRuntime: Sendable {
         fields["install"] = "false"; fields["disposable"] = "false"; fields["attemptsPerBuild"] = "30"
         fields["uiActions"] = String(proposal.limits.uiActions); fields["controllerCalls"] = String(proposal.limits.controllerCalls)
         fields["wallClockSeconds"] = String(proposal.limits.wallClockSeconds)
-        return .init(proposal: proposal, before: .installedMacUI(before), after: .installedMacUI(after), runtime: nil,
+        return .init(proposal: proposal, before: .installedMacUI(before), after: .installedMacUI(after),
             digest: try digest(fields), originalAttemptID: original.attemptID)
     }
     private func identityFields(original: AutomationAttemptReport, evidence: AutomationPrivateMacDaemonUnit.Evidence) throws -> [String: String] {

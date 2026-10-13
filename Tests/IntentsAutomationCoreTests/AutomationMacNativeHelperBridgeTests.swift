@@ -15,53 +15,65 @@ final class AutomationMacNativeHelperBridgeTests: XCTestCase, @unchecked Sendabl
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let app = root.appendingPathComponent("Fixture.app"), ready = root.appendingPathComponent("ready"), marker = root.appendingPathComponent("marker")
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: false)
-        let script = root.appendingPathComponent("helper.mjs")
+        let script = root.appendingPathComponent("helper.py")
         let source = #"""
-        import fs from 'node:fs';
-        import {setTimeout as sleep} from 'node:timers/promises';
-        const [readyPath,mode,bundlePath,marker,...args]=process.argv.slice(2);
-        const nonce=process.env.INTENTS_MAC_HELPER_OWNERSHIP_NONCE;
-        while(!fs.existsSync(readyPath))await sleep(5);
-        const ready=JSON.parse(fs.readFileSync(readyPath));
-        if(ready.nonce!==nonce || ready.identity.pid!==process.pid)process.exit(2);
-        if(mode==='delayed-ready'){fs.writeFileSync(readyPath+'.waiting','');while(!fs.existsSync(readyPath+'.resume'))await sleep(5);}
-        process.stdout.write(fs.readFileSync(readyPath));
-        let input='';for await(const bytes of process.stdin)input+=bytes;
-        const lines=input.trimEnd().split('\n');
-        const ack=JSON.parse(lines[0]);
-        if(ack.kind!=='ack' || ack.nonce!==nonce || ack.identity.pid!==process.pid)process.exit(3);
-        fs.appendFileSync(marker,args[0]+'\n');
-        const applicationTarget={bundleId:'example.Target',canonicalBundlePath:bundlePath,pid:123,processStartIdentity:'100:0'};
-        let data=applicationTarget;
-        if(args[0]==='snapshot')data={applicationTarget,nodes:[],surface:'frontmost-app',backend:'macos-helper',truncated:false};
-        if(args[0]==='press'){
-          if(mode==='hang')await sleep(60000);
-          const x=Number(args[args.indexOf('--x')+1]),y=Number(args[args.indexOf('--y')+1]);
-          data={applicationTarget,x,y,disposition:'submittedUnconfirmed',releaseSubmitted:mode!=='uncertain'};
-        }
-        if(args[0]==='owned-scroll'){
-          const x=Number(args[args.indexOf('--x')+1]),y=Number(args[args.indexOf('--y')+1]);
-          const direction=mode==='uncertain-scroll'?'up':args[args.indexOf('--direction')+1];
-          data={applicationTarget,x,y,direction,disposition:'submittedUnconfirmed'};
-        }
-        if(args[0]==='owned-fill'){
-          const frame=JSON.parse(lines[1]);
-          if(lines.length!==2 || frame.kind!=='ordinaryFill' || frame.nonce!==nonce ||
-             frame.applicationTarget.pid!==applicationTarget.pid || frame.applicationTarget.canonicalBundlePath!==bundlePath ||
-             frame.applicationTarget.bundleId!==applicationTarget.bundleId || frame.applicationTarget.processStartIdentity!==applicationTarget.processStartIdentity)process.exit(4);
-          if(args.some(value=>value.includes('private-sentinel')) || Object.values(process.env).some(value=>value.includes('private-sentinel')))process.exit(5);
-          if(frame.value!=='private-sentinel-e\u0301')process.exit(6);
-          data={applicationTarget,x:mode==='uncertain-fill'?999:frame.x,y:frame.y,disposition:'replacementVerified'};
-        }
-        process.stdout.write(JSON.stringify({ok:true,data}));
+        import json, os, sys, time
+        from pathlib import Path
+        ready_path, mode, bundle_path, marker, *args = sys.argv[1:]
+        nonce = os.environ['INTENTS_MAC_HELPER_OWNERSHIP_NONCE']
+        while not Path(ready_path).exists():
+            time.sleep(0.005)
+        ready_text = Path(ready_path).read_text(encoding='utf-8')
+        ready = json.loads(ready_text)
+        if ready['nonce'] != nonce or ready['identity']['pid'] != os.getpid():
+            sys.exit(2)
+        if mode == 'delayed-ready':
+            Path(ready_path + '.waiting').write_text('', encoding='utf-8')
+            while not Path(ready_path + '.resume').exists():
+                time.sleep(0.005)
+        sys.stdout.write(ready_text)
+        sys.stdout.flush()
+        lines = sys.stdin.buffer.read().decode('utf-8').rstrip('\n').split('\n')
+        ack = json.loads(lines[0])
+        if ack['kind'] != 'ack' or ack['nonce'] != nonce or ack['identity']['pid'] != os.getpid():
+            sys.exit(3)
+        with Path(marker).open('a', encoding='utf-8') as output:
+            output.write(args[0] + '\n')
+        application_target = {'bundleId': 'example.Target', 'canonicalBundlePath': bundle_path, 'pid': 123, 'processStartIdentity': '100:0'}
+        data = application_target
+        if args[0] == 'snapshot':
+            data = {'applicationTarget': application_target, 'nodes': [], 'surface': 'frontmost-app', 'backend': 'macos-helper', 'truncated': False}
+        if args[0] == 'press':
+            if mode == 'hang':
+                time.sleep(60)
+            x, y = float(args[args.index('--x') + 1]), float(args[args.index('--y') + 1])
+            data = {'applicationTarget': application_target, 'x': x, 'y': y, 'disposition': 'submittedUnconfirmed', 'releaseSubmitted': mode != 'uncertain'}
+        if args[0] == 'owned-scroll':
+            x, y = float(args[args.index('--x') + 1]), float(args[args.index('--y') + 1])
+            direction = 'up' if mode == 'uncertain-scroll' else args[args.index('--direction') + 1]
+            data = {'applicationTarget': application_target, 'x': x, 'y': y, 'direction': direction, 'disposition': 'submittedUnconfirmed'}
+        if args[0] == 'owned-fill':
+            frame = json.loads(lines[1])
+            if len(lines) != 2 or frame['kind'] != 'ordinaryFill' or frame['nonce'] != nonce or any(frame['applicationTarget'].get(key) != application_target[key] for key in ['pid', 'canonicalBundlePath', 'bundleId', 'processStartIdentity']):
+                sys.exit(4)
+            if any('private-sentinel' in value for value in args) or any('private-sentinel' in value for value in os.environ.values()):
+                sys.exit(5)
+            if frame['value'] != 'private-sentinel-e\u0301':
+                sys.exit(6)
+            data = {'applicationTarget': application_target, 'x': 999 if mode == 'uncertain-fill' else frame['x'], 'y': frame['y'], 'disposition': 'replacementVerified'}
+        if mode == 'failed-acquire':
+            sys.stdout.write(json.dumps({'ok': False, 'error': {'message': 'exact-path launch failed', 'details': {'reason': 'Selected instance unavailable'}}}))
+            sys.stdout.flush()
+            sys.exit(1)
+        sys.stdout.write(json.dumps({'ok': True, 'data': data}))
+        sys.stdout.flush()
         """#
         try Data(source.utf8).write(to: script)
-        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let node = try AutomationPath.canonical(repository.appendingPathComponent("Tools/IntentsAutomation/.runtime/node-v24.21.0-darwin-arm64/bin/node"))
+        let python = try AutomationSyntheticPython.executable()
         let leases = try AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("leases.json")), target = TargetIdentity(id: "fixture-mac", kind: .nativeMac, loginSession: "fixture-login")
         let lease = try await leases.acquire(runID: "run", target: target, control: .ui)
         let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "segment", leaseGeneration: lease.generation)
-        let bridge = try AutomationMacNativeHelperBridge(executable: node, prefix: [script.path, ready.path, mode, app.path, marker.path],
+        let bridge = try AutomationMacNativeHelperBridge(executable: python, prefix: [script.path, ready.path, mode, app.path, marker.path],
             directory: root, bundleID: "example.Target", bundlePath: app, scope: scope, lease: lease, leases: leases,
             authorize: { request in try? FileManager.default.removeItem(at: ready); try await authorization(request) }, didCapture: { identity, nonce in
                 try AutomationMacHelperHandshake.ready(nonce: nonce, identity: identity).write(to: ready, options: .atomic)
@@ -168,42 +180,6 @@ final class AutomationMacNativeHelperBridgeTests: XCTestCase, @unchecked Sendabl
             do { _ = try await execute(fixture, request: .object(request)); XCTFail("Repeated submission accepted") } catch {}
             XCTAssertEqual(try String(contentsOf: fixture.marker, encoding: .utf8), "app\npress\n")
             let stopped = await fixture.bridge.stop()
-            XCTAssertTrue(stopped)
-        }
-    }
-    func testActualPrivateDaemonClientUsesAuthenticatedNativePipeAndOwnedChildren() async throws {
-        guard let sdk = ProcessInfo.processInfo.environment["INTENTS_PRIVATE_DAEMON_ENTRY"] else {
-            throw XCTSkip("Opt-in requires the separately built private SDK daemon entry")
-        }
-        let node = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent("Tools/IntentsAutomation/.runtime/node-v24.21.0-darwin-arm64/bin/node")
-        let entry = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent("Tools/IntentsAutomation/dist/tests/fixtures/macDaemonPipeFixture.js")
-        for mode in ["valid", "uncertain"] {
-            let fixture = try await fixture(mode: mode), state = fixture.root.appendingPathComponent("sidecar")
-            let owner = try AutomationSidecarProcess(configuration: .init(node: node, entry: entry, stateDirectory: state, privateMacDaemon: true),
-                reverse: { method, input in try await fixture.bridge.handle(method: method, input: input) })
-            addTeardownBlock { _ = await owner.stop() }
-            try await owner.start()
-            let selection = try XCTUnwrap(fixture.request.object?["selection"]?.object)
-            let target: AutomationJSON = .object(["id": .string("fixture-mac"), "platform": .string("macos"), "kind": .string("nativeMac"),
-                "bundleId": selection["bundleId"]!, "bundlePath": selection["canonicalBundlePath"]!, "loginSession": .string("fixture-login")])
-            do {
-                let reply = try await owner.rpc.request(.hello, params: .object(["scope": try json(fixture.scope), "target": target,
-                    "sdk": .string(sdk), "mode": .string(mode), "helperSHA256": .string(AutomationArtifactRegistry.digest(try Data(contentsOf: node))),
-                    "authentication": .string(await fixture.bridge.pipeCapability())]), timeout: .seconds(25))
-                XCTAssertEqual(reply.object?["cleanup"]?.object?["commandsDrained"], .bool(true))
-                XCTAssertEqual(reply.object?["cleanup"]?.object?["ownedHelperReaped"], .bool(true))
-                XCTAssertEqual(reply.object?["cleanup"]?.object?["daemonStopped"], .bool(true))
-                XCTAssertEqual(reply.object?["cleanup"]?.object?["subjectTerminated"], .bool(false))
-                XCTAssertEqual(reply.object?["uncertain"], .bool(mode == "uncertain"))
-                XCTAssertEqual(try String(contentsOf: fixture.marker, encoding: .utf8), "app\nsnapshot\npress\n")
-            } catch {
-                let diagnostics = await owner.diagnosticsSummary()
-                _ = await owner.stop()
-                XCTFail("Private daemon/native pipe fixture failed: \(diagnostics)"); throw error
-            }
-            let stopped = await owner.stop()
             XCTAssertTrue(stopped)
         }
     }

@@ -41,8 +41,8 @@ final class AutomationPackageManifestTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let manifest = try XCTUnwrap(AutomationPackageManifest.read(Data(contentsOf: root.appendingPathComponent("Package.swift"))))
         XCTAssertEqual(manifest.productsByName["IntentsAutomationCore"]?.targets, ["IntentsAutomationCore"])
-        XCTAssertEqual(manifest.targetsByName["IntentsAutomationCore"]?.dependencies, ["IntentsAutomationDateCodec", "IntentLabContracts"])
-        for name in ["IntentsAutomationCore", "IntentsAutomationDateCodec", "IntentLabContracts"] { XCTAssertTrue(try XCTUnwrap(manifest.targetsByName[name]).membershipAvailable) }
+        XCTAssertEqual(manifest.targetsByName["IntentsAutomationCore"]?.dependencies, ["IntentsAutomationDateCodec", "IntentLabContracts", "IntentsAutomationUIHostContracts"])
+        for name in ["IntentsAutomationCore", "IntentsAutomationDateCodec", "IntentLabContracts", "IntentsAutomationUIHostContracts"] { XCTAssertTrue(try XCTUnwrap(manifest.targetsByName[name]).membershipAvailable) }
     }
     func testGeneratorsAndConditionalDependenciesStayVisibleAndPartial() throws {
         let manifest = try XCTUnwrap(read("""

@@ -77,7 +77,18 @@ struct AppAutomationView: View {
                     GroupBox("UI workflow") {
                         VStack(alignment: .leading, spacing: 12) {
                             TextField("What should the app do?", text: $model.uiInstruction, axis: .vertical)
-                            TextField("Visible label at the destination", text: $model.uiEndpoint)
+                            TextField("Controls to tap in order (one per line)", text: $model.uiTapControls, axis: .vertical)
+                                .onChange(of: model.uiTapControls) { _, _ in model.workflowSelectionChanged() }
+                            TextField("Text entry control (when entering text)", text: $model.uiTextEntryControl)
+                                .onChange(of: model.uiTextEntryControl) { _, _ in model.workflowSelectionChanged() }
+                            TextField("Submit control (optional)", text: $model.uiSubmitControl)
+                                .onChange(of: model.uiSubmitControl) { _, _ in model.workflowSelectionChanged() }
+                            TextField("Destination control", text: $model.uiEndpoint)
+                            Text("Use an exact label or id:accessibilityIdentifier. Intents follows these exact controls.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            if model.isInstalledUI {
+                                Text("Select and prepare this app's Xcode project to run a workflow.").font(.caption).foregroundStyle(.secondary)
+                            }
                             if model.isMacUIReview {
                                 Text("Mac drafts support navigation and visible checks. Text entry awaits qualification.").font(.callout).foregroundStyle(.secondary)
                                 if !model.uiApprovedText.isEmpty {
@@ -123,6 +134,7 @@ struct AppAutomationView: View {
                                     do { searchReview = try model.reviewNativeSearch(); approveSearch = true }
                                     catch { model.message = "The workflow or phrases changed. Review them before searching." }
                                 }.disabled(!model.canFindFailures)
+                                if let reason = model.failureSearchUnavailableReason { Text(reason).font(.caption).foregroundStyle(.secondary) }
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(10).disabled(model.busy)
                     }
@@ -440,22 +452,20 @@ struct AppAutomationView: View {
     }
     @ViewBuilder private var freshRecordInputs: some View {
         if let entity = model.freshEntity {
-            if model.learnedSetupRecipe != nil {
-                Toggle("Use the learned setup path", isOn: $model.useLearnedSetup)
-                    .onChange(of: model.useLearnedSetup) { _, _ in model.workflowSelectionChanged() }
-                Text("This path created independently checked fresh records in two runs. Review and approve the new plan before using it.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
             Text("Each attempt creates a new record in the app, runs this action on that record, then checks its state independently.")
                 .font(.callout).foregroundStyle(.secondary)
             TextField("How should the app create and save the record?", text: $model.uiInstruction, axis: .vertical)
             TextField("Visible destination after saving", text: $model.uiEndpoint)
-            TextField("Save button label (optional)", text: $model.freshSaveControl)
+            TextField("Add control (optional if the form is already open)", text: $model.freshCreateControl)
+                .onChange(of: model.freshCreateControl) { _, _ in model.workflowSelectionChanged() }
+            TextField("Record name entry control", text: $model.freshNameEntryControl)
+                .onChange(of: model.freshNameEntryControl) { _, _ in model.workflowSelectionChanged() }
+            TextField("Save control", text: $model.freshSaveControl)
                 .onChange(of: model.freshSaveControl) { _, _ in model.workflowSelectionChanged() }
-            Text("When supplied, Intents requires one tap on this button before finishing setup. The record query still checks that saving worked.")
+            Text("Use an exact label or id:accessibilityIdentifier. Intents fills the name, taps Save, waits for the destination, then queries the record.")
                 .font(.caption).foregroundStyle(.secondary)
             TextField("Test record name prefix", text: $model.freshNamePrefix)
-            Text("Intents adds a unique suffix to this name for each attempt. The controller may enter only that approved name.")
+            Text("Intents adds a unique suffix to this name for each attempt and enters it in the selected name field.")
                 .font(.caption).foregroundStyle(.secondary)
             Picker("Record name", selection: $model.freshNameProperty) {
                 Text("Choose name property").tag("")
@@ -471,6 +481,8 @@ struct AppAutomationView: View {
                         Text(entity.propertyTitles[name] ?? name).tag(name)
                     }
                 }.accessibilityLabel("Distinguish records by")
+                TextField("Context text field (optional; otherwise select named option)", text: $model.freshContextEntryControl)
+                    .onChange(of: model.freshContextEntryControl) { _, _ in model.workflowSelectionChanged() }
                 TextField("Owner or list of the record to act on", text: $model.freshSelectedContext)
                 TextField("Owner or list of the record to keep unchanged", text: $model.freshProtectedContext)
                 Text("Both records use the same test name. Intents queries each real record by its owner or list and checks both after the action.")

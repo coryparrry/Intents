@@ -16,8 +16,6 @@ import IntentsAutomationCore
         var developerDirectory: String
         var allowBootAndInstall: Bool
         var plan: AutomationCase?
-        var runtimeBundlePath: String?
-        var runtimeTeamID: String?
         var approveExactCase: Bool?
         var recipeCandidate: AutomationSetupRecipeCandidate?
         var recipeReuse: RecipeReuse?
@@ -35,6 +33,10 @@ import IntentsAutomationCore
         var expectedState: Bool
         var localeIdentifier: String
         var context: AutomationFreshEntityContext?
+        var createControl: AutomationUIProgram.Locator?
+        var nameEntry: AutomationUIProgram.Locator?
+        var contextEntry: AutomationUIProgram.Locator?
+        var saveControl: AutomationUIProgram.Locator?
     }
     struct FreshFixtureQualification: Decodable {
         var repeatAttemptID: String
@@ -65,28 +67,32 @@ import IntentsAutomationCore
             let profile = try JSONDecoder().decode(Profile.self, from: bytes)
             let prepared = try JSONDecoder().decode(AutomationPreparedApplication.self,
                 from: read(profile.preparedPath, maximumBytes: 16 * 1024 * 1024))
-            guard (profile.runtimeBundlePath == nil) == (profile.runtimeTeamID == nil) else { throw AutomationContractError.invalidIdentity }
-            let runtime = profile.runtimeBundlePath.map { AutomationUIRuntime(bundleURL: URL(fileURLWithPath: $0), expectedTeamID: profile.runtimeTeamID!) }
             var plan: AutomationCase
             if let fresh = profile.freshRecordWorkflow {
                 guard profile.approveExactCase == true, profile.plan == nil, profile.inputs.isEmpty,
-                      profile.recipeCandidate == nil, let runtime else { throw AutomationContractError.invalidIdentity }
+                      profile.recipeCandidate == nil else { throw AutomationContractError.invalidIdentity }
                 plan = try AutomationFreshEntityPlanner.compile(catalog: prepared.catalog, actionID: profile.actionID,
                     instruction: fresh.instruction, endpoint: fresh.endpoint, namePrefix: fresh.namePrefix,
                     nameProperty: fresh.nameProperty, stateProperty: fresh.stateProperty, initialState: fresh.initialState,
                     expectedState: fresh.expectedState, approval: profile.approval, capabilities: profile.capabilities,
-                    localeIdentifier: fresh.localeIdentifier, context: fresh.context, purpose: .simulatorDraft)
+                    localeIdentifier: fresh.localeIdentifier, context: fresh.context, purpose: .simulatorDraft,
+                    saveControl: fresh.saveControl, createControl: fresh.createControl, nameEntry: fresh.nameEntry, contextEntry: fresh.contextEntry)
                 plan.provenance.merge(["ui.preparedHostDigest": prepared.host.hostProductDigest,
                     "ui.preparedXctestrunDigest": prepared.host.xctestrunDigest,
                     "ui.preparedCatalogDigest": try AutomationRecipeContext.catalogDigest(prepared.catalog),
-                    "ui.hostTemplateDigest": prepared.generatedHost.templateDigest,
-                    "ui.runtimeManifestDigest": try AutomationRuntimeBundle.verifiedManifestDigest(bundleURL: runtime.bundleURL,
-                        stateDirectory: URL(fileURLWithPath: profile.supportRoot).appendingPathComponent("runtime-preview"), expectedTeamID: runtime.expectedTeamID),
-                    "ui.runtimeTeamID": runtime.expectedTeamID]) { _, value in value }
+                    "ui.hostTemplateDigest": prepared.generatedHost.templateDigest]) { _, value in value }
                 plan.id = "fresh." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
             } else {
                 plan = try profile.plan ?? AutomationTemplatePlanner.compile(catalog: prepared.catalog, actionID: profile.actionID,
                     inputs: profile.inputs, declaredEffects: profile.declaredEffects, approval: profile.approval, capabilities: profile.capabilities, purpose: .review)
+            }
+            if profile.recipeCandidate != nil || profile.recipeReuse != nil {
+                let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
+                guard !segments.contains(where: { segment in
+                    segment.uiProgram?.operations.contains(where: { $0.kind == .navigateGoal }) == true
+                }) else {
+                    throw AutomationContractError.missingEvidence("Controller recipe execution was removed; supply concrete XCUITest steps")
+                }
             }
             var approval = profile.approval
             if profile.approveExactCase == true { approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan) }
@@ -111,7 +117,7 @@ import IntentsAutomationCore
             let runner = try AutomationApplicationRunner(supportRoot: URL(fileURLWithPath: profile.supportRoot),
                 developerDirectory: URL(fileURLWithPath: profile.developerDirectory))
             let report = try await runner.run(prepared: prepared, plan: plan, approval: approval, capabilities: profile.capabilities,
-                attemptID: profile.attemptID, allowBootAndInstall: profile.allowBootAndInstall, uiRuntime: runtime,
+                attemptID: profile.attemptID, allowBootAndInstall: profile.allowBootAndInstall,
                 qualifyingFreshBindings: profile.freshFixtureQualification?.bindings)
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             if let qualification = profile.freshFixtureQualification {
@@ -123,7 +129,7 @@ import IntentsAutomationCore
                 }
                 try await runner.validateFreshFixtureAttempt(bindings: qualification.bindings)
                 let repeated = try await runner.run(prepared: prepared, plan: plan, approval: approval, capabilities: profile.capabilities,
-                    attemptID: qualification.repeatAttemptID, allowBootAndInstall: profile.allowBootAndInstall, uiRuntime: runtime,
+                    attemptID: qualification.repeatAttemptID, allowBootAndInstall: profile.allowBootAndInstall,
                     qualifyingFreshBindings: qualification.bindings)
                 guard completeForFreshQualification(repeated) else { throw AutomationContractError.missingEvidence("Second attempt did not complete; no fixture authority is minted") }
                 let fixture = try await runner.qualifyFreshFixture(bindings: qualification.bindings)
@@ -138,7 +144,7 @@ import IntentsAutomationCore
                     let cases = try AutomationCaseStore(root: casesRoot), frozen = try AutomationFrozenCase(plan: plan)
                     var repeatApproval = approval; repeatApproval.runID = approval.runID + "-reproduction"
                     let executor = AutomationApplicationCampaignExecutor(runner: runner, prepared: prepared,
-                        capabilities: profile.capabilities, allowBootAndInstall: profile.allowBootAndInstall, uiRuntime: runtime)
+                        capabilities: profile.capabilities, allowBootAndInstall: profile.allowBootAndInstall)
                     let result = try await AutomationReproduction(cases: cases).run(frozen: frozen, originalAttemptID: report.attemptID,
                         approval: repeatApproval, capabilities: profile.capabilities, limits: .firstCampaign, executor: executor, fixture: fixture)
                     reproduction = result
@@ -165,7 +171,7 @@ import IntentsAutomationCore
                     guard profile.approveExactCase == true else { throw AutomationContractError.missingEvidence("Recipe reuse needs exact-case approval") }
                     reuseApproval.approvedCaseDigest = try AutomationFrozenCase.planDigest(next)
                     let repeated = try await runner.run(prepared: prepared, plan: next, approval: reuseApproval,
-                        capabilities: profile.capabilities, attemptID: reuse.attemptID, allowBootAndInstall: profile.allowBootAndInstall, uiRuntime: runtime)
+                        capabilities: profile.capabilities, attemptID: reuse.attemptID, allowBootAndInstall: profile.allowBootAndInstall)
                     if !repeated.executionSucceeded { Foundation.exit(1) }
                 }
             }

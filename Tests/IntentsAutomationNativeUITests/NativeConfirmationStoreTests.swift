@@ -6,7 +6,10 @@ import XCTest
 
 extension InstalledUIStoreTests {
     func testNativeConfirmationHistoryExpiresTerminalPayloadsWithoutExhaustingAdmission() async throws {
-        let (model, _, _) = try await fixture()
+        let (model, root, _) = try await fixture()
+        XCTAssertFalse(model.canRun, "An installed app without an associated host cannot run a workflow")
+        try selectPreparedSource(model: model, root: root)
+        XCTAssertTrue(model.canRun)
         var reviews: [AutomationNativeConfirmationReview] = []
         for index in 0..<65 {
             let review = try await model.prepareNativeConfirmation(.run)
@@ -37,7 +40,10 @@ extension InstalledUIStoreTests {
     }
 
     func testExternalIdempotentHistoryLimitDoesNotBlockNativeConfirmations() async throws {
-        let (model, _, _) = try await fixture()
+        let (model, root, _) = try await fixture()
+        XCTAssertFalse(model.canRun, "An installed app without an associated host cannot run a workflow")
+        try selectPreparedSource(model: model, root: root)
+        XCTAssertTrue(model.canRun)
         let preview = try model.previewCommand()
         var externalIDs: [UUID] = []
         for _ in 0..<50 {
@@ -96,7 +102,7 @@ extension InstalledUIStoreTests {
         XCTAssertTrue(review.message.contains(original))
         XCTAssertEqual(model.pendingCommandStatus?.requestID, review.id)
         await gate.release(); await inventory.value
-        XCTAssertEqual(model.simulatorID, replacement.id); XCTAssertTrue(model.canRun)
+        XCTAssertEqual(model.simulatorID, replacement.id); XCTAssertFalse(model.canRun)
         do { try await model.confirmNativeRequest(review); XCTFail("Changed destination approved") } catch {}
         let count = await calls.count; XCTAssertEqual(count, 0)
         XCTAssertFalse(model.busy); XCTAssertNil(model.report); XCTAssertNil(model.pendingCommandStatus)

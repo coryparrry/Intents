@@ -88,6 +88,10 @@ enum AutomationPreparedProgramContract {
             return (["text", "value"].contains(output.property) && family == "text")
                 || (["checked", "selected"].contains(output.property) && family == "bool")
         }
+        if let output = producer.uiProgram?.steps?.first(where: { $0.id == binding.outputID && $0.kind == .readProperty }) {
+            return (["label", "text", "value"].contains(output.property) && family == "text")
+                || (["exists", "selected", "checked"].contains(output.property) && family == "bool")
+        }
         return producer.hostProgram?.operations.contains(where: {
             $0.id == binding.outputID && $0.kind == .invoke && $0.resultCodec == family
         }) == true

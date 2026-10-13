@@ -91,6 +91,14 @@ class CoverageTests(unittest.TestCase):
             python=("script.tests.test_release_pr",),
         )
 
+    def test_release_packaging_selects_its_pipeline_regressions(self):
+        for path in ['script/release.sh', '.github/workflows/package-installer.yml']:
+            with self.subTest(path=path):
+                self.assertIn('script.tests.test_automation_release_pipeline', routes.coverage([path])['python_tests'])
+        for path in ['script/automation_fetch_runtime.sh', 'script/automation_prepare_runtime.sh',
+                     'script/automation_package.sh']:
+            self.assertNotIn(path, routes.PYTHON_DEPENDENCIES)
+
     def test_signature_code_and_test_run_on_macos_without_xcode_build(self):
         for path in (
             "script/verify_update_signature.swift",

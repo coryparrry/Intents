@@ -21,11 +21,15 @@ if pgrep -x "$APP_NAME" >/dev/null; then
 fi
 
 XCODEBUILD_ARGUMENTS=(
+  -jobs 2
   -project "$PROJECT"
   -scheme "$APP_NAME"
   -configuration "$CONFIGURATION"
   -destination "platform=macOS"
   -derivedDataPath "$DERIVED_DATA"
+  CODE_SIGN_STYLE=Manual
+  CODE_SIGN_IDENTITY=-
+  DEVELOPMENT_TEAM=
 )
 xcodebuild "${XCODEBUILD_ARGUMENTS[@]}" build
 /usr/bin/codesign --verify --strict --deep "$BUILT_APP"
@@ -40,6 +44,9 @@ open_app() {
 }
 
 case "$MODE" in
+  --build-only)
+    echo "Built and verified: $APP_BUNDLE"
+    ;;
   run)
     open_app
     ;;
@@ -60,7 +67,7 @@ case "$MODE" in
     pgrep -x "$APP_NAME" >/dev/null
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--build-only]" >&2
     exit 2
     ;;
 esac

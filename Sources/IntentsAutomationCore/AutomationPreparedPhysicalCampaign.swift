@@ -41,12 +41,15 @@ enum AutomationPreparedPhysicalCampaign {
     }
     static func run(prepared: AutomationPreparedApplication, plan: AutomationCase, approval: RunApproval,
                     capabilities: CapabilityProfile, attemptID: String, root: URL, developer: URL,
-                    leases: AutomationDeviceLeaseManager, runtime: AutomationUIRuntime?,
+                    leases: AutomationDeviceLeaseManager,
                     campaignBudget: AutomationCampaignBudget?, siriAuthority: AutomationSiriRouteAuthority? = nil,
                     components: Components = .owned) async throws -> AutomationAttemptReport {
         guard attemptID.range(of: #"^[A-Za-z0-9-]{1,128}$"#, options: .regularExpression) != nil,
               plan.app == prepared.host.app, plan.target == prepared.host.target, plan.target.kind == .physical,
               prepared.generatedHost.includesSiri == true, approval.disposable else { throw AutomationContractError.invalidIdentity }
+        guard ["ui.runtimeTeamID", "ui.runtimeManifestDigest"].allSatisfy({ plan.provenance[$0] == nil }) else {
+            throw AutomationContractError.conflictingOperation
+        }
         var authority = siriAuthority
         if authority == nil { authority = await AutomationSiriQualificationAuthority.shared.admission(prepared: prepared, plan: plan, approval: approval) }
         let capabilities = try await AutomationSiriCapabilitySnapshot.resolve(prepared: prepared, capabilities: capabilities,
@@ -54,31 +57,18 @@ enum AutomationPreparedPhysicalCampaign {
         guard await AutomationPreparedCodecAuthority.shared.contains(prepared) else { throw AutomationContractError.missingEvidence("Prepare the exact physical host in this process before running") }
         try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, siriAuthority: authority)
         let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
-        guard segments.allSatisfy({ [.ui, .systemIntent, .systemQuery, .siriText].contains($0.kind) }),
+        guard segments.allSatisfy({ [.systemIntent, .systemQuery, .siriText].contains($0.kind) }),
               segments.filter({ $0.kind == .siriText }).allSatisfy({ $0.id == plan.execution.id }) else { throw AutomationContractError.invalidPlan("Siri may run only as the frozen subject") }
-        let needsUI = segments.contains { $0.kind == .ui }
-        guard !needsUI || runtime != nil else { throw AutomationContractError.missingEvidence("Mixed physical checks require the signed UI runtime") }
         let selected = try AutomationInstalledUIApplication.preparedPhysicalProduct(prepared)
         let state = root.appendingPathComponent(attemptID)
         guard !FileManager.default.fileExists(atPath: state.path) else { throw AutomationContractError.ambiguousDispatch }
         try FileManager.default.createDirectory(at: state, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        if let runtime {
-            _ = try AutomationRuntimeBundle.verifiedConfiguration(bundleURL: runtime.bundleURL,
-                stateDirectory: state.appendingPathComponent("ui"), expectedTeamID: runtime.expectedTeamID)
-            let digest = AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(root: runtime.bundleURL,
-                relativePath: "Contents/Resources/Automation/runtime-manifest.json", maximumBytes: 4_194_304))
-            guard plan.provenance["ui.runtimeManifestDigest"].map({ $0 == digest }) ?? true,
-                  plan.provenance["ui.runtimeTeamID"].map({ $0 == runtime.expectedTeamID }) ?? true else { throw AutomationContractError.conflictingOperation }
-        } else {
-            guard plan.provenance["ui.runtimeManifestDigest"] == nil, plan.provenance["ui.runtimeTeamID"] == nil else { throw AutomationContractError.conflictingOperation }
-        }
         let journal = try AutomationJournal(url: state.appendingPathComponent("journal.json"))
         let artifacts = try AutomationArtifactRegistry(root: state.appendingPathComponent("artifacts"), secretEvidenceRoot: root.appendingPathComponent("secret-evidence"))
         let cases = try AutomationCaseStore(root: root.appendingPathComponent("Cases")), frozen = try await cases.freeze(plan)
         let info = try PropertyListSerialization.propertyList(from: AutomationReadOnlyFile.read(root: URL(fileURLWithPath: prepared.host.hostBundlePath), relativePath: "Info.plist", maximumBytes: 1_048_576), format: nil) as? [String: Any]
         guard let executable = info?["CFBundleExecutable"] as? String else { throw AutomationContractError.invalidIdentity }
-        var controllers = [AutomationPhysicalRunnerVerifier.Controller(bundleID: prepared.host.hostBundleID, executableName: executable)]
-        if needsUI { controllers += AutomationPhysicalUIQualification.controllers }
+        let controllers = [AutomationPhysicalRunnerVerifier.Controller(bundleID: prepared.host.hostBundleID, executableName: executable)]
         let deviceRelease = try components.deviceRelease(state, developer, controllers)
         let release = AutomationPhysicalCampaignRelease(verifier: deviceRelease, identifiers: controllers.map(\.bundleID))
         let installer = try components.installer(state, developer)
@@ -107,14 +97,7 @@ enum AutomationPreparedPhysicalCampaign {
             let siri = try AutomationSiriRouteDriver(prepared: prepared, approval: approval, capabilities: capabilities,
                 developerDirectory: developer, stateDirectory: state.appendingPathComponent("siri"), leases: leases,
                 artifacts: artifacts, subjectVerifier: subject, releaseVerifier: release, campaignBudget: campaignBudget, siriAuthority: authority)
-            let driver: any AutomationRouteDriver
-            if needsUI, let runtime {
-                let ui = try AutomationSidecarRouteDriver(bundleURL: runtime.bundleURL, expectedTeamID: runtime.expectedTeamID,
-                    stateDirectory: state.appendingPathComponent("ui"), approval: approval, leases: leases, artifacts: artifacts,
-                    subjectVerifier: subject, releaseVerifier: release, campaignBudget: campaignBudget, developerDirectory: developer,
-                    controllerBundleIDs: AutomationPhysicalUIQualification.controllers.map(\.bundleID))
-                driver = AutomationMixedRouteDriver(ui: ui, apple: apple, siri: siri)
-            } else { driver = AutomationMixedRouteDriver(ui: apple, apple: apple, siri: siri) }
+            let driver = AutomationMixedRouteDriver(apple: apple, siri: siri)
             executionStarted = true
             let report = try await AutomationCoordinator(leases: leases, journal: journal).run(plan: plan, approval: approval,
                 capabilities: capabilities, attemptID: attemptID, driver: driver, siriAuthority: authority)

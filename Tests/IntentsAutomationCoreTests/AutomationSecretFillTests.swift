@@ -439,43 +439,7 @@ final class AutomationSecretFillTests: XCTestCase, @unchecked Sendable {
         await denied { _ = try await bindings.payload() }
     }
 
-    #if os(macOS) || os(Linux)
-    func testActualOpaqueNodeWorkerUsesNativeRPCWithSpecialKeysWithoutReceivingCredential() async throws {
-        guard let nodePath = ProcessInfo.processInfo.environment["INTENTS_SECRET_TEST_NODE"],
-              let entryPath = ProcessInfo.processInfo.environment["INTENTS_SECRET_TEST_ENTRY"] else {
-            throw XCTSkip("Requires compiled opaque source worker and explicit owned Node test path")
-        }
-        let probe = Probe(), f = try await fixture(adapter: .init(validateSink: { _, _ in }, submit: { value, _, _ in await probe.submit(value) }))
-        defer { try? FileManager.default.removeItem(at: f.root) }
-        let request = try await bind(f), second = try await bind(f)
-        let bindings = AutomationSecretFillBindings(program: try secretProgram(f.scope,
-            operations: [.init(id: "__proto__", binding: "2"), .init(id: "second", binding: "10")]), session: f.session)
-        try await bindings.register(request, operationID: "__proto__"); try await bindings.register(second, operationID: "second")
-        try await grant(request, fixture: f, additional: [second])
-        let payload = try await bindings.payload()
-        let state = f.root.appendingPathComponent("worker")
-        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
-        let process = try AutomationSidecarProcess(configuration: .init(node: AutomationPath.canonical(URL(fileURLWithPath: nodePath)),
-            entry: AutomationPath.canonical(URL(fileURLWithPath: entryPath)), stateDirectory: AutomationPath.canonical(state)),
-            reverse: { method, input in try await bindings.handle(method: method, input: input) })
-        do {
-            try await process.start()
-            let result = try await process.rpc.request(.runSegment, params: payload, timeout: .seconds(10))
-            XCTAssertEqual(result.object?["complete"], .bool(true))
-            XCTAssertEqual(result.object?["outputs"]?.object?["__proto__"]?.object?["disposition"], .string("submittedUnconfirmed"))
-            XCTAssertFalse(String(decoding: try JSONEncoder().encode(result), as: UTF8.self).contains(sentinel))
-            _ = try await process.rpc.request(.shutdown, params: .object([:]), timeout: .seconds(5))
-            let stopped = await process.stop(); XCTAssertTrue(stopped)
-            await bindings.revokeAndDrain()
-            let logs = await process.diagnosticsSummary(); XCTAssertFalse(logs.contains(sentinel))
-            let count = await probe.count(); XCTAssertEqual(count, 2)
-            XCTAssertEqual(result.object?["outputs"]?.object?.count, 2)
-            let exposed = await f.artifacts.canExposeEvidence(scope: f.scope); XCTAssertFalse(exposed)
-        } catch {
-            _ = await process.stop(); await bindings.revokeAndDrain(); throw error
-        }
-    }
-    #endif
+
 
     func testNativeOpaqueExecutorUsesAllDeclaredHandlesOnceAndNeverExportsCredential() async throws {
         let probe = Probe()
@@ -648,85 +612,6 @@ final class AutomationSecretFillTests: XCTestCase, @unchecked Sendable {
         let count = await drained.count(); XCTAssertEqual(count, 2)
     }
 
-    #if os(macOS)
-    private func ownedTransport(_ f: Fixture, entryKey: String = "INTENTS_SECRET_PROGRAM_TEST_ENTRY") async throws -> AutomationMacSecretProgramTransport {
-        guard let node = ProcessInfo.processInfo.environment["INTENTS_SECRET_TEST_NODE"],
-              let entry = ProcessInfo.processInfo.environment[entryKey] else { throw XCTSkip("Requires explicit owned secret-only source fixture") }
-        return try AutomationMacSecretProgramTransport(configuration: .init(node: AutomationPath.canonical(URL(fileURLWithPath: node)),
-            entry: AutomationPath.canonical(URL(fileURLWithPath: entry)), stateDirectory: AutomationPath.canonical(f.root).appendingPathComponent("secret-transport"), retainDiagnostics: false),
-            scope: f.scope, lease: f.lease, leases: f.leases, revalidate: {})
-    }
-    func testSecretProcessDiagnosticDiscardDrainsWithoutRetainingBytes() async throws {
-        guard let node = ProcessInfo.processInfo.environment["INTENTS_SECRET_TEST_NODE"],
-              let entry = ProcessInfo.processInfo.environment["INTENTS_SECRET_DIAGNOSTIC_TEST_ENTRY"] else { throw XCTSkip("Requires explicit diagnostic discard fixture") }
-        for retain in [true, false] {
-            let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
-            defer { try? FileManager.default.removeItem(at: root) }
-            let child = try AutomationSidecarProcess(configuration: .init(node: AutomationPath.canonical(URL(fileURLWithPath: node)),
-                entry: AutomationPath.canonical(URL(fileURLWithPath: entry)), stateDirectory: root, retainDiagnostics: retain), reverse: { _, _ in throw AutomationSecretFillSession.Failure.denied })
-            try await child.start()
-            _ = try await child.rpc.request(.hello, params: .object([:]))
-            let stopped = await child.stop(); XCTAssertTrue(stopped)
-            let summary = await child.diagnosticsSummary()
-            XCTAssertEqual(summary.contains("SYNTHETIC-SECRET-WORKER-DIAGNOSTIC"), retain)
-        }
-    }
-    func testSecretTransportStopJoinsSuspendedStartupBeforeReportingAbsence() async throws {
-        guard let node = ProcessInfo.processInfo.environment["INTENTS_SECRET_TEST_NODE"],
-              let entry = ProcessInfo.processInfo.environment["INTENTS_SECRET_PROGRAM_TEST_ENTRY"] else { throw XCTSkip("Requires owned secret entry") }
-        let gate = Gate(), done = Probe(), f = try await fixture()
-        defer { try? FileManager.default.removeItem(at: f.root) }
-        let request = try await bind(f), program = try secretProgram(f.scope), bindings = AutomationSecretFillBindings(program: try secretProgram(f.scope), session: f.session)
-        try await bindings.register(request, operationID: "fill-password")
-        let transport = try AutomationMacSecretProgramTransport(configuration: .init(node: AutomationPath.canonical(URL(fileURLWithPath: node)),
-            entry: AutomationPath.canonical(URL(fileURLWithPath: entry)), stateDirectory: AutomationPath.canonical(f.root).appendingPathComponent("suspended-worker"), retainDiagnostics: false),
-            scope: f.scope, lease: f.lease, leases: f.leases, revalidate: {}, beforeStart: { await gate.hold() })
-        let capability = await transport.capability(), payload = try await bindings.payload()
-        let pending = Task { try await capability.run(payload, .now + .seconds(30), .init(handle: { _, _ in XCTFail("Callback after startup Stop"); throw AutomationSecretFillSession.Failure.denied })) }
-        await gate.wait()
-        let stop = Task { let drained = await transport.closeAndDrain(); XCTAssertTrue(drained); await done.submit("joined") }
-        for _ in 0..<20 { await Task.yield() }
-        let early = await done.count(); XCTAssertEqual(early, 0)
-        await gate.resume(); await stop.value; await denied { _ = try await pending.value }
-        let record = try await f.leases.currentRecord(f.lease); XCTAssertTrue(record.runners.isEmpty)
-        let again = await transport.closeAndDrain(); XCTAssertTrue(again)
-        await bindings.revokeAndDrain(); try await f.leases.release(f.lease, commandsDrained: true, ownedRunnerTerminated: true)
-    }
-    func testOwnedSecretProcessDeadlineCoversSilentHandshake() async throws {
-        let probe = Probe(), f = try await fixture(adapter: .init(validateSink: { _, _ in }, submit: { value, _, _ in await probe.submit(value) }))
-        defer { try? FileManager.default.removeItem(at: f.root) }
-        let request = try await bind(f); try await grant(request, fixture: f)
-        let program = try AutomationSecretFillProgram(scope: f.scope, phase: .setup, operationID: "deadline", operations: [.init(id: "fill-password", binding: "credential")], timeoutMilliseconds: 100)
-        let bindings = AutomationSecretFillBindings(program: program, session: f.session); try await bindings.register(request, operationID: "fill-password")
-        let transport = try await ownedTransport(f, entryKey: "INTENTS_SECRET_SILENT_TEST_ENTRY")
-        let executor = AutomationNativeSecretExecutor(program: program, bindings: bindings, drainNativeOwner: {}, transport: await transport.capability())
-        let start = ContinuousClock.now
-        await denied { _ = try await executor.run() }; await executor.closeAndDrain()
-        XCTAssertLessThan(start.duration(to: .now), .seconds(5))
-        let count = await probe.count(); XCTAssertEqual(count, 0)
-        let record = try await f.leases.currentRecord(f.lease); XCTAssertEqual(record.runners.count, 1)
-        XCTAssertNil(record.lastDispatch)
-        try await f.leases.release(f.lease, commandsDrained: true, ownedRunnerTerminated: true)
-    }
-    func testActualOwnedSecretProcessStopJoinsUncooperativeNativeCallback() async throws {
-        let gate = Gate(), done = Probe()
-        let f = try await fixture(adapter: .init(validateSink: { _, _ in }, submit: { _, _, _ in await gate.hold() }))
-        defer { try? FileManager.default.removeItem(at: f.root) }
-        let request = try await bind(f); try await grant(request, fixture: f)
-        let program = try secretProgram(f.scope), bindings = AutomationSecretFillBindings(program: try secretProgram(f.scope), session: f.session)
-        try await bindings.register(request, operationID: "fill-password")
-        let transport = try await ownedTransport(f)
-        let executor = AutomationNativeSecretExecutor(program: program, bindings: bindings, drainNativeOwner: {}, transport: await transport.capability())
-        let pending = Task { try await executor.run() }; await gate.wait()
-        let active = try await f.leases.currentRecord(f.lease); XCTAssertEqual(active.runners.count, 1); XCTAssertEqual(active.lastDispatch?.operationID, program.operationID)
-        let stop = Task { await executor.closeAndDrain(); await done.submit("drained") }
-        for _ in 0..<20 { await Task.yield() }
-        let early = await done.count(); XCTAssertEqual(early, 0)
-        let held = await f.leases.isCurrent(f.lease); XCTAssertTrue(held)
-        await gate.resume(); await stop.value; await denied { _ = try await pending.value }
-        let count = await done.count(); XCTAssertEqual(count, 1)
-        try await f.leases.release(f.lease, commandsDrained: true, ownedRunnerTerminated: true)
-    }
-    #endif
+
 
 }

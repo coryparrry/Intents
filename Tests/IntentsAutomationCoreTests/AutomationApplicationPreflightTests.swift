@@ -3,11 +3,8 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationApplicationPreflightTests: XCTestCase, @unchecked Sendable {
-    func testMixedPlanWithoutRuntimeStopsBeforeCreatingAnAttemptOrTouchingSimulator() async throws {
-        try await rejectedBeforeMutation(runtime: nil)
-    }
-    func testUnsignedMissingRuntimeStopsBeforeCreatingAnAttemptOrTouchingSimulator() async throws {
-        try await rejectedBeforeMutation(runtime: .init(bundleURL: URL(fileURLWithPath: "/private/tmp/missing-intents-runtime"), expectedTeamID: "ABCDEFGHIJ"))
+    func testMissingUIProgramStopsBeforeCreatingAnAttemptOrTouchingSimulator() async throws {
+        try await rejectedBeforeMutation()
     }
     func testPreparationFailurePersistsWithoutInventingDispatchOrRelease() async throws {
         try await retainedPreparationFailure(error: .terminationUnverified, expectedSummary: .unresolved, released: false)
@@ -77,7 +74,7 @@ final class AutomationApplicationPreflightTests: XCTestCase, @unchecked Sendable
         do { _ = try await runner.qualifyRecipe(.init(id: "invented", producerSegmentID: "setup", verifierSegmentID: "verify", fillBinding: "name", outputID: "title")); XCTFail("Failed preparation cannot qualify a recipe") }
         catch { }
     }
-    private func rejectedBeforeMutation(runtime: AutomationUIRuntime?) async throws {
+    private func rejectedBeforeMutation() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "ios", productDigest: String(repeating: "a", count: 64))
@@ -91,15 +88,16 @@ final class AutomationApplicationPreflightTests: XCTestCase, @unchecked Sendable
                 hostBundlePath: "unused", hostProductDigest: "unused", hostBundleID: "unused", testTarget: "unused"),
             catalog: .init(app: app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: []),
             buildLogPath: "unused", buildLogTruncated: false)
-        let approval = RunApproval(runID: "run", app: app, target: target, environmentID: plan.environmentID,
+        var approval = RunApproval(runID: "run", app: app, target: target, environmentID: plan.environmentID,
             effects: [.observe], maximumActions: 10, disposable: true)
+        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
         let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: NSTemporaryDirectory()))
         do {
             _ = try await runner.run(prepared: prepared, plan: plan, approval: approval, capabilities: .init(),
-                attemptID: "attempt", allowBootAndInstall: true, uiRuntime: runtime)
-            XCTFail("Unqualified UI runtime was allowed")
+                attemptID: "attempt", allowBootAndInstall: true)
+            XCTFail("A UI segment without concrete steps was allowed")
         } catch {
-            if runtime == nil { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Mixed plans require the signed private UI runtime")) }
+            XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Segment has no qualified XCUITest program"))
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("attempt").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Cases").path))

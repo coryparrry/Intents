@@ -52,7 +52,7 @@ final class AutomationSubjectCampaignExecutorTests: XCTestCase, @unchecked Senda
         let call = try XCTUnwrap(calls.first); XCTAssertEqual(call.subject.app, selected.app); XCTAssertEqual(call.subject.target, selected.target)
         XCTAssertEqual(call.subject.productPath, selected.bundleURL.path); XCTAssertEqual(call.frozen.digest, frozen.digest)
         XCTAssertEqual(call.approval, approval); XCTAssertEqual(call.attemptID, "attempt"); XCTAssertTrue(call.budget === budget)
-        XCTAssertNil(call.fixtureTracker); XCTAssertNil(call.uiRuntime); XCTAssertFalse(call.allowBootAndInstall); XCTAssertEqual(report.attemptID, "attempt")
+        XCTAssertNil(call.fixtureTracker); XCTAssertFalse(call.allowBootAndInstall); XCTAssertEqual(report.attemptID, "attempt")
     }
     func testInstalledMacWritesAndChangedProductFailBeforeForwarding() async throws {
         for changedProduct in [false, true] {

@@ -17,6 +17,7 @@ struct AutomationAppleHostPayloadFile: Sendable {
         func clean(_ target: [String: Any]) throws -> [String: Any] {
             guard var environment = target["EnvironmentVariables"] as? [String: String] else { throw AutomationContractError.invalidIdentity }
             environment.removeValue(forKey: "INTENTS_AUTOMATION_HOST_PLAN_B64")
+            environment.removeValue(forKey: "INTENTS_AUTOMATION_UI_PLAN_B64")
             environment.removeValue(forKey: "INTENTS_AUTOMATION_INPUT_PROBE_B64")
             environment.removeValue(forKey: "INTENTS_AUTOMATION_SIRI_PLAN_B64")
             var result = target; result["EnvironmentVariables"] = environment; return result

@@ -24,7 +24,7 @@ extension AppAutomationStore {
                 capabilities: request.capabilities, attemptID: attemptID, allowInstall: request.installApproved)
         }
         return try await runner.run(subject: request.subject, plan: request.plan, approval: request.approval,
-            capabilities: request.capabilities, attemptID: attemptID, allowBootAndInstall: request.installApproved, uiRuntime: request.uiRuntime)
+            capabilities: request.capabilities, attemptID: attemptID, allowBootAndInstall: request.installApproved)
     }
 
     var isSiriWorkflow: Bool { candidate?.kind == .sourceTarget && workflowRoute == "siri" }
@@ -57,7 +57,7 @@ extension AppAutomationStore {
                 initialState: siriOracle.initialState == "true", expectedState: siriOracle.expectedState == "true",
                 request: siriRequest, approval: proposal, capabilities: siriCapabilities)
         }
-        plan.provenance.merge(try AutomationNativeUIRuntime.preparedProvenance(prepared)) { _, prepared in prepared }
+        plan.provenance.merge(try AutomationNativePreparedEvidence.preparedProvenance(prepared)) { _, prepared in prepared }
         plan.provenance["siri.evidenceScope"] = siriOracle.enabled ? "controlledExistingRecordState" : "recognizedTextSubmissionOnly"
         plan.provenance["physical.installedBytesVerified"] = "false"
         plan.id = "siri-" + (try AutomationFrozenCase.planDigest(plan))
@@ -68,7 +68,7 @@ extension AppAutomationStore {
         let fields = ["plan": digest, "host": prepared.host.hostProductDigest, "xctestrun": prepared.host.xctestrunDigest,
             "install": String(installApproved), "disposable": String(disposable)]
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return .init(subject: .prepared(prepared), uiRuntime: nil, plan: plan, approval: approval, capabilities: siriCapabilities,
+        return .init(subject: .prepared(prepared), plan: plan, approval: approval, capabilities: siriCapabilities,
             installApproved: installApproved, digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: digest, siriQualification: siriOracle.enabled)
     }
 }

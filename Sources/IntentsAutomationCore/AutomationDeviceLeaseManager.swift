@@ -160,7 +160,9 @@ public actor AutomationDeviceLeaseManager {
     }
     /// Persist authority before the first write, including acquisitions that fail before control exists.
     func recordPrivatePayload(_ payload: AutomationAppleHostPayloadFile, lease: Lease) throws {
-        let reference = payload.recoveryReference
+        try recordPrivatePayload(payload.recoveryReference, lease: lease)
+    }
+    func recordPrivatePayload(_ reference: PrivatePayload, lease: Lease) throws {
         try reference.validate()
         guard reference.scope.runId == lease.runID, reference.scope.leaseGeneration == lease.generation else {
             throw AutomationContractError.unknownLease
@@ -174,7 +176,9 @@ public actor AutomationDeviceLeaseManager {
         }
     }
     func retirePrivatePayload(_ payload: AutomationAppleHostPayloadFile, lease: Lease) throws {
-        let reference = payload.recoveryReference
+        try retirePrivatePayload(payload.recoveryReference, lease: lease)
+    }
+    func retirePrivatePayload(_ reference: PrivatePayload, lease: Lease) throws {
         try mutate { state in
             var campaign = try ownedCampaign(lease, state: state)
             guard campaign.privatePayload == nil || campaign.privatePayload == reference else { throw AutomationContractError.unknownLease }

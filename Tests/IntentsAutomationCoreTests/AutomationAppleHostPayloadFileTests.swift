@@ -7,7 +7,7 @@ final class AutomationAppleHostPayloadFileTests: XCTestCase {
         let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent("apple-host-payload-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let target: [String: Any] = ["BlueprintName": "OwnedHost", "EnvironmentVariables": ["INTENTS_AUTOMATION_HOST_PLAN_B64": "frozen-plan", "INTENTS_AUTOMATION_INPUT_PROBE_B64": "frozen-probe", "UNCHANGED": "value"]]
+        let target: [String: Any] = ["BlueprintName": "OwnedHost", "EnvironmentVariables": ["INTENTS_AUTOMATION_HOST_PLAN_B64": "frozen-plan", "INTENTS_AUTOMATION_UI_PLAN_B64": "frozen-ui-plan", "INTENTS_AUTOMATION_INPUT_PROBE_B64": "frozen-probe", "UNCHANGED": "value"]]
         let plist: [String: Any] = modern ? ["TestConfigurations": [["Name": "Debug", "TestTargets": [target]]], "__xctestrun_metadata__": ["FormatVersion": 2]] : ["OwnedHost": target, "__xctestrun_metadata__": ["FormatVersion": 1]]
         let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0), url = root.appendingPathComponent("host.xctestrun")
         return (try .init(data: data, url: url, scope: scope), url, data)
@@ -20,7 +20,7 @@ final class AutomationAppleHostPayloadFileTests: XCTestCase {
             try await manager.recordPrivatePayload(file, lease: lease)
             let prewrite = try await manager.currentRecord(lease); XCTAssertEqual(prewrite.privatePayload, file.recoveryReference)
             let serialized = try String(contentsOf: storeURL, encoding: .utf8)
-            XCTAssertFalse(serialized.contains("frozen-plan")); XCTAssertFalse(serialized.contains("frozen-probe"))
+            XCTAssertFalse(serialized.contains("frozen-ui-plan")); XCTAssertFalse(serialized.contains("frozen-plan")); XCTAssertFalse(serialized.contains("frozen-probe"))
             try file.write(data)
             do { try await manager.release(lease, commandsDrained: true, ownedRunnerTerminated: true); XCTFail("Process proof cannot release a private payload") }
             catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }

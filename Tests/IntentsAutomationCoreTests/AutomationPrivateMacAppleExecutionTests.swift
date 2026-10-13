@@ -196,7 +196,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
         let runner = try AutomationApplicationRunner(supportRoot: h.root.appendingPathComponent("support"), developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"),
             simulatorInventory: { _, _ in XCTFail("Prepared Mac reached simulator infrastructure"); throw AutomationContractError.invalidIdentity })
         do { _ = try await runner.run(subject: .prepared(prepared), plan: h.plan, approval: h.approval, capabilities: .init(), attemptID: "attempt", allowBootAndInstall: false); XCTFail("Unqualified Mac customer route admitted") }
-        catch let error as AutomationContractError { XCTAssertEqual(error, .missingEvidence("Prepared Mac system and mixed execution require a qualified associated-host route")) }
+        catch let error as AutomationContractError { XCTAssertEqual(error, .missingEvidence("Prepared program does not match the selected app's input and result declarations")) }
     }
 }
 #endif

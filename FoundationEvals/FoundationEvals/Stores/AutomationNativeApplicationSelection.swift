@@ -70,7 +70,7 @@ extension AppAutomationStore {
             observationLabel: uiObservationProperty == "text" ? "" : uiObservationLabel,
             observationProperty: uiObservationProperty, approval: approval, localeIdentifier: Locale.current.identifier)
         if isPreparedMacUI, let prepared {
-            try AutomationNativeUIRuntime.attachPreparedEvidence(to: &plan, prepared: prepared)
+            try AutomationNativePreparedEvidence.attachPreparedEvidence(to: &plan, prepared: prepared)
             plan.id = "ui." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
         }
         let digest = try AutomationFrozenCase.planDigest(plan)

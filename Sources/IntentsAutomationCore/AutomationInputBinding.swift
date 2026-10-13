@@ -89,6 +89,7 @@ public enum AutomationInputResolver {
                 }
                 let producer = plan.setup.first { $0.id == binding.producerSegmentID }!
                 let declared = producer.uiProgram?.operations.contains { $0.kind == .observeProperty && $0.id == binding.outputID } == true
+                    || producer.uiProgram?.steps?.contains { $0.kind == .readProperty && $0.id == binding.outputID } == true
                     || producer.hostProgram?.operations.contains { $0.id == binding.outputID } == true
                 guard declared else { throw AutomationContractError.invalidPlan("Producer has no verified output declaration") }
                 if let selection = binding.uniqueEntity {
@@ -102,7 +103,8 @@ public enum AutomationInputResolver {
                 case .uiBinding:
                     guard binding.operationID == nil, segment.phase != .observe, let program = segment.uiProgram,
                           program.bindings[binding.name] == nil,
-                          program.operations.contains(where: { $0.binding == binding.name }) || program.operations.contains(where: { $0.kind == .navigateGoal }) else {
+                          program.operations.contains(where: { $0.binding == binding.name }) || program.operations.contains(where: { $0.kind == .navigateGoal }) ||
+                          program.steps?.contains(where: { $0.binding == binding.name }) == true else {
                         throw AutomationContractError.invalidPlan("Invalid UI input destination or literal replacement")
                     }
                 case .hostQueryIDs:

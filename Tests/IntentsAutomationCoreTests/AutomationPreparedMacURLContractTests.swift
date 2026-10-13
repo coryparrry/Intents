@@ -4,7 +4,7 @@ import XCTest
 
 extension AutomationPrivateMacAppleRouteDriverTests {
     func testPreparedMacURLDeclarationRejectsTextBeforeAnyRouteDispatch() async throws {
-        let h = try await macFreshHarness()
+        let h = try await preparedMacSavedHarness()
         var prepared = h.prepared, plan = h.plan, approval = h.approval
         prepared.catalog.systemActions[0].parameters.append(.init(name: "url", family: "url", optional: false))
         plan.execution.hostProgram?.operations[0].parameters["url"] = .text("file:///private/tmp/customer.txt")
@@ -22,7 +22,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
         XCTAssertTrue(names.isEmpty); XCTAssertEqual(invocations, 0)
     }
     func testPreparedMacDeferredTextCannotFillOptionalOrDefaultURLDeclarations() async throws {
-        let h = try await macFreshHarness()
+        let h = try await preparedMacSavedHarness()
         let declarations: [(Bool, AutomationValue?)] = [(true, nil), (false, .object(["url": .text("https://example.invalid")]))]
         for (index, declaration) in declarations.enumerated() {
             var prepared = h.prepared, plan = h.plan, approval = h.approval

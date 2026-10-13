@@ -164,7 +164,9 @@ import Synchronization
     }
 
     func testResetPreservesCompletedIndependentReportsWhenOnlyNormalAttemptIsUnresolved() async throws {
-        let (model, root, _) = try await InstalledUIStoreTests().fixture()
+        let helper = InstalledUIStoreTests()
+        let (model, root, _) = try await helper.fixture()
+        try helper.selectPreparedSource(model: model, root: root)
         defer { try? FileManager.default.removeItem(at: root) }
         await model.ownershipRecoveryTask?.value
         let request = try model.makeNativeRunRequest(runID: "later-unresolved-normal")
@@ -197,7 +199,9 @@ import Synchronization
 
     func testEveryActiveUnresolvedReportCanResetWithoutRemovingSavedEvidence() async throws {
         for kind in ["entity", "search", "reproduction", "comparison", "normal"] {
-            let (model, root, _) = try await InstalledUIStoreTests().fixture()
+            let helper = InstalledUIStoreTests()
+            let (model, root, _) = try await helper.fixture()
+            try helper.selectPreparedSource(model: model, root: root)
             defer { try? FileManager.default.removeItem(at: root) }
             await model.ownershipRecoveryTask?.value
             let request = try model.makeNativeRunRequest(runID: "finished-" + kind)

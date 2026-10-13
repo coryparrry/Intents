@@ -12,6 +12,7 @@ public struct AutomationSegmentReceipt: Codable, Equatable, Sendable {
     public var artifact: String?
     public var verifiedOutputs: [String: AutomationValue]?
     public var environmentID: String?
+    public var terminalUIAssertionFailure: AutomationTerminalUIAssertionFailure? = nil
     var hostReceiptDigest: String? = nil
     public init(scope: AutomationScope, app: AppIdentity, target: TargetIdentity, segmentID: String,
                 route: AutomationSegment.Kind, dispatched: Bool, completed: Bool, observations: [AutomationObservation] = [], artifact: String? = nil, verifiedOutputs: [String: AutomationValue]? = nil, environmentID: String? = nil) {
@@ -142,7 +143,7 @@ public actor AutomationCoordinator {
     }
     private func execute(plan: AutomationCase, segment: AutomationSegment, resolution: AutomationSegmentResolutionAuthority, approval: RunApproval,
                          attemptID: String, deadline: ContinuousClock.Instant, driver: any AutomationRouteDriver) async throws -> (AutomationSegmentReceipt, Bool) {
-        let control: AutomationDeviceLeaseManager.Lease.Control = segment.kind == .ui ? .ui : .system
+        let control: AutomationDeviceLeaseManager.Lease.Control = segment.usesUIControl ? .ui : .system
         let lease = try await leases.acquire(runID: approval.runID, target: plan.target, control: control)
         let scope = AutomationScope(runID: approval.runID, attemptID: attemptID, segmentID: segment.id, leaseGeneration: lease.generation)
         var invoked = false, alreadyReleased = false

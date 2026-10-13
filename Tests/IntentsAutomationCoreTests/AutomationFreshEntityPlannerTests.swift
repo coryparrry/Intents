@@ -20,7 +20,7 @@ final class AutomationFreshEntityPlannerTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(observedIDs, ["id-first", "id-second"])
         XCTAssertEqual(try AutomationFrozenCase.planDigest(fixture.plan), original)
         let context = AutomationRecipeContext(app: fixture.plan.app, target: fixture.plan.target, environmentID: fixture.plan.environmentID,
-            catalogDigest: String(repeating: "c", count: 64), hostDigest: String(repeating: "d", count: 64), localeIdentifier: "en_GB", uiRuntimeManifestDigest: String(repeating: "e", count: 64))
+            catalogDigest: try XCTUnwrap(fixture.plan.provenance["catalog"]), hostDigest: String(repeating: "d", count: 64), localeIdentifier: "en_GB", uiRuntimeManifestDigest: nil)
         let token = try AutomationQualifiedFreshFixture(bindings: AutomationFreshEntityPlanner.bindings(plan: fixture.plan),
             evidence: reports.map { .init(context: context, plan: fixture.plan, approval: fixture.approval, report: $0) })
         let tracker = AutomationFreshFixtureTracker(fixture: token)
@@ -35,9 +35,10 @@ final class AutomationFreshEntityPlannerTests: XCTestCase, @unchecked Sendable {
         let coordinator = try fixture.coordinator()
         let original = try await coordinator.run(plan: fixture.plan, approval: fixture.approval, capabilities: fixture.capabilities, attemptID: "original", driver: driver)
         let context = AutomationRecipeContext(app: fixture.plan.app, target: fixture.plan.target, environmentID: fixture.plan.environmentID,
-            catalogDigest: String(repeating: "c", count: 64), hostDigest: String(repeating: "d", count: 64), localeIdentifier: "en_GB", uiRuntimeManifestDigest: String(repeating: "e", count: 64))
+            catalogDigest: try XCTUnwrap(fixture.plan.provenance["catalog"]), hostDigest: String(repeating: "d", count: 64), localeIdentifier: "en_GB", uiRuntimeManifestDigest: nil)
         let prior = AutomationLiveRecipeEvidence(context: context, plan: fixture.plan, approval: fixture.approval, report: original)
         var plan = fixture.plan; plan.app.productDigest = String(repeating: "b", count: 64); plan.revision += 1
+        plan.provenance["catalog"] = String(repeating: "f", count: 64)
         var approval = fixture.approval; approval.app = plan.app; approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
         let changedContext = AutomationRecipeContext(app: plan.app, target: plan.target, environmentID: plan.environmentID,
             catalogDigest: String(repeating: "f", count: 64), hostDigest: String(repeating: "a", count: 64), localeIdentifier: "en_GB", uiRuntimeManifestDigest: context.uiRuntimeManifestDigest)
@@ -94,18 +95,21 @@ final class AutomationFreshEntityPlannerTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(fixture.plan.requirements.map(\.expected), [.bool(true), .bool(false)])
         XCTAssertEqual(fixture.plan.execution.inputBindings?.first?.uniqueEntity?.matchingProperties, ["owner": .text("Work")])
         XCTAssertEqual(fixture.plan.setup.count, 3)
-        XCTAssertEqual(fixture.plan.setup[0].uiProgram?.bindings, ["selectedContext": "Work"])
-        XCTAssertEqual(fixture.plan.setup[1].uiProgram?.bindings, ["protectedContext": "Personal"])
-        XCTAssertEqual(fixture.plan.setup[0].uiProgram?.operations.first?.goal?.selectionBindings, ["selectedContext"])
-        XCTAssertEqual(fixture.plan.setup[1].uiProgram?.operations.first?.goal?.selectionBindings, ["protectedContext"])
+        XCTAssertEqual(fixture.plan.setup[0].uiProgram?.bindings, [:])
+        XCTAssertEqual(fixture.plan.setup[1].uiProgram?.bindings, [:])
+        XCTAssertEqual(fixture.plan.setup[0].attemptTextBindings, ["approvedText": "Invoice"])
         XCTAssertEqual(fixture.plan.setup[0].attemptTextBindings, fixture.plan.setup[1].attemptTextBindings)
-        let goals = fixture.plan.setup.dropLast().compactMap { $0.uiProgram?.operations.first?.goal }
-        XCTAssertEqual(goals.count, 2)
-        XCTAssertEqual(goals.map(\.minimumBindingUses), [["approvedText": 1], ["approvedText": 1]])
-        XCTAssertEqual(goals.map(\.allowedFillBindings), [["approvedText"], ["approvedText"]])
-        XCTAssertEqual(goals.map(\.maximumCalls).reduce(0,+), fixture.plan.budget.controllerCalls)
-        XCTAssertEqual(goals.map(\.maximumActions).reduce(0,+), fixture.plan.budget.uiActions)
-        XCTAssertEqual(fixture.plan.setupChecks?.count, 2)
+        for (segment, contextValue) in zip(fixture.plan.setup.dropLast(), ["Work", "Personal"]) {
+            let program = try XCTUnwrap(segment.uiProgram)
+            XCTAssertEqual(program.operations.map(\.kind), [.tap, .fillBinding, .tap, .tap, .assertEndpoint])
+            XCTAssertEqual(program.operations.map(\.id), ["open", "name", "context", "save", "saved"])
+            XCTAssertEqual(program.operations.map(\.locator), [.init(.testId, "task.create"), .init(.testId, "task.title"),
+                .init(.label, contextValue, role: .button), .init(.testId, "task.add"), .init(.label, "Tasks")])
+            XCTAssertEqual(program.operations.map(\.binding), [nil, "approvedText", nil, nil, nil])
+            XCTAssertTrue(program.operations.allSatisfy { $0.goal == nil })
+        }
+        let filledContexts = await driver.contexts
+        XCTAssertEqual(filledContexts, ["Work", "Personal"])
         XCTAssertEqual(fixture.plan.requirements.count, 2)
         // Both selections deliberately have the same name; ownership disambiguates.
         XCTAssertEqual(fixture.plan.setupChecks?[0].entityProperty?.selection.attemptProperties,
@@ -130,6 +134,53 @@ final class AutomationFreshEntityPlannerTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(report.result.summary, .invalidFixture)
         let invocations = await driver.invocations
         XCTAssertEqual(invocations, 0)
+    }
+    func testCreationUsesExactApprovedControlsAndAttemptNameBinding() throws {
+        let fixture = try FreshRecordPlanFixture()
+        let program = try XCTUnwrap(fixture.plan.setup.first?.uiProgram)
+        XCTAssertEqual(program.operations.map(\.kind), [.tap, .fillBinding, .tap, .assertEndpoint])
+        XCTAssertEqual(program.operations.map(\.id), ["open", "name", "save", "saved"])
+        XCTAssertEqual(program.operations.map(\.locator), [.init(.testId, "task.create"), .init(.testId, "task.title"),
+            .init(.testId, "task.add"), .init(.label, "Tasks")])
+        XCTAssertEqual(program.operations.map(\.binding), [nil, "approvedText", nil, nil])
+        XCTAssertEqual(program.bindings, [:], "The attempt name is supplied only when the approved case runs")
+        XCTAssertEqual(fixture.plan.setup.first?.attemptTextBindings, ["approvedText": "Invoice"])
+        XCTAssertTrue(program.operations.allSatisfy { $0.goal == nil })
+        let alreadyOpen = try FreshRecordPlanFixture(createControl: nil)
+        XCTAssertEqual(alreadyOpen.plan.setup.first?.uiProgram?.operations.map(\.kind), [.fillBinding, .tap, .assertEndpoint])
+    }
+    func testExplicitContextFieldsFillOnlyApprovedSelectedAndProtectedBindings() async throws {
+        let fixture = try FreshRecordPlanFixture(protected: true, contextEntry: .init(.testId, "task.owner"))
+        for (segment, contextValue) in zip(fixture.plan.setup.dropLast(), ["Work", "Personal"]) {
+            let program = try XCTUnwrap(segment.uiProgram)
+            XCTAssertEqual(program.bindings, ["context": contextValue])
+            XCTAssertEqual(program.operations.map(\.kind), [.tap, .fillBinding, .fillBinding, .tap, .assertEndpoint])
+            XCTAssertEqual(program.operations.map(\.locator), [.init(.testId, "task.create"), .init(.testId, "task.title"),
+                .init(.testId, "task.owner"), .init(.testId, "task.add"), .init(.label, "Tasks")])
+            XCTAssertEqual(program.operations.map(\.binding), [nil, "approvedText", "context", nil, nil])
+            XCTAssertTrue(program.operations.allSatisfy { $0.goal == nil })
+        }
+        let driver = FreshRecordPlanDriver()
+        let report = try await fixture.coordinator().run(plan: fixture.plan, approval: fixture.approval,
+            capabilities: fixture.capabilities, attemptID: "first", driver: driver)
+        XCTAssertEqual(report.result.summary, .passed)
+        let filledContexts = await driver.contexts
+        XCTAssertEqual(filledContexts, ["Work", "Personal"])
+        let names = await driver.names
+        XCTAssertEqual(names, [try AutomationAttemptText.value(prefix: "Invoice", attemptID: "first")])
+    }
+    func testMissingNameOrSaveFieldRejectsCreationBeforeExecution() throws {
+        for makeFixture in [
+            { try FreshRecordPlanFixture(nameEntry: nil) },
+            { try FreshRecordPlanFixture(saveControl: nil) }
+        ] {
+            XCTAssertThrowsError(try makeFixture()) { error in
+                guard let contractError = error as? AutomationContractError, case .invalidPlan(let message) = contractError else {
+                    return XCTFail("Missing exact locator was not rejected: \(error)")
+                }
+                XCTAssertTrue(message.contains("name field and Save control"))
+            }
+        }
     }
     func testProtectedContextRequiresRealDistinctNonNamePropertyAndBoundedValues() throws {
         let fixture = try FreshRecordPlanFixture(protected: true)
@@ -171,7 +222,11 @@ private struct FreshRecordPlanFixture {
     var plan: AutomationCase
     var approval: RunApproval
     var capabilities: CapabilityProfile
-    init(protected: Bool = false) throws {
+    init(protected: Bool = false,
+         createControl: AutomationUIProgram.Locator? = .init(.testId, "task.create"),
+         nameEntry: AutomationUIProgram.Locator? = .init(.testId, "task.title"),
+         saveControl: AutomationUIProgram.Locator? = .init(.testId, "task.add"),
+         contextEntry: AutomationUIProgram.Locator? = nil) throws {
         let app = AppIdentity(logicalID: "fixture", bundleID: "example.Fixture", platform: "ios", productDigest: String(repeating: "a", count: 64))
         let target = TargetIdentity(id: "simulator", kind: .simulator)
         let catalog = ApplicationSurfaceCatalog(app: app, systemActions: [.init(id: "Complete", typeName: "Complete", title: "Complete task",
@@ -179,7 +234,7 @@ private struct FreshRecordPlanFixture {
             systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: [], entities: [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "TaskQuery", properties: protected ? ["title": "text", "completed": "bool", "owner": "text"] : ["title": "text", "completed": "bool"], propertyTitles: [:])])
         capabilities = .init(records: Dictionary(uniqueKeysWithValues: ["apple.entity.query", "apple.intent.invoke", "apple.codec.entity"].map { ($0, .init(state: .available, reason: "test", probeVersion: "test", evidence: [])) }))
         approval = .init(runID: "run", app: app, target: target, environmentID: "test", effects: [.observe, .navigate, .fixtureWrite], maximumActions: 30, disposable: true)
-        plan = try AutomationFreshEntityPlanner.compile(catalog: catalog, actionID: "Complete", instruction: "Create a task using approvedText and save it", endpoint: "Tasks", namePrefix: "Invoice", nameProperty: "title", stateProperty: "completed", initialState: false, expectedState: true, approval: approval, capabilities: capabilities, localeIdentifier: "en_GB", context: protected ? .init(property: "owner", selectedValue: "Work", protectedValue: "Personal") : nil)
+        plan = try AutomationFreshEntityPlanner.compile(catalog: catalog, actionID: "Complete", instruction: "Create a task using approvedText and save it", endpoint: "Tasks", namePrefix: "Invoice", nameProperty: "title", stateProperty: "completed", initialState: false, expectedState: true, approval: approval, capabilities: capabilities, localeIdentifier: "en_GB", context: protected ? .init(property: "owner", selectedValue: "Work", protectedValue: "Personal") : nil, saveControl: saveControl, createControl: createControl, nameEntry: nameEntry, contextEntry: protected ? contextEntry : nil)
         approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
     }
     func coordinator() throws -> AutomationCoordinator {
@@ -190,7 +245,7 @@ private struct FreshRecordPlanFixture {
 actor FreshRecordPlanDriver: AutomationRouteDriver {
     enum Mode: Sendable { case normal, duplicate, wrongName, noChange, wrongObserver, wrongRecord, bothChanged, duplicateProtected }
     let mode: Mode
-    var names: [String] = [], observedIDs: [String] = []
+    var names: [String] = [], observedIDs: [String] = [], contexts: [String] = []
     var invocations = 0
     var reusedID: String?
     var title = "", entityID = "", completed = false
@@ -204,12 +259,14 @@ actor FreshRecordPlanDriver: AutomationRouteDriver {
         case "fixture.create":
             title = segment.uiProgram?.bindings["approvedText"] ?? ""; names.append(title)
             entityID = reusedID ?? "id-" + scope.attemptId; completed = false
-            selectedContext = segment.uiProgram?.bindings["selectedContext"]; protectedContext = segment.uiProgram?.bindings["protectedContext"]
+            selectedContext = segment.uiProgram?.bindings["context"] ?? segment.uiProgram?.operations.first(where: { $0.id == "context" })?.locator?.value; protectedContext = nil
+            if let selectedContext { contexts.append(selectedContext) }
             protectedID = "protected-" + scope.attemptId; protectedCompleted = false
             XCTAssertFalse(title.isEmpty); XCTAssertNil(segment.attemptTextBindings)
         case "fixture.create.protected":
             XCTAssertEqual(segment.uiProgram?.bindings["approvedText"], title)
-            protectedContext = segment.uiProgram?.bindings["protectedContext"]
+            protectedContext = segment.uiProgram?.bindings["context"] ?? segment.uiProgram?.operations.first(where: { $0.id == "context" })?.locator?.value
+            if let protectedContext { contexts.append(protectedContext) }
             XCTAssertNil(segment.attemptTextBindings)
         case "fixture.lookup":
             XCTAssertEqual(segment.hostProgram?.operations.first?.queryText, title)

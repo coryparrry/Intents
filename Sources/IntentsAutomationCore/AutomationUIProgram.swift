@@ -1,4 +1,5 @@
 import Foundation
+import IntentsAutomationUIHostContracts
 
 public struct AutomationUIProgram: Codable, Equatable, Sendable {
     public struct Locator: Codable, Equatable, Sendable {
@@ -25,10 +26,53 @@ public struct AutomationUIProgram: Codable, Equatable, Sendable {
     public var operations: [Operation]
     public var bindings: [String: String]
     public var timeoutMilliseconds: Int
-    public init(operations: [Operation], bindings: [String: String] = [:], timeoutMilliseconds: Int = 120_000) {
+    public var steps: [UIHostStep]?
+    public init(operations: [Operation] = [], bindings: [String: String] = [:], timeoutMilliseconds: Int = 120_000, steps: [UIHostStep]? = nil) {
         self.operations = operations; self.bindings = bindings; self.timeoutMilliseconds = timeoutMilliseconds
+        self.steps = steps
     }
     public func validate(phase: AutomationSegment.Phase) throws {
+        if let steps {
+            guard operations.isEmpty, (1...30).contains(steps.count), bindings.count <= 30,
+                  (100...120_000).contains(timeoutMilliseconds), Set(steps.map(\.id)).count == steps.count,
+                  bindings.allSatisfy({ Self.identifier($0.key) && $0.value.utf16.count <= 32768 }) else {
+                throw AutomationContractError.invalidPlan("Malformed direct XCUITest program")
+            }
+            let supported: [UIHostStep.Kind] = [.launch, .tap, .typeText, .clearAndType, .swipe, .waitFor, .assert, .screenshot, .readProperty]
+            for step in steps {
+                guard Self.identifier(step.id), supported.contains(step.kind), step.operation == nil,
+                      step.inputBindings == nil, step.setupChecks == nil,
+                      (step.text?.utf16.count ?? 0) <= 32768,
+                      [step.query?.identifier, step.query?.label, step.query?.labelContains, step.query?.elementType].compactMap({ $0 }).allSatisfy({ $0.utf16.count <= 1024 && !$0.contains("\0") }),
+                      (step.timeout ?? 10) > 0, (step.timeout ?? 10) <= 120 else { throw AutomationContractError.invalidPlan("Unsupported direct UI step") }
+                if [.typeText, .clearAndType].contains(step.kind) {
+                    guard phase != .observe, (step.text == nil) != (step.binding == nil),
+                          step.binding.map({ bindings[$0] != nil }) ?? true else { throw AutomationContractError.invalidPlan("Missing direct UI fill input") }
+                }
+                if [.tap, .typeText, .clearAndType, .waitFor, .assert, .readProperty].contains(step.kind) {
+                    guard let query = step.query, query.index.map({ $0 >= 0 }) ?? true,
+                          [query.identifier, query.label, query.labelContains, query.elementType].contains(where: { $0?.isEmpty == false }) else { throw AutomationContractError.invalidPlan("Missing direct UI query") }
+                }
+                if step.kind == .swipe, !["up", "down", "left", "right"].contains(step.direction) { throw AutomationContractError.invalidPlan("Invalid direct UI swipe") }
+                if step.kind == .waitFor, !["exists", "hittable", "absent"].contains(step.property) { throw AutomationContractError.invalidPlan("Invalid direct UI wait") }
+                if step.kind == .readProperty, !["label", "text", "value", "exists", "selected", "checked"].contains(step.property) { throw AutomationContractError.invalidPlan("Invalid direct UI property") }
+                if let type = step.query?.elementType, !["any", "button", "textField", "textbox", "secureTextField", "searchField", "searchbox", "textView", "staticText", "switch", "cell", "window", "other"].contains(type) { throw AutomationContractError.invalidPlan("Invalid direct UI element type") }
+                if step.kind == .launch {
+                    guard (step.arguments?.count ?? 0) <= 100, (step.environment?.count ?? 0) <= 32,
+                          (step.arguments ?? []).allSatisfy({ !$0.contains("\0") && $0.utf8.count <= 32768 }),
+                          (step.environment ?? [:]).allSatisfy({ !$0.key.isEmpty && !$0.key.contains("=") && !$0.key.contains("\0") && !$0.value.contains("\0") && $0.value.utf8.count <= 32768 }) else {
+                        throw AutomationContractError.invalidPlan("Invalid direct UI launch inputs")
+                    }
+                }
+                if step.kind == .assert {
+                    guard ["label", "value", "exists", "selected"].contains(step.property), let expected = step.equals,
+                          (["exists", "selected"].contains(step.property) ? expected.kind == "bool" && expected.boolValue != nil : expected.kind == "text" && expected.value != nil) else {
+                        throw AutomationContractError.invalidPlan("Invalid direct UI assertion")
+                    }
+                }
+            }
+            return
+        }
         guard (1...30).contains(operations.count), bindings.count <= 30, (100...120_000).contains(timeoutMilliseconds),
               Set(operations.map(\.id)).count == operations.count,
               bindings.allSatisfy({ Self.identifier($0.key) && $0.value.utf16.count <= 32768 }) else {
@@ -76,6 +120,19 @@ public struct AutomationUIProgram: Codable, Equatable, Sendable {
     }
     public func approvedActions() throws -> [AutomationRunAuthority.Action] {
         try validate(phase: .setup)
+        if let steps {
+            return try steps.compactMap { step in
+                switch step.kind {
+                case .launch: return .activate
+                case .tap: return .tap
+                case .typeText, .clearAndType:
+                    guard let text = step.text ?? step.binding.flatMap({ bindings[$0] }) else { throw AutomationInputBindingError.inputUnavailable }
+                    return .fill(text)
+                case .swipe: return .swipe(step.direction!)
+                default: return nil
+                }
+            }
+        }
         return [.activate] + operations.compactMap { operation in
             switch operation.kind {
             case .tap: return .tap
@@ -86,6 +143,7 @@ public struct AutomationUIProgram: Codable, Equatable, Sendable {
         }
     }
     public func payload(scope: AutomationScope, phase: AutomationSegment.Phase, operationID: String, digestVersion: AutomationUIPayloadDigestVersion = .legacyV1) throws -> AutomationJSON {
+        guard steps == nil else { throw AutomationContractError.missingEvidence("Direct XCUITest steps require the prepared host route") }
         try scope.validate(); try validate(phase: phase)
         guard Self.identifier(operationID) else { throw AutomationContractError.invalidIdentity }
         let encoder = JSONEncoder()

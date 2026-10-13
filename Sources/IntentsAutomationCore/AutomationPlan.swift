@@ -14,6 +14,21 @@ public struct AutomationSegment: Codable, Equatable, Sendable {
     public enum Lifecycle: String, Codable, Sendable { case persistedStateAcrossSegments, processContinuityRequired, noActivation }
     public var id: String
     public var kind: Kind
+    public var usesUIControl: Bool { kind == .ui || kind == .observeOnly }
+    func validateObservationOnly() throws {
+        guard kind == .observeOnly else { return }
+        guard let program = uiProgram, program.bindings.isEmpty,
+              effects.isSubset(of: [.observe, .navigate]), inputBindings?.isEmpty != false,
+              attemptTextBindings?.isEmpty != false,
+              program.operations.allSatisfy({ [.locate, .readProperty, .observeProperty].contains($0.kind) }) else {
+            throw AutomationContractError.invalidPlan("Observation-only segments cannot navigate controls or write inputs")
+        }
+        if let steps = program.steps {
+            guard steps.allSatisfy({ [.waitFor, .assert, .screenshot, .readProperty].contains($0.kind) }) else {
+                throw AutomationContractError.invalidPlan("Observation-only segments cannot mutate direct UI steps")
+            }
+        }
+    }
     public var phase: Phase
     public var requiredCapabilities: [String]
     public var lifecycle: Lifecycle
@@ -126,11 +141,12 @@ public enum PlanValidator {
         guard plan.budget.attempts > 0, plan.budget.subjectOperations > 0, plan.budget.wallClockSeconds > 0,
               plan.budget.uiActions > 0, plan.budget.controllerCalls >= 0 else { throw AutomationContractError.invalidPlan("Invalid budget") }
         for segment in segments {
+            try segment.validateObservationOnly()
             guard (segment.kind == .siriText) == (segment.siriProgram != nil) else {
                 throw AutomationContractError.invalidPlan("Siri route requires its frozen recognised-text program")
             }
             if let program = segment.siriProgram { try program.validate(segment: segment, target: plan.target) }
-            guard segment.uiProgram == nil || (segment.kind == .ui && segment.hostProgram == nil),
+            guard segment.uiProgram == nil || (segment.usesUIControl && segment.hostProgram == nil),
                   segment.hostProgram == nil || ([.systemIntent, .systemQuery].contains(segment.kind) && segment.uiProgram == nil) else {
                 throw AutomationContractError.invalidPlan("Program does not match its route")
             }
@@ -151,8 +167,9 @@ public enum PlanValidator {
             if segment.hostProgram != nil, segment.lifecycle != .persistedStateAcrossSegments {
                 throw AutomationContractError.invalidPlan("Apple host requires persisted-state lifecycle")
             }
-            if segment.kind == .ui, segment.uiProgram != nil {
-                guard segment.effects.contains(.navigate), segment.lifecycle == .persistedStateAcrossSegments else {
+            if segment.usesUIControl, segment.uiProgram != nil {
+                guard segment.kind == .observeOnly && segment.lifecycle == .noActivation ||
+                    (segment.effects.contains(.navigate) && segment.lifecycle == .persistedStateAcrossSegments) else {
                     throw AutomationContractError.invalidPlan("UI activation needs approved navigation and persisted-state lifecycle")
                 }
                 if segment.uiProgram?.operations.contains(where: { $0.goal?.saveControl != nil }) == true,

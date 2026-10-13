@@ -31,7 +31,7 @@ final class AutomationInstalledUICampaignExecutorTests: XCTestCase, @unchecked S
     private func executor(_ root: URL, _ installed: AutomationInstalledUIApplication) throws -> AutomationInstalledUICampaignExecutor {
         let runner = try AutomationApplicationRunner(supportRoot: root.appendingPathComponent("Support"), developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"),
             simulatorInventory: { _, _ in XCTFail("Installed UI campaign reached simulator infrastructure"); throw AutomationContractError.invalidIdentity })
-        return .init(runner: runner, installed: installed, runtime: .init(bundleURL: root.appendingPathComponent("Runtime.app"), expectedTeamID: "TEAMID1234"), allowBootAndInstall: false)
+        return .init(runner: runner, installed: installed, allowBootAndInstall: false)
     }
     /// An attempt ID the runner rejects at its first identity check, so a forwarded case
     /// surfaces `.invalidIdentity` and never reaches simulator or device infrastructure.

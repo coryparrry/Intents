@@ -28,15 +28,15 @@ extension AppAutomationStore {
         case .reproduction:
             let preview = try await previewReproductionCommand()
             status = try await requestReproductionCommand(id: id, digest: preview.digest, nativeConfirmation: true)
-            detail = "App: \(preview.bundleID)\nDestination: \(preview.targetID)\nSaved attempt: \(preview.originalAttemptID)\nCase: \(preview.caseID), version \(preview.revision)\nRun five attempts with the frozen inputs, route and independent checks. The campaign is capped at 150 UI actions, 60 controller calls and 15 minutes." +
+            detail = "App: \(preview.bundleID)\nDestination: \(preview.targetID)\nSaved attempt: \(preview.originalAttemptID)\nCase: \(preview.caseID), version \(preview.revision)\nRun five attempts with the frozen inputs, route and independent checks. The campaign is capped at 150 UI actions and 15 minutes." +
                 (preview.installApproved ? " Intents may start this simulator and install the retained original app." : " No simulator installation is approved.") +
-                (preview.disposable ? " Approved fixture writes stay within the disposable test environment. Fresh-record cases first run two qualification attempts, capped separately at 60 UI actions, 24 controller calls and 20 minutes." : " Only observation and navigation are allowed.")
+                (preview.disposable ? " Approved fixture writes stay within the disposable test environment. Fresh-record cases first run two qualification attempts, capped separately at 60 UI actions and 20 minutes." : " Only observation and navigation are allowed.")
         case .comparison:
             let preview = try await previewComparisonCommand()
             status = try await requestComparisonCommand(id: id, digest: preview.digest, nativeConfirmation: true)
-            detail = "App: \(preview.bundleID)\nDestination: \(preview.targetID)\nSaved attempt: \(preview.originalAttemptID)\nOriginal build: \(preview.beforeProductDigest.prefix(12))\nFixed build: \(preview.afterProductDigest.prefix(12))\nRun 30 attempts per build with unchanged inputs, route and checks. Each build is capped at 900 UI actions, 360 controller calls and 90 minutes. Observed counts do not guarantee future reliability." +
+            detail = "App: \(preview.bundleID)\nDestination: \(preview.targetID)\nSaved attempt: \(preview.originalAttemptID)\nOriginal build: \(preview.beforeProductDigest.prefix(12))\nFixed build: \(preview.afterProductDigest.prefix(12))\nRun 30 attempts per build with unchanged inputs, route and checks. Each build is capped at 900 UI actions and 90 minutes. Observed counts do not guarantee future reliability." +
                 (preview.installApproved ? " Intents will install each retained build on this simulator." : " Intents will use the retained Mac app bundles.") +
-                (preview.disposable ? " Approved fixture writes stay within the disposable test environment; fresh-record cases also run two qualification attempts per build, capped separately at 60 UI actions, 24 controller calls and 20 minutes." : " Only observation and navigation are allowed.")
+                (preview.disposable ? " Approved fixture writes stay within the disposable test environment; fresh-record cases also run two qualification attempts per build, capped separately at 60 UI actions and 20 minutes." : " Only observation and navigation are allowed.")
         }
         guard status.state == "awaitingApproval", pendingCommandStatus?.requestID == id,
               pendingCommandStatus?.digest == status.digest else { throw AutomationContractError.conflictingOperation }
@@ -52,7 +52,10 @@ extension AppAutomationStore {
               pending.kind == expected, pending.state == "awaitingApproval" else { throw AutomationContractError.conflictingOperation }
         switch review.kind {
         case .run:
-            guard canRun, try previewCommand().digest == review.digest else {
+            let preview: AutomationNativeCommandPreview
+            do { preview = try previewCommand() }
+            catch { invalidatePendingCommand(); throw error }
+            guard canRun, preview.digest == review.digest else {
                 invalidatePendingCommand(); throw AutomationContractError.conflictingOperation
             }
             run()

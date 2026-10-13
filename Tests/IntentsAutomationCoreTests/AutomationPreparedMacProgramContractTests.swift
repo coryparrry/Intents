@@ -4,7 +4,7 @@ import XCTest
 
 extension AutomationPrivateMacAppleRouteDriverTests {
     func testPreparedMacReviewedPlanCannotDispatchWithoutItsCodecFamily() async throws {
-        let h = try await macFreshHarness()
+        let h = try await preparedMacSavedHarness()
         var capabilities = h.capabilities; capabilities.records.removeValue(forKey: "apple.codec.entity")
         XCTAssertNoThrow(try PlanValidator.validate(h.plan, approval: h.approval, capabilities: capabilities, purpose: .review))
         do {
@@ -19,7 +19,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
     }
 
     func testPreparedMacQueryMismatchStopsBeforeUIOrAppleDispatch() async throws {
-        let h = try await macFreshHarness()
+        let h = try await preparedMacSavedHarness()
         for index in 0..<5 {
             var prepared = h.prepared, plan = h.plan, approval = h.approval
             let queryIndex = try XCTUnwrap(plan.setup.firstIndex(where: { $0.kind == .systemQuery }))
@@ -47,7 +47,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
     }
 
     func testPreparedMacProgramMismatchStopsBeforeUIOrAppleDispatch() async throws {
-        let h = try await macFreshHarness()
+        let h = try await preparedMacSavedHarness()
         for index in 0..<5 {
             var prepared = h.prepared, plan = h.plan, approval = h.approval
             switch index {

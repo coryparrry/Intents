@@ -55,7 +55,6 @@ struct AutomationNativeFixComparisonRequest: Sendable {
     var proposal: AutomationNativeUIFixComparisonProposal
     var before: AutomationApplicationSubject
     var after: AutomationApplicationSubject
-    var runtime: AutomationUIRuntime?
     var digest: String
     var originalAttemptID: String
 }

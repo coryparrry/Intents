@@ -21,7 +21,6 @@ import XCTest
         try PropertyListSerialization.data(fromPropertyList: ["objects": objects], format: .xml, options: 0).write(to: project.appendingPathComponent("project.pbxproj"))
         let session = Session()
         let model = AppAutomationStore(supportDirectory: root.appendingPathComponent("support"),
-            uiRuntimeProvider: { XCTFail("Draft must not request a runtime"); throw AutomationContractError.invalidIdentity },
             nativeMacTargetReader: { session.read() }, preparationExecutor: { candidate, approval, directory in
                 var app = AppIdentity(logicalID: candidate.id, bundleID: "test.Subject", platform: "macos", productDigest: String(repeating: "a", count: 64))
                 app.productDigestVersion = 2; app.configuration = approval.configuration
@@ -40,6 +39,7 @@ import XCTest
         await model.prepareAndWait()
         model.workflowRoute = "fresh"; model.actionID = "Complete"
         model.uiInstruction = "Create and save a task using approvedText"; model.uiEndpoint = "Tasks"
+        model.freshCreateControl = "Add"; model.freshNameEntryControl = "Title"; model.freshSaveControl = "Save"; model.freshContextEntryControl = "Owner"
         model.freshNamePrefix = "Invoice"; model.freshNameProperty = "title"; model.freshStateProperty = "completed"
         model.freshInitialState = "false"; model.freshExpectedState = "true"
         model.freshProtectOtherRecord = true; model.freshContextProperty = "owner"
@@ -179,17 +179,17 @@ import XCTest
     func testPreparedMacEvidenceMatcherSupportsTypedAndLegacyCasesWithExactArtifacts() async throws {
         let (model, _) = try await fixture(); let prepared = try XCTUnwrap(model.prepared)
         let review = try model.reviewPreparedMacFreshWorkflow()
-        XCTAssertTrue(AutomationNativeUIRuntime.preparedEvidenceMatches(plan: review.plan, prepared: prepared))
+        XCTAssertTrue(AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: review.plan, prepared: prepared))
         for mode in 0..<3 {
             var changed = prepared
             if mode == 0 { changed.host.hostProductDigest = String(repeating: "f", count: 64) }
             if mode == 1 { changed.host.xctestrunDigest = String(repeating: "f", count: 64) }
             if mode == 2 { changed.catalog.gaps.append("changed") }
-            XCTAssertFalse(AutomationNativeUIRuntime.preparedEvidenceMatches(plan: review.plan, prepared: changed))
+            XCTAssertFalse(AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: review.plan, prepared: changed))
         }
         var legacy = review.plan; legacy.preparedMacBuildArtifacts = nil
-        legacy.provenance.merge(try AutomationNativeUIRuntime.preparedProvenance(prepared)) { _, value in value }
-        XCTAssertTrue(AutomationNativeUIRuntime.preparedEvidenceMatches(plan: legacy, prepared: prepared))
+        legacy.provenance.merge(try AutomationNativePreparedEvidence.preparedProvenance(prepared)) { _, value in value }
+        XCTAssertTrue(AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: legacy, prepared: prepared))
     }
 
 }

@@ -28,8 +28,11 @@ extension AppAutomationStore {
             instruction: uiInstruction, endpoint: uiEndpoint, namePrefix: freshNamePrefix, nameProperty: freshNameProperty,
             stateProperty: freshStateProperty, initialState: freshInitialState == "true", expectedState: freshExpectedState == "true",
             approval: approval, capabilities: capabilities, localeIdentifier: Locale.current.identifier, context: freshContext, purpose: .nativeMacDraft,
-            saveControl: freshSaveControl.isEmpty ? nil : .init(.label, freshSaveControl))
-        try AutomationNativeUIRuntime.attachPreparedEvidence(to: &plan, prepared: prepared)
+            saveControl: try AutomationNativeWorkflowSteps.locator(freshSaveControl),
+            createControl: try AutomationNativeWorkflowSteps.optionalLocator(freshCreateControl),
+            nameEntry: try AutomationNativeWorkflowSteps.locator(freshNameEntryControl),
+            contextEntry: try AutomationNativeWorkflowSteps.optionalLocator(freshContextEntryControl))
+        try AutomationNativePreparedEvidence.attachPreparedEvidence(to: &plan, prepared: prepared)
         plan.id = "fresh." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
         let digest = try AutomationFrozenCase.planDigest(plan); approval.approvedCaseDigest = digest
         guard try nativeMacTargetReader() == target else { throw AutomationContractError.conflictingOperation }
