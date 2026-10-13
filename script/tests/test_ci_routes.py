@@ -25,6 +25,28 @@ def selections(plan):
 
 
 class CoverageTests(unittest.TestCase):
+    def test_automation_execution_contract_changes_select_simulator_e2e(self):
+        for path in (
+            "Sources/IntentsAutomationCore/AutomationApplicationRunner.swift",
+            "Integration/AutomationHost/IntentDefinitionsHost.swift",
+            "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift",
+            "FoundationEvals/FoundationEvals/Stores/AppAutomationStore+Run.swift",
+            "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIRuntime.swift",
+            "Tools/IntentsAutomationApplicationProbe/main.swift",
+            "Sources/IntentsAutomationTool/AutomationCLI.swift",
+            "examples/AutomationFixture/App/EchoIntents.swift",
+            "script/automation_e2e.py", "script/tests/test_automation_e2e.py",
+            "Package.swift", ".github/workflows/ci.yml",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(routes.coverage([path])["automation_e2e"])
+
+    def test_automation_e2e_routes_conservatively_when_history_or_path_is_unknown(self):
+        self.assertTrue(routes.coverage(None)["automation_e2e"])
+        self.assertTrue(routes.coverage(["unknown-new-tool.swift"])["automation_e2e"])
+        self.assertFalse(routes.coverage(["docs/wiki/App-automation.md"])["automation_e2e"])
+        self.assertFalse(routes.coverage([routes.APP + "Services/MetricScorer.swift"])["automation_e2e"])
+
     def test_homebrew_updater_and_workflow_select_their_regressions(self):
         for path in ("script/update_homebrew.py", ".github/workflows/update-homebrew.yml"):
             with self.subTest(path=path):
@@ -471,6 +493,7 @@ class GitEventTests(unittest.TestCase):
                 result = self.run_event(name, event)
                 self.assertTrue(result["native"])
                 self.assertTrue(result["ui"])
+                self.assertTrue(result["automation_e2e"])
                 self.assertEqual(result["swift_suites"], ["*"])
                 self.assertEqual(
                     result["python_tests"], sorted(routes.python_test_inventory())

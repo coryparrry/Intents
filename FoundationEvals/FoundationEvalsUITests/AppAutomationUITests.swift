@@ -1,5 +1,4 @@
 import XCTest
-import CryptoKit
 import Darwin
 
 final class AppAutomationUITests: XCTestCase {
@@ -215,52 +214,32 @@ final class AppAutomationUITests: XCTestCase {
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
 
-    /// Opt-in integration test: a caller supplies an explicitly reviewed private
-    /// fixture and exact owned simulator. Ordinary UI suites skip this test.
+    /// Opt-in integration test of the committed fixture on an exact owned simulator.
     @MainActor
     func testPreparedPureEchoShowsUnassessedNativeEvidence() throws {
-        struct Profile: Decodable {
-            let sourceProject: String
-            let sourceDigest: String
-            let simulatorID: String
-            let simulatorLabel: String
-            let developerDirectory: String?
-        }
-        let profileURL = UITestStorage.root.appendingPathComponent("automation-native-echo-approved-profile.json")
-        guard FileManager.default.fileExists(atPath: profileURL.path) else {
-            throw XCTSkip("Requires an explicitly approved private echo fixture profile")
-        }
+        executionTimeAllowance = 600
+        let fixture = try AutomationFixtureUITestSupport(requiresSimulator: true)
+        let simulatorID = try XCTUnwrap(fixture.simulatorID)
         continueAfterFailure = false
-        let profileData = try Data(contentsOf: profileURL)
-        XCTAssertLessThanOrEqual(profileData.count, 16_384)
-        let profile = try JSONDecoder().decode(Profile.self, from: profileData)
-        let project = URL(fileURLWithPath: profile.sourceProject).resolvingSymlinksInPath()
-        XCTAssertTrue(project.path.hasPrefix(UITestStorage.root.resolvingSymlinksInPath().path + "/"))
-        XCTAssertEqual(project.lastPathComponent, "DuplicateTasks.xcodeproj")
-        XCTAssertNotNil(UUID(uuidString: profile.simulatorID))
-        let source = try Data(contentsOf: project.deletingLastPathComponent().appendingPathComponent("App/TaskIntents.swift"))
-        XCTAssertEqual(SHA256.hash(data: source).map { String(format: "%02x", $0) }.joined(), profile.sourceDigest)
         let storage = try UITestStorage.makeDirectory(prefix: "native-echo-automation")
         print("NATIVE_ECHO_STORAGE=\(storage.path)")
         // Retain the real reports and screenshots, including on test failure.
         let app = XCUIApplication()
-        if let developerDirectory = profile.developerDirectory {
-            app.launchEnvironment["DEVELOPER_DIR"] = developerDirectory
-        }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
-                                "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
-        app.launchArguments += ["--automation-select-path", project.path]
+        fixture.configure(app, storage: storage)
         app.launch(); defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)
         waitForAutomationSelection(in: app)
-        selectAutomationMenu(app.popUpButtons["automation.preparation.simulator"], item: profile.simulatorID, timeout: 30)
+        selectAutomationMenu(app.popUpButtons["App"], item: "AutomationFixture")
+        selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "simulator")
+        selectAutomationMenu(app.popUpButtons["automation.preparation.simulator"], item: simulatorID, timeout: 30)
         selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "system")
         let prepare = app.buttons["Prepare app…"]
         XCTAssertTrue(prepare.isEnabled); prepare.click()
-        app.buttons["Build private copy"].click()
+        let build = app.buttons["Build private copy"]
+        XCTAssertTrue(build.waitForExistence(timeout: 5)); build.click()
         let action = app.popUpButtons["automation.action"]
         XCTAssertTrue(action.waitForExistence(timeout: 300), app.debugDescription)
-        selectAutomationMenu(action, item: "Qualification echo IntegerArray")
+        selectAutomationMenu(action, item: "Echo integer array")
         let input = app.textFields["value (JSON list of whole numbers)"]
         XCTAssertTrue(input.waitForExistence(timeout: 5)); input.click(); input.typeText("[1]")
         selectAutomationMenu(app.popUpButtons["Effects of this action"], item: "Observation and navigation")
@@ -283,8 +262,8 @@ final class AppAutomationUITests: XCTestCase {
         XCTAssertEqual(result["subjectCompleted"] as? Bool, true)
         let receipt = try XCTUnwrap((report["receipts"] as? [[String: Any]])?.first)
         XCTAssertEqual((report["receipts"] as? [[String: Any]])?.count, 1)
-        XCTAssertEqual((receipt["target"] as? [String: Any])?["id"] as? String, profile.simulatorID)
-        XCTAssertEqual((receipt["app"] as? [String: Any])?["bundleID"] as? String, "com.coryparry.IntentsAutomation.DuplicateTasks")
+        XCTAssertEqual((receipt["target"] as? [String: Any])?["id"] as? String, simulatorID)
+        XCTAssertEqual((receipt["app"] as? [String: Any])?["bundleID"] as? String, AutomationFixtureUITestSupport.iOSBundleID)
         let outputs = try XCTUnwrap(receipt["verifiedOutputs"] as? [String: Any])
         XCTAssertEqual(outputs.count, 1)
         let output = try XCTUnwrap(outputs.values.first as? [String: Any])
@@ -309,6 +288,7 @@ final class AppAutomationUITests: XCTestCase {
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = "Real prepared echo with unassessed native evidence"; attachment.lifetime = .keepAlways; add(attachment)
         try screenshot.pngRepresentation.write(to: storage.appendingPathComponent("native-echo-result.png"))
+        try fixture.assertSourceUnchanged()
     }
     @MainActor
     func testInstalledAppWorkflowKeepsSeparatePropertyCheckAndNeedsApproval() throws {

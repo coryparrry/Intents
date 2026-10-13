@@ -1,52 +1,23 @@
 import XCTest
-import CryptoKit
 
 final class MacPreparationUITests: XCTestCase {
-    /// Opt-in: builds only an explicitly supplied authored fixture, then saves an unexecuted draft.
+    /// Opt-in: prepares the committed Mac fixture, then saves an unexecuted draft.
     @MainActor
     func testSelectedToolchainPreparesMacCopyAndSavesReviewedDraft() throws {
-        struct Profile: Decodable {
-            let sourceProject: String
-            let sourceDigest: String
-            let projectDigest: String
-            let developerDirectory: String
-            let metadataGeneratorVersion: String
-        }
-        let profileURL = UITestStorage.root.appendingPathComponent("automation-native-mac-approved-profile.json")
-        guard FileManager.default.fileExists(atPath: profileURL.path) else {
-            throw XCTSkip("Requires an explicitly approved private Mac fixture profile")
-        }
+        executionTimeAllowance = 600
+        let fixture = try AutomationFixtureUITestSupport(requiresSimulator: false)
         continueAfterFailure = false
-        let profileData = try Data(contentsOf: profileURL)
-        XCTAssertLessThanOrEqual(profileData.count, 16_384)
-        let profile = try JSONDecoder().decode(Profile.self, from: profileData)
-        let project = URL(fileURLWithPath: profile.sourceProject).resolvingSymlinksInPath()
-        XCTAssertTrue(project.path.hasPrefix(UITestStorage.root.resolvingSymlinksInPath().path + "/"), project.path)
-        XCTAssertEqual(project.lastPathComponent, "Subject.xcodeproj")
-        let source = project.deletingLastPathComponent().appendingPathComponent("Subject.swift")
-        let projectFile = project.appendingPathComponent("project.pbxproj")
-        XCTAssertEqual(try digest(source), profile.sourceDigest)
-        XCTAssertEqual(try digest(projectFile), profile.projectDigest)
         let storage = try UITestStorage.makeDirectory(prefix: "native-mac-preparation")
         print("NATIVE_MAC_PREPARATION_STORAGE=\(storage.path)")
         // Keep build provenance, saved draft and screenshots for inspection.
         let app = XCUIApplication()
-        app.launchEnvironment["DEVELOPER_DIR"] = profile.developerDirectory
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
-                                "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
+        fixture.configure(app, storage: storage)
         app.launch(); defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)
-        let choose = app.buttons["Choose app…"]
-        XCTAssertTrue(choose.waitForExistence(timeout: 15)); choose.click()
-        app.typeKey("g", modifierFlags: [.command, .shift])
-        let path = app.textFields.firstMatch
-        XCTAssertTrue(path.waitForExistence(timeout: 5)); path.typeText(project.path)
-        app.typeKey(.return, modifierFlags: [])
-        let panelChoose = app.buttons["Choose app"]
-        XCTAssertTrue(panelChoose.waitForExistence(timeout: 5)); panelChoose.click()
-        let destination = app.popUpButtons["Prepare for"]
-        XCTAssertTrue(destination.waitForExistence(timeout: 10), app.debugDescription); destination.click()
-        app.menuItems["This Mac"].click()
+        waitForAutomationSelection(in: app)
+        selectAutomationMenu(app.popUpButtons["App"], item: "AutomationFixtureMac")
+        selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "macOS")
+        selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "ui")
         let prepare = app.buttons["Prepare app…"]
         XCTAssertTrue(prepare.isEnabled); prepare.click()
         let build = app.buttons["Build private copy"]
@@ -62,17 +33,25 @@ final class MacPreparationUITests: XCTestCase {
         XCTAssertEqual(preparations.count, 1)
         let prepared = try object(try XCTUnwrap(preparations.first).appendingPathComponent("prepared-application.json"))
         let host = try XCTUnwrap(prepared["host"] as? [String: Any])
+        let identity = try XCTUnwrap(host["app"] as? [String: Any])
+        XCTAssertEqual(identity["bundleID"] as? String, AutomationFixtureUITestSupport.macBundleID)
+        XCTAssertEqual(identity["platform"] as? String, "macos")
+        XCTAssertEqual((host["target"] as? [String: Any])?["kind"] as? String, "nativeMac")
         let product = URL(fileURLWithPath: try XCTUnwrap(host["subjectProductPath"] as? String))
         let metadata = try object(product.appendingPathComponent("Contents/Resources/Metadata.appintents/extract.actionsdata"))
-        let generator = try XCTUnwrap(metadata["generator"] as? [String: Any])
-        XCTAssertEqual(generator["version"] as? String, profile.metadataGeneratorVersion)
+        XCTAssertEqual(metadata["version"] as? Int, 1)
+        let catalog = try XCTUnwrap(prepared["catalog"] as? [String: Any])
+        let actions = try XCTUnwrap(catalog["systemActions"] as? [[String: Any]])
+        XCTAssertTrue(actions.contains { ($0["typeName"] as? String)?.hasSuffix("EchoIntegerArrayIntent") == true })
+        XCTAssertTrue(actions.contains { ($0["typeName"] as? String)?.hasSuffix("CompleteTaskIntent") == true })
 
         let instruction = app.textFields["What should the app do?"]
-        instruction.click(); instruction.typeText("Show the input adapter fixture")
-        let endpoint = app.textFields["Visible label at the destination"]
-        endpoint.click(); endpoint.typeText("Intents input adapter fixture")
-        app.popUpButtons["Effects of this workflow"].click()
-        app.menuItems["Observation and navigation"].click()
+        XCTAssertTrue(instruction.waitForExistence(timeout: 5))
+        instruction.click(); instruction.typeText("Show the task list")
+        let endpoint = app.textFields["Destination control"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
+        endpoint.click(); endpoint.typeText("Automation Fixture")
+        selectAutomationMenu(app.popUpButtons["Effects of this workflow"], item: "Observation and navigation")
         app.checkBoxes["I confirm this workflow stays within these effects"].click()
         let review = app.buttons["Review Mac workflow…"]
         XCTAssertTrue(review.isEnabled); review.click()
@@ -84,12 +63,21 @@ final class MacPreparationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Mac workflow draft saved. It has no execution result or approval."].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Run workflow…"].exists)
         try capture(app, storage: storage, name: "saved-draft")
-        XCTAssertEqual(try digest(source), profile.sourceDigest)
-        XCTAssertEqual(try digest(projectFile), profile.projectDigest)
+        let cases = automation.appendingPathComponent("Cases")
+        let definitions = try jsonFiles(in: cases.appendingPathComponent("Definitions"))
+        XCTAssertEqual(definitions.count, 1)
+        let draft = try object(XCTUnwrap(definitions.first))
+        XCTAssertEqual(draft["schemaVersion"] as? Int, 1)
+        let plan = try XCTUnwrap(draft["plan"] as? [String: Any])
+        XCTAssertEqual(plan["schemaVersion"] as? Int, 3)
+        XCTAssertEqual((plan["app"] as? [String: Any])?["bundleID"] as? String, AutomationFixtureUITestSupport.macBundleID)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cases.appendingPathComponent("Attempts").path))
+        XCTAssertTrue(try jsonFiles(in: automation).allSatisfy { $0.lastPathComponent != "report.json" })
+        try fixture.assertSourceUnchanged()
     }
-
-    private func digest(_ url: URL) throws -> String {
-        SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+    private func jsonFiles(in directory: URL) throws -> [URL] {
+        let files = try XCTUnwrap(FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil))
+        return files.compactMap { $0 as? URL }.filter { $0.pathExtension == "json" }
     }
     private func object(_ url: URL) throws -> [String: Any] {
         try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])

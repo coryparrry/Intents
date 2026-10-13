@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct DuplicateTasksApp: App {
+struct AutomationFixtureApp: App {
     var body: some Scene { WindowGroup { TaskListView() } }
 }
 struct TaskListView: View {
@@ -29,11 +29,16 @@ struct TaskListView: View {
                 Section("Tasks") {
                     ForEach(repository.document.records) { record in
                         let label = "\(record.owner) · \(record.title) · \(record.completed ? "Complete" : "Open")"
-                        Text(label).accessibilityLabel(label).accessibilityIdentifier("task.record." + record.id)
+                        HStack {
+                            Text(label).accessibilityLabel(label).accessibilityIdentifier("task.record." + record.id)
+                            Spacer()
+                            Button("Complete") { repository.completeFromUI(id: record.id) }
+                                .accessibilityIdentifier("task.complete").disabled(record.completed)
+                        }
                     }
                 }
                 if let error = repository.error { Section { Text(error).foregroundStyle(.red) } }
-            }.navigationTitle("Duplicate Tasks")
+            }.navigationTitle("Automation Fixture")
         }
         .task { repository.reload() }
         .onChange(of: scenePhase) { if scenePhase == .active { repository.reload() } }

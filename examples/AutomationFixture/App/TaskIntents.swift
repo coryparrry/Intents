@@ -33,8 +33,18 @@ struct CompleteTaskIntent: AppIntent {
     static let title: LocalizedStringResource = "Complete task"
     static let openAppWhenRun = false
     @Parameter(title: "Task") var task: TaskEntity
+    static var parameterSummary: some ParameterSummary { Summary("Complete \(\.$task)") }
     func perform() async throws -> some IntentResult & ProvidesDialog {
         try await TaskRepository.shared.complete(id: task.id)
         return .result(dialog: "Task marked complete.")
+    }
+}
+
+
+struct AutomationFixtureShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: CompleteTaskIntent(),
+                    phrases: ["Complete \(\.$task) in \(.applicationName)"],
+                    shortTitle: "Complete task", systemImageName: "checkmark.circle")
     }
 }

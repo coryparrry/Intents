@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "DE641280100333D2F09AF8A2"
-               BuildableName = "DuplicateTasks.app"
-               BlueprintName = "DuplicateTasks"
-               ReferencedContainer = "container:DuplicateTasks.xcodeproj">
+               BlueprintIdentifier = "21CF23C9F9FB21AED37466BA"
+               BuildableName = "AutomationFixture.app"
+               BlueprintName = "AutomationFixture"
+               ReferencedContainer = "container:AutomationFixture.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -32,10 +32,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "DE641280100333D2F09AF8A2"
-            BuildableName = "DuplicateTasks.app"
-            BlueprintName = "DuplicateTasks"
-            ReferencedContainer = "container:DuplicateTasks.xcodeproj">
+            BlueprintIdentifier = "21CF23C9F9FB21AED37466BA"
+            BuildableName = "AutomationFixture.app"
+            BlueprintName = "AutomationFixture"
+            ReferencedContainer = "container:AutomationFixture.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -55,10 +55,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "DE641280100333D2F09AF8A2"
-            BuildableName = "DuplicateTasks.app"
-            BlueprintName = "DuplicateTasks"
-            ReferencedContainer = "container:DuplicateTasks.xcodeproj">
+            BlueprintIdentifier = "21CF23C9F9FB21AED37466BA"
+            BuildableName = "AutomationFixture.app"
+            BlueprintName = "AutomationFixture"
+            ReferencedContainer = "container:AutomationFixture.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -72,10 +72,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "DE641280100333D2F09AF8A2"
-            BuildableName = "DuplicateTasks.app"
-            BlueprintName = "DuplicateTasks"
-            ReferencedContainer = "container:DuplicateTasks.xcodeproj">
+            BlueprintIdentifier = "21CF23C9F9FB21AED37466BA"
+            BuildableName = "AutomationFixture.app"
+            BlueprintName = "AutomationFixture"
+            ReferencedContainer = "container:AutomationFixture.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

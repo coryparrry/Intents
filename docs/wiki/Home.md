@@ -16,6 +16,7 @@ Intents is a macOS app for testing Apple Foundation Models and features in your 
 |---|---|
 | Change the model, scoring, tools, structured output, or performance settings | [Models, scoring, and tools](Models-scoring-and-tools.md) |
 | Run checks on a feature in my iPhone, iPad, or Mac app | [Connect an app feature runner](App-feature-runners.md) |
+| Run app UI and App Intent plans from the command line | [App automation](App-automation.md) |
 | Run an App Intent or Siri check | [Use Intent Lab](Intent-Lab.md) |
 | Review saved outputs, find recurring failures, or check a judge | [Review and judge checks](Review-and-judge-checks.md) |
 | Run larger jobs or review original production outputs | [Production batches](Production-batches.md) |

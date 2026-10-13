@@ -1,5 +1,5 @@
 import XCTest
-@testable import DuplicateTasksModel
+@testable import AutomationFixtureModel
 
 final class TaskDiskStoreTests: XCTestCase {
     private var root: URL!

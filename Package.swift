@@ -72,6 +72,8 @@ let package = Package(
         .library(name: "IntentLabCoreTesting", targets: ["IntentLabCoreTesting"]),
         .executable(name: "intents-evidence", targets: ["IntentsEvidenceCLI"]),
         .executable(name: "intents-evals", targets: ["ProductionEvalsCLI"]),
+        .executable(name: "intents-automation", targets: ["IntentsAutomationApplicationProbe"]),
+        .executable(name: "IntentsAutomationApplicationProbe", targets: ["IntentsAutomationApplicationProbe"]),
     ],
     dependencies: [.package(path: "Packages/ProductionEvals")],
     targets: [
@@ -83,7 +85,9 @@ let package = Package(
         .testTarget(name: "IntentsAutomationHostContractTests", dependencies: ["IntentsAutomationHostContracts", "IntentsAutomationCore"], path: "Tests/IntentsAutomationHostContractTests"),
         .executableTarget(name: "IntentsAutomationOwnershipProbe", dependencies: ["IntentsAutomationCore"], path: "Tools/IntentsAutomationOwnershipProbe"),
         .executableTarget(name: "IntentsAutomationPreparationProbe", dependencies: ["IntentsAutomationCore"], path: "Tools/IntentsAutomationPreparationProbe"),
-        .executableTarget(name: "IntentsAutomationApplicationProbe", dependencies: ["IntentsAutomationCore"], path: "Tools/IntentsAutomationApplicationProbe"),
+        .target(name: "IntentsAutomationCLIResources", path: "Integration", exclude: ["AppIntentsTesting"], sources: ["AutomationCLIResources.swift"], resources: [.copy("AutomationHost")]),
+        .executableTarget(name: "IntentsAutomationApplicationProbe", dependencies: ["IntentsAutomationCore", "IntentsAutomationCLIResources"], path: "Tools/IntentsAutomationApplicationProbe"),
+        .testTarget(name: "IntentsAutomationCLITests", dependencies: ["IntentsAutomationApplicationProbe", "IntentsAutomationCore", "IntentsAutomationCLIResources"], path: "Tests/IntentsAutomationCLITests"),
         .executableTarget(name: "IntentsAutomationControllerProbe", dependencies: ["IntentsAutomationCore"], path: "Tools/IntentsAutomationControllerProbe"),
         .testTarget(name: "IntentsAutomationCoreTests", dependencies: ["IntentsAutomationCore", "IntentsAutomationOwnershipProbe", "IntentsAutomationControllerProbe"], path: "Tests/IntentsAutomationCoreTests", resources: [.copy("Fixtures")]),
         // Exercise the native confirmation store without rebuilding the full app.

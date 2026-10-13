@@ -265,7 +265,7 @@ Acceptance: CI green on `main`. A test cancels an unresolved attempt, resets it 
 
 ### Phase 1 — Make typed App Intent testing work on any supported Mac
 
-**Execution update, 2026-10-13:** PR 135 had already merged as `f03d36497` before this request. Phase 1 is implemented in separate [PR 136](https://github.com/coryparrry/Intents/pull/136) from main, with the item 6 failing regression first and independent reviews complete. Local CLI mixed-workflow acceptance passes with Xcode 27.0/iOS 27.0 and Xcode 27.2 beta 2/iOS 27.2 using the app’s capability resolver, with no capabilities supplied. Core/native regressions and initial hosted app UI checks pass; final checks and the caption screenshot recheck are recorded with the PR. This change is not merged or released. See [Phase 1 verification](Verification/Recovery-Phase1-20261013/README.md). The original amended instructions below record the intended merge order.
+**Execution update, 2026-10-13:** Phase 1 merged in [PR 136](https://github.com/coryparrry/Intents/pull/136) as `f205bc9ba`, after every hosted check passed. PR 135 had already merged before this work. The item 6 regression failed first; local CLI mixed workflows then passed on iOS simulators with Xcode 27.0/iOS 27.0 and Xcode 27.2 beta 2/iOS 27.2 through the app's capability resolver, with no supplied capabilities. Review repaired retained-host compatibility, diagnostic recovery and latest-preparation restoration; 1,087 core tests and 170 native XCTest tests plus two Swift Testing checks passed locally. No iPhone, Mac subject or Intent Lab run was performed. This change is merged, not released. See [Phase 1 verification](Verification/Recovery-Phase1-20261013/README.md). The original amended instructions below record the intended merge order.
 
 *Amended 2026-10-13.* Status: **not started, and now required before PR 135 merges.**
 - PR 135 adds `UIHostPlan.swift` and `UIStepTests.swift` to the host templates, so the prepared host's template digest becomes `815a51c0…`.
@@ -336,6 +336,8 @@ Acceptance:
 - This works from an Xcode **Debug** build of Intents with no Team ID.
 
 ### Phase 3 — Headless CLI and CI end-to-end job (the source of truth for agents)
+
+**Implementation update, 2026-10-13:** Phase 3 is a separate PR from main after PR 136. It supplies `intents-automation`, the all-codec committed fixture, a simulator e2e job, the live Mac input-conversion diagnostic CI job required by Phase 1, and opt-in UI tests without private profiles. Local fixture builds, six model tests, 14 CLI regressions and 53 Python checks pass; the fixed CLI reloads a real retained catalog. Acceptance remains the current PR head's hosted simulator and diagnostic results. This phase is not merged or released, and release PR 130 remains held. See [Phase 3 verification](Verification/Recovery-Phase3-20261013/README.md).
 
 1. Add a committed fixture app, `examples/AutomationFixture`, generated with XcodeGen like the other examples. It needs:
    - echo intents for every codec family;

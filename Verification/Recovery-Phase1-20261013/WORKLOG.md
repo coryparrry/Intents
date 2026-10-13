@@ -25,3 +25,4 @@
 
 - Conditional merge review of PR 136 found three real issues: older intact host inventories rejected, diagnostic ownership hidden after unsuccessful cleanup, and corrupt latest preparation restoring an older app. Fixed all three with core/native regressions; independent scoped reviews found no material blockers. The device/Mac SDK major/minor check is the amended plan requirement and remains. Release PR 130 is held, with auto-merge disabled.
 - Conditional-merge recheck: core direct XCTest passed 1,087 tests (33 opt-in skips); native direct XCTest passed 170 tests plus two Swift Testing checks, with zero failures. Updated PR checks are required before merge.
+- PR 136 merged as f205bc9ba after all checks passed. Three reviewed bugs were repaired; the remaining SDK thread matched the amended plan and was resolved for the repository conversation gate. Release PR 130 remains open with auto-merge disabled. No release occurred.

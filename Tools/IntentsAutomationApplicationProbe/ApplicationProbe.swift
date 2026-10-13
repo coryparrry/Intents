@@ -60,12 +60,15 @@ import IntentsAutomationCore
     }
     static func main() async {
         do {
+            if !["--profile", "--plan-profile"].contains(CommandLine.arguments.dropFirst().first ?? "") {
+                let succeeded = try await AutomationCLI.execute(Array(CommandLine.arguments.dropFirst()))
+                if !succeeded { Foundation.exit(1) }
+                return
+            }
             guard CommandLine.arguments.count == 3, ["--profile", "--plan-profile"].contains(CommandLine.arguments[1]) else { throw AutomationContractError.invalidIdentity }
             let planningOnly = CommandLine.arguments[1] == "--plan-profile"
             let bytes = try read(CommandLine.arguments[2], maximumBytes: 1_048_576)
-            if let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any], object["capabilities"] != nil {
-                throw AutomationContractError.missingEvidence("Remove capabilities from the profile; the runner resolves them from the prepared app")
-            }
+            try AutomationCLI.rejectCapabilityRecords(bytes)
             let profile = try JSONDecoder().decode(Profile.self, from: bytes)
             let prepared = try JSONDecoder().decode(AutomationPreparedApplication.self,
                 from: read(profile.preparedPath, maximumBytes: 16 * 1024 * 1024))
@@ -181,7 +184,7 @@ import IntentsAutomationCore
                 }
             }
         } catch {
-            try? FileHandle.standardError.write(contentsOf: Data("Application execution failed: \(error)\n".utf8))
+            AutomationCLI.writeError(error)
             Foundation.exit(1)
         }
     }

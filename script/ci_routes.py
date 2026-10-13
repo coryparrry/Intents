@@ -101,6 +101,7 @@ PYTHON_DEPENDENCIES = {
     "script/release.sh": RELEASE_VALIDATION | {"script.tests.test_automation_release_pipeline"},
     "script/verify_installer.sh": RELEASE_VALIDATION,
     "script/ci_core_scheme.py": {"script.tests.test_ci_core_scheme"},
+    "script/automation_e2e.py": {"script.tests.test_automation_e2e"},
     "release-please-config.json": {
         "script.tests.test_release_notes",
         "script.tests.test_release_pr",
@@ -155,6 +156,7 @@ def full_coverage(reason, root=ROOT):
     return {
         "native": True,
         "ui": True,
+        "automation_e2e": True,
         "swift_suites": ["*"],
         "python_tests": sorted(python_test_inventory(root)),
         "macos_tests": sorted(MACOS_TESTS),
@@ -168,9 +170,16 @@ def coverage(paths, root=ROOT):
             "Full coverage: unsupported event, malformed payload, or unavailable Git history.",
             root,
         )
-    native = ui = False
+    native = ui = automation_e2e = False
     swift, python, macos, reasons = set(), set(), set(), set()
     for path in paths:
+        automation_e2e |= path.startswith((
+            "Sources/IntentsAutomationCore/", "Sources/IntentsAutomationTool/",
+            "Integration/AutomationHost/", "examples/AutomationFixture/",
+            "Tools/IntentsAutomationApplicationProbe/",
+            "FoundationEvals/FoundationEvals/Stores/AppAutomation",
+            "FoundationEvals/FoundationEvals/Stores/AutomationNative",
+        )) or path in {"script/automation_e2e.py", "script/tests/test_automation_e2e.py"}
         if path in FULL_COVERAGE_PATHS:
             return full_coverage(
                 f"Full coverage: {path} changes CI, dependencies, or the release candidate.",
@@ -259,6 +268,7 @@ def coverage(paths, root=ROOT):
     return {
         "native": native,
         "ui": ui,
+        "automation_e2e": automation_e2e,
         "swift_suites": sorted(swift),
         "python_tests": sorted(python),
         "macos_tests": sorted(macos),
@@ -313,7 +323,7 @@ def main():
         event = None
     paths = changed_paths(os.environ["GITHUB_EVENT_NAME"], event, Path.cwd())
     plan = coverage(paths)
-    outputs = {key: str(plan[key]).lower() for key in ("native", "ui")}
+    outputs = {key: str(plan[key]).lower() for key in ("native", "ui", "automation_e2e")}
     outputs["regression"] = str(
         bool(plan["swift_suites"] or plan["macos_tests"])
     ).lower()

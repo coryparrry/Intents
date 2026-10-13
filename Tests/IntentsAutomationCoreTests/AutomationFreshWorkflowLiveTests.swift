@@ -17,7 +17,7 @@ final class AutomationFreshWorkflowLiveTests: XCTestCase {
         }
         let profile = try JSONDecoder().decode(Profile.self, from: AutomationReadOnlyFile.read(URL(fileURLWithPath: profilePath), maximumBytes: 16_384))
         let project = try AutomationPath.canonical(URL(fileURLWithPath: profile.sourceProject))
-        guard project.path.hasPrefix("/private/tmp/foundation-evals-ui-tests/"), project.lastPathComponent == "DuplicateTasks.xcodeproj",
+        guard project.path.hasPrefix("/private/tmp/foundation-evals-ui-tests/"), project.lastPathComponent == "AutomationFixture.xcodeproj",
               UUID(uuidString: profile.simulatorID) != nil else { throw AutomationContractError.invalidIdentity }
         let source = project.deletingLastPathComponent().appendingPathComponent("App/TaskIntents.swift")
         let before = AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(source, maximumBytes: 4_194_304))
@@ -28,7 +28,7 @@ final class AutomationFreshWorkflowLiveTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         print("INDEPENDENT_FRESH_ROOT=\(root.path)")
         let intake = try AutomationApplicationIntake.assess(project)
-        let candidate = try XCTUnwrap(intake.candidates.first { $0.kind == .sourceTarget && $0.name == "DuplicateTasks" })
+        let candidate = try XCTUnwrap(intake.candidates.first { $0.kind == .sourceTarget && $0.name == "AutomationFixture" })
         let target = TargetIdentity(id: profile.simulatorID, kind: .simulator)
         let build = AutomationBuildApproval(sourceRoot: project.deletingLastPathComponent().path,
             candidateID: candidate.id, configuration: "Debug", target: target)
@@ -36,13 +36,12 @@ final class AutomationFreshWorkflowLiveTests: XCTestCase {
             sessionRoot: root.appendingPathComponent("prepare"), templates: templates, developerDirectory: developer)
         XCTAssertNotEqual(prepared.generatedHost.includesSiri, true, "A simulator host must exclude the physical Siri template")
         XCTAssertFalse(prepared.generatedHost.templateDigest.isEmpty)
-        var capabilities = AutomationEntityQuery.capabilities(prepared)
-        capabilities.records["apple.intent.invoke"] = .init(state: .available, reason: "Invocation checks registration", probeVersion: "host-v2", evidence: [prepared.host.xctestrunDigest])
+        var capabilities = AutomationPreparedCapabilities.base(prepared)
         var approval = RunApproval(runID: UUID().uuidString, app: prepared.host.app, target: prepared.host.target,
             environmentID: "selected-simulator:" + target.id, effects: [.observe, .navigate, .fixtureWrite], maximumActions: 30, disposable: true)
         let plan = try AutomationFreshEntityPlanner.compile(catalog: prepared.catalog, actionID: "CompleteTaskIntent",
             instruction: "Create and save a task using the approved test record name and the specified account. Enter the name in Task title, select the specified Account if needed, and press Add task once. Finish when the new task row is visible.",
-            endpoint: "Duplicate Tasks", namePrefix: "Intents record", nameProperty: "title", stateProperty: "completed",
+            endpoint: "Automation Fixture", namePrefix: "Intents record", nameProperty: "title", stateProperty: "completed",
             initialState: false, expectedState: true, approval: approval, capabilities: capabilities, localeIdentifier: Locale.current.identifier,
             context: .init(property: "owner", selectedValue: "Personal", protectedValue: "Work"), purpose: .simulatorDraft,
             saveControl: .init(.testId, "task.add"), nameEntry: .init(.testId, "task.title"))
