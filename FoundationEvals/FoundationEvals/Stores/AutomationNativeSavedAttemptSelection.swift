@@ -58,7 +58,11 @@ extension AppAutomationStore {
     }
     private func loadRetainedPreparation(app: AppIdentity) async throws -> AutomationPreparedApplication {
         let root = support
-        return try await Task.detached { try AutomationPreparedApplicationRecord.load(app: app, supportRoot: root) }.value
+        return try await Task.detached {
+            let prepared = try AutomationPreparedApplicationRecord.load(app: app, supportRoot: root)
+            try AutomationPreparedCodecAuthority.verify(prepared)
+            return prepared
+        }.value
     }
 }
 #endif

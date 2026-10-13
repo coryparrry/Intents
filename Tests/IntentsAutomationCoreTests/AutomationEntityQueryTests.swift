@@ -3,12 +3,11 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationEntityQueryTests: XCTestCase, @unchecked Sendable {
-    private func fixture(root: URL) -> (AutomationPreparedApplication, ApplicationSurfaceCatalog.Entity, RunApproval) {
-        let app = AppIdentity(logicalID: "source", bundleID: "example.Subject", platform: "ios", productDigest: String(repeating: "a", count: 64))
-        let target = TargetIdentity(id: "nonexistent-query-simulator", kind: .simulator)
+    private func fixture(root: URL) throws -> (AutomationPreparedApplication, ApplicationSurfaceCatalog.Entity, RunApproval) {
+        var prepared = try AutomationPreparedCodecRegressionTests.makeFixture(root: root.appendingPathComponent("prepared")).prepared
+        let app = prepared.host.app, target = prepared.host.target
         let entity = ApplicationSurfaceCatalog.Entity(typeID: "TaskEntity", title: "Task", queryIdentifier: "Subject.TaskQuery", properties: ["title": "text", "completed": "bool"], propertyTitles: [:])
-        let catalog = ApplicationSurfaceCatalog(app: app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: [], entities: [entity])
-        let prepared = AutomationPreparedApplication(source: .init(sourceRoot: root.path, files: [], directories: [], excludedPaths: []), generatedHost: .init(projectPath: "unused", scheme: "unused", targetID: "HOST", bundleID: "unused", configuration: "Debug", templateDigest: "unused"), host: .init(app: app, target: target, xctestrunPath: "unused", xctestrunDigest: "unused", subjectProductPath: "unused", hostBundlePath: "unused", hostProductDigest: "unused", hostBundleID: "unused", testTarget: "unused"), catalog: catalog, buildLogPath: "unused", buildLogTruncated: false)
+        prepared.catalog.entities = [entity]
         return (prepared, entity, .init(runID: "query-run", app: app, target: target, environmentID: "disposable", effects: [.observe], maximumActions: 10, disposable: true))
     }
     private func root() throws -> URL {
@@ -18,7 +17,7 @@ final class AutomationEntityQueryTests: XCTestCase, @unchecked Sendable {
         return root
     }
     func testFinalizedPlanAcceptsItsExactApprovalAndRejectsForeignDigest() throws {
-        let (prepared, entity, original) = fixture(root: try root())
+        let (prepared, entity, original) = try fixture(root: try root())
         let plan = try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "Invoice", approval: original)
         var exact = original; exact.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
         XCTAssertEqual(try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "Invoice", approval: exact), plan)
@@ -26,7 +25,7 @@ final class AutomationEntityQueryTests: XCTestCase, @unchecked Sendable {
         XCTAssertThrowsError(try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "Invoice", approval: exact))
     }
     func testRealPreparationFailureRecoveryRetainsUnresolvedReportWithoutChoicesAndCannotReuseAttempt() async throws {
-        let root = try root(), (prepared, entity, approval) = fixture(root: root)
+        let root = try root(), (prepared, entity, approval) = try fixture(root: root)
         let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: "/private/tmp"), simulatorInventory: { _, _ in throw AutomationContractError.terminationUnverified })
         let result = try await AutomationEntityQuery.execute(runner: runner, prepared: prepared, entity: entity, text: "Invoice", approval: approval, attemptID: "query-attempt", allowBootAndInstall: true)
         XCTAssertEqual(result.report.attemptID, "query-attempt"); XCTAssertEqual(result.report.result.summary, .unresolved)
@@ -41,7 +40,7 @@ final class AutomationEntityQueryTests: XCTestCase, @unchecked Sendable {
         }
     }
     func testRecoveryDoesNotReadSymlinksOrCreateMissingAttempts() async throws {
-        let root = try root(), outside = try self.root(), (prepared, entity, approval) = fixture(root: root)
+        let root = try root(), outside = try self.root(), (prepared, entity, approval) = try fixture(root: root)
         let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: "/private/tmp"))
         let plan = try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "Invoice", approval: approval)
         try Data("untrusted historical report".utf8).write(to: outside.appendingPathComponent("report.json"))

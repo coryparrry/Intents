@@ -32,7 +32,7 @@ public actor AutomationSimulatorReleaseVerifier: AutomationDeviceReleaseVerifier
         bundleIDs = Self.runnerBundleIDs + additionalRunnerBundleIDs
     }
     public func prepare(target: TargetIdentity, controllerBundleIDs: [String]) async throws {
-        guard !unprovedInspector, try await runnerJobs(target: target, additionalIDs: controllerBundleIDs, timeout: .seconds(15), stage: "prepare").isEmpty else { throw AutomationContractError.targetBusy }
+        guard !unprovedInspector, try await runnerJobs(target: target, additionalIDs: controllerBundleIDs, timeout: .seconds(60), stage: "prepare").isEmpty else { throw AutomationContractError.targetBusy }
     }
     public func verifyReleased(target: TargetIdentity, controllerBundleIDs: [String]) async -> Bool {
         guard !unprovedInspector else { return false }
@@ -40,7 +40,7 @@ public actor AutomationSimulatorReleaseVerifier: AutomationDeviceReleaseVerifier
     }
     private func runnerJobs(target: TargetIdentity, additionalIDs: [String], // Match preparation: under CPU load, launching the read-only inspector can exceed three seconds.
     // The coordinator still bounds all cleanup and retains ownership on timeout.
-    timeout: Duration = .seconds(15), stage: String) async throws -> [Int32] {
+    timeout: Duration = .seconds(60), stage: String) async throws -> [Int32] {
         guard target.kind == .simulator, target.id.range(of: #"^[A-Fa-f0-9-]{36}$"#, options: .regularExpression) != nil else {
             throw AutomationContractError.missingEvidence("Device runner termination has no qualified verifier for this target")
         }

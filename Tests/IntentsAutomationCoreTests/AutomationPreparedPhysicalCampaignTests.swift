@@ -55,7 +55,7 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
         })
     }
 
-    private func fixture(includesSiri: Bool = true, register: Bool = true) async throws -> Harness {
+    private func fixture(includesSiri: Bool = true) async throws -> Harness {
         let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent("prepared-physical-campaign-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let session = root.appendingPathComponent("session"), attempts = root.appendingPathComponent("attempts")
@@ -103,7 +103,6 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
         let prepared = AutomationPreparedApplication(source: .init(sourceRoot: session.path, files: [], directories: [], excludedPaths: []),
             generatedHost: generated, host: hostRecord, catalog: catalog,
             buildLogPath: session.appendingPathComponent("build.log").path, buildLogTruncated: false)
-        if register { await AutomationPreparedCodecAuthority.shared.register(prepared) }
 
         var approval = RunApproval(runID: "run", app: app, target: target, environmentID: "test",
             effects: [.observe, .navigate, .fixtureWrite], maximumActions: 20, disposable: true)
@@ -179,10 +178,11 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
         }
     }
 
-    func testUnregisteredPreparationIsRefusedBeforeStateOrDeviceReservation() async throws {
-        let h = try await fixture(register: false), device = Device(), installer = Installer()
-        do { _ = try await run(h, components: components(device, installer)); XCTFail("Unregistered preparation admitted") }
-        catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Prepare the exact physical host in this process before running")) }
+    func testModifiedRetainedPreparationIsRefusedBeforeStateOrDeviceReservation() async throws {
+        let h = try await fixture(), device = Device(), installer = Installer()
+        try Data("modified".utf8).write(to: URL(fileURLWithPath: h.prepared.host.xctestrunPath))
+        do { _ = try await run(h, components: components(device, installer)); XCTFail("Modified preparation admitted") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
         try await assertNothingReserved(h, device, installer)
     }
 

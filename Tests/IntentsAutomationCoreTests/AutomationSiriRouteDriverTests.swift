@@ -77,8 +77,19 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
         let app = AppIdentity(logicalID: "subject", bundleID: "example.Subject", platform: "ios", productDigest: try AutomationProductDigest.compute(bundle: subject))
         let hostRecord = AutomationPreparedAppleHost(app: app, target: target, xctestrunPath: testFile.path, xctestrunDigest: AutomationArtifactRegistry.digest(data),
             subjectProductPath: subject.path, hostBundlePath: host.path, hostProductDigest: try AutomationProductDigest.compute(bundle: host), hostBundleID: "example.Host.xctrunner", testTarget: "OwnedHost")
+        let sources = root.appendingPathComponent("generated-host/OwnedHost/Sources")
+        try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
+        let templates = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Integration/AutomationHost")
+        var sourceDigests: [String: String] = [:]
+        for file in AutomationHostGenerator.physicalTemplateFiles {
+            let bytes = try Data(contentsOf: templates.appendingPathComponent(file))
+            try bytes.write(to: sources.appendingPathComponent(file))
+            sourceDigests[file] = AutomationArtifactRegistry.digest(bytes)
+        }
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let generated = AutomationGeneratedHost(projectPath: "synthetic", scheme: "OwnedHost", targetID: "HOST", bundleID: hostRecord.hostBundleID,
-            configuration: "Debug", templateDigest: String(repeating: "a", count: 64), includesSiri: true)
+            configuration: "Debug", templateDigest: AutomationArtifactRegistry.digest(try encoder.encode(sourceDigests)), includesSiri: true)
         let prepared = AutomationPreparedApplication(source: .init(sourceRoot: root.path, files: [], directories: [], excludedPaths: []), generatedHost: generated,
             host: hostRecord, catalog: .init(app: app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: []), buildLogPath: root.appendingPathComponent("build.log").path, buildLogTruncated: false)
         var segment = AutomationSegment(id: "siri", kind: .siriText, phase: .subject, operation: "submitRecognizedText", requiredCapabilities: ["siri.recognizedText.api"], effects: [.navigate], lifecycle: .persistedStateAcrossSegments)
@@ -182,12 +193,13 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
         catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Unqualified Siri API submission cannot assess routing or business outcomes")) }
         let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.privatePayloadCleaned)
     }
-    func testSerializedCompilationGrantCannotQualifyAHostAndCannotOverrideVeto() async throws {
+    func testRetainedCompilationGrantVerifiesFilesWithoutGrantingSiriRoutingOrOverridingVeto() async throws {
         let h = try await fixture()
         var claims = h.capabilities
         claims.records["siri.actualRoute"] = .init(state: .available, reason: "cached route", probeVersion: "test", evidence: ["saved.json"])
-        let cached = try await AutomationSiriCapabilitySnapshot.resolve(prepared: h.prepared, capabilities: claims)
-        XCTAssertEqual(cached.records["siri.recognizedText.api"]?.state, .unknown)
+        let retained = try JSONDecoder().decode(AutomationPreparedApplication.self, from: JSONEncoder().encode(h.prepared))
+        let cached = try await AutomationSiriCapabilitySnapshot.resolve(prepared: retained, capabilities: claims)
+        XCTAssertEqual(cached.records["siri.recognizedText.api"]?.state, .available)
         XCTAssertEqual(cached.records["siri.actualRoute"]?.state, .unknown)
         for state in [CapabilityProfile.State.unavailable, .consentRequired] {
             let veto = CapabilityProfile(records: ["siri.recognizedText.api": .init(state: state, reason: "veto", probeVersion: "test", evidence: [])])

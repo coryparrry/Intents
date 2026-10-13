@@ -85,7 +85,7 @@ public actor AutomationApplicationRunner {
         self.simulatorInventory = simulatorInventory
 
     }
-    /// Resolve independently qualified codecs before a campaign's preflight.
+    /// Resolve implemented codecs from the prepared files before a campaign's preflight.
     /// The runner repeats this verification before every actual attempt.
     public func capabilitiesForExecution(subject: AutomationApplicationSubject, plan: AutomationCase,
                                          capabilities: CapabilityProfile) async throws -> CapabilityProfile {
@@ -94,14 +94,13 @@ public actor AutomationApplicationRunner {
         }
         running = true; defer { running = false }
         try subject.validate(plan: plan)
-        if let prepared = subject.prepared, plan.target.kind == .physical {
-            return try await AutomationSiriCapabilitySnapshot.resolve(prepared: prepared, capabilities: capabilities)
-        }
-        guard let prepared = subject.prepared, plan.target.kind == .simulator else { return capabilities }
+        guard let prepared = subject.prepared else { return capabilities }
         try AutomationPreparedProgramContract.validate(plan, catalog: prepared.catalog)
-        let required = Set((plan.setup + [plan.execution] + plan.observations + plan.cleanup).flatMap(\.requiredCapabilities))
-        return try await AutomationSimulatorCodecQualification.enrich(capabilities, prepared: prepared,
-            requiredCapabilities: required, developerDirectory: developerDirectory, workspace: supportRoot)
+        let resolved = try await AutomationSimulatorCodecQualification.enrich(capabilities, prepared: prepared)
+        if plan.target.kind == .physical {
+            return try await AutomationSiriCapabilitySnapshot.resolve(prepared: prepared, capabilities: resolved)
+        }
+        return resolved
     }
 
     /// Calibrate a narrowly approved record-state workflow through actual Siri and
@@ -147,12 +146,7 @@ public actor AutomationApplicationRunner {
         }
         try AutomationPreparedProgramContract.validate(plan, catalog: prepared.catalog)
         running = true; defer { running = false }
-        var capabilities = capabilities
-        if plan.target.kind == .simulator {
-            let required = Set((plan.setup + [plan.execution] + plan.observations + plan.cleanup).flatMap(\.requiredCapabilities))
-            capabilities = try await AutomationSimulatorCodecQualification.enrich(capabilities, prepared: prepared,
-                requiredCapabilities: required, developerDirectory: developerDirectory, workspace: supportRoot)
-        }
+        let capabilities = try await AutomationSimulatorCodecQualification.enrich(capabilities, prepared: prepared)
         guard fixtureTracker == nil || qualifyingFreshBindings == nil else { throw AutomationContractError.missingEvidence("Fresh query fixtures require their qualified associated host") }
         try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
         let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup

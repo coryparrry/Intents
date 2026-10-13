@@ -41,7 +41,7 @@ import XCTest
     func testPhysicalSourceSelectionAndSiriSubmissionApprovalStayExactAndUnassessed() async throws {
         let box = TargetBox()
         let model = try await model(executor: { candidate, approval, session in
-            var value = preparedFixture(candidate, approval, session); value.generatedHost.includesSiri = true; return value
+            try preparedPhysicalFixture(candidate, approval, session)
         }, reader: { box.read() })
         model.preparationDestination = .physical; model.physicalDeviceID = "iPhone"
         model.preparationSelectionChanged(); XCTAssertFalse(model.canPrepare)
@@ -50,7 +50,9 @@ import XCTest
         await model.prepareAndWait(); XCTAssertEqual(model.prepared?.host.target.kind, .physical)
         model.workflowRoute = "siri"; model.siriRequest = "Open the approved fixture"
         model.effectChoice = "navigation"; model.effectsConfirmed = true; model.disposable = true; model.installApproved = true
-        XCTAssertFalse(model.canRun, "A synthetic preparation cannot grant submission capability")
+        XCTAssertEqual(model.siriCapabilities.records["siri.recognizedText.api"]?.state, .available)
+        model.siriCapabilities.records["siri.recognizedText.api"]?.state = .unknown
+        XCTAssertFalse(model.canRun, "A missing submission capability must prevent running")
         model.siriCapabilities.records["siri.recognizedText.api"] = .init(state: .available, reason: "test-only grammar", probeVersion: "test", evidence: [])
         XCTAssertTrue(model.canRun)
         let first = try model.makeSiriRunRequest(runID: "preview"), second = try model.makeSiriRunRequest(runID: UUID().uuidString)
@@ -77,7 +79,7 @@ import XCTest
     func testControlledSiriRecordCheckFreezesOracleAndCannotExecuteFromCachedProfile() async throws {
         let box = TargetBox()
         let model = try await model(executor: { candidate, approval, session in
-            var value = preparedFixture(candidate, approval, session); value.generatedHost.includesSiri = true
+            var value = try preparedPhysicalFixture(candidate, approval, session)
             value.catalog.entities = [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "TaskQuery",
                 properties: ["title": "text", "completed": "bool"], propertyTitles: [:])]
             return value
@@ -422,6 +424,39 @@ private actor PreparationGate {
         return await withCheckedContinuation { entered = $0 }
     }
     func release() { released?.resume(); released = nil }
+}
+private func preparedPhysicalFixture(_ candidate: AutomationApplicationCandidate, _ approval: AutomationBuildApproval,
+                                     _ session: URL) throws -> AutomationPreparedApplication {
+    var prepared = preparedFixture(candidate, approval, session)
+    let subject = session.appendingPathComponent("Subject.app"), host = session.appendingPathComponent("Host-Runner.app")
+    for (bundle, identifier) in [(subject, prepared.host.app.bundleID), (host, prepared.host.hostBundleID)] {
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": identifier, "CFBundleExecutable": "App"],
+            format: .binary, options: 0).write(to: bundle.appendingPathComponent("Info.plist"))
+        try Data("unit test product".utf8).write(to: bundle.appendingPathComponent("App"))
+    }
+    let sources = session.appendingPathComponent("generated-host/Host/Sources")
+    try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
+    let templates = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().appendingPathComponent("Integration/AutomationHost")
+    var sourceDigests: [String: String] = [:]
+    for file in AutomationHostGenerator.physicalTemplateFiles {
+        let bytes = try Data(contentsOf: templates.appendingPathComponent(file))
+        try bytes.write(to: sources.appendingPathComponent(file))
+        sourceDigests[file] = AutomationArtifactRegistry.digest(bytes)
+    }
+    let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+    let xctestrun = session.appendingPathComponent("host.xctestrun"), testBytes = Data("unit test xctestrun".utf8)
+    try testBytes.write(to: xctestrun)
+    prepared.generatedHost.scheme = "Host"; prepared.generatedHost.includesSiri = true
+    prepared.generatedHost.templateDigest = AutomationArtifactRegistry.digest(try encoder.encode(sourceDigests))
+    prepared.host.subjectProductPath = subject.path; prepared.host.hostBundlePath = host.path
+    prepared.host.app.productDigest = try AutomationProductDigest.compute(bundle: subject)
+    prepared.host.hostProductDigest = try AutomationProductDigest.compute(bundle: host)
+    prepared.host.xctestrunPath = xctestrun.path; prepared.host.xctestrunDigest = AutomationArtifactRegistry.digest(testBytes)
+    prepared.catalog.app = prepared.host.app
+    prepared.buildLogPath = session.appendingPathComponent("build.log").path
+    return prepared
 }
 private func preparedFixture(_ candidate: AutomationApplicationCandidate, _ approval: AutomationBuildApproval, _ session: URL) -> AutomationPreparedApplication {
     var app = AppIdentity(logicalID: candidate.id, bundleID: "example.Subject", platform: approval.target.kind == .nativeMac ? "macos" : "ios",

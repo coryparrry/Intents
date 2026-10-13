@@ -8,20 +8,14 @@ extension InstalledUIStoreTests {
     func testFailedSimulatorCandidateReopensAndReproducesAfterRestart() async throws {
         let (model, root, bundle) = try await fixture()
         try selectPreparedSource(model: model, root: root)
-        let before = try XCTUnwrap(model.prepared)
+        let before = try nativeRetainedPreparation(XCTUnwrap(model.prepared), bundle: bundle, support: model.support, saveRecord: false)
+        model.prepared = before; model.catalog = before.catalog
         let legacy = try await saveFailure(model: model, root: root, legacyPreparedEvidence: true)
         let cases = try AutomationCaseStore(root: model.support.appendingPathComponent("Cases"))
         let legacyAttempts = try await cases.attempts(for: legacy)
         let original = try XCTUnwrap(legacyAttempts.first)
         // Retained preparation fixture; no device execution or signed-runtime claim.
-        var after = try changedPreparedSource(before)
-        let session = model.support.appendingPathComponent("prepare-" + UUID().uuidString)
-        let product = session.appendingPathComponent("DerivedData/Subject.app")
-        try FileManager.default.createDirectory(at: product.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try FileManager.default.copyItem(at: bundle, to: product)
-        after.host.app.canonicalBundlePath = product.path; after.host.subjectProductPath = product.path
-        after.catalog.app = after.host.app
-        try JSONEncoder().encode(after).write(to: session.appendingPathComponent("prepared-application.json"))
+        let after = try nativeRetainedPreparation(changedPreparedSource(before), bundle: bundle, support: model.support)
         let comparison = try AutomationNativeUIFixComparisonProposal.compile(frozen: legacy, original: original,
             before: .prepared(before), after: .prepared(after), runID: "comparison", disposable: false)
         XCTAssertEqual(comparison.baseline.plan.id, "comparison." + legacy.digest)
@@ -39,6 +33,7 @@ extension InstalledUIStoreTests {
         await model.showSavedCase(candidate)
         XCTAssertTrue(model.canReproduceSavedFailure)
         let restarted = AppAutomationStore(supportDirectory: model.support)
+        await restarted.waitForPreparation()
         restarted.intake = model.intake; restarted.candidateID = model.candidateID; restarted.configuration = model.configuration
         restarted.simulatorID = model.simulatorID; restarted.effectChoice = "navigation"; restarted.effectsConfirmed = true
         await restarted.showSavedCase(candidate)

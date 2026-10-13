@@ -10,7 +10,6 @@ import IntentsAutomationCore
         var inputs: [String: AutomationActionInput]
         var declaredEffects: AutomationActionEffectDeclaration
         var approval: RunApproval
-        var capabilities: CapabilityProfile
         var attemptID: String
         var supportRoot: String
         var developerDirectory: String
@@ -64,9 +63,13 @@ import IntentsAutomationCore
             guard CommandLine.arguments.count == 3, ["--profile", "--plan-profile"].contains(CommandLine.arguments[1]) else { throw AutomationContractError.invalidIdentity }
             let planningOnly = CommandLine.arguments[1] == "--plan-profile"
             let bytes = try read(CommandLine.arguments[2], maximumBytes: 1_048_576)
+            if let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any], object["capabilities"] != nil {
+                throw AutomationContractError.missingEvidence("Remove capabilities from the profile; the runner resolves them from the prepared app")
+            }
             let profile = try JSONDecoder().decode(Profile.self, from: bytes)
             let prepared = try JSONDecoder().decode(AutomationPreparedApplication.self,
                 from: read(profile.preparedPath, maximumBytes: 16 * 1024 * 1024))
+            let baseCapabilities = AutomationPreparedCapabilities.base(prepared)
             var plan: AutomationCase
             if let fresh = profile.freshRecordWorkflow {
                 guard profile.approveExactCase == true, profile.plan == nil, profile.inputs.isEmpty,
@@ -74,7 +77,7 @@ import IntentsAutomationCore
                 plan = try AutomationFreshEntityPlanner.compile(catalog: prepared.catalog, actionID: profile.actionID,
                     instruction: fresh.instruction, endpoint: fresh.endpoint, namePrefix: fresh.namePrefix,
                     nameProperty: fresh.nameProperty, stateProperty: fresh.stateProperty, initialState: fresh.initialState,
-                    expectedState: fresh.expectedState, approval: profile.approval, capabilities: profile.capabilities,
+                    expectedState: fresh.expectedState, approval: profile.approval, capabilities: baseCapabilities,
                     localeIdentifier: fresh.localeIdentifier, context: fresh.context, purpose: .simulatorDraft,
                     saveControl: fresh.saveControl, createControl: fresh.createControl, nameEntry: fresh.nameEntry, contextEntry: fresh.contextEntry)
                 plan.provenance.merge(["ui.preparedHostDigest": prepared.host.hostProductDigest,
@@ -84,7 +87,7 @@ import IntentsAutomationCore
                 plan.id = "fresh." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
             } else {
                 plan = try profile.plan ?? AutomationTemplatePlanner.compile(catalog: prepared.catalog, actionID: profile.actionID,
-                    inputs: profile.inputs, declaredEffects: profile.declaredEffects, approval: profile.approval, capabilities: profile.capabilities, purpose: .review)
+                    inputs: profile.inputs, declaredEffects: profile.declaredEffects, approval: profile.approval, capabilities: baseCapabilities, purpose: .review)
             }
             if profile.recipeCandidate != nil || profile.recipeReuse != nil {
                 let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
@@ -100,23 +103,25 @@ import IntentsAutomationCore
             guard profile.reproduceQualifiedFailure != true || profile.freshFixtureQualification != nil else {
                 throw AutomationContractError.missingEvidence("Reproduction requires new live fixture qualification in this invocation")
             }
+            let runner = try AutomationApplicationRunner(supportRoot: URL(fileURLWithPath: profile.supportRoot),
+                developerDirectory: URL(fileURLWithPath: profile.developerDirectory))
+            let capabilities = try await runner.capabilitiesForExecution(subject: .prepared(prepared), plan: plan,
+                capabilities: baseCapabilities)
             if let qualification = profile.freshFixtureQualification {
                 guard profile.approveExactCase == true, profile.recipeCandidate == nil,
                       qualification.repeatAttemptID != profile.attemptID,
                       qualification.repeatAttemptID.range(of: #"^[A-Za-z0-9-]{1,128}$"#, options: .regularExpression) != nil else { throw AutomationContractError.invalidIdentity }
                 try AutomationQualifiedFreshFixture.validateProposal(bindings: qualification.bindings, plan: plan,
-                    approval: approval, capabilities: profile.capabilities)
+                    approval: approval, capabilities: capabilities)
             }
             if planningOnly {
-                // Engineering inspection only. No runner, lease, device action,
-                // qualification token or dispatch authority is constructed.
+                // Use the same prepared-file checks as execution, without
+                // acquiring a target lease or launching the subject app.
                 let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 FileHandle.standardOutput.write(try encoder.encode(plan))
                 return
             }
-            let runner = try AutomationApplicationRunner(supportRoot: URL(fileURLWithPath: profile.supportRoot),
-                developerDirectory: URL(fileURLWithPath: profile.developerDirectory))
-            let report = try await runner.run(prepared: prepared, plan: plan, approval: approval, capabilities: profile.capabilities,
+            let report = try await runner.run(prepared: prepared, plan: plan, approval: approval, capabilities: capabilities,
                 attemptID: profile.attemptID, allowBootAndInstall: profile.allowBootAndInstall,
                 qualifyingFreshBindings: profile.freshFixtureQualification?.bindings)
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -128,7 +133,7 @@ import IntentsAutomationCore
                     }
                 }
                 try await runner.validateFreshFixtureAttempt(bindings: qualification.bindings)
-                let repeated = try await runner.run(prepared: prepared, plan: plan, approval: approval, capabilities: profile.capabilities,
+                let repeated = try await runner.run(prepared: prepared, plan: plan, approval: approval, capabilities: capabilities,
                     attemptID: qualification.repeatAttemptID, allowBootAndInstall: profile.allowBootAndInstall,
                     qualifyingFreshBindings: qualification.bindings)
                 guard completeForFreshQualification(repeated) else { throw AutomationContractError.missingEvidence("Second attempt did not complete; no fixture authority is minted") }
@@ -144,9 +149,9 @@ import IntentsAutomationCore
                     let cases = try AutomationCaseStore(root: casesRoot), frozen = try AutomationFrozenCase(plan: plan)
                     var repeatApproval = approval; repeatApproval.runID = approval.runID + "-reproduction"
                     let executor = AutomationApplicationCampaignExecutor(runner: runner, prepared: prepared,
-                        capabilities: profile.capabilities, allowBootAndInstall: profile.allowBootAndInstall)
+                        capabilities: capabilities, allowBootAndInstall: profile.allowBootAndInstall)
                     let result = try await AutomationReproduction(cases: cases).run(frozen: frozen, originalAttemptID: report.attemptID,
-                        approval: repeatApproval, capabilities: profile.capabilities, limits: .firstCampaign, executor: executor, fixture: fixture)
+                        approval: repeatApproval, capabilities: capabilities, limits: .firstCampaign, executor: executor, fixture: fixture)
                     reproduction = result
                     try await AutomationReproductionArchive(caseStoreRoot: casesRoot).save(result)
                 }
@@ -166,12 +171,12 @@ import IntentsAutomationCore
                 if let reuse = profile.recipeReuse {
                     var reuseApproval = profile.approval; reuseApproval.approvedCaseDigest = nil
                     let next = try AutomationTemplatePlanner.compile(catalog: prepared.catalog, actionID: profile.actionID,
-                        inputs: profile.inputs, declaredEffects: profile.declaredEffects, approval: reuseApproval, capabilities: profile.capabilities,
+                        inputs: profile.inputs, declaredEffects: profile.declaredEffects, approval: reuseApproval, capabilities: capabilities,
                         recipe: recipe, recipeContext: recipe.context, recipeText: reuse.text, consumingParameter: reuse.consumingParameter)
                     guard profile.approveExactCase == true else { throw AutomationContractError.missingEvidence("Recipe reuse needs exact-case approval") }
                     reuseApproval.approvedCaseDigest = try AutomationFrozenCase.planDigest(next)
                     let repeated = try await runner.run(prepared: prepared, plan: next, approval: reuseApproval,
-                        capabilities: profile.capabilities, attemptID: reuse.attemptID, allowBootAndInstall: profile.allowBootAndInstall)
+                        capabilities: capabilities, attemptID: reuse.attemptID, allowBootAndInstall: profile.allowBootAndInstall)
                     if !repeated.executionSucceeded { Foundation.exit(1) }
                 }
             }

@@ -8,21 +8,14 @@ public enum AutomationSiriCapabilitySnapshot {
         var result = capabilities
         let key = "siri.recognizedText.api"
         if result.records[key]?.state == .available {
-            result.records[key] = .init(state: .unknown, reason: "Cached API compilation evidence requires the exact fresh preparation", probeVersion: "siri-api-compilation-v1", evidence: [])
+            result.records[key] = .init(state: .unknown, reason: "Cached API compilation evidence requires matching prepared files", probeVersion: "siri-api-compilation-v1", evidence: [])
         }
         if result.records["siri.actualRoute"]?.state == .available {
             result.records["siri.actualRoute"] = .init(state: .unknown, reason: "Cached routing availability has no exact live qualification authority", probeVersion: "siri-route-v1", evidence: [])
         }
-        guard prepared.host.target.kind == .physical, prepared.generatedHost.includesSiri == true,
-              await AutomationPreparedCodecAuthority.shared.contains(prepared) else { return result }
+        guard prepared.host.target.kind == .physical, prepared.generatedHost.includesSiri == true else { return result }
         try Task.checkCancellation()
-        try AutomationHostGenerator.verifyGeneratedSources(prepared.generatedHost,
-            sessionRoot: URL(fileURLWithPath: prepared.buildLogPath).deletingLastPathComponent())
-        for (path, digest) in [(prepared.host.subjectProductPath, prepared.host.app.productDigest),
-                               (prepared.host.hostBundlePath, Optional(prepared.host.hostProductDigest))] {
-            guard try AutomationProductDigest.compute(bundle: URL(fileURLWithPath: path), version: 1) == digest else { throw AutomationContractError.conflictingOperation }
-        }
-        guard AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(URL(fileURLWithPath: prepared.host.xctestrunPath), maximumBytes: 4_194_304)) == prepared.host.xctestrunDigest else { throw AutomationContractError.conflictingOperation }
+        try AutomationPreparedCodecAuthority.verify(prepared)
         if result.records[key] == nil || result.records[key]?.state == .unknown {
             result.records[key] = .init(state: .available, reason: "This exact physical host compiled against XCTest's recognised-text submission API. Device submission and Siri routing are unverified.",
                 probeVersion: "siri-api-compilation-v1", evidence: [prepared.generatedHost.templateDigest, prepared.host.hostProductDigest, prepared.host.xctestrunDigest])
