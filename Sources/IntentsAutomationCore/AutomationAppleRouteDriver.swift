@@ -243,8 +243,14 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
                       presence(runner) == .matching else { runnerStopped = false; break }
                 _ = kill(runner.pid, SIGTERM)
                 let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-                while presence(runner) == .matching, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(50)) }
-                runnerStopped = presence(runner) == .absent || presence(runner) == .replaced
+                var observed = presence(runner)
+                // After signalling the exact owned identity, unknown means wait,
+                // never permission to signal again or evidence of release.
+                while ![.absent, .replaced].contains(observed), ContinuousClock.now < deadline {
+                    try? await Task.sleep(for: .milliseconds(50))
+                    observed = presence(runner)
+                }
+                runnerStopped = [.absent, .replaced].contains(observed)
             case .absent, .replaced: break
             case .unknown: runnerStopped = false
             }
