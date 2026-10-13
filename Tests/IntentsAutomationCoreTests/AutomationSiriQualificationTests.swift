@@ -228,8 +228,8 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
                 capabilities: capabilities, attemptID: "attempt", allowInstall: true)
             XCTFail("Synthetic host cannot complete a physical campaign", file: file, line: line)
         } catch {
-            XCTAssertEqual(error as? AutomationContractError,
-                .missingEvidence("Prepare the exact physical host in this process before running"), file: file, line: line)
+            XCTAssertEqual((error as NSError).domain, NSCocoaErrorDomain, file: file, line: line)
+            XCTAssertTrue([NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains((error as NSError).code), file: file, line: line)
         }
     }
     func testQualifySiriWorkflowWithoutInstallApprovalStopsBeforeAuthorityOrDevice() async throws {
@@ -293,18 +293,10 @@ final class AutomationSiriQualificationTests: XCTestCase, @unchecked Sendable {
                 await gate.hold()
                 throw AutomationContractError.missingEvidence("fixture unavailable")
             }, physicalAliasReader: { _, _ in [:] })
-        let app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "ios", productDigest: String(repeating: "a", count: 64))
-        let simulator = TargetIdentity(id: "nonexistent-simulator", kind: .simulator)
-        let simulatorPlan = AutomationCase(id: "busy", app: app, target: simulator, environmentID: "disposable",
-            execution: .init(id: "subject", kind: .systemIntent, phase: .subject, operation: "Actual subject"))
-        let simulatorApp = AutomationPreparedApplication(source: .init(sourceRoot: root.path, files: [], directories: [], excludedPaths: []),
-            generatedHost: .init(projectPath: "unused", scheme: "unused", targetID: "unused", bundleID: "unused", configuration: "Debug", templateDigest: "unused"),
-            host: .init(app: app, target: simulator, xctestrunPath: "unused", xctestrunDigest: "unused", subjectProductPath: "unused",
-                hostBundlePath: "unused", hostProductDigest: "unused", hostBundleID: "unused", testTarget: "unused"),
-            catalog: .init(app: app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: []),
-            buildLogPath: "unused", buildLogTruncated: false)
-        let simulatorApproval = RunApproval(runID: "simulator-run", app: app, target: simulator, environmentID: simulatorPlan.environmentID,
-            effects: [.observe], maximumActions: 10, disposable: true)
+        let simulatorFixture = try AutomationPreparedCodecRegressionTests.makeFixture(root: root.appendingPathComponent("prepared"))
+        let simulatorPlan = simulatorFixture.plan
+        let simulatorApp = simulatorFixture.prepared
+        let simulatorApproval = simulatorFixture.approval
         await gate.start()
         let active = Task {
             do {

@@ -21,8 +21,17 @@ final class AutomationCatalogTests: XCTestCase {
         XCTAssertEqual(catalog.systemActions[0].parameters[0].family, "text")
         XCTAssertFalse(catalog.systemActions[0].registered); XCTAssertFalse(catalog.systemDiscoveryComplete)
         document["generator"] = ["name": "xcode-tools", "version": "unqualified"]
-        let unknown = try read(); XCTAssertTrue(unknown.systemActions.isEmpty); XCTAssertFalse(unknown.systemDiscoveryComplete)
-        XCTAssertFalse(unknown.gaps.isEmpty)
+        let unknown = try read()
+        XCTAssertEqual(unknown.systemActions, catalog.systemActions)
+        XCTAssertFalse(unknown.systemDiscoveryComplete)
+        XCTAssertTrue(unknown.gaps.contains("Built with Xcode unqualified; metadata parsed best-effort."))
+        for version in [2, true, "1"] as [Any] {
+            document["version"] = version
+            let unsupportedSchema = try read()
+            XCTAssertTrue(unsupportedSchema.systemActions.isEmpty)
+            XCTAssertFalse(unsupportedSchema.systemDiscoveryComplete)
+            XCTAssertTrue(unsupportedSchema.gaps.contains { $0.contains("Unknown built metadata format") })
+        }
     }
     func testCapturedEntityInputAndDeclaredPropertyCodecsRequireConsistentQueryMetadata() throws {
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

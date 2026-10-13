@@ -4,6 +4,40 @@ import Foundation
 /// Resolves one saved preparation from its exact retained product path. It
 /// neither searches other projects nor authorises a build or device command.
 public enum AutomationPreparedApplicationRecord {
+    /// Reuses the newest completed preparation without rebuilding. Unfinished
+    /// directories are ignored; a damaged newest record requires preparation again.
+    public static func loadLatest(supportRoot: URL) throws -> AutomationPreparedApplication? {
+        guard FileManager.default.fileExists(atPath: supportRoot.path) else { return nil }
+        let root = try AutomationPath.canonical(supportRoot)
+        guard root.path == supportRoot.path else { throw AutomationContractError.invalidIdentity }
+        let sessions = try FileManager.default.contentsOfDirectory(at: root,
+            includingPropertiesForKeys: [.contentModificationDateKey])
+            .filter { $0.lastPathComponent.hasPrefix("prepare-") && UUID(uuidString: String($0.lastPathComponent.dropFirst(8))) != nil }
+        let records = sessions.map { $0.appendingPathComponent("prepared-application.json") }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+            .sorted {
+                let left = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let right = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return left == right ? $0.path > $1.path : left > right
+            }
+        guard let record = records.first else { return nil }
+        do {
+            let relative = record.deletingLastPathComponent().lastPathComponent + "/prepared-application.json"
+            let data = try AutomationReadOnlyFile.read(root: root, relativePath: relative,
+                maximumBytes: 16 * 1024 * 1024, requirePrivateOwnership: true)
+            let expected = try JSONDecoder().decode(AutomationPreparedApplication.self, from: data)
+            guard expected.host.subjectProductPath.hasPrefix(record.deletingLastPathComponent().path + "/") else {
+                throw AutomationContractError.conflictingOperation
+            }
+            let prepared = try load(app: expected.host.app, supportRoot: root)
+            guard prepared == expected else { throw AutomationContractError.conflictingOperation }
+            try AutomationPreparedCodecAuthority.verify(prepared)
+            return prepared
+        } catch {
+            throw AutomationContractError.missingEvidence("The latest saved prepared files changed or are missing. Prepare the app again.")
+        }
+    }
+
     public static func load(app: AppIdentity, supportRoot: URL) throws -> AutomationPreparedApplication {
         let root = try AutomationPath.canonical(supportRoot)
         guard root.path == supportRoot.path, let path = app.canonicalBundlePath, path.hasPrefix(root.path + "/") else {

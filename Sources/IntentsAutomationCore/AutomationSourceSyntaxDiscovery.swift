@@ -83,7 +83,7 @@ enum AutomationSourceSyntaxDiscovery {
         let built = try await command.run(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
             arguments: ["swiftc", "-j", "2", "-sdk", sdk.path, "-I", host.path, "-L", host.path,
                         "-Xlinker", "-rpath", "-Xlinker", host.path, sourceFile.url.path, "-o", helper.path],
-            directory: directory, environment: environment, timeout: .seconds(120), willStart: willStart)
+            directory: directory, environment: environment, timeout: .seconds(300), willStart: willStart)
         let buildLog = try AutomationDurableFile(url: directory.appendingPathComponent("compiler.log"), maximumBytes: 2_100_000)
         try buildLog.withLock { try buildLog.write(built.stdout + built.stderr) }
         try requireComplete(built)

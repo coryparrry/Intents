@@ -26,17 +26,25 @@ public enum AutomationHostGenerator {
     static let physicalTemplateFiles = templateFiles + ["SiriSubmissionTests.swift"]
 
     static func verifyGeneratedSources(_ generated: AutomationGeneratedHost, sessionRoot: URL) throws {
-        let sources = sessionRoot.appendingPathComponent("generated-host/" + generated.scheme + "/Sources")
-        let files = generated.includesSiri == true ? physicalTemplateFiles : templateFiles
-        guard Set(try FileManager.default.contentsOfDirectory(atPath: sources.path)) == Set(files) else {
-            throw AutomationContractError.conflictingOperation
+        guard generated.scheme.range(of: #"^[A-Za-z_][A-Za-z0-9_]{0,127}$"#, options: .regularExpression) == (generated.scheme.startIndex..<generated.scheme.endIndex) else {
+            throw AutomationContractError.invalidIdentity
         }
+        let relativeDirectory = "generated-host/" + generated.scheme + "/Sources"
+        let sources = sessionRoot.appendingPathComponent(relativeDirectory)
+        // The saved aggregate digest binds the original source inventory. Using today's
+        // generator list here would invalidate intact hosts whenever templates are added.
+        let files = try FileManager.default.contentsOfDirectory(atPath: sources.path).sorted()
+        guard (1...64).contains(files.count), files.allSatisfy({
+            $0.range(of: #"^[A-Za-z_][A-Za-z0-9_.-]{0,250}\.swift$"#, options: .regularExpression) == ($0.startIndex..<$0.endIndex)
+        }) else { throw AutomationContractError.invalidIdentity }
         var records: [String: String] = [:]
         for file in files {
-            records[file] = AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(root: sources, relativePath: file, maximumBytes: 1_048_576))
+            records[file] = AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(root: sessionRoot,
+                relativePath: relativeDirectory + "/" + file, maximumBytes: 1_048_576))
         }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
-        guard AutomationArtifactRegistry.digest(try encoder.encode(records)) == generated.templateDigest else {
+        guard try FileManager.default.contentsOfDirectory(atPath: sources.path).sorted() == files,
+              AutomationArtifactRegistry.digest(try encoder.encode(records)) == generated.templateDigest else {
             throw AutomationContractError.conflictingOperation
         }
     }

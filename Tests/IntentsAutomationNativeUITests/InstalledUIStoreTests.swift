@@ -435,17 +435,13 @@ import XCTest
     }
     func testSourceComparisonRestoresRetainedBaselineAfterStoreRestart() async throws {
         let (model, root, bundle) = try await fixture(); try selectPreparedSource(model: model, root: root)
-        var baseline = try XCTUnwrap(model.prepared)
-        let support = root.appendingPathComponent("support"), session = support.appendingPathComponent("prepare-" + UUID().uuidString)
-        let product = session.appendingPathComponent("DerivedData/Subject.app")
-        try FileManager.default.createDirectory(at: product.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try FileManager.default.copyItem(at: bundle, to: product)
-        baseline.host.app.canonicalBundlePath = product.path; baseline.host.subjectProductPath = product.path
-        baseline.catalog.app = baseline.host.app; model.prepared = baseline
-        let record = session.appendingPathComponent("prepared-application.json")
-        try JSONEncoder().encode(baseline).write(to: record)
+        let support = root.appendingPathComponent("support")
+        let baseline = try nativeRetainedPreparation(XCTUnwrap(model.prepared), bundle: bundle, support: support)
+        model.prepared = baseline; model.catalog = baseline.catalog
+        let record = URL(fileURLWithPath: baseline.buildLogPath).deletingLastPathComponent().appendingPathComponent("prepared-application.json")
         let frozen = try await saveFailure(model: model, root: root)
         let restored = AppAutomationStore(supportDirectory: support)
+        await restored.waitForPreparation()
         restored.intake = model.intake; restored.candidateID = model.candidateID; restored.configuration = model.configuration
         restored.simulatorID = model.simulatorID; restored.effectChoice = "navigation"; restored.effectsConfirmed = true
         restored.prepared = try changedPreparedSource(baseline); restored.installApproved = true
@@ -456,6 +452,7 @@ import XCTest
         XCTAssertEqual(preview.afterProductDigest, restored.prepared?.host.app.productDigest)
         try FileManager.default.removeItem(at: record)
         let absent = AppAutomationStore(supportDirectory: support)
+        await absent.waitForPreparation()
         absent.intake = model.intake; absent.candidateID = model.candidateID; absent.configuration = model.configuration
         absent.simulatorID = model.simulatorID; absent.effectChoice = "navigation"; absent.effectsConfirmed = true
         absent.prepared = restored.prepared; absent.installApproved = true

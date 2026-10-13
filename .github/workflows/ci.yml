@@ -187,6 +187,7 @@ jobs:
             -only-testing:FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration \
             -only-testing:FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence \
             -only-testing:FoundationEvalsUITests/AppAutomationUITests/testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled \
+            -only-testing:FoundationEvalsUITests/AppAutomationUITests/testXcodeDefaultsFollowDestinationAndRestoreWithoutRunOverride \
             -only-testing:FoundationEvalsUITests/AppAutomationUITests/testEmptyAutomationAndPickerCancellationRemainReadOnly \
             -only-testing:FoundationEvalsUITests/AppAutomationUITests/testOwnershipResetConfirmationCanBeCancelledWithoutChangingTheReservation \
             CODE_SIGNING_ALLOWED=NO

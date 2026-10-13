@@ -37,7 +37,7 @@ struct AppAutomationView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Picker("App", selection: $model.candidateID) {
                                 ForEach(intake.candidates) { Text($0.name).tag($0.id) }
-                            }.onChange(of: model.candidateID) { model.selectCandidate() }
+                            }.onChange(of: model.candidateID) { model.candidateSelectionChanged() }
                             if model.candidate?.kind == .sourceTarget {
                                 DisclosureGroup("Build settings") {
                                     Picker("Configuration", selection: Binding(

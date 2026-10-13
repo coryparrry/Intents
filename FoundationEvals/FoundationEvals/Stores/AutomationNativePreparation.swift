@@ -18,6 +18,44 @@ enum AutomationNativePreparationDestination: String, CaseIterable, Identifiable 
     var title: String { switch self { case .simulator: "iOS Simulator"; case .physical: "Physical iPhone or iPad"; case .macOS: "This Mac" } }
 }
 
+/// Saved defaults are destination-specific; a run override never changes those defaults.
+@MainActor @Observable final class AutomationNativeXcodeSettings {
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let key = "automation.xcodePathsByDestination"
+    private var paths: [String: String]
+    var runOverride = ""
+
+    init(defaults: UserDefaults? = nil) {
+        let defaults = defaults ?? Self.applicationDefaults()
+        self.defaults = defaults
+        paths = defaults.dictionary(forKey: key) as? [String: String] ?? [:]
+    }
+    private static func applicationDefaults() -> UserDefaults {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "--automation-xcode-settings-suite"), arguments.indices.contains(index + 1),
+           let suite = UserDefaults(suiteName: arguments[index + 1]) { return suite }
+        #endif
+        return .standard
+    }
+    func path(for destination: AutomationNativePreparationDestination) -> String {
+        paths[destination.rawValue] ?? ""
+    }
+    func setPath(_ path: String, for destination: AutomationNativePreparationDestination) {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { paths.removeValue(forKey: destination.rawValue) }
+        else { paths[destination.rawValue] = trimmed }
+        defaults.set(paths, forKey: key)
+    }
+    func developerDirectory(for destination: AutomationNativePreparationDestination, fallback: URL) -> URL {
+        let override = runOverride.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = override.isEmpty ? path(for: destination) : override
+        guard !selected.isEmpty else { return fallback }
+        let url = URL(fileURLWithPath: selected)
+        return url.pathExtension == "app" ? url.appendingPathComponent("Contents/Developer") : url
+    }
+}
+
 typealias AutomationNativePreparationExecutor = @Sendable (AutomationApplicationCandidate, AutomationBuildApproval, URL) async throws -> AutomationPreparedApplication
 typealias AutomationNativeSimulatorInventoryReader = @Sendable (URL, URL) async throws -> [AutomationSimulator]
 

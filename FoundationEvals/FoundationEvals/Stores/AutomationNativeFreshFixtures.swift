@@ -16,10 +16,7 @@ extension AutomationApplicationRunner: AutomationFreshFixtureQualifyingRunner {}
 
 enum AutomationNativeFreshFixtures {
     static func capabilities(_ prepared: AutomationPreparedApplication) -> CapabilityProfile {
-        var value = AutomationEntityQuery.capabilities(prepared)
-        value.records["apple.intent.invoke"] = .init(state: .available,
-            reason: "Associated Apple host; registration is checked by invocation", probeVersion: "host-v2", evidence: [prepared.host.xctestrunDigest])
-        return value
+        AutomationPreparedCapabilities.base(prepared)
     }
     /// Requalify through actual execution in this runner. Saved reports can only
     /// exclude historical IDs; they cannot restore this non-Codable authority.

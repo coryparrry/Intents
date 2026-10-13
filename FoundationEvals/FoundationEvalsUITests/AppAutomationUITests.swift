@@ -42,6 +42,58 @@ final class AppAutomationUITests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: file), bytes)
     }
 
+    @MainActor
+    func testXcodeDefaultsFollowDestinationAndRestoreWithoutRunOverride() throws {
+        executionTimeAllowance = 120; continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "automation-xcode-selection")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let suite = "automation-xcode-ui-" + UUID().uuidString
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let project = storage.appendingPathComponent("XcodeSelectionFixture.xcodeproj")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let objects: [String: Any] = [
+            "APP": ["isa": "PBXNativeTarget", "name": "XcodeSelectionFixture",
+                    "productType": "com.apple.product-type.application", "buildConfigurationList": "CONFIGS"],
+            "CONFIGS": ["buildConfigurations": ["DEBUG"]], "DEBUG": ["name": "Debug"]]
+        try PropertyListSerialization.data(fromPropertyList: ["objects": objects], format: .xml, options: 0)
+            .write(to: project.appendingPathComponent("project.pbxproj"))
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
+            "--automation-select-path", project.path, "--automation-xcode-settings-suite", suite,
+            "--evaluation-window-width", "1300", "--evaluation-window-height", "950"]
+        app.launch(); defer { app.terminate() }
+        app.activate(); app.typeKey("3", modifierFlags: .command)
+        waitForAutomationSelection(in: app)
+        let destination = app.popUpButtons["automation.preparation.destination"]
+        let saved = app.textFields["automation.xcode.default"]
+        let override = app.textFields["automation.xcode.override"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 10)); XCTAssertTrue(override.exists)
+        XCTAssertTrue(app.staticTexts["Default Xcode for this destination"].exists)
+        XCTAssertTrue(app.staticTexts["Xcode override for this session"].exists)
+        saved.click(); saved.typeText("/Applications/Simulator Xcode.app")
+        selectAutomationMenu(destination, item: "physical")
+        XCTAssertEqual(saved.value as? String, "")
+        saved.click(); saved.typeText("/Applications/Device Xcode.app")
+        override.click(); override.typeText("/Applications/Run Xcode.app")
+        selectAutomationMenu(destination, item: "macOS")
+        XCTAssertEqual(saved.value as? String, "")
+        XCTAssertEqual(override.value as? String, "/Applications/Run Xcode.app")
+        selectAutomationMenu(destination, item: "physical")
+        XCTAssertEqual(saved.value as? String, "/Applications/Device Xcode.app")
+        let screenshot = app.windows.firstMatch.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "phase1-xcode-selection"; attachment.lifetime = .keepAlways; add(attachment)
+        let screenshots = URL(fileURLWithPath: "/private/tmp/foundation-evals-ui-tests")
+        try FileManager.default.createDirectory(at: screenshots, withIntermediateDirectories: true)
+        try screenshot.pngRepresentation.write(to: screenshots.appendingPathComponent("phase1-xcode-selection.png"))
+        app.terminate(); app.launch(); app.activate(); app.typeKey("3", modifierFlags: .command)
+        waitForAutomationSelection(in: app)
+        XCTAssertEqual(saved.value as? String, "/Applications/Simulator Xcode.app")
+        XCTAssertEqual(override.value as? String, "")
+        selectAutomationMenu(destination, item: "physical")
+        XCTAssertEqual(saved.value as? String, "/Applications/Device Xcode.app")
+    }
+
     /// Intake and picker regression only; selecting a destination never builds, boots or installs.
     @MainActor
     func testPreparationPickersUseStableIdentifiers() throws {

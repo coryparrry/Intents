@@ -7,6 +7,7 @@ import IntentsAutomationCore
 final class AppAutomationStore {
     var intake: AutomationIntakeAssessment?
     var candidateID = ""
+    var restoredCandidateID: String?
     var configuration = ""
     var simulators: [AutomationSimulator] = []
     var simulatorID = ""
@@ -157,13 +158,13 @@ final class AppAutomationStore {
     var progress: String?
     var selectedMacTarget: TargetIdentity?
     let nativeMacTargetReader: @Sendable () throws -> TargetIdentity
-    private var selectedURL: URL?
+    var selectedURL: URL?
     let sourceGrants: AutomationNativeSourceGrants
     var selectedSourceRoot: URL? {
         selectedURL.map { ["xcodeproj", "xcworkspace"].contains($0.pathExtension.lowercased()) ? $0.deletingLastPathComponent() : $0 }
     }
-    private var hasSecurityScope = false
-    private var securityScopedURL: URL?
+    var hasSecurityScope = false
+    var securityScopedURL: URL?
     var closing = false
     @ObservationIgnored private let telemetry: (any AutomationRunTelemetry)?
     var task: Task<Void, Never>?
@@ -176,13 +177,34 @@ final class AppAutomationStore {
     private let preparation = AutomationPreparation()
     private let preparationExecutor: AutomationNativePreparationExecutor?
     private let simulatorInventoryReader: AutomationNativeSimulatorInventoryReader
-    private let intakeAssessor: @Sendable (URL) throws -> AutomationIntakeAssessment
+    let intakeAssessor: @Sendable (URL) throws -> AutomationIntakeAssessment
     private let selectionCatalogReader: @Sendable (AppIdentity, URL) throws -> ApplicationSurfaceCatalog
     private let physicalTargetResolver: @Sendable (TargetIdentity, URL, URL) async throws -> TargetIdentity
     var resolvedPhysicalDeviceIdentifiers: [String: String] = [:]
     private var simulatorInventoryRevision = 0
-    let developerDirectory: URL
+    private let launchDeveloperDirectory: URL
+    let xcodeSettings: AutomationNativeXcodeSettings
+    var selectedXcodePath: String {
+        get { xcodeSettings.path(for: preparationDestination) }
+        set { guard !busy else { return }; xcodeSettings.setPath(newValue, for: preparationDestination); advanceSelection() }
+    }
+    var runXcodePathOverride: String {
+        get { xcodeSettings.runOverride }
+        set { guard !busy else { return }; xcodeSettings.runOverride = newValue; advanceSelection() }
+    }
+    var developerDirectory: URL {
+        xcodeSettings.developerDirectory(for: isInstalledMacUI ? .macOS : preparationDestination, fallback: launchDeveloperDirectory)
+    }
+    func developerDirectory(for target: TargetIdentity) -> URL {
+        let destination: AutomationNativePreparationDestination = switch target.kind {
+        case .simulator: .simulator
+        case .physical: .physical
+        case .nativeMac: .macOS
+        }
+        return xcodeSettings.developerDirectory(for: destination, fallback: launchDeveloperDirectory)
+    }
     init(supportDirectory: URL, telemetry: (any AutomationRunTelemetry)? = nil, developerDirectory: URL = AutomationNativeToolchain.developerDirectory(),
+         xcodeSettings: AutomationNativeXcodeSettings? = nil,
          savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])? = nil,
          savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil, runExecutor: AutomationNativeRunExecutor? = nil,
          macSavedRuntimeProvider: (@Sendable () throws -> AutomationNativeMacSavedRuntime)? = nil,
@@ -203,7 +225,8 @@ final class AppAutomationStore {
         self.physicalTargetResolver = physicalTargetResolver
         self.intakeAssessor = intakeAssessor; self.selectionCatalogReader = selectionCatalogReader
         self.recoverySimulatorShutdown = recoverySimulatorShutdown
-        self.developerDirectory = developerDirectory
+        launchDeveloperDirectory = developerDirectory
+        self.xcodeSettings = xcodeSettings ?? AutomationNativeXcodeSettings()
         self.preparationExecutor = preparationExecutor
         self.sourceGrants = sourceGrants ?? AutomationNativeSourceGrants()
         self.simulatorInventoryReader = simulatorInventoryReader
@@ -214,6 +237,7 @@ final class AppAutomationStore {
         support = supportDirectory; self.entityQueryExecutor = entityQueryExecutor; self.comparisonExecutor = comparisonExecutor; self.savedAttemptsReader = savedAttemptsReader
         self.savedCasesReader = savedCasesReader; self.runExecutor = runExecutor; self.searchExecutor = searchExecutor; self.reproductionExecutor = reproductionExecutor; self.reproductionPreflightReader = reproductionPreflightReader
         ownershipRecoveryTask = Task { [weak self] in await self?.reconcileAbandonedOwnership() }
+        restoreLatestPreparation()
     }
     var busy: Bool { progress != nil }
     var candidate: AutomationApplicationCandidate? { intake?.candidates.first { $0.id == candidateID } }
@@ -326,7 +350,7 @@ final class AppAutomationStore {
                 executedRequest = (proposal.approval.runID, proposal.frozen.plan.target)
                 let result: AutomationReproductionReport
                 if let reproductionExecutor { result = try await reproductionExecutor(proposal, subject, support, request.installApproved) }
-                else { result = try await proposal.execute(subject: subject, support: support, developerDirectory: developerDirectory, allowBootAndInstall: request.installApproved) }
+                else { result = try await proposal.execute(subject: subject, support: support, developerDirectory: developerDirectory(for: request.subject.target), allowBootAndInstall: request.installApproved) }
                 reproductionReport = result
                 if unresolvedReproduction { retainUnresolvedRequest(runID: proposal.approval.runID, target: proposal.frozen.plan.target) }
                 guard result.frozen == proposal.frozen, result.originalFailure.attemptID == proposal.originalAttemptID,
@@ -441,7 +465,7 @@ final class AppAutomationStore {
                 let result: AutomationEntityQueryResult
                 if let entityQueryExecutor { result = try await entityQueryExecutor(prepared, entity, text, approval, attemptID, install, support) }
                 else {
-                    let runner = try AutomationApplicationRunner(supportRoot: support, developerDirectory: developerDirectory)
+                    let runner = try AutomationApplicationRunner(supportRoot: support, developerDirectory: developerDirectory(for: prepared.host.target))
                     result = try await AutomationEntityQuery.execute(runner: runner, prepared: prepared, entity: entity, text: text,
                         approval: approval, attemptID: attemptID, allowBootAndInstall: install)
                 }
@@ -580,7 +604,7 @@ final class AppAutomationStore {
                     (request.proposal.afterApproval.runID, request.proposal.candidate.plan.target)]
                 let result: AutomationFixComparisonReport
                 if let comparisonExecutor { result = try await comparisonExecutor(request.proposal, request.before, request.after, support) }
-                else { result = try await request.proposal.execute(before: request.before, after: request.after, support: support, developerDirectory: developerDirectory) }
+                else { result = try await request.proposal.execute(before: request.before, after: request.after, support: support, developerDirectory: developerDirectory(for: request.before.target)) }
                 comparisonReport = result
                 if unresolvedComparison {
                     retainUnresolvedRequest(runID: request.proposal.beforeApproval.runID, target: request.proposal.baseline.plan.target)
@@ -638,7 +662,7 @@ final class AppAutomationStore {
             do {
                 let result: AutomationFailureSearchReport
                 if let searchExecutor { result = try await searchExecutor(proposal, request.subject, support, request.installApproved) }
-                else { result = try await proposal.execute(subject: request.subject, support: support, developerDirectory: developerDirectory, allowBootAndInstall: request.installApproved) }
+                else { result = try await proposal.execute(subject: request.subject, support: support, developerDirectory: developerDirectory(for: request.subject.target), allowBootAndInstall: request.installApproved) }
                 // Retain uncertain results even if their archive cannot be written.
                 searchReport = result
                 if unresolvedSearch { retainUnresolvedRequest(runID: proposal.approval.run.runID, target: proposal.baseline.plan.target) }
@@ -686,8 +710,15 @@ final class AppAutomationStore {
             }
         }
     }
+    func candidateSelectionChanged() {
+        let restored = restoredCandidateID
+        restoredCandidateID = nil
+        guard restored != candidateID else { return }
+        selectCandidate()
+    }
     func selectCandidate() {
         guard !busy, !closing else { return }
+        restoredCandidateID = nil
         clearPrepared(); message = nil
         let epoch = selectionEpoch
         progress = "Reading selected app…"
@@ -721,16 +752,19 @@ final class AppAutomationStore {
         guard needsSimulatorInventory else { return }
         simulatorInventoryRevision += 1
         let revision = simulatorInventoryRevision, selection = simulatorInventorySelection
+        let selectedDeveloper = developerDirectory(for: .init(id: simulatorID, kind: .simulator))
         do {
             try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let targets = try await simulatorInventoryReader(developerDirectory, support)
+            let targets = try await simulatorInventoryReader(selectedDeveloper, support)
             guard !busy, !closing, !Task.isCancelled, simulatorInventoryRevision == revision,
-                  simulatorInventorySelection == selection, needsSimulatorInventory else { return }
+                  simulatorInventorySelection == selection, needsSimulatorInventory,
+                  developerDirectory(for: .init(id: simulatorID, kind: .simulator)) == selectedDeveloper else { return }
             simulators = targets
             if !simulators.contains(where: { $0.id == simulatorID }) { simulatorID = simulators.first?.id ?? "" }
         } catch {
             guard !busy, !closing, !Task.isCancelled, simulatorInventoryRevision == revision,
-                  simulatorInventorySelection == selection, needsSimulatorInventory else { return }
+                  simulatorInventorySelection == selection, needsSimulatorInventory,
+                  developerDirectory(for: .init(id: simulatorID, kind: .simulator)) == selectedDeveloper else { return }
             message = errorText(error)
         }
     }
@@ -739,6 +773,7 @@ final class AppAutomationStore {
         guard expectedTarget == nil || target == expectedTarget else { message = "The build destination changed. Review it again."; return }
         message = nil; progress = "Freezing source and building an associated host…"
         let root = ["xcodeproj", "xcworkspace"].contains(selectedURL.pathExtension.lowercased()) ? selectedURL.deletingLastPathComponent() : selectedURL
+        let developerDirectory = developerDirectory(for: target)
         let destination = preparationDestination, epoch = selectionEpoch
         let selectedConfiguration = configuration, additionalRoots = sourceGrants.urls.map(\.path)
         task = Task {
@@ -820,7 +855,7 @@ final class AppAutomationStore {
                 if let runExecutor {
                     result = try await runExecutor(request.subject, request.plan, request.approval, request.capabilities, attemptID, request.installApproved)
                 } else {
-                    let runner = try AutomationApplicationRunner(supportRoot: support, developerDirectory: developerDirectory)
+                    let runner = try AutomationApplicationRunner(supportRoot: support, developerDirectory: developerDirectory(for: request.subject.target))
                     result = try await runNativePreparedRequest(request, runner: runner, attemptID: attemptID)
                     if isFreshRecordWorkflow, !useLearnedSetup,
                        let bindings = try? AutomationFreshEntityPlanner.bindings(plan: request.plan),
@@ -1039,7 +1074,7 @@ final class AppAutomationStore {
         guard !busy, !closing, sourceGrants.urls.contains(url) else { return }
         sourceGrants.remove(url); clearPrepared(); message = nil
     }
-    private func releaseScopeIfClosing() {
+    func releaseScopeIfClosing() {
         if closing { clearFixedSelection(); sourceGrants.clear() }
         if closing, hasSecurityScope { securityScopedURL?.stopAccessingSecurityScopedResource(); securityScopedURL = nil; hasSecurityScope = false }
     }
