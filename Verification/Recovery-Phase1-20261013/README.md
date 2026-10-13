@@ -12,14 +12,17 @@ Typed plans now use the conversions implemented by the saved host after checking
 - CLI probe, **iOS simulator on this Mac**, Xcode **27.0**: UI create → `CompleteTaskIntent` → independent query passed without supplied capabilities. One entity changed from incomplete to complete; all four receipts completed, resources released and the simulator shut down. This used the app's shared capability code; it was not a desktop app or Intent Lab run.
 - The probe rejects a profile containing capabilities before execution. Independent scoped reviews found no material issues. CI YAML parses.
 
-## Pending before acceptance
+## Simulator acceptance and CI
 
-- Xcode 27.2 beta 2 preparation and the same mixed simulator workflow.
-- Native Debug app Xcode-settings UI test and visual screenshot inspection.
-- Hosted PR checks. The Phase 3 simulator workflow CI job does not exist yet; the live workflow above is local evidence.
+- CLI probe, **iOS simulator on this Mac**, Xcode **27.2 beta 2** with matching iOS **27.2 (24B5089g)**: the same UI create → intent → independent query passed with no supplied capabilities. One entity changed from incomplete to complete; all four receipts completed, resources released, campaign ownership cleared and simulator shutdown completed.
+- Xcode 27.0 deliberate wrong expectation: `assertionFailed`, with the intent completed, independent query evidence complete and resources released. This also used shared app capability resolution without supplied capabilities.
+- [Initial hosted CI](https://github.com/coryparrry/Intents/actions/runs/38449864414) passed portable regressions, the native Debug app settings/relaunch UI test and ten preparation-picker repetitions. Its actual settings screenshot was inspected. Filled fields lacked visible labels, so permanent default/session captions and two assertions were added. The final caption screenshot and final checks are tracked in [PR 136](https://github.com/coryparrry/Intents/pull/136).
+- The Phase 3 live simulator workflow CI job does not exist yet. The two mixed workflows ran locally; CI covers regressions and Mac app configuration UI.
 
-The first real workflow stopped before dispatch at a 15-second simulator inspection timeout. After observing a 12-second read-only inspection under load, the bounded allowance became 60 seconds; all checks remain, and cleanup remains bounded at 90 seconds. The stopped campaign was recovered through the existing API after owner/command exit checks and simulator shutdown. The retry passed. A cold Xcode 27.2 source-scanner compile exceeded 120 seconds; its bounded allowance became 300 seconds, with cancellation and checks retained.
+The first real workflow stopped before dispatch at a 15-second simulator inspection timeout. After observing a 12-second read-only inspection under load, the bounded allowance became 60 seconds; all checks remain, and cleanup remains bounded at 90 seconds. The stopped campaign was recovered through the existing API after owner/command exit checks and simulator shutdown. The retry passed. The first Xcode 27.2 preparation timeout occurred after source-scanner inputs were written; the bounded cold-compile allowance became 300 seconds, with cancellation and checks retained. A later attempt timed out earlier at build settings. The same settings query succeeded directly and through the owned command API; a subsequent preparation passed.
 
-The optional conversion diagnostic preserves the existing **Mac-only** canary and never grants or revokes execution capabilities. No live diagnostic, iPhone, Mac intent/UI workflow, or Intent Lab run was performed in this phase. Every codec family's real echo is still Phase 3 acceptance.
+Xcode 27.2 initially failed to load Apple’s test framework on iOS 27.0 because that runtime lacks `PropertyContainerElement.valueExpression`. Explicit-version download queries returned unavailable; the beta Xcode default catalog found and installed the matching iOS 27.2 runtime. Its first cold boot timed out during subject installation, before dispatch; automatic shutdown and empty ownership were verified. The unchanged retry passed. These retries are local tooling evidence, not a claim that cold-runtime startup is always reliable.
+
+The optional conversion diagnostic preserves the existing **Mac-only** canary and never grants or revokes execution capabilities. No live diagnostic, iPhone, Mac subject intent/UI workflow, or Intent Lab run was performed in this phase. Every codec family's real echo is still Phase 3 acceptance.
 
 Raw logs, profiles, prepared products and screenshots stay outside git in the temporary verification directory. Only this README, the compact worklog, plan and brief are committed.

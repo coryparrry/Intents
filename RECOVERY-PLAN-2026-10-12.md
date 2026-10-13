@@ -265,7 +265,7 @@ Acceptance: CI green on `main`. A test cancels an unresolved attempt, resets it 
 
 ### Phase 1 — Make typed App Intent testing work on any supported Mac
 
-**Execution update, 2026-10-13:** PR 135 had already merged as `f03d36497` before this request. Phase 1 is being delivered as a separate PR from that main commit. The implementation and independent reviews are complete; local Xcode 27.0 mixed-workflow acceptance and automation regressions pass. Xcode 27.2 and the native UI check remain in progress. See [Phase 1 verification](Verification/Recovery-Phase1-20261013/README.md). The original amended instructions below record the intended merge order.
+**Execution update, 2026-10-13:** PR 135 had already merged as `f03d36497` before this request. Phase 1 is implemented in separate [PR 136](https://github.com/coryparrry/Intents/pull/136) from main, with the item 6 failing regression first and independent reviews complete. Local CLI mixed-workflow acceptance passes with Xcode 27.0/iOS 27.0 and Xcode 27.2 beta 2/iOS 27.2 using the app’s capability resolver, with no capabilities supplied. Core/native regressions and initial hosted app UI checks pass; final checks and the caption screenshot recheck are recorded with the PR. This change is not merged or released. See [Phase 1 verification](Verification/Recovery-Phase1-20261013/README.md). The original amended instructions below record the intended merge order.
 
 *Amended 2026-10-13.* Status: **not started, and now required before PR 135 merges.**
 - PR 135 adds `UIHostPlan.swift` and `UIStepTests.swift` to the host templates, so the prepared host's template digest becomes `815a51c0…`.
