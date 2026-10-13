@@ -26,25 +26,10 @@ final class AutomationMacExecutableInventoryTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(Inventory.self, from: JSONEncoder().encode(result)), result)
     }
 
-    func testExactHelperRetainsIdentityAndBlocksReleaseVerifier() async throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let executable = try AutomationPath.canonical(folder).appendingPathComponent("helper")
-        let bytes = Data("owned helper fixture".utf8); try bytes.write(to: executable)
-        let selected: Set<String> = [executable.path]
-        let helper = AutomationMacHelperReleaseVerifier.Helper(executable: executable, sha256: AutomationArtifactRegistry.digest(bytes))
-        let occupied = try Inventory.collectExecutables(userID: 501, paths: selected,
-            reader: reader(path: { _ in executable.path }), inactive: { _ in false })
+    func testExactExecutableRetainsProcessIdentity() throws {
+        let occupied = try Inventory.collectExecutables(userID: 501, paths: paths,
+            reader: reader(), inactive: { _ in false })
         XCTAssertEqual(occupied.processes.map(\.identity), [.init(pid: 42, startIdentity: "100:0")])
-        var empty = Inventory(userID: 501, complete: true, processes: []); empty.executableScope = selected.sorted()
-        let state = Frames([empty, occupied])
-        let verifier = try AutomationMacHelperReleaseVerifier(helpers: [helper], loginSession: "fixture", userID: 501,
-            inspector: { try await state.next() }, drain: { true })
-        let target = TargetIdentity(id: "host-macos-local", kind: .nativeMac, loginSession: "fixture")
-        try await verifier.prepare(target: target, controllerBundleIDs: [])
-        let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [])
-        XCTAssertFalse(released)
     }
 
     func testUnreadableLivePathAndOwnedIdentityStillFailClosed() throws {
@@ -101,10 +86,5 @@ final class AutomationMacExecutableInventoryTests: XCTestCase {
         .init(processIDs: { _ in [42] }, identity: { pid, _ in .init(pid: pid, startIdentity: "100:0") }, executablePath: path)
     }
     private enum Failure: Error { case unrelated, owned }
-    private actor Frames {
-        var frames: [Inventory]
-        init(_ frames: [Inventory]) { self.frames = frames }
-        func next() throws -> Inventory { guard !frames.isEmpty else { throw Failure.owned }; return frames.removeFirst() }
-    }
 }
 #endif

@@ -116,21 +116,4 @@ extension AutomationAppleRouteDriverTests {
             makeDriver: { try self.driver(h, approval: $0, capabilities: $1) }, calls: { await h.release.calls })
     }
 }
-extension AutomationPrivateMacAppleRouteDriverTests {
-    func testResolvedMacCodecIsCheckedBeforePreparation() async throws {
-        let h = try await fixture()
-        try await checkResolvedCodecAdmission(plan: h.plan, approval: h.approval, scope: h.scope, lease: h.lease,
-            makeDriver: { try self.driver(h, approval: $0) }, calls: { await h.release.calls })
-    }
-    func testCoordinatorMacProfileMismatchReleasesWithoutExternalWork() async throws {
-        let h = try await fixture()
-        try await checkCoordinatorCodecDenial(plan: h.plan, approval: h.approval, root: h.root, leases: h.leases, initial: h.lease,
-            makeDriver: { try self.driver(h, approval: $0) }, calls: { await h.release.calls })
-    }
-    func testDirectMacDriverRequiresCodecAdmissionBeforeControllerPreparation() async throws {
-        let h = try await fixture()
-        try await checkCodecAdmission(plan: h.plan, approval: h.approval, scope: h.scope, lease: h.lease,
-            makeDriver: { try self.driver(h, approval: $0, capabilities: $1) }, calls: { await h.release.calls })
-    }
-}
 #endif

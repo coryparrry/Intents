@@ -142,50 +142,19 @@ public struct AutomationUIProgram: Codable, Equatable, Sendable {
             }
         }
     }
-    public func payload(scope: AutomationScope, phase: AutomationSegment.Phase, operationID: String, digestVersion: AutomationUIPayloadDigestVersion = .legacyV1) throws -> AutomationJSON {
-        guard steps == nil else { throw AutomationContractError.missingEvidence("Direct XCUITest steps require the prepared host route") }
-        try scope.validate(); try validate(phase: phase)
-        guard Self.identifier(operationID) else { throw AutomationContractError.invalidIdentity }
-        let encoder = JSONEncoder()
-        let operationJSON = try JSONDecoder().decode(AutomationJSON.self, from: encoder.encode(operations))
-        var body: [String: AutomationJSON] = ["scope": try JSONDecoder().decode(AutomationJSON.self, from: encoder.encode(scope)),
-            "operationId": .string(operationID), "phase": .string(phase.rawValue), "operations": operationJSON,
-            "bindings": .object(bindings.mapValues(AutomationJSON.string)), "timeoutMs": .number(Double(timeoutMilliseconds))]
-        if digestVersion == .lexicalV2 { body["digestVersion"] = .number(2) }
-        body["payloadDigest"] = .string(AutomationArtifactRegistry.digest(try AutomationCanonicalJSON.encode(.object(body), legacyObjectKeyOrder: digestVersion == .legacyV1)))
-        guard try encoder.encode(AutomationJSON.object(body)).count <= 1_047_552 else { throw AutomationContractError.invalidPlan("UI payload exceeds frame budget") }
-        return .object(body)
-    }
     private static func identifier(_ value: String) -> Bool {
         value.utf16.count <= 256 && value.range(of: #"^[A-Za-z0-9_.:-]+$"#, options: .regularExpression) != nil
     }
 }
 
-/// Missing envelope version is the historical JSON.stringify object ordering.
-/// Explicit version-two envelopes sort every object key lexically.
-/// Existing callers retain v1 until their verified runtime supports v2.
-public enum AutomationUIPayloadDigestVersion: Equatable, Sendable { case legacyV1, lexicalV2 }
-
 /// Canonical protocol numbers are exact safe integers; default keys use UTF-16 lexical order.
 enum AutomationCanonicalJSON {
-    static func encode(_ value: AutomationJSON, legacyObjectKeyOrder: Bool = false) throws -> Data {
+    static func encode(_ value: AutomationJSON) throws -> Data {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.withoutEscapingSlashes]
         func render(_ value: AutomationJSON) throws -> String {
             switch value {
             case .object(let fields):
                 let keys = fields.keys.sorted { left, right in
-                    if legacyObjectKeyOrder {
-                        func index(_ key: String) -> UInt64? {
-                            guard let value = UInt64(key), value < 4_294_967_295, String(value) == key else { return nil }
-                            return value
-                        }
-                        switch (index(left), index(right)) {
-                        case let (a?, b?): return a < b
-                        case (_?, nil): return true
-                        case (nil, _?): return false
-                        default: break
-                        }
-                    }
                     return left.utf16.lexicographicallyPrecedes(right.utf16)
                 }
                 return "{" + (try keys.map { try render(.string($0)) + ":" + render(fields[$0]!) }).joined(separator: ",") + "}"

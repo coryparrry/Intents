@@ -244,3 +244,13 @@ enum HostIntentFileCodec {
     }
     private static func invalid() -> DecodingError { .dataCorrupted(.init(codingPath: [], debugDescription: "File transport input does not match its frozen codec")) }
 }
+
+enum HostIntentIdentity {
+    static func validate(bundle: String, action: String, definitionsBundle: String, definitionBundle: String,
+                         definitionID: String, intentBundle: String, intentID: String) throws {
+        guard definitionsBundle == bundle, definitionBundle == bundle, intentBundle == bundle,
+              definitionID == action, intentID == action else {
+            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Intent definition identity does not match the selected bundle and action"))
+        }
+    }
+}

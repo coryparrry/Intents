@@ -11,9 +11,6 @@ public struct AutomationFreshEntityContext: Codable, Equatable, Sendable {
     public init(property: String, selectedValue: String, protectedValue: String) {
         self.property = property; self.selectedValue = selectedValue; self.protectedValue = protectedValue
     }
-    public func setupInstruction(_ instruction: String) -> String {
-        instruction + " Create two records with the same approvedText name. Use selectedContext (\(selectedValue)) for the selected record's \(property), and protectedContext (\(protectedValue)) for the other record's \(property). Save both records."
-    }
     public func validate(entity: ApplicationSurfaceCatalog.Entity, nameProperty: String) throws {
         guard property != nameProperty, entity.properties[property] == "text", selectedValue != protectedValue,
               [selectedValue, protectedValue].allSatisfy({ value in

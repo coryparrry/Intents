@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import IntentsAutomationCore
 
-extension AutomationPrivateMacAppleRouteDriverTests {
+extension AutomationPreparedMacContractTests {
     struct PreparedSavedFixture: Sendable {
         let harness: PreparedMacSavedHarness, frozen: AutomationFrozenCase, original: AutomationAttemptReport
         let evidence: AutomationPrivateMacDaemonUnit.Evidence

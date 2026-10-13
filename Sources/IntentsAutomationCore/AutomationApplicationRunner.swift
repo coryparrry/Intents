@@ -63,7 +63,6 @@ public actor AutomationApplicationRunner {
     private var lastSetupCapture: AutomationControllerSetupCapture?
     private var liveFixtureEvidence: [AutomationLiveRecipeEvidence] = []
     private var latestFreshFixtureAttemptID: String?
-    private var latestAppleRuntimeContext: AutomationLiveAppleRuntimeContext?
     private let simulatorInventory: @Sendable (URL, URL) async throws -> [AutomationSimulator]
     private let physicalAliasReader: (@Sendable (URL, URL) async throws -> [String: String])?
     public init(supportRoot: URL, developerDirectory: URL) throws {
@@ -134,7 +133,6 @@ public actor AutomationApplicationRunner {
         failedPreparation = nil
         lastSetupCapture = nil
         latestFreshFixtureAttemptID = nil
-        latestAppleRuntimeContext = nil
         try subject.validate(plan: plan)
         guard let prepared = subject.prepared else {
             throw AutomationContractError.missingEvidence("Prepare the source app and its XCUITest host before running this workflow")
@@ -313,11 +311,6 @@ public actor AutomationApplicationRunner {
               failure.planDigest == (try AutomationFrozenCase.planDigest(plan)), failure.runID == runID else { return nil }
         try AutomationRecordedEvidence.validate(report: failure.report, plan: plan, expectedRunID: runID)
         return failure.report
-    }
-    func appleRuntimeContext(report: AutomationAttemptReport, plan: AutomationCase, host: AutomationPreparedAppleHost) -> AutomationLiveAppleRuntimeContext? {
-        guard !running, let context = latestAppleRuntimeContext,
-              (try? context.matches(report: report, plan: plan, host: host)) == true else { return nil }
-        return context
     }
     public func captureFreshSetup(bindings: [AutomationFreshFixtureBinding]) throws -> AutomationCapturedSetupAttempt {
         guard !running, let live = liveFixtureEvidence.last, let capture = lastSetupCapture else {

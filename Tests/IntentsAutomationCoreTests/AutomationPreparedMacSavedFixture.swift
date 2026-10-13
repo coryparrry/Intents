@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import IntentsAutomationCore
 
-extension AutomationPrivateMacAppleRouteDriverTests {
+extension AutomationPreparedMacContractTests {
     /// Synthetic saved-review evidence with actual bundle and xctestrun artifacts.
     /// It exercises the coordinator's receipt contract without any Mac UI runtime.
     struct PreparedMacSavedHarness: Sendable {
@@ -13,7 +13,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
     }
 
     func preparedMacSavedHarness(mode: FreshRecordPlanDriver.Mode = .normal, changedBuild: Bool = false) async throws -> PreparedMacSavedHarness {
-        let base = try await fixture()
+        let base = try fixture()
         let source = AutomationSourceManifest(sourceRoot: base.root.path, files: [], directories: [], excludedPaths: [])
         var host = base.host
         host.app.sourceManifestDigest = try source.digest

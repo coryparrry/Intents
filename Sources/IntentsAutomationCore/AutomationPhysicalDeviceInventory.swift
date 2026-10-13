@@ -18,9 +18,6 @@ public enum AutomationPhysicalDeviceInventory {
         func set(_ developer: String, identifiers: [String: String]) { self.identifiers[developer] = identifiers }
     }
     private static let identifierCache = IdentifierCache()
-    public static func cachedLeaseAliases(developerDirectory: URL) async throws -> [String: String]? {
-        await identifierCache.get(try AutomationPath.canonical(developerDirectory).path)
-    }
     public static func leaseAliases(developerDirectory: URL, workspace: URL) async throws -> [String: String] {
         try await readCoreIdentifiers(developerDirectory: developerDirectory, workspace: workspace)
     }

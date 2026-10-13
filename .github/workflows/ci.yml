@@ -120,12 +120,11 @@ jobs:
           PY
       # The Xcode 27 hosted image is a macOS 27 ARM public-preview runner.
       # Compile the full scheme for UI-impacting changes, but execute only core tests.
-      - name: Enable UI snapshots
+      - name: Prepare desktop for UI tests
         run: |
           # The preview runner has a 1024x768 display. Keep its Dock from covering footer controls.
           defaults write com.apple.dock autohide -bool true
           killall Dock || true
-          echo "TEST_RUNNER_INTENTS_SNAPSHOT_DIR=$RUNNER_TEMP/ui-snapshots" >> "$GITHUB_ENV"
           defaults write com.coryparry.FoundationEvals SUEnableAutomaticChecks -bool false
           defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
       - name: Build app and selected test bundles

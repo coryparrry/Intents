@@ -14,7 +14,6 @@ struct SpotlightSearchToolTests {
         #expect(!configuration.pipeline.deduplicateItems)
         #expect(configuration.fileSource.maximumResults == 8)
         #expect(configuration.maximumResponseSize == 1_024)
-        #expect(configuration.conservativeContextTokenReserve(maximumCalls: 4) == 0)
         #expect(configuration.enabledToolNames.isEmpty)
 
         let decoded = try JSONDecoder().decode(

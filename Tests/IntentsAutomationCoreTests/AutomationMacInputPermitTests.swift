@@ -45,18 +45,5 @@ final class AutomationMacInputPermitTests: XCTestCase {
         XCTAssertEqual(AutomationPrivateMacDaemonUnit.programInputCapabilities(receiptSHA256: AutomationPrivateMacDaemonUnit.pinnedProgramReceiptSHA256), .tapOnly)
         XCTAssertEqual(AutomationPrivateMacDaemonUnit.programInputCapabilities(receiptSHA256: AutomationPrivateMacDaemonUnit.pinnedFillProgramReceiptSHA256), .ordinaryFillAndScroll)
     }
-
-    func testDigestVersionIsChosenOnlyFromExactFrozenRuntimeReceipt() {
-        XCTAssertEqual(AutomationPrivateMacDaemonUnit.programDigestVersion(receiptSHA256: AutomationPrivateMacDaemonUnit.pinnedV2ProgramReceiptSHA256), .lexicalV2)
-        for receipt in [AutomationPrivateMacDaemonUnit.pinnedReceiptSHA256, AutomationPrivateMacDaemonUnit.pinnedProgramReceiptSHA256, AutomationPrivateMacDaemonUnit.pinnedFillProgramReceiptSHA256] {
-            XCTAssertEqual(AutomationPrivateMacDaemonUnit.programDigestVersion(receiptSHA256: receipt), .legacyV1)
-        }
-        XCTAssertEqual(AutomationPrivateMacDaemonUnit.programDigestVersion(receiptSHA256: AutomationPrivateMacDaemonUnit.pinnedSecretProgramReceiptSHA256), .lexicalV2)
-        XCTAssertEqual(AutomationPrivateMacDaemonUnit.programDigestVersion(receiptSHA256: AutomationPrivateMacDaemonUnit.pinnedPolicyDiagnosticsProgramReceiptSHA256), .lexicalV2)
-        XCTAssertEqual(AutomationPrivateMacDaemonUnit.programInputCapabilities(receiptSHA256: AutomationPrivateMacDaemonUnit.pinnedPolicyDiagnosticsProgramReceiptSHA256), .ordinaryFillAndScroll)
-        XCTAssertNil(AutomationPrivateMacDaemonUnit.programDigestVersion(receiptSHA256: String(repeating: "a", count: 64)))
-        XCTAssertEqual(AutomationPrivateMacDaemonUnit.programInputCapabilities(receiptSHA256: AutomationPrivateMacDaemonUnit.pinnedV2ProgramReceiptSHA256), .ordinaryFillAndScroll)
-    }
-
 }
 #endif

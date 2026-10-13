@@ -41,6 +41,8 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 
 # Local audit reports, build logs, screenshots, and working notes.
 /worklog.md
+/website/QA.md
+/website/WORKLOG.md
 /.codegraph/
 /Verification/**
 

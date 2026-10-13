@@ -2,7 +2,7 @@
 import XCTest
 @testable import IntentsAutomationCore
 
-extension AutomationPrivateMacAppleRouteDriverTests {
+extension AutomationPreparedMacContractTests {
     func testPreparedMacReviewedPlanCannotDispatchWithoutItsCodecFamily() async throws {
         let h = try await preparedMacSavedHarness()
         var capabilities = h.capabilities; capabilities.records.removeValue(forKey: "apple.codec.entity")

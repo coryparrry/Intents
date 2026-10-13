@@ -1,6 +1,5 @@
 #if os(macOS)
 import XCTest
-import Darwin
 @testable import IntentsAutomationCore
 
 final class AutomationMacInputProbeFixtureTests: XCTestCase {
@@ -57,80 +56,6 @@ final class AutomationMacInputProbeFixtureTests: XCTestCase {
         try (bytes + Data("\n// original drift".utf8)).write(to: original.appendingPathComponent("Subject.swift"))
         XCTAssertThrowsError(try AutomationMacInputProbeFixture.validateSource(manifest, fixture: fixture, original: original, frozenRoot: frozen))
     }
-    func testAuthoredInputProbeFixtureWhenRequested() async throws {
-        let environment = ProcessInfo.processInfo.environment
-        let live = environment["INTENTS_MAC_INPUT_PROBE_FIXTURE_LIVE"] == "1"
-        guard live || environment["INTENTS_MAC_INPUT_PROBE_FIXTURE_BUILD"] == "1" else {
-            throw XCTSkip("Authored input probe build/live calibration is opt-in")
-        }
-        // Target validation and owned host/runner release checks below govern this
-        // fixture. Unrelated account processes are not an admission prerequisite.
-        let target = try AutomationMacGUIIdentity.currentTarget()
-        // Keep the prepared subject and SDK host on the explicitly selected toolchain.
-        // This allows side-by-side Xcode qualification without changing xcode-select.
-        let developer = try AutomationPath.canonical(URL(fileURLWithPath:
-            environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
-        let retainedParent = environment["INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT"].map { URL(fileURLWithPath: $0) }
-        let parent = try AutomationPath.canonical(retainedParent ?? FileManager.default.temporaryDirectory)
-        let requestedRoot = parent.appendingPathComponent("intents-input-fixture-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: requestedRoot, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        let root = try AutomationPath.canonical(requestedRoot)
-        if live || retainedParent != nil { print("Owned input fixture evidence root: \(root.path)") }
-        // Preserve live attempt artifacts and uncertain release evidence for inspection.
-        defer { if !live && retainedParent == nil { try? FileManager.default.removeItem(at: root) } }
-        let source = root.appendingPathComponent("original")
-        let fixture = try AutomationMacInputProbeFixture.write(at: source)
-        let intake = try AutomationApplicationIntake.assess(fixture.project)
-        guard intake.candidates.count == 1, let candidate = intake.candidates.first, candidate.targetID == fixture.targetID else {
-            throw AutomationContractError.conflictingOperation
-        }
-        let templates = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Integration/AutomationHost")
-        let prepared = try await AutomationPreparation().prepare(candidate: candidate,
-            approval: .init(sourceRoot: source.path, candidateID: candidate.id, configuration: "Debug", target: target),
-            sessionRoot: root.appendingPathComponent("prepare"), templates: templates, developerDirectory: developer)
-        try AutomationMacInputProbeFixture.validateSource(prepared.source, fixture: fixture, original: source,
-            frozenRoot: root.appendingPathComponent("prepare/source"))
-        guard let graph = prepared.sourceGraph, graph.targetID == fixture.targetID, graph.projectRelativePath == "Subject.xcodeproj",
-              graph.sourceManifestDigest == (try prepared.source.digest), prepared.catalog.sourceGraphDigest == (try graph.digest),
-              graph.inputs == [.init(relativePath: "Subject.swift", sha256: AutomationArtifactRegistry.digest(Data(AutomationMacInputProbeFixture.source.utf8)),
-                  owner: "Subject.xcodeproj#" + fixture.targetID, role: "explicitSwiftMembership")] else {
-            throw AutomationContractError.conflictingOperation
-        }
-        let settings = try AutomationReadOnlyFile.read(root: root.appendingPathComponent("prepare"),
-            relativePath: "source-compilation-settings.json", maximumBytes: 1_048_576, requirePrivateOwnership: true)
-        guard let context = graph.platformContext, context.settingsSHA256 == AutomationArtifactRegistry.digest(settings),
-              context.selected.platformFamily == "macos", context.filterFamily == "macos" else { throw AutomationContractError.conflictingOperation }
-        let replayedGraph = try AutomationSourceGraphReader.read(manifest: prepared.source,
-            frozenRoot: root.appendingPathComponent("prepare/source"), projectRelativePath: "Subject.xcodeproj",
-            targetID: fixture.targetID, configuration: "Debug",
-            projectData: AutomationReadOnlyFile.read(root: root.appendingPathComponent("prepare"), relativePath: "source-graph-project.pbxproj", maximumBytes: 16 * 1024 * 1024, requirePrivateOwnership: true),
-            platformSettings: settings, developerDirectory: developer)
-        guard try replayedGraph.digest == graph.digest else { throw AutomationContractError.conflictingOperation }
-        guard !prepared.buildLogTruncated else { throw AutomationContractError.missingEvidence("Authored fixture build log is truncated") }
-        print("Authored fixture bundle \(prepared.host.app.bundleID); subjectSHA256 \(prepared.host.app.productDigest ?? "unknown"); hostSHA256 \(prepared.host.hostProductDigest)")
-        let actionID = try AutomationMacInputProbeFixture.validateCatalog(prepared.catalog, app: prepared.host.app)
-        let plan = try AutomationInputAdapterProbePlan(prepared: prepared, actionID: actionID, parameterNames: ["sample"])
-        guard plan.parameters.count == 1, plan.parameters[0].samples == [.text("Intents adapter probe")] else {
-            throw AutomationContractError.conflictingOperation
-        }
-        if !live {
-            print("Authored String input fixture and dedicated SDK host compiled; no app, probe or intent runtime launched")
-            return
-        }
-        let subject = AutomationInstalledSubjectVerifier(developerDirectory: developer, workspace: root)
-        let owner = try AutomationInputAdapterProbeRunner(plan: plan,
-            approval: .init(runID: "authored-input-fixture", probeDigest: plan.digest, app: prepared.host.app, target: target),
-            developerDirectory: developer, state: root.appendingPathComponent("probe-owner"),
-            leases: AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("leases.json")),
-            artifacts: AutomationArtifactRegistry(root: root.appendingPathComponent("artifacts")), subject: subject,
-            release: AutomationMacAssociatedHostReleaseVerifier(host: prepared.host))
-        let report = try await owner.run(attemptID: "string-calibration")
-        XCTAssertNil(report.failure)
-        XCTAssertTrue(report.resourcesReleased)
-        let observation = try XCTUnwrap(report.observation)
-        XCTAssertEqual(observation.echoedSamples["sample"], [.text("Intents adapter probe")])
-        XCTAssertNotNil(report.artifact)
-        print("Authored String setter/readback calibration only; runner absence checked; complete child closure and generic codec availability remain unqualified")
-    }
+
 }
 #endif

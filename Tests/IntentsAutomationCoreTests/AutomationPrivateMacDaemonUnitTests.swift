@@ -27,32 +27,12 @@ final class AutomationPrivateMacDaemonUnitTests: XCTestCase {
         try data.write(to: root.appendingPathComponent(AutomationPrivateMacDaemonUnit.receiptName))
         return AutomationArtifactRegistry.digest(data)
     }
-    func testAvailableFillRuntimeRequiresWholeReceiptInventoryWithoutLaunching() throws {
-        guard let path = ProcessInfo.processInfo.environment["INTENTS_MAC_FILL_RUNTIME"] else { throw XCTSkip("Requires exact private fill daemon runtime") }
-        let unit = try AutomationPrivateMacDaemonUnit.load(root: URL(fileURLWithPath: path))
-        XCTAssertEqual(unit.evidence.receiptSHA256, AutomationPrivateMacDaemonUnit.pinnedFillProgramReceiptSHA256)
-        XCTAssertEqual(unit.evidence.fileCount, 5475)
-        XCTAssertEqual(unit.inputCapabilities, .ordinaryFillAndScroll)
-        XCTAssertEqual(unit.inputCapabilities.helperSHA256, AutomationMacNativeHelperBridge.privateFillHelperSHA256)
-        XCTAssertFalse(unit.evidence.hardwareQualified); XCTAssertFalse(unit.evidence.customerRuntimeEnabled)
-    }
-    func testAvailableV2RuntimePinsAllCompiledModulesWithoutLaunching() throws {
-        guard let path = ProcessInfo.processInfo.environment["INTENTS_MAC_V2_RUNTIME"] else { throw XCTSkip("Requires exact private v2 daemon runtime") }
-        let unit = try AutomationPrivateMacDaemonUnit.load(root: URL(fileURLWithPath: path))
-        XCTAssertEqual(unit.evidence.receiptSHA256, AutomationPrivateMacDaemonUnit.pinnedV2ProgramReceiptSHA256)
-        XCTAssertEqual(unit.evidence.fileCount, 5481)
-        XCTAssertEqual(unit.programDigestVersion, .lexicalV2)
-        XCTAssertEqual(unit.inputCapabilities, .ordinaryFillAndScroll)
-        XCTAssertFalse(unit.evidence.hardwareQualified); XCTAssertFalse(unit.evidence.customerRuntimeEnabled)
-        XCTAssertFalse(unit.evidence.developerIDSigned)
-    }
     func testInternalEvidenceHasNoCustomerAuthorityAndPublicPinRejectsFixture() throws {
         let (root, receipt) = try fixture(), digest = try write(receipt, to: root)
-        let loaded = try AutomationPrivateMacDaemonUnit.load(root: root, expectedReceiptSHA256: digest)
-        XCTAssertEqual(loaded.evidence.fileCount, 7)
-        XCTAssertFalse(loaded.evidence.customerRuntimeEnabled); XCTAssertFalse(loaded.evidence.hardwareQualified)
-        XCTAssertFalse(loaded.evidence.developerIDSigned)
-        XCTAssertEqual(loaded.entry.path, root.appendingPathComponent("sidecar/src/macOwnedDaemonMain.js").path)
+        let evidence = try AutomationPrivateMacDaemonUnit.load(root: root, expectedReceiptSHA256: digest)
+        XCTAssertEqual(evidence.fileCount, 7)
+        XCTAssertFalse(evidence.customerRuntimeEnabled); XCTAssertFalse(evidence.hardwareQualified)
+        XCTAssertFalse(evidence.developerIDSigned)
         XCTAssertThrowsError(try AutomationPrivateMacDaemonUnit.verify(root: root))
         XCTAssertThrowsError(try AutomationPrivateMacDaemonUnit.load(root: root, expectedReceiptSHA256: String(repeating: "0", count: 64)))
     }
@@ -90,32 +70,6 @@ final class AutomationPrivateMacDaemonUnitTests: XCTestCase {
         let (root, original) = try fixture(); var receipt = original, files = original["files"] as! [String: String]
         files["../escape"] = String(repeating: "0", count: 64); receipt["files"] = files
         XCTAssertThrowsError(try AutomationPrivateMacDaemonUnit.load(root: root, expectedReceiptSHA256: write(receipt, to: root)))
-    }
-    func testActualFrozenPolicyDiagnosticsUnitVerificationWhenExplicitlySelected() throws {
-        guard let selected = ProcessInfo.processInfo.environment["INTENTS_MAC_POLICY_RUNTIME"] else { throw XCTSkip("Requires explicitly selected frozen policy diagnostics runtime") }
-        let unit = try AutomationPrivateMacDaemonUnit.load(root: AutomationPath.canonical(URL(fileURLWithPath: selected)))
-        XCTAssertEqual(unit.evidence.receiptSHA256, AutomationPrivateMacDaemonUnit.pinnedPolicyDiagnosticsProgramReceiptSHA256)
-        XCTAssertEqual(unit.evidence.fileCount, 5487)
-        XCTAssertEqual(unit.programDigestVersion, .lexicalV2)
-        XCTAssertEqual(unit.inputCapabilities, .ordinaryFillAndScroll)
-        XCTAssertEqual(unit.secretProgramEntry?.lastPathComponent, "secretProgramMain.js")
-        XCTAssertFalse(unit.evidence.customerRuntimeEnabled); XCTAssertFalse(unit.evidence.hardwareQualified)
-    }
-    func testActualFrozenSecretUnitVerificationWhenExplicitlySelected() throws {
-        guard let selected = ProcessInfo.processInfo.environment["INTENTS_MAC_SECRET_RUNTIME"] else { throw XCTSkip("Requires explicitly selected frozen secret runtime") }
-        let unit = try AutomationPrivateMacDaemonUnit.load(root: AutomationPath.canonical(URL(fileURLWithPath: selected)))
-        XCTAssertEqual(unit.evidence.receiptSHA256, AutomationPrivateMacDaemonUnit.pinnedSecretProgramReceiptSHA256)
-        XCTAssertEqual(unit.evidence.fileCount, 5485); XCTAssertEqual(unit.programDigestVersion, .lexicalV2)
-        XCTAssertEqual(unit.secretProgramEntry?.lastPathComponent, "secretProgramMain.js")
-        XCTAssertFalse(unit.evidence.customerRuntimeEnabled); XCTAssertFalse(unit.evidence.hardwareQualified)
-    }
-    func testActualFrozenPrivateUnitVerificationWhenExplicitlySelected() throws {
-        guard let path = ProcessInfo.processInfo.environment["INTENTS_PRIVATE_DAEMON_UNIT"] else { throw XCTSkip("Requires the explicitly selected frozen private unit") }
-        let evidence = try AutomationPrivateMacDaemonUnit.verify(root: URL(fileURLWithPath: path))
-        let program = evidence.receiptSHA256 == AutomationPrivateMacDaemonUnit.pinnedProgramReceiptSHA256
-        XCTAssertEqual(evidence.fileCount, program ? 5473 : 5465)
-        XCTAssertEqual(evidence.receiptSHA256, program ? AutomationPrivateMacDaemonUnit.pinnedProgramReceiptSHA256 : AutomationPrivateMacDaemonUnit.pinnedReceiptSHA256)
-        XCTAssertFalse(evidence.customerRuntimeEnabled); XCTAssertFalse(evidence.hardwareQualified)
     }
 }
 #endif

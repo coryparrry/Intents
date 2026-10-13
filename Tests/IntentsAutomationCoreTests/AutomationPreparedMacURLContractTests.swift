@@ -2,7 +2,7 @@
 import XCTest
 @testable import IntentsAutomationCore
 
-extension AutomationPrivateMacAppleRouteDriverTests {
+extension AutomationPreparedMacContractTests {
     func testPreparedMacURLDeclarationRejectsTextBeforeAnyRouteDispatch() async throws {
         let h = try await preparedMacSavedHarness()
         var prepared = h.prepared, plan = h.plan, approval = h.approval

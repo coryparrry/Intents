@@ -19,13 +19,6 @@ public enum AutomationPrivateMacDaemonUnit {
     static let pinnedV2ProgramReceiptSHA256 = "631f7d60b4f56a76f145533dd278f1752f2b3e91b2903e6b6767f06c3930deb8"
     static let pinnedSecretProgramReceiptSHA256 = "80fe19fb94080790458f39dc81ca199dabd32d99f0befe323c4ea0040de0c592"
     static let pinnedPolicyDiagnosticsProgramReceiptSHA256 = "5ff1f0e74f8474882340e5f68c3dfc2b1abc8882f4224df365c990818438f354"
-    static func programDigestVersion(receiptSHA256: String) -> AutomationUIPayloadDigestVersion? {
-        switch receiptSHA256 {
-        case pinnedV2ProgramReceiptSHA256, pinnedSecretProgramReceiptSHA256, pinnedPolicyDiagnosticsProgramReceiptSHA256: return .lexicalV2
-        case pinnedReceiptSHA256, pinnedProgramReceiptSHA256, pinnedFillProgramReceiptSHA256: return .legacyV1
-        default: return nil
-        }
-    }
     static func programInputCapabilities(receiptSHA256: String) -> AutomationMacInputCapabilities? {
         switch receiptSHA256 {
         case pinnedProgramReceiptSHA256: return .tapOnly
@@ -34,18 +27,6 @@ public enum AutomationPrivateMacDaemonUnit {
         }
     }
     static let receiptName = "intents-native-daemon-runtime.json"
-    struct Loaded: Sendable {
-        let evidence: Evidence
-        let root: URL
-        let node: URL
-        let entry: URL
-        let helper: URL
-        var secretProgramEntry: URL? {
-            [AutomationPrivateMacDaemonUnit.pinnedSecretProgramReceiptSHA256, AutomationPrivateMacDaemonUnit.pinnedPolicyDiagnosticsProgramReceiptSHA256].contains(evidence.receiptSHA256) ? root.appendingPathComponent("sidecar/src/secretProgramMain.js") : nil
-        }
-        var programDigestVersion: AutomationUIPayloadDigestVersion { AutomationPrivateMacDaemonUnit.programDigestVersion(receiptSHA256: evidence.receiptSHA256) ?? .legacyV1 }
-        var inputCapabilities: AutomationMacInputCapabilities { programInputCapabilities(receiptSHA256: evidence.receiptSHA256) ?? .tapOnly }
-    }
     private struct Receipt: Decodable {
         let schemaVersion: Int
         let artifactVariant: String
@@ -63,14 +44,14 @@ public enum AutomationPrivateMacDaemonUnit {
     private static let keys: Set<String> = ["schemaVersion", "artifactVariant", "customerRuntimeEnabled",
         "hardwareQualified", "developerIDSigned", "checkpointSHA256", "entryRelativePath", "nodeRelativePath",
         "helperRelativePath", "enclosingApplicationVerified", "privateEntryExecuted", "files"]
-    public static func verify(root: URL) throws -> Evidence { try load(root: root).evidence }
-    static func load(root: URL) throws -> Loaded {
+    public static func verify(root: URL) throws -> Evidence { try load(root: root) }
+    static func load(root: URL) throws -> Evidence {
         let selected = AutomationArtifactRegistry.digest(try read(root, receiptName, limit: 8_388_608))
         guard [pinnedReceiptSHA256, pinnedProgramReceiptSHA256, pinnedFillProgramReceiptSHA256, pinnedV2ProgramReceiptSHA256, pinnedSecretProgramReceiptSHA256, pinnedPolicyDiagnosticsProgramReceiptSHA256].contains(selected) else { throw AutomationContractError.conflictingOperation }
         return try load(root: root, expectedReceiptSHA256: selected)
     }
     // Internal fixture seam. Shipping callers can only use the frozen digests above.
-    static func load(root: URL, expectedReceiptSHA256: String) throws -> Loaded {
+    static func load(root: URL, expectedReceiptSHA256: String) throws -> Evidence {
         guard root.isFileURL, try AutomationPath.canonical(root).path == root.path,
               digest(expectedReceiptSHA256) else { throw AutomationContractError.invalidIdentity }
         let bytes = try read(root, receiptName, limit: 8_388_608)
@@ -121,10 +102,8 @@ public enum AutomationPrivateMacDaemonUnit {
                   receipt.checkpointSHA256 == "867b2d1ffad2eda87739fc42609f1a7ab8c2676bbf106939ed97b40b2f9ea528",
                   ["sidecar/src/policyReview.js", "sidecar/src/secretProgramMain.js", "sidecar/src/secretProgramController.js", "sidecar/src/secretFillProgram.js", "sidecar/src/ownRecord.js", "sidecar/src/payloadDigest.js"].allSatisfy({ receipt.files[$0] != nil }) else { throw AutomationContractError.conflictingOperation }
         }
-        return .init(evidence: .init(receiptSHA256: expectedReceiptSHA256, checkpointSHA256: receipt.checkpointSHA256,
-            fileCount: receipt.files.count, customerRuntimeEnabled: false, hardwareQualified: false, developerIDSigned: false),
-            root: root, node: root.appendingPathComponent(receipt.nodeRelativePath), entry: root.appendingPathComponent(receipt.entryRelativePath),
-            helper: root.appendingPathComponent(receipt.helperRelativePath))
+        return .init(receiptSHA256: expectedReceiptSHA256, checkpointSHA256: receipt.checkpointSHA256,
+            fileCount: receipt.files.count, customerRuntimeEnabled: false, hardwareQualified: false, developerIDSigned: false)
     }
     private static func digest(_ value: String) -> Bool { value.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil }
     private static func relative(_ value: String) -> Bool {

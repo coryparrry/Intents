@@ -84,8 +84,7 @@ public enum AutomationEntityQuery {
                     app: plan.app, target: plan.target, environmentID: plan.environmentID,
                     catalogDigest: try AutomationRecipeContext.catalogDigest(prepared.catalog))
             }
-            let context = await runner.appleRuntimeContext(report: report, plan: plan, host: prepared.host)
-            let projection = try AutomationEntityProjectionEvidence.issue(report: report, plan: plan, approval: scoped, prepared: prepared, runtimeContext: context)
+            let projection = try AutomationEntityProjectionEvidence.issue(report: report, plan: plan, approval: scoped, prepared: prepared)
             return .init(report: report, choices: choices, selectionGap: nil, propertyProjection: projection)
         } catch { return .init(report: report, choices: [], selectionGap: "The returned entity records were incomplete or inconsistent.") }
     }

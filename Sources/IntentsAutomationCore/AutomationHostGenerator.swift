@@ -22,7 +22,7 @@ struct AutomationRebasedProject: Sendable {
 
 /// Adds an owned associated UI test target only inside a verified private snapshot.
 public enum AutomationHostGenerator {
-    static let templateFiles = ["AutomationDateCodec.swift", "AutomationDurationCodec.swift", "AutomationCalendarCodec.swift", "AutomationURLCodec.swift", "AutomationIntentFileCodec.swift", "HostPlan.swift", "HostReceipt.swift", "IntentDefinitionsHost.swift", "SegmentTests.swift", "UIHostPlan.swift", "UIStepTests.swift", "HostInputAdapterProbePlan.swift", "InputAdapterProbeTests.swift"]
+    static let templateFiles = ["AutomationDateCodec.swift", "AutomationDurationCodec.swift", "AutomationCalendarCodec.swift", "AutomationURLCodec.swift", "AutomationIntentFileCodec.swift", "HostPlan.swift", "HostReceipt.swift", "IntentDefinitionsHost.swift", "SegmentTests.swift", "UIHostPlan.swift", "UIStepTests.swift"]
     static let physicalTemplateFiles = templateFiles + ["SiriSubmissionTests.swift"]
 
     static func verifyGeneratedSources(_ generated: AutomationGeneratedHost, sessionRoot: URL) throws {
