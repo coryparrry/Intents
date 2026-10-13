@@ -16,7 +16,12 @@ struct FixtureReference: AppEntity {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Fixture reference"
     static let defaultQuery = FixtureReferenceQuery()
     let id: String
-    var displayRepresentation: DisplayRepresentation { .init(title: "Reference one") }
+    @Property(title: "Name") var name: String
+    init(id: String) {
+        self.id = id
+        self.name = "Reference one"
+    }
+    var displayRepresentation: DisplayRepresentation { .init(title: "\(name)") }
 }
 
 struct FixtureReferenceQuery: EntityStringQuery {
