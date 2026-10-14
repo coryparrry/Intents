@@ -13,23 +13,23 @@ final class IntentFileTransportTests: XCTestCase, @unchecked Sendable {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }; return root
     }
-    private func export(_ root: URL, bytes: Data? = nil) throws -> (AutomationHostProgram, Data, [[String: Any]]) {
+    private func export(_ root: URL, bytes: Data? = nil, operationID: String = "make") throws -> (AutomationHostProgram, Data, [[String: Any]]) {
         let bytes = bytes ?? self.bytes
-        let value = try HostIntentFileCodec.encode(data: bytes, filename: "sample.txt", typeIdentifier: "public.plain-text", operationID: "make")
+        let value = try HostIntentFileCodec.encode(data: bytes, filename: "sample.txt", typeIdentifier: "public.plain-text", operationID: operationID)
         let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value))
         let receipt: [String: Any] = ["schemaVersion": 2, "runner": ["pid": Int32.max, "startIdentity": "100:0", "executablePath": "/owned/Host.app/Host"],
             "runID": scope.runId, "attemptID": scope.attemptId, "segmentID": scope.segmentId, "leaseGeneration": scope.leaseGeneration,
             "bundleID": app.bundleID, "productDigest": app.productDigest!, "complete": true,
-            "operations": [["operationID": "make", "dispatched": true, "value": json]]]
+            "operations": [["operationID": operationID, "dispatched": true, "value": json]]]
         let data = try JSONSerialization.data(withJSONObject: receipt)
         try data.write(to: root.appendingPathComponent("receipt.json")); try bytes.write(to: root.appendingPathComponent("binary.dat"))
-        let attachments = [("receipt.json", "intents-system-receipt"), ("binary.dat", "intents-file-make")].map { file, name in
+        let attachments = [("receipt.json", "intents-system-receipt"), ("binary.dat", "intents-file-" + operationID)].map { file, name in
             ["exportedFileName": file, "suggestedHumanReadableName": name, "isAssociatedWithFailure": false,
              "configurationName": "Debug", "deviceName": "fixture", "deviceId": "owned"] as [String: Any]
         }
         let manifest: [[String: Any]] = [["testIdentifier": "SegmentTests/testSegment()", "attachments": attachments]]
         try writeManifest(manifest, root: root)
-        return (.init(operations: [.init(id: "make", kind: .invoke, typeID: "MakeIntent", resultCodec: "intentFile")]), data, manifest)
+        return (.init(operations: [.init(id: operationID, kind: .invoke, typeID: "MakeIntent", resultCodec: "intentFile")]), data, manifest)
     }
     private func writeManifest(_ value: [[String: Any]], root: URL) throws {
         try JSONSerialization.data(withJSONObject: value).write(to: root.appendingPathComponent("manifest.json"))
@@ -39,7 +39,7 @@ final class IntentFileTransportTests: XCTestCase, @unchecked Sendable {
         setup.hostProgram = program; setup.requiredCapabilities = ["apple.codec.intentFile"]
         var subject = AutomationSegment(id: "subject", kind: .systemIntent, phase: .subject, operation: "Read", lifecycle: .persistedStateAcrossSegments)
         subject.hostProgram = .init(operations: [.init(id: "read", kind: .invoke, typeID: "ReadIntent", resultCodec: "noValue")])
-        subject.inputBindings = [.init(producerSegmentID: "setup", outputID: "make", destination: .hostParameter, operationID: "read", name: "file", parameterCodec: "intentFile")]
+        subject.inputBindings = [.init(producerSegmentID: "setup", outputID: program.operations[0].id, destination: .hostParameter, operationID: "read", name: "file", parameterCodec: "intentFile")]
         subject.requiredCapabilities = ["apple.codec.intentFile"]
         return .init(id: "file-case", app: app, target: .init(id: "owned", kind: .simulator), environmentID: "fixture", execution: subject, setup: [setup])
     }
@@ -97,7 +97,39 @@ final class IntentFileTransportTests: XCTestCase, @unchecked Sendable {
         duplicate["suggestedHumanReadableName"] = "intents-system-receipt_0_F2839133-BF2D-4CE3-B21F-DF4FC978C4CF.json"
         try Data(contentsOf: root.appendingPathComponent("receipt.json")).write(to: root.appendingPathComponent("duplicate.json"))
         entries.append(duplicate); manifest[0]["attachments"] = entries; try writeManifest(manifest, root: root)
-        XCTAssertThrowsError(try AutomationHostFileAttachments.exportEntries(root: root, testIdentifier: "SegmentTests/testSegment()"))
+        XCTAssertThrowsError(try AutomationHostFileAttachments.exportEntries(root: root, testIdentifier: "SegmentTests/testSegment()",
+            expectedNames: ["intents-system-receipt", "intents-file-make"]))
+    }
+    func testXcodeExportPreservesDottedOperationIDAcrossAllAttachments() async throws {
+        let root = try root(), (program, receiptData, initial) = try export(root, operationID: "file.echo")
+        var manifest = initial, entries = initial[0]["attachments"] as! [[String: Any]]
+        entries[0]["suggestedHumanReadableName"] = "intents-system-receipt_0_246F4B45-9E0E-4513-9BC8-D2C0CA8DE7FD.json"
+        entries[1]["suggestedHumanReadableName"] = "intents-file-file_0_B926F051-5659-4214-B1F9-F527286D8C21.echo"
+        var progress = entries[0], dispatch = entries[0]
+        progress["exportedFileName"] = "progress.json"
+        progress["suggestedHumanReadableName"] = "intents-system-receipt-file_0_9ECD9287-624C-4791-852B-3A8D52DFF738.echo"
+        dispatch["exportedFileName"] = "dispatch.json"
+        dispatch["suggestedHumanReadableName"] = "intents-dispatch-file_0_4F818EB8-5D7B-48E7-A0F4-3F34E3100BEB.echo"
+        var receipt = try XCTUnwrap(JSONSerialization.jsonObject(with: receiptData) as? [String: Any])
+        receipt["complete"] = false
+        try JSONSerialization.data(withJSONObject: receipt).write(to: root.appendingPathComponent("progress.json"))
+        try JSONSerialization.data(withJSONObject: ["operationID": "file.echo", "dispatched": true]).write(to: root.appendingPathComponent("dispatch.json"))
+        entries += [progress, dispatch]; manifest[0]["attachments"] = entries; try writeManifest(manifest, root: root)
+        let artifacts = try AutomationArtifactRegistry(root: self.root())
+        let imported = try await AutomationHostFileAttachments.importExport(root: root, scope: scope, app: app, program: program,
+            artifacts: artifacts, planDigest: AutomationFrozenCase.planDigest(plan(program)))
+        guard case .artifact(_, let digest) = imported.receipt.values["file.echo"] else { return XCTFail("Dotted output missing") }
+        XCTAssertEqual(digest, AutomationArtifactRegistry.digest(bytes))
+    }
+    func testXcodeExportRejectsAmbiguousOrUnexpectedLogicalNames() throws {
+        let root = try root(), (_, _, initial) = try export(root)
+        var manifest = initial, entries = initial[0]["attachments"] as! [[String: Any]]
+        entries[0]["suggestedHumanReadableName"] = "intents-system-receipt_0_246F4B45-9E0E-4513-9BC8-D2C0CA8DE7FD.json"
+        manifest[0]["attachments"] = entries; try writeManifest(manifest, root: root)
+        XCTAssertThrowsError(try AutomationHostFileAttachments.exportEntries(root: root, testIdentifier: "SegmentTests/testSegment()",
+            expectedNames: ["intents-system-receipt", "intents-system-receipt.json", "intents-file-make"]))
+        XCTAssertThrowsError(try AutomationHostFileAttachments.exportEntries(root: root, testIdentifier: "SegmentTests/testSegment()",
+            expectedNames: ["intents-system-receipt", "intents-file-other"]))
     }
     func testMetadataByteAndNativeInputBoundsRejectMalformedFiles() throws {
         for name in ["../escape", "a/b", "a\\b", ".hidden", "", String(repeating: "a", count: 129)] {

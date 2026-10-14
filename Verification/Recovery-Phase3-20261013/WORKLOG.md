@@ -22,3 +22,5 @@
 - Two independently validated PR review findings fixed: selected Xcode fallback and testing-only helper scheme entries. All 19 CLI regressions pass, independent recheck is clean, and the current fixture Mac target builds.
 
 - Fixed actual Xcode attachment-name suffix import and ignored automatic recordings as claimed data, retaining exact receipt/digest checks. Added explicit shared host activation from the already-approved navigate effect; missing navigation preserves prior behavior. Independent review is clean; 33 native driver tests, 41 host contract tests and 53 Python tests pass. Full runtime rerun is required to establish the fix.
+
+- Local run 5 proved native IntentFile producer and consumer return the same exact bytes. Report import then exposed Xcode treating the dot in file.echo as an extension. Fixed matching against exact expected attachment names, including the shared diagnostic importer. Dotted-name and ambiguous-name regressions pass: 43 host-contract tests and 53 Mac driver/probe tests, with independent review clean. Owned simulator cleanup passed.

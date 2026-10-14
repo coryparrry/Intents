@@ -6,13 +6,18 @@ import IntentsAutomationDateCodec
 enum AutomationInputAdapterProbeFileAttachments {
     static func importExport(root: URL, plan: AutomationInputAdapterProbePlan, scope: AutomationScope,
                              artifacts: AutomationArtifactRegistry) async throws -> (Data, AutomationInputAdapterProbeObservation) {
-        let entries = try AutomationHostFileAttachments.exportEntries(root: root, testIdentifier: "InputAdapterProbeTests/testParameterRoundTrip()")
+        var allowed: Set<String> = ["intents-input-adapter-probe"]
+        for parameter in plan.parameters where parameter.family == "intentFile" {
+            for index in parameter.samples.indices { allowed.insert("intents-file-" + parameter.name + ":" + String(index)) }
+        }
+        let entries = try AutomationHostFileAttachments.exportEntries(root: root,
+            testIdentifier: "InputAdapterProbeTests/testParameterRoundTrip()", expectedNames: allowed)
         guard let filename = entries["intents-input-adapter-probe"] else { throw AutomationContractError.missingEvidence("Unique input probe receipt required") }
         let data = try AutomationReadOnlyFile.read(root: root, relativePath: filename, maximumBytes: 1_048_576, requirePrivateOwnership: true)
         guard let fields = try JSONDecoder().decode(AutomationJSON.self, from: data).object,
               case .array(let parameters) = fields["parameters"], parameters.count == plan.parameters.count else { throw AutomationContractError.invalidIdentity }
         var claims: [(name: String, operationID: String, metadata: AutomationIntentFileMetadata, data: Data)] = []
-        var placeholders: [String: [AutomationValue]] = [:], allowed: Set<String> = ["intents-input-adapter-probe"]
+        var placeholders: [String: [AutomationValue]] = [:]
         for (parameter, field) in zip(plan.parameters, parameters) where parameter.family == "intentFile" {
             guard case .array(let samples) = field.object?["samples"], samples.count == parameter.samples.count else { throw AutomationContractError.invalidIdentity }
             for (index, value) in samples.enumerated() {
@@ -23,7 +28,7 @@ enum AutomationInputAdapterProbeFileAttachments {
                 let bytes = try AutomationReadOnlyFile.read(root: root, relativePath: exported, maximumBytes: 8192, requirePrivateOwnership: true)
                 try descriptor.metadata.verify(bytes)
                 guard bytes == AutomationIntentFileCalibration.data else { throw AutomationContractError.conflictingOperation }
-                claims.append((parameter.name, operationID, descriptor.metadata, bytes)); allowed.insert(descriptor.attachmentName)
+                claims.append((parameter.name, operationID, descriptor.metadata, bytes))
                 placeholders[parameter.name, default: []].append(.artifact(handle: "validated-calibration-file", sha256: descriptor.metadata.sha256))
             }
         }
