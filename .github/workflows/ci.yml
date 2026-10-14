@@ -230,12 +230,20 @@ jobs:
     if: ${{ needs.changes.outputs.automation_e2e == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 60
+    env:
+      # Exercise the cross-build acceptance from Phase 1, beyond local Xcode 27.0.
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
       - name: Install fixture project generator
         run: command -v xcodegen || brew install xcodegen
+      - name: Install matching simulator runtime
+        timeout-minutes: 15
+        run: |
+          xcodebuild -version
+          xcodebuild -downloadPlatform iOS -buildVersion 27.2 -architectureVariant arm64
       - name: Reproduce prepared-app automation
         run: python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e"
       - name: Upload automation evidence

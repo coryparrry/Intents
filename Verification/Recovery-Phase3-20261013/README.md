@@ -10,6 +10,10 @@ The **Automation e2e (simulator)** job must pass for the PR head. It compares ex
 
 The separate **Input conversion diagnostic (Mac)** job runs the existing live String setter/readback canary. It checks exact readback and release without invoking a business action or granting execution capabilities. Skipped or empty execution cannot satisfy the job.
 
+## Hosted runtime
+
+All checks at `6082d6235` passed in [CI run 38532159770](https://github.com/coryparrry/Intents/actions/runs/38532159770), including all seven simulator cases and the live Mac diagnostic. Artifacts confirmed the default hosted Xcode was `27A266a`, the same build as the local run. This does not close Phase 1's inherited cross-build requirement. The simulator job now explicitly selects the runner's installed Xcode 27.2 and installs its matching iOS runtime; current-head CI must prove that run before this PR is ready.
+
 ## Local runtime
 
 The full CLI command passed on this Mac with Xcode 27.0 and an owned iOS 27.0 simulator at `1bd8edcd5`: all seven cases, exact outputs for all 16 codec families and five empty arrays, assessed mixed workflow, deliberate assertion failure, timeout release and immediate successful rerun. Saved reports matched, no campaign remained, and the simulator was shut down and deleted. The in-test screenshot was visually inspected. A redundant post-launch screenshot that captured a blank launch frame was then removed; workflow screenshots remain in the test artifacts. Hosted CI on the current PR head is the reproducibility gate.
