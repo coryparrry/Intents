@@ -4,8 +4,7 @@ import Foundation
 enum AutomationAppleHostFile {
     enum Purpose { case segment, inputAdapterProbe, siriSubmission }
     static func freeze(_ value: Any, testRoot: URL, expectedHost: URL, expectedSubject: URL, testTarget: String, payload: Data,
-                       platform: AutomationAssociatedHostPlatform = .iosSimulator, purpose: Purpose = .segment,
-                       destinationBundleIDs: (host: String, subject: String)? = nil) throws -> [String: Any] {
+                       platform: AutomationAssociatedHostPlatform = .iosSimulator, purpose: Purpose = .segment) throws -> [String: Any] {
         guard purpose == .segment || (purpose == .inputAdapterProbe && platform == .macOS)
             || (purpose == .siriSubmission && platform == .physicalIOS) else { throw AutomationContractError.invalidIdentity }
         func paths(_ value: Any) -> Any {
@@ -39,18 +38,6 @@ enum AutomationAppleHostFile {
             }
             environment[key] = payload.base64EncodedString()
             target["EnvironmentVariables"] = environment
-            if let destinationBundleIDs {
-                guard platform == .iosSimulator else { throw AutomationContractError.invalidIdentity }
-                // Validate the prepared source paths first, then reference the explicitly installed
-                // products so XCTest cannot replace the subject while its metadata is being indexed.
-                target["UseDestinationArtifacts"] = true
-                target.removeValue(forKey: "TestBundlePath")
-                target.removeValue(forKey: "TestHostPath")
-                target.removeValue(forKey: "UITargetAppPath")
-                target["TestHostBundleIdentifier"] = destinationBundleIDs.host
-                target["UITargetAppBundleIdentifier"] = destinationBundleIDs.subject
-                target["TestBundleDestinationRelativePath"] = "__TESTHOST__/PlugIns/" + testTarget + ".xctest"
-            }
             return target
         }
         if var configurations = plist["TestConfigurations"] as? [[String: Any]] {

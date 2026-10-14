@@ -59,7 +59,6 @@ public actor AutomationXCUITestRouteDriver {
                                                        excludedEntityIDs: excludedEntityIDs)
         let commandTimeout = min(timeout ?? .seconds(plan.budget.wallClockSeconds), .seconds(plan.budget.wallClockSeconds))
         guard commandTimeout > .zero else { throw AutomationRPCError.timedOut }
-        let commandDeadline = ContinuousClock.now.advanced(by: commandTimeout)
         let directory = root.appendingPathComponent("xcuitest-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let scope = AutomationScope(runID: approval.runID, attemptID: attemptID, segmentID: plan.execution.id, leaseGeneration: leaseGeneration)
@@ -83,23 +82,11 @@ public actor AutomationXCUITestRouteDriver {
         var exitStatus: Int32 = -1
         do {
             try verifyPrepared()
-            if plan.target.kind == .simulator {
-                let remaining = ContinuousClock.now.duration(to: commandDeadline)
-                guard remaining > .zero else { throw AutomationRPCError.timedOut }
-                let installed = try await run(["simctl", "install", plan.target.id, prepared.hostBundlePath],
-                    directory: directory, timeout: min(.seconds(120), remaining))
-                _ = try await artifacts.store(data: installed.stdout + installed.stderr,
-                    name: "xcuitest-host-install-" + UUID().uuidString + ".txt", scope: scope)
-                guard installed.exitStatus == 0 else { throw AutomationContractError.missingEvidence("Prepared simulator host installation failed") }
-                try verifyPrepared()
-            }
-            let remaining = ContinuousClock.now.duration(to: commandDeadline)
-            guard remaining > .zero else { throw AutomationRPCError.timedOut }
             let result = try await run(["xcodebuild", "test-without-building", "-xctestrun", testFile.path,
                 "-destination", Self.destination(plan.target), "-only-testing:" + prepared.testTarget + "/UIStepTests/testUISteps",
                 // The host retains failure receipts/screenshots; a sysdiagnose can consume the entire attempt deadline.
                 "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never", "-resultBundlePath", resultPath.path],
-                directory: directory, timeout: remaining, testInvocation: true)
+                directory: directory, timeout: commandTimeout, testInvocation: true)
             exitStatus = result.exitStatus
             _ = try await artifacts.store(data: result.stdout + result.stderr, name: "xcuitest-log-" + UUID().uuidString + ".txt", scope: scope)
         } catch { executionError = error }
@@ -225,8 +212,7 @@ public actor AutomationXCUITestRouteDriver {
         let platform: AutomationAssociatedHostPlatform = prepared.target.kind == .nativeMac ? .macOS : prepared.target.kind == .physical ? .physicalIOS : .iosSimulator
         var frozen = try AutomationAppleHostFile.freeze(value, testRoot: URL(fileURLWithPath: prepared.xctestrunPath).deletingLastPathComponent(),
             expectedHost: URL(fileURLWithPath: prepared.hostBundlePath), expectedSubject: URL(fileURLWithPath: prepared.subjectProductPath),
-            testTarget: prepared.testTarget, payload: payload, platform: platform,
-            destinationBundleIDs: prepared.target.kind == .simulator ? (prepared.hostBundleID, prepared.app.bundleID) : nil)
+            testTarget: prepared.testTarget, payload: payload, platform: platform)
         func environment(_ target: [String: Any]) -> [String: Any] {
             var target = target
             var fields = target["EnvironmentVariables"] as? [String: String] ?? [:]

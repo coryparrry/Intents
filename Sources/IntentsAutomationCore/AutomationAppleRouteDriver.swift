@@ -135,8 +135,7 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         let plist = try PropertyListSerialization.propertyList(from: data, format: nil)
         let frozen = try AutomationAppleHostFile.freeze(plist, testRoot: URL(fileURLWithPath: prepared.xctestrunPath).deletingLastPathComponent(),
                                                       expectedHost: URL(fileURLWithPath: prepared.hostBundlePath), expectedSubject: URL(fileURLWithPath: prepared.subjectProductPath), testTarget: prepared.testTarget, payload: payload,
-                                                      platform: prepared.target.kind == .physical ? .physicalIOS : .iosSimulator,
-                                                      destinationBundleIDs: prepared.target.kind == .simulator ? (prepared.hostBundleID, plan.app.bundleID) : nil)
+                                                      platform: prepared.target.kind == .physical ? .physicalIOS : .iosSimulator)
         let frozenData = try PropertyListSerialization.data(fromPropertyList: frozen, format: .xml, options: 0)
         let payloadFile = try AutomationAppleHostPayloadFile(data: frozenData, url: testFile, scope: scope)
         privatePayload = payloadFile
@@ -163,13 +162,6 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         try await authorizeLaunch(scope: scope, lease: lease)
         try await campaignBudget?.reserveOperations(id: scope.attemptId + "." + scope.segmentId, phase: segment.phase, count: program.operations.count)
         try await authorizeLaunch(scope: scope, lease: lease)
-        if plan.target.kind == .simulator {
-            let installed = try await run(["simctl", "install", plan.target.id, prepared.hostBundlePath],
-                                          scope: scope, lease: lease, timeout: .seconds(120))
-            if program.usesFiles { _ = try await artifacts.storeNativeEvidence(data: installed.stdout + installed.stderr, scope: scope) }
-            else { _ = try await artifacts.store(data: installed.stdout + installed.stderr, name: "apple-host-install-\(lease.generation).txt", scope: scope) }
-            guard installed.exitStatus == 0 else { throw AutomationContractError.missingEvidence("Prepared simulator host installation failed") }
-        }
         let resultPath = active.directory.appendingPathComponent("system.xcresult")
         let result = try await run(["xcodebuild", "test-without-building", "-xctestrun", active.testFile.path,
             "-destination", plan.target.kind == .physical ? "platform=iOS,id=" + plan.target.id : Self.simulatorDestination(targetID: plan.target.id), "-only-testing:" + prepared.testTarget + "/SegmentTests/testSegment",

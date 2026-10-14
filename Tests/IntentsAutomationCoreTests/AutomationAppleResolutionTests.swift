@@ -39,7 +39,7 @@ actor AutomationResolutionCommands {
             let env = try XCTUnwrap(entry["EnvironmentVariables"] as? [String: String])
             let payload = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(env["INTENTS_AUTOMATION_HOST_PLAN_B64"])))
             payloads.append(try XCTUnwrap(JSONDecoder().decode(AutomationJSON.self, from: payload).object))
-        } else if args[0] == "xcresulttool" {
+        } else {
             let payload = try XCTUnwrap(payloads.last)
             guard case .array(let operations) = payload["operations"] else { throw AutomationContractError.invalidIdentity }
             let results = try operations.map { operation -> AutomationJSON in

@@ -8,16 +8,9 @@ extension AutomationAppleRouteDriverTests {
         let harness: Harness
         let runner: AutomationLiveRunnerFixture.Runner?
         var calls: [String] = [], stops = 0
-        let installStatus: Int32
-        init(_ harness: Harness, runner: AutomationLiveRunnerFixture.Runner? = nil, installStatus: Int32 = 0) {
-            self.harness = harness; self.runner = runner; self.installStatus = installStatus
-        }
+        init(_ harness: Harness, runner: AutomationLiveRunnerFixture.Runner? = nil) { self.harness = harness; self.runner = runner }
         func run(_ arguments: [String], root: URL, timeout: Duration) throws -> AutomationOwnedCommand.Result {
             calls.append(arguments[0])
-            if arguments[0] == "simctl" {
-                XCTAssertEqual(arguments, ["simctl", "install", harness.host.target.id, harness.host.hostBundlePath])
-                return .init(exitStatus: installStatus, stdout: Data(), stderr: Data(), logsTruncated: false)
-            }
             if arguments[0] == "xcresulttool" {
                 let index = try XCTUnwrap(arguments.firstIndex(of: "--output-path"))
                 let output = URL(fileURLWithPath: arguments[index + 1]); try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -58,35 +51,8 @@ extension AutomationAppleRouteDriverTests {
         let receipt = try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
         XCTAssertTrue(receipt.completed); XCTAssertEqual(receipt.verifiedOutputs?["probe"], .omission)
         do { _ = try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease); XCTFail("Replayed intent dispatched") } catch {}
-        let calls = await commands.calls; XCTAssertEqual(calls, ["simctl", "xcodebuild", "xcresulttool"])
+        let calls = await commands.calls; XCTAssertEqual(calls, ["xcodebuild", "xcresulttool"])
         let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.runnerTerminated)
-    }
-    func testFailedPreparedHostInstallNeverLaunchesXCTestAndStillReleases() async throws {
-        let h = try await fixture(), commands = CommandFixture(h, installStatus: 1)
-        let driver = try driver(h, commands: commands.adapter)
-        try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
-        do {
-            _ = try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
-            XCTFail("Failed host installation launched a test")
-        } catch {
-            XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Prepared simulator host installation failed"))
-        }
-        let calls = await commands.calls
-        XCTAssertEqual(calls, ["simctl"])
-        let proof = await driver.release(scope: h.scope, lease: h.lease)
-        XCTAssertTrue(proof.commandsDrained); XCTAssertTrue(proof.runnerTerminated); XCTAssertTrue(proof.privatePayloadCleaned)
-    }
-    func testChangedPreparedHostIsRejectedBeforeExplicitInstallation() async throws {
-        let h = try await fixture(), commands = CommandFixture(h)
-        let driver = try driver(h, commands: commands.adapter)
-        try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
-        try Data("changed".utf8).write(to: URL(fileURLWithPath: h.host.hostBundlePath).appendingPathComponent("OwnedHost-Runner"))
-        do {
-            _ = try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
-            XCTFail("Changed host was installed")
-        } catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
-        let calls = await commands.calls
-        XCTAssertTrue(calls.isEmpty)
     }
     func testSameRunUnknownAttemptSegmentOrLeaseCannotRevokeActiveWork() async throws {
         let h = try await fixture(), commands = CommandFixture(h), driver = try driver(h, commands: commands.adapter)
@@ -118,7 +84,7 @@ extension AutomationAppleRouteDriverTests {
         }
         await subject.resume(); let receipt = try await first.value; XCTAssertTrue(receipt.completed)
         do { _ = try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease); XCTFail("Consumed authority replayed") } catch {}
-        let calls = await commands.calls; XCTAssertEqual(calls, ["simctl", "xcodebuild", "xcresulttool"])
+        let calls = await commands.calls; XCTAssertEqual(calls, ["xcodebuild", "xcresulttool"])
     }
     func testDetachedCanonicallyEquivalentParameterCannotChangeApprovedPayload() async throws {
         let h = try await fixture(); var plan = h.plan, approval = h.approval
