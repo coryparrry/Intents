@@ -48,7 +48,7 @@ final class AutomationGeneratorTests: XCTestCase {
             "APP_CONFIGS": ["isa": "XCConfigurationList", "buildConfigurations": ["APP_CONFIG"]],
             "APP_CONFIG": ["isa": "XCBuildConfiguration", "name": "Staging", "buildSettings": [String: String]()],
             "PROJECT_CONFIGS": ["isa": "XCConfigurationList", "buildConfigurations": ["PROJECT_CONFIG"]],
-            "PROJECT_CONFIG": ["isa": "XCBuildConfiguration", "name": "Staging", "buildSettings": ["DEVELOPMENT_TEAM": "ABCDEFGHIJ"]]
+            "PROJECT_CONFIG": ["isa": "XCBuildConfiguration", "name": "Staging", "buildSettings": ["DEVELOPMENT_TEAM": "ABCDEFGHIJ", "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited) INTENTS_AUTOMATION_CI_FIXTURE"]]
         ]
         let bytes = try PropertyListSerialization.data(fromPropertyList: ["rootObject": "ROOT", "objects": objects], format: .xml, options: 0)
         try bytes.write(to: project.appendingPathComponent("project.pbxproj"))
@@ -79,6 +79,9 @@ final class AutomationGeneratorTests: XCTestCase {
         let target = try XCTUnwrap(merged[generated.targetID]); XCTAssertEqual(target["productType"] as? String, "com.apple.product-type.bundle.ui-testing")
         let configs = merged.values.filter { $0["isa"] as? String == "XCBuildConfiguration" && ($0["buildSettings"] as? [String: Any])?["TEST_TARGET_NAME"] as? String == "Subject" }
         XCTAssertEqual(configs.count, 1); XCTAssertEqual((configs[0]["buildSettings"] as? [String: Any])?["DEVELOPMENT_TEAM"] as? String, "ABCDEFGHIJ")
+        XCTAssertEqual((merged["PROJECT_CONFIG"]?["buildSettings"] as? [String: Any])?["SWIFT_ACTIVE_COMPILATION_CONDITIONS"] as? String,
+                       "$(inherited) INTENTS_AUTOMATION_CI_FIXTURE")
+        XCTAssertNil((configs[0]["buildSettings"] as? [String: Any])?["SWIFT_ACTIVE_COMPILATION_CONDITIONS"])
         // Once Xcode or another task changes the inspected private project, the old receipt cannot create a host.
         XCTAssertThrowsError(try AutomationHostGenerator.associate(rebased: rebased, subjectTargetID: "APP", configuration: "Staging", subjectPlatform: "ios", templates: templates))
         XCTAssertThrowsError(try AutomationHostGenerator.associate(sessionRoot: session, projectRelativePath: "../original/Subject.xcodeproj", subjectTargetID: "APP", configuration: "Staging", subjectPlatform: "ios", templates: templates))
