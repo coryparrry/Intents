@@ -16,7 +16,15 @@ spec.loader.exec_module(driver)
 
 def catalog():
     actions = []
-    for family, name in driver.INTENTS.items():
+    for family, name in {
+        "text": "EchoTextIntent", "bool": "EchoBoolIntent", "integer": "EchoIntegerIntent",
+        "decimal": "EchoDecimalIntent", "date": "EchoDateIntent", "enum": "EchoEnumIntent",
+        "entity": "EchoEntityIntent", "duration": "EchoDurationIntent",
+        "calendarComponents": "EchoCalendarComponentsIntent", "url": "EchoURLIntent",
+        "intentFile": "EchoIntentFileIntent", "textArray": "EchoTextArrayIntent",
+        "boolArray": "EchoBoolArrayIntent", "integerArray": "EchoIntegerArrayIntent",
+        "decimalArray": "EchoDecimalArrayIntent", "dateArray": "EchoDateArrayIntent",
+    }.items():
         parameter = {"name": "value", "family": family, "optional": False}
         if family in ("enum", "entity"):
             parameter["typeID"] = "CapturedChoice" if family == "enum" else "CapturedReference"
@@ -227,7 +235,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("timeout-minutes: 30", job)
         self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_LIVE: '1'", job)
         self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT: ${{ runner.temp }}/input-conversion", job)
-        self.assertIn('export DEVELOPER_DIR="$(xcode-select -p)"', job)
+        self.assertIn('DEVELOPER_DIR="$(xcode-select -p)"', job)
+        self.assertIn('export DEVELOPER_DIR\n', job)
         self.assertIn("swift test --jobs 2", job)
         self.assertIn("--filter 'AutomationMacInputProbeFixtureTests/testAuthoredInputProbeFixtureWhenRequested'", job)
         self.assertIn('--scratch-path "$RUNNER_TEMP/input-conversion-build"', job)

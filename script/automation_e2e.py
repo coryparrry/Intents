@@ -19,6 +19,7 @@ ARRAYS = ("textArray", "boolArray", "integerArray", "decimalArray", "dateArray")
 FAMILIES = ("text", "bool", "integer", "decimal", "date", "enum", "entity", "duration",
             "calendarComponents", "url", "intentFile", *ARRAYS)
 INTENTS = {f: "Echo" + f[0].upper() + f[1:] + "Intent" for f in FAMILIES}
+INTENTS["url"] = "EchoURLIntent"
 FILE_SHA = hashlib.sha256(b"phase3 fixture").hexdigest()
 
 

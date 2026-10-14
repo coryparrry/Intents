@@ -264,7 +264,8 @@ jobs:
           INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT: ${{ runner.temp }}/input-conversion
         run: |
           mkdir -p "$INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT"
-          export DEVELOPER_DIR="$(xcode-select -p)"
+          DEVELOPER_DIR="$(xcode-select -p)"
+          export DEVELOPER_DIR
           set -o pipefail
           swift test --jobs 2 \
             --scratch-path "$RUNNER_TEMP/input-conversion-build" \
