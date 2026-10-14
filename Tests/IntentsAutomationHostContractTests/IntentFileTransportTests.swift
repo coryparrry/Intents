@@ -90,6 +90,58 @@ final class IntentFileTransportTests: XCTestCase, @unchecked Sendable {
             from: Data(contentsOf: artifactsRoot.appendingPathComponent("artifact-index.json")))
         XCTAssertEqual(index.count, 1, "Only the correlated file becomes an artifact")
     }
+    func testFixtureDiagnosticsRemainUnclaimedWhileExactFileImports() async throws {
+        for count in [1, 3] {
+            let root = try root(), (program, _, initial) = try export(root)
+            var manifest = initial, entries = initial[0]["attachments"] as! [[String: Any]]
+            for index in 1...count {
+                var diagnostic = entries[0]
+                diagnostic["exportedFileName"] = "diagnostic-\(index).json"
+                diagnostic["suggestedHumanReadableName"] = "intents-fixture-registration-\(index)_0_F2839133-BF2D-4CE3-B21F-DF4FC978C4CF.json"
+                try JSONSerialization.data(withJSONObject: ["index": index, "succeeded": index == count])
+                    .write(to: root.appendingPathComponent("diagnostic-\(index).json"))
+                entries.append(diagnostic)
+            }
+            manifest[0]["attachments"] = entries; try writeManifest(manifest, root: root)
+            let claims = try AutomationHostFileAttachments.exportEntries(root: root, testIdentifier: "SegmentTests/testSegment()",
+                expectedNames: ["intents-system-receipt", "intents-file-make"])
+            XCTAssertEqual(Set(claims.keys), ["intents-system-receipt", "intents-file-make"])
+            let artifactsRoot = try self.root(), artifacts = try AutomationArtifactRegistry(root: artifactsRoot)
+            let imported = try await AutomationHostFileAttachments.importExport(root: root, scope: scope, app: app, program: program,
+                artifacts: artifacts, planDigest: AutomationFrozenCase.planDigest(plan(program)))
+            guard case .artifact(_, let digest) = imported.receipt.values["make"] else { return XCTFail("Missing exact file output") }
+            XCTAssertEqual(digest, AutomationArtifactRegistry.digest(bytes))
+            let index = try JSONDecoder().decode([String: AutomationArtifactRegistry.Artifact].self,
+                from: Data(contentsOf: artifactsRoot.appendingPathComponent("artifact-index.json")))
+            XCTAssertEqual(index.count, 1, "Diagnostics must not become evidence claims")
+        }
+    }
+    func testFixtureDiagnosticNamesStillRequireUniqueBoundedNamesAndExactContextAndPaths() throws {
+        for failure in ["duplicate", "index4", "unknown", "context", "traversal", "unlisted"] {
+            let root = try root(), (_, _, initial) = try export(root)
+            var manifest = initial, entries = initial[0]["attachments"] as! [[String: Any]], diagnostic = entries[0]
+            diagnostic["exportedFileName"] = "diagnostic.json"
+            diagnostic["suggestedHumanReadableName"] = "intents-fixture-registration-1_0_F2839133-BF2D-4CE3-B21F-DF4FC978C4CF.json"
+            try Data("diagnostic only".utf8).write(to: root.appendingPathComponent("diagnostic.json"))
+            switch failure {
+            case "duplicate":
+                var duplicate = diagnostic
+                duplicate["exportedFileName"] = "duplicate-diagnostic.json"
+                duplicate["suggestedHumanReadableName"] = "intents-fixture-registration-1"
+                try Data("duplicate".utf8).write(to: root.appendingPathComponent("duplicate-diagnostic.json"))
+                entries.append(duplicate)
+            case "index4": diagnostic["suggestedHumanReadableName"] = "intents-fixture-registration-4_0_F2839133-BF2D-4CE3-B21F-DF4FC978C4CF.json"
+            case "unknown": diagnostic["suggestedHumanReadableName"] = "intents-fixture-registration-1-extra"
+            case "context": diagnostic["deviceId"] = "other-device"
+            case "traversal": diagnostic["exportedFileName"] = "../diagnostic.json"
+            case "unlisted": try Data("not in manifest".utf8).write(to: root.appendingPathComponent("unlisted.json"))
+            default: XCTFail("Unknown test case")
+            }
+            entries.append(diagnostic); manifest[0]["attachments"] = entries; try writeManifest(manifest, root: root)
+            XCTAssertThrowsError(try AutomationHostFileAttachments.exportEntries(root: root, testIdentifier: "SegmentTests/testSegment()",
+                expectedNames: ["intents-system-receipt", "intents-file-make"]), failure)
+        }
+    }
     func testExportRejectsDuplicateNamesAfterRemovingXcodeSuffix() throws {
         let root = try root(), (_, _, initial) = try export(root)
         var manifest = initial, entries = initial[0]["attachments"] as! [[String: Any]], duplicate = entries[0]
@@ -176,7 +228,8 @@ final class IntentFileTransportTests: XCTestCase, @unchecked Sendable {
         }
     }
     func testAggregatePayloadBudgetAndSecretFenceApplyToTransferredFiles() async throws {
-        let artifacts = try AutomationArtifactRegistry(root: root()), data = Data(repeating: 42, count: 8192)
+        let artifactRoot = try root()
+        let artifacts = try AutomationArtifactRegistry(root: artifactRoot), data = Data(repeating: 42, count: 8192)
         let metadata = try AutomationIntentFileMetadata(filename: "data.bin", typeIdentifier: "public.data", data: data)
         let operations = (0..<3).map { AutomationHostProgram.Operation(id: "make\($0)", kind: .invoke, typeID: "MakeIntent", resultCodec: "intentFile") }
         var plan = plan(.init(operations: operations))
@@ -196,7 +249,7 @@ final class IntentFileTransportTests: XCTestCase, @unchecked Sendable {
         let consumer = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: 2)
         let inputs = try await resolved.authority.fileInputs(plan: plan, segment: resolved.segment, scope: consumer, artifacts: artifacts)
         XCTAssertThrowsError(try resolved.segment.hostProgram!.executionPayload(scope: consumer, app: app, route: .systemIntent, phase: .subject, fileInputs: inputs))
-        try await artifacts.restrictSecretEvidence(scope: scope)
+        try AutomationSecretEvidenceFence(root: artifactRoot).restrict(scope)
         do { _ = try await resolved.authority.fileInputs(plan: plan, segment: resolved.segment, scope: consumer, artifacts: artifacts); XCTFail("Secret-tainted file transferred") } catch {}
     }
     func testArtifactFromDifferentFrozenPlanOrOutputCannotSatisfyTransfer() async throws {

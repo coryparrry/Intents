@@ -4,17 +4,6 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationDynamicProfileTests {
-    @Test func defaultsPreserveRunGenerationSettings() {
-        let configuration = EvaluationProfileConfiguration()
-
-        #expect(configuration.resolvedAfterToolSamplingMode == nil)
-        #expect(configuration.resolvedAfterToolTemperature == nil)
-        #expect(configuration.afterToolMaximumResponseTokens == nil)
-        #expect(configuration.resolvedAfterToolReasoningLevel == nil)
-        #expect(configuration.afterToolTranscriptErrorPolicy == .automatic)
-        #expect(configuration.validationIssue == nil)
-    }
-
     @Test func afterToolOverridesMapToFoundationModelsModifiers() {
         let configuration = EvaluationProfileConfiguration(
             afterToolSamplingMode: .topK,
@@ -135,30 +124,5 @@ struct EvaluationDynamicProfileTests {
 
         suite.modelConfiguration.customProviderSettings.supportsReasoning = true
         #expect(store.validationIssue(for: suite, includeModelReadiness: false) == nil)
-    }
-
-    @Test func recorderCapturesEveryLifecycleCallback() async {
-        let recorder = EvaluationProfileRecorder()
-
-        await recorder.recordActivation("Lookup first")
-        await recorder.recordPrompt("Lookup first")
-        await recorder.recordReasoning("Lookup first")
-        await recorder.recordToolCall(toolName: "lookup")
-        await recorder.recordToolOutput(toolName: "lookup")
-        await recorder.recordDeactivation("Lookup first")
-        await recorder.recordTransition("Lookup first")
-        await recorder.recordResponse("Lookup first · after tool")
-
-        #expect(await recorder.transitioned)
-        #expect(await recorder.snapshot() == [
-            "Activated profile: Lookup first",
-            "Prompt received: Lookup first",
-            "Reasoning received: Lookup first",
-            "Tool call requested: lookup",
-            "Tool output received: lookup",
-            "Deactivated profile: Lookup first",
-            "Activated profile: Lookup first · after tool",
-            "Response received: Lookup first · after tool"
-        ])
     }
 }

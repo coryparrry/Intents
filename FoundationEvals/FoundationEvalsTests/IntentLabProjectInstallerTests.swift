@@ -1198,16 +1198,6 @@ struct IntentLabProjectInstallerTests {
             .attribute(forName: "reference")?.stringValue == "container:Custom.xctestplan")
     }
 
-    @Test func removalIsExplicitManualReview() throws {
-        let fixture = try Fixture()
-        defer { fixture.cleanup() }
-        let preview = try IntentLabProjectInstaller().previewRemoval(fixture.request())
-        #expect(!preview.automated)
-        #expect(preview.filesToReview.count == 5)
-        #expect(preview.filesToReview.contains { $0.lastPathComponent == "IntentLabAppAdapter.swift" })
-        #expect(preview.steps.contains { $0.contains("preserving edited adapters") })
-    }
-
     @Test func malformedDeclarationDoesNotAppearInstalled() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }

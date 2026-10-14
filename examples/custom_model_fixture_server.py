@@ -27,6 +27,8 @@ ROUTES = {
     "/tokenize",
     "/text",
     "/text-gated",
+    "/text-eof",
+    "/text-eof-newline",
     "/guided",
     "/guided/simple",
     "/guided/stream",
@@ -225,6 +227,20 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def serve_scenario(self, scenario: str, request: dict[str, Any]) -> None:
+        if scenario in {"text-eof", "text-eof-newline"}:
+            self.emit_response("First ", token_count=1)
+            event = {
+                "kind": "response",
+                "action": "append",
+                "entryID": "fixture-response",
+                "segmentID": "fixture-response-text",
+                "content": "last.",
+                "tokenCount": 1,
+            }
+            ending = b"\n" if scenario == "text-eof-newline" else b""
+            self.wfile.write(json.dumps(event).encode("utf-8") + ending)
+            self.wfile.flush()
+            return
         if scenario == "malformed":
             self.wfile.write(b'{"kind":"response","content":\n')
             self.wfile.flush()

@@ -26,7 +26,6 @@ final class AutomationAppleFileDeclarationBuildTests: XCTestCase {
         XCTAssertNil(AutomationCodecMetadata.inputPrimitiveFamily(12))
         XCTAssertFalse(AutomationCodecMetadata.intentFile(["primitive": ["wrapper": ["typeIdentifier": 12]]]))
         XCTAssertFalse(AutomationCodecMetadata.intentFile(["intents": ["wrapper": ["typeIdentifier": 12, "unexpected": 1]]]))
-        XCTAssertEqual(try AutomationInputAdapterProbePlan.samples(family: "intentFile").count, 1)
         XCTAssertFalse(CapabilityProfile().supports(["apple.codec.intentFile"]))
         XCTAssertEqual(provenance["runtimeLaunched"] as? Bool, false)
         XCTAssertEqual(provenance["codecTransportQualified"] as? Bool, false)

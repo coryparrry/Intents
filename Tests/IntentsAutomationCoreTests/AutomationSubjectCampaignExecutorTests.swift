@@ -28,8 +28,7 @@ final class AutomationSubjectCampaignExecutorTests: XCTestCase, @unchecked Senda
     func plan(_ selected: AutomationInstalledMacUIApplication) -> AutomationCase {
         var segment = AutomationSegment(id: "subject", kind: .ui, phase: .subject, operation: "Inspect", effects: [.observe, .navigate], lifecycle: .persistedStateAcrossSegments)
         segment.uiProgram = .init(operations: [.init(id: "tap", kind: .tap, locator: .init(.label, "Ready"))])
-        var plan = AutomationCase(id: "mac-campaign", app: selected.app, target: selected.target, environmentID: "selected-mac:synthetic-login", execution: segment)
-        plan.provenance["ui.privateMacReceiptSHA256"] = AutomationPrivateMacDaemonUnit.pinnedProgramReceiptSHA256
+        let plan = AutomationCase(id: "mac-campaign", app: selected.app, target: selected.target, environmentID: "selected-mac:synthetic-login", execution: segment)
         return plan
     }
     func approval(_ plan: AutomationCase) throws -> RunApproval {

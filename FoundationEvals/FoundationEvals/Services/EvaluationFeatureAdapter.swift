@@ -249,14 +249,3 @@ actor EvaluationFeatureAdapterRunner {
             + Double(duration.components.attoseconds) / 1_000_000_000_000_000
     }
 }
-
-/// Compilable shared-code example used by tests and documentation. Replace the
-/// closure with the application's actual feature entry point.
-struct ClosureFeatureAdapter: EvaluationFeatureAdapter {
-    var displayName: String
-    var operation: @Sendable (EvaluationFeatureInput) async throws -> String
-
-    func evaluate(_ input: EvaluationFeatureInput) async throws -> EvaluationFeatureOutput {
-        EvaluationFeatureOutput(response: try await operation(input))
-    }
-}

@@ -52,7 +52,7 @@ public struct AutomationHostProgram: Codable, Equatable, Sendable {
                 }
             } else {
                 guard route == .systemQuery, operation.parameters.isEmpty, operation.resultCodec == nil, operation.parameterCodecs == nil,
-                      [operation.queryText != nil, operation.queryIDs != nil, operation.attemptQueryPrefix != nil].filter { $0 }.count == 1 else { throw AutomationContractError.invalidPlan("Exactly one Apple query selector required") }
+                      [operation.queryText != nil, operation.queryIDs != nil, operation.attemptQueryPrefix != nil].filter({ $0 }).count == 1 else { throw AutomationContractError.invalidPlan("Exactly one Apple query selector required") }
                 if let prefix = operation.attemptQueryPrefix { try AutomationAttemptText.validatePrefix(prefix) }
                 if let text = operation.queryText, text.utf16.count > 32768 { throw AutomationContractError.invalidIdentity }
                 if let ids = operation.queryIDs, !(1...100).contains(ids.count) || ids.contains(where: { $0.isEmpty || $0.utf16.count > 1024 }) { throw AutomationContractError.invalidIdentity }
@@ -132,7 +132,6 @@ public struct AutomationHostProgram: Codable, Equatable, Sendable {
             return .object(["kind": .string("fileReference"), "value": .string(handle), "typeId": .string(digest)])
         case .null: return .object(["kind": .string("null")])
         case .omission: return .object(["kind": .string("omission")])
-        default: throw AutomationContractError.invalidPlan("Host codec has no qualified Apple setter")
         }
     }
     private static func structuredHostInput(_ value: AutomationValue) throws -> AutomationJSON {

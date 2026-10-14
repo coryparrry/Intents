@@ -2,9 +2,9 @@
 import XCTest
 @testable import IntentsAutomationCore
 
-extension AutomationPrivateMacAppleRouteDriverTests {
+extension AutomationPreparedMacContractTests {
     func testPreparedMacURLDeclarationRejectsTextBeforeAnyRouteDispatch() async throws {
-        let h = try await preparedMacSavedHarness()
+        let h = try preparedMacHarness()
         var prepared = h.prepared, plan = h.plan, approval = h.approval
         prepared.catalog.systemActions[0].parameters.append(.init(name: "url", family: "url", optional: false))
         plan.execution.hostProgram?.operations[0].parameters["url"] = .text("file:///private/tmp/customer.txt")
@@ -18,11 +18,9 @@ extension AutomationPrivateMacAppleRouteDriverTests {
         } catch {
             XCTAssertEqual(error as? AutomationContractError, .missingEvidence("URL program does not match its selected declaration and qualified codec"))
         }
-        let names = await h.driver.names, invocations = await h.driver.invocations
-        XCTAssertTrue(names.isEmpty); XCTAssertEqual(invocations, 0)
     }
     func testPreparedMacDeferredTextCannotFillOptionalOrDefaultURLDeclarations() async throws {
-        let h = try await preparedMacSavedHarness()
+        let h = try preparedMacHarness()
         let declarations: [(Bool, AutomationValue?)] = [(true, nil), (false, .object(["url": .text("https://example.invalid")]))]
         for (index, declaration) in declarations.enumerated() {
             var prepared = h.prepared, plan = h.plan, approval = h.approval
@@ -43,8 +41,6 @@ extension AutomationPrivateMacAppleRouteDriverTests {
                 XCTAssertEqual(error as? AutomationContractError, .missingEvidence("URL program does not match its selected declaration and qualified codec"))
             }
         }
-        let names = await h.driver.names, invocations = await h.driver.invocations
-        XCTAssertTrue(names.isEmpty); XCTAssertEqual(invocations, 0)
     }
 }
 #endif

@@ -221,17 +221,6 @@ struct ModelConfigurationTests {
         #expect(context.reasoningLevel == .moderate)
     }
 
-    @Test func casePickerSelectionRejectsMissingCasesUntilObserverRepairsIt() {
-        let cases = [EvaluationCase(name: "Current", prompt: "Prompt", expected: "Expected")]
-
-        #expect(SuiteCasePickerSelection.resolved(nil, in: cases) == nil)
-        #expect(SuiteCasePickerSelection.resolved(UUID(), in: cases) == nil)
-        #expect(SuiteCasePickerSelection.resolved(cases[0].id, in: cases) == cases[0].id)
-        #expect(SuiteCasePickerSelection.resolvedOrFirst(nil, in: cases) == cases[0].id)
-        #expect(SuiteCasePickerSelection.resolvedOrFirst(UUID(), in: cases) == cases[0].id)
-        #expect(SuiteCasePickerSelection.resolvedOrFirst(nil, in: []) == nil)
-    }
-
     @Test func automaticControlsPreserveFrameworkDefaultsAndDisableTools() {
         let configuration = EvaluationModelConfiguration()
         let generation = configuration.generationOptions

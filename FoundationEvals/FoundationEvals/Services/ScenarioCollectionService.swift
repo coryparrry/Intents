@@ -99,9 +99,10 @@ enum ScenarioCollectionService {
         createdAt: Date = Date()
     ) throws -> ScenarioCollectionBatchManifest {
         try collection.validate()
+        let memberIDs = Set(collection.members.map(\.caseID))
         let definitionsByID = Dictionary(uniqueKeysWithValues: definitions.map { ($0.id, $0) })
         guard definitionsByID.count == definitions.count,
-              Set(definitionsByID.keys) == Set(collection.members.map(\.caseID)) else {
+              Set(definitionsByID.keys) == memberIDs else {
             throw ScenarioCollectionError.invalidSelection
         }
         for member in collection.members {
@@ -114,10 +115,10 @@ enum ScenarioCollectionService {
                 throw ScenarioCollectionError.invalidDefinition(member.caseID)
             }
         }
-        let selected = selectedCaseIDs ?? Set(collection.members.map(\.caseID))
+        let selected = selectedCaseIDs ?? memberIDs
         guard !appProductDigest.isEmpty, !selected.isEmpty,
-              selected.isSubset(of: Set(collection.members.map(\.caseID))),
-              (scope != .full || selected == Set(collection.members.map(\.caseID))),
+              selected.isSubset(of: memberIDs),
+              (scope != .full || selected == memberIDs),
               (scope == .rerunFailed) == (priorBatchID != nil) else {
             throw ScenarioCollectionError.invalidSelection
         }
@@ -417,13 +418,14 @@ enum ScenarioCollectionService {
         try collection.validate()
         let all = collection.members
         let selected = manifest.cases.map(\.member)
+        let selectedIDs = Set(selected.map(\.caseID))
         guard manifest.collectionID == collection.id,
               manifest.collectionVersion == collection.version,
               manifest.membershipDigest == collection.membershipDigest,
               manifest.hasValidDigest,
               !manifest.appProductDigest.isEmpty,
-              !selected.isEmpty, Set(selected.map(\.caseID)).count == selected.count,
-              selected == all.filter({ member in selected.contains(where: { $0.caseID == member.caseID }) }),
+              !selected.isEmpty, selectedIDs.count == selected.count,
+              selected == all.filter({ selectedIDs.contains($0.caseID) }),
               Set(manifest.cases.map(\.executionPlanID)).count == manifest.cases.count,
               manifest.cases.allSatisfy({ !$0.fixtureContractDigest.isEmpty
                   && !$0.targetBundleIdentifier.isEmpty
@@ -434,7 +436,6 @@ enum ScenarioCollectionService {
               Set(manifest.coordinates.map(\.id)).count == manifest.coordinates.count else {
             throw ScenarioCollectionError.invalidManifest
         }
-        let selectedIDs = Set(selected.map(\.caseID))
         guard manifest.coordinates.allSatisfy({ selectedIDs.contains($0.caseID) && $0.repetition > 0 }),
               Set(manifest.coordinates.map { "\($0.caseID)/\($0.lane.rawValue)/\($0.repetition)" }).count
                 == manifest.coordinates.count else {

@@ -25,22 +25,6 @@ public struct AutomationPreparedMacBuildArtifacts: Codable, Equatable, Sendable 
         return value
     }
 #if os(macOS)
-    static func validateSelection(_ prepared: AutomationPreparedApplication, plan: AutomationCase) throws {
-        try AutomationApplicationSubject.prepared(prepared).validate(plan: plan)
-        guard prepared.host.target.kind == .nativeMac, prepared.catalog.app == prepared.host.app,
-              prepared.host.app.sourceManifestDigest == (try prepared.source.digest),
-              prepared.host.app.canonicalBundlePath == prepared.host.subjectProductPath else { throw AutomationContractError.conflictingOperation }
-        _ = try AutomationMacAssociatedHostReleaseVerifier.profile(prepared.host)
-        if let artifacts = plan.preparedMacBuildArtifacts {
-            guard artifacts == (try Self(prepared: prepared)) else { throw AutomationContractError.conflictingOperation }
-        }
-        let product = URL(fileURLWithPath: prepared.host.subjectProductPath), test = URL(fileURLWithPath: prepared.host.xctestrunPath)
-        guard try AutomationPath.canonical(product).path == product.path, try AutomationPath.canonical(test).path == test.path,
-              try AutomationProductDigest.compute(bundle: product, version: 2) == prepared.host.app.productDigest,
-              AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(test, maximumBytes: 4 * 1024 * 1024)) == prepared.host.xctestrunDigest else {
-            throw AutomationContractError.conflictingOperation
-        }
-    }
     public init(prepared: AutomationPreparedApplication) throws {
         guard prepared.host.target.kind == .nativeMac, prepared.catalog.app == prepared.host.app,
               prepared.generatedHost.configuration == prepared.host.app.configuration else { throw AutomationContractError.conflictingOperation }

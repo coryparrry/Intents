@@ -98,7 +98,6 @@ final class AppAutomationStore {
     var savedComparisons: [AutomationFixComparisonReport] = []
     var viewedComparison: AutomationFixComparisonReport?
     private var fixedBundleURL: URL?
-    private var fixedMacProduct: AutomationInstalledMacUIApplication?
     private var fixedProduct: AutomationInstalledUIApplication?
     private var hasFixedSecurityScope = false
     var savedViewedCase: AutomationFrozenCase?
@@ -117,7 +116,6 @@ final class AppAutomationStore {
     private let comparisonExecutor: AutomationNativeFixComparisonExecutor?
     private let reproductionExecutor: AutomationNativeReproductionExecutor?
     private let reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))?
-    let macSavedRuntimeProvider: (@Sendable () throws -> AutomationNativeMacSavedRuntime)?
     var savedCases: [AutomationFrozenCase] = []
     private(set) var retainedUnresolvedNormalReport: AutomationAttemptReport?
     private(set) var retainedUnresolvedNormalTarget: TargetIdentity?
@@ -207,7 +205,6 @@ final class AppAutomationStore {
          xcodeSettings: AutomationNativeXcodeSettings? = nil,
          savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])? = nil,
          savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil, runExecutor: AutomationNativeRunExecutor? = nil,
-         macSavedRuntimeProvider: (@Sendable () throws -> AutomationNativeMacSavedRuntime)? = nil,
          searchExecutor: AutomationNativeSearchExecutor? = nil,
          entityQueryExecutor: AutomationNativeEntityQueryExecutor? = nil,
          comparisonExecutor: AutomationNativeFixComparisonExecutor? = nil,
@@ -230,7 +227,6 @@ final class AppAutomationStore {
         self.preparationExecutor = preparationExecutor
         self.sourceGrants = sourceGrants ?? AutomationNativeSourceGrants()
         self.simulatorInventoryReader = simulatorInventoryReader
-        self.macSavedRuntimeProvider = macSavedRuntimeProvider
         self.nativeMacTargetReader = nativeMacTargetReader
         self.evidenceImporter = evidenceImporter
         self.telemetry = telemetry
@@ -312,13 +308,10 @@ final class AppAutomationStore {
     private func canUseSavedFailure(commandKind: AutomationNativeCommandKind) -> Bool {
         guard !busy, !closing, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery, permitsSavedWorkflow,
               pendingCommandStatus == nil || pendingCommandStatus?.kind == commandKind,
-              effectsConfirmed, permitsSavedWorkflow, let frozen = savedViewedCase,
+              effectsConfirmed, let frozen = savedViewedCase,
               let original = savedViewedReport else { return false }
-        if isInstalledMacUI {
-            guard macSavedRuntimeProvider != nil, let target = selectedMacTarget, frozen.plan.target == target,
-                  (try? nativeMacTargetReader()) == target, frozen.plan.app == candidate?.app else { return false }
-        } else if UUID(uuidString: simulatorID) == nil { return false }
-        return (isInstalledMacUI || (frozen.plan.app == (isInstalledUI ? candidate?.app : sourceSavedBaseline?.host.app) && frozen.plan.target.id == simulatorID)) &&
+        guard !isMacWorkflowUnavailable, frozen.plan.target.kind == .simulator, UUID(uuidString: simulatorID) != nil else { return false }
+        return frozen.plan.app == (isInstalledUI ? candidate?.app : sourceSavedBaseline?.host.app) && frozen.plan.target.id == simulatorID &&
             original.result.summary == .assertionFailed && original.result.assessed && original.result.evidenceComplete &&
             original.resourcesReleased && !original.result.subjectDispatchUncertain &&
             report?.resourcesReleased != false && report?.result.subjectDispatchUncertain != true
@@ -378,10 +371,10 @@ final class AppAutomationStore {
         await task?.value
     }
     private func makeReproductionRequest(runID: String) async throws -> AutomationNativeReproductionRequest {
-        guard !closing, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery, permitsSavedWorkflow, effectsConfirmed, permitsSavedWorkflow, let frozen = savedViewedCase, let original = savedViewedReport, let candidate else {
+        guard !closing, !isMacWorkflowUnavailable, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery, permitsSavedWorkflow, effectsConfirmed, let frozen = savedViewedCase, let original = savedViewedReport, let candidate else {
             throw AutomationContractError.missingEvidence("Select a released, assessed saved UI failure and its original app in the native window")
         }
-        let epoch = selectionEpoch, viewID = savedViewRequestID, targetID = simulatorID, macTarget = selectedMacTarget
+        let epoch = selectionEpoch, viewID = savedViewRequestID, targetID = simulatorID
         let install = installApproved, approvedDisposable = disposable
         let casesRoot = support.appendingPathComponent("Cases")
         let stored: AutomationFrozenCase, failure: AutomationAttemptReport
@@ -394,15 +387,9 @@ final class AppAutomationStore {
         try Task.checkCancellation()
         guard stored == frozen, failure == original else { throw AutomationContractError.conflictingOperation }
         guard !closing, selectionEpoch == epoch, savedViewRequestID == viewID,
-              savedViewedCase == frozen, savedViewedReport == original, candidateID == candidate.id, simulatorID == targetID, selectedMacTarget == macTarget,
+              savedViewedCase == frozen, savedViewedReport == original, candidateID == candidate.id, simulatorID == targetID,
               !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery, effectsConfirmed, permitsSavedWorkflow,
               installApproved == install, disposable == approvedDisposable else { throw AutomationContractError.conflictingOperation }
-        if isInstalledMacUI {
-            guard let target = macTarget, try nativeMacTargetReader() == target, let provider = macSavedRuntimeProvider else { throw AutomationContractError.conflictingOperation }
-            let selected = try AutomationInstalledMacUIApplication(bundleURL: URL(fileURLWithPath: candidate.containerPath), target: target)
-            guard selected.app == candidate.app else { throw AutomationContractError.conflictingOperation }
-            return try provider().reproduction(frozen: stored, original: failure, selected: selected, runID: runID)
-        }
         let subject: AutomationApplicationSubject
         if isInstalledUI {
             let installed = try AutomationInstalledUIApplication(bundleURL: URL(fileURLWithPath: candidate.containerPath), target: .init(id: targetID, kind: .simulator))
@@ -500,18 +487,17 @@ final class AppAutomationStore {
     private var unresolvedComparison: Bool {
         comparisonReport.map { ($0.before + $0.after).contains { !$0.resourcesReleased || $0.result.subjectDispatchUncertain } || $0.interruption?.dispatchMayHaveOccurred == true } ?? false
     }
-    var canSelectFix: Bool { (isInstalledUI || isInstalledMacUI) && canReproduceSavedFailure && pendingCommand == nil }
+    var canSelectFix: Bool { isInstalledUI && canReproduceSavedFailure && pendingCommand == nil }
     var canPrepareSourceFix: Bool { !isInstalledUI && !isInstalledMacUI && canPrepare && canReproduceSavedFailure && pendingCommand == nil }
     var canCheckFix: Bool {
         guard canUseSavedFailure(commandKind: .fixComparison) else { return false }
-        if isInstalledMacUI { return fixedMacProduct != nil }
         guard installApproved else { return false }
         if isInstalledUI { return fixedProduct != nil }
         guard let before = sourceSavedBaseline, let after = prepared else { return false }
         return (try? AutomationNativeUIFixComparisonProposal.validatePreparedCandidate(before: before, after: after)) != nil
     }
     var fixedAppName: String? {
-        if isInstalledUI || isInstalledMacUI { return fixedBundleURL?.lastPathComponent }
+        if isInstalledUI { return fixedBundleURL?.lastPathComponent }
         guard let before = sourceSavedBaseline, let after = prepared,
               (try? AutomationNativeUIFixComparisonProposal.validatePreparedCandidate(before: before, after: after)) != nil else { return nil }
         return after.host.app.bundleID
@@ -522,12 +508,6 @@ final class AppAutomationStore {
         let scope = url.startAccessingSecurityScopedResource()
         do {
             guard let frozen = savedViewedCase else { throw AutomationContractError.conflictingOperation }
-            if isInstalledMacUI {
-                guard let target = selectedMacTarget, try nativeMacTargetReader() == target else { throw AutomationContractError.conflictingOperation }
-                let product = try AutomationInstalledMacUIApplication.comparisonCandidate(bundleURL: url, target: target, baseline: frozen.plan.app)
-                _ = try AutomationFixContract.candidate(from: frozen, app: product.app)
-                fixedBundleURL = url; fixedMacProduct = product; hasFixedSecurityScope = scope; message = nil; return
-            }
             let product = try AutomationInstalledUIApplication.comparisonCandidate(bundleURL: url,
                 target: .init(id: simulatorID, kind: .simulator), baseline: frozen.plan.app)
             _ = try AutomationFixContract.candidate(from: frozen, app: product.app)
@@ -537,12 +517,6 @@ final class AppAutomationStore {
     private func makeComparisonRequest(runID: String) async throws -> AutomationNativeFixComparisonRequest {
         guard let original = savedViewedReport else { throw AutomationContractError.conflictingOperation }
         let request = try await makeReproductionRequest(runID: runID)
-        if case .installedMacUI(let before) = request.subject {
-            guard let url = fixedBundleURL, let selected = fixedMacProduct, let provider = macSavedRuntimeProvider else { throw AutomationContractError.conflictingOperation }
-            let after = try AutomationInstalledMacUIApplication.comparisonCandidate(bundleURL: url, target: before.target, baseline: before.app)
-            guard after.app == selected.app else { throw AutomationContractError.conflictingOperation }
-            return try provider().comparison(frozen: request.proposal.frozen, original: original, before: before, after: after, runID: runID)
-        }
         guard installApproved else { throw AutomationContractError.conflictingOperation }
         let before = request.subject, after: AutomationApplicationSubject
         switch before {
@@ -635,7 +609,7 @@ final class AppAutomationStore {
     }
     func clearFixedSelection() {
         if hasFixedSecurityScope { fixedBundleURL?.stopAccessingSecurityScopedResource() }
-        hasFixedSecurityScope = false; fixedBundleURL = nil; fixedProduct = nil; fixedMacProduct = nil
+        hasFixedSecurityScope = false; fixedBundleURL = nil; fixedProduct = nil
     }
     var failureSearchUnavailableReason: String? {
         "This workflow follows fixed controls. Alternative navigation instructions do not change its steps."

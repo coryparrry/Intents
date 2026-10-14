@@ -35,8 +35,7 @@ enum AutomationXCUITestCampaign {
                                     segmentID: "xcuitest", leaseGeneration: lease.generation)
         let operationID = "\(approval.runID):\(attemptID):xcuitest"
         let digest = try AutomationFrozenCase.planDigest(plan)
-        let driver: AutomationXCUITestRouteDriver
-        do { driver = try AutomationXCUITestRouteDriver(prepared: prepared,
+        let driver = AutomationXCUITestRouteDriver(prepared: prepared,
             root: root.appendingPathComponent("xcuitest"), artifacts: artifacts,
             developerDirectory: developerDirectory,
             willStart: {
@@ -53,11 +52,7 @@ enum AutomationXCUITestCampaign {
                 try await leases.recordPrivatePayload(reference, lease: lease)
             }, didCleanPayload: { reference in
                 try await leases.retirePrivatePayload(reference, lease: lease)
-            }) }
-        catch {
-            try await leases.release(lease, commandsDrained: true, ownedRunnerTerminated: true)
-            throw error
-        }
+            })
         var receipts: [AutomationSegmentReceipt] = []
         var termination: AttemptResult.Summary?
         var began = false, uncertainDispatch = false

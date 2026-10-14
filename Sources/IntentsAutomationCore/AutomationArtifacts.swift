@@ -49,8 +49,6 @@ public actor AutomationArtifactRegistry {
         }
     }
     /// A campaign-shared fence also covers separate per-attempt registries.
-    func secretEvidenceRoot() -> URL { secretEvidence.root }
-    func restrictSecretEvidence(scope: AutomationScope) throws { try secretEvidence.restrict(scope) }
     func canExposeEvidence(scope: AutomationScope) -> Bool { secretEvidence.permits(scope) }
     func reserveModelEvidence(scope: AutomationScope) throws -> AutomationSecretEvidencePermit { try secretEvidence.reserve(scope) }
     public func register(relativePath: String, scope: AutomationScope) throws -> Artifact {

@@ -4,7 +4,41 @@ import XCTest
 import IntentsAutomationDateCodec
 @testable import IntentsAutomationCore
 
-extension AutomationPrivateMacAppleRouteDriverTests {
+extension AutomationPreparedMacContractTests {
+    struct Subject: AutomationSubjectVerifier {
+        let app: AppIdentity, target: TargetIdentity
+        func verify(app: AppIdentity, target: TargetIdentity) async throws {
+            guard self.app == app, self.target == target else { throw AutomationContractError.invalidIdentity }
+        }
+    }
+    actor Release: AutomationDeviceReleaseVerifier {
+        var calls: [String] = [], accepted = true
+        var preparationFailure: AutomationContractError?
+        func prepare(target: TargetIdentity, controllerBundleIDs: [String]) throws {
+            calls.append("prepare:" + controllerBundleIDs.joined(separator: ","))
+            if let preparationFailure { throw preparationFailure }
+        }
+        func verifyReleased(target: TargetIdentity, controllerBundleIDs: [String]) -> Bool { calls.append("release:" + controllerBundleIDs.joined(separator: ",")); return accepted }
+        func deny() { accepted = false }
+        func failPreparation(_ error: AutomationContractError) { preparationFailure = error; accepted = false }
+    }
+    struct ProbeHarness: Sendable {
+        let root: URL
+        let host: AutomationPreparedAppleHost
+        let runID: String
+        let leases: AutomationDeviceLeaseManager
+        let lease: AutomationDeviceLeaseManager.Lease
+        let scope: AutomationScope
+        let release: Release
+    }
+    func probeFixture() async throws -> ProbeHarness {
+        let base = try fixture()
+        let leases = AutomationDeviceLeaseManager()
+        try await leases.reserveCampaign(runID: "run", target: base.host.target)
+        let lease = try await leases.acquire(runID: "run", target: base.host.target, control: .system)
+        return .init(root: base.root, host: base.host, runID: "run", leases: leases, lease: lease,
+            scope: .init(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: lease.generation), release: Release())
+    }
     actor InputProbeCommands {
         let host: AutomationPreparedAppleHost
         let duplicate: Bool
@@ -93,11 +127,11 @@ extension AutomationPrivateMacAppleRouteDriverTests {
         try await checkFileProbeOwner(tamper: true)
     }
     private func checkFileProbeOwner(tamper: Bool) async throws {
-        let h = try await fixture(), commands = FileInputProbeCommands(host: h.host, tamper: tamper)
+        let h = try await probeFixture(), commands = FileInputProbeCommands(host: h.host, tamper: tamper)
         try await h.leases.release(h.lease, commandsDrained: true, ownedRunnerTerminated: true)
         let plan = try inputProbe(h, family: "intentFile"), artifacts = try AutomationArtifactRegistry(root: h.root.appendingPathComponent("file-probe-artifacts"))
         let owner = try AutomationInputAdapterProbeRunner(plan: plan,
-            approval: .init(runID: h.approval.runID, probeDigest: plan.digest, app: h.host.app, target: h.host.target),
+            approval: .init(runID: h.runID, probeDigest: plan.digest, app: h.host.app, target: h.host.target),
             developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"), state: h.root.appendingPathComponent("file-probe-owner"),
             leases: h.leases, artifacts: artifacts, subject: Subject(app: h.host.app, target: h.host.target), release: h.release, commands: commands.adapter, validateTarget: { _ in })
         let report = try await owner.run(attemptID: "probe")
@@ -117,7 +151,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
         let next = try await h.leases.acquire(runID: "next", target: h.host.target, control: .system)
         try await h.leases.release(next, commandsDrained: true, ownedRunnerTerminated: true)
     }
-    private func inputProbe(_ h: Harness, family: String = "text") throws -> AutomationInputAdapterProbePlan {
+    private func inputProbe(_ h: ProbeHarness, family: String = "text") throws -> AutomationInputAdapterProbePlan {
         let catalog = ApplicationSurfaceCatalog(app: h.host.app, systemActions: [.init(id: "Probe", typeName: "Probe", title: "Probe",
             parameters: [.init(name: "sample", family: family, optional: false)], parametersComplete: true, compiled: true, registered: false, executed: false)],
             systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: [])
@@ -126,16 +160,16 @@ extension AutomationPrivateMacAppleRouteDriverTests {
                 configuration: "Debug", templateDigest: String(repeating: "d", count: 64)), host: h.host, catalog: catalog, buildLogPath: "synthetic", buildLogTruncated: false)
         return try .init(prepared: prepared, actionID: "Probe", parameterNames: ["sample"])
     }
-    private func probeOwner(_ h: Harness, commands: InputProbeCommands, release: (any AutomationDeviceReleaseVerifier)? = nil) async throws -> AutomationInputAdapterProbeRunner {
+    private func probeOwner(_ h: ProbeHarness, commands: InputProbeCommands, release: (any AutomationDeviceReleaseVerifier)? = nil) async throws -> AutomationInputAdapterProbeRunner {
         try await h.leases.release(h.lease, commandsDrained: true, ownedRunnerTerminated: true)
         let plan = try inputProbe(h)
-        return try .init(plan: plan, approval: .init(runID: h.approval.runID, probeDigest: plan.digest, app: h.host.app, target: h.host.target),
+        return try .init(plan: plan, approval: .init(runID: h.runID, probeDigest: plan.digest, app: h.host.app, target: h.host.target),
             developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"), state: h.root.appendingPathComponent("probe-owner"), leases: h.leases,
             artifacts: AutomationArtifactRegistry(root: h.root.appendingPathComponent("probe-artifacts")), subject: Subject(app: h.host.app, target: h.host.target),
             release: release ?? h.release, commands: commands.adapter, validateTarget: { _ in })
     }
     func testSeparateProbeOwnerReturnsOnlyReleasedReadbackAndReleasesItsLease() async throws {
-        let h = try await fixture(), commands = InputProbeCommands(host: h.host), owner = try await probeOwner(h, commands: commands)
+        let h = try await probeFixture(), commands = InputProbeCommands(host: h.host), owner = try await probeOwner(h, commands: commands)
         let report = try await owner.run(attemptID: "probe")
         XCTAssertTrue(report.resourcesReleased); XCTAssertNil(report.failure); XCTAssertNotNil(report.artifact)
         XCTAssertEqual(report.observation?.echoedSamples["sample"], [.text("Intents adapter probe")])
@@ -147,25 +181,25 @@ extension AutomationPrivateMacAppleRouteDriverTests {
         try await h.leases.release(next, commandsDrained: true, ownedRunnerTerminated: true)
     }
     func testSeparateProbeOwnerRejectsDuplicateReceiptWithoutBusinessObservation() async throws {
-        let h = try await fixture(), commands = InputProbeCommands(host: h.host, duplicate: true), owner = try await probeOwner(h, commands: commands)
+        let h = try await probeFixture(), commands = InputProbeCommands(host: h.host, duplicate: true), owner = try await probeOwner(h, commands: commands)
         let report = try await owner.run(attemptID: "probe")
         XCTAssertTrue(report.resourcesReleased); XCTAssertNil(report.observation); XCTAssertNotNil(report.failure)
     }
     func testSeparateProbeOwnerWithholdsReadbackAndLeaseWhenReleaseIsDenied() async throws {
-        let h = try await fixture(), commands = InputProbeCommands(host: h.host), owner = try await probeOwner(h, commands: commands)
+        let h = try await probeFixture(), commands = InputProbeCommands(host: h.host), owner = try await probeOwner(h, commands: commands)
         await h.release.deny()
         let report = try await owner.run(attemptID: "probe")
         XCTAssertFalse(report.resourcesReleased); XCTAssertNil(report.observation); XCTAssertNotNil(report.failure)
         do { _ = try await h.leases.acquire(runID: "next", target: h.host.target, control: .system); XCTFail("Unreleased probe lease was reused") } catch {}
     }
     func testSeparateProbeOwnerQuarantinesUnprovedInspectorBeforeAnyLaunch() async throws {
-        let h = try await fixture(), commands = InputProbeCommands(host: h.host), owner = try await probeOwner(h, commands: commands)
+        let h = try await probeFixture(), commands = InputProbeCommands(host: h.host), owner = try await probeOwner(h, commands: commands)
         await h.release.failPreparation(.terminationUnverified)
         let report = try await owner.run(attemptID: "probe"), calls = await commands.calls
         XCTAssertFalse(report.resourcesReleased); XCTAssertNil(report.observation); XCTAssertTrue(calls.isEmpty)
     }
     func testSeparateProbeStopRevokesSuspendedCommandAndCannotExportOrReturnReadback() async throws {
-        let h = try await fixture(), commands = InputProbeCommands(host: h.host, suspended: true), owner = try await probeOwner(h, commands: commands)
+        let h = try await probeFixture(), commands = InputProbeCommands(host: h.host, suspended: true), owner = try await probeOwner(h, commands: commands)
         let task = Task { try await owner.run(attemptID: "probe") }
         try await commands.wait()
         let stopped = await owner.cancel(); XCTAssertTrue(stopped)
@@ -175,9 +209,9 @@ extension AutomationPrivateMacAppleRouteDriverTests {
         XCTAssertEqual(calls, ["xcodebuild"])
     }
     func testSeparateProbeApprovalCannotAuthorizeDifferentSamplePlan() async throws {
-        let h = try await fixture(), plan = try inputProbe(h)
+        let h = try await probeFixture(), plan = try inputProbe(h)
         XCTAssertThrowsError(try AutomationInputAdapterProbeRunner(plan: plan,
-            approval: .init(runID: h.approval.runID, probeDigest: String(repeating: "f", count: 64), app: h.host.app, target: h.host.target),
+            approval: .init(runID: h.runID, probeDigest: String(repeating: "f", count: 64), app: h.host.app, target: h.host.target),
             developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"), state: h.root.appendingPathComponent("denied-probe"), leases: h.leases,
             artifacts: AutomationArtifactRegistry(root: h.root.appendingPathComponent("denied-artifacts")), subject: Subject(app: h.host.app, target: h.host.target), release: h.release))
     }
@@ -196,7 +230,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
     }
     func testStopOrTaskCancellationDuringProbeCleanupWithholdsReadbackAndArtifact() async throws {
         for taskCancellation in [false, true] {
-            let h = try await fixture(), commands = InputProbeCommands(host: h.host), release = SuspendedProbeRelease()
+            let h = try await probeFixture(), commands = InputProbeCommands(host: h.host), release = SuspendedProbeRelease()
             let owner = try await probeOwner(h, commands: commands, release: release)
             let task = Task { try await owner.run(attemptID: "probe") }
             try await release.wait()
@@ -207,7 +241,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
         }
     }
     func testFrozenProbeTestFileTamperAtFinalCommandGatePreventsLaunch() async throws {
-        let h = try await fixture(), commands = InputProbeCommands(host: h.host, tamperBeforeStart: true), owner = try await probeOwner(h, commands: commands)
+        let h = try await probeFixture(), commands = InputProbeCommands(host: h.host, tamperBeforeStart: true), owner = try await probeOwner(h, commands: commands)
         let report = try await owner.run(attemptID: "probe"), calls = await commands.calls
         XCTAssertFalse(report.resourcesReleased); XCTAssertNil(report.observation); XCTAssertNil(report.artifact); XCTAssertNotNil(report.failure); XCTAssertTrue(calls.isEmpty)
         let captured = await commands.testFile, file = try XCTUnwrap(captured)
@@ -215,7 +249,7 @@ extension AutomationPrivateMacAppleRouteDriverTests {
         do { _ = try await h.leases.acquire(runID: "next", target: h.host.target, control: .system); XCTFail("Unsanitized payload ownership must remain") } catch {}
     }
     func testFrozenHostPurposeRemovesOtherPayloadAndProbeCannotSelectIOSHost() async throws {
-        let h = try await fixture(), payload = try inputProbe(h).payload(scope: h.scope)
+        let h = try await probeFixture(), payload = try inputProbe(h).payload(scope: h.scope)
         var plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: URL(fileURLWithPath: h.host.xctestrunPath)), format: nil) as? [String: Any])
         var entry = try XCTUnwrap(plist[h.host.testTarget] as? [String: Any])
         entry["EnvironmentVariables"] = ["INTENTS_AUTOMATION_HOST_PLAN_B64": "stale-business", "INTENTS_AUTOMATION_INPUT_PROBE_B64": "stale-probe"]

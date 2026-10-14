@@ -52,11 +52,14 @@ final class AutomationHostTests: XCTestCase {
         let subject = root.appendingPathComponent("Subject.app")
         try FileManager.default.createDirectory(at: host.appendingPathComponent("PlugIns/OwnedHost.xctest"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: subject, withIntermediateDirectories: true); defer { try? FileManager.default.removeItem(at: root) }
-        let target: [String: Any] = ["BlueprintName": "OwnedHost", "TestHostPath": "__TESTROOT__/Host.app", "TestBundlePath": "__TESTHOST__/PlugIns/OwnedHost.xctest", "UITargetAppPath": "__TESTROOT__/Subject.app", "IsUITestBundle": true]
+        let target: [String: Any] = ["BlueprintName": "OwnedHost", "TestHostPath": "__TESTROOT__/Host.app", "TestBundlePath": "__TESTHOST__/PlugIns/OwnedHost.xctest", "UITargetAppPath": "__TESTROOT__/Subject.app", "IsUITestBundle": true,
+            "EnvironmentVariables": ["INTENTS_AUTOMATION_INPUT_PROBE_B64": "stale probe", "UNCHANGED": "value"]]
         let original: [String: Any] = ["OwnedHost": target, "__xctestrun_metadata__": ["FormatVersion": 1]]
         let frozen = try AutomationAppleHostFile.freeze(original, testRoot: root, expectedHost: host, expectedSubject: subject, testTarget: "OwnedHost", payload: Data("current lease".utf8))
         let environment = (frozen["OwnedHost"] as? [String: Any])?["EnvironmentVariables"] as? [String: String]
         XCTAssertEqual(environment?["INTENTS_AUTOMATION_HOST_PLAN_B64"], Data("current lease".utf8).base64EncodedString())
+        XCTAssertNil(environment?["INTENTS_AUTOMATION_INPUT_PROBE_B64"])
+        XCTAssertEqual(environment?["UNCHANGED"], "value")
         var wrong = target; wrong["UITargetAppPath"] = "__TESTROOT__/Host.app"
         XCTAssertThrowsError(try AutomationAppleHostFile.freeze(["OwnedHost": wrong], testRoot: root, expectedHost: host, expectedSubject: subject, testTarget: "OwnedHost", payload: Data()))
         wrong = target; wrong["TestBundlePath"] = "__TESTHOST__/PlugIns/../../Foreign.xctest"

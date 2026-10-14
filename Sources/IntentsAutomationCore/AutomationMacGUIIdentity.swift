@@ -63,13 +63,4 @@ public enum AutomationMacGUIIdentity {
     }
 }
 
-struct AutomationMacGUISubjectVerifier: AutomationSubjectVerifier {
-    let subject: any AutomationSubjectVerifier
-    let identity: @Sendable (TargetIdentity) throws -> Void
-    func verify(app: AppIdentity, target: TargetIdentity) async throws {
-        try identity(target)
-        try await subject.verify(app: app, target: target)
-        try identity(target)
-    }
-}
 #endif

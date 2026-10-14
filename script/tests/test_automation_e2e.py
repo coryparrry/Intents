@@ -42,7 +42,8 @@ def catalog():
 
 def prepared():
     return {"host": {"app": {"bundleID": "example.fixture"},
-                     "target": {"id": "11111111-1111-1111-1111-111111111111", "kind": "simulator"}},
+                     "target": {"id": "11111111-1111-1111-1111-111111111111", "kind": "simulator"},
+                     "subjectProductPath": "/prepared/AutomationFixture.app"},
             "catalog": catalog()}
 
 
@@ -166,6 +167,7 @@ class PlanAndReceiptTests(unittest.TestCase):
 class FakeCommands:
     def __init__(self, output, failure=None):
         self.output, self.failure, self.calls, self.saved = output, failure, [], {}
+        self.envelopes = []
 
     def run(self, arguments, **options):
         args = [str(a) for a in arguments]
@@ -201,6 +203,7 @@ class FakeCommands:
             return 0, self.saved[args[args.index("show") + 1]]
         if "run" in args:
             envelope = json.loads(Path(args[args.index("--plan") + 1]).read_text())
+            self.envelopes.append(envelope)
             plan = envelope["plan"]
             summary = "executedUnassessed"
             if plan["requirements"]:
@@ -223,6 +226,111 @@ class FakeCommands:
             self.saved[envelope["attemptID"]] = result
             return (0 if summary in ("passed", "executedUnassessed") else 1), result
         raise AssertionError(f"Unhandled fake JSON command: {args}")
+
+
+class RegistrationReadinessTests(unittest.TestCase):
+    def exercise(self, failures=0, mutation=None, quick_exit=False):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        support = output / "support"
+        support.mkdir()
+        (support / "target-leases.json").write_text(json.dumps({"campaigns": {}}))
+        value = driver.tagged("text", "registration-ready")
+        attempts = []
+        for index in range(failures + 1):
+            attempt = "readiness-" + str(index)
+            result = report(values={"registration": value})
+            code = 0
+            if index < failures:
+                result = report("unresolved" if quick_exit else "timedOut")
+                result["result"].update(subjectDispatched=False, subjectCompleted=False,
+                                        subjectDispatchUncertain=True, evidenceComplete=False)
+                result["receipts"] = []
+                artifact = support / attempt / "artifacts"
+                artifact.mkdir(parents=True)
+                marker = 'Error Domain=AppIntentsServicesMetadataErrorDomain Code=400 "example.fixture is not present"'
+                if mutation in ("other-error", "other-bundle"):
+                    marker = marker.replace("Code=400", "Code=401") if mutation == "other-error" else marker.replace("example.fixture", "other.fixture")
+                if mutation != "missing-log":
+                    name = "apple-log-4.txt" if quick_exit else "apple-command-failure-4-test.txt"
+                    (artifact / name).write_text(marker)
+                if mutation == "other-summary":
+                    result["result"]["summary"] = "infrastructureFailed"
+                if mutation == "unreleased":
+                    result["resourcesReleased"] = False
+                if mutation == "dispatched":
+                    result["result"]["subjectDispatched"] = True
+                if mutation == "completed":
+                    result["result"]["subjectCompleted"] = True
+                if mutation == "receipt":
+                    result["receipts"] = report()["receipts"]
+                code = 1
+            attempts.append((attempt, code, result))
+        return output, support, attempts
+
+    def test_registered_fixture_requires_one_exact_harmless_echo(self):
+        output, support, attempts = self.exercise()
+        with patch.object(driver, "run_plan", side_effect=attempts) as run:
+            driver.wait_for_registration(None, "cli", support, output, prepared())
+        run.assert_called_once()
+        plan = run.call_args.args[-1]
+        self.assertEqual(plan["id"], "phase3.registration")
+        self.assertEqual(plan["setup"], [])
+        self.assertEqual(plan["cleanup"], [])
+        self.assertEqual(plan["execution"]["hostProgram"]["operations"], [{
+            "id": "registration", "kind": "invoke", "typeID": "EchoTextIntent",
+            "parameters": {"value": driver.tagged("text", "registration-ready")},
+            "resultCodec": "text"}])
+
+    def test_only_known_metadata_error_retries_after_release_and_retains_attempts(self):
+        output, support, attempts = self.exercise(failures=1)
+        with patch.object(driver, "run_plan", side_effect=attempts) as run:
+            driver.wait_for_registration(None, "cli", support, output, prepared())
+        self.assertEqual(run.call_count, 2)
+        evidence = json.loads((output / "registration-readiness.json").read_text())
+        self.assertEqual([a["summary"] for a in evidence], ["timedOut", "executedUnassessed"])
+
+    def test_nonzero_xcode_metadata_failure_retries_from_unresolved_apple_log(self):
+        output, support, attempts = self.exercise(failures=1, quick_exit=True)
+        with patch.object(driver, "run_plan", side_effect=attempts) as run:
+            driver.wait_for_registration(None, "cli", support, output, prepared())
+        self.assertEqual(run.call_count, 2)
+        evidence = json.loads((output / "registration-readiness.json").read_text())
+        self.assertEqual([a["summary"] for a in evidence], ["unresolved", "executedUnassessed"])
+
+    def test_unrelated_failures_and_unreleased_or_partly_completed_runs_do_not_retry(self):
+        for quick_exit in (False, True):
+            for mutation in ("other-error", "other-bundle", "missing-log", "other-summary", "unreleased", "dispatched", "completed", "receipt"):
+                with self.subTest(quick_exit=quick_exit, mutation=mutation):
+                    output, support, attempts = self.exercise(failures=1, mutation=mutation, quick_exit=quick_exit)
+                    with patch.object(driver, "run_plan", side_effect=attempts) as run:
+                        with self.assertRaises(AssertionError):
+                            driver.wait_for_registration(None, "cli", support, output, prepared())
+                    self.assertEqual(run.call_count, 1)
+
+    def test_registration_wait_stops_after_three_failed_attempts(self):
+        for quick_exit in (False, True):
+            with self.subTest(quick_exit=quick_exit):
+                output, support, attempts = self.exercise(failures=3, quick_exit=quick_exit)
+                with patch.object(driver, "run_plan", side_effect=attempts) as run:
+                    with self.assertRaisesRegex(AssertionError, "Expected executedUnassessed"):
+                        driver.wait_for_registration(None, "cli", support, output, prepared())
+                self.assertEqual(run.call_count, 3)
+
+    def test_success_still_requires_exact_output_and_successful_exit(self):
+        for mutation in ("output", "exit"):
+            with self.subTest(mutation=mutation):
+                output, support, attempts = self.exercise()
+                attempt, code, result = attempts[0]
+                if mutation == "output":
+                    result["receipts"][0]["verifiedOutputs"]["registration"] = driver.tagged("text", "wrong")
+                else:
+                    code = 1
+                with patch.object(driver, "run_plan", return_value=(attempt, code, result)) as run:
+                    with self.assertRaises(AssertionError):
+                        driver.wait_for_registration(None, "cli", support, output, prepared())
+                run.assert_called_once()
 
 
 class WorkflowTests(unittest.TestCase):
@@ -277,6 +385,12 @@ class OrchestrationTests(unittest.TestCase):
         commands, results = self.exercise()
         calls = [args for args, _ in commands.calls]
         self.assertEqual(sum("prepare" in args for args in calls), 1)
+        installs = [args for args in calls if args[:3] == ["xcrun", "simctl", "install"]]
+        self.assertEqual(installs, [["xcrun", "simctl", "install", prepared()["host"]["target"]["id"],
+                                    prepared()["host"]["subjectProductPath"]]])
+        self.assertLess(calls.index(installs[0]), next(i for i, args in enumerate(calls) if "run" in args))
+        self.assertEqual(commands.envelopes[0]["plan"]["id"], "phase3.registration")
+        self.assertTrue(all(e["allowBootAndInstall"] is False for e in commands.envelopes))
         self.assertEqual([r["summary"] for r in results], ["executedUnassessed"] * 3 +
                          ["passed", "assertionFailed", "timedOut", "executedUnassessed"])
         self.assertEqual(results[-1]["case"], "phase3.after-timeout")
@@ -302,7 +416,7 @@ class OrchestrationTests(unittest.TestCase):
                 driver.main(["--output-root", directory, "--build-root", str(driver.ROOT / "cache")])
 
     def test_prepare_or_boot_failure_still_deletes_only_owned_simulator(self):
-        for failure in ("prepare", "bootstatus"):
+        for failure in ("prepare", "bootstatus", "install"):
             with self.subTest(failure=failure):
                 commands, _ = self.exercise(failure)
                 calls = [args for args, _ in commands.calls]

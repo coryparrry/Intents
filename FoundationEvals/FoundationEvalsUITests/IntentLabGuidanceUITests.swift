@@ -110,18 +110,22 @@ final class IntentLabGuidanceUITests: XCTestCase {
 
     @MainActor
     func testNewDeveloperCheckShowsGuidedControls() throws {
+        continueAfterFailure = false
         let storage = try UITestStorage.makeDirectory(prefix: "intent-guided-check")
         defer { try? FileManager.default.removeItem(at: storage) }
         let app = XCUIApplication()
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
         app.launch()
         defer { app.terminate() }
+        app.activate()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
         app.typeKey("2", modifierFlags: .command)
         app.radioButtons["Create test"].click()
         app.buttons["New test"].click()
-        if app.sheets.buttons["Discard draft and continue"].waitForExistence(timeout: 2) {
-            app.sheets.buttons["Discard draft and continue"].click()
-        }
+        let discardDraft = app.sheets.buttons["Discard draft and continue"].firstMatch
+        XCTAssertTrue(discardDraft.waitForExistence(timeout: 5))
+        discardDraft.click()
+        XCTAssertTrue(app.popUpButtons["Feature control backend"].waitForExistence(timeout: 5))
 
         XCTAssertTrue(app.popUpButtons["Declared app action"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.popUpButtons["Feature control backend"].exists)
@@ -130,6 +134,11 @@ final class IntentLabGuidanceUITests: XCTestCase {
         XCTAssertFalse(app.textFields["OpenNoteIntent"].exists, "Stable checks select the compiled action")
         XCTAssertTrue(app.staticTexts["Rebuild and check support to choose an observable result."].exists)
         XCTAssertFalse(app.textFields["Optional feature run UUID"].exists)
+        XCTAssertTrue(app.staticTexts["Rebuild and check support to load the app's actions."].exists)
+        app.scrollViews["Intent Lab scenario scroll"].scroll(byDeltaX: 0, deltaY: -600)
+        XCTAssertTrue(app.staticTexts["Add a project-local Feature control to the app's test support, then rebuild and check support."].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.textFields["Feature ID from the evaluation"].exists)
+        XCTAssertFalse(app.buttons["Add assertion"].exists)
         capture(app.windows.firstMatch, name: "Guided developer check")
     }
 

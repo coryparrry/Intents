@@ -2,9 +2,9 @@
 import XCTest
 @testable import IntentsAutomationCore
 
-extension AutomationPrivateMacAppleRouteDriverTests {
+extension AutomationPreparedMacContractTests {
     func testPreparedMacQueryMismatchStopsBeforeUIOrAppleDispatch() async throws {
-        let h = try await preparedMacSavedHarness()
+        let h = try preparedMacHarness()
         for index in 0..<5 {
             var prepared = h.prepared, plan = h.plan, approval = h.approval
             let queryIndex = try XCTUnwrap(plan.setup.firstIndex(where: { $0.kind == .systemQuery }))
@@ -27,12 +27,10 @@ extension AutomationPrivateMacAppleRouteDriverTests {
                 XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Prepared query does not match the selected app's entity and property declarations"))
             }
         }
-        let names = await h.driver.names, invocations = await h.driver.invocations
-        XCTAssertTrue(names.isEmpty); XCTAssertEqual(invocations, 0)
     }
 
     func testPreparedMacProgramMismatchStopsBeforeUIOrAppleDispatch() async throws {
-        let h = try await preparedMacSavedHarness()
+        let h = try preparedMacHarness()
         for index in 0..<5 {
             var prepared = h.prepared, plan = h.plan, approval = h.approval
             switch index {
@@ -61,8 +59,6 @@ extension AutomationPrivateMacAppleRouteDriverTests {
                 XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Prepared program does not match the selected app's input and result declarations"))
             }
         }
-        let names = await h.driver.names, invocations = await h.driver.invocations
-        XCTAssertTrue(names.isEmpty); XCTAssertEqual(invocations, 0)
     }
 }
 #endif

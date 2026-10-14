@@ -24,6 +24,61 @@ struct ScenarioCollectionTests {
         #expect(manifest.coordinates.map(\.repetition) == [1, 2, 3])
     }
 
+    @Test func selectedManifestPreservesCollectionOrderRegardlessOfDefinitionOrder() throws {
+        let projectID = UUID()
+        let definitions = try (0..<3).map { try caseDefinition(projectID: projectID, name: "Case \($0)") }
+        let collection = try ScenarioCollection(
+            projectID: projectID, name: "Selected cases",
+            members: try definitions.map(ScenarioCollectionService.member)
+        )
+        let selectedIDs: Set<UUID> = [definitions[2].id, definitions[0].id]
+        let manifest = try ScenarioCollectionService.freezeManifest(
+            collection: collection, definitions: Array(definitions.reversed()), scope: .selected,
+            appProductDigest: "app-build", selectedCaseIDs: selectedIDs
+        )
+        #expect(manifest.cases.map(\.member) == [collection.members[0], collection.members[2]])
+        try ScenarioCollectionService.validate(manifest: manifest, collection: collection)
+        #expect(throws: ScenarioCollectionError.self) {
+            _ = try ScenarioCollectionService.freezeManifest(
+                collection: collection, definitions: definitions, scope: .selected,
+                appProductDigest: "app-build", selectedCaseIDs: selectedIDs.union([UUID()])
+            )
+        }
+    }
+
+    @Test(arguments: ["reordered", "duplicate", "unknown", "revision", "digest", "fullScope"])
+    func manifestRejectsInvalidSelectedMembership(mutation: String) throws {
+        let projectID = UUID()
+        let definitions = try (0..<3).map { try caseDefinition(projectID: projectID, name: "Case \($0)") }
+        let collection = try ScenarioCollection(
+            projectID: projectID, name: "Selected cases",
+            members: try definitions.map(ScenarioCollectionService.member)
+        )
+        var manifest = try ScenarioCollectionService.freezeManifest(
+            collection: collection, definitions: definitions, scope: .selected,
+            appProductDigest: "app-build", selectedCaseIDs: [definitions[0].id, definitions[2].id]
+        )
+        switch mutation {
+        case "reordered": manifest.cases.reverse()
+        case "duplicate":
+            manifest.cases[1].member = manifest.cases[0].member
+            manifest.coordinates[1].caseID = manifest.cases[0].id
+            manifest.coordinates[1].repetition = 2
+        case "unknown":
+            manifest.cases[0].member.caseID = UUID()
+            manifest.coordinates[0].caseID = manifest.cases[0].id
+        case "revision": manifest.cases[0].member.version += 1
+        case "digest": manifest.cases[0].member.definitionDigest = "changed"
+        case "fullScope": manifest.scope = .full
+        default: Issue.record("Unknown membership mutation: \(mutation)")
+        }
+        manifest.manifestDigest = try manifest.calculatedDigest()
+        #expect(manifest.hasValidDigest)
+        #expect(throws: ScenarioCollectionError.self) {
+            try ScenarioCollectionService.validate(manifest: manifest, collection: collection)
+        }
+    }
+
     @Test func interruptedBatchKeepsEntirePlannedPopulationVisibleAfterRelaunch() async throws {
         let projectID = UUID()
         let definitions = try (0..<3).map { try caseDefinition(projectID: projectID, name: "Case \($0)") }

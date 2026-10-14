@@ -67,17 +67,6 @@ enum SuiteEditorPage: String, CaseIterable, Identifiable {
     }
 }
 
-enum SuiteCasePickerSelection {
-    static func resolved(_ selection: UUID?, in cases: [EvaluationCase]) -> UUID? {
-        guard let selection, cases.contains(where: { $0.id == selection }) else { return nil }
-        return selection
-    }
-
-    static func resolvedOrFirst(_ selection: UUID?, in cases: [EvaluationCase]) -> UUID? {
-        resolved(selection, in: cases) ?? cases.first?.id
-    }
-}
-
 struct SuiteEditorView: View {
     @Environment(DeveloperRunnerStore.self) private var runners
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

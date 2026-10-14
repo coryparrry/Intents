@@ -44,37 +44,16 @@ public struct AutomationInstalledMacUIApplication: Sendable {
 }
 
 enum AutomationMacUIProgramPreflight {
-    static func validateReadOnly(_ segment: AutomationSegment, capabilities: AutomationMacInputCapabilities, allowNavigationGoals: Bool = false) throws {
-        guard segment.effects.isSubset(of: [.observe, .navigate]), segment.inputBindings?.isEmpty != false,
-              segment.attemptTextBindings?.isEmpty != false, segment.uiProgram?.bindings.isEmpty == true else {
-            throw AutomationContractError.invalidPlan("Saved Mac read-only review cannot approve input bindings")
-        }
-        try validate(segment, capabilities: capabilities)
-        guard segment.uiProgram?.operations.allSatisfy({ operation in
-            if operation.kind == .navigateGoal {
-                return allowNavigationGoals && operation.goal?.allowedFillBindings?.isEmpty != false &&
-                    operation.goal?.minimumBindingUses?.isEmpty != false && operation.goal?.selectionBindings?.isEmpty != false && operation.goal?.saveControl == nil
-            }
-            return [.tap, .scroll, .readProperty, .observeProperty, .assertEndpoint, .locate].contains(operation.kind)
-        }) == true else { throw AutomationContractError.missingEvidence("Saved Mac read-only review requires navigation and visible checks without text entry") }
-    }
-    static func validateDeferred(_ segment: AutomationSegment, capabilities: AutomationMacInputCapabilities, attemptID: String) throws {
-        var validation = segment
-        for (name, prefix) in segment.attemptTextBindings ?? [:] {
-            validation.uiProgram?.bindings[name] = try AutomationAttemptText.value(prefix: prefix, attemptID: attemptID)
-        }
-        // Producer outputs remain deferred until the coordinator verifies their receipts.
-        for binding in segment.inputBindings ?? [] where binding.destination == .uiBinding {
-            validation.uiProgram?.bindings[binding.name] = "preflight-placeholder"
-        }
-        try validate(validation, capabilities: capabilities)
-    }
-    static func validate(_ segment: AutomationSegment, capabilities: AutomationMacInputCapabilities = .tapOnly) throws {
+    static func validate(_ segment: AutomationSegment) throws {
         guard segment.kind == .ui, segment.hostProgram == nil, let program = segment.uiProgram,
               segment.lifecycle == .persistedStateAcrossSegments else {
             throw AutomationContractError.invalidPlan("Mac UI requires a frozen persisted-state program")
         }
         try program.validate(phase: segment.phase)
-        try capabilities.validate(program)
+        guard program.operations.allSatisfy({ operation in
+            operation.kind != .fillBinding && operation.kind != .scroll &&
+                operation.goal?.allowedFillBindings?.isEmpty != false &&
+                operation.goal?.minimumBindingUses?.values.contains(where: { $0 > 0 }) != true
+        }) else { throw AutomationContractError.missingEvidence("Installed Mac review supports tap only") }
     }
 }

@@ -97,8 +97,7 @@ public enum AutomationApplicationSubject: Sendable {
             guard segments.allSatisfy({ $0.kind == .ui && $0.uiProgram != nil && $0.hostProgram == nil }) else {
                 throw AutomationContractError.invalidPlan("Installed Mac checks require typed UI programs")
             }
-            let inputs = AutomationPrivateMacDaemonUnit.programInputCapabilities(receiptSHA256: plan.provenance["ui.privateMacReceiptSHA256"] ?? "") ?? .tapOnly
-            for segment in segments { try AutomationMacUIProgramPreflight.validate(segment, capabilities: inputs) }
+            for segment in segments { try AutomationMacUIProgramPreflight.validate(segment) }
             try installed.verifySelectedProduct()
         }
     }

@@ -37,12 +37,13 @@ struct EvaluationTraceTests {
 
         #expect(result.timing == nil)
         #expect(result.workflowTrace == nil)
+        #expect(result.structuredFeatureEvidence == nil)
         #expect(result.toolCalls?.first?.durationMilliseconds == nil)
         #expect(result.durationMilliseconds == 42)
     }
 
     @Test func measuredTraceFieldsRoundTripWithoutChangingAggregateDuration() throws {
-        let result = EvaluationSampleResult(
+        var result = EvaluationSampleResult(
             caseID: UUID(),
             caseName: "Timed case",
             repetition: 1,
@@ -69,6 +70,12 @@ struct EvaluationTraceTests {
             )
         )
 
+        result.structuredFeatureEvidence = .init(
+            encodedValue: Data(#"{"selectedNoteID":"packing-001"}"#.utf8),
+            encodedValueTypeName: "FixtureSummary",
+            metadata: ["fixture": "packing-notes-v1"]
+        )
+
         let decoded = try JSONDecoder().decode(
             EvaluationSampleResult.self,
             from: JSONEncoder().encode(result)
@@ -78,6 +85,9 @@ struct EvaluationTraceTests {
         #expect(decoded.timing?.preparationMilliseconds == 10)
         #expect(decoded.timing?.generationMilliseconds == 20)
         #expect(decoded.timing?.scoringMilliseconds == 2)
+        #expect(decoded.structuredFeatureEvidence?.encodedValue == result.structuredFeatureEvidence?.encodedValue)
+        #expect(decoded.structuredFeatureEvidence?.encodedValueTypeName == "FixtureSummary")
+        #expect(decoded.structuredFeatureEvidence?.metadata == ["fixture": "packing-notes-v1"])
     }
 
     @Test func referenceToolRecordsMeasuredDurationWithoutPersistingQueryOrOutput() async throws {

@@ -219,20 +219,7 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
             )
         }
 
-        let sessionConfiguration = URLSessionConfiguration.ephemeral
-        sessionConfiguration.timeoutIntervalForRequest = configuration.requestTimeoutSeconds
-        sessionConfiguration.timeoutIntervalForResource = configuration.requestTimeoutSeconds
-        sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        sessionConfiguration.urlCache = nil
-        sessionConfiguration.httpCookieStorage = nil
-        sessionConfiguration.httpShouldSetCookies = false
-        sessionConfiguration.urlCredentialStorage = nil
-        sessionConfiguration.connectionProxyDictionary = [:]
-        let session = URLSession(
-            configuration: sessionConfiguration,
-            delegate: EvaluationHTTPNoRedirectDelegate(),
-            delegateQueue: nil
-        )
+        let session = Self.isolatedSession(timeout: configuration.requestTimeoutSeconds)
         defer { session.invalidateAndCancel() }
 
         var urlRequest = URLRequest(url: endpoint)
@@ -254,6 +241,34 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         var responseEventCount = 0
         var firstContentMilliseconds: Double?
         var liveResponse = EvaluationHTTPResponseAccumulator()
+
+        func consume(_ line: Data) async throws {
+            guard let command = try Self.command(
+                fromLine: line,
+                expectsGuidedResponse: request.schema != nil
+            ) else { return }
+            if command.producesResponseOrToolCall { responseEventCount += 1 }
+            try await command.send(into: channel)
+            guard let mutation = command.responseMutation else { return }
+            let content = liveResponse.apply(mutation)
+            if firstContentMilliseconds == nil, Self.isVisibleContent(content) {
+                let measurement = Self.firstContentMilliseconds(
+                    started: started,
+                    metadata: request.metadata
+                )
+                firstContentMilliseconds = measurement
+                await channel.send(.response(
+                    entryID: mutation.entryID,
+                    action: .updateMetadata([
+                        EvaluationHTTPLiveResponseObserver.firstContentMetadataKey: measurement
+                    ])
+                ))
+            }
+            if let update = Self.liveResponseUpdate(content: content, metadata: request.metadata) {
+                await liveResponseObserver?.publish(update)
+            }
+        }
+
         var buffer = EvaluationHTTPNDJSONBuffer(
             maximumEventBytes: Self.maximumEventBytes,
             maximumResponseBytes: Self.maximumResponseBytes
@@ -261,71 +276,11 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         for try await byte in bytes {
             try Task.checkCancellation()
             if let line = try buffer.append(byte) {
-                if let command = try Self.command(
-                    fromLine: line,
-                    expectsGuidedResponse: request.schema != nil
-                ) {
-                    if command.producesResponseOrToolCall { responseEventCount += 1 }
-                    try await command.send(into: channel)
-                    if let mutation = command.responseMutation {
-                        let content = liveResponse.apply(mutation)
-                        if firstContentMilliseconds == nil,
-                           Self.isVisibleContent(content) {
-                            let measurement = Self.firstContentMilliseconds(
-                                started: started,
-                                metadata: request.metadata
-                            )
-                            firstContentMilliseconds = measurement
-                            await channel.send(.response(
-                                entryID: mutation.entryID,
-                                action: .updateMetadata([
-                                    EvaluationHTTPLiveResponseObserver.firstContentMetadataKey:
-                                        measurement
-                                ])
-                            ))
-                        }
-                        if let update = Self.liveResponseUpdate(
-                            content: content,
-                            metadata: request.metadata
-                        ) {
-                            await liveResponseObserver?.publish(update)
-                        }
-                    }
-                }
+                try await consume(line)
             }
         }
         if let finalLine = buffer.finish() {
-            if let command = try Self.command(
-                fromLine: finalLine,
-                expectsGuidedResponse: request.schema != nil
-            ) {
-                if command.producesResponseOrToolCall { responseEventCount += 1 }
-                try await command.send(into: channel)
-                if let mutation = command.responseMutation {
-                    let content = liveResponse.apply(mutation)
-                    if firstContentMilliseconds == nil,
-                       Self.isVisibleContent(content) {
-                        let measurement = Self.firstContentMilliseconds(
-                            started: started,
-                            metadata: request.metadata
-                        )
-                        firstContentMilliseconds = measurement
-                        await channel.send(.response(
-                            entryID: mutation.entryID,
-                            action: .updateMetadata([
-                                EvaluationHTTPLiveResponseObserver.firstContentMetadataKey:
-                                    measurement
-                            ])
-                        ))
-                    }
-                    if let update = Self.liveResponseUpdate(
-                        content: content,
-                        metadata: request.metadata
-                    ) {
-                        await liveResponseObserver?.publish(update)
-                    }
-                }
-            }
+            try await consume(finalLine)
         }
 
         guard responseEventCount > 0 else {
@@ -333,13 +288,7 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         }
     }
 
-    private static func validateTokenBudget(
-        body: Data,
-        endpoint: URL,
-        request: LanguageModelExecutorGenerationRequest,
-        contextSize: Int,
-        timeout: TimeInterval
-    ) async throws {
+    private static func isolatedSession(timeout: TimeInterval) -> URLSession {
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.timeoutIntervalForRequest = timeout
         sessionConfiguration.timeoutIntervalForResource = timeout
@@ -349,11 +298,21 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         sessionConfiguration.httpShouldSetCookies = false
         sessionConfiguration.urlCredentialStorage = nil
         sessionConfiguration.connectionProxyDictionary = [:]
-        let session = URLSession(
+        return URLSession(
             configuration: sessionConfiguration,
             delegate: EvaluationHTTPNoRedirectDelegate(),
             delegateQueue: nil
         )
+    }
+
+    private static func validateTokenBudget(
+        body: Data,
+        endpoint: URL,
+        request: LanguageModelExecutorGenerationRequest,
+        contextSize: Int,
+        timeout: TimeInterval
+    ) async throws {
+        let session = isolatedSession(timeout: timeout)
         defer { session.invalidateAndCancel() }
 
         var urlRequest = URLRequest(url: endpoint)
