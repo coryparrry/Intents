@@ -69,6 +69,36 @@ final class IntentFileTransportTests: XCTestCase, @unchecked Sendable {
         try AutomationCodecRequirements.validate(plan.execution, plan: plan, capabilities: .init(), purpose: .review)
         XCTAssertThrowsError(try AutomationCodecRequirements.validate(plan.execution, plan: plan, capabilities: .init()))
     }
+    func testXcodeExportSuffixesAndAutomaticRecordingPreserveExactFileImport() async throws {
+        let root = try root(), (program, _, initial) = try export(root)
+        var manifest = initial, entries = initial[0]["attachments"] as! [[String: Any]]
+        // Naming captured from the Xcode 27 simulator export, not the host's raw attachment name.
+        entries[0]["suggestedHumanReadableName"] = "intents-system-receipt_0_F2839133-BF2D-4CE3-B21F-DF4FC978C4CF.json"
+        entries[1]["suggestedHumanReadableName"] = "intents-file-make_0_0D3B99C5-2405-4559-8D4D-E21A7234F4D5.txt"
+        var recording = entries[0]
+        recording["exportedFileName"] = "A0EE9C86-53C0-429D-8A69-3DE5725B66AC.mp4"
+        recording["suggestedHumanReadableName"] = "Screen Recording 2026-10-14 at 08.25.36 am.mp4"
+        entries.append(recording)
+        try Data("unclaimed recording".utf8).write(to: root.appendingPathComponent(recording["exportedFileName"] as! String))
+        manifest[0]["attachments"] = entries; try writeManifest(manifest, root: root)
+        let artifactsRoot = try self.root(), artifacts = try AutomationArtifactRegistry(root: artifactsRoot)
+        let imported = try await AutomationHostFileAttachments.importExport(root: root, scope: scope, app: app, program: program,
+            artifacts: artifacts, planDigest: AutomationFrozenCase.planDigest(plan(program)))
+        guard case .artifact(_, let digest) = imported.receipt.values["make"] else { return XCTFail("Missing exact file output") }
+        XCTAssertEqual(digest, AutomationArtifactRegistry.digest(bytes))
+        let index = try JSONDecoder().decode([String: AutomationArtifactRegistry.Artifact].self,
+            from: Data(contentsOf: artifactsRoot.appendingPathComponent("artifact-index.json")))
+        XCTAssertEqual(index.count, 1, "Only the correlated file becomes an artifact")
+    }
+    func testExportRejectsDuplicateNamesAfterRemovingXcodeSuffix() throws {
+        let root = try root(), (_, _, initial) = try export(root)
+        var manifest = initial, entries = initial[0]["attachments"] as! [[String: Any]], duplicate = entries[0]
+        duplicate["exportedFileName"] = "duplicate.json"
+        duplicate["suggestedHumanReadableName"] = "intents-system-receipt_0_F2839133-BF2D-4CE3-B21F-DF4FC978C4CF.json"
+        try Data(contentsOf: root.appendingPathComponent("receipt.json")).write(to: root.appendingPathComponent("duplicate.json"))
+        entries.append(duplicate); manifest[0]["attachments"] = entries; try writeManifest(manifest, root: root)
+        XCTAssertThrowsError(try AutomationHostFileAttachments.exportEntries(root: root, testIdentifier: "SegmentTests/testSegment()"))
+    }
     func testMetadataByteAndNativeInputBoundsRejectMalformedFiles() throws {
         for name in ["../escape", "a/b", "a\\b", ".hidden", "", String(repeating: "a", count: 129)] {
             XCTAssertThrowsError(try AutomationIntentFileMetadata(filename: name, typeIdentifier: nil, data: bytes))

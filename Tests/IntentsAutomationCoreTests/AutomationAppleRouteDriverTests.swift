@@ -79,6 +79,47 @@ final class AutomationAppleRouteDriverTests: XCTestCase, @unchecked Sendable {
         let calls = await h.release.calls; XCTAssertEqual(calls, ["prepare:example.Host.xctrunner", "release:example.Host.xctrunner"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: h.root.appendingPathComponent("driver/system-\(h.lease.generation)/result.xcresult").path))
     }
+    func testSubjectActivationRequiresNavigationInTheExactApprovedSegment() async throws {
+        for mode in 0...2 {
+            let h = try await fixture()
+            var plan = h.plan, approval = h.approval
+            // Extra approval alone cannot activate a segment that did not request navigation.
+            if mode > 0 { approval.effects.insert(.navigate) }
+            if mode == 2 { plan.execution.effects.insert(.navigate) }
+            approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+            let driver = try driver(h, approval: approval)
+            try await driver.acquire(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease)
+            let file = h.root.appendingPathComponent("driver/system-\(h.lease.generation)/host.xctestrun")
+            let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: file), format: nil) as? [String: Any])
+            let target = try XCTUnwrap(plist["OwnedHost"] as? [String: Any])
+            let environment = try XCTUnwrap(target["EnvironmentVariables"] as? [String: String])
+            let payload = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(environment["INTENTS_AUTOMATION_HOST_PLAN_B64"])))
+            let value = try JSONDecoder().decode(AutomationJSON.self, from: payload)
+            XCTAssertEqual(value.object?["activateSubject"], mode == 2 ? .bool(true) : nil)
+            let proof = await driver.release(scope: h.scope, lease: h.lease)
+            XCTAssertTrue(proof.runnerTerminated)
+            XCTAssertTrue(proof.privatePayloadCleaned)
+        }
+    }
+    func testUnapprovedNavigationAndNoActivationCannotPrepareNativeHost() async throws {
+        for noActivation in [false, true] {
+            let h = try await fixture()
+            var plan = h.plan, approval = h.approval
+            plan.execution.effects.insert(.navigate)
+            if noActivation {
+                plan.execution.lifecycle = .noActivation
+                approval.effects.insert(.navigate)
+            }
+            approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+            let driver = try driver(h, approval: approval)
+            do {
+                try await driver.acquire(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease)
+                XCTFail("Native activation without its approved lifecycle was admitted")
+            } catch {}
+            let calls = await h.release.calls
+            XCTAssertTrue(calls.isEmpty)
+        }
+    }
     func testChangedPrivatePayloadRetainsOwnershipAndCanOnlyCleanExactRestoredBytes() async throws {
         let h = try await fixture(), driver = try driver(h)
         try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)

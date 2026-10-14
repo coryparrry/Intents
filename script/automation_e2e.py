@@ -100,7 +100,7 @@ def host_segment(identity, phase, operations, bindings=None):
     for binding in bindings or []:
         codecs.add(binding.get("parameterCodec", "entity"))
     result = {"id": identity, "kind": "systemQuery" if query else "systemIntent", "phase": phase,
-              "operation": identity, "inputs": {}, "effects": ["observe"] if query else ["observe", "fixtureWrite"],
+              "operation": identity, "inputs": {}, "effects": ["observe", "navigate"] if query else ["observe", "navigate", "fixtureWrite"],
               "lifecycle": "persistedStateAcrossSegments",
               "requiredCapabilities": ["apple.entity.query" if query else "apple.intent.invoke"] +
                                       sorted("apple.codec." + c for c in codecs),
@@ -308,8 +308,8 @@ def run_contract(commands, output, build_root=None):
             plan_path = output / (plan["id"] + ".json")
             plan_path.write_text(json.dumps(envelope, indent=2))
             code, report = commands.json([cli, "run", "--plan", plan_path, *flags], timeout=900, allowed=(0, 1))
-            ensure(code == (0 if summary in ("passed", "executedUnassessed") else 1), "CLI exit status differs from assessment")
             verify_report(report, summary, completed=summary != "timedOut")
+            ensure(code == (0 if summary in ("passed", "executedUnassessed") else 1), "CLI exit status differs from assessment")
             if expected is not None:
                 verify_echo(report, expected)
             if file:
@@ -317,6 +317,7 @@ def run_contract(commands, output, build_root=None):
             verify_campaigns(support)
             _, saved = commands.json([cli, "show", attempt, *flags])
             ensure(saved == report, "Saved report differs from run output")
+            print(f"Verified {plan['id']}: {summary}", flush=True)
             reports.append({"case": plan["id"], "attemptID": attempt, "summary": summary,
                             "exactOutputsCompared": expected is not None or file})
         for index, (operations, expected) in enumerate(echo_batches(catalog), 1):

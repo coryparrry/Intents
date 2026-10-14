@@ -20,3 +20,5 @@
 
 - Local run 4 passed exact comparisons for the first 15 codec families and all five empty arrays. IntentFile producer setup failed with AppIntentsServicesMetadataErrorDomain 400 (fixture bundle not present); raw result retained, owned simulator removed. Investigating the real runtime boundary.
 - Two independently validated PR review findings fixed: selected Xcode fallback and testing-only helper scheme entries. All 19 CLI regressions pass, independent recheck is clean, and the current fixture Mac target builds.
+
+- Fixed actual Xcode attachment-name suffix import and ignored automatic recordings as claimed data, retaining exact receipt/digest checks. Added explicit shared host activation from the already-approved navigate effect; missing navigation preserves prior behavior. Independent review is clean; 33 native driver tests, 41 host contract tests and 53 Python tests pass. Full runtime rerun is required to establish the fix.

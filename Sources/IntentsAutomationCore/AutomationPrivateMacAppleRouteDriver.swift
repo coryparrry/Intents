@@ -89,7 +89,8 @@ actor AutomationPrivateMacAppleRouteDriver: AutomationResolvedRouteDriver {
         try program.validate(route: segment.kind, phase: segment.phase)
         preparing = true; defer { preparing = false }
         let fileInputs = try await authority?.fileInputs(plan: plan, segment: segment, scope: scope, artifacts: artifacts) ?? [:]
-        let payload = try program.executionPayload(scope: scope, app: plan.app, route: segment.kind, phase: segment.phase, fileInputs: fileInputs)
+        let payload = try program.executionPayload(scope: scope, app: plan.app, route: segment.kind, phase: segment.phase, fileInputs: fileInputs,
+                                                   activateSubject: segment.effects.contains(.navigate))
         guard await leases.isCurrent(lease), !revoked.contains(lease.generation) else { throw AutomationContractError.unknownLease }
         try Task.checkCancellation()
         do {

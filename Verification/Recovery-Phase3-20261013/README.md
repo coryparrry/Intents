@@ -13,8 +13,9 @@ The separate **Input conversion diagnostic (Mac)** job runs the existing live St
 ## Local checks
 
 - Fixture iOS Simulator and Mac targets build with Xcode 27.0; all six model tests pass.
-- Supported CLI builds; 14 CLI regressions pass, including capability injection, exact approval, Mac assembly budgets, saved reports and canonical support-folder aliases.
+- Supported CLI builds; 19 CLI regressions pass, including capability injection, exact approval, Mac assembly budgets, saved reports and canonical support-folder aliases.
 - All 53 Python workflow, routing and driver checks pass.
+- Native activation and real Xcode file-export fixes pass 33 native driver tests and 41 host-contract tests. Fifteen codec families passed locally before the file runtime failure; the complete rerun remains required.
 - A real simulator preparation captured 18 actions. The initial saved-preparation reload exposed a `/tmp` alias bug; the fixed CLI reloads that retained catalog without rebuilding.
 - Independent fixture/UI, CLI and CI reviews are clean. Current execution evidence is published by the required CI jobs above.
 
