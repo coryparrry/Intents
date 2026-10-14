@@ -337,7 +337,7 @@ Acceptance:
 
 ### Phase 3 — Headless CLI and CI end-to-end job (the source of truth for agents)
 
-**Implementation update, 2026-10-13:** Phase 3 is a separate PR from main after PR 136. It supplies `intents-automation`, the all-codec committed fixture, a simulator e2e job, the live Mac input-conversion diagnostic CI job required by Phase 1, and opt-in UI tests without private profiles. Local fixture builds, six model tests, 19 CLI regressions and 53 Python checks pass; the fixed CLI reloads a real retained catalog. Acceptance remains the current PR head's hosted simulator and diagnostic results. This phase is not merged or released, and release PR 130 remains held. See [Phase 3 verification](Verification/Recovery-Phase3-20261013/README.md).
+**Implementation update, 2026-10-13:** Phase 3 is a separate PR from main after PR 136. It supplies `intents-automation`, the all-codec committed fixture, a simulator e2e job, the live Mac input-conversion diagnostic CI job required by Phase 1, and opt-in UI tests without private profiles. The complete CLI simulator command passed locally: all 16 codec families, mixed workflow, deliberate failure, timeout release and immediate rerun. Fixture builds, six model tests, 19 CLI regressions and 53 Python checks also pass. Acceptance remains the current PR head's hosted simulator and diagnostic results. This phase is not merged or released, and release PR 130 remains held. See [Phase 3 verification](Verification/Recovery-Phase3-20261013/README.md).
 
 1. Add a committed fixture app, `examples/AutomationFixture`, generated with XcodeGen like the other examples. It needs:
    - echo intents for every codec family;

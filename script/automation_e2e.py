@@ -325,8 +325,6 @@ def run_contract(commands, output, build_root=None):
                     "executedUnassessed", expected)
         execute(file_case(prepared), "executedUnassessed", file=True)
         execute(mixed_case(prepared, "mixed"), "passed")
-        commands.run(["xcrun", "simctl", "launch", simulator, prepared["host"]["app"]["bundleID"]])
-        commands.run(["xcrun", "simctl", "io", simulator, "screenshot", output / "fixture.png"])
         execute(mixed_case(prepared, "wrong-assertion", expected=False), "assertionFailed")
         execute(timeout_case(prepared), "timedOut")
         operations, expected = echo_batches(catalog)[0]

@@ -10,6 +10,10 @@ The **Automation e2e (simulator)** job must pass for the PR head. It compares ex
 
 The separate **Input conversion diagnostic (Mac)** job runs the existing live String setter/readback canary. It checks exact readback and release without invoking a business action or granting execution capabilities. Skipped or empty execution cannot satisfy the job.
 
+## Local runtime
+
+The full CLI command passed on this Mac with Xcode 27.0 and an owned iOS 27.0 simulator at `1bd8edcd5`: all seven cases, exact outputs for all 16 codec families and five empty arrays, assessed mixed workflow, deliberate assertion failure, timeout release and immediate successful rerun. Saved reports matched, no campaign remained, and the simulator was shut down and deleted. The in-test screenshot was visually inspected. A redundant post-launch screenshot that captured a blank launch frame was then removed; workflow screenshots remain in the test artifacts. Hosted CI on the current PR head is the reproducibility gate.
+
 ## Local checks
 
 - Fixture iOS Simulator and Mac targets build with Xcode 27.0; all six model tests pass.
