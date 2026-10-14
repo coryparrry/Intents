@@ -3,9 +3,9 @@ import Foundation
 import XCTest
 @testable import IntentsAutomationCore
 
-extension AutomationPrivateMacAppleRouteDriverTests {
+extension AutomationPreparedMacContractTests {
     func testOptionalDiagnosticSelectsOnlySupportedFixedSamplesAndDoesNotChangeCatalog() async throws {
-        let h = try await fixture()
+        let h = try fixture()
         let catalog = ApplicationSurfaceCatalog(app: h.host.app, systemActions: [
             .init(id: "Probe", typeName: "Probe", title: "Probe", parameters: [
                 .init(name: "title", family: "text", optional: false),

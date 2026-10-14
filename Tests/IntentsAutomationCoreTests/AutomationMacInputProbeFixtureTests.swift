@@ -118,12 +118,11 @@ final class AutomationMacInputProbeFixtureTests: XCTestCase {
             return
         }
         let installed = AutomationInstalledSubjectVerifier(developerDirectory: developer, workspace: root)
-        let subject = AutomationMacGUISubjectVerifier(subject: installed, identity: { try AutomationMacGUIIdentity.validate($0) })
         let owner = try AutomationInputAdapterProbeRunner(plan: plan,
             approval: .init(runID: "authored-input-fixture", probeDigest: plan.digest, app: prepared.host.app, target: target),
             developerDirectory: developer, state: root.appendingPathComponent("probe-owner"),
             leases: AutomationDeviceLeaseManager(storeURL: root.appendingPathComponent("leases.json")),
-            artifacts: AutomationArtifactRegistry(root: root.appendingPathComponent("artifacts")), subject: subject,
+            artifacts: AutomationArtifactRegistry(root: root.appendingPathComponent("artifacts")), subject: installed,
             release: AutomationMacAssociatedHostReleaseVerifier(host: prepared.host))
         let report = try await owner.run(attemptID: "string-calibration")
         XCTAssertNil(report.failure)

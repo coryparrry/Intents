@@ -93,23 +93,7 @@ struct AutomationNativeUIReproductionProposal: Sendable {
         if let freshBindings { try AutomationQualifiedFreshFixture.validateProposal(bindings: freshBindings, plan: plan, approval: approval, capabilities: capabilities, purpose: .review) }
         return .init(frozen: frozen, originalAttemptID: original.attemptID, approval: approval, capabilities: capabilities)
     }
-    static func compileMac(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
-                           selected: AutomationInstalledMacUIApplication, runtimeRoot: URL, runID: String) throws -> Self {
-        fromMacReview(try AutomationMacSavedWorkflowContract.reproduction(frozen: frozen, original: original,
-            selected: selected, runtimeRoot: runtimeRoot, runID: runID))
-    }
-    static func fromMacReview(_ review: AutomationMacSavedWorkflowContract.Reproduction) -> Self {
-        .init(frozen: review.frozen, originalAttemptID: review.originalAttemptID, approval: review.approval, capabilities: review.capabilities)
-    }
-    static func compilePreparedMac(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
-                                   prepared: AutomationPreparedApplication, runtimeRoot: URL, runID: String, disposable: Bool) throws -> Self {
-        fromMacReview(try AutomationMacSavedWorkflowContract.reproduction(frozen: frozen, original: original,
-            prepared: prepared, runtimeRoot: runtimeRoot, runID: runID, disposable: disposable))
-    }
     func execute(subject: AutomationApplicationSubject, support: URL, developerDirectory: URL, allowBootAndInstall: Bool) async throws -> AutomationReproductionReport {
-        if case .installedMacUI = subject {
-            guard !allowBootAndInstall else { throw AutomationContractError.conflictingOperation }
-        }
         let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
         let runner = try AutomationApplicationRunner(supportRoot: support,
             developerDirectory: developerDirectory)

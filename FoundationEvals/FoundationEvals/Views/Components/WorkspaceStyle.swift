@@ -546,23 +546,6 @@ struct WorkspaceEmptyState: View {
     }
 }
 
-/// Presents a native GroupBox as a workspace card with a clear heading.
-/// Group box content brings its own 10-point inset, so the heading is inset to match it.
-struct WorkspaceGroupBoxStyle: GroupBoxStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            configuration.label
-                .font(.headline)
-                .accessibilityAddTraits(.isHeader)
-                .padding(.horizontal, 10)
-            configuration.content
-        }
-        .padding(.horizontal, 10).padding(.top, 18).padding(.bottom, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceSurface()
-    }
-}
-
 struct WorkspaceRowButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         WorkspaceRowButton(configuration: configuration)

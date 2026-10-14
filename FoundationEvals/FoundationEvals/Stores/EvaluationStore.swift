@@ -2356,7 +2356,8 @@ final class EvaluationStore {
     func deleteRunDurably(id: UUID) throws -> Bool {
         try requireWorkspaceWritable()
         if activeRun?.id == id { throw EvaluationStoreError.runBusy }
-        guard let location = persistedRunLocation(id: id) ?? pendingRunDeletionLocation(id: id) else {
+        guard let location = persistedRunLocation(id: id)
+            ?? persistedRunLocation(id: id, directoryName: "RunDeletions") else {
             return false
         }
         let deletionDirectory = location.runURL.deletingLastPathComponent().deletingLastPathComponent()
@@ -3962,7 +3963,7 @@ final class EvaluationStore {
         return run
     }
 
-    private func persistedRunLocation(id: UUID) -> EvaluationPersistedRunLocation? {
+    private func persistedRunLocation(id: UUID, directoryName: String = "Runs") -> EvaluationPersistedRunLocation? {
         for project in workspace.projects {
             for record in project.suites {
                 let directory = EvaluationWorkspacePersistence.suiteDirectory(
@@ -3971,35 +3972,7 @@ final class EvaluationStore {
                     suiteID: record.id
                 )
                 let runURL = directory
-                    .appending(path: "Runs", directoryHint: .isDirectory)
-                    .appending(path: "\(id.uuidString).json")
-                guard FileManager.default.fileExists(atPath: runURL.path),
-                      let data = try? Data(contentsOf: runURL),
-                      let run = try? CanonicalJSON.decode(EvaluationRun.self, from: data),
-                      run.id == id,
-                      run.suiteID == record.id,
-                      run.projectID == nil || run.projectID == project.id else { continue }
-                return EvaluationPersistedRunLocation(
-                    projectID: project.id,
-                    suiteID: record.id,
-                    runURL: runURL,
-                    run: run
-                )
-            }
-        }
-        return nil
-    }
-
-    private func pendingRunDeletionLocation(id: UUID) -> EvaluationPersistedRunLocation? {
-        for project in workspace.projects {
-            for record in project.suites {
-                let directory = EvaluationWorkspacePersistence.suiteDirectory(
-                    supportDirectory: supportDirectory,
-                    projectID: project.id,
-                    suiteID: record.id
-                )
-                let runURL = directory
-                    .appending(path: "RunDeletions", directoryHint: .isDirectory)
+                    .appending(path: directoryName, directoryHint: .isDirectory)
                     .appending(path: "\(id.uuidString).json")
                 guard FileManager.default.fileExists(atPath: runURL.path),
                       let data = try? Data(contentsOf: runURL),

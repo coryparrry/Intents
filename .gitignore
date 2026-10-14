@@ -3,10 +3,6 @@
 __pycache__/
 dist/
 
-# Local demo recordings, source artwork, and intermediate media.
-/demo-video/public/
-/demo-video/out/
-
 # Keep only the published repository artwork.
 /.github/assets/*
 !/.github/assets/readme-banner.png
@@ -20,14 +16,11 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 
 # Keep only the public guides and release instructions.
 /docs/*
-!/docs/EVAL_REVIEW_SPEC.md
 !/docs/EVAL_REVIEW_GUIDE.md
 !/docs/MCP_CONTROL_GUIDE.md
 !/docs/DEVELOPER_SWIFT_INTEGRATION.md
 !/docs/FEATURE_ADAPTER.md
-!/docs/PRODUCTION_EVALS_SPEC.md
 !/docs/PRODUCTION_EVALS_GUIDE.md
-!/docs/MCP_CONTROL_SPEC.md
 !/docs/coreai-provider.md
 !/docs/custom-provider-protocol.md
 !/docs/foundation-model-features.md
@@ -43,19 +36,32 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 *.mobileprovision
 *.provisionprofile
 
-# Local working notes.
-/Verification/LocalReliability-20260930/
-/Verification/PR57-CI-20260930/
-/Verification/IntentLabUX-20261001/
-/Verification/FinalFollowup/
+# Local audit reports, build logs, screenshots, and working notes.
 /worklog.md
+/website/QA.md
+/website/WORKLOG.md
+/.codegraph/
+/Verification/**
 
-/Verification/INTENT_LAB_USABILITY_WORKLOG.md
+# Keep executable verification inputs, developer hosts, and formal models.
+!/Verification/Automation/
+!/Verification/Automation/Fixtures/
+!/Verification/Automation/Fixtures/**
 
-/Verification/PR_SIMPLIFICATION_REVIEW_2026-09-30.md
-
-/Verification/PR_SIMPLIFICATION_REVIEW_COVERAGE_2026-09-30.md
-
-/Verification/REUSABLE_INTENT_LAB_IMPLEMENTATION_LOG.md
-
-!/docs/MCP_CONTROL_GUIDE.md
+# Historical captures with no runtime, build, or test consumer.
+/Verification/Automation/Fixtures/CodecMetadata/QualifiedDeclarations.swift.txt
+/Verification/Automation/Fixtures/CodecMetadata/product-manifest.json
+/Verification/Automation/Fixtures/CodecMetadata/provenance.json
+/Verification/Automation/Fixtures/CollectionMetadata/QualifiedDeclarations.swift.txt
+/Verification/Automation/Fixtures/CollectionMetadata/RejectedNestedInputDeclarations.swift.txt
+/Verification/Automation/Fixtures/CollectionMetadata/RejectedNestedResultDeclaration.swift.txt
+/Verification/Automation/Fixtures/CollectionMetadata/provenance.json
+/Verification/Automation/Fixtures/CollectionMetadata/unsupported-nested-inputs.json
+/Verification/Automation/Fixtures/CollectionMetadata/unsupported-nested-result.json
+/Verification/Automation/Fixtures/RuntimeCodecEcho/echo-actions.swift.txt
+/Verification/Automation/Fixtures/RuntimeCodecEcho/scalar-actions.swift.txt
+/Verification/Automation/Fixtures/Xcode272Metadata/QualifiedDeclarations.swift.txt
+/Verification/Automation/Fixtures/Xcode272Metadata/project.pbxproj
+/Verification/Automation/Fixtures/Xcode272Metadata/provenance.json
+/Verification/Automation/Fixtures/DuplicateTasks/Metadata/provenance.json
+/Verification/Automation/Fixtures/IntentFileDeclarations/xcresult-export-attachments-schema.json

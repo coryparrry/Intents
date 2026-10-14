@@ -484,6 +484,47 @@ struct MCPStoreAuthorityTests {
     }
 
     @MainActor
+    @Test(arguments: ["Runs", "RunDeletions"], ["id", "suite", "project"])
+    func storedRunLookupRejectsMismatchedIdentity(directoryName: String, mismatchedField: String) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        var run = makeRun(
+            case: EvaluationCase(name: "Case", prompt: "Prompt", expected: ""),
+            resultCount: 1,
+            plannedCount: 1
+        )
+        let requestedID = run.id
+        run.projectID = store.selectedProjectID
+        run.suiteID = store.selectedSuiteID
+        switch mismatchedField {
+        case "id": run.id = UUID()
+        case "suite": run.suiteID = UUID()
+        case "project": run.projectID = UUID()
+        default: Issue.record("Unknown identity field: \(mismatchedField)")
+        }
+        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory,
+            projectID: store.selectedProjectID,
+            suiteID: store.selectedSuiteID
+        )
+        let runDirectory = suiteDirectory.appending(path: directoryName, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
+        let runURL = runDirectory.appending(path: "\(requestedID.uuidString).json")
+        let storedData = try CanonicalJSON.data(for: run)
+        try storedData.write(to: runURL, options: .atomic)
+        let evidenceURL = suiteDirectory.appending(path: "RunEvidence/\(requestedID.uuidString)/source.bin")
+        try FileManager.default.createDirectory(at: evidenceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let evidenceData = Data("private evidence".utf8)
+        try evidenceData.write(to: evidenceURL)
+
+        #expect(store.run(with: requestedID) == nil)
+        #expect(try !store.deleteRunDurably(id: requestedID))
+        #expect(try Data(contentsOf: runURL) == storedData)
+        #expect(try Data(contentsOf: evidenceURL) == evidenceData)
+    }
+
+    @MainActor
     @Test func failedEvidenceCleanupRetainsADeletionRetryPath() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

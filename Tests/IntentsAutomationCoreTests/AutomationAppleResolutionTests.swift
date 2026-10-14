@@ -169,30 +169,4 @@ extension AutomationAppleRouteDriverTests {
     }
 }
 
-extension AutomationPrivateMacAppleRouteDriverTests {
-    func testUnresolvedBoundTemplateCannotAcquireWithoutProducerAuthority() async throws {
-        let h = try await fixture(), plan = boundPlan(h.plan, query: false)
-        var approval = h.approval; approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
-        let driver = try driver(h, approval: approval)
-        do { try await driver.acquire(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease); XCTFail("Unresolved bound template acquired without producer evidence") }
-        catch let error as AutomationContractError {
-            guard case .invalidPlan = error else { return XCTFail("Unexpected rejection: \(error)") }
-        }
-        let calls = await h.release.calls; XCTAssertTrue(calls.isEmpty)
-    }
-    func testCoordinatorPassesBoundInputsAndAttemptQueriesThroughMixedMacRoute() async throws {
-        for query in [false, true] {
-            let h = try await fixture(), plan = boundPlan(h.plan, query: query), commands = AutomationResolutionCommands(host: h.host)
-            var approval = h.approval; approval.effects.formUnion([.navigate, .fixtureWrite]); approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
-            let leases = AutomationDeviceLeaseManager()
-            let driver = try AutomationPrivateMacAppleRouteDriver(prepared: h.host, approval: approval, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"),
-                stateDirectory: h.root.appendingPathComponent("integration"), leases: leases, artifacts: AutomationArtifactRegistry(root: h.root.appendingPathComponent("integration-artifacts")),
-                subjectVerifier: Subject(app: h.host.app, target: h.host.target), releaseVerifier: h.release, capabilities: resolutionCodecs, validateTarget: { _ in },
-                commands: .init(run: { try await commands.run($0, root: $1, timeout: $2) }, stop: { await commands.stop() }))
-            let coordinator = AutomationCoordinator(leases: leases, journal: try AutomationJournal(url: h.root.appendingPathComponent("integration-journal.json")))
-            let report = try await coordinator.run(plan: plan, approval: approval, capabilities: resolutionCodecs, attemptID: "attempt", driver: AutomationResolutionFixtureRouter(apple: driver))
-            try await checkResolution(report: report, commands: commands, query: query)
-        }
-    }
-}
 #endif

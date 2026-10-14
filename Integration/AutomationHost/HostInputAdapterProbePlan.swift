@@ -60,13 +60,3 @@ struct HostInputAdapterProbePlan: Codable {
         .dataCorrupted(.init(codingPath: [], debugDescription: "Input adapter probe requires its exact scope and fixed supported samples"))
     }
 }
-
-enum HostIntentIdentity {
-    static func validate(bundle: String, action: String, definitionsBundle: String, definitionBundle: String,
-                         definitionID: String, intentBundle: String, intentID: String) throws {
-        guard definitionsBundle == bundle, definitionBundle == bundle, intentBundle == bundle,
-              definitionID == action, intentID == action else {
-            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Intent definition identity does not match the selected bundle and action"))
-        }
-    }
-}

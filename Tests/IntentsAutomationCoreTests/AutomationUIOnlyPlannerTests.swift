@@ -26,12 +26,9 @@ final class AutomationUIOnlyPlannerTests: XCTestCase {
     }
     func testIndependentStablePropertyCanProduceAnAssessedFailure() throws {
         let plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, instruction: "Set the volume", endpoint: "Volume", expectedVisibleText: "50%", observationLabel: "Volume", observationProperty: "value", approval: approval(), localeIdentifier: "en_GB")
-        let observer = plan.observations[0], operation = try XCTUnwrap(observer.uiProgram?.operations.first)
-        let capture = AutomationUIReadback(schemaVersion: 1, appBundleId: app.bundleID, targetId: target.id, complete: true,
-            nodes: [.init(index: 0, label: "Volume", value: "40%", blocked: false, hidden: false, visible: true, disabled: false, secure: false)])
-        let actual = try capture.extract(operation: operation, app: app, target: target)
+        let observer = plan.observations[0]
         let fact = AutomationObservation(id: observer.id, app: app, target: target, environmentID: plan.environmentID,
-            attemptID: "attempt", stepID: observer.id, route: .ui, proof: .visibleState, value: actual)
+            attemptID: "attempt", stepID: observer.id, route: .ui, proof: .visibleState, value: .text("40%"))
         let result = AutomationAssessment.assess(plan: plan, attemptID: "attempt", subjectDispatched: true, subjectCompleted: true, observations: [fact])
         XCTAssertEqual(result.summary, .assertionFailed); XCTAssertTrue(result.assessed)
         XCTAssertEqual(result.failedObservations, ["business.visible-property"])

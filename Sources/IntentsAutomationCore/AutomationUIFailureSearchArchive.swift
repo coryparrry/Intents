@@ -73,9 +73,9 @@ public struct AutomationUIFailureSearchRecord: Codable, Equatable, Sendable {
         for confirmation in report.confirmations { try validate(confirmation, stage: .confirmation, byDigest: byDigest) }
         let confirmationIDs = report.confirmations.flatMap(\.attempts)
         guard Set(confirmationIDs).count == confirmationIDs.count,
-              confirmationIDs == report.attempts.filter { $0.stage == .confirmation }.map({ $0.report.attemptID }) else { throw AutomationContractError.conflictingOperation }
+              confirmationIDs == report.attempts.filter({ $0.stage == .confirmation }).map(\.report.attemptID) else { throw AutomationContractError.conflictingOperation }
         let finalIDs = report.finalReproduction?.attempts ?? []
-        guard finalIDs == report.attempts.filter { $0.stage == .finalConfirmation }.map({ $0.report.attemptID }) else { throw AutomationContractError.conflictingOperation }
+        guard finalIDs == report.attempts.filter({ $0.stage == .finalConfirmation }).map(\.report.attemptID) else { throw AutomationContractError.conflictingOperation }
         if let best = report.bestConfirmedCaseDigest {
             guard byDigest[best] != nil, let selected = report.confirmations.first(where: { $0.caseDigest == best && $0.confirmed }),
                   let final = report.finalReproduction, final.caseDigest == best, final.signature == selected.signature,

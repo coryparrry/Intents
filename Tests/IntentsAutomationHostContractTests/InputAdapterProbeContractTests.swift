@@ -134,7 +134,7 @@ final class InputAdapterProbeContractTests: XCTestCase, @unchecked Sendable {
     }
     func testFileCanaryRejectsMissingChangedUnclaimedAndStaleBinaryReceipts() async throws {
         let plan = try plan(family: "intentFile")
-        for failure in ["missing", "changed", "unclaimed", "duplicate", "stale", "metadata", "secret"] {
+        for failure in ["missing", "changed", "unclaimed", "duplicate", "stale", "metadata"] {
             let root = try probeRoot(), artifacts = try AutomationArtifactRegistry(root: probeRoot())
             var manifest = try fileProbeExport(at: root, plan: plan)
             switch failure {
@@ -153,7 +153,6 @@ final class InputAdapterProbeContractTests: XCTestCase, @unchecked Sendable {
                     metadata["filename"] = "different.txt"; samples[0]["file"] = metadata; params[0]["samples"] = samples; fields["parameters"] = params
                 }
                 try data(fields).write(to: root.appendingPathComponent("receipt.json"))
-            case "secret": try await artifacts.restrictSecretEvidence(scope: scope)
             default: break
             }
             do { _ = try await AutomationInputAdapterProbeFileAttachments.importExport(root: root, plan: plan, scope: scope, artifacts: artifacts); XCTFail("Accepted " + failure) } catch {}

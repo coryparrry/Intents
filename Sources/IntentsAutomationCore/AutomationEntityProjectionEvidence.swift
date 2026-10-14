@@ -13,16 +13,14 @@ public struct AutomationEntityProjectionEvidence: Sendable {
     private let sourceDigest: String
     private let catalogDigest: String
     private let templateDigest: String
-    private let runtimeContext: AutomationLiveAppleRuntimeContext?
 
     private init(entityTypeID: String, properties: [String: String], recordCount: Int,
                  report: AutomationAttemptReport, receipt: AutomationSegmentReceipt,
-                 prepared: AutomationPreparedApplication, environmentID: String, runtimeContext: AutomationLiveAppleRuntimeContext?) throws {
+                 prepared: AutomationPreparedApplication, environmentID: String) throws {
         self.entityTypeID = entityTypeID; self.properties = properties; self.recordCount = recordCount
         sourceAttemptID = report.attemptID; self.environmentID = environmentID; host = prepared.host
         sourceDigest = try prepared.source.digest; catalogDigest = try AutomationRecipeContext.catalogDigest(prepared.catalog)
         templateDigest = prepared.generatedHost.templateDigest
-        self.runtimeContext = runtimeContext
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         receiptDigest = AutomationArtifactRegistry.digest(try encoder.encode(receipt))
     }
@@ -30,7 +28,7 @@ public struct AutomationEntityProjectionEvidence: Sendable {
     /// Internal issuer accepts only the completed receipt returned by the owned runner.
     /// Structural synthetic tests exercise this boundary but do not establish live qualification.
     static func issue(report: AutomationAttemptReport, plan: AutomationCase, approval: RunApproval,
-                      prepared: AutomationPreparedApplication, runtimeContext: AutomationLiveAppleRuntimeContext? = nil) throws -> Self? {
+                      prepared: AutomationPreparedApplication) throws -> Self? {
         guard plan.app == prepared.host.app, prepared.catalog.app == prepared.host.app,
               plan.target == prepared.host.target, plan.app == approval.app, plan.target == approval.target,
               plan.environmentID == approval.environmentID, approval.effects == [.observe],
@@ -56,11 +54,8 @@ public struct AutomationEntityProjectionEvidence: Sendable {
         guard case .array(let records) = output else { throw AutomationContractError.conflictingOperation }
         // Empty results or identity-only reads never demonstrate a property getter conversion.
         guard !records.isEmpty, let properties = query.properties, !properties.isEmpty else { return nil }
-        let qualifiedContext = try runtimeContext.flatMap { context in
-            try context.matches(report: report, plan: plan, host: prepared.host) ? context : nil
-        }
         return try .init(entityTypeID: query.typeID, properties: properties, recordCount: records.count,
-            report: report, receipt: receipt, prepared: prepared, environmentID: plan.environmentID, runtimeContext: qualifiedContext)
+            report: report, receipt: receipt, prepared: prepared, environmentID: plan.environmentID)
     }
 
     /// Returns only named property-projection records for the exact preparation and requested subset.
@@ -76,13 +71,12 @@ public struct AutomationEntityProjectionEvidence: Sendable {
             throw AutomationContractError.conflictingOperation
         }
         try AutomationHostProgram(operations: [query]).validate(route: .systemQuery, phase: .subject)
-        let qualified = runtimeContext.map { (try? $0.validate(host: host)) != nil } ?? false
         return .init(records: (query.properties ?? [:]).reduce(into: [:]) { records, item in
             records["apple.entity.propertyProjection." + entityTypeID + "." + item.key] = .init(
-                state: qualified ? .available : .unknown,
-                reason: qualified ? "Observed " + item.value + " projection in the verified Mac runtime" : "Observed " + item.value + " property projection; independent runtime context remains unverified",
+                state: .unknown,
+                reason: "Observed " + item.value + " property projection; independent runtime context remains unverified",
                 probeVersion: "entity-property-projection-v2",
-                evidence: [sourceAttemptID, receiptDigest, host.hostProductDigest, host.xctestrunDigest, catalogDigest, sourceDigest, templateDigest] + (qualified ? runtimeContext?.evidence ?? [] : []))
+                evidence: [sourceAttemptID, receiptDigest, host.hostProductDigest, host.xctestrunDigest, catalogDigest, sourceDigest, templateDigest])
         })
     }
 }

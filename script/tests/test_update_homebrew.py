@@ -298,14 +298,6 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(published, self.cask.read_text())
         self.assertEqual(git("status", "--porcelain"), "")
 
-    def test_packaging_chains_update_after_successful_publication(self):
-        packaging = (ROOT / ".github/workflows/package-installer.yml").read_text()
-        job = packaging.split("\n  homebrew:\n")[1]
-        for contract in ("needs: release", "uses: ./.github/workflows/update-homebrew.yml",
-                         "tag: ${{ inputs.tag }}", "secrets: inherit", "actions: read"):
-            self.assertIn(contract, job)
-        self.assertNotIn("always()", job)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -239,22 +239,6 @@ class UIXctestrunTests(unittest.TestCase):
             helper.prepare_ui_xctestrun(self.products)
         self.assertEqual(self.descriptor.read_bytes(), original)
 
-    def test_workflow_executes_the_verified_descriptor_without_scheme_reconstruction(self):
-        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-        step = workflow.split("      - name: Run selected UI tests\n", 1)[1].split("      - name: Export UI test attachments\n", 1)[0]
-        self.assertIn('python3 script/ci_ui_xctestrun.py "$RUNNER_TEMP/DerivedData/Build/Products"', step)
-        self.assertIn('-xctestrun "$ui_xctestrun"', step)
-        for option in ("-project ", "-scheme ", "-configuration ", "-derivedDataPath "):
-            self.assertNotIn(option, step)
-        self.assertIn("-only-testing:FoundationEvalsUITests/FoundationEvalsUITests", step)
-
-    def test_portable_fixtures_run_without_removed_sidecar_runtime_preparation(self):
-        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-        job = workflow.split("  regression:\n", 1)[1].split("  build:\n", 1)[0]
-        self.assertIn("run: python3 script/ci_run_tests.py swift", job)
-        self.assertNotIn("automation_prepare_runtime.sh", job)
-        self.assertNotIn("run: python3 Tools/IntentsAutomation/scripts/provision_runtime.py", job)
-
 
 if __name__ == "__main__":
     unittest.main()

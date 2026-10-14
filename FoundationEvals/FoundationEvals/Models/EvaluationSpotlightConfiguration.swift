@@ -109,14 +109,6 @@ struct EvaluationSpotlightSearchConfiguration: Codable, Equatable, Sendable {
         return pipeline.validationIssue
     }
 
-    /// Apple documents its native response-size limit without stating the units.
-    /// Admission therefore relies only on the exact post-call token limit for every allowed call.
-    func conservativeContextTokenReserve(maximumCalls: Int) -> Int {
-        guard enabled else { return 0 }
-        return EvaluationCustomTool.maximumOutputTokens
-            * min(maximumCalls, EvaluationCustomToolRecorder.maximumCallsPerSample)
-    }
-
     static func isDisallowedFileScope(_ url: URL) -> Bool {
         let canonicalURL = url.standardizedFileURL.resolvingSymlinksInPath()
         let path = canonicalURL.path

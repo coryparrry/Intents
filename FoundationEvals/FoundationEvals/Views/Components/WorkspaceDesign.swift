@@ -87,36 +87,3 @@ struct WorkspaceFigure: View {
         .accessibilityElement(children: .combine)
     }
 }
-
-/// Turns any placeholder layout into one quiet shape with a soft, sweeping highlight.
-struct WorkspaceShimmer: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func body(content: Content) -> some View {
-        content
-            .redacted(reason: .placeholder)
-            .overlay {
-                if !reduceMotion {
-                    TimelineView(.animation) { context in
-                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
-                        GeometryReader { geometry in
-                            LinearGradient(colors: [.clear, .white.opacity(0.35), .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: geometry.size.width * 0.4)
-                                .offset(x: -geometry.size.width * 0.4 + geometry.size.width * 1.4 * phase)
-                        }
-                    }
-                    .blendMode(.plusLighter)
-                    .mask(content.redacted(reason: .placeholder))
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Loading")
-            .allowsHitTesting(false)
-    }
-}
-
-extension View {
-    func workspaceShimmer(_ active: Bool = true) -> some View {
-        Group { if active { modifier(WorkspaceShimmer()) } else { self } }
-    }
-}

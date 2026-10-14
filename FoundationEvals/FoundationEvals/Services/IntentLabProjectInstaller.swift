@@ -108,12 +108,6 @@ struct IntentLabInstallationVerification: Sendable {
     let missing: [String]
 }
 
-struct IntentLabRemovalPreview: Sendable {
-    let automated: Bool
-    let filesToReview: [URL]
-    let steps: [String]
-}
-
 enum IntentLabProjectInstallerError: LocalizedError {
     case unsupported(String)
     case conflict(URL)
@@ -978,47 +972,6 @@ struct IntentLabProjectInstaller: Sendable {
             throw error
         }
         return files.map(\.1)
-    }
-
-    /// Removing an existing target or developer-edited adapter cannot be inferred
-    /// safely from Xcode's project graph alone. Expose exact review locations and
-    /// require the same verification after a manual change.
-    func previewRemoval(_ request: IntentLabInstallationRequest) throws -> IntentLabRemovalPreview {
-        let project = request.projectURL.standardizedFileURL.resolvingSymlinksInPath()
-        let workspace = request.workspaceURL?.standardizedFileURL.resolvingSymlinksInPath()
-        let inspection = try Self.inspect(projectURL: project, workspaceURL: request.workspaceURL)
-        let targetName = inspection.uiTestTargets.first { $0.id == request.uiTestTargetID }?.name
-            ?? inspection.uiTestTargets.first { $0.name == "IntentLabUITests" }?.name
-            ?? "IntentLabUITests"
-        let integrationDir = project.deletingLastPathComponent()
-            .appending(path: "IntentLabIntegration/\(targetName)")
-        let projectScheme = project.appending(path: "xcshareddata/xcschemes/\(request.scheme).xcscheme")
-        let workspaceScheme = workspace?.appending(path: "xcshareddata/xcschemes/\(request.scheme).xcscheme")
-        let scheme = workspaceScheme.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
-            ?? projectScheme
-        let declaration = (try? JSONSerialization.jsonObject(with: request.declarationData)) as? [String: Any]
-        let hasLocalFeatureControls = (declaration?["localFeatureControls"] as? [[String: Any]])?.isEmpty == false
-        let hasReadinessControl = declaration?["readinessControl"] is [String: Any]
-        let appName = inspection.applications.first?.name ?? "App"
-        let files = [project.appending(path: "project.pbxproj"),
-                     scheme,
-                     integrationDir.appending(path: "IntentLabScenarioTests.swift"),
-                     integrationDir.appending(path: "IntentLabIntegration.json"),
-                     integrationDir.appending(path: "IntentLabAppAdapter.swift")]
-            + (hasLocalFeatureControls ? [
-                project.deletingLastPathComponent()
-                    .appending(path: "IntentLabIntegration/\(appName)/IntentLabFeatureTestSupport.swift")
-            ] : [])
-            + (hasReadinessControl ? [
-                project.deletingLastPathComponent()
-                    .appending(path: "IntentLabIntegration/\(appName)/IntentLabReadinessTestSupport.swift")
-            ] : [])
-        try ensureSafe(files, roots: [project.deletingLastPathComponent()] + (workspace.map { [$0] } ?? []))
-        return .init(automated: false, filesToReview: files, steps: [
-            "Remove only Intent Lab test-source and declaration references from \(targetName), preserving edited adapters.",
-            "If \(targetName) is the dedicated Intent Lab target, remove it from the project and shared scheme; preserve existing test targets and other package consumers.",
-            "Remove the package reference only when no other target uses it. Rebuild and verify the remaining integration state."
-        ])
     }
 
     static func digest(_ data: Data) -> String {

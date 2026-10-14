@@ -1,15 +1,15 @@
 import XCTest
 
 final class MacPreparationUITests: XCTestCase {
-    /// Opt-in: prepares the committed Mac fixture, then saves an unexecuted draft.
+    /// Opt-in: prepares the committed Mac fixture and inspects its metadata.
     @MainActor
-    func testSelectedToolchainPreparesMacCopyAndSavesReviewedDraft() throws {
+    func testSelectedToolchainPreparesMacCopyForInspection() throws {
         executionTimeAllowance = 600
         let fixture = try AutomationFixtureUITestSupport(requiresSimulator: false)
         continueAfterFailure = false
         let storage = try UITestStorage.makeDirectory(prefix: "native-mac-preparation")
         print("NATIVE_MAC_PREPARATION_STORAGE=\(storage.path)")
-        // Keep build provenance, saved draft and screenshots for inspection.
+        // Keep build provenance and screenshots for inspection.
         let app = XCUIApplication()
         fixture.configure(app, storage: storage)
         app.launch(); defer { app.terminate() }
@@ -45,39 +45,11 @@ final class MacPreparationUITests: XCTestCase {
         XCTAssertTrue(actions.contains { ($0["typeName"] as? String)?.hasSuffix("EchoIntegerArrayIntent") == true })
         XCTAssertTrue(actions.contains { ($0["typeName"] as? String)?.hasSuffix("CompleteTaskIntent") == true })
 
-        let instruction = app.textFields["What should the app do?"]
-        XCTAssertTrue(instruction.waitForExistence(timeout: 5))
-        instruction.click(); instruction.typeText("Show the task list")
-        let endpoint = app.textFields["Destination control"]
-        XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
-        endpoint.click(); endpoint.typeText("Automation Fixture")
-        selectAutomationMenu(app.popUpButtons["Effects of this workflow"], item: "Observation and navigation")
-        app.checkBoxes["I confirm this workflow stays within these effects"].click()
-        let review = app.buttons["Review Mac workflow…"]
-        XCTAssertTrue(review.isEnabled); review.click()
-        let save = app.buttons["Save draft"]
-        XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertTrue(save.isEnabled)
-        XCTAssertTrue(app.staticTexts["This draft has no execution result. Saving it does not approve or run the app."].exists)
-        try capture(app, storage: storage, name: "workflow-review")
-        save.click()
-        XCTAssertTrue(app.staticTexts["Mac workflow draft saved. It has no execution result or approval."].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Mac workflow execution is unavailable."].exists)
         XCTAssertFalse(app.buttons["Run workflow…"].exists)
-        try capture(app, storage: storage, name: "saved-draft")
-        let cases = automation.appendingPathComponent("Cases")
-        let definitions = try jsonFiles(in: cases.appendingPathComponent("Definitions"))
-        XCTAssertEqual(definitions.count, 1)
-        let draft = try object(XCTUnwrap(definitions.first))
-        XCTAssertEqual(draft["schemaVersion"] as? Int, 1)
-        let plan = try XCTUnwrap(draft["plan"] as? [String: Any])
-        XCTAssertEqual(plan["schemaVersion"] as? Int, 3)
-        XCTAssertEqual((plan["app"] as? [String: Any])?["bundleID"] as? String, AutomationFixtureUITestSupport.macBundleID)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: cases.appendingPathComponent("Attempts").path))
-        XCTAssertTrue(try jsonFiles(in: automation).allSatisfy { $0.lastPathComponent != "report.json" })
+        XCTAssertFalse(app.buttons["Review Mac workflow…"].exists)
+        try capture(app, storage: storage, name: "prepared-mac-copy")
         try fixture.assertSourceUnchanged()
-    }
-    private func jsonFiles(in directory: URL) throws -> [URL] {
-        let files = try XCTUnwrap(FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil))
-        return files.compactMap { $0 as? URL }.filter { $0.pathExtension == "json" }
     }
     private func object(_ url: URL) throws -> [String: Any] {
         try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])

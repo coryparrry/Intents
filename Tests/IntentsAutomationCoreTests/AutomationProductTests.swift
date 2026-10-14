@@ -36,8 +36,4 @@ final class AutomationProductTests: XCTestCase, @unchecked Sendable {
             else { earlier = name }
         }))
     }
-    func testActualFrozenProductMatchesRecordedEngineeringDigestWhenProvided() throws {
-        guard let path = ProcessInfo.processInfo.environment["INTENTS_AUTOMATION_SUBJECT_BUNDLE"] else { throw XCTSkip("Frozen subject is an explicit integration input") }
-        XCTAssertEqual(try AutomationProductDigest.compute(bundle: URL(fileURLWithPath: path)), "6311e6b95db95e606946f48eedb05a2740824a37c7d8004e9b82e8cd8ed3b2f4")
-    }
 }

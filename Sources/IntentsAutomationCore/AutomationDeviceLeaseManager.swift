@@ -72,7 +72,6 @@ public actor AutomationDeviceLeaseManager {
     private let store: AutomationLeaseStore?
     private let diagnosticRoot: URL?
     private var state = AutomationLeaseState()
-    private var nativeInputFences: [AutomationNativeInputLeaseFence] = []
     /// Ephemeral arrangement for isolated contract tests. Application execution must supply storeURL.
     public init() {
         owner = (try? .current()) ?? .init(pid: 0, startIdentity: "unknown")
@@ -108,19 +107,6 @@ public actor AutomationDeviceLeaseManager {
     public func isCurrent(_ lease: Lease) -> Bool {
         guard let state = try? read(), let campaign = state.campaigns[lease.target.leaseKey] else { return false }
         return owns(campaign) && campaign.lease == lease
-    }
-    func nativeInputFence(for lease: Lease) throws -> AutomationNativeInputLeaseFence {
-        guard lease.control == .ui, isCurrent(lease), nativeInputFences.count < 64 else { throw AutomationContractError.unknownLease }
-        let check: (@Sendable () -> Bool)?
-        if let store {
-            let owner = self.owner, token = ownerToken
-            check = {
-                guard let campaign = try? store.read().campaigns[lease.target.leaseKey] else { return false }
-                return campaign.owner == owner && campaign.ownerToken == token && campaign.lease == lease
-            }
-        } else { check = nil }
-        let fence = AutomationNativeInputLeaseFence(lease: lease, persisted: check)
-        nativeInputFences.append(fence); return fence
     }
     public func acquire(runID: String, target: TargetIdentity, control: Lease.Control) throws -> Lease {
         guard !runID.isEmpty, runID.utf8.count <= 256, !target.id.isEmpty, target.id.utf8.count <= 256,
@@ -365,25 +351,10 @@ public actor AutomationDeviceLeaseManager {
         }
         return campaign
     }
-    private func invalidateNativeInputFences(_ value: AutomationLeaseState) {
-        nativeInputFences.removeAll { fence in
-            guard let campaign = value.campaigns[fence.lease.target.leaseKey], owns(campaign), campaign.lease == fence.lease else {
-                fence.invalidate(); return true
-            }
-            return false
-        }
-    }
     private func read() throws -> AutomationLeaseState { try store?.read() ?? state }
     private func mutate<T>(_ body: (inout AutomationLeaseState) throws -> T) throws -> T {
-        if let store {
-            var committed: AutomationLeaseState?
-            let result = try store.transaction { next in
-                let result = try body(&next); committed = next; return result
-            }
-            if let committed { invalidateNativeInputFences(committed) }
-            return result
-        }
+        if let store { return try store.transaction(body) }
         var next = state; let result = try body(&next); try next.validate(); state = next
-        invalidateNativeInputFences(next); return result
+        return result
     }
 }

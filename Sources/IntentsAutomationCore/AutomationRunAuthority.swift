@@ -3,7 +3,7 @@ import Foundation
 /// Swift grants only the actions of the frozen segment, in order and under its current lease.
 public actor AutomationRunAuthority {
     public enum Action: Equatable, Sendable {
-        case activate, tap, fill(String), fillSecret(referenceID: String, sinkID: String), swipe(String)
+        case activate, tap, fill(String), swipe(String)
         public static func == (lhs: Self, rhs: Self) -> Bool {
             switch (lhs, rhs) {
             case (.activate, .activate), (.tap, .tap): return true
@@ -11,8 +11,6 @@ public actor AutomationRunAuthority {
             // ordinary String equality also accepts canonically equivalent text.
             case (.fill(let left), .fill(let right)): return left.utf16.elementsEqual(right.utf16)
             case (.swipe(let left), .swipe(let right)): return left == right
-            case (.fillSecret(let leftReference, let leftSink), .fillSecret(let rightReference, let rightSink)):
-                return leftReference == rightReference && leftSink == rightSink
             default: return false
             }
         }
@@ -53,10 +51,6 @@ public actor AutomationRunAuthority {
         self.approval = approval; self.leases = leases; self.controller = controller; self.artifacts = artifacts
         self.now = now; self.campaignBudget = campaignBudget
     }
-    func matchesSecretContext(_ expected: RunApproval, evidenceRoot: URL) async -> Bool {
-        guard approval == expected, let artifacts else { return false }
-        return await artifacts.secretEvidenceRoot() == evidenceRoot
-    }
     public func approve(scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease,
                         segment: AutomationSegment, actions: [Action], maximumControllerCalls: Int = 0, maximumUIActions: Int? = nil) async throws {
         try scope.validate()
@@ -67,9 +61,9 @@ public actor AutomationRunAuthority {
               segment.effects.isSubset(of: approval.effects), actions.count <= approval.maximumActions - actionCount,
               !actions.isEmpty, actions.first == .activate,
               segment.lifecycle == .persistedStateAcrossSegments, segment.effects.contains(.navigate),
-              !actions.contains(where: { switch $0 { case .fill, .fillSecret: true; default: false } }) ||
+              !actions.contains(where: { switch $0 { case .fill: true; default: false } }) ||
                 segment.effects.contains(.fixtureWrite) || segment.effects.contains(.externalWrite),
-              segment.phase != .observe || !actions.contains(where: { switch $0 { case .fill, .fillSecret: true; default: false } }) else {
+              segment.phase != .observe || !actions.contains(where: { switch $0 { case .fill: true; default: false } }) else {
             throw AutomationContractError.invalidPlan("Action grant does not match approved plan and lease")
         }
         guard grant == nil else { throw AutomationContractError.targetBusy }
@@ -123,11 +117,6 @@ public actor AutomationRunAuthority {
             case .string("fill"):
                 guard let text = action["value"]?.string, text.utf16.count <= 32768, action["sensitive"] == .bool(false),
                       Set(action.keys) == ["kind", "value", "sensitive"] else { return await policyDenied(scope: active.scope, reason: .actionShape) }; candidate = .fill(text)
-            case .string("fillSecret"):
-                guard active.goal == nil, let reference = action["referenceID"]?.string, UUID(uuidString: reference) != nil,
-                      let sink = action["sinkID"]?.string, !sink.isEmpty, sink.utf8.count <= 256,
-                      Set(action.keys) == ["kind", "referenceID", "sinkID"] else { return await policyDenied(scope: active.scope, reason: .actionShape) }
-                candidate = .fillSecret(referenceID: reference, sinkID: sink)
             case .string("swipe"):
                 guard let direction = action["direction"]?.string, ["up", "down", "left", "right"].contains(direction),
                       Set(action.keys) == ["kind", "direction"] else { return await policyDenied(scope: active.scope, reason: .actionShape) }; candidate = .swipe(direction)

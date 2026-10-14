@@ -58,23 +58,6 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
         try PlanValidator.validate(candidate.plan, approval: afterApproval, capabilities: afterCapabilities, purpose: .review)
         return .init(baseline: baseline, candidate: candidate, beforeApproval: beforeApproval, afterApproval: afterApproval, beforeCapabilities: reproduction.capabilities, afterCapabilities: afterCapabilities)
     }
-    static func compileMac(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
-                           before: AutomationInstalledMacUIApplication, after: AutomationInstalledMacUIApplication,
-                           runtimeRoot: URL, runID: String) throws -> Self {
-        fromMacReview(try AutomationMacSavedWorkflowContract.comparison(frozen: frozen, original: original,
-            before: before, after: after, runtimeRoot: runtimeRoot, runID: runID))
-    }
-    static func fromMacReview(_ review: AutomationMacSavedWorkflowContract.Comparison) -> Self {
-        .init(baseline: review.baseline, candidate: review.candidate,
-            beforeApproval: review.beforeApproval, afterApproval: review.afterApproval,
-            beforeCapabilities: review.beforeCapabilities, afterCapabilities: review.afterCapabilities)
-    }
-    static func compilePreparedMac(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
-                                   before: AutomationPreparedApplication, after: AutomationPreparedApplication,
-                                   runtimeRoot: URL, runID: String, disposable: Bool) throws -> Self {
-        fromMacReview(try AutomationMacSavedWorkflowContract.comparison(frozen: frozen, original: original,
-            before: before, after: after, runtimeRoot: runtimeRoot, runID: runID, disposable: disposable))
-    }
     func execute(before: AutomationApplicationSubject, after: AutomationApplicationSubject,
                  support: URL, developerDirectory: URL) async throws -> AutomationFixComparisonReport {
         let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))

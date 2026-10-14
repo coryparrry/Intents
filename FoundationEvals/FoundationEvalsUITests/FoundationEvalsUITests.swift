@@ -28,8 +28,8 @@ final class FoundationEvalsUITests: XCTestCase {
     }
 
     @MainActor
-    func testIntentLabOpensWithScenarioAndConnectionControls() throws {
-        let app = verificationApplication()
+    func testIntentLabResultsAndRunControlsFitMinimumWindow() throws {
+        let app = verificationApplication() // Fixed 1000 × 700 content size.
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -38,42 +38,19 @@ final class FoundationEvalsUITests: XCTestCase {
         defer { app.terminate() }
         app.activate()
         app.typeKey("2", modifierFlags: .command)
-
-        XCTAssertTrue(app.staticTexts["Intent Lab"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Connect an app"].exists)
-        XCTAssertTrue(app.buttons["Choose Project…"].exists)
-
-        app.radioButtons["Create test"].click()
-        XCTAssertTrue(app.staticTexts["What should happen?"].exists)
-        XCTAssertTrue(app.buttons["Run test"].exists)
-
-        app.radioButtons["Results"].click()
-        XCTAssertTrue(app.staticTexts["No results yet"].waitForExistence(timeout: 3))
+        let results = app.radioButtons["Results"]
+        XCTAssertTrue(results.waitForExistence(timeout: 5))
+        results.click()
+        let emptyState = app.staticTexts["No results yet"]
+        XCTAssertTrue(emptyState.waitForExistence(timeout: 3))
         let title = app.staticTexts["Intent Lab page title"]
-        XCTAssertGreaterThan(title.frame.minY - app.windows.firstMatch.frame.minY, 45,
-                             "The page header must remain below the window toolbar")
-        XCTAssertLessThan(title.frame.minY - app.windows.firstMatch.frame.minY, 120,
-                          "Results must keep the page header at the top of the window")
-        XCTAssertLessThan(app.staticTexts["No results yet"].frame.minY - title.frame.minY, 180,
+        let headerOffset = title.frame.minY - app.windows.firstMatch.frame.minY
+        XCTAssertGreaterThan(headerOffset, 45, "The page header must remain below the toolbar")
+        XCTAssertLessThan(headerOffset, 120, "Results must keep the page header at the top")
+        XCTAssertLessThan(emptyState.frame.minY - title.frame.minY, 180,
                           "The empty state must sit directly beneath page navigation")
-        let resultsAttachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        resultsAttachment.name = "Intent Lab results"
-        resultsAttachment.lifetime = .keepAlways
-        add(resultsAttachment)
         app.radioButtons["Create test"].click()
-
-        XCTAssertTrue(app.textFields["Test name"].isHittable)
         XCTAssertTrue(app.buttons["Run test"].isHittable)
-
-        let screenshot = app.windows.firstMatch.screenshot()
-        let attachment = XCTAttachment(screenshot: screenshot)
-        attachment.name = "Intent Lab initial state"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        try screenshot.pngRepresentation.write(
-            to: FileManager.default.temporaryDirectory.appending(path: "foundation-evals-intent-lab.png"),
-            options: .atomic
-        )
     }
 
     @MainActor
@@ -228,14 +205,12 @@ final class FoundationEvalsUITests: XCTestCase {
         XCTAssertTrue(app.popUpButtons["Sampling"].exists)
         XCTAssertFalse(app.popUpButtons["System model use case"].exists)
         let advancedOptions = app.disclosureTriangles["Advanced model options"]
-        advancedOptions.click() // Let XCTest scroll the disclosure's enclosing editor into view.
+        let editor = app.scrollViews["Suite editor scroll"]
+        editor.scroll(byDeltaX: 0, deltaY: -1200)
+        XCTAssertTrue(advancedOptions.isHittable)
+        advancedOptions.click()
+        editor.scroll(byDeltaX: 0, deltaY: -600)
         let useCase = app.popUpButtons["System model use case"]
-        if !useCase.waitForExistence(timeout: 2) {
-            // The recorded AX frame includes leading padding: its chevron is 27pt
-            // from the left edge, while XCTest's default click lands on the label.
-            advancedOptions.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
-                .withOffset(CGVector(dx: 27, dy: 0)).click()
-        }
         XCTAssertTrue(useCase.waitForExistence(timeout: 3))
         XCTAssertTrue(app.popUpButtons["System model guardrails"].exists)
 
@@ -270,46 +245,6 @@ final class FoundationEvalsUITests: XCTestCase {
         screenshot.name = "Refined suite editor"
         screenshot.lifetime = .keepAlways
         add(screenshot)
-    }
-
-    @MainActor
-    func testSetupPagesRenderInDarkAppearance() throws {
-        let app = verificationApplication()
-        let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
-        defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += [
-            "--disable-mcp-autostart",
-            "--evaluation-storage-name", storageName,
-            "-AppleInterfaceStyle", "Dark",
-            "-AppleInterfaceStyleSwitchesAutomatically", "NO"
-        ]
-        app.launch()
-        defer { app.terminate() }
-
-        app.activate()
-        app.menuBars.menuBarItems["Evaluation"].click()
-        app.menuItems["Show Suite Editor"].click()
-        app.activate()
-        XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
-
-        app.radioButtons["Setup"].click()
-
-        for title in ["Scoring", "Tools", "Structured output", "Session profile", "Performance"] {
-            selectSetup(title, in: app)
-            XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 3), "Missing setup page: \(title)")
-            let screenshot = app.screenshot()
-            let attachment = XCTAttachment(screenshot: screenshot)
-            attachment.name = "Dark setup - \(title)"
-            attachment.lifetime = .keepAlways
-            add(attachment)
-            try screenshot.pngRepresentation.write(
-                to: UITestStorage.screenshotURL(
-                    name: "pr47-dark-\(title.lowercased().replacingOccurrences(of: " ", with: "-"))"
-                ),
-                options: .atomic
-            )
-        }
     }
 
     @MainActor

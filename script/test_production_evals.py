@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Real-process CLI protocol checks. Run after swift build --product intents-evals."""
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
