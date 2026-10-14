@@ -255,7 +255,7 @@ class Commands:
 
 def run_plan(commands, cli, support, output, plan):
     attempt = "phase3-" + uuid.uuid4().hex
-    envelope = {"schemaVersion": 1, "attemptID": attempt, "allowBootAndInstall": True,
+    envelope = {"schemaVersion": 1, "attemptID": attempt, "allowBootAndInstall": False,
                 "disposable": True, "plan": plan}
     plan_path = output / (plan["id"] + ".json")
     plan_path.write_text(json.dumps(envelope, indent=2))
@@ -358,6 +358,8 @@ def run_contract(commands, output, build_root=None):
             print(f"Verified {plan['id']}: {summary}", flush=True)
             reports.append({"case": plan["id"], "attemptID": attempt, "summary": summary,
                             "exactOutputsCompared": expected is not None or file})
+        # Install once: reinstalling before each case invalidates the metadata index again.
+        commands.run(["xcrun", "simctl", "install", simulator, prepared["host"]["subjectProductPath"]], timeout=180)
         wait_for_registration(commands, cli, support, output, prepared)
         for index, (operations, expected) in enumerate(echo_batches(catalog), 1):
             execute(case(prepared, f"codec-{index}", host_segment("subject", "subject", operations)),

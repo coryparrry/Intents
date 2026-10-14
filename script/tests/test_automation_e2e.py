@@ -42,7 +42,8 @@ def catalog():
 
 def prepared():
     return {"host": {"app": {"bundleID": "example.fixture"},
-                     "target": {"id": "11111111-1111-1111-1111-111111111111", "kind": "simulator"}},
+                     "target": {"id": "11111111-1111-1111-1111-111111111111", "kind": "simulator"},
+                     "subjectProductPath": "/prepared/AutomationFixture.app"},
             "catalog": catalog()}
 
 
@@ -166,6 +167,7 @@ class PlanAndReceiptTests(unittest.TestCase):
 class FakeCommands:
     def __init__(self, output, failure=None):
         self.output, self.failure, self.calls, self.saved = output, failure, [], {}
+        self.envelopes = []
 
     def run(self, arguments, **options):
         args = [str(a) for a in arguments]
@@ -201,6 +203,7 @@ class FakeCommands:
             return 0, self.saved[args[args.index("show") + 1]]
         if "run" in args:
             envelope = json.loads(Path(args[args.index("--plan") + 1]).read_text())
+            self.envelopes.append(envelope)
             plan = envelope["plan"]
             summary = "executedUnassessed"
             if plan["requirements"]:
@@ -368,6 +371,12 @@ class OrchestrationTests(unittest.TestCase):
         commands, results = self.exercise()
         calls = [args for args, _ in commands.calls]
         self.assertEqual(sum("prepare" in args for args in calls), 1)
+        installs = [args for args in calls if args[:3] == ["xcrun", "simctl", "install"]]
+        self.assertEqual(installs, [["xcrun", "simctl", "install", prepared()["host"]["target"]["id"],
+                                    prepared()["host"]["subjectProductPath"]]])
+        self.assertLess(calls.index(installs[0]), next(i for i, args in enumerate(calls) if "run" in args))
+        self.assertEqual(commands.envelopes[0]["plan"]["id"], "phase3.registration")
+        self.assertTrue(all(e["allowBootAndInstall"] is False for e in commands.envelopes))
         self.assertEqual([r["summary"] for r in results], ["executedUnassessed"] * 3 +
                          ["passed", "assertionFailed", "timedOut", "executedUnassessed"])
         self.assertEqual(results[-1]["case"], "phase3.after-timeout")
@@ -393,7 +402,7 @@ class OrchestrationTests(unittest.TestCase):
                 driver.main(["--output-root", directory, "--build-root", str(driver.ROOT / "cache")])
 
     def test_prepare_or_boot_failure_still_deletes_only_owned_simulator(self):
-        for failure in ("prepare", "bootstatus"):
+        for failure in ("prepare", "bootstatus", "install"):
             with self.subTest(failure=failure):
                 commands, _ = self.exercise(failure)
                 calls = [args for args, _ in commands.calls]
