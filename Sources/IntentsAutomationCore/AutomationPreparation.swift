@@ -90,6 +90,9 @@ public actor AutomationPreparation {
             let developer = try AutomationPath.canonical(developerDirectory)
             let environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DEVELOPER_DIR": developer.path,
                                "HOME": FileManager.default.homeDirectoryForCurrentUser.path, "TMPDIR": NSTemporaryDirectory()]
+            try await AutomationXcodeSDKCompatibility.check(target: approval.target, developerDirectory: developer,
+                workspace: sessionRoot, command: command, willStart: { try await self.requireActive() })
+            try requireActive()
             var sourceSyntax: AutomationSourceSyntaxIndex?
             var syntaxUnavailable = false
             try requireActive()
@@ -193,7 +196,6 @@ public actor AutomationPreparation {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             let state = try AutomationDurableFile(url: sessionRoot.appendingPathComponent("prepared-application.json"), maximumBytes: 16 * 1024 * 1024)
             try state.withLock { try state.write(try encoder.encode(value)) }
-            await AutomationPreparedCodecAuthority.shared.register(value)
             return value
         } catch {
             try AutomationSourceSnapshot.verifyOriginal(manifest)

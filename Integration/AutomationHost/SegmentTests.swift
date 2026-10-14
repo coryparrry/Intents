@@ -22,6 +22,17 @@ final class SegmentTests: XCTestCase {
                                   leaseGeneration: plan.leaseGeneration, bundleID: plan.bundleID, productDigest: plan.productDigest)
         receipt.productDigestVersion = plan.productDigestVersion
         let deadline = ContinuousClock.now.advanced(by: .seconds(120))
+        if plan.activateSubject == true {
+            let app = XCUIApplication(bundleIdentifier: plan.bundleID)
+            let previousFailures = (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0)
+            // Activation preserves an existing process and registers a freshly installed subject
+            // before AppIntentsTesting resolves its definitions.
+            app.activate()
+            guard app.wait(for: .runningForeground, timeout: 10),
+                  (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0) == previousFailures else {
+                throw HostError.invalidPlan
+            }
+        }
         for operation in plan.operations {
             guard ContinuousClock.now < deadline else { throw HostError.invalidPlan }
             attach(name: "intents-dispatch-\(operation.id)", data: try JSONEncoder().encode(

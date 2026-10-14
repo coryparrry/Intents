@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 public struct ApplicationSurfaceCatalog: Codable, Equatable, Sendable {
     public struct SystemAction: Codable, Equatable, Sendable, Identifiable {
@@ -32,12 +33,8 @@ public struct ApplicationSurfaceCatalog: Codable, Equatable, Sendable {
     public var sourceSyntaxIndexDigest: String? = nil
 }
 
-/// Captured metadata layouts are version-qualified, never treated as a stable Apple API.
+/// Reads the supported metadata schema independently of the Xcode build that emitted it.
 public enum AutomationSurfaceCatalogReader {
-    // Both builds emit the captured version-1 envelope and value descriptors.
-    // New Xcode builds require fresh metadata evidence before joining this list.
-    private static let observedGenerators: Set<String> = ["27A266a", "27B5028f"]
-
     public static func read(app: AppIdentity, product: URL) throws -> ApplicationSurfaceCatalog {
         guard app.productDigest == (try AutomationProductDigest.compute(bundle: product, version: app.productDigestVersion)) else { throw AutomationContractError.conflictingOperation }
         let relative = (app.platform == "macos" ? "Contents/Resources/" : "") + "Metadata.appintents/extract.actionsdata"
@@ -46,15 +43,16 @@ public enum AutomationSurfaceCatalogReader {
                          gaps: ["Built system metadata is unavailable. External UI checks remain separate."])
         }
         let data = try AutomationProductDigest.readFile(bundle: product, relativePath: relative, maximumBytes: 16 * 1024 * 1024, version: app.productDigestVersion, expectedDigest: app.productDigest)
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], root["version"] as? Int == 1,
-              let generator = root["generator"] as? [String: Any], generator["name"] as? String == "xcode-tools",
-              let generatorVersion = generator["version"] as? String, observedGenerators.contains(generatorVersion),
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = root["version"] as? NSNumber, CFGetTypeID(version) != CFBooleanGetTypeID(), version.doubleValue == 1,
               let actions = root["actions"] as? [String: [String: Any]], actions.count <= 1000 else {
             return .init(app: app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: ["Unknown built metadata format; no empty-catalog or runtime-eligibility claim is made."])
         }
+        let generator = root["generator"] as? [String: Any]
+        let generatorVersion = (generator?["version"] as? String).map { String($0.prefix(128)) } ?? "unknown"
         let entities = AutomationEntityMetadata.read(root)
         let enumerations = AutomationCodecMetadata.enumerations(root)
-        var result: [ApplicationSurfaceCatalog.SystemAction] = [], gaps = ["Runtime registration, query execution and source graph reconciliation remain independent checks."]
+        var result: [ApplicationSurfaceCatalog.SystemAction] = [], gaps = ["Built with Xcode " + generatorVersion + "; metadata parsed best-effort.", "Runtime registration, query execution and source graph reconciliation remain independent checks."]
         var unsupportedInputCount = 0
         for (id, action) in actions.sorted(by: { $0.key < $1.key }) {
             guard AutomationHostProgram.identifier(id), action["identifier"] as? String == id,

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "profile": "xcode-tools 27A266a metadata version1",
+  "sourceFixture": "Verification/Automation/Fixtures/DuplicateTasks",
+  "captureSource": "/private/tmp/intents-automation-canonical-preparation-c2/DerivedData/Build/Products/Debug-iphonesimulator/DuplicateTasks.app/Metadata.appintents/extract.actionsdata",
+  "metadataSHA256": "cdb404dd3d428a02a21485f4b5baeb24b5ad1f8366a4dd29e72a4e316d886da2",
+  "preparedApplicationSHA256": "f5f2de83f38916ed12c9492be3f83f79569657f02dd69b7992c378308ee4d96e",
+  "recordedAppIdentity": {
+    "architecture": "arm64,x86_64",
+    "bundleID": "com.coryparry.IntentsAutomation.DuplicateTasks",
+    "canonicalBundlePath": "/private/tmp/intents-automation-canonical-preparation-c2/DerivedData/Build/Products/Debug-iphonesimulator/DuplicateTasks.app",
+    "configuration": "Debug",
+    "logicalID": "/Users/coryparry/Developer/Projects/Intents/Verification/Automation/Fixtures/DuplicateTasks/DuplicateTasks.xcodeproj#DE641280100333D2F09AF8A2",
+    "owningModule": "DuplicateTasks",
+    "platform": "ios",
+    "productDigest": "7823ea9a538f2395f68968ce2f73d01b578fc62d60c01c29dbd147aad08bc10a",
+    "provenanceStrength": "productBytes",
+    "sourceManifestDigest": "d9ead2a198e3fbb66c63d455ab81c59636f7f455413f78b8d9d974a5930212ba"
+  },
+  "scope": "Actual retained C2 built metadata. Entity action input and text/bool entity properties; no evidence for direct bool/integer action inputs or enum encoding."
+}

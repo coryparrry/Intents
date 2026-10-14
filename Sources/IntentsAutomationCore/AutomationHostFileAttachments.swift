@@ -14,28 +14,31 @@ struct AutomationHostFileDescriptor {
 }
 
 /// The installed xcresulttool export schema is retained under IntentFileDeclarations.
-/// This strict file path is separate from legacy JSON-only import; qualification
-/// must establish the actual runner's test identifier and export naming convention.
+/// Exported display names include an attachment repetition and UUID suffix.
+/// Only correlated receipt/file attachments become claims; XCTest recordings remain unclaimed.
 enum AutomationHostFileAttachments {
     struct Imported: Sendable { let receiptData: Data; let receipt: AutomationImportedHostReceipt }
     static func importExport(root: URL, scope: AutomationScope, app: AppIdentity, program: AutomationHostProgram,
                              artifacts: AutomationArtifactRegistry, planDigest: String, testIdentifier: String = "SegmentTests/testSegment()") async throws -> Imported {
-        let entries = try exportEntries(root: root, testIdentifier: testIdentifier)
+        var allowedNames: Set<String> = ["intents-system-receipt"]
+        for operation in program.operations {
+            allowedNames.formUnion(["intents-dispatch-" + operation.id, "intents-system-receipt-" + operation.id])
+            if operation.resultCodec == "intentFile" { allowedNames.insert("intents-file-" + operation.id) }
+        }
+        let entries = try exportEntries(root: root, testIdentifier: testIdentifier, expectedNames: allowedNames)
         guard let finalName = entries["intents-system-receipt"] else { throw invalid() }
         let data = try AutomationReadOnlyFile.read(root: root, relativePath: finalName, maximumBytes: 1_048_576, requirePrivateOwnership: true)
         guard let receiptRoot = try JSONDecoder().decode(AutomationJSON.self, from: data).object,
               case .array(let operations) = receiptRoot["operations"], operations.count == program.operations.count else { throw invalid() }
         var claims: [String: (AutomationHostFileDescriptor, Data)] = [:], placeholders: [String: AutomationValue] = [:]
-        var allowedNames: Set<String> = ["intents-system-receipt"]
         for (expected, operation) in zip(program.operations, operations) {
-            allowedNames.formUnion(["intents-dispatch-" + expected.id, "intents-system-receipt-" + expected.id])
             if expected.resultCodec == "intentFile" {
                 guard let value = operation.object?["value"] else { throw invalid() }
                 let descriptor = try AutomationHostFileDescriptor(value, operationID: expected.id)
                 guard let exportedName = entries[descriptor.attachmentName] else { throw invalid() }
                 let bytes = try AutomationReadOnlyFile.read(root: root, relativePath: exportedName, maximumBytes: 8192, requirePrivateOwnership: true)
                 try descriptor.metadata.verify(bytes)
-                claims[expected.id] = (descriptor, bytes); allowedNames.insert(descriptor.attachmentName)
+                claims[expected.id] = (descriptor, bytes)
                 placeholders[expected.id] = .artifact(handle: "validated-file", sha256: descriptor.metadata.sha256)
             }
         }
@@ -57,7 +60,7 @@ enum AutomationHostFileAttachments {
         }
         return .init(receiptData: data, receipt: try AutomationHostReceiptImporter.importValidatedReceipt(data, scope: scope, app: app, program: program, fileValues: fileValues))
     }
-    static func exportEntries(root: URL, testIdentifier: String) throws -> [String: String] {
+    static func exportEntries(root: URL, testIdentifier: String, expectedNames: Set<String>) throws -> [String: String] {
         let manifestData = try AutomationReadOnlyFile.read(root: root, relativePath: "manifest.json", maximumBytes: 1_048_576, requirePrivateOwnership: true)
         guard case .array(let records) = try JSONDecoder().decode(AutomationJSON.self, from: manifestData), records.count == 1,
               let record = records.first?.object, Set(record.keys).isSubset(of: ["testIdentifier", "testIdentifierURL", "attachments"]),
@@ -71,7 +74,7 @@ enum AutomationHostFileAttachments {
             guard let fields = attachment.object, required.isSubset(of: Set(fields.keys)), Set(fields.keys).isSubset(of: required.union(optional)),
                   case .string(let filename) = fields["exportedFileName"], safeBasename(filename), filename != "manifest.json",
                   case .string(let name) = fields["suggestedHumanReadableName"], name.utf8.count <= 512,
-                  fields["isAssociatedWithFailure"] == .bool(false), exported.insert(filename).inserted, names.insert(name).inserted else { throw invalid() }
+                  fields["isAssociatedWithFailure"] == .bool(false), exported.insert(filename).inserted else { throw invalid() }
             let identity = try ["configurationName", "deviceName", "deviceId"].map { key -> AutomationJSON in
                 guard case .string(let value) = fields[key], !value.isEmpty, value.utf8.count <= 512 else { throw invalid() }
                 return .string(value)
@@ -80,11 +83,30 @@ enum AutomationHostFileAttachments {
             if let timestamp = fields["timestamp"] { guard case .number(let value) = timestamp, value.isFinite else { throw invalid() } }
             if let repetition = fields["repetitionNumber"] { guard case .number(let value) = repetition, value == 1 else { throw invalid() } }
             if let arguments = fields["arguments"] { guard case .array(let values) = arguments, values.isEmpty else { throw invalid() } }
-            entries[name] = filename
+            // XCTest adds its own video beside the attachments added by our host. It is
+            // retained in the export inventory, but never imported as receipt or file data.
+            if name.hasPrefix("Screen Recording "), name.hasSuffix(".mp4"), filename.hasSuffix(".mp4") { continue }
+            let logicalName = try attachmentName(name, expectedNames: expectedNames)
+            guard names.insert(logicalName).inserted else { throw invalid() }
+            entries[logicalName] = filename
         }
         let actual = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
         guard Set(actual.map(\.lastPathComponent)) == exported.union(["manifest.json"]), actual.count == exported.count + 1 else { throw invalid() }
         return entries
+    }
+    private static func attachmentName(_ exportedName: String, expectedNames: Set<String>) throws -> String {
+        var candidates: Set<String> = [exportedName]
+        let suffix = #"_0_[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}(?=\.[A-Za-z0-9_:-]+\z)"#
+        if let range = exportedName.range(of: suffix, options: .regularExpression) {
+            let stem = String(exportedName[..<range.lowerBound])
+            // XCTest preserves an existing extension in the attachment name (file.echo),
+            // or adds the content type extension when the original name had none.
+            candidates.insert(stem)
+            candidates.insert(stem + exportedName[range.upperBound...])
+        }
+        let matches = candidates.intersection(expectedNames)
+        guard matches.count == 1, let name = matches.first else { throw invalid() }
+        return name
     }
     private static func safeBasename(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 255 && value != "." && value != ".." && !value.contains("/") && !value.contains("\\") && !value.contains("\u{0}")

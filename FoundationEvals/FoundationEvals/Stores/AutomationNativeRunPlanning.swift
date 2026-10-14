@@ -22,8 +22,7 @@ extension AppAutomationStore {
     func makeFreshRecordRequest(runID: String) throws -> AutomationNativeRunRequest {
         guard let prepared, preparedUISelectionMatches, ["true", "false"].contains(freshInitialState),
               ["true", "false"].contains(freshExpectedState) else { throw AutomationContractError.invalidIdentity }
-        var capabilities = AutomationEntityQuery.capabilities(prepared)
-        capabilities.records["apple.intent.invoke"] = .init(state: .available, reason: "Associated Apple host; invocation checks registration", probeVersion: "host-v2", evidence: [prepared.host.xctestrunDigest])
+        let capabilities = AutomationPreparedCapabilities.base(prepared)
         var approval = RunApproval(runID: runID, app: prepared.host.app, target: prepared.host.target,
             environmentID: "selected-simulator:" + simulatorID, effects: [.observe, .navigate, .fixtureWrite], maximumActions: 30, disposable: disposable)
         var plan = try AutomationFreshEntityPlanner.compile(catalog: prepared.catalog, actionID: actionID,
@@ -64,9 +63,7 @@ extension AppAutomationStore {
         if effectChoice == "external" { effects.insert(.externalWrite) }
         let approval = RunApproval(runID: runID, app: prepared.host.app, target: prepared.host.target,
             environmentID: "selected-simulator:" + prepared.host.target.id, effects: effects, maximumActions: 20, disposable: disposable)
-        var capabilities = AutomationEntityQuery.capabilities(prepared)
-        capabilities.records["apple.intent.invoke"] = .init(state: .available,
-            reason: "Associated iOS 27 host built; subject registration is checked by invocation", probeVersion: "host-v2", evidence: [prepared.host.xctestrunDigest])
+        let capabilities = AutomationPreparedCapabilities.base(prepared)
         var values: [String: AutomationActionInput] = [:]
         for parameter in action.parameters where parameter.family != "entity" {
             if let raw = inputs[parameter.name] { values[parameter.name] = try AutomationCodecRegistry.input(raw, parameter: parameter, catalog: prepared.catalog) }

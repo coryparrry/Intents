@@ -18,13 +18,11 @@ final class AutomationApplicationPreflightTests: XCTestCase, @unchecked Sendable
     private func retainedPreparationFailure(error: AutomationContractError, expectedSummary: AttemptResult.Summary, released: Bool, persistenceFails: Bool = false) async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "ios", productDigest: String(repeating: "a", count: 64))
-        let target = TargetIdentity(id: "nonexistent-simulator", kind: .simulator)
+        let fixture = try AutomationPreparedCodecRegressionTests.makeFixture(root: root.appendingPathComponent("prepared"))
+        let app = fixture.prepared.host.app
+        let target = fixture.prepared.host.target
         let plan = AutomationCase(id: "preparation", app: app, target: target, environmentID: "disposable", execution: .init(id: "subject", kind: .systemIntent, phase: .subject, operation: "Actual subject"))
-        let prepared = AutomationPreparedApplication(source: .init(sourceRoot: root.path, files: [], directories: [], excludedPaths: []),
-            generatedHost: .init(projectPath: "unused", scheme: "unused", targetID: "unused", bundleID: "unused", configuration: "Debug", templateDigest: "unused"),
-            host: .init(app: app, target: target, xctestrunPath: "unused", xctestrunDigest: "unused", subjectProductPath: "unused", hostBundlePath: "unused", hostProductDigest: "unused", hostBundleID: "unused", testTarget: "unused"),
-            catalog: .init(app: app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: []), buildLogPath: "unused", buildLogTruncated: false)
+        let prepared = fixture.prepared
         let approval = RunApproval(runID: "run", app: app, target: target, environmentID: plan.environmentID, effects: [.observe], maximumActions: 10, disposable: true)
         let calls = PreparationInventoryCalls()
         let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: NSTemporaryDirectory()), simulatorInventory: { _, workspace in
@@ -77,17 +75,13 @@ final class AutomationApplicationPreflightTests: XCTestCase, @unchecked Sendable
     private func rejectedBeforeMutation() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "ios", productDigest: String(repeating: "a", count: 64))
-        let target = TargetIdentity(id: "nonexistent-simulator", kind: .simulator)
+        let fixture = try AutomationPreparedCodecRegressionTests.makeFixture(root: root.appendingPathComponent("prepared"))
+        let app = fixture.prepared.host.app
+        let target = fixture.prepared.host.target
         let plan = AutomationCase(id: "mixed", app: app, target: target, environmentID: "disposable",
             execution: .init(id: "subject", kind: .systemIntent, phase: .subject, operation: "Complete"),
             setup: [.init(id: "setup", kind: .ui, phase: .setup, operation: "Create")])
-        let prepared = AutomationPreparedApplication(source: .init(sourceRoot: root.path, files: [], directories: [], excludedPaths: []),
-            generatedHost: .init(projectPath: "unused", scheme: "unused", targetID: "unused", bundleID: "unused", configuration: "Debug", templateDigest: "unused"),
-            host: .init(app: app, target: target, xctestrunPath: "unused", xctestrunDigest: "unused", subjectProductPath: "unused",
-                hostBundlePath: "unused", hostProductDigest: "unused", hostBundleID: "unused", testTarget: "unused"),
-            catalog: .init(app: app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: []),
-            buildLogPath: "unused", buildLogTruncated: false)
+        let prepared = fixture.prepared
         var approval = RunApproval(runID: "run", app: app, target: target, environmentID: plan.environmentID,
             effects: [.observe], maximumActions: 10, disposable: true)
         approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)

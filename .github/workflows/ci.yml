@@ -22,6 +22,7 @@ jobs:
     outputs:
       native: ${{ steps.route.outputs.native }}
       ui: ${{ steps.route.outputs.ui }}
+      automation_e2e: ${{ steps.route.outputs.automation_e2e }}
       regression: ${{ steps.route.outputs.regression }}
       swift_suites: ${{ steps.route.outputs.swift_suites }}
       python_tests: ${{ steps.route.outputs.python_tests }}
@@ -186,6 +187,7 @@ jobs:
             -only-testing:FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration \
             -only-testing:FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence \
             -only-testing:FoundationEvalsUITests/AppAutomationUITests/testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled \
+            -only-testing:FoundationEvalsUITests/AppAutomationUITests/testXcodeDefaultsFollowDestinationAndRestoreWithoutRunOverride \
             -only-testing:FoundationEvalsUITests/AppAutomationUITests/testEmptyAutomationAndPickerCancellationRemainReadOnly \
             -only-testing:FoundationEvalsUITests/AppAutomationUITests/testOwnershipResetConfirmationCanBeCancelledWithoutChangingTheReservation \
             CODE_SIGNING_ALLOWED=NO
@@ -220,3 +222,78 @@ jobs:
           name: ui-snapshots
           path: ${{ runner.temp }}/ui-snapshots
           if-no-files-found: warn
+
+  automation-e2e:
+    name: Automation e2e (simulator)
+    needs: changes
+    if: ${{ needs.changes.outputs.automation_e2e == 'true' }}
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      # Exercise the cross-build acceptance from Phase 1, beyond local Xcode 27.0.
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install fixture project generator
+        run: command -v xcodegen || brew install xcodegen
+      - name: Install matching simulator runtime
+        timeout-minutes: 15
+        run: |
+          xcodebuild -version
+          if ! xcrun simctl list runtimes -j | python3 -c 'import json, sys; sys.exit(not any(r["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS-") and r["version"] == "27.1" and r.get("isAvailable") for r in json.load(sys.stdin)["runtimes"]))'; then
+            # Apple's catalog identifies the iOS 27.1 release candidate as 27.1.0.0.
+            xcodebuild -downloadPlatform iOS -buildVersion 27.1.0.0 -architectureVariant arm64
+          fi
+      - name: Reproduce prepared-app automation
+        run: python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e"
+      - name: Upload automation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: automation-e2e
+          path: ${{ runner.temp }}/automation-e2e
+          if-no-files-found: error
+
+  input-conversion:
+    name: Input conversion diagnostic (Mac)
+    needs: changes
+    if: ${{ needs.changes.outputs.automation_e2e == 'true' }}
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      # This canary checks a String setter/readback in its authored Mac fixture.
+      # It neither executes a business subject nor grants codec execution authority.
+      - name: Run live input setter/readback canary
+        env:
+          INTENTS_MAC_INPUT_PROBE_FIXTURE_LIVE: '1'
+          INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT: ${{ runner.temp }}/input-conversion
+        run: |
+          mkdir -p "$INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT"
+          DEVELOPER_DIR="$(xcode-select -p)"
+          export DEVELOPER_DIR
+          set -o pipefail
+          swift test --jobs 2 \
+            --scratch-path "$RUNNER_TEMP/input-conversion-build" \
+            --filter 'AutomationMacInputProbeFixtureTests/testAuthoredInputProbeFixtureWhenRequested' \
+            2>&1 | tee "$INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT/test.log"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+          log = (Path(os.environ['INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT']) / 'test.log').read_text()
+          test = 'testAuthoredInputProbeFixtureWhenRequested'
+          assert re.search(r"Test Case .*" + test + r".* passed", log), 'Live input canary did not pass'
+          assert 'Authored String setter/readback calibration only;' in log, 'Live calibration did not execute'
+          PY
+      - name: Upload input conversion diagnostic evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: input-conversion-mac
+          path: ${{ runner.temp }}/input-conversion
+          if-no-files-found: error

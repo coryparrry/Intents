@@ -4,6 +4,23 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class HostCodecContractTests: XCTestCase {
+    func testSubjectActivationWireDefaultsOffAndPreservesExplicitAuthorization() throws {
+        let program = AutomationHostProgram(operations: [.init(id: "invoke", kind: .invoke, typeID: "Intent")])
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: 2)
+        let app = AppIdentity(logicalID: "subject", bundleID: "example.Subject", platform: "ios", productDigest: String(repeating: "a", count: 64))
+        let publicPayload = try program.payload(scope: scope, app: app, route: .systemIntent, phase: .subject)
+        XCTAssertNil(try JSONDecoder().decode(HostPlan.self, from: publicPayload).activateSubject)
+        for activate in [false, true] {
+            let payload = try program.executionPayload(scope: scope, app: app, route: .systemIntent, phase: .subject,
+                                                      fileInputs: [:], activateSubject: activate)
+            let host = try JSONDecoder().decode(HostPlan.self, from: payload)
+            XCTAssertEqual(host.activateSubject == true, activate)
+        }
+        var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: publicPayload) as? [String: Any])
+        fields["activateSubject"] = false
+        let explicitFalse = try JSONSerialization.data(withJSONObject: fields)
+        XCTAssertEqual(try JSONDecoder().decode(HostPlan.self, from: explicitFalse).activateSubject, false)
+    }
     func testActualHostDateCodecPreservesAbsoluteInstantAndRejectsMissingZoneOrWrongPayload() throws {
         let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: 2)
         let app = AppIdentity(logicalID: "app", bundleID: "example.Subject", platform: "ios", productDigest: String(repeating: "a", count: 64))

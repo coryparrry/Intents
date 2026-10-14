@@ -90,7 +90,7 @@ extension AppAutomationStore {
             }) else { throw AutomationContractError.targetBusy }
             let simulatorTargets = (eligible.map(\.target) + resetTargets).filter { $0.kind == .simulator }
             for target in Dictionary(grouping: simulatorTargets, by: \.leaseKey).values.compactMap(\.first) {
-                try await recoverySimulatorShutdown(target, developerDirectory, support)
+                try await recoverySimulatorShutdown(target, developerDirectory(for: target), support)
             }
             for record in eligible {
                 if [.absent, .replaced].contains(record.owner.presence()) {

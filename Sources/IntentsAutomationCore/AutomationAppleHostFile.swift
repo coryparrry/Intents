@@ -2,10 +2,11 @@ import Foundation
 
 /// The only test target in a prepared host is bound to its exact product and current native lease.
 enum AutomationAppleHostFile {
-    enum Purpose { case segment, siriSubmission }
+    enum Purpose { case segment, inputAdapterProbe, siriSubmission }
     static func freeze(_ value: Any, testRoot: URL, expectedHost: URL, expectedSubject: URL, testTarget: String, payload: Data,
                        platform: AutomationAssociatedHostPlatform = .iosSimulator, purpose: Purpose = .segment) throws -> [String: Any] {
-        guard purpose == .segment || (purpose == .siriSubmission && platform == .physicalIOS) else { throw AutomationContractError.invalidIdentity }
+        guard purpose == .segment || (purpose == .inputAdapterProbe && platform == .macOS)
+            || (purpose == .siriSubmission && platform == .physicalIOS) else { throw AutomationContractError.invalidIdentity }
         func paths(_ value: Any) -> Any {
             if let value = value as? String { return value.replacingOccurrences(of: "__TESTROOT__", with: testRoot.path).replacingOccurrences(of: "__TESTHOST__", with: expectedHost.path) }
             if let values = value as? [Any] { return values.map(paths) }
@@ -32,6 +33,7 @@ enum AutomationAppleHostFile {
             let key: String
             switch purpose {
             case .segment: key = "INTENTS_AUTOMATION_HOST_PLAN_B64"
+            case .inputAdapterProbe: key = "INTENTS_AUTOMATION_INPUT_PROBE_B64"
             case .siriSubmission: key = "INTENTS_AUTOMATION_SIRI_PLAN_B64"
             }
             environment[key] = payload.base64EncodedString()

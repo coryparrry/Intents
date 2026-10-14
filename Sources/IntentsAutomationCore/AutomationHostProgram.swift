@@ -66,7 +66,7 @@ public struct AutomationHostProgram: Codable, Equatable, Sendable {
     }
     var usesFiles: Bool { operations.contains { $0.resultCodec == "intentFile" || $0.parameterCodecs?.values.contains("intentFile") == true } }
     func executionPayload(scope: AutomationScope, app: AppIdentity, route: AutomationSegment.Kind, phase: AutomationSegment.Phase,
-                          fileInputs: [AutomationFileDestination: AutomationJSON]) throws -> Data {
+                          fileInputs: [AutomationFileDestination: AutomationJSON], activateSubject: Bool = false) throws -> Data {
         try scope.validate(); try validate(route: route, phase: phase)
         guard let digest = app.productDigest, digest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw AutomationContractError.invalidIdentity }
         guard app.productDigestVersion == nil || app.productDigestVersion == 1 || app.productDigestVersion == 2 else { throw AutomationContractError.invalidIdentity }
@@ -92,6 +92,7 @@ public struct AutomationHostProgram: Codable, Equatable, Sendable {
         var fields: [String: AutomationJSON] = ["schemaVersion": .number(1), "runID": .string(scope.runId), "attemptID": .string(scope.attemptId),
             "segmentID": .string(scope.segmentId), "leaseGeneration": .number(Double(scope.leaseGeneration)), "bundleID": .string(app.bundleID),
             "productDigest": .string(digest), "operations": .array(values)]
+        if activateSubject { fields["activateSubject"] = .bool(true) }
         if let version = app.productDigestVersion { fields["productDigestVersion"] = .number(Double(version)) }
         let data = try encoder.encode(AutomationJSON.object(fields))
         guard data.count <= 32768 else { throw AutomationContractError.invalidPlan("Apple environment payload exceeds budget") }

@@ -3,19 +3,6 @@ import XCTest
 @testable import IntentsAutomationCore
 
 extension AutomationPreparedMacContractTests {
-    func testPreparedMacReviewedPlanCannotDispatchWithoutItsCodecFamily() async throws {
-        let h = try preparedMacHarness()
-        var capabilities = h.capabilities; capabilities.records.removeValue(forKey: "apple.codec.entity")
-        XCTAssertNoThrow(try PlanValidator.validate(h.plan, approval: h.approval, capabilities: capabilities, purpose: .review))
-        do {
-            _ = try await h.runner.run(prepared: h.prepared, plan: h.plan, approval: h.approval, capabilities: capabilities,
-                attemptID: "unqualified-conversion", allowBootAndInstall: false)
-            XCTFail("Review cannot stand in for conversion evidence")
-        } catch {
-            XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Input and result conversion has not been verified for this app and target"))
-        }
-    }
-
     func testPreparedMacQueryMismatchStopsBeforeUIOrAppleDispatch() async throws {
         let h = try preparedMacHarness()
         for index in 0..<5 {

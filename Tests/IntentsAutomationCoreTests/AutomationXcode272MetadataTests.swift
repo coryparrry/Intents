@@ -37,18 +37,40 @@ final class AutomationXcode272MetadataTests: XCTestCase {
         XCTAssertEqual(probe.parameters, [.init(name: "sample", family: "text", optional: false)])
     }
 
-    func testUnknownGeneratorSchemaAndMalformedEnvelopeRemainIncomplete() throws {
+    func testUnfamiliarGeneratorMetadataPreservesSchemaOneCatalog() throws {
+        let baseline = try captured()
+        let generators: [(metadata: [String: Any], version: String)] = [
+            (["name": "xcode-tools", "version": "27B5028g"], "27B5028g"),
+            (["name": "foreign", "version": "27B5028f"], "27B5028f"),
+            (["name": "xcode-tools"], "unknown")
+        ]
+        for generator in generators {
+            let catalog = try captured { $0["generator"] = generator.metadata }
+            XCTAssertEqual(catalog.systemActions, baseline.systemActions)
+            XCTAssertEqual(catalog.entities, baseline.entities)
+            XCTAssertEqual(catalog.enumerations, baseline.enumerations)
+            XCTAssertFalse(catalog.systemDiscoveryComplete)
+            XCTAssertFalse(catalog.uiDiscoveryComplete)
+            XCTAssertTrue(catalog.systemActions.allSatisfy { $0.compiled && !$0.registered && !$0.executed })
+            XCTAssertTrue(catalog.gaps.contains("Built with Xcode " + generator.version + "; metadata parsed best-effort."))
+        }
+    }
+
+    func testUnsupportedSchemaAndMalformedEnvelopeRemainIncomplete() throws {
         let mutations: [(inout [String: Any]) -> Void] = [
             { $0["version"] = 2 },
-            { $0["generator"] = ["name": "xcode-tools", "version": "27B5028g"] },
-            { $0["generator"] = ["name": "foreign", "version": "27B5028f"] },
-            { $0["generator"] = ["name": "xcode-tools"] },
-            { $0["actions"] = [] }
+            { $0["version"] = true },
+            { $0["version"] = "1" },
+            { _ = $0.removeValue(forKey: "version") },
+            { $0["actions"] = [] },
+            { $0["actions"] = ["malformed": "not an action object"] },
+            { _ = $0.removeValue(forKey: "actions") }
         ]
         for mutate in mutations {
             let catalog = try captured(mutate)
             XCTAssertTrue(catalog.systemActions.isEmpty)
             XCTAssertFalse(catalog.systemDiscoveryComplete)
+            XCTAssertFalse(catalog.uiDiscoveryComplete)
             XCTAssertTrue(catalog.gaps.contains { $0.hasPrefix("Unknown built metadata format") })
         }
     }

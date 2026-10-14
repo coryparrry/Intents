@@ -52,9 +52,9 @@ enum AutomationPreparedPhysicalCampaign {
         }
         var authority = siriAuthority
         if authority == nil { authority = await AutomationSiriQualificationAuthority.shared.admission(prepared: prepared, plan: plan, approval: approval) }
-        let capabilities = try await AutomationSiriCapabilitySnapshot.resolve(prepared: prepared, capabilities: capabilities,
+        let codecs = try await AutomationSimulatorCodecQualification.enrich(capabilities, prepared: prepared)
+        let capabilities = try await AutomationSiriCapabilitySnapshot.resolve(prepared: prepared, capabilities: codecs,
             plan: plan, approval: approval, authority: authority)
-        guard await AutomationPreparedCodecAuthority.shared.contains(prepared) else { throw AutomationContractError.missingEvidence("Prepare the exact physical host in this process before running") }
         try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, siriAuthority: authority)
         let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
         guard segments.allSatisfy({ [.systemIntent, .systemQuery, .siriText].contains($0.kind) }),
