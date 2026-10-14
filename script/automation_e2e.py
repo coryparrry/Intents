@@ -280,8 +280,7 @@ def wait_for_registration(commands, cli, support, output, prepared):
     declared = action(prepared["catalog"], "EchoTextIntent")
     value = tagged("text", "registration-ready")
     operation = {"id": "registration", "kind": "invoke", "typeID": declared["id"],
-                 "parameters": {"value": value}, "parameterCodecs": {"value": "text"},
-                 "resultCodec": "text"}
+                 "parameters": {"value": value}, "resultCodec": declared["resultFamily"]}
     plan = case(prepared, "registration", host_segment("subject", "subject", [operation]))
     attempts = []
     for index in range(3):

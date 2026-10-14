@@ -275,7 +275,7 @@ class RegistrationReadinessTests(unittest.TestCase):
         self.assertEqual(plan["execution"]["hostProgram"]["operations"], [{
             "id": "registration", "kind": "invoke", "typeID": "EchoTextIntent",
             "parameters": {"value": driver.tagged("text", "registration-ready")},
-            "parameterCodecs": {"value": "text"}, "resultCodec": "text"}])
+            "resultCodec": "text"}])
 
     def test_only_known_metadata_error_retries_after_release_and_retains_attempts(self):
         output, support, attempts = self.exercise(failures=1)
