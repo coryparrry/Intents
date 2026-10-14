@@ -67,3 +67,57 @@ final class AutomationHostTests: XCTestCase {
         XCTAssertThrowsError(try AutomationAppleHostFile.freeze(extra, testRoot: root, expectedHost: host, expectedSubject: subject, testTarget: "OwnedHost", payload: Data()))
     }
 }
+
+
+extension AutomationHostTests {
+    func testDestinationArtifactsKeepTheInstalledSubjectAndValidatePreparedPaths() throws {
+        let root = URL(fileURLWithPath: "/private/tmp/destination-artifacts-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let host = root.appendingPathComponent("Host.app"), subject = root.appendingPathComponent("Subject.app")
+        try FileManager.default.createDirectory(at: host.appendingPathComponent("PlugIns/OwnedHost.xctest"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: subject, withIntermediateDirectories: true)
+        let target: [String: Any] = ["BlueprintName": "OwnedHost", "TestHostPath": "__TESTROOT__/Host.app",
+            "TestBundlePath": "__TESTHOST__/PlugIns/OwnedHost.xctest", "UITargetAppPath": "__TESTROOT__/Subject.app", "IsUITestBundle": true]
+        for configurationFormat in [false, true] {
+            let source: [String: Any] = configurationFormat ? ["TestConfigurations": [["TestTargets": [target]]]] : ["OwnedHost": target]
+            func onlyTarget(_ value: [String: Any]) throws -> [String: Any] {
+                if configurationFormat {
+                    let configurations = try XCTUnwrap(value["TestConfigurations"] as? [[String: Any]])
+                    return try XCTUnwrap((configurations[0]["TestTargets"] as? [[String: Any]])?.first)
+                }
+                return try XCTUnwrap(value["OwnedHost"] as? [String: Any])
+            }
+            let frozen = try AutomationAppleHostFile.freeze(source, testRoot: root, expectedHost: host,
+                expectedSubject: subject, testTarget: "OwnedHost", payload: Data(),
+                destinationBundleIDs: ("example.Host.xctrunner", "example.Subject"))
+            let installed = try onlyTarget(frozen)
+            XCTAssertEqual(installed["UseDestinationArtifacts"] as? Bool, true)
+            XCTAssertEqual(installed["TestHostBundleIdentifier"] as? String, "example.Host.xctrunner")
+            XCTAssertEqual(installed["UITargetAppBundleIdentifier"] as? String, "example.Subject")
+            XCTAssertEqual(installed["TestBundleDestinationRelativePath"] as? String, "__TESTHOST__/PlugIns/OwnedHost.xctest")
+            for key in ["TestBundlePath", "TestHostPath", "UITargetAppPath"] { XCTAssertNil(installed[key]) }
+            let physical = try onlyTarget(AutomationAppleHostFile.freeze(source, testRoot: root, expectedHost: host,
+                expectedSubject: subject, testTarget: "OwnedHost", payload: Data(), platform: .physicalIOS))
+            XCTAssertNil(physical["UseDestinationArtifacts"])
+            XCTAssertEqual(physical["UITargetAppPath"] as? String, subject.path)
+            XCTAssertEqual(physical["TestHostPath"] as? String, host.path)
+            XCTAssertEqual(physical["TestBundlePath"] as? String, host.path + "/PlugIns/OwnedHost.xctest")
+            XCTAssertThrowsError(try AutomationAppleHostFile.freeze(source, testRoot: root, expectedHost: host,
+                expectedSubject: host, testTarget: "OwnedHost", payload: Data(),
+                destinationBundleIDs: ("example.Host.xctrunner", "example.Subject")))
+            #if os(macOS)
+            for kind in [TargetIdentity.Kind.simulator, .physical] {
+                let prepared = AutomationPreparedAppleHost(app: .init(logicalID: "app", bundleID: "example.Subject", platform: "ios"),
+                    target: .init(id: "target", kind: kind), xctestrunPath: root.appendingPathComponent("host.xctestrun").path,
+                    xctestrunDigest: "unused", subjectProductPath: subject.path, hostBundlePath: host.path,
+                    hostProductDigest: "unused", hostBundleID: "example.Host.xctrunner", testTarget: "OwnedHost")
+                let uiTarget = try onlyTarget(AutomationXCUITestRouteDriver.freeze(source, prepared: prepared, payload: Data()))
+                XCTAssertEqual(uiTarget["UseDestinationArtifacts"] as? Bool, kind == .simulator ? true : nil)
+                let environment = try XCTUnwrap(uiTarget["EnvironmentVariables"] as? [String: String])
+                XCTAssertNotNil(environment["INTENTS_AUTOMATION_UI_PLAN_B64"])
+                XCTAssertNil(environment["INTENTS_AUTOMATION_HOST_PLAN_B64"])
+            }
+            #endif
+        }
+    }
+}

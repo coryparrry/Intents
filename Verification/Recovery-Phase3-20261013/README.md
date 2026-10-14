@@ -12,7 +12,7 @@ The separate **Input conversion diagnostic (Mac)** job runs the existing live St
 
 ## Hosted runtime
 
-All checks at `6082d6235` passed in [CI run 38532159770](https://github.com/coryparrry/Intents/actions/runs/38532159770), including all seven simulator cases and the live Mac diagnostic. Artifacts confirmed the default hosted Xcode was `27A266a`, the same build as the local run. This does not close Phase 1's inherited cross-build requirement. The simulator job now explicitly selects the runner's installed Xcode 27.2 and installs its matching iOS runtime; current-head CI must prove that run before this PR is ready.
+All checks at `6082d6235` passed in [CI run 38532159770](https://github.com/coryparrry/Intents/actions/runs/38532159770), including all seven simulator cases and the live Mac diagnostic. Artifacts confirmed the default hosted Xcode was `27A266a`, the same build as the local run. This does not close Phase 1's inherited cross-build requirement. The simulator job now explicitly selects the runner's installed Xcode 27.2 and installs its matching iOS runtime. That run at `9f245d78c` confirmed Xcode `27B5028f` and iOS `24B5089g`, but exposed a registration race: XCTest reinstalled the subject, then dispatched before the system had indexed the replacement. The simulator routes now install the verified runner explicitly and use Xcode's documented already-installed-artifacts option to preserve the subject. Current-head CI must prove the complete workflow before this PR is ready.
 
 ## Local runtime
 
@@ -24,6 +24,7 @@ The full CLI command passed on this Mac with Xcode 27.0 and an owned iOS 27.0 si
 - Supported CLI builds; 19 CLI regressions pass, including capability injection, exact approval, Mac assembly budgets, saved reports and canonical support-folder aliases.
 - All 53 Python workflow, routing and driver checks pass.
 - Native activation and real Xcode file-export fixes pass 33 native driver tests and 43 host-contract tests plus 53 Mac driver/probe regressions. The full simulator job supplies runtime acceptance; focused tests alone do not satisfy it.
+- The destination-artifacts fix builds and passes 120 focused native/UI, host-configuration, resolution, release/campaign and Mac regressions. Its runtime proof is the current-head simulator job.
 - A real simulator preparation captured 18 actions. The initial saved-preparation reload exposed a `/tmp` alias bug; the fixed CLI reloads that retained catalog without rebuilding.
 - Independent fixture/UI, CLI and CI reviews are clean. Current execution evidence is published by the required CI jobs above.
 
