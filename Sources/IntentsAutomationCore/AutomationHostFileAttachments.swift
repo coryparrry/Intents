@@ -69,6 +69,7 @@ enum AutomationHostFileAttachments {
         if let url = record["testIdentifierURL"] { guard case .string(let text) = url, text.utf8.count <= 4096 else { throw invalid() } }
         let required: Set<String> = ["exportedFileName", "suggestedHumanReadableName", "isAssociatedWithFailure", "configurationName", "deviceName", "deviceId"]
         let optional: Set<String> = ["timestamp", "repetitionNumber", "arguments"]
+        let diagnosticNames = Set((1...3).map { "intents-fixture-registration-\($0)" })
         var exported = Set<String>(), names = Set<String>(), entries: [String: String] = [:], context: [AutomationJSON]?
         for attachment in attachments {
             guard let fields = attachment.object, required.isSubset(of: Set(fields.keys)), Set(fields.keys).isSubset(of: required.union(optional)),
@@ -86,8 +87,10 @@ enum AutomationHostFileAttachments {
             // XCTest adds its own video beside the attachments added by our host. It is
             // retained in the export inventory, but never imported as receipt or file data.
             if name.hasPrefix("Screen Recording "), name.hasSuffix(".mp4"), filename.hasSuffix(".mp4") { continue }
-            let logicalName = try attachmentName(name, expectedNames: expectedNames)
+            let logicalName = try attachmentName(name, expectedNames: expectedNames.union(diagnosticNames))
             guard names.insert(logicalName).inserted else { throw invalid() }
+            // Fixture readiness diagnostics stay in the checked export inventory, never in claims.
+            if diagnosticNames.contains(logicalName) { continue }
             entries[logicalName] = filename
         }
         let actual = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
