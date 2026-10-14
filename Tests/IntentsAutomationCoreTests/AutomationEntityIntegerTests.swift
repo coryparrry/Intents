@@ -5,7 +5,7 @@ import XCTest
 final class AutomationEntityIntegerTests: XCTestCase {
     private func catalog(descriptor: Any = 2, optional: Bool = false) throws -> ApplicationSurfaceCatalog {
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Verification/Automation/Fixtures/DuplicateTasks/Metadata/extract.actionsdata")
+            .appendingPathComponent("examples/AutomationFixture/Metadata/extract.actionsdata")
         var document = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
         var entities = try XCTUnwrap(document["entities"] as? [String: [String: Any]])
         var properties = try XCTUnwrap(entities["TaskEntity"]?["properties"] as? [[String: Any]])

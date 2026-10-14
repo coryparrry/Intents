@@ -1,6 +1,6 @@
 # Phase 1 verification — 2026-10-13
 
-Phase 1 of the amended recovery plan. Changes are in this PR, not merged or released. PR 135 had already merged before this work; this PR starts from main at `f03d36497`.
+Phase 1 of the amended recovery plan. Merged in [PR 136](https://github.com/coryparrry/Intents/pull/136) as `f205bc9ba` after [all hosted checks passed](https://github.com/coryparrry/Intents/actions/runs/38467560997). Not released. PR 135 had already merged before this work; this PR starts from main at `f03d36497`.
 
 Typed plans now use the conversions implemented by the saved host after checking its generated sources, subject, host and test-run file. The app and CLI probe share base capabilities and execution resolution; profiles containing capabilities are rejected. Preparation can restore after relaunch. Metadata version 1 stays visible on unfamiliar Xcode builds, and Xcode defaults persist separately for simulator, device and Mac with a session override and device/Mac SDK preflight.
 

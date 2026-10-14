@@ -35,7 +35,7 @@ final class AutomationCatalogTests: XCTestCase {
     }
     func testCapturedEntityInputAndDeclaredPropertyCodecsRequireConsistentQueryMetadata() throws {
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Verification/Automation/Fixtures/DuplicateTasks/Metadata/extract.actionsdata")
+            .appendingPathComponent("examples/AutomationFixture/Metadata/extract.actionsdata")
         let captured = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
         let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString + ".app")
         let metadata = root.appendingPathComponent("Metadata.appintents")

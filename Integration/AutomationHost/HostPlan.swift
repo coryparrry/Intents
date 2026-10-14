@@ -13,6 +13,7 @@ struct HostPlan: Decodable {
     let productDigest: String
     let productDigestVersion: Int?
     let operations: [HostOperation]
+    let activateSubject: Bool?
 }
 struct HostOperation: Decodable {
     enum Kind: String, Decodable { case invoke, query }

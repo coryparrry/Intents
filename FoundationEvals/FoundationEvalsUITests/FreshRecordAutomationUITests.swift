@@ -1,60 +1,37 @@
 import XCTest
-import CryptoKit
 
 final class FreshRecordAutomationUITests: XCTestCase {
     /// Real, opt-in UI → App Intent → persisted entity-query workflow.
     @MainActor
     func testFreshDuplicateRecordsPreserveTheOtherOwner() throws {
         executionTimeAllowance = 600
-        struct Profile: Decodable {
-            let sourceProject: String
-            let sourceDigest: String
-            let simulatorID: String
-            let simulatorLabel: String
-            let developerDirectory: String
-        }
-        let profileURL = UITestStorage.root.appendingPathComponent("automation-native-fresh-approved-profile.json")
-        guard FileManager.default.fileExists(atPath: profileURL.path) else {
-            throw XCTSkip("Requires an explicitly approved disposable fresh-record fixture profile")
-        }
+        let fixture = try AutomationFixtureUITestSupport(requiresSimulator: true)
+        let simulatorID = try XCTUnwrap(fixture.simulatorID)
         continueAfterFailure = false
-        let bytes = try Data(contentsOf: profileURL)
-        XCTAssertLessThanOrEqual(bytes.count, 16_384)
-        let profile = try JSONDecoder().decode(Profile.self, from: bytes)
-        let project = URL(fileURLWithPath: profile.sourceProject).resolvingSymlinksInPath()
-        XCTAssertTrue(project.path.hasPrefix(UITestStorage.root.resolvingSymlinksInPath().path + "/"))
-        XCTAssertEqual(project.lastPathComponent, "DuplicateTasks.xcodeproj")
-        XCTAssertNotNil(UUID(uuidString: profile.simulatorID))
-        let source = project.deletingLastPathComponent().appendingPathComponent("App/TaskIntents.swift")
-        XCTAssertEqual(try digest(source), profile.sourceDigest)
         let storage = try UITestStorage.makeDirectory(prefix: "native-fresh-automation")
         print("NATIVE_FRESH_STORAGE=\(storage.path)")
         let app = XCUIApplication()
-        app.launchEnvironment["DEVELOPER_DIR"] = profile.developerDirectory
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
-                                "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
+        fixture.configure(app, storage: storage)
         app.launch()
         defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)
-        let choose = app.buttons["Choose app…"]
-        XCTAssertTrue(choose.waitForExistence(timeout: 15)); choose.click()
-        app.typeKey("g", modifierFlags: [.command, .shift])
-        let path = app.textFields.firstMatch
-        XCTAssertTrue(path.waitForExistence(timeout: 5)); path.typeText(project.path)
-        app.typeKey(.return, modifierFlags: [])
-        let panelChoose = app.buttons["Choose app"]
-        XCTAssertTrue(panelChoose.waitForExistence(timeout: 5)); panelChoose.click()
-        try select(app, "Simulator", profile.simulatorLabel)
-        try select(app, "What to test", "Action on a new test record")
+        waitForAutomationSelection(in: app)
+        selectAutomationMenu(app.popUpButtons["App"], item: "AutomationFixture")
+        selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "simulator")
+        selectAutomationMenu(app.popUpButtons["automation.preparation.simulator"], item: simulatorID, timeout: 30)
+        selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "fresh")
         let prepare = app.buttons["Prepare app…"]
         XCTAssertTrue(prepare.isEnabled); prepare.click()
-        app.buttons["Build private copy"].click()
-        XCTAssertTrue(app.popUpButtons["Action"].waitForExistence(timeout: 300), app.debugDescription)
-        try select(app, "Action", "Complete task")
+        let build = app.buttons["Build private copy"]
+        XCTAssertTrue(build.waitForExistence(timeout: 5)); build.click()
+        let action = app.popUpButtons["automation.action"]
+        XCTAssertTrue(action.waitForExistence(timeout: 300), app.debugDescription)
+        selectAutomationMenu(action, item: "Complete task")
         try fill(app, "How should the app create and save the record?",
                  "Create and save a task using the approved test record name and the specified account. Enter the name in Task title, select the specified Account if needed, and press Add task once. Finish when the new task row is visible.")
-        try fill(app, "Visible destination after saving", "Duplicate Tasks")
-        try fill(app, "Save button label (optional)", "Add task")
+        try fill(app, "Visible destination after saving", "Automation Fixture")
+        try fill(app, "Record name entry control", "id:task.title")
+        try fill(app, "Save control", "id:task.add")
         try fill(app, "Test record name prefix", "Intents v3 record")
         try select(app, "Record name", "Title")
         app.checkBoxes["Check another record with the same name stays unchanged"].click()
@@ -94,15 +71,15 @@ final class FreshRecordAutomationUITests: XCTestCase {
         let receipts = try XCTUnwrap(report["receipts"] as? [[String: Any]])
         XCTAssertFalse(receipts.isEmpty)
         for receipt in receipts {
-            XCTAssertEqual((receipt["target"] as? [String: Any])?["id"] as? String, profile.simulatorID)
+            XCTAssertEqual((receipt["target"] as? [String: Any])?["id"] as? String, simulatorID)
             XCTAssertEqual((receipt["app"] as? [String: Any])?["bundleID"] as? String,
-                           "com.coryparry.IntentsAutomation.DuplicateTasks")
+                           AutomationFixtureUITestSupport.iOSBundleID)
         }
         let saved = app.buttons["View saved result"].firstMatch
         XCTAssertTrue(saved.waitForExistence(timeout: 10)); saved.click()
         XCTAssertTrue(app.staticTexts["Saved result · not reverified"].waitForExistence(timeout: 10))
         try capture(app, storage: storage, name: "fresh-saved-result")
-        XCTAssertEqual(try digest(source), profile.sourceDigest)
+        try fixture.assertSourceUnchanged()
     }
 
     private func reports(in directory: URL) -> [URL] {
@@ -113,15 +90,9 @@ final class FreshRecordAutomationUITests: XCTestCase {
     private func object(_ url: URL) throws -> [String: Any] {
         try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
     }
-    private func digest(_ url: URL) throws -> String {
-        SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
-    }
     @MainActor
     private func select(_ app: XCUIApplication, _ label: String, _ value: String) throws {
-        let picker = app.popUpButtons[label]
-        XCTAssertTrue(picker.waitForExistence(timeout: 10), app.debugDescription); picker.click()
-        let item = app.menuItems[value]
-        XCTAssertTrue(item.waitForExistence(timeout: 5), app.debugDescription); item.click()
+        selectAutomationMenu(app.popUpButtons[label], item: value)
     }
     @MainActor
     private func fill(_ app: XCUIApplication, _ label: String, _ value: String) throws {
