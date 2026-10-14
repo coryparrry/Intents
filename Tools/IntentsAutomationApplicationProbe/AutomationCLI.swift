@@ -80,7 +80,7 @@ enum AutomationCLI {
             let assessment = try AutomationApplicationIntake.assess(project)
             let ids = try command.options["--scheme"].map { try schemeTargetIDs(project: project, scheme: $0) }
             let candidate = try selectCandidate(assessment.candidates, target: command.options["--target"], schemeIDs: ids)
-            let developer = developerDirectory(command.options["--xcode"])
+            let developer = try developerDirectory(command.options["--xcode"])
             var target = try destination(command.options["--destination"]!)
             try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             support = try AutomationPath.canonical(support)
@@ -100,7 +100,7 @@ enum AutomationCLI {
             let prepared = try loadPrepared(support)
             try attachPreparedEvidence(to: &envelope.plan, prepared: prepared)
             let approval = try deriveExactRunApproval(envelope)
-            let developer = prepared.sourceGraph?.platformContext.map { URL(fileURLWithPath: $0.developerDirectory) }
+            let developer = try prepared.sourceGraph?.platformContext.map { URL(fileURLWithPath: $0.developerDirectory) }
                 ?? developerDirectory(nil)
             let runner = try AutomationApplicationRunner(supportRoot: support, developerDirectory: developer)
             let base = AutomationPreparedCapabilities.base(prepared)
@@ -128,9 +128,28 @@ enum AutomationCLI {
         }
         return prepared
     }
-    static func developerDirectory(_ path: String?) -> URL {
-        let url = URL(fileURLWithPath: path ?? ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer")
+    static func developerDirectory(_ path: String?,
+                                   environment: [String: String] = ProcessInfo.processInfo.environment,
+                                   selection: () throws -> String = selectedDeveloperDirectory) throws -> URL {
+        let selected = try path ?? environment["DEVELOPER_DIR"] ?? selection()
+        guard !selected.isEmpty else { throw AutomationContractError.invalidPlan("No Xcode developer directory is selected") }
+        let url = URL(fileURLWithPath: selected)
         return url.pathExtension == "app" ? url.appendingPathComponent("Contents/Developer") : url
+    }
+    private static func selectedDeveloperDirectory() throws -> String {
+        let process = Process(), output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+        process.arguments = ["-p"]
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationReason == .exit, process.terminationStatus == 0,
+              let path = String(data: data, encoding: .utf8) else {
+            throw AutomationContractError.invalidPlan("Cannot read the selected Xcode developer directory; use --xcode")
+        }
+        return path.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     static func destination(_ value: String) throws -> TargetIdentity {
         if value == "mac" { return try AutomationMacGUIIdentity.currentTarget() }

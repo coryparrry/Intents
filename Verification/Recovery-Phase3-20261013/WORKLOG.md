@@ -17,3 +17,6 @@
 - Second full run restored the catalog successfully, then stopped before dispatch because FixtureReference had no readable text property. Added a deterministic Name property to the fixture entity, keeping its identifier and query behavior. The complete catalog guard remains in place; simulator cleanup passed.
 
 - Hosted head 212c09 passed the live Mac setter/readback diagnostic, app compilation and portable tests. Simulator preparation passed but the driver misspelled EchoURLIntent; corrected it and made the mock catalog independent. Fixed shellcheck SC2155 in the diagnostic lane. All 53 Python checks pass, and both codec batches validate against the real captured catalog before another live run.
+
+- Local run 4 passed exact comparisons for the first 15 codec families and all five empty arrays. IntentFile producer setup failed with AppIntentsServicesMetadataErrorDomain 400 (fixture bundle not present); raw result retained, owned simulator removed. Investigating the real runtime boundary.
+- Two independently validated PR review findings fixed: selected Xcode fallback and testing-only helper scheme entries. All 19 CLI regressions pass, independent recheck is clean, and the current fixture Mac target builds.

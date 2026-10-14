@@ -40,15 +40,18 @@ private final class AutomationSchemeParser: NSObject, XMLParserDelegate {
     var identifiers: Set<String> = []
     var invalid = false
     private var buildAction = false
+    private var runnableEntry = false
     init(projectName: String) { self.projectName = projectName }
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String]) {
         if elementName == "BuildAction" { buildAction = true }
-        if elementName == "BuildableReference", buildAction,
+        if elementName == "BuildActionEntry", buildAction { runnableEntry = attributes["buildForRunning"] == "YES" }
+        if elementName == "BuildableReference", buildAction, runnableEntry,
            attributes["ReferencedContainer"] == "container:" + projectName,
            let identifier = attributes["BlueprintIdentifier"] { identifiers.insert(identifier) }
     }
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
-        if elementName == "BuildAction" { buildAction = false }
+        if elementName == "BuildActionEntry" { runnableEntry = false }
+        if elementName == "BuildAction" { buildAction = false; runnableEntry = false }
     }
     func parser(_ parser: XMLParser, foundExternalEntityDeclarationWithName name: String, publicID: String?, systemID: String?) { invalid = true; parser.abortParsing() }
     func parser(_ parser: XMLParser, foundInternalEntityDeclarationWithName name: String, value: String?) { invalid = true; parser.abortParsing() }

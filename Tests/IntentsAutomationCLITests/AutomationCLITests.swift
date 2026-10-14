@@ -18,6 +18,34 @@ final class AutomationCLITests: XCTestCase, @unchecked Sendable {
         ] { XCTAssertThrowsError(try AutomationCLICommand.parse(arguments)) }
         XCTAssertEqual(try AutomationCLICommand.parse(["show", "--support-root", "/private/tmp/support", "attempt-1"]).attemptID, "attempt-1")
     }
+    func testDeveloperDirectoryPrefersExplicitXcodeOverEnvironmentAndSelection() throws {
+        let developer = try AutomationCLI.developerDirectory("/Applications/Explicit.app",
+            environment: ["DEVELOPER_DIR": "/Applications/Environment.app/Contents/Developer"],
+            selection: { XCTFail("Explicit Xcode must not consult xcode-select"); return "/unexpected" })
+        XCTAssertEqual(developer.path, "/Applications/Explicit.app/Contents/Developer")
+    }
+    func testDeveloperDirectoryUsesEnvironmentBeforeSelection() throws {
+        for path in ["/Applications/Environment.app", "/Applications/Environment.app/Contents/Developer"] {
+            let developer = try AutomationCLI.developerDirectory(nil, environment: ["DEVELOPER_DIR": path],
+                selection: { XCTFail("DEVELOPER_DIR must not consult xcode-select"); return "/unexpected" })
+            XCTAssertEqual(developer.path, "/Applications/Environment.app/Contents/Developer")
+        }
+    }
+    func testDeveloperDirectoryUsesNondefaultSelectedXcode() throws {
+        var selections = 0
+        let developer = try AutomationCLI.developerDirectory(nil, environment: [:], selection: {
+            selections += 1
+            return "/Applications/Xcode-beta.app/Contents/Developer"
+        })
+        XCTAssertEqual(developer.path, "/Applications/Xcode-beta.app/Contents/Developer")
+        XCTAssertEqual(selections, 1)
+    }
+    func testDeveloperDirectoryRejectsFailedOrEmptySelection() {
+        XCTAssertThrowsError(try AutomationCLI.developerDirectory(nil, environment: [:], selection: {
+            throw AutomationContractError.invalidIdentity
+        }))
+        XCTAssertThrowsError(try AutomationCLI.developerDirectory(nil, environment: [:], selection: { "" }))
+    }
     func testSupportRootUsesCoreCanonicalIdentityForTemporaryAliases() throws {
         let root = temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -115,14 +143,24 @@ final class AutomationCLITests: XCTestCase, @unchecked Sendable {
         XCTAssertThrowsError(try AutomationCLI.selectCandidate(candidates, target: nil, schemeIDs: ["IOS", "MAC"]))
         XCTAssertThrowsError(try AutomationCLI.selectCandidate(candidates, target: "Missing", schemeIDs: nil))
     }
-    func testSchemeReadsBuildActionAndIgnoresTestOnlyReference() throws {
+    func testSchemeSelectsRunnableAppAndIgnoresTestingOnlyHelperAndForeignProject() throws {
         let root = temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
-        let project = root.appendingPathComponent("Fixture.xcodeproj"), schemes = project.appendingPathComponent("xcshareddata/xcschemes")
-        try FileManager.default.createDirectory(at: schemes, withIntermediateDirectories: true)
-        let xml = #"<Scheme><BuildAction><BuildableReference BlueprintIdentifier="IOS" ReferencedContainer="container:Fixture.xcodeproj"/><BuildableReference BlueprintIdentifier="OTHER" ReferencedContainer="container:Other.xcodeproj"/></BuildAction><TestAction><BuildableReference BlueprintIdentifier="TEST" ReferencedContainer="container:Fixture.xcodeproj"/></TestAction></Scheme>"#
-        try Data(xml.utf8).write(to: schemes.appendingPathComponent("Fixture.xcscheme"))
-        XCTAssertEqual(try AutomationCLI.schemeTargetIDs(project: project, scheme: "Fixture"), ["IOS"])
+        let project = try writeScheme(root: root, helperRuns: false)
+        let ids = try AutomationCLI.schemeTargetIDs(project: project, scheme: "Fixture")
+        XCTAssertEqual(ids, ["MAIN"])
+        let main = candidate(id: "MAIN", name: "Main")
+        XCTAssertEqual(try AutomationCLI.selectCandidate([main, candidate(id: "HELPER", name: "Helper")],
+            target: nil, schemeIDs: ids), main)
         XCTAssertThrowsError(try AutomationCLI.schemeTargetIDs(project: project, scheme: "../escape"))
+    }
+    func testSchemePreservesAmbiguityBetweenTwoRunnableApplications() throws {
+        let root = temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let project = try writeScheme(root: root, helperRuns: true)
+        let ids = try AutomationCLI.schemeTargetIDs(project: project, scheme: "Fixture")
+        XCTAssertEqual(ids, ["MAIN", "HELPER"])
+        XCTAssertThrowsError(try AutomationCLI.selectCandidate([
+            candidate(id: "MAIN", name: "Main"), candidate(id: "HELPER", name: "Helper")],
+            target: nil, schemeIDs: ids))
     }
     func testShowUsesSharedStoreWithoutChangingFiles() async throws {
         let root = temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
@@ -168,6 +206,35 @@ final class AutomationCLITests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(names.allSatisfy { $0.hasSuffix(".swift") })
     }
 
+    private func writeScheme(root: URL, helperRuns: Bool) throws -> URL {
+        let project = root.appendingPathComponent("Fixture.xcodeproj")
+        let schemes = project.appendingPathComponent("xcshareddata/xcschemes")
+        try FileManager.default.createDirectory(at: schemes, withIntermediateDirectories: true)
+        let xml = """
+        <Scheme version="1.3">
+          <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES">
+            <BuildActionEntries>
+              <BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">
+                <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="MAIN" BuildableName="Main.app" BlueprintName="Main" ReferencedContainer="container:Fixture.xcodeproj"/>
+              </BuildActionEntry>
+              <BuildActionEntry buildForTesting="YES" buildForRunning="\(helperRuns ? "YES" : "NO")" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="YES">
+                <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="HELPER" BuildableName="Helper.app" BlueprintName="Helper" ReferencedContainer="container:Fixture.xcodeproj"/>
+              </BuildActionEntry>
+              <BuildActionEntry buildForTesting="YES" buildForRunning="YES">
+                <BuildableReference BlueprintIdentifier="FOREIGN" ReferencedContainer="container:Other.xcodeproj"/>
+              </BuildActionEntry>
+            </BuildActionEntries>
+          </BuildAction>
+          <TestAction buildConfiguration="Debug">
+            <Testables><TestableReference skipped="NO">
+              <BuildableReference BlueprintIdentifier="TEST" ReferencedContainer="container:Fixture.xcodeproj"/>
+            </TestableReference></Testables>
+          </TestAction>
+        </Scheme>
+        """
+        try Data(xml.utf8).write(to: schemes.appendingPathComponent("Fixture.xcscheme"))
+        return project
+    }
     private func candidate(id: String, name: String) -> AutomationApplicationCandidate {
         .init(id: "/fixture.xcodeproj#" + id, name: name, kind: .sourceTarget, containerPath: "/fixture.xcodeproj", targetID: id, bundleID: nil, platform: nil, architectures: [], configurations: ["Debug"], app: nil)
     }

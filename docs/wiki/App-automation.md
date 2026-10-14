@@ -33,7 +33,7 @@ intents-automation run --plan <plan.json> --support-root <directory>
 intents-automation show <attempt-id> --support-root <directory>
 ```
 
-Choose a target with `--target` instead of `--scheme`. Destinations are `sim:<udid>`, `device:<id>` or `mac`. `prepare --xcode` selects an Xcode app or developer directory; otherwise preparation uses `DEVELOPER_DIR` or `/Applications/Xcode.app/Contents/Developer`. Later runs use the retained preparation toolchain. The default support directory matches the app; `--support-root` isolates tests. `actions` prints the saved catalog, and `show` reads a saved attempt without running the app.
+Choose a target with `--target` instead of `--scheme`. Destinations are `sim:<udid>`, `device:<id>` or `mac`. `prepare --xcode` selects an Xcode app or developer directory; otherwise preparation uses `DEVELOPER_DIR` or the developer directory selected by `xcode-select -p`. Later runs use the retained preparation toolchain. The default support directory matches the app; `--support-root` isolates tests. `actions` prints the saved catalog, and `show` reads a saved attempt without running the app.
 
 A run request contains a concrete `AutomationCase` plan and explicit install/boot consent. It binds approval to that plan's app, target, environment, effects, budget and digest. The CLI resolves capabilities from the retained preparation and actual execution path. It prints JSON, keeps the runner's verdict, and returns a nonzero status for failed, timed-out or unreleased attempts.
 
