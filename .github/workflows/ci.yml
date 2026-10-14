@@ -243,7 +243,10 @@ jobs:
         timeout-minutes: 15
         run: |
           xcodebuild -version
-          xcodebuild -downloadPlatform iOS -buildVersion 27.2 -architectureVariant arm64
+          if ! xcrun simctl list runtimes -j | python3 -c 'import json, sys; sys.exit(not any(r["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS-") and r["version"] == "27.2" and r.get("isAvailable") for r in json.load(sys.stdin)["runtimes"]))'; then
+            # Apple's catalog identifies iOS 27.2 beta 2 as 27.2.0.2.
+            xcodebuild -downloadPlatform iOS -buildVersion 27.2.0.2 -architectureVariant arm64
+          fi
       - name: Reproduce prepared-app automation
         run: python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e"
       - name: Upload automation evidence
