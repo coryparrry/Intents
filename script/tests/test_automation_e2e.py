@@ -229,7 +229,7 @@ class FakeCommands:
 
 
 class RegistrationReadinessTests(unittest.TestCase):
-    def exercise(self, failures=0, mutation=None):
+    def exercise(self, failures=0, mutation=None, quick_exit=False):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         output = Path(temporary.name)
@@ -243,7 +243,7 @@ class RegistrationReadinessTests(unittest.TestCase):
             result = report(values={"registration": value})
             code = 0
             if index < failures:
-                result = report("timedOut")
+                result = report("unresolved" if quick_exit else "timedOut")
                 result["result"].update(subjectDispatched=False, subjectCompleted=False,
                                         subjectDispatchUncertain=True, evidenceComplete=False)
                 result["receipts"] = []
@@ -253,7 +253,10 @@ class RegistrationReadinessTests(unittest.TestCase):
                 if mutation in ("other-error", "other-bundle"):
                     marker = marker.replace("Code=400", "Code=401") if mutation == "other-error" else marker.replace("example.fixture", "other.fixture")
                 if mutation != "missing-log":
-                    (artifact / "apple-command-failure-4-test.txt").write_text(marker)
+                    name = "apple-log-4.txt" if quick_exit else "apple-command-failure-4-test.txt"
+                    (artifact / name).write_text(marker)
+                if mutation == "other-summary":
+                    result["result"]["summary"] = "infrastructureFailed"
                 if mutation == "unreleased":
                     result["resourcesReleased"] = False
                 if mutation == "dispatched":
@@ -288,21 +291,32 @@ class RegistrationReadinessTests(unittest.TestCase):
         evidence = json.loads((output / "registration-readiness.json").read_text())
         self.assertEqual([a["summary"] for a in evidence], ["timedOut", "executedUnassessed"])
 
+    def test_nonzero_xcode_metadata_failure_retries_from_unresolved_apple_log(self):
+        output, support, attempts = self.exercise(failures=1, quick_exit=True)
+        with patch.object(driver, "run_plan", side_effect=attempts) as run:
+            driver.wait_for_registration(None, "cli", support, output, prepared())
+        self.assertEqual(run.call_count, 2)
+        evidence = json.loads((output / "registration-readiness.json").read_text())
+        self.assertEqual([a["summary"] for a in evidence], ["unresolved", "executedUnassessed"])
+
     def test_unrelated_failures_and_unreleased_or_partly_completed_runs_do_not_retry(self):
-        for mutation in ("other-error", "other-bundle", "missing-log", "unreleased", "dispatched", "completed", "receipt"):
-            with self.subTest(mutation=mutation):
-                output, support, attempts = self.exercise(failures=1, mutation=mutation)
-                with patch.object(driver, "run_plan", side_effect=attempts) as run:
-                    with self.assertRaises(AssertionError):
-                        driver.wait_for_registration(None, "cli", support, output, prepared())
-                self.assertEqual(run.call_count, 1)
+        for quick_exit in (False, True):
+            for mutation in ("other-error", "other-bundle", "missing-log", "other-summary", "unreleased", "dispatched", "completed", "receipt"):
+                with self.subTest(quick_exit=quick_exit, mutation=mutation):
+                    output, support, attempts = self.exercise(failures=1, mutation=mutation, quick_exit=quick_exit)
+                    with patch.object(driver, "run_plan", side_effect=attempts) as run:
+                        with self.assertRaises(AssertionError):
+                            driver.wait_for_registration(None, "cli", support, output, prepared())
+                    self.assertEqual(run.call_count, 1)
 
     def test_registration_wait_stops_after_three_failed_attempts(self):
-        output, support, attempts = self.exercise(failures=3)
-        with patch.object(driver, "run_plan", side_effect=attempts) as run:
-            with self.assertRaisesRegex(AssertionError, "Expected executedUnassessed"):
-                driver.wait_for_registration(None, "cli", support, output, prepared())
-        self.assertEqual(run.call_count, 3)
+        for quick_exit in (False, True):
+            with self.subTest(quick_exit=quick_exit):
+                output, support, attempts = self.exercise(failures=3, quick_exit=quick_exit)
+                with patch.object(driver, "run_plan", side_effect=attempts) as run:
+                    with self.assertRaisesRegex(AssertionError, "Expected executedUnassessed"):
+                        driver.wait_for_registration(None, "cli", support, output, prepared())
+                self.assertEqual(run.call_count, 3)
 
     def test_success_still_requires_exact_output_and_successful_exit(self):
         for mutation in ("output", "exit"):
