@@ -12,6 +12,8 @@ python3 script/automation_e2e.py
 
 The command generates the committed `examples/AutomationFixture` project, builds the CLI, creates its own simulator and prepares the fixture once. It checks exact returned values for all 16 codec families and empty arrays, runs UI create → App Intent → independent query, checks a deliberately wrong assertion, and checks a timeout followed by a successful run. It shuts down and deletes only its own simulator. Raw reports, profiles, screenshots, products and logs stay outside git.
 
+After preparation, the harness installs the frozen fixture once and disables case-level boot and installation. Before running the contract, it requires the fixture's harmless `EchoTextIntent` to return its exact readiness value. Only that readiness probe can retry, with at most three total attempts, for the matching metadata-not-present error after resource release and without reported dispatch, completion or receipts. The codec, mixed-workflow and negative cases still run once. `registration-readiness.json` records each readiness attempt and its result.
+
 Use `--xcode <Xcode.app>` to select a toolchain, `--output-root <empty-directory>` to retain a run at a chosen location, and `--build-root <directory>` to reuse an external Swift build cache. Both directories must be outside the checkout; the cache is preserved.
 
 The hosted **Automation e2e (simulator)** job runs the same command on relevant PRs. Echo attempts remain `executedUnassessed`; the script compares their actual returned values exactly. The mixed workflow must have the app's assessed `passed` verdict. The negative checks must report `assertionFailed` and `timedOut`, release resources, and leave no held campaign.

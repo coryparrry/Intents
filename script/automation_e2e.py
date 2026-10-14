@@ -266,13 +266,14 @@ def run_plan(commands, cli, support, output, plan):
 
 
 def registration_pending(report, support, attempt, bundle_id):
-    # Only retry the observed pre-dispatch metadata error, after owned resources drain.
-    if (report["resourcesReleased"] is not True or report["result"]["summary"] != "timedOut"
+    # Retry only the harmless readiness echo's exact metadata error after resources drain.
+    if (report["resourcesReleased"] is not True or report["result"]["summary"] not in ("timedOut", "unresolved")
             or report["result"]["subjectDispatched"] or report["result"]["subjectCompleted"] or report["receipts"]):
         return False
     marker = f'Error Domain=AppIntentsServicesMetadataErrorDomain Code=400 "{bundle_id} is not present"'
-    return any(marker in path.read_text() for path in
-               (support / attempt / "artifacts").glob("apple-command-failure-*.txt"))
+    return any(marker in path.read_text()
+               for pattern in ("apple-command-failure-*.txt", "apple-log-*.txt")
+               for path in (support / attempt / "artifacts").glob(pattern))
 
 
 def wait_for_registration(commands, cli, support, output, prepared):
