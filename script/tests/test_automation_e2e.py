@@ -225,6 +225,97 @@ class FakeCommands:
         raise AssertionError(f"Unhandled fake JSON command: {args}")
 
 
+class RegistrationReadinessTests(unittest.TestCase):
+    def exercise(self, failures=0, mutation=None):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        support = output / "support"
+        support.mkdir()
+        (support / "target-leases.json").write_text(json.dumps({"campaigns": {}}))
+        value = driver.tagged("text", "registration-ready")
+        attempts = []
+        for index in range(failures + 1):
+            attempt = "readiness-" + str(index)
+            result = report(values={"registration": value})
+            code = 0
+            if index < failures:
+                result = report("timedOut")
+                result["result"].update(subjectDispatched=False, subjectCompleted=False,
+                                        subjectDispatchUncertain=True, evidenceComplete=False)
+                result["receipts"] = []
+                artifact = support / attempt / "artifacts"
+                artifact.mkdir(parents=True)
+                marker = 'Error Domain=AppIntentsServicesMetadataErrorDomain Code=400 "example.fixture is not present"'
+                if mutation in ("other-error", "other-bundle"):
+                    marker = marker.replace("Code=400", "Code=401") if mutation == "other-error" else marker.replace("example.fixture", "other.fixture")
+                if mutation != "missing-log":
+                    (artifact / "apple-command-failure-4-test.txt").write_text(marker)
+                if mutation == "unreleased":
+                    result["resourcesReleased"] = False
+                if mutation == "dispatched":
+                    result["result"]["subjectDispatched"] = True
+                if mutation == "completed":
+                    result["result"]["subjectCompleted"] = True
+                if mutation == "receipt":
+                    result["receipts"] = report()["receipts"]
+                code = 1
+            attempts.append((attempt, code, result))
+        return output, support, attempts
+
+    def test_registered_fixture_requires_one_exact_harmless_echo(self):
+        output, support, attempts = self.exercise()
+        with patch.object(driver, "run_plan", side_effect=attempts) as run:
+            driver.wait_for_registration(None, "cli", support, output, prepared())
+        run.assert_called_once()
+        plan = run.call_args.args[-1]
+        self.assertEqual(plan["id"], "phase3.registration")
+        self.assertEqual(plan["setup"], [])
+        self.assertEqual(plan["cleanup"], [])
+        self.assertEqual(plan["execution"]["hostProgram"]["operations"], [{
+            "id": "registration", "kind": "invoke", "typeID": "EchoTextIntent",
+            "parameters": {"value": driver.tagged("text", "registration-ready")},
+            "parameterCodecs": {"value": "text"}, "resultCodec": "text"}])
+
+    def test_only_known_metadata_error_retries_after_release_and_retains_attempts(self):
+        output, support, attempts = self.exercise(failures=1)
+        with patch.object(driver, "run_plan", side_effect=attempts) as run:
+            driver.wait_for_registration(None, "cli", support, output, prepared())
+        self.assertEqual(run.call_count, 2)
+        evidence = json.loads((output / "registration-readiness.json").read_text())
+        self.assertEqual([a["summary"] for a in evidence], ["timedOut", "executedUnassessed"])
+
+    def test_unrelated_failures_and_unreleased_or_partly_completed_runs_do_not_retry(self):
+        for mutation in ("other-error", "other-bundle", "missing-log", "unreleased", "dispatched", "completed", "receipt"):
+            with self.subTest(mutation=mutation):
+                output, support, attempts = self.exercise(failures=1, mutation=mutation)
+                with patch.object(driver, "run_plan", side_effect=attempts) as run:
+                    with self.assertRaises(AssertionError):
+                        driver.wait_for_registration(None, "cli", support, output, prepared())
+                self.assertEqual(run.call_count, 1)
+
+    def test_registration_wait_stops_after_three_failed_attempts(self):
+        output, support, attempts = self.exercise(failures=3)
+        with patch.object(driver, "run_plan", side_effect=attempts) as run:
+            with self.assertRaisesRegex(AssertionError, "Expected executedUnassessed"):
+                driver.wait_for_registration(None, "cli", support, output, prepared())
+        self.assertEqual(run.call_count, 3)
+
+    def test_success_still_requires_exact_output_and_successful_exit(self):
+        for mutation in ("output", "exit"):
+            with self.subTest(mutation=mutation):
+                output, support, attempts = self.exercise()
+                attempt, code, result = attempts[0]
+                if mutation == "output":
+                    result["receipts"][0]["verifiedOutputs"]["registration"] = driver.tagged("text", "wrong")
+                else:
+                    code = 1
+                with patch.object(driver, "run_plan", return_value=(attempt, code, result)) as run:
+                    with self.assertRaises(AssertionError):
+                        driver.wait_for_registration(None, "cli", support, output, prepared())
+                run.assert_called_once()
+
+
 class WorkflowTests(unittest.TestCase):
     def test_mac_input_diagnostic_is_live_scoped_and_preserves_separate_evidence(self):
         workflow = (SCRIPT.parents[1] / ".github/workflows/ci.yml").read_text()

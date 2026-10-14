@@ -253,6 +253,50 @@ class Commands:
         return code, json.loads(raw)
 
 
+def run_plan(commands, cli, support, output, plan):
+    attempt = "phase3-" + uuid.uuid4().hex
+    envelope = {"schemaVersion": 1, "attemptID": attempt, "allowBootAndInstall": True,
+                "disposable": True, "plan": plan}
+    plan_path = output / (plan["id"] + ".json")
+    plan_path.write_text(json.dumps(envelope, indent=2))
+    code, report = commands.json([cli, "run", "--plan", plan_path, "--support-root", support],
+                                 timeout=900, allowed=(0, 1))
+    verify_campaigns(support)
+    return attempt, code, report
+
+
+def registration_pending(report, support, attempt, bundle_id):
+    # Only retry the observed pre-dispatch metadata error, after owned resources drain.
+    if (report["resourcesReleased"] is not True or report["result"]["summary"] != "timedOut"
+            or report["result"]["subjectDispatched"] or report["result"]["subjectCompleted"] or report["receipts"]):
+        return False
+    marker = f'Error Domain=AppIntentsServicesMetadataErrorDomain Code=400 "{bundle_id} is not present"'
+    return any(marker in path.read_text() for path in
+               (support / attempt / "artifacts").glob("apple-command-failure-*.txt"))
+
+
+def wait_for_registration(commands, cli, support, output, prepared):
+    # This authored fixture echo has no writes; never retry customer/business actions.
+    declared = action(prepared["catalog"], "EchoTextIntent")
+    value = tagged("text", "registration-ready")
+    operation = {"id": "registration", "kind": "invoke", "typeID": declared["id"],
+                 "parameters": {"value": value}, "parameterCodecs": {"value": "text"},
+                 "resultCodec": "text"}
+    plan = case(prepared, "registration", host_segment("subject", "subject", [operation]))
+    attempts = []
+    for index in range(3):
+        attempt, code, report = run_plan(commands, cli, support, output, plan)
+        attempts.append({"attemptID": attempt, "summary": report["result"]["summary"]})
+        (output / "registration-readiness.json").write_text(json.dumps(attempts, indent=2))
+        if index < 2 and code == 1 and registration_pending(report, support, attempt, prepared["host"]["app"]["bundleID"]):
+            print("Fixture metadata is still indexing; retrying the harmless registration echo.", flush=True)
+            continue
+        verify_echo(report, {"registration": value})
+        ensure(code == 0, "Registration echo exit status differs from successful report")
+        print("Verified fixture registration readiness.", flush=True)
+        return
+
+
 def simulator_configuration(runtimes, device_types, sdk_version=None):
     available = [r for r in runtimes["runtimes"] if r.get("isAvailable") and r["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS-")]
     if sdk_version is not None:
@@ -302,12 +346,7 @@ def run_contract(commands, output, build_root=None):
         _, catalog = commands.json([cli, "actions", *flags])
         ensure(catalog == prepared["catalog"], "actions differs from prepared catalog")
         def execute(plan, summary, expected=None, file=False):
-            attempt = "phase3-" + uuid.uuid4().hex
-            envelope = {"schemaVersion": 1, "attemptID": attempt, "allowBootAndInstall": True,
-                        "disposable": True, "plan": plan}
-            plan_path = output / (plan["id"] + ".json")
-            plan_path.write_text(json.dumps(envelope, indent=2))
-            code, report = commands.json([cli, "run", "--plan", plan_path, *flags], timeout=900, allowed=(0, 1))
+            attempt, code, report = run_plan(commands, cli, support, output, plan)
             verify_report(report, summary, completed=summary != "timedOut")
             ensure(code == (0 if summary in ("passed", "executedUnassessed") else 1), "CLI exit status differs from assessment")
             if expected is not None:
@@ -320,6 +359,7 @@ def run_contract(commands, output, build_root=None):
             print(f"Verified {plan['id']}: {summary}", flush=True)
             reports.append({"case": plan["id"], "attemptID": attempt, "summary": summary,
                             "exactOutputsCompared": expected is not None or file})
+        wait_for_registration(commands, cli, support, output, prepared)
         for index, (operations, expected) in enumerate(echo_batches(catalog), 1):
             execute(case(prepared, f"codec-{index}", host_segment("subject", "subject", operations)),
                     "executedUnassessed", expected)
