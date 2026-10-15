@@ -88,6 +88,10 @@ class CoverageTests(unittest.TestCase):
         self.assertFalse(plan["automation_e2e"])
         self.assertFalse(plan["input_conversion"])
 
+    def test_metadata_workflow_changes_select_its_checks_without_native_tests(self):
+        self.assert_selection([".github/workflows/pr-metadata.yml"],
+                              python=("script.tests.test_release_notes", "script.tests.test_ci_workflow"))
+
     def test_release_workflow_fix_skips_native_and_unrelated_script_suites(self):
         self.assert_selection(
             [

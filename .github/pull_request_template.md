@@ -13,12 +13,12 @@
 ## Release notes
 
 <!--
-Release Please sees one commit after GitHub squash-merges a pull request. For a
-feat: or fix: pull request, replace this comment with the active commit-override
-block documented in docs/releasing.md. Add one Conventional Commit entry for
+Release Please sees one commit after GitHub squash-merges a pull request. Replace
+this comment with the active commit-override block documented in docs/releasing.md.
+Add one Conventional Commit entry for
 each user-visible change. Use docs, test, refactor, build, ci, chore, style, or
 revert entries for changes in those categories.
-CI validates the active block. Docs, CI, test, refactor, and chore pull requests
-can leave this instruction commented to use their conventional squash-commit
-subject, or add an override to list several changes in the changelog.
+CI requires and validates the active block for every ordinary PR, including docs,
+CI, tests, refactoring, and maintenance. Release Please's generated release PR is
+exempt because it already contains the generated changelog.
 -->
