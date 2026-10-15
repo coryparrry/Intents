@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import vm from 'node:vm';
+import { JSDOM } from 'jsdom';
 
 // Exercise the script actually served by preview.mjs. Navigation preserves an
 // iframe WindowProxy, so source identity alone must not authorize its new origin.
@@ -9,7 +10,9 @@ test('preview bridge requires both its child WindowProxy and same origin', async
   const source = await readFile(new URL('../preview.mjs', import.meta.url), 'utf8');
   const host = source.match(/const host = `([\s\S]*?)`;/)?.[1];
   assert.ok(host, 'Preview host template must exist');
-  const script = host.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  const page = new JSDOM(host);
+  const script = page.window.document.querySelector('script')?.textContent;
+  page.window.close();
   assert.ok(script, 'Preview bridge script must exist');
   const origin = 'http://127.0.0.1:4317';
   const posted = [];

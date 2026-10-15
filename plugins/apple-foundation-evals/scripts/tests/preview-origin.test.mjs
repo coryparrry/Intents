@@ -31,7 +31,7 @@ test('preview accepts same-origin JSON and rejects foreign mutations before pers
       return new Promise((resolve, reject) => {
         const req = request(`${origin}${path}`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', ...headers } }, res => {
           let text = ''; res.setEncoding('utf8'); res.on('data', chunk => { text += chunk; });
-          res.on('end', () => resolve({ status: res.statusCode, text }));
+          res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text }));
         });
         req.setTimeout(5000, () => req.destroy(Error('Preview request timeout')));
         req.on('error', reject); req.end(JSON.stringify(body));
@@ -44,6 +44,11 @@ test('preview accepts same-origin JSON and rejects foreign mutations before pers
     assert.equal(JSON.parse(accepted.text).result.structuredContent.project.name, 'Allowed project');
     const exportBody = { params: { contents: [{ resource: { uri: 'file:///allowed.json', text: 'review evidence' } }] } };
     assert.equal((await post('/export', exportBody)).status, 200);
+    const invalidExport = await post('/export', { params: { contents: [{ resource: { uri: 'file:///invalid.html', text: '<script>unexpected</script>' } }] } });
+    assert.equal(invalidExport.status, 500);
+    assert.equal(invalidExport.headers['content-type'], 'application/json');
+    assert.equal(invalidExport.headers['x-content-type-options'], 'nosniff');
+    assert.equal(JSON.parse(invalidExport.text).error.message, 'Invalid export filename');
     for (const headers of [
       { Origin: 'https://unrelated.example' },
       { Origin: `http://127.0.0.1:${port + 1}` },

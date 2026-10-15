@@ -94,7 +94,12 @@ const server = createServer(async (req, res) => {
       res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify(await rpc(JSON.parse(body))));
     }
     res.statusCode = 404; res.end();
-  } catch (error) { res.statusCode = 500; res.end(JSON.stringify({ error: { code: -32603, message: error.message } })); }
+  } catch (error) {
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.end(JSON.stringify({ error: { code: -32603, message: error.message } }));
+  }
 });
 const port = Number(process.env.FOUNDATION_EVALS_PREVIEW_PORT || 4317);
 server.listen(port, '127.0.0.1', () => console.error(`Local MCP preview: http://127.0.0.1:${server.address().port}`));
