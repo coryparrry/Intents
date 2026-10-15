@@ -338,7 +338,7 @@ class WorkflowTests(unittest.TestCase):
         workflow = (SCRIPT.parents[1] / ".github/workflows/ci.yml").read_text()
         job = workflow.split("\n  input-conversion:\n", 1)[1]
         self.assertIn("name: Input conversion diagnostic (Mac)", job)
-        self.assertIn("needs.changes.outputs.automation_e2e == 'true'", job)
+        self.assertIn("needs.changes.outputs.input_conversion == 'true'", job)
         self.assertIn("runs-on: xcode-27", job)
         self.assertIn("timeout-minutes: 30", job)
         self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_LIVE: '1'", job)
@@ -430,7 +430,8 @@ class OrchestrationTests(unittest.TestCase):
             with patch.object(driver, "run_contract", return_value=[]) as run:
                 self.assertEqual(driver.main(["--output-root", str(root / "evidence"),
                                               "--build-root", str(root / "cache"), "--jobs", "4"]), 0)
-            self.assertEqual(run.call_args.kwargs, {"build_root": (root / "cache").resolve(), "build_jobs": 4})
+            self.assertEqual(run.call_args.kwargs, {"build_root": (root / "cache").resolve(),
+                                                   "build_jobs": 4, "record_build_cache": False})
 
     def test_boot_overlaps_cli_build_and_finishes_before_prepare(self):
         commands, _ = self.exercise()
@@ -439,6 +440,56 @@ class OrchestrationTests(unittest.TestCase):
         self.assertLess(position("boot"), position("--jobs"))
         self.assertLess(position("--jobs"), position("bootstatus"))
         self.assertLess(position("bootstatus"), position("prepare"))
+
+    def test_cache_checkpoint_requires_external_cache_and_github_output_before_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            commands = FakeCommands(root)
+            with patch.dict(driver.os.environ, {"GITHUB_OUTPUT": ""}):
+                for build_root, expected in ((None, "requires --build-root"), (root / "cache", "GITHUB_OUTPUT")):
+                    with self.subTest(build_root=build_root), self.assertRaisesRegex(AssertionError, expected):
+                        driver.run_contract(commands, root, build_root=build_root, record_build_cache=True)
+            self.assertEqual(commands.calls, [])
+
+    def test_cli_forwards_optional_cache_checkpoint_flag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / "github-output"
+            marker.touch()
+            with patch.dict(driver.os.environ, {"GITHUB_OUTPUT": str(marker)}), \
+                 patch.object(driver, "run_contract", return_value=[]) as run:
+                self.assertEqual(driver.main(["--output-root", str(root / "evidence"),
+                                              "--build-root", str(root / "cache"), "--record-build-cache"]), 0)
+            self.assertIs(run.call_args.kwargs["record_build_cache"], True)
+
+    def test_cache_checkpoint_survives_contract_failure_but_never_records_failed_build(self):
+        for failure in ("prepare", "--product"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "repo/examples/AutomationFixture").mkdir(parents=True)
+                (root / "repo/examples/AutomationFixture/project.yml").write_text("name: fixture")
+                output = root / "evidence"
+                output.mkdir()
+                marker = root / "github-output"
+                marker.write_text("existing=value\n")
+                commands = FakeCommands(output, failure)
+                cache_module = unittest.mock.Mock()
+                def capture(repository, scratch):
+                    self.assertEqual((repository, scratch), (root / "repo", root / "cache"))
+                    self.assertTrue(any("--product" in args for args, _ in commands.calls))
+                    self.assertFalse(any("prepare" in args for args, _ in commands.calls))
+                cache_module.capture.side_effect = capture
+                with patch.object(driver, "ROOT", root / "repo"), \
+                     patch.dict(driver.os.environ, {"GITHUB_OUTPUT": str(marker)}), \
+                     patch.dict(driver.sys.modules, {"ci_native_cache": cache_module}):
+                    with self.assertRaisesRegex(RuntimeError, "injected"):
+                        driver.run_contract(commands, output, build_root=root / "cache", record_build_cache=True)
+                if failure == "prepare":
+                    cache_module.capture.assert_called_once()
+                    self.assertEqual(marker.read_text(), "existing=value\ncli_built=true\n")
+                else:
+                    cache_module.capture.assert_not_called()
+                    self.assertEqual(marker.read_text(), "existing=value\n")
 
     def test_cli_rejects_reusable_build_cache_inside_the_checkout(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -486,7 +537,7 @@ class OrchestrationTests(unittest.TestCase):
     def test_sigterm_enters_python_cleanup_and_restores_original_handler(self):
         with tempfile.TemporaryDirectory() as directory:
             original = driver.signal.getsignal(driver.signal.SIGTERM)
-            def terminate(commands, output, build_root=None, build_jobs=None):
+            def terminate(commands, output, build_root=None, build_jobs=None, record_build_cache=False):
                 handler = driver.signal.getsignal(driver.signal.SIGTERM)
                 handler(driver.signal.SIGTERM, None)
             with patch.object(driver, "run_contract", side_effect=terminate):
@@ -518,6 +569,28 @@ class OrchestrationTests(unittest.TestCase):
                  patch("builtins.print") as report:
                 self.assertEqual(driver.Commands(Path(directory)).run(["swift", "build"]), (0, ""))
             report.assert_called_once_with("Completed swift build: 2.5s (exit 0)", flush=True)
+
+    def test_json_command_failures_surface_exit_status_stderr_and_log_paths(self):
+        for stdout, stderr, code in (("", '{"error":"timedOut"}', 1), ("invalid JSON", "", 0),
+                                      ("invalid JSON", "diagnostic" * 1000, 1)):
+            with self.subTest(code=code, stdout=stdout), tempfile.TemporaryDirectory() as directory:
+                command = [driver.sys.executable, "-c",
+                           "import sys; sys.stdout.write(sys.argv[1]); sys.stderr.write(sys.argv[2]); sys.exit(int(sys.argv[3]))",
+                           stdout, stderr, str(code)]
+                with self.assertRaises(AssertionError) as failure:
+                    driver.Commands(Path(directory)).json(command, allowed=(0, 1))
+                message = str(failure.exception)
+                self.assertIn(f"invalid JSON (exit {code})", message)
+                self.assertIn(stderr[:4096] or "(empty)", message)
+                self.assertIn(".stdout.log", message)
+                self.assertIn(".stderr.log", message)
+                self.assertLess(len(message), 4700)
+
+    def test_json_command_retains_valid_nonzero_assessment_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            command = [driver.sys.executable, "-c", 'import sys; print(\'{"summary":"assertionFailed"}\'); sys.exit(1)']
+            self.assertEqual(driver.Commands(Path(directory)).json(command, allowed=(0, 1)),
+                             (1, {"summary": "assertionFailed"}))
 
 
 if __name__ == "__main__":

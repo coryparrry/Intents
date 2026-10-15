@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+from urllib.parse import unquote, urlparse
 
 from ci_ui_xctestrun import prepare_ui_xctestrun
 
@@ -55,6 +56,31 @@ def verify_ui_selection(log, selection):
             raise ValueError(f"Selected UI test did not pass: {test}")
 
 
+def verify_native_selection(document, selection):
+    """Use stable result identifiers, including Swift Testing suite symbols."""
+    passed = set()
+
+    def visit(node):
+        if not isinstance(node, dict):
+            raise ValueError("Malformed native test result node")
+        if node.get("nodeType") == "Test Case" and node.get("result") == "Passed":
+            parts = unquote(urlparse(node.get("nodeIdentifierURL", "")).path).strip("/").split("/")
+            if "FoundationEvalsTests" in parts:
+                passed.add("/".join(parts[parts.index("FoundationEvalsTests"):]))
+        for child in node.get("children", []):
+            visit(child)
+
+    if not isinstance(document, dict) or not isinstance(document.get("testNodes"), list):
+        raise ValueError("Missing native test result tree")
+    for node in document["testNodes"]:
+        visit(node)
+    for test in selection:
+        if not test.startswith("FoundationEvalsTests"):
+            continue
+        if not any(identifier == test or identifier.startswith(test + "/") for identifier in passed):
+            raise ValueError(f"Selected native test did not pass: {test}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--products", type=Path, required=True)
@@ -71,6 +97,11 @@ def main():
     finally:
         print(log.read_text(), flush=True)
     verify_ui_selection(log.read_text(), selection)
+    if any(test.startswith("FoundationEvalsTests") for test in selection):
+        result = subprocess.run([
+            "xcrun", "xcresulttool", "get", "test-results", "tests", "--path", str(args.result), "--compact",
+        ], check=True, capture_output=True, text=True)
+        verify_native_selection(json.loads(result.stdout), selection)
 
 
 if __name__ == "__main__":

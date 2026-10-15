@@ -40,12 +40,13 @@ class GateTests(unittest.TestCase):
         self.assertEqual(gate("regression", **{**common, "MACOS_SELECTION": "[]", "MACOS": "skipped"}), 0)
 
     def test_native_gate_rejects_any_missing_build_core_or_ui_shard(self):
-        common = dict(ROUTING="success", BUILD="success", CORE="success", UI="success", UI_SELECTED="true", STABILITY="skipped", STABILITY_SELECTED="false")
+        common = dict(ROUTING="success", BUILD="success", CORE="success", CORE_SELECTION='["FoundationEvalsTests"]', UI="success", UI_SELECTED="true", STABILITY="skipped", STABILITY_SELECTED="false")
         self.assertEqual(gate("build", **common), 0)
         for field in ("ROUTING", "BUILD", "CORE", "UI"):
             for result in ("failure", "cancelled", "skipped"):
                 self.assertNotEqual(gate("build", **{**common, field: result}), 0)
         self.assertEqual(gate("build", **{**common, "UI_SELECTED": "false", "UI": "skipped"}), 0)
+        self.assertEqual(gate("build", **{**common, "CORE_SELECTION": "[]", "CORE": "skipped"}), 0)
         self.assertNotEqual(gate("build", **{**common, "STABILITY_SELECTED": "true"}), 0)
         self.assertEqual(gate("build", **{**common, "STABILITY_SELECTED": "true", "STABILITY": "success"}), 0)
 
@@ -59,6 +60,15 @@ class GateTests(unittest.TestCase):
             self.assertIn("fail-fast: false", job(name))
             self.assertNotIn("max-parallel:", job(name))
         self.assertNotIn("--iterations", job("ui-tests"))
+
+    def test_simulator_cache_is_saved_only_after_successful_compilation(self):
+        workflow = job("automation-e2e")
+        self.assertIn("uses: actions/cache/restore@", workflow)
+        self.assertIn("--record-build-cache", workflow)
+        self.assertIn("always() && steps.contract.outputs.cli_built == 'true'", workflow)
+        self.assertIn("steps.cli-cache.outputs.cache-hit != 'true'", workflow)
+        self.assertIn("uses: actions/cache/save@", workflow)
+        self.assertIn("key: ${{ steps.cli-cache.outputs.cache-primary-key }}", workflow)
 
 
 if __name__ == "__main__":

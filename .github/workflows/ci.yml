@@ -33,6 +33,8 @@ jobs:
       native: ${{ steps.route.outputs.native }}
       ui: ${{ steps.route.outputs.ui }}
       automation_e2e: ${{ steps.route.outputs.automation_e2e }}
+      input_conversion: ${{ steps.route.outputs.input_conversion }}
+      native_tests: ${{ steps.route.outputs.native_tests }}
       regression: ${{ steps.route.outputs.regression }}
       swift_suites: ${{ steps.route.outputs.swift_suites }}
       python_tests: ${{ steps.route.outputs.python_tests }}
@@ -237,6 +239,7 @@ jobs:
   native-tests:
     name: Native core tests
     needs: [changes, native-build]
+    if: ${{ needs.changes.outputs.native_tests != '[]' }}
     runs-on: xcode-27
     timeout-minutes: 15
     steps:
@@ -251,7 +254,7 @@ jobs:
         run: tar -xf "$RUNNER_TEMP/native-tests.tar" -C "$RUNNER_TEMP"
       - name: Run core tests without rebuilding
         env:
-          CI_TEST_SELECTION: '["FoundationEvalsTests"]'
+          CI_TEST_SELECTION: ${{ needs.changes.outputs.native_tests }}
         run: |
           defaults write com.coryparry.FoundationEvals SUEnableAutomaticChecks -bool false
           defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
@@ -362,6 +365,7 @@ jobs:
           ROUTING: ${{ needs.changes.result }}
           BUILD: ${{ needs.native-build.result }}
           CORE: ${{ needs.native-tests.result }}
+          CORE_SELECTION: ${{ needs.changes.outputs.native_tests }}
           UI: ${{ needs.ui-tests.result }}
           UI_SELECTED: ${{ needs.changes.outputs.ui }}
           STABILITY: ${{ needs.picker-stability.result }}
@@ -369,7 +373,7 @@ jobs:
         run: |
           test "$ROUTING" = success
           test "$BUILD" = success
-          test "$CORE" = success
+          if [[ "$CORE_SELECTION" == '[]' ]]; then test "$CORE" = skipped; else test "$CORE" = success; fi
           if [[ "$UI_SELECTED" == true ]]; then test "$UI" = success; else test "$UI" = skipped; fi
           if [[ "$STABILITY_SELECTED" == true ]]; then test "$STABILITY" = success; else test "$STABILITY" = skipped; fi
 
@@ -390,7 +394,8 @@ jobs:
         id: toolchain
         run: echo "version=$(xcrun swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - name: Restore reusable Swift build
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: cli-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/automation-e2e-build
           key: ${{ runner.os }}-${{ runner.arch }}-automation-e2e-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved', '**/Package.resolved') }}-${{ github.sha }}
@@ -407,10 +412,16 @@ jobs:
             xcodebuild -downloadPlatform iOS -buildVersion 27.1.0.0 -architectureVariant arm64
           fi
       - name: Reproduce prepared-app automation
+        id: contract
         run: |
           python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/automation-e2e-build"
-          python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build"
-          python3 script/ci_native_cache.py capture --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/automation-e2e-build"
+          python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --record-build-cache
+      - name: Save successfully compiled automation CLI
+        if: ${{ always() && steps.contract.outputs.cli_built == 'true' && steps.cli-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/automation-e2e-build
+          key: ${{ steps.cli-cache.outputs.cache-primary-key }}
       - name: Upload automation evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -422,7 +433,7 @@ jobs:
   input-conversion:
     name: Input conversion diagnostic (Mac)
     needs: changes
-    if: ${{ needs.changes.outputs.automation_e2e == 'true' }}
+    if: ${{ needs.changes.outputs.input_conversion == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 30
     steps:

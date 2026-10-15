@@ -255,7 +255,16 @@ class Commands:
 
     def json(self, arguments, **options):
         code, raw = self.run(arguments, **options)
-        return code, json.loads(raw)
+        try:
+            return code, json.loads(raw)
+        except json.JSONDecodeError as error:
+            stem = self.output / f"{self.sequence:02d}-{Path(str(arguments[0])).name}"
+            stderr_path = stem.with_suffix(".stderr.log")
+            with stderr_path.open("rb") as diagnostics:
+                detail = diagnostics.read(4096).decode("utf-8", errors="replace").strip()
+            raise AssertionError(f"Command returned invalid JSON (exit {code}): {arguments[0]}; "
+                                 f"stderr: {detail or '(empty)'}; "
+                                 f"see {stem}.stdout.log and {stderr_path}") from error
 
 
 def run_plan(commands, cli, support, output, plan):
@@ -322,7 +331,12 @@ def simulator_configuration(runtimes, device_types, sdk_version=None):
     return runtime["identifier"], phone["identifier"]
 
 
-def run_contract(commands, output, build_root=None, build_jobs=None):
+def run_contract(commands, output, build_root=None, build_jobs=None, record_build_cache=False):
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if record_build_cache:
+        ensure(build_root is not None, "--record-build-cache requires --build-root")
+        ensure(github_output and Path(github_output).is_file(),
+               "--record-build-cache requires an existing GITHUB_OUTPUT file")
     jobs = build_jobs if build_jobs is not None else (os.cpu_count() or 1)
     ensure(jobs > 0, "Build jobs must be positive")
     _, runtimes = commands.json(["xcrun", "simctl", "list", "runtimes", "--json"])
@@ -343,6 +357,14 @@ def run_contract(commands, output, build_root=None, build_jobs=None):
         commands.run(["xcodegen", "generate", "--spec", fixture / "project.yml"], cwd=fixture)
         scratch = build_root or output / "swift-build"
         commands.run(["swift", "build", "--jobs", str(jobs), "--scratch-path", scratch, "--product", "intents-automation"], timeout=900)
+        if record_build_cache:
+            try:
+                from ci_native_cache import capture
+            except ModuleNotFoundError:
+                from script.ci_native_cache import capture
+            capture(ROOT, scratch)
+            with Path(github_output).open("a") as state:
+                state.write("cli_built=true\n")
         _, bin_path = commands.run(["swift", "build", "--scratch-path", scratch, "--show-bin-path"])
         cli = Path(bin_path.strip()) / "intents-automation"
         support, reports = output / "support", []
@@ -405,6 +427,8 @@ def main(argv=None):
     parser.add_argument("--output-root", type=Path, help="Fresh artifact directory outside the repository")
     parser.add_argument("--build-root", type=Path, help="Reusable Swift build cache outside the repository")
     parser.add_argument("--jobs", type=int, help="Swift build jobs (defaults to the runner CPU count)")
+    parser.add_argument("--record-build-cache", action="store_true",
+                        help="Checkpoint a successful CLI build for GitHub Actions cache saving")
     args = parser.parse_args(argv)
     if args.jobs is not None and args.jobs < 1:
         parser.error("--jobs must be positive")
@@ -425,7 +449,7 @@ def main(argv=None):
     previous_term = signal.signal(signal.SIGTERM, interrupted)
     try:
         summary["cases"] = run_contract(Commands(output, developer), output, build_root=build_root,
-                                        build_jobs=args.jobs)
+                                        build_jobs=args.jobs, record_build_cache=args.record_build_cache)
         summary.update(status="passed", codecFamiliesCompared=list(FAMILIES))
         print("Automation contract passed: 16 codec families, mixed assessment, failure and timeout recovery.")
         return 0

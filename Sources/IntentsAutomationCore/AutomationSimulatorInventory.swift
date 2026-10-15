@@ -9,10 +9,11 @@ public struct AutomationSimulator: Codable, Equatable, Sendable, Identifiable {
 }
 public enum AutomationSimulatorInventory {
     public static func read(developerDirectory: URL, workspace: URL) async throws -> [AutomationSimulator] {
+        // Fresh hosted simulators can stall this read-only inspection while services settle.
         let result = try await AutomationOwnedCommand().run(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
             arguments: ["simctl", "list", "devices", "available", "--json"], directory: workspace,
             environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DEVELOPER_DIR": try AutomationPath.canonical(developerDirectory).path,
-                          "HOME": FileManager.default.homeDirectoryForCurrentUser.path, "TMPDIR": NSTemporaryDirectory()], timeout: .seconds(15))
+                          "HOME": FileManager.default.homeDirectoryForCurrentUser.path, "TMPDIR": NSTemporaryDirectory()], timeout: .seconds(60))
         guard result.exitStatus == 0, !result.logsTruncated,
               let root = try JSONSerialization.jsonObject(with: result.stdout) as? [String: Any],
               let devices = root["devices"] as? [String: [[String: Any]]] else { throw AutomationContractError.missingEvidence("Simulator inventory is unavailable") }

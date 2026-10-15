@@ -80,6 +80,14 @@ class CoverageTests(unittest.TestCase):
             ]
         )
 
+    def test_website_changes_skip_app_and_simulator_tests(self):
+        paths = ["website/dist/app.js", "website/tests/demo.test.mjs"]
+        self.assert_selection(paths)
+        plan = routes.coverage(paths)
+        self.assertEqual(plan["native_tests"], [])
+        self.assertFalse(plan["automation_e2e"])
+        self.assertFalse(plan["input_conversion"])
+
     def test_release_workflow_fix_skips_native_and_unrelated_script_suites(self):
         self.assert_selection(
             [
@@ -153,10 +161,11 @@ class CoverageTests(unittest.TestCase):
             macos=routes.MACOS_TESTS,
         )
 
-    def test_scoring_change_only_runs_its_portable_suite(self):
+    def test_scoring_change_runs_its_portable_suite_and_run_ui(self):
         self.assert_selection(
             [routes.APP + "Services/MetricScorer.swift"],
             native=True,
+            ui=True,
             swift=("MetricScorerTests",),
         )
 
@@ -255,7 +264,7 @@ class CoverageTests(unittest.TestCase):
 
     def test_app_code_excluded_from_package_does_not_run_unrelated_portable_tests(self):
         self.assert_selection(
-            [routes.APP + "Services/EvaluationRunner.swift"], native=True
+            [routes.APP + "Services/EvaluationRunner.swift"], native=True, ui=True
         )
         self.assert_selection([routes.APP + "MCP/MCPServer.swift"], native=True)
         self.assert_selection(
@@ -283,14 +292,13 @@ class CoverageTests(unittest.TestCase):
         self.assert_selection(
             [routes.TESTS + "TimelineRenderingTests.swift"],
             native=True,
-            ui=True,
             swift=("TimelineRenderingTests",),
             python=("script.tests.test_ci_routes",),
         )
 
     def test_app_only_tests_compile_without_running_unrelated_portable_suites(self):
         self.assert_selection(
-            [routes.TESTS + "EvaluationJudgeTests.swift"], native=True, ui=True
+            [routes.TESTS + "EvaluationJudgeTests.swift"], native=True
         )
         self.assert_selection(
             ["FoundationEvals/FoundationEvalsUITests/WorkflowTraceUITests.swift"],
@@ -400,11 +408,16 @@ class MatrixTests(unittest.TestCase):
             "testOwnershipResetConfirmationCanBeCancelledWithoutChangingTheReservation",
             "testPreparationPickersUseStableIdentifiers",
         )}
+        expected.update({
+            "FoundationEvalsUITests/WorkspacePolishUITests/testSettingsTabsKeepTheirPrimaryControlsAccessible",
+            "FoundationEvalsUITests/WorkspacePolishUITests/testImportIssuesKeepCancelAndImportVisible",
+            "FoundationEvalsUITests/EvaluationReviewUITests",
+        })
         matrix = routes.full_coverage("fixture")["ui_matrix"]
         selections = [test for group in matrix for test in group["tests"]]
         self.assertEqual(set(selections), expected)
         self.assertEqual(len(selections), len(expected))
-        self.assertEqual(len(matrix), 5)
+        self.assertEqual(len(matrix), 8)
 
     def test_feature_view_runs_its_full_regression_class_without_other_features(self):
         for view, expected, unrelated in (
@@ -511,6 +524,160 @@ class MatrixTests(unittest.TestCase):
                         self.assertRegex(source, r"\bfunc " + re.escape(method[0]) + r"\(")
 
 
+class FeatureOwnershipTests(unittest.TestCase):
+    def groups(self, paths):
+        return {group["name"] for group in routes.coverage(paths)["ui_matrix"]}
+
+    def test_isolated_features_do_not_run_unrelated_ui(self):
+        cases = {
+            "Views/IntentLabView.swift": {"intent-lab"},
+            "Views/ModelControlsSection.swift": {"suite-editor"},
+            "Views/CustomProviderControls.swift": {"suite-editor"},
+            "Views/SuiteResultsView.swift": {"runs"},
+            "Views/RunReportSummary.swift": {"runs"},
+            "Views/WorkflowTraceView.swift": {"traces"},
+            "Models/WorkflowTracePresentation.swift": {"traces"},
+            "Models/ScenarioModels.swift": {"intent-lab"},
+            "Services/ScenarioCoordinator.swift": {"intent-lab"},
+            "Views/AppSettingsView.swift": {"settings"},
+            "Views/MCPSettingsView.swift": {"settings"},
+            "Services/TelemetryController.swift": {"settings"},
+            "Views/SuiteReviewView.swift": {"review"},
+            "Stores/EvaluationReviewDraftStore.swift": {"review"},
+            "Stores/AppAutomationStore.swift": {"automation"},
+            "Stores/AutomationNativePreparation.swift": {"automation"},
+            "Views/ProductionReviewPane.swift": {"traces"},
+            "Views/CaseImportView.swift": {"imports"},
+        }
+        for path, expected in cases.items():
+            with self.subTest(path=path):
+                self.assertEqual(self.groups([routes.APP + path]), expected)
+
+    def test_intent_lab_and_suite_editor_select_only_their_shared_class_methods(self):
+        for view, wanted, unrelated in (
+            ("IntentLabView", "testDuplicateParameterDraftsRemoveOneAtATime", "testCaseSearchKeepsEditorAndScoringSelectionAligned"),
+            ("ModelControlsSection", "testCaseSearchKeepsEditorAndScoringSelectionAligned", "testDuplicateParameterDraftsRemoveOneAtATime"),
+        ):
+            with self.subTest(view=view):
+                tests = {test for group in routes.coverage([routes.APP + "Views/" + view + ".swift"])["ui_matrix"] for test in group["tests"]}
+                prefix = routes.UI_TARGET + "FoundationEvalsUITests"
+                self.assertIn(prefix + "/" + wanted, tests)
+                self.assertNotIn(prefix + "/" + unrelated, tests)
+                self.assertNotIn(prefix, tests)
+
+    def test_combined_feature_changes_union_only_relevant_groups(self):
+        paths = [routes.APP + "Views/MCPSettingsView.swift", routes.APP + "Views/WorkflowTraceView.swift"]
+        self.assertEqual(self.groups(paths), {"settings", "traces"})
+        self.assertEqual(self.groups(paths), self.groups(list(reversed(paths))))
+        shared = routes.coverage(paths + [routes.APP + "ContentView.swift"])
+        self.assertLessEqual(set(routes.UI_BASELINE) | {"settings"}, {group["name"] for group in shared["ui_matrix"]})
+
+    def test_shared_lifecycle_navigation_and_storage_keep_full_baseline(self):
+        for path in (
+            "ContentView.swift", "FoundationEvalsApp.swift", "Stores/EvaluationStore.swift",
+            "Stores/EvaluationWorkspaceStatePersistence.swift", "Services/EvaluationWorkspacePersistence.swift",
+            "Views/WorkspaceSidebar.swift", "Views/Components/WorkspaceStyle.swift",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(self.groups([routes.APP + path]), routes.ALL_UI_GROUPS)
+
+    def test_isolated_production_and_service_changes_have_no_ui(self):
+        for path in (
+            "Views/ProductionWorkspaceView.swift", "Views/ProductionReportPane.swift", "Stores/ProductionWorkspaceStore.swift",
+            "Services/NativeProductionExecutor.swift",
+        ):
+            with self.subTest(path=path):
+                plan = routes.coverage([routes.APP + path])
+                self.assertTrue(plan["native"])
+                self.assertFalse(plan["ui"])
+                self.assertEqual(plan["ui_matrix"], [])
+
+    def test_services_select_only_the_ui_that_exercises_their_results(self):
+        for source, expected in (
+            ("MetricScorer.swift", {"runs"}),
+            ("EvaluationRunner.swift", {"runs"}),
+            ("EvaluationRunner+Judge.swift", {"runs"}),
+            ("ScenarioPersistence.swift", {"intent-lab"}),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(self.groups([routes.APP + "Services/" + source]), expected)
+
+    def test_all_native_unit_test_only_edits_skip_ui_but_keep_portable_suites(self):
+        for suite in ("EvaluationJudgeTests", "MetricScorerTests", "TimelineRenderingTests", "NavigationInteractionTests"):
+            with self.subTest(suite=suite):
+                plan = routes.coverage([routes.TESTS + suite + ".swift"])
+                self.assertTrue(plan["native"])
+                self.assertFalse(plan["ui"])
+                self.assertEqual(plan["swift_suites"], [suite] if suite in routes.SWIFT_SUITES else [])
+
+    def test_automation_and_intent_lab_package_sources_own_their_ui(self):
+        for path, expected, simulator, mac in (
+            ("Sources/IntentsAutomationCore/AutomationApplicationRunner.swift", {"automation"}, True, True),
+            ("Integration/AutomationHost/NativeMac/HostInputAdapterProbePlan.swift", {"automation"}, False, True),
+            ("Sources/IntentLabContracts/Contract.swift", {"automation", "intent-lab"}, True, True),
+            ("Sources/IntentLabTesting/Transport.swift", {"intent-lab"}, False, False),
+        ):
+            with self.subTest(path=path):
+                plan = routes.coverage([path])
+                self.assertEqual({group["name"] for group in plan["ui_matrix"]}, expected)
+                self.assertEqual(plan["swift_suites"], ["*"])
+                self.assertEqual(plan["automation_e2e"], simulator)
+                self.assertEqual(plan["input_conversion"], mac)
+
+    def test_package_test_only_changes_select_suites_or_helper_fallback_without_app_ui(self):
+        for path, expected in (
+            ("Tests/IntentsAutomationCLITests/AutomationCLITests.swift", ["AutomationCLITests"]),
+            ("Tests/FoundationEvalsDeveloperTests/DeveloperProtocolTests.swift", ["*"]),
+            ("Tests/IntentsAutomationCoreTests/Fixtures/new.json", ["*"]),
+        ):
+            with self.subTest(path=path):
+                plan = routes.coverage([path])
+                self.assertEqual(plan["swift_suites"], expected)
+                self.assertFalse(plan["native"])
+                self.assertFalse(plan["ui"])
+                self.assertFalse(plan["automation_e2e"])
+
+    def test_package_shared_helpers_and_top_level_tests_are_not_narrowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = "Tests/ExampleTests/ExampleTests.swift"
+            source = root / path
+            source.parent.mkdir(parents=True)
+            for helper in ("struct SharedFixture {}", "@Test func topLevelTest() {}", "extension SharedFixture {}"):
+                with self.subTest(helper=helper):
+                    source.write_text("struct ExampleTests {}\n" + helper)
+                    self.assertEqual(routes.coverage([path], root=root)["swift_suites"], ["*"])
+
+    def test_mac_canary_and_simulator_driver_are_independent(self):
+        mac = routes.coverage(["Tests/IntentsAutomationCoreTests/AutomationMacInputProbeFixtureTests.swift"])
+        self.assertEqual(mac["swift_suites"], ["AutomationMacInputProbeFixtureTests"])
+        self.assertTrue(mac["input_conversion"])
+        self.assertFalse(mac["automation_e2e"])
+        driver = routes.coverage(["script/automation_e2e.py"])
+        self.assertTrue(driver["automation_e2e"])
+        self.assertFalse(driver["input_conversion"])
+        self.assertTrue(routes.coverage(None)["input_conversion"])
+
+    def test_native_selection_is_attached_to_specific_and_full_plans(self):
+        self.assertEqual(routes.coverage(["README.md"])["native_tests"], [])
+        self.assertEqual(routes.coverage([routes.UI_TESTS + "WorkflowTraceUITests.swift"])["native_tests"], [])
+        self.assertEqual(routes.coverage([routes.APP + "Models/WorkflowTracePresentation.swift"])["native_tests"],
+                         ["FoundationEvalsTests/WorkflowTracePresentationTests"])
+        self.assertEqual(routes.coverage(None)["native_tests"], ["FoundationEvalsTests"])
+        self.assertEqual(routes.coverage(["script/ci_native_routes.py"])["native_tests"], ["FoundationEvalsTests"])
+
+    def test_every_feature_catalog_path_and_selector_exists(self):
+        for path in routes.UI_APP_GROUPS:
+            self.assertTrue((ROOT / routes.APP / path).is_file(), path)
+        for group in routes.ui_matrix(set(routes.UI_BASELINE) | set(routes.UI_FEATURE_TESTS), targeted=True):
+            for selector in group["tests"]:
+                _, suite, *method = selector.split("/")
+                source = (ROOT / routes.UI_TESTS / (suite + ".swift")).read_text()
+                self.assertRegex(source, r"\bclass " + re.escape(suite) + r"\s*:\s*XCTestCase")
+                if method:
+                    self.assertRegex(source, r"\bfunc " + re.escape(method[0]) + r"\(")
+
+
 class CatalogTests(unittest.TestCase):
     def test_every_portable_source_and_suite_has_a_route(self):
         manifest = (ROOT / "Package.swift").read_text()
@@ -603,11 +770,12 @@ class GitEventTests(unittest.TestCase):
             {"pull_request": {"base": {"sha": base}, "head": {"sha": head}}},
         )
         self.assertTrue(result["native"])
-        self.assertFalse(result["ui"])
+        self.assertTrue(result["ui"])
         self.assertTrue(result["regression"])
         self.assertEqual(result["swift_suites"], ["MetricScorerTests"])
         self.assertEqual(result["python_tests"], [])
-        self.assertEqual(result["ui_matrix"], [])
+        self.assertEqual(result["native_tests"], ["FoundationEvalsTests"])
+        self.assertEqual({group["name"] for group in result["ui_matrix"]}, {"runs"})
         self.assertEqual(result["python_matrix"], [])
 
     def test_push_uses_previous_tip_not_parent(self):

@@ -73,6 +73,32 @@ class NativeShardTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             runner.verify_ui_selection("Executed 0 tests", ["FoundationEvalsUITests/Foo"])
 
+    def test_native_swift_testing_symbols_are_checked_independently_of_display_names(self):
+        document = {"testNodes": [{"children": [{
+            "nodeType": "Test Case", "name": "A friendly display name", "result": "Passed",
+            "nodeIdentifierURL": "test://com.apple.xcode/Plan/FoundationEvalsTests/FooTests/checkValue",
+        }]}]}
+        runner.verify_native_selection(document, ["FoundationEvalsTests", "FoundationEvalsTests/FooTests"])
+        for missing in ("FoundationEvalsTests/OtherFooTests", "FoundationEvalsTests/FooTestsExtra"):
+            with self.assertRaisesRegex(ValueError, "did not pass"):
+                runner.verify_native_selection(document, [missing])
+
+    def test_each_native_suite_must_have_a_passing_case(self):
+        for result in ("Failed", "Skipped"):
+            document = {"testNodes": [{
+                "nodeType": "Test Case", "result": result,
+                "nodeIdentifierURL": "test://com.apple.xcode/Plan/FoundationEvalsTests/FooTests/checkValue",
+            }]}
+            with self.assertRaises(ValueError):
+                runner.verify_native_selection(document, ["FoundationEvalsTests/FooTests"])
+        with self.assertRaises(ValueError):
+            runner.verify_native_selection({"testNodes": []}, ["FoundationEvalsTests"])
+
+    def test_malformed_native_results_fail_instead_of_accepting_zero_tests(self):
+        for document in ({}, {"testNodes": None}, {"testNodes": [None]}):
+            with self.assertRaises(ValueError):
+                runner.verify_native_selection(document, ["FoundationEvalsTests"])
+
 
 if __name__ == "__main__":
     unittest.main()

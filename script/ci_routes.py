@@ -6,6 +6,11 @@ import re
 import subprocess
 from pathlib import Path
 
+try:
+    from ci_native_routes import declared_suites, select_native_tests
+except ModuleNotFoundError:
+    from script.ci_native_routes import declared_suites, select_native_tests
+
 ROOT = Path(__file__).resolve().parents[1]
 APP = "FoundationEvals/FoundationEvals/"
 TESTS = "FoundationEvals/FoundationEvalsTests/"
@@ -27,13 +32,13 @@ UI_BASELINE = {
         )
     ] + [UI_TARGET + "AutomationDependencyControlsUITests"],
 }
-# Narrow only leaf views whose UI contracts have dedicated feature tests. Shared
-# models, stores, components, navigation and unknown views retain the full baseline.
+# Feature ownership follows the view composition and store consumers. Shared
+# lifecycle, navigation, persistence and unknown app files retain the full baseline.
 UI_VIEW_GROUPS = {
-    **{"Views/" + name + ".swift": {"intent-lab", "suite-editor"} for name in (
+    **{"Views/" + name + ".swift": {"intent-lab"} for name in (
         "IntentLabView", "IntentLabHelp", "IntentLabSetupInstallerView",
         "ScenarioEditorView", "ScenarioGuidedCheckEditor", "ScenarioReportView",
-        "ScenarioCollectionView", "ScenarioReusableChecksView",
+        "ScenarioCollectionView", "ScenarioReusableChecksView", "AppleTestConnectionView",
     )},
     **{"Views/" + name + ".swift": {"suite-editor", "runs"} for name in (
         "SuiteCasesView", "SuiteEditorView", "SuiteEditorChrome", "SuiteRunControls",
@@ -51,22 +56,120 @@ UI_VIEW_GROUPS = {
         "NativeAutomationEvidenceView",
     )},
 }
+# These views share feature-specific state, rather than the whole workspace.
+UI_VIEW_GROUPS.update({
+    **{"Views/" + name + ".swift": {"suite-editor"} for name in (
+        "ModelControlsSection", "ModelCustomizationSection", "CoreAIModelControls",
+        "CustomProviderControls", "FeatureControlsView", "FeatureConfigurationSummary",
+        "ConversationConfigurationEditor", "JudgeConfigurationSection", "VisionToolControls",
+        "SpotlightSearchToolEditor", "PromptTextEditor",
+    )},
+    **{"Views/" + name + ".swift": {"runs"} for name in (
+        "SuiteResultsView", "RunReportSummary", "RunSummaryDashboard", "SuiteDashboardCards",
+        "SuiteExperimentsView", "DeveloperRunPresentation", "DeveloperDevicesView",
+    )},
+    "Views/RunDetailView.swift": {"runs", "traces", "review"},
+    "Views/RunAnalysisSection.swift": {"runs", "traces"},
+    **{"Views/" + name + ".swift": {"traces"} for name in (
+        "RunWorkflowPanel", "SampleTraceSection", "FeatureTraceSection", "ConversationTraceSection",
+        "SpotlightSearchTraceView", "JudgeEvidenceSection", "RefusalExplanationView",
+        "LiveResponseSection", "ProductionReviewPane",
+    )},
+    **{"Views/" + name + ".swift": {"review"} for name in (
+        "SuiteReviewView", "ReviewSampleEditor", "ReviewOutputView", "ReviewPatternsPane",
+        "ReviewJudgeChecksPane", "TranscriptFeedbackSection",
+    )},
+    **{"Views/" + name + ".swift": {"settings"} for name in (
+        "AppSettingsView", "MCPSettingsView", "JudgeConnectionsSettingsView", "TelemetrySettingsView",
+    )},
+    "Views/CaseImportView.swift": {"imports"},
+})
+UI_APP_GROUPS = {
+    **UI_VIEW_GROUPS,
+    "Services/EvaluationWorkspacePersistence.swift": None,
+    "Services/WorkspaceOverviewLoader.swift": None,
+    "Services/EvaluationAppControl.swift": None,
+    "Services/MCPWorkspaceControl.swift": None,
+    "Services/MCPStoreAuthority.swift": None,
+    **{"Models/" + name + ".swift": {"suite-editor"} for name in (
+        "EvaluationFeatureConfiguration", "EvaluationCoreAIConfiguration",
+        "EvaluationModelCustomization", "EvaluationVisionToolConfiguration", "EvaluationSpotlightConfiguration",
+    )},
+    "Models/EvaluationConversation.swift": {"suite-editor", "traces"},
+    **{"Models/" + name + ".swift": {"traces"} for name in (
+        "WorkflowTimelineInterval", "WorkflowTracePresentation", "EvaluationWorkflowTrace",
+        "EvaluationBuiltinToolTrace", "EvaluationJudgeTrace", "EvaluationRefusalTrace", "EvaluationLiveResponse",
+    )},
+    "Models/EvaluationTranscriptTrace.swift": {"traces", "review"},
+    "Models/EvaluationRunAnalysis.swift": {"runs", "traces"},
+    "Models/DevelopmentWorkflowModels.swift": {"runs"},
+    **{"Models/" + name + ".swift": {"intent-lab"} for name in (
+        "ScenarioModels", "ScenarioExecutionModels", "ScenarioCollectionModels",
+    )},
+    **{path: {"review"} for path in (
+        "Models/EvaluationReviewModels.swift", "Models/EvaluationJudgeCalibration.swift",
+        "Stores/EvaluationStore+Review.swift", "Stores/EvaluationReviewDraftStore.swift",
+        "Services/EvaluationReviewWorkflow.swift",
+    )},
+    "Stores/DeveloperRunnerStore.swift": {"runs", "suite-editor"},
+    "Services/ScenarioCoordinator.swift": {"intent-lab"},
+    "Services/ScenarioPersistence.swift": {"intent-lab"},
+    "Services/MetricScorer.swift": {"runs"},
+    "MCP/Installer/MCPSettingsController.swift": {"settings"},
+    "Services/TelemetryController.swift": {"settings"},
+    "Views/Components/RunToolbarProgress.swift": {"runs"},
+    "Views/Components/SolidTimelineBar.swift": {"traces"},
+    # Batch workspace has native tests but no dedicated authored UI test class.
+    **{path: set() for path in (
+        "Views/ProductionWorkspaceView.swift", "Views/ProductionWorkspaceSheets.swift",
+        "Views/ProductionReportPane.swift", "Stores/ProductionWorkspaceStore.swift",
+    )},
+}
+# FoundationEvalsUITests spans two features and the app menu. Keep its broad class
+# in the full baseline, but select only its relevant methods on isolated changes.
+UI_FEATURE_TESTS = {
+    "suite-editor": [UI_TARGET + "FoundationEvalsUITests/" + method for method in (
+        "testRunCommandsMatchInvalidSuiteControls", "testSuiteEditorShowsPrimaryRunControls",
+        "testCaseSelectionSurvivesSetupNavigation", "testSameNamedCasesHaveDistinctAccessibilityLabels",
+        "testCaseSearchKeepsEditorAndScoringSelectionAligned",
+    )],
+    "intent-lab": UI_BASELINE["intent-lab"] + [UI_TARGET + "FoundationEvalsUITests/" + method for method in (
+        "testIntentLabResultsAndRunControlsFitMinimumWindow", "testDuplicateParameterDraftsRemoveOneAtATime",
+    )],
+    "settings": [UI_TARGET + "WorkspacePolishUITests/testSettingsTabsKeepTheirPrimaryControlsAccessible"],
+    "imports": [UI_TARGET + "WorkspacePolishUITests/testImportIssuesKeepCancelAndImportVisible"],
+    "review": [UI_TARGET + "EvaluationReviewUITests"],
+}
+ALL_UI_GROUPS = set(UI_BASELINE) | set(UI_FEATURE_TESTS)
+
+
+def app_ui_groups(relative):
+    if relative in UI_APP_GROUPS:
+        return UI_APP_GROUPS[relative]
+    if relative == "Services/EvaluationRunner.swift" or relative.startswith("Services/EvaluationRunner+"):
+        return {"runs"}
+    if relative.startswith(("Stores/AppAutomation", "Stores/AutomationNative")) or relative in {
+        "Stores/AutomationCommandHistory.swift", "Stores/AutomationCapsuleExportSelection.swift",
+    }:
+        return {"automation"}
+    # Service-only changes still receive native unit tests, without unrelated UI.
+    if relative.startswith(("Services/", "MCP/", "Support/Telemetry")):
+        return set()
+    return None
+
 UI_FEATURE_CLASSES = {
     "intent-lab": {"IntentLabArrayEntryUITests"},
     "runs": {"FoundationEvalsRunLifecycleUITests"},
     "traces": {"WorkflowTraceUITests"},
     "automation": {"AppAutomationUITests"},
+    "review": {"EvaluationReviewUITests"},
 }
 NATIVE_UI_HELPERS = {
     "script/ci_native_tests.py": "script.tests.test_ci_native_tests",
     "script/ci_ui_display.py": "script.tests.test_ci_ui_display",
     "script/ci_ui_xctestrun.py": "script.tests.test_ci_ui_xctestrun",
 }
-UI_SUITES = {
-    "NavigationInteractionTests",
-    "TimelineRenderingTests",
-    "RunToolbarProgressTests",
-}
+
 
 # Include shared dependencies, not just the file named after a suite.
 PHYSICAL_SCENARIO_SUITES = {
@@ -179,6 +282,8 @@ FULL_COVERAGE_PATHS = {
     "script/tests/test_ci_routes.py",
     "script/tests/test_ci_run_tests.py",
     "script/tests/test_ci_native_cache.py",
+    "script/ci_native_routes.py",
+    "script/tests/test_ci_native_routes.py",
     "script/build_and_run.sh",
     "Package.swift",
     "Package.resolved",
@@ -208,6 +313,33 @@ def python_test_inventory(root=ROOT):
     } - MACOS_TESTS
 
 
+def package_test_suites(path, root):
+    source = root / path
+    if not path.endswith(".swift") or not source.is_file():
+        return {"*"}
+    # Explicit test-suite declarations only; extension/helper/fixture edits select
+    # the full package instead of guessing which suite consumes them.
+    return declared_suites(source.read_text()) or {"*"}
+
+
+def package_ui_groups(path):
+    if path.startswith((
+        "Sources/IntentsAutomationCore/", "Sources/IntentsAutomationTool/",
+        "Integration/AutomationHost/", "Tools/IntentsAutomationApplicationProbe/",
+        "examples/AutomationFixture/",
+    )) or path == "Integration/AutomationCLIResources.swift":
+        return {"automation"}
+    if path.startswith("Sources/IntentLabContracts/"):
+        return {"intent-lab", "automation"}
+    if path.startswith(("Sources/IntentLabTesting/", "Sources/IntentLabCoreTesting/", "Sources/IntentLabSiriBridge/")):
+        return {"intent-lab"}
+    if path.startswith("Sources/FoundationEvalsDeveloper/"):
+        return {"suite-editor", "runs"}
+    if path.startswith(("Sources/IntentsEvidenceCLI/", "Sources/ProductionEvalsCLI/")):
+        return set()
+    return None
+
+
 def python_matrix(selection):
     """Spread selected modules deterministically across at most four Linux jobs."""
     names = sorted(set(selection))
@@ -218,8 +350,12 @@ def python_matrix(selection):
     ]
 
 
-def ui_matrix(groups, extra_classes=()):
-    selections = {name: set(UI_BASELINE[name]) for name in sorted(groups)}
+def ui_matrix(groups, extra_classes=(), targeted=False):
+    catalog = {**UI_BASELINE, **UI_FEATURE_TESTS}
+    selections = {
+        name: set(catalog[name] if targeted or name not in UI_BASELINE else UI_BASELINE[name])
+        for name in sorted(groups)
+    }
     # New or edited test classes run in full, including methods outside the baseline.
     # A whole-class selector supersedes partial selectors everywhere, avoiding repeats.
     for suite in sorted(extra_classes):
@@ -245,51 +381,62 @@ def changed_ui_classes(paths, root):
     return classes
 
 
-def with_matrices(plan, groups=(), extra_classes=()):
-    plan["ui_matrix"] = ui_matrix(groups, extra_classes) if plan["ui"] else []
+def with_matrices(plan, groups=(), extra_classes=(), targeted=False):
+    plan["ui_matrix"] = ui_matrix(groups, extra_classes, targeted) if plan["ui"] else []
     plan["python_matrix"] = python_matrix(plan["python_tests"])
     return plan
 
 
-def full_coverage(reason, root=ROOT, extra_classes=()):
+def full_coverage(reason, root=ROOT, extra_classes=(), extra_groups=()):
     return with_matrices({
+        "full_coverage": True,
         "native": True,
         "ui": True,
         "automation_e2e": True,
+        "input_conversion": True,
         "swift_suites": ["*"],
         "python_tests": sorted(python_test_inventory(root)),
         "macos_tests": sorted(MACOS_TESTS),
         "reasons": [reason],
-    }, UI_BASELINE, extra_classes)
+    }, ALL_UI_GROUPS | set(extra_groups), extra_classes)
 
 
-def coverage(paths, root=ROOT):
+def coverage_plan(paths, root=ROOT):
     extra_classes = changed_ui_classes(paths, root)
+    affected_groups = set()
     # Gather affected feature classes before any full-coverage early return.
     for path in paths or ():
-        if path.startswith(APP + "Views/"):
-            for group in UI_VIEW_GROUPS.get(path.removeprefix(APP), ()):
-                extra_classes.update(UI_FEATURE_CLASSES.get(group, ()))
+        groups = app_ui_groups(path.removeprefix(APP)) if path.startswith(APP) else package_ui_groups(path)
+        affected_groups.update(groups or ())
+        for group in groups or ():
+            extra_classes.update(UI_FEATURE_CLASSES.get(group, ()))
     if paths is None:
         return full_coverage(
             "Full coverage: unsupported event, malformed payload, or unavailable Git history.",
             root,
         )
-    native = ui = automation_e2e = False
+    native = ui = automation_e2e = input_conversion = False
     ui_groups, ui_fallback = set(), False
     swift, python, macos, reasons = set(), set(), set(), set()
     for path in paths:
-        automation_e2e |= path.startswith((
+        automation_e2e |= not path.startswith("Integration/AutomationHost/NativeMac/") and path.startswith((
             "Sources/IntentsAutomationCore/", "Sources/IntentsAutomationTool/",
             "Integration/AutomationHost/", "examples/AutomationFixture/",
             "Tools/IntentsAutomationApplicationProbe/",
             "FoundationEvals/FoundationEvals/Stores/AppAutomation",
             "FoundationEvals/FoundationEvals/Stores/AutomationNative",
         )) or path in {"script/automation_e2e.py", "script/tests/test_automation_e2e.py"}
+        input_conversion |= path.startswith((
+            "Sources/IntentsAutomationCore/", "Integration/AutomationHost/",
+            "FoundationEvals/FoundationEvals/Stores/AppAutomation",
+            "FoundationEvals/FoundationEvals/Stores/AutomationNative",
+        )) or path in {
+            "Tests/IntentsAutomationCoreTests/AutomationMacInputProbeFixtureTests.swift",
+        }
         if path in FULL_COVERAGE_PATHS:
             return full_coverage(
                 f"Full coverage: {path} changes CI, dependencies, or the release candidate.",
-                root, extra_classes,
+                root, extra_classes, affected_groups,
             )
         if path in PYTHON_DEPENDENCIES:
             python.update(PYTHON_DEPENDENCIES[path])
@@ -322,21 +469,30 @@ def coverage(paths, root=ROOT):
             if module in NATIVE_UI_HELPERS.values():
                 native = ui = ui_fallback = True
             reasons.add("Test-only changes select the changed suites.")
+        elif path.startswith("Tests/"):
+            swift.update(package_test_suites(path, root))
+            reasons.add("Package test changes select declared suites; helper and fixture changes select the full package.")
+        elif package_ui_groups(path) is not None:
+            groups = package_ui_groups(path)
+            swift.add("*")
+            if groups:
+                native = ui = True
+                ui_groups.update(groups)
+            if path.startswith("Sources/IntentLabContracts/"):
+                automation_e2e = input_conversion = True
+            if path == "Integration/AutomationCLIResources.swift":
+                automation_e2e = input_conversion = True
+            reasons.add("Package source changes run portable contracts and only the owning app feature's UI.")
         elif path.startswith(APP):
             native = True
             relative = path.removeprefix(APP)
             swift.update(SWIFT_DEPENDENCIES.get(relative, set()))
-            needs_ui = relative in {
-                "MCP/Installer/MCPSettingsController.swift",
-                "Services/TelemetryController.swift",
-            } or not relative.startswith(("Services/", "MCP/"))
-            ui |= needs_ui
-            if needs_ui:
-                groups = UI_VIEW_GROUPS.get(relative)
-                if groups is None:
-                    ui_fallback = True
-                else:
-                    ui_groups.update(groups)
+            groups = app_ui_groups(relative)
+            if groups is None:
+                ui = ui_fallback = True
+            elif groups:
+                ui = True
+                ui_groups.update(groups)
             reasons.add(
                 "App changes build the native target; portable tests follow their production dependencies."
             )
@@ -345,14 +501,10 @@ def coverage(paths, root=ROOT):
             suite = Path(path).stem
             if suite in SWIFT_SUITES:
                 swift.add(suite)
-                ui |= suite in UI_SUITES
                 python.add(
                     "script.tests.test_ci_routes"
                 )  # Check suite names against the package catalog.
-            else:
-                # These tests only compile on the macOS 27 app target, not the portable package.
-                ui = True
-            ui_fallback |= suite not in SWIFT_SUITES or suite in UI_SUITES
+            # App unit-test edits never require unrelated user-interface tests.
             reasons.add(
                 "Native test changes build their target and run the affected portable suite, when available."
             )
@@ -365,8 +517,10 @@ def coverage(paths, root=ROOT):
             )
         elif path.startswith("FoundationEvals/"):
             return full_coverage(
-                f"Full coverage: native project/configuration change in {path}.", root, extra_classes
+                f"Full coverage: native project/configuration change in {path}.", root, extra_classes, affected_groups
             )
+        elif path.startswith("website/"):
+            reasons.add("Website changes use Linux website checks without native app tests.")
         elif path in METADATA_PATHS or path.startswith(
             ("docs/", ".github/assets/")
         ):
@@ -384,16 +538,23 @@ def coverage(paths, root=ROOT):
                 "Unmapped tooling changes conservatively select all script suites."
             )
         else:
-            return full_coverage(f"Full coverage: unclassified path {path}.", root, extra_classes)
+            return full_coverage(f"Full coverage: unclassified path {path}.", root, extra_classes, affected_groups)
     return with_matrices({
         "native": native,
         "ui": ui,
         "automation_e2e": automation_e2e,
-        "swift_suites": sorted(swift),
+        "input_conversion": input_conversion,
+        "swift_suites": ["*"] if "*" in swift else sorted(swift),
         "python_tests": sorted(python),
         "macos_tests": sorted(macos),
         "reasons": sorted(reasons),
-    }, UI_BASELINE if ui_fallback else ui_groups, extra_classes)
+    }, ALL_UI_GROUPS | ui_groups if ui_fallback else ui_groups, extra_classes, not ui_fallback)
+
+
+def coverage(paths, root=ROOT):
+    plan = coverage_plan(paths, root)
+    plan["native_tests"] = select_native_tests(paths, plan["native"], root, full=plan.get("full_coverage", False))
+    return plan
 
 
 def changed_paths(event_name, event, root):
@@ -443,14 +604,14 @@ def main():
         event = None
     paths = changed_paths(os.environ["GITHUB_EVENT_NAME"], event, Path.cwd())
     plan = coverage(paths)
-    outputs = {key: str(plan[key]).lower() for key in ("native", "ui", "automation_e2e")}
+    outputs = {key: str(plan[key]).lower() for key in ("native", "ui", "automation_e2e", "input_conversion")}
     outputs["regression"] = str(
         bool(plan["swift_suites"] or plan["macos_tests"])
     ).lower()
     outputs.update(
         {
             key: json.dumps(plan[key])
-            for key in ("swift_suites", "python_tests", "macos_tests", "ui_matrix", "python_matrix")
+            for key in ("swift_suites", "python_tests", "macos_tests", "ui_matrix", "python_matrix", "native_tests")
         }
     )
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
@@ -472,6 +633,7 @@ def main():
         summary.writelines(
             f"- {label}: {', '.join(plan[key]) or 'none'}\n"
             for label, key in (
+                ("Native unit suites", "native_tests"),
                 ("Portable Swift suites", "swift_suites"),
                 ("Linux unit tests", "python_tests"),
                 ("macOS script tests", "macos_tests"),
