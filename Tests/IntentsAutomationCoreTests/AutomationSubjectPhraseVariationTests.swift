@@ -7,12 +7,12 @@ final class AutomationSubjectPhraseVariationTests: XCTestCase, @unchecked Sendab
         let target = TargetIdentity(id: UUID().uuidString, kind: .simulator)
         let approval = RunApproval(runID: "phrasing", app: app, target: target, environmentID: "owned",
             effects: [.observe, .navigate], maximumActions: 30, disposable: true)
-        let plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, instruction: "Submit the approved request to AI",
-            endpoint: "AI response", approvedText: "Show my completed tasks", expectedVisibleText: "Completed tasks",
+        let plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, program: .init(operations: [.init(id: "request", kind: .fillBinding, locator: .init(.testId, "request"), binding: "approvedText"), .init(id: "send", kind: .tap, locator: .init(.testId, "send"))], bindings: ["approvedText": "Show my completed tasks"]),
+            expectedVisibleText: "Completed tasks",
             approval: approval, localeIdentifier: "en_GB")
         return (try .init(plan: plan), approval)
     }
-    func testSubjectRequestVariesOnlyExplicitFrozenBindingAndKeepsControllerFixed() throws {
+    func testSubjectRequestVariesOnlyExplicitFrozenBindingAndKeepsStepsFixed() throws {
         let (baseline, _) = try fixture()
         let phrase = try AutomationSubjectPhraseVariation.propose(baseline: baseline, slot: .uiRequestBinding("approvedText"),
             request: "List tasks I have completed", semanticJustification: "Developer reviewed the same completed-task request")
@@ -25,7 +25,6 @@ final class AutomationSubjectPhraseVariationTests: XCTestCase, @unchecked Sendab
         let repeated = try AutomationSubjectPhraseVariation.propose(baseline: baseline, slot: .uiRequestBinding("approvedText"),
             request: "List tasks I have completed", semanticJustification: "Another explanation of the same approval")
         XCTAssertEqual(phrase.frozen.digest, repeated.frozen.digest)
-        XCTAssertThrowsError(try AutomationGoalPhraseVariation.validate(phrase, baseline: baseline))
     }
     func testSubjectPhraseFlagCannotChangeRouteOracleBindingsEffectsOrBudgets() throws {
         let (baseline, _) = try fixture()
@@ -35,8 +34,8 @@ final class AutomationSubjectPhraseVariationTests: XCTestCase, @unchecked Sendab
             var changed = phrase, plan = phrase.frozen.plan
             switch field {
             case 0: plan.execution.kind = .siriText
-            case 1: plan.execution.operation = "Changed controller instruction"
-            case 2: plan.execution.uiProgram!.operations[0].goal!.endpoint.value = "Another destination"
+            case 1: plan.execution.operation = "Changed reviewed steps"
+            case 2: plan.execution.uiProgram!.operations[0].locator!.value = "Another input"
             case 3: plan.execution.uiProgram!.bindings["other"] = "Extra input"
             case 4: plan.requirements[0].expected = .text("Another oracle")
             case 5: plan.observations[0].operation = "Another observer"
@@ -87,17 +86,32 @@ final class AutomationSubjectPhraseVariationTests: XCTestCase, @unchecked Sendab
             XCTFail("Unmarked request change entered execution")
         } catch {}
         let rejectedCalls = await executor.calls; XCTAssertEqual(rejectedCalls, 0)
-        do {
-            _ = try await search.run(baseline: baseline, mutations: [phrase], approval: .init(run: run, approvedDigests: [baseline.digest, phrase.frozen.digest]), capabilities: .init(), executor: executor)
-            XCTFail("UI request trial without qualified session isolation was admitted")
-        } catch {}
-        let admittedCalls = await executor.calls; XCTAssertEqual(admittedCalls, 0)
+        let report = try await search.run(baseline: baseline, mutations: [phrase],
+            approval: .init(run: run, approvedDigests: [baseline.digest, phrase.frozen.digest]), capabilities: .init(), executor: executor)
+        let admittedCalls = await executor.calls
+        let admittedDigests = await executor.digests
+        XCTAssertEqual(admittedCalls, 4)
+        XCTAssertEqual(admittedDigests, Set([baseline.digest, phrase.frozen.digest]))
+        XCTAssertTrue(report.interruptions.isEmpty)
+        XCTAssertEqual(report.attempts.count, 4)
+        XCTAssertTrue(report.attempts.allSatisfy { $0.report.result.summary == .passed })
     }
 }
 
 private actor SubjectPhraseAdmissionExecutor: AutomationCampaignAttemptExecutor {
     var calls = 0
-    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) throws -> AutomationAttemptReport {
-        calls += 1; throw CancellationError()
+    var digests: Set<String> = []
+    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) -> AutomationAttemptReport {
+        calls += 1; digests.insert(frozen.digest)
+        let plan = frozen.plan, observer = plan.observations[0]
+        let fact = AutomationObservation(id: observer.id, app: plan.app, target: plan.target, environmentID: plan.environmentID,
+            attemptID: attemptID, stepID: observer.id, route: .ui, proof: .visibleState, value: plan.requirements[0].expected)
+        let receipts = [plan.execution, observer].enumerated().map { index, segment in
+            AutomationSegmentReceipt(scope: .init(runID: approval.runID, attemptID: attemptID, segmentID: segment.id, leaseGeneration: index + 1),
+                app: plan.app, target: plan.target, segmentID: segment.id, route: .ui, dispatched: true, completed: true,
+                observations: segment.phase == .observe ? [fact] : [])
+        }
+        return .init(attemptID: attemptID, result: AutomationAssessment.assess(plan: plan, attemptID: attemptID,
+            subjectDispatched: true, subjectCompleted: true, observations: [fact]), receipts: receipts, resourcesReleased: true)
     }
 }

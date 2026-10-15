@@ -19,7 +19,6 @@ UI_SUITES = {
 PHYSICAL_SCENARIO_SUITES = {
     "ScenarioPhysicalLeaseTests",
     "ScenarioPhysicalFailureTests",
-    "ScenarioPhysicalSiriQualificationTests",
 }
 SCENARIO_EXECUTION_SUITES = {"ScenarioContractsTests"} | PHYSICAL_SCENARIO_SUITES
 SWIFT_DEPENDENCIES = {
@@ -39,7 +38,7 @@ SWIFT_DEPENDENCIES = {
     "Models/ScenarioCollectionModels.swift": {"ScenarioCollectionTests"},
     "Services/ScenarioComparison.swift": {"ScenarioContractsTests"},
     "Services/ScenarioExecutionComparison.swift": {"ScenarioExecutionComparisonTests"},
-    "Services/ScenarioExecutionRecovery.swift": {"ScenarioContractsTests", "ScenarioPhysicalSiriQualificationTests"},
+    "Services/ScenarioExecutionRecovery.swift": {"ScenarioContractsTests"},
     "Services/ScenarioExpectationAuthoring.swift": {
         "ScenarioExpectationAuthoringTests", "ScenarioV3HarnessBridgeTests",
     },

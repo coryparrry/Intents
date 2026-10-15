@@ -26,7 +26,7 @@ public enum AutomationFirstRunPlanner {
             do { try validateContext(context, catalog: catalog, approval: approval, localeIdentifier: localeIdentifier) }
             catch {
                 trustedEvidence?.runtimeContext = nil
-                gaps.append("Supplied runtime context is stale or incomplete. Saved cases and recipes need fresh compatibility evidence.")
+                gaps.append("Supplied runtime context is stale or incomplete. Saved cases need fresh compatibility evidence.")
             }
         }
         var plannedDigests = Set<String>()
@@ -65,9 +65,6 @@ public enum AutomationFirstRunPlanner {
             var plan = AutomationCase(id: "first-view", app: approval.app, target: approval.target, environmentID: approval.environmentID, execution: segment, budget: budget)
             plan.provenance = ["ui.locale": localeIdentifier, "expectation": "Initial accessibility observation only; no business correctness rule", "firstRun": "automatic observation"]
             plan.provenance["catalog"] = try AutomationRecipeContext.catalogDigest(catalog)
-            if let runtime = trustedEvidence?.runtimeContext?.uiRuntimeManifestDigest {
-                plan.provenance["ui.runtimeManifestDigest"] = runtime
-            }
             try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, purpose: .review)
             // The shared authority counts activation and the initial read.
             let digest = try AutomationFrozenCase.planDigest(plan)
@@ -164,24 +161,11 @@ public enum AutomationFirstRunPlanner {
         #if os(macOS)
         let selections = evidence?.entitySelections[action.id] ?? [:]
         if !selections.isEmpty {
-            guard evidence?.recipes[action.id] == nil else {
-                throw AutomationContractError.missingEvidence("Combining entity selection and a text-producing recipe needs an approved advanced workflow")
-            }
             return try AutomationEntityActionPlanner.compile(catalog: catalog, actionID: action.id,
                 textInputs: inputs, selections: selections, expectations: [:], declaredEffects: declaredEffects,
                 approval: approval, capabilities: capabilities, purpose: .review)
         }
         #endif
-        if let source = evidence?.recipes[action.id] {
-            guard let current = evidence?.runtimeContext, source.context == current else {
-                throw AutomationContractError.missingEvidence("Saved setup recipe needs the exact current host, UI runtime and approved input context")
-            }
-            try validateContext(current, catalog: catalog, approval: approval, localeIdentifier: localeIdentifier)
-            return try AutomationTemplatePlanner.compile(catalog: catalog, actionID: action.id, inputs: inputs,
-                declaredEffects: declaredEffects, approval: approval, capabilities: capabilities,
-                recipe: source.recipe, recipeContext: source.context, recipeText: source.text,
-                consumingParameter: source.consumingParameter, purpose: .review)
-        }
         return try AutomationTemplatePlanner.compile(catalog: catalog, actionID: action.id, inputs: inputs,
             declaredEffects: declaredEffects, approval: approval, capabilities: capabilities, purpose: .review)
     }
@@ -204,7 +188,7 @@ public enum AutomationFirstRunPlanner {
                                       evidence: AutomationFirstRunInputEvidence?, capabilities: CapabilityProfile,
                                       localeIdentifier: String) throws {
         guard plan.app == catalog.app, plan.target == approval.target, plan.environmentID == approval.environmentID,
-              let evidence, plan.provenance["catalog"] == evidence.catalogDigest || plan.preparedMacBuildArtifacts?.catalogDigest == evidence.catalogDigest else {
+              let evidence, plan.provenance["catalog"] == evidence.catalogDigest || plan.preparedMacBuildArtifacts?.catalogDigest == evidence.catalogDigest || plan.preparedSimulatorBuildArtifacts?.catalogDigest == evidence.catalogDigest else {
             throw AutomationContractError.missingEvidence("Saved case does not match the exact app build, catalog, target and environment")
         }
         let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
@@ -212,23 +196,21 @@ public enum AutomationFirstRunPlanner {
             guard let context = evidence.runtimeContext else { throw AutomationContractError.missingEvidence("Saved case needs current runtime compatibility evidence") }
             try validateContext(context, catalog: catalog, approval: approval, localeIdentifier: localeIdentifier)
             if segments.contains(where: { $0.hostProgram != nil }) {
-                guard plan.preparedMacBuildArtifacts?.hostProductDigest == context.hostDigest || plan.provenance["firstRun.hostDigest"] == context.hostDigest else {
+                guard plan.preparedMacBuildArtifacts?.hostProductDigest == context.hostDigest || plan.preparedSimulatorBuildArtifacts?.hostProductDigest == context.hostDigest || plan.provenance["firstRun.hostDigest"] == context.hostDigest else {
                     throw AutomationContractError.missingEvidence("Saved case belongs to a different or unverified host build")
                 }
             }
             if segments.contains(where: { $0.uiProgram != nil }) {
                 guard plan.provenance["ui.locale"] == localeIdentifier else { throw AutomationContractError.missingEvidence("Saved case belongs to a different or unverified UI locale") }
-                if plan.provenance["ui.backend"] == "xcuitest" {
-                    guard plan.provenance["ui.preparedHostDigest"] == context.hostDigest
-                            || plan.provenance["firstRun.hostDigest"] == context.hostDigest,
-                          plan.provenance["ui.preparedCatalogDigest"].map({ $0 == context.catalogDigest }) ?? true else {
-                        throw AutomationContractError.missingEvidence("Saved case belongs to a different prepared UI host or catalog")
-                    }
-                } else {
-                    let runtimeKey = "ui.runtimeManifestDigest"
-                    guard let runtime = context.uiRuntimeManifestDigest, plan.provenance[runtimeKey] == runtime else {
-                        throw AutomationContractError.missingEvidence("Saved case belongs to a different or unverified UI runtime")
-                    }
+                guard plan.provenance["ui.backend"] == "xcuitest",
+                      plan.preparedSimulatorBuildArtifacts?.hostProductDigest == context.hostDigest
+                        || plan.preparedMacBuildArtifacts?.hostProductDigest == context.hostDigest
+                        || plan.provenance["ui.preparedHostDigest"] == context.hostDigest
+                        || plan.provenance["firstRun.hostDigest"] == context.hostDigest,
+                      plan.preparedSimulatorBuildArtifacts?.catalogDigest == context.catalogDigest
+                        || plan.preparedMacBuildArtifacts?.catalogDigest == context.catalogDigest
+                        || plan.provenance["ui.preparedCatalogDigest"] == context.catalogDigest else {
+                    throw AutomationContractError.missingEvidence("Saved case belongs to a different prepared UI host or catalog")
                 }
             }
         }
@@ -244,17 +226,11 @@ public enum AutomationFirstRunPlanner {
         let mutations = program.operations.filter { [.tap, .fillBinding, .scroll].contains($0.kind) }.count
         let reads = program.operations.reduce(0) { count, operation in
             switch operation.kind {
-            case .navigateGoal: return count + (operation.goal?.maximumCalls ?? 12) * 2
             case .observeProperty, .readProperty, .locate, .assertEndpoint: return count + 1
             default: return count
             }
         }
-        let goalMutations = program.operations.reduce(0) { count, operation in
-            guard operation.kind == .navigateGoal, let goal = operation.goal else { return count }
-            return count + min(goal.maximumCalls, goal.maximumActions)
-        }
-        // Goals reserve their readbacks before dispatch and may consume one mutation per call.
         // Include activation and the fresh read following each explicit program mutation.
-        return 1 + max(1, reads) + 2 * mutations + goalMutations
+        return 1 + max(1, reads) + 2 * mutations
     }
 }

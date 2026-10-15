@@ -33,7 +33,7 @@ public enum AutomationPreparedApplicationRecord {
             }
             let prepared = try load(app: expected.host.app, supportRoot: root)
             guard prepared == expected else { throw AutomationContractError.conflictingOperation }
-            try AutomationPreparedCodecAuthority.verify(prepared)
+            try AutomationPreparedArtifactIntegrity.verify(prepared)
             return prepared
         } catch {
             throw AutomationContractError.missingEvidence("The latest saved prepared files changed or are missing. Prepare the app again.")

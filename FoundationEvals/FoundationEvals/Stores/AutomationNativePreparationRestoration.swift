@@ -38,8 +38,7 @@ extension AppAutomationStore {
                     includesDependencies: value.source.includesDependencies == true,
                     servedJavaScriptProfile: javaScriptProfile, automaticMetroRecipe: automaticMetro)
                 try validatePreparedSelection(value, candidate: candidate, approval: approval)
-                let siriProfile = try await AutomationSiriCapabilitySnapshot.resolve(prepared: value,
-                    capabilities: AutomationEntityQuery.capabilities(value))
+                let siriProfile = AutomationPreparedCapabilities.base(value)
                 try Task.checkCancellation()
                 guard !closing, selectionEpoch == epoch else { return }
                 // Source access is useful for a later Check fix; execution itself

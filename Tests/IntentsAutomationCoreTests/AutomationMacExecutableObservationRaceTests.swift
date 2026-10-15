@@ -191,7 +191,7 @@ final class AutomationMacExecutableObservationRaceTests: XCTestCase {
             // current-UID census. The test explicitly arms only release, and
             // consumes that arm only at the owned child's relevant kernel read.
             guard mode != .sameCodeUnlink, transition.withLock({ $0.releaseTransitionArmed }) else {
-                return try Inventory.currentUser(helperExecutablePaths: paths)
+                return try Inventory.currentUser(watchedExecutablePaths: paths)
             }
             let child = child, mode = mode, transition = transition, uid = getuid()
             transition.withLock { $0.pathReads = 0 }

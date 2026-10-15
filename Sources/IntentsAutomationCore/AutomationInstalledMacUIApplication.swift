@@ -51,9 +51,7 @@ enum AutomationMacUIProgramPreflight {
         }
         try program.validate(phase: segment.phase)
         guard program.operations.allSatisfy({ operation in
-            operation.kind != .fillBinding && operation.kind != .scroll &&
-                operation.goal?.allowedFillBindings?.isEmpty != false &&
-                operation.goal?.minimumBindingUses?.values.contains(where: { $0 > 0 }) != true
+            operation.kind != .fillBinding && operation.kind != .scroll
         }) else { throw AutomationContractError.missingEvidence("Installed Mac review supports tap only") }
     }
 }

@@ -14,7 +14,6 @@ final class DeterministicWorkflowStoreTests: XCTestCase {
         XCTAssertEqual(program.operations[2].binding, "approvedText")
         XCTAssertEqual(program.bindings, ["approvedText": "Approved name"])
         XCTAssertEqual(program.operations.last?.locator, .init(.testId, "task-list"))
-        XCTAssertFalse(program.operations.contains { $0.kind == .navigateGoal })
     }
     func testReadOnlyWorkflowNeedsNoWriteControlOrText() throws {
         let program = try AutomationNativeWorkflowSteps.program(tapControls: "Tasks", textEntry: "", approvedText: "",
@@ -39,8 +38,8 @@ extension InstalledUIStoreTests {
         model.uiTapControls = "id:add"; model.uiTextEntryControl = "id:title"; model.uiSubmitControl = "Save"
         XCTAssertTrue(model.canRun)
         let request = try model.makeNativeRunRequest(runID: "concrete-workflow")
-        XCTAssertFalse(try XCTUnwrap(request.plan.execution.uiProgram).operations.contains { $0.kind == .navigateGoal })
-        XCTAssertEqual(request.plan.budget.controllerCalls, 1)
+        XCTAssertEqual(try XCTUnwrap(request.plan.execution.uiProgram).operations.map(\.kind), [.tap, .fillBinding, .tap, .assertEndpoint])
+        XCTAssertEqual(request.plan.budget.controllerCalls, 0)
         let host = try AutomationXCUITestPlan.assemble(plan: request.plan, approval: request.approval,
             attemptID: "native-workflow-preflight", leaseGeneration: 1)
         XCTAssertEqual(host.steps.map(\.kind), [.launch, .tap, .clearAndType, .tap, .waitFor, .screenshot])
@@ -76,13 +75,12 @@ extension InstalledUIStoreTests {
         XCTAssertEqual(setup.operations.map(\.kind), [.tap, .fillBinding, .tap, .assertEndpoint])
         XCTAssertEqual(setup.operations[1].binding, "approvedText")
         XCTAssertEqual(request.plan.setup.first?.attemptTextBindings, ["approvedText": "Invoice"])
-        XCTAssertFalse(setup.operations.contains { $0.kind == .navigateGoal })
         let host = try AutomationXCUITestPlan.assemble(plan: request.plan, approval: request.approval,
             attemptID: "native-fresh-preflight", leaseGeneration: 1)
         XCTAssertTrue(host.steps.contains { $0.kind == .checkFreshness })
         XCTAssertEqual(host.steps.filter { $0.segmentID == request.plan.execution.id }.count, 1)
         XCTAssertEqual(request.plan.budget.subjectOperations, 1)
-        XCTAssertEqual(request.plan.budget.controllerCalls, 1)
+        XCTAssertEqual(request.plan.budget.controllerCalls, 0)
         XCTAssertNil(request.plan.provenance["ui.runtimeTeamID"])
     }
 }

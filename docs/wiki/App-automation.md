@@ -39,7 +39,7 @@ Choose a target with `--target` instead of `--scheme`. Destinations are `sim:<ud
 
 A run request contains a concrete `AutomationCase` plan and explicit install/boot consent. It binds approval to that plan's app, target, environment, effects, budget and digest. The CLI resolves capabilities from the retained preparation and actual execution path. It prints JSON, keeps the runner's verdict, and returns a nonzero status for failed, timed-out or unreleased attempts.
 
-The legacy `IntentsAutomationApplicationProbe --profile` and `--plan-profile` modes remain available for existing planning tools. Their profiles also cannot carry capabilities. The e2e script provides concrete plan examples in its temporary output.
+The e2e script provides concrete plan examples in its temporary output. Historical probe-profile and controller-recipe execution modes have been removed; use the commands above with a reviewed deterministic plan.
 
 ## Review checks in the app
 
@@ -49,7 +49,7 @@ After preparation, **Run checks** lists the initial observations and discovered 
 
 **Connected app feature** runs a feature registered through an existing trusted connection. Review its app version, feature version, effects, and request before sending it. An expected response stays in Intents for independent comparison. A timeout or disconnect leaves the outcome unresolved and prevents automatic repetition; registration does not verify remote build bytes or model internals.
 
-Physical Siri failure search additionally requires a reviewed disposable record, its initial and expected state, an independent observer, and a matching reset action. Exact requests need submission-channel qualification before search. Qualification, restoration, trials, and confirmation share the reviewed budget, and uncertain submission or release stops the campaign. Local unit tests do not qualify a real device or account.
+Physical Siri failure search additionally requires a reviewed disposable record, its initial and expected state, an independent observer, and a matching reset action. Each trial runs the reviewed request and assesses the independently observed state change. Restoration, trials, and confirmation share the reviewed budget, and uncertain submission or release stops the campaign. Local unit tests do not qualify a real device or account.
 
 ## Evidence boundaries
 

@@ -60,36 +60,28 @@ public actor AutomationApplicationRunner {
     private var running = false
     private var servingJavaScript = false
     private var failedPreparation: (attemptID: String, planDigest: String, runID: String, report: AutomationAttemptReport)?
-    private var liveRecipeEvidence: AutomationLiveRecipeEvidence?
-    private var lastSetupCapture: AutomationControllerSetupCapture?
-    private var liveFixtureEvidence: [AutomationLiveRecipeEvidence] = []
-    private var latestFreshFixtureAttemptID: String?
     private let simulatorInventory: @Sendable (URL, URL) async throws -> [AutomationSimulator]
     private let physicalAliasReader: (@Sendable (URL, URL) async throws -> [String: String])?
-    /// Explicit internal simulation seam; public construction always uses owned authority.
-    private let nativeCodecResolver: (@Sendable (CapabilityProfile, AutomationPreparedApplication, AutomationCase) async throws -> CapabilityProfile)?
     public init(supportRoot: URL, developerDirectory: URL) throws {
         self.supportRoot = supportRoot; self.developerDirectory = try AutomationPath.canonical(developerDirectory)
         try FileManager.default.createDirectory(at: supportRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         leases = try AutomationDeviceLeaseManager(storeURL: supportRoot.appendingPathComponent("target-leases.json"))
         simulatorInventory = { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) }
         physicalAliasReader = nil
-        nativeCodecResolver = nil
     }
     init(supportRoot: URL, developerDirectory: URL,
          simulatorInventory: @escaping @Sendable (URL, URL) async throws -> [AutomationSimulator],
-         nativeCodecResolver: (@Sendable (CapabilityProfile, AutomationPreparedApplication, AutomationCase) async throws -> CapabilityProfile)? = nil,
          physicalAliasReader: (@Sendable (URL, URL) async throws -> [String: String])? = nil) throws {
         let developer = try AutomationPath.canonical(developerDirectory)
         self.supportRoot = supportRoot; self.developerDirectory = developer
         try FileManager.default.createDirectory(at: supportRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let manager = try AutomationDeviceLeaseManager(storeURL: supportRoot.appendingPathComponent("target-leases.json"))
         leases = manager
-        self.simulatorInventory = simulatorInventory; self.nativeCodecResolver = nativeCodecResolver
+        self.simulatorInventory = simulatorInventory
         self.physicalAliasReader = physicalAliasReader
 
     }
-    /// Resolve independently qualified codecs before a campaign's preflight.
+    /// Resolve implemented conversions from the retained host before campaign preflight.
     /// The runner repeats this verification before every actual attempt.
     public func capabilitiesForExecution(subject: AutomationApplicationSubject, plan: AutomationCase,
                                          capabilities: CapabilityProfile) async throws -> CapabilityProfile {
@@ -104,177 +96,24 @@ public actor AutomationApplicationRunner {
         }
         running = true; defer { running = false }
         try subject.validate(plan: plan)
-        if let prepared = subject.prepared, plan.target.kind == .physical {
-            let resolved = try await AutomationSimulatorCodecQualification.enrich(capabilities, prepared: prepared)
-            return try await AutomationSiriCapabilitySnapshot.resolve(prepared: prepared, capabilities: resolved)
-        }
-        if let prepared = subject.prepared, plan.target.kind == .nativeMac {
-            return try await qualifiedNativeCapabilities(prepared: prepared, plan: plan, approval: approval, capabilities: capabilities)
-        }
-        guard let prepared = subject.prepared, plan.target.kind == .simulator else { return capabilities }
+        guard let prepared = subject.prepared else { return capabilities }
         try AutomationPreparedProgramContract.validate(plan, catalog: prepared.catalog)
-        let required = Set((plan.setup + [plan.execution] + plan.observations + plan.cleanup).flatMap(\.requiredCapabilities))
-        return try await AutomationSimulatorCodecQualification.enrich(capabilities, prepared: prepared,
-            requiredCapabilities: required, developerDirectory: developerDirectory, workspace: supportRoot)
-    }
-
-    /// Review a separate, bounded conversion-only probe before authorizing it.
-    public func reviewNativeInputAdapters(prepared: AutomationPreparedApplication, actionID: String,
-                                          parameterNames: [String]) throws -> AutomationNativeInputAdapterReview {
-        try validatePreparedToolchain(prepared)
-        return try AutomationNativeCodecQualification.review(.init(prepared: prepared, actionID: actionID, parameterNames: parameterNames))
-    }
-    /// Passing a reviewed probe digest authorizes this read-only calibration only.
-    /// The selected action is never dispatched; only assigned input members are read.
-    public func qualifyNativeInputAdapters(prepared: AutomationPreparedApplication, actionID: String, parameterNames: [String],
-                                            reviewedProbeDigest: String, runID: String, attemptID: String) async throws -> AutomationNativeInputAdapterReport {
-        try validatePreparedToolchain(prepared)
-        guard !running, !servingJavaScript else { throw AutomationContractError.targetBusy }
-        running = true; defer { running = false }
-        return try await AutomationNativeCodecQualification.qualify(
-            plan: .init(prepared: prepared, actionID: actionID, parameterNames: parameterNames), reviewedProbeDigest: reviewedProbeDigest,
-            runID: runID, attemptID: attemptID, developer: developerDirectory, root: supportRoot, leases: leases)
-    }
-
-    private func resolveNativeCapabilities(_ capabilities: CapabilityProfile, prepared: AutomationPreparedApplication,
-                                           plan: AutomationCase) async throws -> CapabilityProfile {
-        if let nativeCodecResolver { return try await nativeCodecResolver(capabilities, prepared, plan) }
-        return try await AutomationNativeCodecAuthority.shared.enrich(capabilities, prepared: prepared, plan: plan,
-            developer: developerDirectory, workspace: supportRoot)
-    }
-
-    /// Shared approved conversion path for direct Run and campaign preflight.
-    private func qualifiedNativeCapabilities(prepared: AutomationPreparedApplication, plan: AutomationCase,
-                                              approval: RunApproval?, capabilities: CapabilityProfile) async throws -> CapabilityProfile {
-        try AutomationPreparedProgramContract.validate(plan, catalog: prepared.catalog)
-        var nativeCapabilities = try await resolveNativeCapabilities(capabilities, prepared: prepared, plan: plan)
-        guard let approval else { return nativeCapabilities }
-        let allReviews = try AutomationNativeInputAdapterPlanning.reviews(plan: plan, prepared: prepared, capabilities: nativeCapabilities)
-        let reviews = allReviews.filter { review in
-            let action = prepared.catalog.systemActions.first { $0.id == review.actionID }
-            return action?.parameters.contains { parameter in
-                review.parameterNames.contains(parameter.name) && parameter.family.map { !nativeCapabilities.supports(["apple.codec." + $0]) } == true
-            } == true
-        }
-        if !reviews.isEmpty {
-            guard approval.approvedCaseDigest == (try AutomationFrozenCase.planDigest(plan)) else {
-                throw AutomationContractError.missingEvidence("Review this exact workflow before checking its native input conversions")
-            }
-            try PlanValidator.validate(plan, approval: approval, capabilities: nativeCapabilities, purpose: .review)
-            for review in reviews {
-                try Task.checkCancellation()
-                guard plan.nativeInputAdapterReviews?.filter({ $0.actionID == review.actionID }) == [review] else {
-                    throw AutomationContractError.missingEvidence("Review the read-only parameter checks for this native workflow")
-                }
-                let calibration = try await AutomationNativeCodecQualification.qualify(
-                    plan: .init(prepared: prepared, actionID: review.actionID, parameterNames: review.parameterNames),
-                    reviewedProbeDigest: review.probeDigest, runID: approval.runID, attemptID: UUID().uuidString,
-                    developer: developerDirectory, root: supportRoot, leases: leases)
-                guard calibration.resourcesReleased, calibration.failure == nil else {
-                    throw AutomationContractError.missingEvidence(calibration.failure ?? "Native parameter checks did not release their host")
-                }
-            }
-            nativeCapabilities = try await resolveNativeCapabilities(nativeCapabilities, prepared: prepared, plan: plan)
-        }
-        try Task.checkCancellation()
-        return nativeCapabilities
-    }
-
-    /// Calibrate a narrowly approved record-state workflow through actual Siri and
-    /// independent before/after queries. Only direct released passing execution
-    /// can create process-local routing authority for this exact frozen case.
-    public func qualifySiriWorkflow(prepared: AutomationPreparedApplication, plan: AutomationCase,
-                                    approval: RunApproval, capabilities: CapabilityProfile, attemptID: String,
-                                    allowInstall: Bool, campaignBudget: AutomationCampaignBudget? = nil) async throws -> AutomationAttemptReport {
-        try validatePreparedToolchain(prepared)
-        guard !running, !servingJavaScript, allowInstall else { throw AutomationContractError.conflictingOperation }
-        running = true; defer { running = false }
-        let conversionOS = await AutomationPhysicalInputAdapterAuthority.shared.osBuild(prepared: prepared, plan: plan)
-        guard plan.provenance["siri.repeatableReset"] == nil || conversionOS != nil else {
-            throw AutomationContractError.missingEvidence("The exact physical reset conversion qualification has expired or is absent")
-        }
-        let authority = try AutomationSiriRouteAuthority(plan: plan, approval: approval, calibrationOSBuild: conversionOS)
-        try await registerPhysicalAliases(plan.target)
-        return try await AutomationPreparedPhysicalCampaign.run(prepared: prepared, plan: plan, approval: approval,
-            capabilities: capabilities, attemptID: attemptID, root: supportRoot, developer: developerDirectory,
-            leases: leases, campaignBudget: campaignBudget, siriAuthority: authority)
-    }
-
-    public func qualifyPhysicalSiriResetInputs(prepared: AutomationPreparedApplication, baseline: AutomationCase, actionID: String,
-                                               approval: RunApproval, capabilities: CapabilityProfile, attemptID: String, allowInstall: Bool) async throws -> AutomationPhysicalInputAdapterReport {
-        guard !running, !servingJavaScript, allowInstall else { throw AutomationContractError.targetBusy }
-        try validatePreparedToolchain(prepared)
-        running = true; defer { running = false }
-        return try await AutomationPhysicalInputAdapterQualification.run(prepared: prepared, baseline: baseline, actionID: actionID,
-            approval: approval, capabilities: capabilities, attemptID: attemptID, root: supportRoot, developer: developerDirectory, leases: leases)
-    }
-    public func qualifiedPhysicalSiriResetCapabilities(prepared: AutomationPreparedApplication, baseline: AutomationCase, actionID: String,
-                                                      approval: RunApproval, capabilities: CapabilityProfile) async throws -> CapabilityProfile {
-        var review = capabilities
-        if review.records["apple.intent.invoke"] == nil || review.records["apple.intent.invoke"]?.state == .unknown {
-            review.records["apple.intent.invoke"] = .init(state: .available, reason: "Review-only compiled reset definition", probeVersion: "review-only", evidence: [])
-        }
-        let plan = try AutomationSiriRepeatableQualification.restoring(baseline, catalog: prepared.catalog, actionID: actionID,
-            approval: approval, capabilities: review)
-        return await AutomationPhysicalInputAdapterAuthority.shared.applying(prepared: prepared, plan: plan, capabilities: capabilities)
-    }
-
-    /// Runtime authority is looked up in the owned live registry, never restored from saved data.
-    public func qualifiedSiriAuthority(prepared: AutomationPreparedApplication, plan: AutomationCase,
-                                       approval: RunApproval) async -> AutomationSiriRouteAuthority? {
-        await AutomationSiriQualificationAuthority.shared.admission(prepared: prepared, plan: plan, approval: approval)
-    }
-
-    public func runQualifiedSiriWorkflow(prepared: AutomationPreparedApplication, plan: AutomationCase,
-                                        approval: RunApproval, capabilities: CapabilityProfile, attemptID: String,
-                                        authority: AutomationSiriRouteAuthority, campaignBudget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
-        guard !running, !servingJavaScript else { throw AutomationContractError.targetBusy }
-        try validatePreparedToolchain(prepared)
-        try AutomationSiriRepeatableQualification.validate(plan: plan, approval: approval, authority: authority)
-        running = true; defer { running = false }
-        guard let live = await qualifiedSiriAuthority(prepared: prepared, plan: plan, approval: approval),
-              live.evidenceDigest == authority.evidenceDigest, live.isRepeatableQualification else {
-            throw AutomationContractError.missingEvidence("The exact live Siri qualification has expired or was revoked")
-        }
-        try await registerPhysicalAliases(plan.target)
-        return try await AutomationPreparedPhysicalCampaign.run(prepared: prepared, plan: plan, approval: approval,
-            capabilities: capabilities, attemptID: attemptID, root: supportRoot, developer: developerDirectory,
-            leases: leases, campaignBudget: campaignBudget, siriAuthority: live)
+        return try AutomationPreparedCapabilities.resolving(capabilities, prepared: prepared)
     }
 
     public func run(prepared: AutomationPreparedApplication, plan: AutomationCase, approval: RunApproval,
-                    capabilities: CapabilityProfile, attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget? = nil,
-                    fixtureTracker: AutomationFreshFixtureTracker? = nil, qualifyingFreshBindings: [AutomationFreshFixtureBinding]? = nil) async throws -> AutomationAttemptReport {
-        try await run(prepared: prepared, plan: plan, approval: approval, capabilities: capabilities, attemptID: attemptID,
-            allowBootAndInstall: allowBootAndInstall, campaignBudget: campaignBudget, fixtureTracker: fixtureTracker,
-            qualifyingFreshBindings: qualifyingFreshBindings, uiRequestFixtureTracker: nil)
-    }
-    public func run(subject: AutomationApplicationSubject, plan: AutomationCase, approval: RunApproval,
-                    capabilities: CapabilityProfile, attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget? = nil,
-                    fixtureTracker: AutomationFreshFixtureTracker? = nil, qualifyingFreshBindings: [AutomationFreshFixtureBinding]? = nil) async throws -> AutomationAttemptReport {
-        try await run(subject: subject, plan: plan, approval: approval, capabilities: capabilities, attemptID: attemptID,
-            allowBootAndInstall: allowBootAndInstall, campaignBudget: campaignBudget, fixtureTracker: fixtureTracker,
-            qualifyingFreshBindings: qualifyingFreshBindings, uiRequestFixtureTracker: nil)
-    }
-
-    public func run(prepared: AutomationPreparedApplication, plan: AutomationCase, approval: RunApproval,
-                    capabilities: CapabilityProfile, attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget? = nil,
-                    fixtureTracker: AutomationFreshFixtureTracker? = nil, qualifyingFreshBindings: [AutomationFreshFixtureBinding]? = nil, uiRequestFixtureTracker: AutomationUIRequestFixtureTracker?) async throws -> AutomationAttemptReport {
+                    capabilities: CapabilityProfile, attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget? = nil, excludedEntityIDs: Set<String> = []) async throws -> AutomationAttemptReport {
         try await run(subject: .prepared(prepared), plan: plan, approval: approval, capabilities: capabilities,
-            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: campaignBudget,
-            fixtureTracker: fixtureTracker, qualifyingFreshBindings: qualifyingFreshBindings, uiRequestFixtureTracker: uiRequestFixtureTracker)
+            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: campaignBudget, excludedEntityIDs: excludedEntityIDs)
     }
     public func run(subject: AutomationApplicationSubject, plan: AutomationCase, approval: RunApproval,
-                    capabilities: CapabilityProfile, attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget? = nil,
-                    fixtureTracker: AutomationFreshFixtureTracker? = nil, qualifyingFreshBindings: [AutomationFreshFixtureBinding]? = nil, uiRequestFixtureTracker: AutomationUIRequestFixtureTracker?) async throws -> AutomationAttemptReport {
+                    capabilities: CapabilityProfile, attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget? = nil, excludedEntityIDs: Set<String> = []) async throws -> AutomationAttemptReport {
         guard !running, !servingJavaScript else { throw AutomationContractError.targetBusy }
         try validatePreparedToolchain(subject.prepared)
         guard let prepared = subject.prepared, let profile = prepared.servedJavaScriptProfile else {
             guard subject.app.servedJavaScriptDigest == nil else { throw AutomationContractError.invalidIdentity }
             return try await runDirect(subject: subject, plan: plan, approval: approval, capabilities: capabilities,
-                attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: campaignBudget,
-                fixtureTracker: fixtureTracker, qualifyingFreshBindings: qualifyingFreshBindings,
-                uiRequestFixtureTracker: uiRequestFixtureTracker)
+                attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: campaignBudget, excludedEntityIDs: excludedEntityIDs)
         }
         guard let expected = prepared.servedJavaScriptIdentity, subject.app.servedJavaScriptDigest == (try expected.digest),
               subject.app == plan.app, subject.target == plan.target,
@@ -283,23 +122,17 @@ public actor AutomationApplicationRunner {
               try AutomationPath.canonical(URL(fileURLWithPath: path)).path == path else { throw AutomationContractError.invalidIdentity }
         servingJavaScript = true; defer { servingJavaScript = false }
         try subject.validate(plan: plan)
-        var qualifiedCapabilities = capabilities
-        let required = Set((plan.setup + [plan.execution] + plan.observations + plan.cleanup).flatMap(\.requiredCapabilities))
-        qualifiedCapabilities = try await AutomationSimulatorCodecQualification.enrich(qualifiedCapabilities, prepared: prepared,
-            requiredCapabilities: required, developerDirectory: developerDirectory, workspace: supportRoot)
-        try PlanValidator.validate(plan, approval: approval, capabilities: qualifiedCapabilities)
-        let executionCapabilities = qualifiedCapabilities
+        let executionCapabilities = try AutomationPreparedCapabilities.resolving(capabilities, prepared: prepared)
+        try PlanValidator.validate(plan, approval: approval, capabilities: executionCapabilities)
         let supervisor = AutomationServedJavaScriptSupervisor()
         return try await supervisor.withSession(profile: profile, manifest: prepared.source,
             app: subject.app, target: subject.target, frozenRoot: URL(fileURLWithPath: path), developerDirectory: developerDirectory,
             supportRoot: supportRoot, expected: expected,
             requiresNativeConsumer: profile.automaticMetro != nil && (plan.setup + [plan.execution] + plan.observations + plan.cleanup).contains(where: \.usesUIControl)) { _ in
                 try await self.runDirect(subject: subject, plan: plan, approval: approval, capabilities: executionCapabilities,
-                    attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: campaignBudget,
-                    fixtureTracker: fixtureTracker, qualifyingFreshBindings: qualifyingFreshBindings,
-                    uiRequestFixtureTracker: uiRequestFixtureTracker,
+                    attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: campaignBudget, excludedEntityIDs: excludedEntityIDs,
                     javaScriptFinalization: { try await supervisor.finishCurrent(profile: profile, manifest: prepared.source, frozenRoot: URL(fileURLWithPath: path)) },
-                    javaScriptResponseEvidence: { await supervisor.responseEvidence() }, codecsQualified: true)
+                    javaScriptResponseEvidence: { await supervisor.responseEvidence() }, codecsResolved: true)
             }
     }
     private func validatePreparedToolchain(_ prepared: AutomationPreparedApplication?) throws {
@@ -308,15 +141,12 @@ public actor AutomationApplicationRunner {
         }
     }
     private func runDirect(subject: AutomationApplicationSubject, plan: AutomationCase, approval: RunApproval,
-                    capabilities: CapabilityProfile, attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget?,
-                    fixtureTracker: AutomationFreshFixtureTracker?, qualifyingFreshBindings: [AutomationFreshFixtureBinding]?, uiRequestFixtureTracker: AutomationUIRequestFixtureTracker?,
+                    capabilities: CapabilityProfile, attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget?, excludedEntityIDs: Set<String>,
                     javaScriptFinalization: (@Sendable () async throws -> Void)? = nil,
-                    javaScriptResponseEvidence: (@Sendable () async -> [String: String]?)? = nil, codecsQualified: Bool = false) async throws -> AutomationAttemptReport {
+                    javaScriptResponseEvidence: (@Sendable () async -> [String: String]?)? = nil, codecsResolved: Bool = false) async throws -> AutomationAttemptReport {
         guard !running, subject.app == plan.app, subject.target == plan.target,
               attemptID.range(of: #"^[A-Za-z0-9-]{1,128}$"#, options: .regularExpression) != nil else { throw AutomationContractError.invalidIdentity }
         failedPreparation = nil
-        lastSetupCapture = nil
-        latestFreshFixtureAttemptID = nil
         try subject.validate(plan: plan)
         guard let prepared = subject.prepared else {
             throw AutomationContractError.missingEvidence("Prepare the source app and its XCUITest host before running this workflow")
@@ -326,41 +156,29 @@ public actor AutomationApplicationRunner {
                 throw AutomationContractError.missingEvidence("Approve installation on the selected physical device before running its prepared host")
             }
             try await registerPhysicalAliases(plan.target)
+            if plan.execution.kind == .siriText {
+                running = true; defer { running = false }
+                return try await AutomationPreparedPhysicalCampaign.run(prepared: prepared, plan: plan, approval: approval,
+                    capabilities: capabilities, attemptID: attemptID, root: supportRoot, developer: developerDirectory,
+                    leases: leases, campaignBudget: campaignBudget)
+            }
         }
         try AutomationPreparedProgramContract.validate(plan, catalog: prepared.catalog)
         running = true; defer { running = false }
         var capabilities = capabilities
-        if plan.target.kind == .nativeMac, !codecsQualified {
-            capabilities = try await qualifiedNativeCapabilities(prepared: prepared, plan: plan,
-                approval: approval, capabilities: capabilities)
-        } else if plan.target.kind == .simulator, !codecsQualified {
-            let required = Set((plan.setup + [plan.execution] + plan.observations + plan.cleanup).flatMap(\.requiredCapabilities))
-            capabilities = try await AutomationSimulatorCodecQualification.enrich(capabilities, prepared: prepared,
-                requiredCapabilities: required, developerDirectory: developerDirectory, workspace: supportRoot)
+        if !codecsResolved {
+            capabilities = try AutomationPreparedCapabilities.resolving(capabilities, prepared: prepared)
         }
-        guard fixtureTracker == nil || qualifyingFreshBindings == nil else { throw AutomationContractError.missingEvidence("Fresh query fixtures require their qualified associated host") }
         try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
         let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
         guard segments.allSatisfy({ [.ui, .observeOnly, .systemIntent, .systemQuery, .storageRead].contains($0.kind) }) else {
-            throw AutomationContractError.missingEvidence("Prepared-app route is not qualified")
+            throw AutomationContractError.missingEvidence("Prepared host does not support this route")
         }
         let needsUI = segments.contains { $0.usesUIControl }
         if needsUI || plan.target.kind != .simulator {
             _ = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval,
                 attemptID: attemptID, leaseGeneration: 1)
-            guard uiRequestFixtureTracker == nil else {
-                throw AutomationContractError.missingEvidence("Repeated UI sessions require an explicit host reset contract")
-            }
         }
-        let context = AutomationRecipeContext(app: plan.app, target: plan.target, environmentID: plan.environmentID,
-            catalogDigest: try AutomationRecipeContext.catalogDigest(prepared.catalog), hostDigest: prepared.host.hostProductDigest,
-            localeIdentifier: plan.provenance["ui.locale"] ?? "", uiRuntimeManifestDigest: nil)
-        if let fixtureTracker { try await fixtureTracker.preflight(context: context, plan: plan, approval: approval) }
-        let qualificationFence = try qualifyingFreshBindings.map {
-            try AutomationFreshFixtureQualificationFence(bindings: $0, plan: plan, approval: approval,
-                capabilities: capabilities, context: context, previous: liveFixtureEvidence)
-        }
-        liveRecipeEvidence = nil
         let cases = try AutomationCaseStore(root: supportRoot.appendingPathComponent("Cases"))
         let frozen = try await cases.freeze(plan)
         let root = supportRoot.appendingPathComponent(attemptID)
@@ -407,8 +225,7 @@ public actor AutomationApplicationRunner {
                 approval: approval, capabilities: capabilities, attemptID: attemptID, root: root,
                 developerDirectory: developerDirectory, leases: leases, journal: journal,
                 artifacts: artifacts, releaseVerifier: plan.target.kind == .simulator ? release : nil,
-                campaignBudget: campaignBudget, releaseCampaignOnCompletion: !ownsBoot,
-                fixtureTracker: fixtureTracker, qualificationFence: qualificationFence)
+                campaignBudget: campaignBudget, releaseCampaignOnCompletion: !ownsBoot, excludedEntityIDs: excludedEntityIDs)
         } else {
             let apple = try AutomationAppleRouteDriver(prepared: prepared.host, approval: approval,
                 developerDirectory: developerDirectory, stateDirectory: root.appendingPathComponent("apple"),
@@ -416,8 +233,7 @@ public actor AutomationApplicationRunner {
                 campaignBudget: campaignBudget, capabilities: capabilities)
             report = try await AutomationCoordinator(leases: leases, journal: journal, cleanupTimeout: .seconds(90),
                 releaseCampaignOnCompletion: !ownsBoot).run(plan: plan, approval: approval,
-                capabilities: capabilities, attemptID: attemptID, driver: apple,
-                fixtureTracker: fixtureTracker, qualificationFence: qualificationFence, uiRequestFixtureTracker: uiRequestFixtureTracker)
+                capabilities: capabilities, attemptID: attemptID, driver: apple, excludedEntityIDs: excludedEntityIDs)
         }
         if ownsBoot && report.resourcesReleased {
             ownedBootCleanupAttempted = true
@@ -436,19 +252,6 @@ public actor AutomationApplicationRunner {
         let store = try AutomationDurableFile(url: root.appendingPathComponent("report.json"), maximumBytes: 16 * 1024 * 1024)
         try store.withLock { try store.write(try encoder.encode(report)) }
         try await cases.saveAttempt(report, for: frozen)
-        if report.resourcesReleased, report.result.subjectCompleted, !report.result.subjectDispatchUncertain,
-           [.passed, .assertionFailed, .executedUnassessed].contains(report.result.summary),
-           let locale = plan.provenance["ui.locale"],
-           approval.approvedCaseDigest == (try AutomationFrozenCase.planDigest(plan)) {
-            let context = AutomationRecipeContext(app: plan.app, target: plan.target, environmentID: plan.environmentID,
-                catalogDigest: try AutomationRecipeContext.catalogDigest(prepared.catalog), hostDigest: prepared.host.hostProductDigest,
-                localeIdentifier: locale, uiRuntimeManifestDigest: nil)
-            let live = AutomationLiveRecipeEvidence(context: context, plan: plan, approval: approval, report: report)
-            if report.executionSucceeded { liveRecipeEvidence = live }
-            liveFixtureEvidence.append(live)
-            latestFreshFixtureAttemptID = attemptID
-            if liveFixtureEvidence.count > 10 { liveFixtureEvidence.removeFirst() }
-        }
         return report
         } catch {
             var bootReleased = !ownsBoot
@@ -498,28 +301,6 @@ public actor AutomationApplicationRunner {
               failure.planDigest == (try AutomationFrozenCase.planDigest(plan)), failure.runID == runID else { return nil }
         try AutomationRecordedEvidence.validate(report: failure.report, plan: plan, expectedRunID: runID)
         return failure.report
-    }
-    public func captureFreshSetup(bindings: [AutomationFreshFixtureBinding]) throws -> AutomationCapturedSetupAttempt {
-        guard !running, !servingJavaScript, let live = liveFixtureEvidence.last, let capture = lastSetupCapture else {
-            throw AutomationContractError.missingEvidence("No released complete live setup trace")
-        }
-        return try .init(live: live, capture: capture, bindings: bindings)
-    }
-    public func qualifyRecipe(_ candidate: AutomationSetupRecipeCandidate) throws -> AutomationQualifiedSetupRecipe {
-        guard !running, !servingJavaScript, let liveRecipeEvidence else { throw AutomationContractError.missingEvidence("No complete live recipe qualification in this runner") }
-        return try .init(candidate: candidate, live: liveRecipeEvidence)
-    }
-    public func qualifyFreshFixture(bindings: [AutomationFreshFixtureBinding]) throws -> AutomationQualifiedFreshFixture {
-        guard !running, !servingJavaScript else { throw AutomationContractError.targetBusy }
-        guard latestFreshFixtureAttemptID == liveFixtureEvidence.last?.report.attemptID,
-              latestFreshFixtureAttemptID != nil else { throw AutomationContractError.missingEvidence("No eligible latest live fixture attempt") }
-        return try .init(bindings: bindings, evidence: Array(liveFixtureEvidence.suffix(2)))
-    }
-    public func validateFreshFixtureAttempt(bindings: [AutomationFreshFixtureBinding]) throws {
-        guard !running, !servingJavaScript, let live = liveFixtureEvidence.last, latestFreshFixtureAttemptID == live.report.attemptID else {
-            throw AutomationContractError.missingEvidence("No eligible latest live fixture attempt")
-        }
-        try AutomationQualifiedFreshFixture.validateLiveAttempt(bindings: bindings, evidence: live)
     }
     private func shutDownOwnedSimulator(approval: RunApproval, attemptID: String, root: URL,
                                        journal: AutomationJournal, release: AutomationSimulatorReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil) async -> Bool {

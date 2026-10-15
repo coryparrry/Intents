@@ -9,31 +9,24 @@ public struct AutomationUIFailureSearchRecord: Codable, Equatable, Sendable {
     public let mutations: [AutomationMutationCase]
     public let report: AutomationFailureSearchReport
     public var reductions: [AutomationReductionEdge]? = nil
-    public var verificationScope: String { schemaVersion == 3 ? "historicalFactsWithUnqualifiedRequestExecution" : "historicalValidatedFacts" }
-    public var historicalQualificationNotice: String? {
-        schemaVersion == 3 ? "This older record does not qualify the complete request input and submission sequence. Historical facts only; running it requires new live qualification." : nil
-    }
+    public var verificationScope: String { "historicalValidatedFacts" }
     public init(id: String, runID: String, baseline: AutomationFrozenCase, mutations: [AutomationMutationCase], report: AutomationFailureSearchReport, reductions: [AutomationReductionEdge] = []) {
-        schemaVersion = baseline.plan.execution.kind == .siriText && baseline.plan.provenance["siri.repeatableReset"] != nil ? 4 : baseline.plan.uiRequestFixture != nil ? (baseline.plan.uiRequestFixture?.requestInputControl == nil ? 3 : 5) : mutations.contains(where: { $0.goalPhraseVariation != true && $0.subjectPhraseSlot == nil }) || report.qualificationAttempts != nil ? 2 : 1
+        schemaVersion = 1
         self.reductions = reductions.isEmpty ? nil : reductions
         self.id = id; self.runID = runID; self.baseline = baseline; self.mutations = mutations; self.report = report
     }
     func validate() throws {
-        if schemaVersion == 2 { try validateStateSearch(); return }
-        if schemaVersion == 3 { try validateLegacyUIRequestQualification() }
-        else if schemaVersion == 5 { try validateUIRequestQualification() }
-        else if schemaVersion == 4 { try validateSiriQualification() }
-        else { guard report.qualificationAttempts == nil else { throw AutomationContractError.conflictingOperation } }
+        guard report.qualificationAttempts == nil else { throw AutomationContractError.conflictingOperation }
         guard reductions?.isEmpty != false else { throw AutomationContractError.conflictingOperation }
-        guard [1, 3, 4, 5].contains(schemaVersion), Self.identifier(id), Self.identifier(runID), mutations.count <= 2,
+        guard schemaVersion == 1, Self.identifier(id), Self.identifier(runID), mutations.count <= 2,
               report.schemaVersion == 1, report.baselineDigest == baseline.digest,
               report.attempts.count + report.interruptions.count + (report.qualificationAttempts?.count ?? 0) <= 100, report.interruptions.count <= 1, report.confirmations.count <= 2,
               report.stopReason.map({ $0.utf16.count <= 4096 }) ?? true,
               report.capabilityGaps.count <= 20, report.capabilityGaps.allSatisfy({ $0.utf16.count <= 4096 }) else { throw AutomationContractError.invalidIdentity }
-        try baseline.validate(); if !mutations.contains(where: { $0.subjectPhraseSlot != nil }) { try AutomationGoalPhraseVariation.validateBaseline(baseline.plan) }
+        try baseline.validate()
         let definitions = [baseline] + mutations.map(\.frozen)
         guard Set(definitions.map(\.digest)).count == definitions.count else { throw AutomationContractError.conflictingOperation }
-        for mutation in mutations { try mutation.frozen.validate(); if schemaVersion == 3 { try validateLegacyUIRequestMutation(mutation) } else if mutation.subjectPhraseSlot != nil { try AutomationSubjectPhraseVariation.validate(mutation, baseline: baseline) } else { try AutomationGoalPhraseVariation.validate(mutation, baseline: baseline) } }
+        for mutation in mutations { try mutation.frozen.validate(); try AutomationSubjectPhraseVariation.validate(mutation, baseline: baseline) }
         let byDigest = Dictionary(uniqueKeysWithValues: definitions.map { ($0.digest, $0) })
         let ids = report.attempts.map { $0.report.attemptID } + report.interruptions.map(\.attemptID) + (report.qualificationAttempts ?? []).map { $0.report.attemptID }
         guard ids.allSatisfy(Self.identifier), Set(ids).count == ids.count else { throw AutomationContractError.invalidIdentity }
@@ -162,19 +155,31 @@ public actor AutomationUIFailureSearchArchive {
         guard record.id == id else { throw AutomationContractError.conflictingOperation }
         try await validateStoredFacts(record); return (record, data.count)
     }
-    public func records() async throws -> [AutomationUIFailureSearchRecord] {
+    public func records() async throws -> [AutomationUIFailureSearchRecord] { try await recordListing().items }
+    public func recordListing() async throws -> AutomationHistoryListing<AutomationUIFailureSearchRecord> {
         guard try AutomationPath.canonical(root).path == root.path else { throw AutomationContractError.invalidIdentity }
         let names = try FileManager.default.contentsOfDirectory(atPath: root.path)
         guard names.count <= 200 else { throw AutomationContractError.invalidIdentity }
         var records: [AutomationUIFailureSearchRecord] = []
-        var totalBytes = 0
+        var totalBytes = 0, skipped = 0
         for name in names.filter({ $0.hasSuffix(".json") }).sorted() {
-            let (record, bytes) = try await read(id: String(name.dropLast(5)), maximumBytes: min(2_097_152, 16_777_216 - totalBytes))
-            totalBytes += bytes
+            let id = String(name.dropLast(5))
+            guard AutomationUIFailureSearchRecord.identifier(id) else { throw AutomationContractError.invalidIdentity }
+            let data = try AutomationReadOnlyFile.read(root: root, relativePath: name,
+                maximumBytes: min(2_097_152, 16_777_216 - totalBytes), requirePrivateOwnership: true)
+            totalBytes += data.count
+            let record: AutomationUIFailureSearchRecord
+            do { record = try JSONDecoder().decode(AutomationUIFailureSearchRecord.self, from: data) }
+            catch {
+                if try AutomationRetiredUIHistory.search(data, id: id) { skipped += 1; continue }
+                throw error
+            }
+            guard record.id == id else { throw AutomationContractError.conflictingOperation }
+            try await validateStoredFacts(record)
             guard totalBytes <= 16_777_216 else { throw AutomationContractError.invalidIdentity }
             records.append(record)
         }
-        return records
+        return .init(items: records, skippedRetiredRecords: skipped)
     }
     private func validateStoredFacts(_ record: AutomationUIFailureSearchRecord) async throws {
         try record.validate()

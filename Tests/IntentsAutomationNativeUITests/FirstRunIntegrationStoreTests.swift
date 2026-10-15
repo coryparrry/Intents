@@ -36,7 +36,7 @@ extension InstalledUIStoreTests {
         let host = try AutomationXCUITestPlan.assemble(plan: request.plan, approval: request.approval,
             attemptID: "saved-action-readback", leaseGeneration: 1)
         XCTAssertEqual(host.steps.filter { $0.segmentID == request.plan.execution.id }.count, 1)
-        XCTAssertEqual(request.plan.budget.controllerCalls, 1)
+        XCTAssertEqual(request.plan.budget.controllerCalls, 0)
         XCTAssertEqual(host.steps.last?.kind, .screenshot)
     }
 

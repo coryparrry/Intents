@@ -259,9 +259,6 @@ import XCTest
             stateProperty: "completed", initialState: "false", expectedState: "true")
         model.siriResetActionID = "SetStateIntent"; model.siriAccountEnvironment = "disposable/account-A"
         model.siriAlternatePhrases = "Finish Approved test task in Example"
-        XCTAssertFalse(model.canFindSiriFailures, "Synthetic capability records alone do not grant a live native conversion scope")
-        model.siriResetConversionScopeDigest = model.siriConversionSelectionDigest
-        model.siriResetConversionDeadline = ContinuousClock.now.advanced(by: .seconds(1800))
         XCTAssertTrue(model.canFindSiriFailures)
         let first = try model.reviewSiriFailureSearch(), second = try model.reviewSiriFailureSearch()
         XCTAssertEqual(first.digest, second.digest); XCTAssertEqual(first.baseline.digest, second.baseline.digest)
@@ -275,14 +272,8 @@ import XCTest
         model.advanceSelection()
         await model.findSiriFailures(reviewed: first)
         XCTAssertNotNil(model.message); XCTAssertNil(model.task); XCTAssertNil(model.searchReport)
-        let conversion = try model.reviewSiriResetConversion()
         model.siriAccountEnvironment = "different-account"
-        XCTAssertFalse(model.canFindSiriFailures, "A different account cannot reuse the native conversion scope")
-        await model.qualifySiriResetConversion(reviewed: conversion)
-        XCTAssertNotNil(model.message); XCTAssertNil(model.task)
-        model.siriAccountEnvironment = "disposable/account-A"
-        model.siriResetConversionDeadline = ContinuousClock.now.advanced(by: .seconds(-1))
-        XCTAssertFalse(model.canFindSiriFailures, "Expired native conversion scope cannot enable repeated search")
+        XCTAssertNotEqual(try model.reviewSiriFailureSearch().digest, first.digest)
         model.close()
     }
     func testManualPhysicalDestinationResolvesOwnershipBeforeFreezingBuildApproval() async throws {
@@ -371,7 +362,7 @@ import XCTest
         XCTAssertNil(model.prepared); XCTAssertTrue(model.siriCapabilities.records.isEmpty); XCTAssertTrue(model.siriRequest.isEmpty)
         model.close()
     }
-    func testControlledSiriRecordCheckFreezesOracleAndCannotExecuteFromCachedProfile() async throws {
+    func testControlledSiriRecordCheckFreezesOracleAndValidatesWithoutQualificationToken() async throws {
         let box = TargetBox()
         let model = try await model(executor: { candidate, approval, session in
             var value = try preparedPhysicalFixture(candidate, approval, session)
@@ -388,10 +379,10 @@ import XCTest
             stateProperty: "completed", initialState: "false", expectedState: "true")
         XCTAssertTrue(model.canRun)
         let preview = try model.makeSiriRunRequest(runID: "preview"), actual = try model.makeSiriRunRequest(runID: UUID().uuidString)
-        XCTAssertEqual(preview.digest, actual.digest); XCTAssertTrue(preview.siriQualification)
+        XCTAssertEqual(preview.digest, actual.digest); XCTAssertEqual(preview.plan.execution.kind, .siriText)
         XCTAssertEqual(preview.plan.setup.count, 1); XCTAssertEqual(preview.plan.observations.count, 1)
         XCTAssertEqual(preview.plan.requirements.first?.expected, .bool(true)); XCTAssertEqual(preview.plan.setupChecks?.first?.expected, .bool(false))
-        XCTAssertThrowsError(try PlanValidator.validate(actual.plan, approval: actual.approval, capabilities: actual.capabilities))
+        XCTAssertNoThrow(try PlanValidator.validate(actual.plan, approval: actual.approval, capabilities: actual.capabilities))
         let review = try await model.prepareNativeConfirmation(.run)
         XCTAssertTrue(review.message.contains("same real record")); XCTAssertFalse(review.message.contains("Submission remains unassessed"))
         _ = try model.cancelCommand(id: review.id)

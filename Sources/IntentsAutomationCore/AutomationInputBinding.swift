@@ -103,7 +103,7 @@ public enum AutomationInputResolver {
                 case .uiBinding:
                     guard binding.operationID == nil, segment.phase != .observe, let program = segment.uiProgram,
                           program.bindings[binding.name] == nil,
-                          program.operations.contains(where: { $0.binding == binding.name }) || program.operations.contains(where: { $0.kind == .navigateGoal }) ||
+                          program.operations.contains(where: { $0.binding == binding.name }) ||
                           program.steps?.contains(where: { $0.binding == binding.name }) == true else {
                         throw AutomationContractError.invalidPlan("Invalid UI input destination or literal replacement")
                     }

@@ -55,13 +55,11 @@ struct AutomationNativeUIReproductionProposal: Sendable {
     let originalAttemptID: String
     let approval: RunApproval
     var capabilities = CapabilityProfile()
-    var usesFreshFixture: Bool { (try? AutomationFreshEntityPlanner.bindings(plan: frozen.plan)) != nil }
     var limits: AutomationCampaignLimits {
         var value = AutomationCampaignLimits.firstCampaign
         value.attempts = 5; value.subjectOperations = 5
-        value.uiActions = 150; value.controllerCalls = 60; value.wallClockSeconds = 900
-        // Native navigation reserves bounded readbacks before dispatch as well as UI actions.
-        value.subjectOperations = value.uiActions + 2 * value.controllerCalls
+        value.uiActions = 150; value.controllerCalls = 0; value.wallClockSeconds = 900
+        value.subjectOperations = value.uiActions
         return value
     }
     static func compile(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
@@ -72,7 +70,7 @@ struct AutomationNativeUIReproductionProposal: Sendable {
         let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
         let freshBindings = try? AutomationFreshEntityPlanner.bindings(plan: plan)
         let capabilities: CapabilityProfile
-        if freshBindings != nil, case .prepared(let prepared) = subject { capabilities = AutomationNativeFreshFixtures.capabilities(prepared) }
+        if freshBindings != nil, case .prepared(let prepared) = subject { capabilities = AutomationPreparedCapabilities.base(prepared) }
         else { capabilities = .init() }
         let permitted = freshBindings != nil && disposable && segments.allSatisfy {
             [.ui, .systemIntent, .systemQuery].contains($0.kind) && $0.effects.isSubset(of: [.observe, .navigate, .fixtureWrite])
@@ -92,7 +90,6 @@ struct AutomationNativeUIReproductionProposal: Sendable {
             environmentID: plan.environmentID, effects: freshBindings == nil ? [.observe, .navigate] : [.observe, .navigate, .fixtureWrite], maximumActions: 30,
             disposable: disposable, approvedCaseDigest: frozen.digest)
         try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, purpose: .review)
-        if let freshBindings { try AutomationQualifiedFreshFixture.validateProposal(bindings: freshBindings, plan: plan, approval: approval, capabilities: capabilities, purpose: .review) }
         return .init(frozen: frozen, originalAttemptID: original.attemptID, approval: approval, capabilities: capabilities)
     }
     @concurrent func execute(subject: AutomationApplicationSubject, support: URL, developerDirectory: URL, allowBootAndInstall: Bool,
@@ -107,22 +104,14 @@ struct AutomationNativeUIReproductionProposal: Sendable {
         var verified = self
         verified.capabilities = try await runner.capabilitiesForExecution(subject: subject, plan: frozen.plan,
             capabilities: capabilities, approval: approval)
-        var fixture: AutomationQualifiedFreshFixture?
-        if usesFreshFixture {
-            guard case .prepared(let prepared) = subject else { throw AutomationContractError.invalidIdentity }
-            fixture = try await AutomationNativeFreshFixtures.qualify(frozen: frozen, prepared: prepared, approval: approval, capabilities: verified.capabilities, runner: runner, installApproved: allowBootAndInstall)
-        }
-        guard subject.target.kind != .physical else {
-            throw AutomationContractError.missingEvidence("Physical installed-app execution is not qualified")
-        }
         let executor = AutomationSubjectCampaignExecutor(runner: runner, subject: subject, capabilities: verified.capabilities,
             allowBootAndInstall: allowBootAndInstall)
-        return try await verified.runCampaign(cases: cases, executor: executor, fixture: fixture, onProgress: onProgress)
+        return try await verified.runCampaign(cases: cases, executor: executor, onProgress: onProgress)
     }
     func runCampaign(cases: AutomationCaseStore, executor: any AutomationCampaignAttemptExecutor,
-                     fixture: AutomationQualifiedFreshFixture?, onProgress: AutomationReproductionProgressHandler? = nil) async throws -> AutomationReproductionReport {
+                     onProgress: AutomationReproductionProgressHandler? = nil) async throws -> AutomationReproductionReport {
         try await AutomationReproduction(cases: cases).run(frozen: frozen, originalAttemptID: originalAttemptID,
-            approval: approval, capabilities: capabilities, limits: limits, executor: executor, fixture: fixture, onProgress: onProgress)
+            approval: approval, capabilities: capabilities, limits: limits, executor: executor, onProgress: onProgress)
     }
 
 }

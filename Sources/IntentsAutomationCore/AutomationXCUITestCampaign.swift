@@ -11,9 +11,7 @@ enum AutomationXCUITestCampaign {
                     journal: AutomationJournal, artifacts: AutomationArtifactRegistry,
                     releaseVerifier: AutomationSimulatorReleaseVerifier?,
                     campaignBudget: AutomationCampaignBudget?,
-                    releaseCampaignOnCompletion: Bool = true,
-                    fixtureTracker: AutomationFreshFixtureTracker? = nil,
-                    qualificationFence: AutomationFreshFixtureQualificationFence? = nil) async throws -> AutomationAttemptReport {
+                    releaseCampaignOnCompletion: Bool = true, excludedEntityIDs: Set<String> = []) async throws -> AutomationAttemptReport {
         let planDeadline = ContinuousClock.now.advanced(by: .seconds(plan.budget.wallClockSeconds))
         let deadline = min(planDeadline, campaignBudget?.deadline ?? planDeadline)
         try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
@@ -30,8 +28,6 @@ enum AutomationXCUITestCampaign {
                 termination: error as? AutomationCampaignBudgetError == .exhausted("wall clock") ? .timedOut : .infrastructureFailed),
                 receipts: [], resourcesReleased: released)
         }
-        var excludedIDs = await fixtureTracker?.excludedEntityIDs() ?? []
-        if let qualificationFence { excludedIDs.formUnion(await qualificationFence.excludedEntityIDs()) }
         let lease = try await leases.acquire(runID: approval.runID, target: plan.target, control: .ui)
         let scope = AutomationScope(runID: approval.runID, attemptID: attemptID,
                                     segmentID: "xcuitest", leaseGeneration: lease.generation)
@@ -68,7 +64,7 @@ enum AutomationXCUITestCampaign {
             let remaining = try await campaignBudget?.remainingDuration()
             receipts = try await driver.execute(plan: plan, approval: approval,
                 attemptID: attemptID, leaseGeneration: lease.generation,
-                timeout: remaining, excludedEntityIDs: excludedIDs)
+                timeout: remaining, excludedEntityIDs: excludedEntityIDs)
         } catch let failure as AutomationXCUITestFailure {
             receipts = failure.receipts
             termination = failure.reason
@@ -77,16 +73,6 @@ enum AutomationXCUITestCampaign {
             termination = error is CancellationError ? .cancelled : .infrastructureFailed
         }
         let subject = receipts.first { $0.segmentID == plan.execution.id && $0.route == plan.execution.kind }
-        if subject?.dispatched == true {
-            do {
-                // The host checked the supplied excluded identities before subject dispatch.
-                // Consume the same positively queried identities in the campaign ledger.
-                try await fixtureTracker?.reserveBeforeSubject(receipts: receipts, plan: plan,
-                    approval: approval, attemptID: attemptID)
-                try await qualificationFence?.reserveBeforeSubject(receipts: receipts, plan: plan,
-                    approval: approval, attemptID: attemptID)
-            } catch { termination = .invalidFixture }
-        }
         try await campaignBudget?.reserveResourceRelease(id: operationID)
         let proof = await Task.detached { await driver.release() }.value
         var released = proof.commandsDrained && proof.runnerTerminated && proof.privatePayloadCleaned
@@ -148,7 +134,6 @@ enum AutomationXCUITestCampaign {
             try await budget.reserveOperations(id: attemptID + ":xcuitest:" + segment.id,
                 phase: segment.phase, count: steps.count, uiActions: actions)
         }
-        try await budget.reserveControllerCall(id: attemptID + ":xcuitest")
     }
 }
 #endif

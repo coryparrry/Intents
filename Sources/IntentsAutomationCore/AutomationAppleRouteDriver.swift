@@ -45,7 +45,6 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
     private let prepared: AutomationPreparedAppleHost
     private let approval: RunApproval
     private let capabilities: CapabilityProfile
-    private let siriAuthority: AutomationSiriRouteAuthority?
     private let developerDirectory: URL
     private let root: URL
     private let leases: AutomationDeviceLeaseManager
@@ -65,15 +64,15 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
     private var revoked: Set<Int> = []
     public init(prepared: AutomationPreparedAppleHost, approval: RunApproval, developerDirectory: URL, stateDirectory: URL,
                 leases: AutomationDeviceLeaseManager, artifacts: AutomationArtifactRegistry, subjectVerifier: any AutomationSubjectVerifier,
-                releaseVerifier: any AutomationDeviceReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil, capabilities: CapabilityProfile = .init(), siriAuthority: AutomationSiriRouteAuthority? = nil) throws {
+                releaseVerifier: any AutomationDeviceReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil, capabilities: CapabilityProfile = .init()) throws {
         try self.init(prepared: prepared, approval: approval, developerDirectory: developerDirectory, stateDirectory: stateDirectory,
                       leases: leases, artifacts: artifacts, subjectVerifier: subjectVerifier, releaseVerifier: releaseVerifier,
-                      campaignBudget: campaignBudget, capabilities: capabilities, siriAuthority: siriAuthority, commands: nil)
+                      campaignBudget: campaignBudget, capabilities: capabilities, commands: nil)
     }
 
     init(prepared: AutomationPreparedAppleHost, approval: RunApproval, developerDirectory: URL, stateDirectory: URL,
                 leases: AutomationDeviceLeaseManager, artifacts: AutomationArtifactRegistry, subjectVerifier: any AutomationSubjectVerifier,
-                releaseVerifier: any AutomationDeviceReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil, capabilities: CapabilityProfile = .init(), siriAuthority: AutomationSiriRouteAuthority? = nil, commands: Commands?) throws {
+                releaseVerifier: any AutomationDeviceReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil, capabilities: CapabilityProfile = .init(), commands: Commands?) throws {
         guard prepared.app == approval.app, prepared.target == approval.target,
               [.simulator, .physical].contains(prepared.target.kind), prepared.app.platform == "ios",
               (prepared.app.productDigestVersion ?? 1) == 1, (prepared.hostProductDigestVersion ?? 1) == 1,
@@ -81,7 +80,7 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
               prepared.testTarget.range(of: #"^[A-Za-z_][A-Za-z0-9_]{0,127}$"#, options: .regularExpression) != nil else { throw AutomationContractError.invalidIdentity }
         self.commands = commands
         if prepared.target.kind == .physical { try AutomationPhysicalExecutable.validateTarget(prepared.target) }
-        self.prepared = prepared; self.approval = approval; self.capabilities = capabilities; self.siriAuthority = siriAuthority; self.developerDirectory = try AutomationPath.canonical(developerDirectory)
+        self.prepared = prepared; self.approval = approval; self.capabilities = capabilities; self.developerDirectory = try AutomationPath.canonical(developerDirectory)
         try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         root = try AutomationPath.canonical(stateDirectory); self.leases = leases; self.artifacts = artifacts
         self.subjectVerifier = subjectVerifier; self.releaseVerifier = releaseVerifier; self.campaignBudget = campaignBudget
@@ -107,19 +106,13 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         // Authenticate a no-work admission so a local preflight denial can drain its exact lease.
         admission = (scope, lease); controllerPreparationStarted = false
         // Direct driver users must satisfy the same execution contract as the coordinator.
-        try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, siriAuthority: siriAuthority)
+        try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
         try AutomationCodecRequirements.validate(segment, plan: plan, capabilities: capabilities)
         try program.validate(route: segment.kind, phase: segment.phase)
         preparing = true; defer { preparing = false }
         let fileInputs = try await authority?.fileInputs(plan: plan, segment: segment, scope: scope, artifacts: artifacts) ?? [:]
         var payload = try program.executionPayload(scope: scope, app: plan.app, route: segment.kind, phase: segment.phase, fileInputs: fileInputs,
                                                    activateSubject: segment.effects.contains(.navigate))
-        if plan.provenance["siri.repeatableReset"] != nil, segment.id == "siri.restore" {
-            let osBuild = try await AutomationPhysicalInputAdapterAuthority.shared.validateReset(host: prepared, plan: plan, segment: segment)
-            guard var fields = try JSONDecoder().decode(AutomationJSON.self, from: payload).object else { throw AutomationContractError.invalidIdentity }
-            fields["expectedOSBuild"] = .string(osBuild)
-            payload = try AutomationFrozenCase.canonicalData(AutomationJSON.object(fields))
-        }
         guard await leases.isCurrent(lease), !revoked.contains(lease.generation) else { throw AutomationContractError.unknownLease }
         try Task.checkCancellation()
         do {
@@ -164,9 +157,6 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         let current = await leases.isCurrent(lease)
         guard current, !releasing, !revoked.contains(lease.generation), control?.scope == scope,
               control?.executing == true, control?.issued == true else { throw AutomationContractError.unknownLease }
-        if plan.provenance["siri.repeatableReset"] != nil, segment.id == "siri.restore" {
-            _ = try await AutomationPhysicalInputAdapterAuthority.shared.validateReset(host: prepared, plan: plan, segment: segment)
-        }
         try verifyPreparedHost(); try await verifySubject(plan)
         try await authorizeLaunch(scope: scope, lease: lease)
         try await campaignBudget?.reserveOperations(id: scope.attemptId + "." + scope.segmentId, phase: segment.phase, count: program.operations.count)
@@ -287,9 +277,6 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         guard let active = control,
               AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(active.testFile, maximumBytes: 4 * 1024 * 1024)) == active.testFileDigest else {
             throw AutomationContractError.conflictingOperation
-        }
-        if active.plan.provenance["siri.repeatableReset"] != nil, active.segment.id == "siri.restore" {
-            _ = try await AutomationPhysicalInputAdapterAuthority.shared.validateReset(host: prepared, plan: active.plan, segment: active.segment)
         }
         try campaignBudget?.validateDeadline()
     }

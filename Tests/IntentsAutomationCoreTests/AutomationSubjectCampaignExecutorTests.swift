@@ -51,8 +51,18 @@ final class AutomationSubjectCampaignExecutorTests: XCTestCase, @unchecked Senda
         let call = try XCTUnwrap(calls.first); XCTAssertEqual(call.subject.app, selected.app); XCTAssertEqual(call.subject.target, selected.target)
         XCTAssertEqual(call.subject.productPath, selected.bundleURL.path); XCTAssertEqual(call.frozen.digest, frozen.digest)
         XCTAssertEqual(call.approval, approval); XCTAssertEqual(call.attemptID, "attempt"); XCTAssertTrue(call.budget === budget)
-        XCTAssertNil(call.fixtureTracker); XCTAssertFalse(call.allowBootAndInstall); XCTAssertEqual(report.attemptID, "attempt")
+        XCTAssertTrue(call.excludedEntityIDs.isEmpty); XCTAssertFalse(call.allowBootAndInstall); XCTAssertEqual(report.attemptID, "attempt")
     }
+    func testAdapterForwardsCampaignIdentityExclusions() async throws {
+        let root = try root(), selected = try selected(root), plan = plan(selected), approval = try approval(plan)
+        let frozen = try AutomationFrozenCase(plan: plan), budget = try AutomationCampaignBudget(limits: .firstCampaign), spy = Spy()
+        let executor = AutomationSubjectCampaignExecutor(subject: .installedMacUI(selected), capabilities: .init(), run: { await spy.run($0) })
+        _ = try await executor.execute(frozen: frozen, approval: approval, attemptID: "attempt", budget: budget,
+            excludedEntityIDs: ["TaskEntity:previous"])
+        let invocation = await spy.invocations.first
+        XCTAssertEqual(invocation?.excludedEntityIDs, ["TaskEntity:previous"])
+    }
+
     func testInstalledMacWritesAndChangedProductFailBeforeForwarding() async throws {
         for changedProduct in [false, true] {
             let root = try root(), selected = try selected(root); var plan = plan(selected)
@@ -74,23 +84,7 @@ final class AutomationSubjectCampaignExecutorTests: XCTestCase, @unchecked Senda
         catch let error as AutomationContractError { guard case .missingEvidence = error else { return XCTFail("Wrong fence: \(error)") } }
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Support/attempt").path))
     }
-    func testPreparedMacFreshFixtureCannotBypassEquivalenceQualification() async throws {
-        let root = try root(), selected = try selected(root), plan = plan(selected), spy = Spy()
-        let frozen = try await AutomationCaseStore(root: root.appendingPathComponent("Cases")).freeze(plan)
-        let tracker = try AutomationFreshFixtureTracker(fixture: FreshFixtureTestData().qualify())
-        let executor = AutomationSubjectCampaignExecutor(subject: .prepared(prepared(plan, root: root)), capabilities: .init(), run: { await spy.run($0) })
-        do { _ = try await executor.execute(frozen: frozen, approval: approval(plan), attemptID: "attempt", budget: AutomationCampaignBudget(limits: .firstCampaign), fixtureTracker: tracker); XCTFail("Unqualified Mac fresh fixture forwarded") }
-        catch let error as AutomationContractError { XCTAssertEqual(error, .missingEvidence("Mac fresh-fixture campaigns require qualified setup and reset equivalence")) }
-        let calls = await spy.invocations; XCTAssertTrue(calls.isEmpty)
-    }
-    func testPreparedSimulatorAdapterForwardsExactFreshFixtureTracker() async throws {
-        let root = try root(), data = try FreshFixtureTestData(), plan = data.plan, spy = Spy()
-        let frozen = try await AutomationCaseStore(root: root.appendingPathComponent("Cases")).freeze(plan), tracker = try AutomationFreshFixtureTracker(fixture: data.qualify())
-        let budget = try AutomationCampaignBudget(limits: .firstCampaign)
-        let executor = AutomationSubjectCampaignExecutor(subject: .prepared(prepared(plan, root: root)), capabilities: .init(), allowBootAndInstall: true, run: { await spy.run($0) })
-        _ = try await executor.execute(frozen: frozen, approval: data.approval, attemptID: "attempt", budget: budget, fixtureTracker: tracker)
-        let calls = await spy.invocations; XCTAssertEqual(calls.count, 1)
-        let call = try XCTUnwrap(calls.first); XCTAssertTrue(call.fixtureTracker === tracker); XCTAssertTrue(call.budget === budget); XCTAssertTrue(call.allowBootAndInstall)
-    }
+
+
 }
 #endif

@@ -138,6 +138,12 @@ final class AutomationMacExecutableInventoryTests: XCTestCase {
         }
     }
 
+    func testCurrentUserRequiresExplicitExecutableScope() {
+        XCTAssertThrowsError(try Inventory.currentUser(watchedExecutablePaths: [])) {
+            XCTAssertEqual($0 as? AutomationContractError, .invalidIdentity)
+        }
+    }
+
     func testBadScopeIncompletePIDListAndInactiveProbeFailureAreRejected() throws {
         XCTAssertThrowsError(try Inventory.collectExecutables(userID: 501, paths: [], reader: reader(), inactive: { _ in true }))
         var empty = reader(); empty.processIDs = { _ in [] }
@@ -167,10 +173,5 @@ final class AutomationMacExecutableInventoryTests: XCTestCase {
         .init(processIDs: { _ in [42] }, identity: { pid, _ in .init(pid: pid, startIdentity: "100:0") }, executablePath: path)
     }
     private enum Failure: Error { case unrelated, owned }
-    private actor Frames {
-        var frames: [Inventory]
-        init(_ frames: [Inventory]) { self.frames = frames }
-        func next() throws -> Inventory { guard !frames.isEmpty else { throw Failure.owned }; return frames.removeFirst() }
-    }
 }
 #endif

@@ -39,30 +39,6 @@ final class AutomationFirstRunPlannerTests: XCTestCase {
         XCTAssertFalse(proposal.plans.contains { $0.execution.operation == "Invalid" })
         XCTAssertTrue(proposal.gaps.contains { $0.contains("Boolean value is invalid") })
     }
-    func testSavedNavigationGoalCannotExceedTheFirstCampaignReadbackReservation() throws {
-        let catalog = catalog()
-        var plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, instruction: "Open the selected view",
-            endpoint: "Complete", approvedText: "", expectedVisibleText: "", approval: approval, localeIdentifier: "en_GB")
-        let runtimeDigest = String(repeating: "d", count: 64)
-        plan.provenance["catalog"] = try AutomationRecipeContext.catalogDigest(catalog)
-        plan.provenance["ui.runtimeManifestDigest"] = runtimeDigest
-        var supplied = try evidence(catalog)
-        supplied.runtimeContext = .init(app: app, target: target, environmentID: approval.environmentID,
-            catalogDigest: supplied.catalogDigest, hostDigest: String(repeating: "b", count: 64), localeIdentifier: "en_GB",
-            uiRuntimeManifestDigest: runtimeDigest)
-        supplied.savedCases = [try AutomationFrozenCase(plan: plan)]
-        let proposal = try compile(catalog, evidence: supplied, includeUI: true)
-        XCTAssertEqual(proposal.plans.count, 1)
-        XCTAssertEqual(proposal.plans.first?.execution.kind, .observeOnly)
-        XCTAssertTrue(proposal.gaps.contains { $0.contains("37 operations") })
-        plan.execution.uiProgram?.operations[0].goal?.maximumCalls = 9
-        plan.execution.uiProgram?.operations[0].goal?.maximumActions = 15
-        supplied.savedCases = [try AutomationFrozenCase(plan: plan)]
-        let shorter = try compile(catalog, evidence: supplied, includeUI: true)
-        XCTAssertEqual(shorter.plans.count, 1)
-        XCTAssertEqual(shorter.plans.first?.execution.kind, .observeOnly)
-        XCTAssertTrue(shorter.gaps.contains { $0.contains("28 operations") })
-    }
     func testInitialObservationIsReadOnlyAndNeverClaimsBusinessPass() throws {
         let proposal = try AutomationFirstRunPlanner.compile(catalog: catalog(), appName: "Example", approval: approval, capabilities: capabilities, includeActions: false, includeUI: true, localeIdentifier: "en_GB")
         let plan = try XCTUnwrap(proposal.plans.first)
@@ -212,12 +188,18 @@ final class AutomationFirstRunPlannerTests: XCTestCase {
     private func context(_ catalog: ApplicationSurfaceCatalog) throws -> AutomationRecipeContext {
         .init(app: app, target: target, environmentID: approval.environmentID,
             catalogDigest: try AutomationRecipeContext.catalogDigest(catalog), hostDigest: String(repeating: "c", count: 64),
-            localeIdentifier: "en_GB", uiRuntimeManifestDigest: String(repeating: "d", count: 64))
+            localeIdentifier: "en_GB")
+    }
+    private func attachUIHost(to plan: inout AutomationCase, context: AutomationRecipeContext) {
+        plan.provenance["ui.backend"] = "xcuitest"
+        plan.provenance["ui.preparedHostDigest"] = context.hostDigest
+        plan.provenance["ui.preparedCatalogDigest"] = context.catalogDigest
     }
     func testCompatibleSavedCasesKeepTheirAssertionsAndBudgetPriority() throws {
         let catalog = catalog()
         var supplied = try evidence(catalog); supplied.runtimeContext = try context(catalog)
         var saved = try XCTUnwrap(compile(catalog, evidence: supplied, includeUI: true).plans.first)
+        attachUIHost(to: &saved, context: try context(catalog))
         var observer = saved.execution; observer.id = "independent"; observer.kind = .ui; observer.phase = .observe
         observer.uiProgram = .init(operations: [.init(id: "destination", kind: .observeProperty, locator: .init(.label, "Actual destination"), property: "text")])
         saved.observations = [observer]
@@ -243,16 +225,24 @@ final class AutomationFirstRunPlannerTests: XCTestCase {
         XCTAssertNotEqual(drifted.plans[0], saved)
         XCTAssertTrue(drifted.gaps.contains { $0.contains("different or unverified host build") })
     }
-    func testSavedCasesRejectStaleEffectsAndRuntimeWithoutLosingView() throws {
+    func testSavedCasesRejectStaleEffectsAndPreparedUIIdentityWithoutLosingView() throws {
         let catalog = catalog()
         var supplied = try evidence(catalog); supplied.runtimeContext = try context(catalog)
         let original = try XCTUnwrap(compile(catalog, evidence: supplied, includeUI: true).plans.first)
-        for mutation in 0..<4 {
-            var saved = original
+        var prepared = original
+        attachUIHost(to: &prepared, context: try context(catalog))
+        for mutation in 0..<8 {
+            var saved = prepared
             switch mutation {
             case 0: saved.environmentID = "foreign"
             case 1: saved.execution.effects.insert(.externalWrite)
-            case 2: saved.provenance["ui.runtimeManifestDigest"] = String(repeating: "f", count: 64)
+            case 2: saved.provenance["ui.preparedHostDigest"] = String(repeating: "f", count: 64)
+            case 3: saved.provenance["ui.preparedCatalogDigest"] = String(repeating: "f", count: 64)
+            case 4: saved.provenance["ui.locale"] = "fr_FR"
+            case 5: saved.app.productDigest = String(repeating: "f", count: 64)
+            case 6:
+                saved.provenance["ui.backend"] = nil
+                saved.provenance["ui.runtimeManifestDigest"] = String(repeating: "d", count: 64)
             default: saved.provenance["catalog"] = nil
             }
             supplied.savedCases = [try AutomationFrozenCase(plan: saved)]
@@ -261,57 +251,6 @@ final class AutomationFirstRunPlannerTests: XCTestCase {
             XCTAssertEqual(proposal.plans[0], original)
             XCTAssertTrue(proposal.gaps.contains { $0.contains("Saved case") })
         }
-    }
-    private func qualifiedRecipe(_ catalog: ApplicationSurfaceCatalog) throws -> AutomationFirstRunRecipeInput {
-        let context = try context(catalog)
-        var create = AutomationSegment(id: "create", kind: .ui, phase: .setup, operation: "Approved record creation",
-            effects: [.observe, .navigate, .fixtureWrite], lifecycle: .persistedStateAcrossSegments)
-        create.uiProgram = .init(operations: [.init(id: "open", kind: .tap, locator: .init(.testId, "add")),
-            .init(id: "fill", kind: .fillBinding, locator: .init(.testId, "name"), binding: "name"),
-            .init(id: "save", kind: .tap, locator: .init(.testId, "save"))], bindings: ["name": "Actual approved fixture"])
-        var verifier = AutomationSegment(id: "verify", kind: .ui, phase: .observe, operation: "Independent fixture label read",
-            effects: [.observe, .navigate], lifecycle: .persistedStateAcrossSegments)
-        verifier.uiProgram = .init(operations: [.init(id: "title", kind: .observeProperty, locator: .init(.label, "Actual approved fixture"), property: "text")])
-        var subject = verifier; subject.id = "subject"; subject.phase = .subject
-        var plan = AutomationCase(id: "qualification", app: app, target: target, environmentID: context.environmentID,
-            execution: subject, setup: [create], observations: [verifier])
-        plan.provenance["ui.locale"] = context.localeIdentifier
-        var approval = self.approval; approval.effects.insert(.fixtureWrite)
-        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
-        let receipts = [create, subject, verifier].enumerated().map { index, segment in
-            AutomationSegmentReceipt(scope: .init(runID: approval.runID, attemptID: "qualified", segmentID: segment.id, leaseGeneration: index + 1),
-                app: app, target: target, segmentID: segment.id, route: .ui, dispatched: true, completed: true,
-                observations: segment.id == "verify" ? [.init(id: "verify", app: app, target: target, environmentID: context.environmentID,
-                    attemptID: "qualified", stepID: "verify", route: .ui, proof: .visibleState, value: .text("Actual approved fixture"))] : [],
-                verifiedOutputs: segment.id == "verify" ? ["title": .text("Actual approved fixture")] : nil, environmentID: context.environmentID)
-        }
-        let report = AutomationAttemptReport(attemptID: "qualified", result: AutomationAssessment.assess(plan: plan, attemptID: "qualified",
-            subjectDispatched: true, subjectCompleted: true, observations: []), receipts: receipts, resourcesReleased: true)
-        let recipe = try AutomationQualifiedSetupRecipe(candidate: .init(id: "approved-creation", producerSegmentID: "create", verifierSegmentID: "verify", fillBinding: "name", outputID: "title"),
-            live: .init(context: context, plan: plan, approval: approval, report: report))
-        return .init(recipe: recipe, context: context, text: "Fresh approved fixture", consumingParameter: "name")
-    }
-    func testQualifiedRecipeRequiresCurrentContextFreshTextAndApprovedEffects() throws {
-        let catalog = catalog([action("Record", parameters: [.init(name: "name", family: "text", optional: false)])])
-        var supplied = try evidence(catalog); supplied.runtimeContext = try context(catalog)
-        supplied.recipes["Record"] = try qualifiedRecipe(catalog)
-        var approval = approval; approval.effects.insert(.fixtureWrite); approval.maximumActions = 11
-        let plan = try XCTUnwrap(compile(catalog, evidence: supplied, approval: approval).plans.first)
-        XCTAssertEqual(plan.setup[0].uiProgram?.bindings["name"], "Fresh approved fixture")
-        XCTAssertEqual(plan.execution.inputBindings?.first?.producerSegmentID, "recipe.verify")
-        XCTAssertNil(plan.execution.inputs["name"])
-        XCTAssertTrue(plan.requirements.isEmpty)
-        approval.maximumActions = 10
-        let bounded = try compile(catalog, evidence: supplied, approval: approval)
-        XCTAssertTrue(bounded.plans.isEmpty)
-        XCTAssertTrue(bounded.gaps.contains { $0.contains("need 11 operations") })
-        approval.maximumActions = 20; approval.effects.remove(.fixtureWrite)
-        XCTAssertTrue(try compile(catalog, evidence: supplied, approval: approval).plans.isEmpty)
-        approval.effects.insert(.fixtureWrite)
-        supplied.runtimeContext = nil
-        XCTAssertTrue(try compile(catalog, evidence: supplied, approval: approval).plans.isEmpty)
-        supplied.runtimeContext = try context(catalog); supplied.recipes["Record"]?.text = ""
-        XCTAssertTrue(try compile(catalog, evidence: supplied, approval: approval).plans.isEmpty)
     }
     #if os(macOS)
     func testRealEntityChoicesCompileFreshLookupAndRespectItsReadbackBudget() throws {

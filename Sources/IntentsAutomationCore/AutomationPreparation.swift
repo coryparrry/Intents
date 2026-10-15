@@ -342,7 +342,6 @@ public actor AutomationPreparation {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             let state = try AutomationDurableFile(url: sessionRoot.appendingPathComponent("prepared-application.json"), maximumBytes: AutomationPreparedApplicationRecord.maximumRecordBytes)
             try state.withLock { try state.write(try encoder.encode(value)) }
-            await AutomationPreparedCodecAuthority.shared.register(value)
             try requireActive()
             return value
         } catch {

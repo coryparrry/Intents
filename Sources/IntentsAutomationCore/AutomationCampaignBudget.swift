@@ -82,10 +82,6 @@ public actor AutomationCampaignBudget {
         }
         usage.reservedUIActions += uiActions
     }
-    public func reserveControllerCall(id: String) throws {
-        try available(); guard usage.controllerCalls < limits.controllerCalls else { throw AutomationCampaignBudgetError.exhausted("controller calls") }
-        try unique("controller:" + id); usage.controllerCalls += 1
-    }
     /// Owned resource release remains permitted after a campaign cap/deadline so expiry cannot strand a booted simulator.
     public func reserveResourceRelease(id: String) throws {
         try unique("release:" + id); usage.reservedResourceReleaseOperations += 1

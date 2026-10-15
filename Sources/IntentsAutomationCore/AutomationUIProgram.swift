@@ -11,16 +11,15 @@ public struct AutomationUIProgram: Codable, Equatable, Sendable {
         public init(_ kind: Kind, _ value: String, role: Role? = nil) { self.kind = kind; self.value = value; self.role = role }
     }
     public struct Operation: Codable, Equatable, Sendable {
-        public enum Kind: String, Codable, Sendable { case tap, fillBinding, readProperty, observeProperty, assertEndpoint, locate, scroll, navigateGoal }
+        public enum Kind: String, Codable, Sendable { case tap, fillBinding, readProperty, observeProperty, assertEndpoint, locate, scroll }
         public var kind: Kind
         public var id: String
         public var locator: Locator?
         public var binding: String?
         public var property: String?
         public var direction: String?
-        public var goal: AutomationNavigationGoal?
-        public init(id: String, kind: Kind, locator: Locator? = nil, binding: String? = nil, property: String? = nil, direction: String? = nil, goal: AutomationNavigationGoal? = nil) {
-            self.id = id; self.kind = kind; self.locator = locator; self.binding = binding; self.property = property; self.direction = direction; self.goal = goal
+        public init(id: String, kind: Kind, locator: Locator? = nil, binding: String? = nil, property: String? = nil, direction: String? = nil) {
+            self.id = id; self.kind = kind; self.locator = locator; self.binding = binding; self.property = property; self.direction = direction
         }
     }
     public var operations: [Operation]
@@ -80,17 +79,6 @@ public struct AutomationUIProgram: Codable, Equatable, Sendable {
         }
         for operation in operations {
             guard Self.identifier(operation.id) else { throw AutomationContractError.invalidIdentity }
-            if operation.kind == .navigateGoal {
-                guard operations.count == 1, let goal = operation.goal, goal.id == operation.id,
-                      operation.locator == nil, operation.binding == nil, operation.property == nil, operation.direction == nil,
-                      phase != .observe || (bindings.isEmpty && goal.saveControl == nil) else { throw AutomationContractError.invalidPlan("Ambiguous navigation goal or observer inputs") }
-                try goal.validate()
-                guard Set((goal.minimumBindingUses ?? [:]).keys).isSubset(of: Set(bindings.keys)) else { throw AutomationContractError.invalidPlan("Required input activity has no approved binding") }
-                guard Set(goal.allowedFillBindings ?? []).isSubset(of: Set(bindings.keys)) else { throw AutomationContractError.invalidPlan("Permitted fill has no approved binding") }
-                guard Set(goal.selectionBindings ?? []).isSubset(of: Set(bindings.keys)) else { throw AutomationContractError.invalidPlan("Option selection has no approved binding") }
-                continue
-            }
-            guard operation.goal == nil else { throw AutomationContractError.invalidPlan("Goal attached to a deterministic operation") }
             if operation.kind == .scroll {
                 guard operation.locator == nil, operation.binding == nil, operation.property == nil,
                       ["up", "down", "left", "right"].contains(operation.direction) else { throw AutomationContractError.invalidPlan("Invalid scroll") }
@@ -115,30 +103,6 @@ public struct AutomationUIProgram: Codable, Equatable, Sendable {
                 guard ["text", "value"].contains(operation.property), operation.binding == nil else { throw AutomationContractError.invalidPlan("Unsupported UI property") }
             default:
                 guard operation.binding == nil, operation.property == nil else { throw AutomationContractError.invalidPlan("Ambiguous UI operation") }
-            }
-        }
-    }
-    public func approvedActions() throws -> [AutomationRunAuthority.Action] {
-        try validate(phase: .setup)
-        if let steps {
-            return try steps.compactMap { step in
-                switch step.kind {
-                case .launch: return .activate
-                case .tap: return .tap
-                case .typeText, .clearAndType:
-                    guard let text = step.text ?? step.binding.flatMap({ bindings[$0] }) else { throw AutomationInputBindingError.inputUnavailable }
-                    return .fill(text)
-                case .swipe: return .swipe(step.direction!)
-                default: return nil
-                }
-            }
-        }
-        return [.activate] + operations.compactMap { operation in
-            switch operation.kind {
-            case .tap: return .tap
-            case .fillBinding: return .fill(bindings[operation.binding!]!)
-            case .scroll: return .swipe(operation.direction!)
-            default: return nil
             }
         }
     }

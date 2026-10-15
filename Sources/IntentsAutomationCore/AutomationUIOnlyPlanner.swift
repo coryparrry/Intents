@@ -1,24 +1,22 @@
 import Foundation
 
-/// Native-authored UI workflow. Its business observer never enters the controller payload.
+/// A reviewed, deterministic UI workflow with an independent visible-state check.
 public enum AutomationUIOnlyPlanner {
-    public static func compile(app: AppIdentity, target: TargetIdentity, instruction: String, endpoint: String,
-                               approvedText: String = "", expectedVisibleText: String = "",
+    public static func compile(app: AppIdentity, target: TargetIdentity, program: AutomationUIProgram,
+                               description: String = "Run reviewed UI steps", expectedVisibleText: String = "",
                                observationLabel: String = "", observationProperty: String = "text",
                                approval: RunApproval, localeIdentifier: String) throws -> AutomationCase {
-        guard app == approval.app, target == approval.target, target.kind == .simulator,
+        let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !description.isEmpty, description.utf16.count <= 4096, !description.contains("\0"),
+              app == approval.app, target == approval.target, target.kind == .simulator,
               !localeIdentifier.isEmpty, localeIdentifier.utf16.count <= 128,
               expectedVisibleText.utf16.count <= 1024, observationLabel.utf16.count <= 1024,
-              ["text", "value", "checked", "selected"].contains(observationProperty), approvedText.utf16.count <= 32768,
+              ["text", "value", "checked", "selected"].contains(observationProperty),
               approval.maximumActions >= 30 else { throw AutomationContractError.invalidPlan("Invalid UI workflow approval") }
-        let goal = AutomationNavigationGoal(id: "navigate", instruction: instruction,
-            endpoint: .init(.label, endpoint), maximumCalls: 12, maximumActions: 30,
-            allowedFillBindings: approvedText.isEmpty ? [] : ["approvedText"])
-        try goal.validate()
-        var subject = AutomationSegment(id: "subject", kind: .ui, phase: .subject, operation: instruction,
+        try program.validate(phase: .subject)
+        var subject = AutomationSegment(id: "subject", kind: .ui, phase: .subject, operation: description,
             effects: approval.effects, lifecycle: .persistedStateAcrossSegments)
-        subject.uiProgram = .init(operations: [.init(id: goal.id, kind: .navigateGoal, goal: goal)],
-            bindings: approvedText.isEmpty ? [:] : ["approvedText": approvedText])
+        subject.uiProgram = program
         var observers: [AutomationSegment] = [], requirements: [AutomationRequirement] = []
         if !expectedVisibleText.isEmpty {
             let expected: AutomationValue
@@ -37,7 +35,7 @@ public enum AutomationUIOnlyPlanner {
                 checkID: observationProperty == "text" ? "business.visible-text" : "business.visible-property")]
         }
         var budget = AutomationBudget(); budget.subjectOperations = 1; budget.attempts = 1
-        budget.uiActions = 30; budget.controllerCalls = 12; budget.wallClockSeconds = 180
+        budget.uiActions = 30; budget.controllerCalls = 0; budget.wallClockSeconds = 180
         var plan = AutomationCase(id: "ui-workflow", app: app, target: target, environmentID: approval.environmentID,
             execution: subject, observations: observers, requirements: requirements, budget: budget)
         plan.provenance = ["ui.locale": localeIdentifier, "inputs": "native approval", "expectation": requirements.isEmpty ? "navigation only; unassessed" : "independent visible-state check"]

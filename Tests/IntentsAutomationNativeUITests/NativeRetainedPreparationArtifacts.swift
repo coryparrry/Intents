@@ -46,7 +46,7 @@ func nativeRetainedPreparation(_ value: AutomationPreparedApplication, bundle: U
         try encoder.encode(prepared).write(to: record)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: record.path)
     }
-    try AutomationPreparedCodecAuthority.verify(prepared)
+    try AutomationPreparedArtifactIntegrity.verify(prepared)
     return prepared
 }
 #endif

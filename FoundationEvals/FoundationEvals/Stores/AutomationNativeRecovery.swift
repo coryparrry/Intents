@@ -142,14 +142,6 @@ extension AppAutomationStore {
                 }
             }
             let remaining = try await leases.recoveryRecords()
-            if let retained = siriResetQualificationOwnership {
-                guard !remaining.contains(where: { $0.runID == retained.runID && $0.target.leaseKey == retained.target.leaseKey }) else {
-                    throw AutomationContractError.terminationUnverified
-                }
-                siriResetQualificationOwnership = nil
-                siriResetQualificationUnresolved = false
-                siriResetConversionScopeDigest = nil; siriResetConversionDeadline = nil
-            }
             finishOwnershipReset()
             recoveryItems = remaining.map { .init(record: $0) }
             message = "Device ownership reset. Review the workflow before running again."

@@ -26,7 +26,6 @@ public struct AutomationFrozenCase: Codable, Equatable, Sendable {
     /// fingerprints while retaining the host template and declared schema.
     /// Cases without typed artifacts keep the original strict projection.
     public static func comparisonContractDigest(_ plan: AutomationCase) throws -> String {
-        try AutomationNativeInputAdapterReview.validate(plan.nativeInputAdapterReviews, plan: plan)
         var contract = plan
         contract.revision = 1
         contract.app.canonicalBundlePath = nil; contract.app.productDigest = nil; contract.app.productDigestVersion = nil
@@ -48,13 +47,6 @@ public struct AutomationFrozenCase: Codable, Equatable, Sendable {
             contract.app.sourceSyntaxIndexDigest = nil
             contract.preparedSimulatorBuildArtifacts = artifacts.comparisonProjection
             if contract.provenance["catalog"] != nil { contract.provenance["catalog"] = artifacts.catalogSurfaceDigest }
-        }
-        if let reviews = plan.nativeInputAdapterReviews {
-            contract.nativeInputAdapterReviews = reviews.map { review in
-                .init(probeDigest: String(repeating: "0", count: 64), app: contract.app, target: review.target,
-                    actionID: review.actionID, parameterNames: review.parameterNames,
-                    purpose: review.purpose, fixedSamples: review.fixedSamples)
-            }
         }
         for index in contract.observations.indices {
             if let reader = plan.observations[index].durableStateReader {
@@ -154,11 +146,12 @@ public actor AutomationCaseStore {
         guard report.attemptID == id else { throw AutomationContractError.conflictingOperation }
         try AutomationRecordedEvidence.validate(report: report, plan: frozen.plan); return (report, data.count)
     }
-    public func definitions() throws -> [AutomationFrozenCase] {
+    public func definitions() throws -> [AutomationFrozenCase] { try definitionListing().items }
+    public func definitionListing() throws -> AutomationHistoryListing<AutomationFrozenCase> {
         let definitions = try directory(["Definitions"])
         let ids = try FileManager.default.contentsOfDirectory(atPath: definitions.path).sorted()
         guard ids.count <= 1000 else { throw AutomationContractError.invalidIdentity }
-        var result: [AutomationFrozenCase] = []; var totalBytes = 0
+        var result: [AutomationFrozenCase] = []; var totalBytes = 0, scanned = 0, skipped = 0
         for id in ids {
             try Self.identifier(id)
             let folder = try directory(["Definitions", id])
@@ -170,14 +163,26 @@ public actor AutomationCaseStore {
                     throw AutomationContractError.invalidIdentity
                 }
                 let digest = String(name[name.index(after: separator)...].dropLast(5))
-                let (frozen, size) = try readDefinition(id: id, revision: revision, digest: digest, maximumBytes: min(2_097_152, 16 * 1024 * 1024 - totalBytes))
-                totalBytes += size
+                let data = try AutomationReadOnlyFile.read(root: root, relativePath: "Definitions/\(id)/\(name)",
+                    maximumBytes: min(2_097_152, 16 * 1024 * 1024 - totalBytes), requirePrivateOwnership: true)
+                totalBytes += data.count; scanned += 1
+                guard scanned <= 1000 else { throw AutomationContractError.invalidIdentity }
+                let frozen: AutomationFrozenCase
+                do { frozen = try JSONDecoder().decode(AutomationFrozenCase.self, from: data) }
+                catch {
+                    if try AutomationRetiredUIHistory.definition(data, id: id, revision: revision, digest: digest) {
+                        skipped += 1; continue
+                    }
+                    throw error
+                }
+                try frozen.validate()
+                guard frozen.plan.id == id, frozen.plan.revision == revision, frozen.digest == digest else { throw AutomationContractError.conflictingOperation }
                 guard totalBytes <= 16 * 1024 * 1024 else { throw AutomationContractError.invalidIdentity }
                 result.append(frozen)
                 guard result.count <= 1000 else { throw AutomationContractError.invalidIdentity }
             }
         }
-        return result.sorted { $0.plan.id == $1.plan.id ? $0.plan.revision < $1.plan.revision : $0.plan.id < $1.plan.id }
+        return .init(items: result.sorted { $0.plan.id == $1.plan.id ? $0.plan.revision < $1.plan.revision : $0.plan.id < $1.plan.id }, skippedRetiredRecords: skipped)
     }
     public func attempts(for frozen: AutomationFrozenCase) throws -> [AutomationAttemptReport] {
         try frozen.validate()

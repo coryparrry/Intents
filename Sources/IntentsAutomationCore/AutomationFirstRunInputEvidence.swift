@@ -8,7 +8,6 @@ public struct AutomationFirstRunInputEvidence: Sendable {
     public var environmentID: String
     public var catalogDigest: String
     public var inputs: [String: [String: AutomationActionInput]]
-    public var recipes: [String: AutomationFirstRunRecipeInput]
     public var savedCases: [AutomationFrozenCase]
     public var runtimeContext: AutomationRecipeContext?
     public var unavailableActions: [String: String] = [:]
@@ -19,10 +18,9 @@ public struct AutomationFirstRunInputEvidence: Sendable {
 
     public init(app: AppIdentity, target: TargetIdentity, environmentID: String, catalogDigest: String,
                 inputs: [String: [String: AutomationActionInput]] = [:],
-                recipes: [String: AutomationFirstRunRecipeInput] = [:],
                 savedCases: [AutomationFrozenCase] = [], runtimeContext: AutomationRecipeContext? = nil) {
         self.app = app; self.target = target; self.environmentID = environmentID
-        self.catalogDigest = catalogDigest; self.inputs = inputs; self.recipes = recipes
+        self.catalogDigest = catalogDigest; self.inputs = inputs
         self.savedCases = savedCases; self.runtimeContext = runtimeContext
     }
 
@@ -30,19 +28,5 @@ public struct AutomationFirstRunInputEvidence: Sendable {
         let observedCatalogDigest = try AutomationRecipeContext.catalogDigest(catalog)
         return app == catalog.app && target == approval.target && environmentID == approval.environmentID
             && catalogDigest == observedCatalogDigest
-    }
-}
-
-/// A saved qualified producer plus a freshly approved real input. The compiler
-/// replays the producer and binds its fresh observation rather than a cached output.
-public struct AutomationFirstRunRecipeInput: Sendable {
-    public var recipe: AutomationQualifiedSetupRecipe
-    public var context: AutomationRecipeContext
-    public var text: String
-    public var consumingParameter: String
-    public init(recipe: AutomationQualifiedSetupRecipe, context: AutomationRecipeContext,
-                text: String, consumingParameter: String) {
-        self.recipe = recipe; self.context = context; self.text = text
-        self.consumingParameter = consumingParameter
     }
 }

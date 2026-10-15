@@ -186,45 +186,12 @@ final class AutomationCoordinatorTests: XCTestCase, @unchecked Sendable {
         let releases = await driver.history.filter { $0.hasPrefix("release:") }
         XCTAssertEqual(releases, ["release:subject"])
     }
-    func testPolicyDenialSurvivesWorkerFailureAndSavedRoundTripWithoutStrengtheningEvidence() async throws {
-        let (plan, approval) = fixture()
-        for reason in AutomationPolicyDenialReason.allCases {
-            let driver = ContractDriver(remoteFailure: .remote(code: -32000, message: "Action denied: " + reason.rawValue))
-            let report = try await coordinator().run(plan: plan, approval: approval, capabilities: .init(), attemptID: "attempt", driver: driver)
-            XCTAssertEqual(report.result.policyDenial, reason)
-            XCTAssertEqual(report.result.summary, .invalidFixture)
-            XCTAssertFalse(report.result.subjectDispatched); XCTAssertFalse(report.result.subjectCompleted)
-            XCTAssertFalse(report.result.assessed); XCTAssertTrue(report.resourcesReleased)
-            XCTAssertEqual(try JSONDecoder().decode(AutomationAttemptReport.self, from: JSONEncoder().encode(report)), report)
-            let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
-            defer { try? FileManager.default.removeItem(at: root) }
-            let store = try AutomationCaseStore(root: root)
-            let frozen = try await store.freeze(plan)
-            try await store.saveAttempt(report, for: frozen)
-            let saved = try await store.loadAttempt(id: report.attemptID, frozen: frozen)
-            XCTAssertEqual(saved, report)
-        }
-    }
     func testRecordedSuccessCannotCarryAnUnexecutedPolicyDenial() async throws {
         let (plan, approval) = fixture()
         var report = try await coordinator().run(plan: plan, approval: approval, capabilities: .init(), attemptID: "attempt", driver: ContractDriver())
         XCTAssertEqual(report.result.summary, .passed)
         report.result.policyDenial = .controllerNode
         XCTAssertThrowsError(try AutomationRecordedEvidence.validate(report: report, plan: plan))
-    }
-    func testUnrecognizedRemoteTextCannotEnterSavedPolicyDiagnostic() async throws {
-        let (plan, approval) = fixture()
-        for error in [AutomationRPCError.remote(code: -32000, message: "Action denied: private-canary"),
-                      .remote(code: -32001, message: "Action denied: scopeLease"),
-                      .remote(code: -32000, message: "Action denied: scopeLease private-canary")] {
-            let report = try await coordinator().run(plan: plan, approval: approval, capabilities: .init(), attemptID: "attempt", driver: ContractDriver(remoteFailure: error))
-            XCTAssertNil(report.result.policyDenial)
-            let bytes = try JSONEncoder().encode(report)
-            XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains("private-canary"))
-            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
-            XCTAssertNil((object["result"] as? [String: Any])?["policyDenial"])
-            XCTAssertEqual(try JSONDecoder().decode(AutomationAttemptReport.self, from: bytes), report)
-        }
     }
     func testCancellationRetainsItsClassificationAndUnknownDispatch() async throws {
         var (plan, approval) = fixture(); plan.setup = []
@@ -376,18 +343,16 @@ private actor ContractDriver: AutomationRouteDriver {
     let delay: Duration?
     let sabotageJournal: URL?
     let uncleanedPayloadSegment: String?
-    let remoteFailure: AutomationRPCError?
     let incompleteSegment: String?, failingSegment: String?
     let slowReleaseSegment: String?, releaseDelay: Duration
     let forgery: (segmentID: String, kind: ReceiptForgery)?
     let gatedReleaseSegment: String?
     private var releaseGateOpen = false, releaseGateWaiters: [CheckedContinuation<Void, Never>] = []
-    init(omitObservation: Bool = false, unreleasedSegment: String? = nil, throwOnExecute: Bool = false, delay: Duration? = nil, sabotageJournal: URL? = nil, uncleanedPayloadSegment: String? = nil, remoteFailure: AutomationRPCError? = nil,
+    init(omitObservation: Bool = false, unreleasedSegment: String? = nil, throwOnExecute: Bool = false, delay: Duration? = nil, sabotageJournal: URL? = nil, uncleanedPayloadSegment: String? = nil,
          incompleteSegment: String? = nil, failingSegment: String? = nil, slowReleaseSegment: String? = nil, releaseDelay: Duration = .zero, forgery: (segmentID: String, kind: ReceiptForgery)? = nil, gatedReleaseSegment: String? = nil) {
         self.omitObservation = omitObservation; self.unreleasedSegment = unreleasedSegment; self.throwOnExecute = throwOnExecute
         self.delay = delay; self.sabotageJournal = sabotageJournal
         self.uncleanedPayloadSegment = uncleanedPayloadSegment
-        self.remoteFailure = remoteFailure
         self.incompleteSegment = incompleteSegment; self.failingSegment = failingSegment
         self.slowReleaseSegment = slowReleaseSegment; self.releaseDelay = releaseDelay; self.forgery = forgery
         self.gatedReleaseSegment = gatedReleaseSegment
@@ -401,8 +366,7 @@ private actor ContractDriver: AutomationRouteDriver {
     }
     func execute(plan: AutomationCase, segment: AutomationSegment, scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease) async throws -> AutomationSegmentReceipt {
         history.append("execute:\(segment.id)")
-        if let remoteFailure { throw remoteFailure }
-        if throwOnExecute || segment.id == failingSegment { throw AutomationRPCError.dispatchedOutcomeUnknown }
+        if throwOnExecute || segment.id == failingSegment { throw AutomationContractError.ambiguousDispatch }
         if let delay { try await Task.sleep(for: delay) }
         let observations: [AutomationObservation] = segment.phase == .observe && !omitObservation ? [AutomationObservation(id: segment.id, app: plan.app,
             target: plan.target, environmentID: plan.environmentID, attemptID: scope.attemptId, stepID: segment.id,

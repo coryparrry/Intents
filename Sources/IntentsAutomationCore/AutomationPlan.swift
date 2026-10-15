@@ -107,7 +107,6 @@ public struct AutomationCase: Codable, Equatable, Sendable {
     public var environmentID: String
     public var setup: [AutomationSegment]
     public var setupChecks: [AutomationRequirement]?
-    public var uiRequestFixture: AutomationUIRequestFixture?
     public var execution: AutomationSegment
     public var observations: [AutomationSegment]
     public var requirements: [AutomationRequirement]
@@ -116,7 +115,6 @@ public struct AutomationCase: Codable, Equatable, Sendable {
     public var provenance: [String: String]
     public var preparedMacBuildArtifacts: AutomationPreparedMacBuildArtifacts?
     public var preparedSimulatorBuildArtifacts: AutomationPreparedSimulatorBuildArtifacts?
-    public var nativeInputAdapterReviews: [AutomationNativeInputAdapterReview]?
     public init(id: String, app: AppIdentity, target: TargetIdentity, environmentID: String, execution: AutomationSegment,
                 setup: [AutomationSegment] = [], observations: [AutomationSegment] = [], requirements: [AutomationRequirement] = [],
                 cleanup: [AutomationSegment] = [], budget: AutomationBudget = .init(), setupChecks: [AutomationRequirement]? = nil) {
@@ -128,16 +126,14 @@ public struct AutomationCase: Codable, Equatable, Sendable {
 }
 public enum PlanValidator {
     public static func validate(_ plan: AutomationCase, approval: RunApproval, capabilities: CapabilityProfile,
-                                purpose: AutomationPlanValidationPurpose = .execution, siriAuthority: AutomationSiriRouteAuthority? = nil) throws {
+                                purpose: AutomationPlanValidationPurpose = .execution) throws {
         guard plan.schemaVersion == 3, plan.revision > 0, !plan.id.isEmpty, plan.execution.phase == .subject,
               plan.app == approval.app, plan.target == approval.target, plan.environmentID == approval.environmentID else {
             throw AutomationContractError.invalidPlan("Identity or required subject route is invalid")
         }
-        try AutomationNativeInputAdapterReview.validate(plan.nativeInputAdapterReviews, plan: plan)
-        try plan.uiRequestFixture?.validate(plan: plan)
         try AutomationAttemptText.validate(plan: plan, approval: approval)
         if plan.execution.kind == .siriText {
-            try AutomationSiriTextProgram.validateAdmission(plan: plan, approval: approval, capabilities: capabilities, authority: siriAuthority, purpose: purpose)
+            try AutomationSiriTextProgram.validateAdmission(plan: plan, approval: approval, capabilities: capabilities, purpose: purpose)
         }
         try plan.preparedMacBuildArtifacts?.validate(plan: plan)
         try plan.preparedSimulatorBuildArtifacts?.validate(plan: plan)
@@ -189,10 +185,7 @@ public enum PlanValidator {
                     (segment.effects.contains(.navigate) && segment.lifecycle == .persistedStateAcrossSegments) else {
                     throw AutomationContractError.invalidPlan("UI activation needs approved navigation and persisted-state lifecycle")
                 }
-                if segment.uiProgram?.operations.contains(where: { $0.goal?.saveControl != nil }) == true,
-                   segment.phase == .observe || segment.effects.isDisjoint(with: [.fixtureWrite, .externalWrite]) {
-                    throw AutomationContractError.invalidPlan("Save control requires approved write effects")
-                }
+
             }
             try AutomationCodecRequirements.validate(segment, plan: plan, capabilities: capabilities, purpose: purpose)
             let required = purpose == .review ? segment.requiredCapabilities.filter { !$0.hasPrefix("apple.codec.") } : segment.requiredCapabilities

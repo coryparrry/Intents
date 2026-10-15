@@ -103,7 +103,7 @@ final class AutomationMacExecutableCodeIdentityTests: XCTestCase {
         XCTAssertEqual(proc_pidpath(process.processIdentifier, &path, UInt32(path.count)), 0)
         XCTAssertEqual(try Code.activeHash(process.processIdentifier), hash)
         XCTAssertTrue(try Code.excludes(pid: process.processIdentifier, userID: getuid(), paths: [helper.path]))
-        let inventory = try AutomationMacProcessInventory.currentUser(helperExecutablePaths: [helper.path])
+        let inventory = try AutomationMacProcessInventory.currentUser(watchedExecutablePaths: [helper.path])
         XCTAssertTrue(inventory.processes.isEmpty)
         try inventory.validate(expectedUserID: getuid(), matchingExecutablePaths: [helper.path])
         XCTAssertFalse(try Code.excludes(pid: process.processIdentifier, userID: getuid(), hashes: sleepHashes,

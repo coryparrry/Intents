@@ -183,7 +183,7 @@ class CoverageTests(unittest.TestCase):
             "XcodeConnectionDiscovery.swift",
         ):
             with self.subTest(source=source):
-                expected = ["ScenarioContractsTests", "ScenarioPhysicalSiriQualificationTests"]
+                expected = ["ScenarioContractsTests"]
                 if source != "ScenarioExecutionRecovery.swift":
                     expected += ["ScenarioPhysicalLeaseTests", "ScenarioPhysicalFailureTests"]
                 if source == "XcodeTestExecutor.swift":
@@ -203,7 +203,7 @@ class CoverageTests(unittest.TestCase):
             with self.subTest(source=source):
                 self.assert_selection(
                     [routes.APP + "Services/" + source], native=True,
-                    swift=("ScenarioPhysicalLeaseTests", "ScenarioPhysicalFailureTests", "ScenarioPhysicalSiriQualificationTests"),
+                    swift=("ScenarioPhysicalLeaseTests", "ScenarioPhysicalFailureTests"),
                 )
         for source in ("IntentLabProjectInstaller.swift", "OpenStepProjectDocument.swift"):
             with self.subTest(source=source):
@@ -217,7 +217,7 @@ class CoverageTests(unittest.TestCase):
             [routes.APP + "Services/XcodeTestExecutor.swift"],
             native=True,
             swift=("ScenarioContractsTests", "ExecutorSimplificationTests", "XcodeBundleLayoutTests", "XcodeSyntheticReadinessTests",
-                   "ScenarioPhysicalLeaseTests", "ScenarioPhysicalFailureTests", "ScenarioPhysicalSiriQualificationTests"),
+                   "ScenarioPhysicalLeaseTests", "ScenarioPhysicalFailureTests"),
         )
         for suite in ("ExecutorSimplificationTests", "XcodeBundleLayoutTests", "XcodeSyntheticReadinessTests"):
             with self.subTest(suite=suite):

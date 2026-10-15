@@ -8,7 +8,7 @@ final class AutomationReproductionTests: XCTestCase, @unchecked Sendable {
         let app = AppIdentity(logicalID: "selected", bundleID: "example.UI", platform: "ios")
         let target = TargetIdentity(id: UUID().uuidString, kind: .simulator)
         var approval = RunApproval(runID: "reproduction", app: app, target: target, environmentID: "owned", effects: [.observe, .navigate], maximumActions: 30, disposable: true)
-        var plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, instruction: "Open controls", endpoint: "Controls", expectedVisibleText: "50%", observationLabel: "Volume", observationProperty: "value", approval: approval, localeIdentifier: "en_GB")
+        var plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, program: .init(operations: [.init(id: "open", kind: .tap, locator: .init(.label, "Controls"))]), expectedVisibleText: "50%", observationLabel: "Volume", observationProperty: "value", approval: approval, localeIdentifier: "en_GB")
         if legacy { plan.requirements[0].checkID = nil }
         var muted = AutomationSegment(id: "muted", kind: .ui, phase: .observe, operation: "Read mute state", effects: [.observe, .navigate], lifecycle: .persistedStateAcrossSegments)
         muted.uiProgram = .init(operations: [.init(id: "read-mute", kind: .observeProperty, locator: .init(.label, "Mute"), property: "checked")])

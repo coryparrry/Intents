@@ -78,7 +78,6 @@ public enum AutomationXCUITestPlan {
                     case .readProperty, .observeProperty: kind = .readProperty
                     case .scroll: kind = .swipe
                     case .locate, .assertEndpoint: kind = .waitFor; property = "exists"
-                    case .navigateGoal: throw AutomationContractError.invalidPlan("XCUITest requires explicit UI steps")
                     }
                     steps.append(.init(id: operation.id, segmentID: segment.id, kind: kind, query: query,
                                        binding: operation.binding, property: property, direction: operation.direction,
@@ -137,7 +136,7 @@ public enum AutomationXCUITestPlan {
         try result.validate()
         let uiActions = steps.filter { [.launch, .tap, .typeText, .clearAndType, .swipe].contains($0.kind) }.count
         guard uiActions <= plan.budget.uiActions, steps.filter({ $0.segmentID == plan.execution.id }).count <= plan.budget.subjectOperations,
-              steps.count <= approval.maximumActions, plan.budget.controllerCalls >= 1 else {
+              steps.count <= approval.maximumActions else {
             throw AutomationContractError.invalidPlan("XCUITest program exceeds its approved action budget")
         }
         guard try encoder.encode(result).count <= 32768 else { throw AutomationContractError.invalidPlan("UI plan exceeds XCTest environment budget") }

@@ -71,30 +71,27 @@ public actor AutomationCoordinator {
         self.releaseCampaignOnCompletion = releaseCampaignOnCompletion
     }
     public func run(plan: AutomationCase, approval: RunApproval, capabilities: CapabilityProfile,
-                    attemptID: String, driver: any AutomationRouteDriver, fixtureTracker: AutomationFreshFixtureTracker? = nil, qualificationFence: AutomationFreshFixtureQualificationFence? = nil, siriAuthority: AutomationSiriRouteAuthority? = nil, uiRequestFixtureTracker: AutomationUIRequestFixtureTracker? = nil) async throws -> AutomationAttemptReport {
+                    attemptID: String, driver: any AutomationRouteDriver, excludedEntityIDs: Set<String> = []) async throws -> AutomationAttemptReport {
         guard !running else { throw AutomationContractError.targetBusy }
         running = true; defer { running = false }
-        try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, siriAuthority: siriAuthority)
+        try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
         guard !attemptID.isEmpty else { throw AutomationContractError.invalidIdentity }
         let planDeadline = ContinuousClock.now.advanced(by: .seconds(plan.budget.wallClockSeconds))
         let deadline = min(planDeadline, campaignDeadline ?? planDeadline)
         var receipts: [AutomationSegmentReceipt] = [], subjectDispatched = false, subjectCompleted = false
         var termination: AttemptResult.Summary?, released = true, dispatchUncertain = false
         var policyDenial: AutomationPolicyDenialReason?
-        guard plan.uiRequestFixture == nil || uiRequestFixtureTracker != nil else { throw AutomationContractError.missingEvidence("UI session plans require live reset authority") }
         let segments = plan.setup + [plan.execution] + plan.observations
         for segment in segments {
             do {
                 try Task.checkCancellation()
                 guard ContinuousClock.now < deadline else { termination = .timedOut; break }
-                if segment.phase == .subject, let qualificationFence {
-                    try await qualificationFence.reserveBeforeSubject(receipts: receipts, plan: plan, approval: approval, attemptID: attemptID)
-                }
-                if segment.phase == .subject, let uiRequestFixtureTracker {
-                    try await uiRequestFixtureTracker.reserveBeforeSubject(receipts: receipts, plan: plan, approval: approval, attemptID: attemptID)
-                }
-                if segment.phase == .subject, let fixtureTracker {
-                    try await fixtureTracker.reserveBeforeSubject(receipts: receipts, plan: plan, approval: approval, attemptID: attemptID)
+                if segment.phase == .subject, AutomationFreshFixtureEvidence.requiresFreshIdentities(plan) {
+                    let identities = try AutomationFreshFixtureEvidence.identitiesBeforeSubject(receipts: receipts, plan: plan,
+                        runID: approval.runID, attemptID: attemptID)
+                    guard identities.isDisjoint(with: excludedEntityIDs) else {
+                        termination = .invalidFixture; break
+                    }
                 }
                 let resolution = try AutomationInputResolver.resolveForExecution(segment: segment, receipts: receipts, plan: plan, runID: approval.runID, attemptID: attemptID)
                 let (receipt, controlReleased) = try await execute(plan: plan, segment: resolution.segment, resolution: resolution.authority, approval: approval, attemptID: attemptID, deadline: deadline, driver: driver)
@@ -226,7 +223,7 @@ public actor AutomationCoordinator {
             }
             let summary: AttemptResult.Summary = error is CancellationError ? .cancelled
                 : error as? AutomationRPCError == .timedOut ? .timedOut : segment.phase == .setup ? .invalidFixture : .unresolved
-            throw AutomationExecutionFailure(summary: summary, dispatchUncertain: knownReceipt == nil && (invoked || duplicate), resourcesReleased: controlReleased, receipt: knownReceipt, policyDenial: AutomationPolicyDenialReason.from(error))
+            throw AutomationExecutionFailure(summary: summary, dispatchUncertain: knownReceipt == nil && (invoked || duplicate), resourcesReleased: controlReleased, receipt: knownReceipt, policyDenial: nil)
         }
     }
     private func release(driver: any AutomationRouteDriver, scope: AutomationScope,

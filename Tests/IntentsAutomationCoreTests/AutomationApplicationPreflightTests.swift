@@ -69,8 +69,7 @@ final class AutomationApplicationPreflightTests: XCTestCase, @unchecked Sendable
             do { _ = try await observer.acquire(runID: "another-owner", target: target, control: .system); XCTFail("Failed reservation cleared earlier ownership") }
             catch { XCTAssertEqual(error as? AutomationContractError, .targetBusy) }
         }
-        do { _ = try await runner.qualifyRecipe(.init(id: "invented", producerSegmentID: "setup", verifierSegmentID: "verify", fillBinding: "name", outputID: "title")); XCTFail("Failed preparation cannot qualify a recipe") }
-        catch { }
+
     }
     private func rejectedBeforeMutation() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)

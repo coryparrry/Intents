@@ -25,11 +25,6 @@ public struct AutomationObservation: Codable, Equatable, Sendable {
 public enum AutomationPolicyDenialReason: String, Codable, CaseIterable, Sendable {
     case scopeEnvelope, actionShape, controllerNode, scopeLease, actionMismatch, deadline, budget, routeBusy, routeRevoked, unspecified
 
-    static func from(_ error: Error) -> Self? {
-        guard case .remote(let code, let message) = error as? AutomationRPCError, code == -32000 else { return nil }
-        return allCases.first { message == "Action denied: " + $0.rawValue }
-    }
-
     public var explanation: String {
         switch self {
         case .scopeEnvelope: "The action no longer matches the approved run."

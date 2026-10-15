@@ -7,11 +7,9 @@ struct AppAutomationView: View {
     @State private var savedCaseLimit = 50
     @State private var approveBuild = false
     @State private var preparationReview: AutomationNativePreparationReview?
-    @State private var searchReview: AutomationNativeSearchReview?
     @State private var approveRun = false
     @State private var nativeConfirmation: AutomationNativeConfirmationReview?
     @State private var nativeConfirmationLoading = false
-    @State private var approveSearch = false
     @State private var approveReproduction = false
     @State private var approveComparison = false
     var body: some View {
@@ -64,7 +62,6 @@ struct AppAutomationView: View {
                                     Text("App workflow").tag("ui").accessibilityIdentifier("ui")
                                     Text("System action").tag("system").accessibilityIdentifier("system")
                                     Text("Action on a new test record").tag("fresh").accessibilityIdentifier("fresh")
-                                    if model.preparationDestination == .simulator { Text("Find record failures").tag("freshSearch").accessibilityIdentifier("freshSearch") }
                                     if model.preparationDestination == .physical { Text("Siri recognised-text submission").tag("siri").accessibilityIdentifier("siri") }
                                 }.accessibilityLabel("What to test").accessibilityIdentifier("automation.workflow.route").onChange(of: model.workflowRoute) { model.workflowSelectionChanged() }
                             }
@@ -119,27 +116,6 @@ struct AppAutomationView: View {
                             Toggle("Allow starting this simulator and installing the selected app", isOn: $model.installApproved)
                             Text(model.uiExpectedText.isEmpty ? "Navigation completion will be unassessed. Add a visible-state check to assess a requirement." : "The visible-state check runs separately after navigation.").font(.callout).foregroundStyle(.secondary)
                             Button("Run workflow…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
-                            Divider()
-                            Picker("Wording to vary", selection: $model.uiVarySubjectRequest) {
-                                Text("Navigation instructions").tag(false)
-                                Text("Actual AI request text").tag(true)
-                            }
-                            if model.uiVarySubjectRequest {
-                                Text("Choose Disposable fixture effects. The selected AI must keep all changes inside the disposable local session. Search stays unavailable without independently observable fresh session identity and empty state.").font(.callout).foregroundStyle(.secondary)
-                                TextField("Request input control label (must be empty after reset)", text: $model.uiRequestInputControl)
-                                TextField("New-session control label", text: $model.uiRequestResetControl)
-                                TextField("Current session ID control label (reads its value)", text: $model.uiRequestSessionIdentity)
-                                TextField("Empty-state control label", text: $model.uiRequestEmptyStateControl)
-                                TextField("Expected empty-state text", text: $model.uiRequestEmptyStateText)
-                                TextField("Submit request control label", text: $model.uiRequestSubmitControl)
-                            }
-                            TextField("Alternative phrases, one per line (up to two)", text: $model.uiAlternatePhrases, axis: .vertical)
-                            Text(model.uiVarySubjectRequest ? "Use only when Approved text is a request sent to the app’s AI. Review each alternative for the same meaning. The destination, controller instructions and business check stay fixed. Every request needs a live-verified new empty session and exact submit tap. Up to 100 attempts, 5,500 reserved subject operations, 1,000 UI actions and 300 controller calls; at most one hour." : "Navigation wording trials keep the destination, approved text and business check fixed. Up to 100 attempts, 5,500 reserved subject operations, 1,000 UI actions and 300 controller calls; at most one hour.").font(.callout).foregroundStyle(.secondary)
-                            Button("Find failures…") {
-                                do { searchReview = try model.reviewNativeSearch(); approveSearch = true }
-                                catch { model.message = "The workflow or phrases changed. Review them before searching." }
-                            }.disabled(!model.canFindFailures)
-                            if let reason = model.failureSearchUnavailableReason { Text(reason).font(.caption).foregroundStyle(.secondary) }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(10).disabled(model.busy)
                     }
                 }
@@ -178,17 +154,7 @@ struct AppAutomationView: View {
                                     Toggle("Allow starting this simulator and installing the prepared app", isOn: $model.installApproved)
                                 }
                                 Text("Only the expected record states you choose are assessed. Invocation alone remains unassessed.").font(.callout).foregroundStyle(.secondary)
-                                if model.isFreshSearchWorkflow {
-                                    Button("Find record failures…") {
-                                        do { searchReview = try model.reviewNativeSearch(); approveSearch = true }
-                                        catch { model.message = model.errorText(error) }
-                                    }.disabled(!model.canFindFailures)
-                                    if let reason = model.failureSearchUnavailableReason {
-                                        Text(reason).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                } else {
-                                    Button(model.isFreshRecordWorkflow ? "Run test record workflow…" : "Run action…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
-                                }
+                                Button(model.isFreshRecordWorkflow ? "Run test record workflow…" : "Run action…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
                             }
                             ForEach(catalog.gaps, id: \.self) { Text($0).font(.callout).foregroundStyle(.secondary) }
                             if model.prepared == nil { Text("Prepare an associated host to run this app's system actions.").font(.callout) }
@@ -197,6 +163,9 @@ struct AppAutomationView: View {
                 }
                 if let result = model.searchReport { searchResult(result, title: "Failure search") }
                 if let result = model.reproductionReport { reproductionResult(result, title: "Reproduction") }
+                if let notice = model.savedHistoryNotice {
+                    Text(notice).font(.callout).foregroundStyle(.secondary)
+                }
                 if !model.savedReproductions.isEmpty {
                     GroupBox("Saved reproductions") {
                         VStack(alignment: .leading, spacing: 10) {
@@ -234,7 +203,7 @@ struct AppAutomationView: View {
                 if let pending = model.pendingCommandStatus {
                     GroupBox("Execution request") {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(pending.kind == .fixComparison ? "Review the selected builds below, then confirm Check fix to run the unchanged case 30 times per build." : pending.kind == .reproduction ? "Review the saved failure below, then confirm Reproduce failure to run its frozen case five times." : "Review the app, inputs and permitted effects above, then confirm Run.")
+                            Text(pending.kind == .fixComparison ? "Review the selected builds below, then confirm Check fix to run the unchanged case three times per build." : pending.kind == .reproduction ? "Review the saved failure below, then confirm Reproduce failure to run its frozen case five times." : "Review the app, inputs and permitted effects above, then confirm Run.")
                             Text("Request \(pending.requestID.uuidString)").font(.caption).textSelection(.enabled)
                             Button("Dismiss request") { _ = try? model.cancelCommand(id: pending.requestID) }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
@@ -252,7 +221,7 @@ struct AppAutomationView: View {
                                 Text(reason.explanation).font(.callout)
                             }
                             Text("Subject dispatched: \(report.result.subjectDispatched ? "yes" : "no") · completed: \(report.result.subjectCompleted ? "yes" : "no")")
-                            Text(report.resourcesReleased ? "Owned controllers released." : "Controller release is unresolved; the target remains quarantined.")
+                            Text(report.resourcesReleased ? "Test runner released." : "Test runner release is unresolved.")
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
                     }
                 }
@@ -366,19 +335,12 @@ struct AppAutomationView: View {
             }
             Button("Cancel", role: .cancel) { preparationReview = nil }
         } message: { Text(preparationReview?.message ?? "Review the selected build again.") }
-        .alert(model.isFreshSearchWorkflow ? "Search with fresh test records?" : "Explore these approved phrases?", isPresented: $approveSearch) {
-            Button("Find failures") {
-                guard let review = searchReview else { return }; searchReview = nil
-                Task { await model.findFailures(reviewed: review) }
-            }
-            Button("Cancel", role: .cancel) { searchReview = nil }
-        } message: { Text(searchReview?.message ?? "Review the selected workflow and phrases again.") }
         .alert("Reproduce the saved failure?", isPresented: $approveReproduction) {
             Button("Run five attempts") { confirmNativeConfirmation() }
             Button("Cancel", role: .cancel) { cancelNativeConfirmation() }
         } message: { Text(nativeConfirmation?.message ?? "Review this request again.") }
         .alert("Compare both retained builds?", isPresented: $approveComparison) {
-            Button("Run 30 attempts per build") { confirmNativeConfirmation() }
+            Button("Run 3 attempts per build") { confirmNativeConfirmation() }
             Button("Cancel", role: .cancel) { cancelNativeConfirmation() }
         } message: { Text(nativeConfirmation?.message ?? "Review this request again.") }
         .alert("Run the selected workflow?", isPresented: $approveRun) {
@@ -419,7 +381,7 @@ struct AppAutomationView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("\(report.matchingFailures) matching failures / \(report.attempts.count) recorded attempts")
                 Text("\(report.assessedPasses) passes · \(report.otherFailures) other failures · \(report.unassessed) unassessed").font(.callout).foregroundStyle(.secondary)
-                Text(report.complete ? "All five attempts finished and released their controllers." : "Reproduction is incomplete.")
+                Text(report.complete ? "All five attempts finished and released their test runners." : "Reproduction is incomplete.")
                 if let reason = report.stopReason { Text(reason).foregroundStyle(.secondary) }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
         }

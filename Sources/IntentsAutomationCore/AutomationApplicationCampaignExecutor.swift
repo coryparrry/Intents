@@ -3,7 +3,7 @@ import Foundation
 
 /// The production campaign adapter retains one native runner and its durable
 /// target ownership; every attempt executes the same checked route contracts.
-public struct AutomationApplicationCampaignExecutor: AutomationFreshFixtureAttemptExecutor {
+public struct AutomationApplicationCampaignExecutor: AutomationCampaignAttemptExecutor {
     private let runner: AutomationApplicationRunner
     private let prepared: AutomationPreparedApplication
     private let capabilities: CapabilityProfile
@@ -15,17 +15,13 @@ public struct AutomationApplicationCampaignExecutor: AutomationFreshFixtureAttem
     }
     public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
                         budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
-        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, tracker: nil)
+        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, excludedEntityIDs: [])
     }
     public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
-                        budget: AutomationCampaignBudget, fixtureTracker: AutomationFreshFixtureTracker) async throws -> AutomationAttemptReport {
-        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, tracker: fixtureTracker)
-    }
-    private func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
-                         budget: AutomationCampaignBudget, tracker: AutomationFreshFixtureTracker?) async throws -> AutomationAttemptReport {
+                        budget: AutomationCampaignBudget, excludedEntityIDs: Set<String>) async throws -> AutomationAttemptReport {
         try frozen.validate()
         return try await runner.run(prepared: prepared, plan: frozen.plan, approval: approval, capabilities: capabilities,
-            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: budget, fixtureTracker: tracker)
+            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: budget, excludedEntityIDs: excludedEntityIDs)
     }
 }
 #endif

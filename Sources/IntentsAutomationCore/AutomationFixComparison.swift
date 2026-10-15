@@ -55,12 +55,6 @@ public enum AutomationFixContract {
             plan.preparedSimulatorBuildArtifacts = artifacts
             if plan.provenance["catalog"] != nil { plan.provenance["catalog"] = artifacts.catalogDigest }
         } else { throw AutomationContractError.missingEvidence("Review a versioned prepared case before comparing rebuilt hosts") }
-        if let reviews = baseline.plan.nativeInputAdapterReviews {
-            plan.nativeInputAdapterReviews = try reviews.map { review in
-                try AutomationNativeCodecQualification.review(.init(prepared: prepared, actionID: review.actionID,
-                    parameterNames: review.parameterNames))
-            }
-        }
         if plan.observations.contains(where: { $0.durableStateReader != nil }) {
             let approval = RunApproval(runID: "candidate-storage-review", app: prepared.host.app, target: prepared.host.target,
                 environmentID: plan.environmentID, effects: [.observe], maximumActions: 1, disposable: true)
@@ -77,9 +71,6 @@ public enum AutomationFixContract {
         guard baseline.plan.preparedMacBuildArtifacts == nil, baseline.plan.preparedSimulatorBuildArtifacts == nil,
               baseline.plan.provenance["ui.preparedHostDigest"] == nil else {
             throw AutomationContractError.missingEvidence("Select the rebuilt prepared artifacts with the changed app")
-        }
-        guard baseline.plan.nativeInputAdapterReviews == nil else {
-            throw AutomationContractError.missingEvidence("Native input conversion comparisons require the changed build's actual prepared source and associated host")
         }
         guard !baseline.plan.observations.contains(where: { $0.durableStateReader != nil }) else {
             throw AutomationContractError.missingEvidence("A durable-state comparison requires the changed build's separately verified prepared reader")
@@ -113,10 +104,9 @@ public actor AutomationFixComparison {
     private let cases: AutomationCaseStore
     private var running = false
     public init(cases: AutomationCaseStore) { self.cases = cases }
-    public func run(baseline: AutomationFrozenCase, candidate: AutomationFrozenCase, attemptsPerBuild: Int = 30,
+    public func run(baseline: AutomationFrozenCase, candidate: AutomationFrozenCase, attemptsPerBuild: Int = 3,
                     beforeApproval: RunApproval, afterApproval: RunApproval, beforeCapabilities: CapabilityProfile = .init(), afterCapabilities: CapabilityProfile = .init(), limits: AutomationCampaignLimits,
                     beforeExecutor: any AutomationCampaignAttemptExecutor, afterExecutor: any AutomationCampaignAttemptExecutor,
-                    beforeFixture: AutomationQualifiedFreshFixture? = nil, afterFixture: AutomationQualifiedFreshFixture? = nil,
                     onProgress: AutomationFixComparisonProgressHandler? = nil) async throws -> AutomationFixComparisonReport {
         guard !running else { throw AutomationContractError.targetBusy }
         try AutomationFixContract.validate(baseline: baseline, candidate: candidate); try limits.validate()
@@ -127,29 +117,16 @@ public actor AutomationFixComparison {
         try PlanValidator.validate(candidate.plan, approval: afterApproval, capabilities: afterCapabilities)
         let segments = baseline.plan.setup + [baseline.plan.execution] + baseline.plan.observations + baseline.plan.cleanup
         let mutating = !segments.allSatisfy({ $0.effects.isSubset(of: [.observe, .navigate]) })
-        var beforeTracker: AutomationFreshFixtureTracker?, afterTracker: AutomationFreshFixtureTracker?
-        if mutating {
-            guard let beforeFixture, let afterFixture else {
-                throw AutomationContractError.missingEvidence("Repeated mutating comparison requires separately qualified fresh fixtures for both builds")
-            }
-            try beforeFixture.validate(plan: baseline.plan, approval: beforeApproval)
-            try afterFixture.validate(plan: candidate.plan, approval: afterApproval)
-            guard beforeFixture.context.uiRuntimeManifestDigest == afterFixture.context.uiRuntimeManifestDigest else {
-                throw AutomationContractError.missingEvidence("Changed UI harness requires qualifying both builds under the same runtime")
-            }
-            guard beforeExecutor is any AutomationFreshFixtureAttemptExecutor, afterExecutor is any AutomationFreshFixtureAttemptExecutor else {
-                throw AutomationContractError.missingEvidence("Mutating comparison requires pre-dispatch fresh-fixture executors")
-            }
-            let ledger = AutomationFixtureIdentityLedger(fixtures: [beforeFixture, afterFixture])
-            beforeTracker = AutomationFreshFixtureTracker(fixture: beforeFixture, ledger: ledger)
-            afterTracker = AutomationFreshFixtureTracker(fixture: afterFixture, ledger: ledger)
+        guard !mutating || (beforeApproval.disposable && afterApproval.disposable && baseline.plan.setupChecks?.isEmpty == false) else {
+            throw AutomationContractError.invalidPlan("Repeated writes require disposable targets and frozen setup checks")
         }
         running = true; defer { running = false }
         _ = try await cases.freeze(baseline.plan); _ = try await cases.freeze(candidate.plan)
         let beforeBudget = try AutomationCampaignBudget(limits: limits), afterBudget = try AutomationCampaignBudget(limits: limits)
+        var excludedEntityIDs: Set<String> = []
         var result = AutomationFixComparisonReport(contractDigest: baseline.contractDigest, baseline: baseline, candidate: candidate, requestedAttemptsPerBuild: attemptsPerBuild)
         result.beforeRunID = beforeApproval.runID; result.afterRunID = afterApproval.runID
-        for (frozen, approval, budget, executor, tracker, isBefore) in [(baseline, beforeApproval, beforeBudget, beforeExecutor, beforeTracker, true), (candidate, afterApproval, afterBudget, afterExecutor, afterTracker, false)] {
+        for (frozen, approval, budget, executor, isBefore) in [(baseline, beforeApproval, beforeBudget, beforeExecutor, true), (candidate, afterApproval, afterBudget, afterExecutor, false)] {
             await onProgress?(.init(population: isBefore ? .before : .after, event: .populationStarted,
                 beforeSaved: result.before.count, afterSaved: result.after.count,
                 requestedAttemptsPerBuild: attemptsPerBuild, savedAttemptID: nil))
@@ -159,16 +136,15 @@ public actor AutomationFixComparison {
                     try Task.checkCancellation()
                     try await budget.reserveAttempt(id: id); reserved = true
                     enteredExecutor = true
-                    let report: AutomationAttemptReport
-                    if let tracker, let fresh = executor as? any AutomationFreshFixtureAttemptExecutor {
-                        report = try await fresh.execute(frozen: frozen, approval: approval, attemptID: id, budget: budget, fixtureTracker: tracker)
-                        try await tracker.validate(report: report, plan: frozen.plan, approval: approval)
-                    } else { report = try await executor.execute(frozen: frozen, approval: approval, attemptID: id, budget: budget) }
+                    let report = try await executor.execute(frozen: frozen, approval: approval, attemptID: id, budget: budget, excludedEntityIDs: excludedEntityIDs)
                     guard report.attemptID == id else { throw AutomationContractError.conflictingOperation }
                     try AutomationRecordedEvidence.validate(report: report, plan: frozen.plan, expectedRunID: approval.runID)
                     if let existing = try? await cases.loadAttempt(id: id, frozen: frozen) {
                         guard existing == report else { throw AutomationContractError.conflictingOperation }
                     } else { try await cases.saveAttempt(report, for: frozen) }
+                    let identities = try AutomationFreshFixtureEvidence.dispatchedIdentities(report: report, plan: frozen.plan)
+                    guard identities.isDisjoint(with: excludedEntityIDs) else { throw AutomationFixtureFreshnessError.invalidFixture }
+                    excludedEntityIDs.formUnion(identities)
                     if isBefore { result.before.append(report); result.beforeCounters.record(report.result) }
                     else { result.after.append(report); result.afterCounters.record(report.result) }
                     // Delivery is ordered and awaited only after canonical persistence succeeds.

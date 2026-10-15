@@ -3,7 +3,7 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationXCUITestCampaignTests: XCTestCase {
-    func testWholeCaseReservesSubjectCleanupUIAndOneController() async throws {
+    func testWholeCaseReservesActualOperationsWithoutControllerCalls() async throws {
         let (plan, approval) = try fixture()
         let steps = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval,
             attemptID: "attempt", leaseGeneration: 1)
@@ -13,7 +13,20 @@ final class AutomationXCUITestCampaignTests: XCTestCase {
         XCTAssertEqual(usage.reservedSubjectOperations, 2)
         XCTAssertEqual(usage.reservedCleanupOperations, 2)
         XCTAssertEqual(usage.reservedUIActions, 3)
-        XCTAssertEqual(usage.controllerCalls, 1)
+        XCTAssertEqual(usage.controllerCalls, 0)
+    }
+
+    func testDeterministicHostAcceptsZeroControllerBudget() async throws {
+        var (plan, approval) = try fixture()
+        plan.budget.controllerCalls = 0
+        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+        let steps = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval, attemptID: "zero-model", leaseGeneration: 1)
+        var limits = AutomationCampaignLimits(); limits.controllerCalls = 0
+        let budget = try AutomationCampaignBudget(limits: limits)
+        try await AutomationXCUITestCampaign.reserveBudget(steps, plan: plan, attemptID: "zero-model", budget: budget)
+        let usage = await budget.snapshot()
+        XCTAssertEqual(usage.controllerCalls, 0)
+        XCTAssertEqual(usage.reservedUIActions, 3)
     }
 
     func testCleanupCannotBypassSharedActionLimit() async throws {

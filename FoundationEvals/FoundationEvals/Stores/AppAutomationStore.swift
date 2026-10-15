@@ -21,10 +21,6 @@ final class AppAutomationStore {
     var siriAlternatePhrases = ""
     var siriResetActionID = ""
     var siriAccountEnvironment = ""
-    var siriResetQualificationUnresolved = false
-    var siriResetQualificationOwnership: (runID: String, target: TargetIdentity)?
-    var siriResetConversionScopeDigest: String?
-    var siriResetConversionDeadline: ContinuousClock.Instant?
     var siriCapabilities = CapabilityProfile()
     var preparationDestination: AutomationNativePreparationDestination = .simulator
     var includesSourceDependencies = false
@@ -36,7 +32,6 @@ final class AppAutomationStore {
                 preparedHistory.append(prepared)
                 if preparedHistory.count > 100 { preparedHistory.removeFirst() }
             }
-            reloadSelectedLearnedSetup()
         }
     }
     var preparedHistory: [AutomationPreparedApplication] = []
@@ -75,11 +70,6 @@ final class AppAutomationStore {
     var effectsConfirmed = false
     var disposable = false
     var installApproved = true
-    var learnedSetupAttempts: [AutomationCapturedSetupAttempt] = []
-    var learnedSetupRecipe: AutomationQualifiedNavigationSetupRecipe?
-    var savedLearnedSetupRecipe: AutomationSavedNavigationSetupRecipe?
-    var learnedSetupPersistenceError: String?
-    var useLearnedSetup = false
     var freshNamePrefix = ""
     var freshNameProperty = ""
     var freshStateProperty = ""
@@ -122,21 +112,6 @@ final class AppAutomationStore {
     var uiExpectedText = ""
     var uiObservationLabel = ""
     var uiObservationProperty = "text"
-    var uiAlternatePhrases = ""
-    var uiVarySubjectRequest = false
-    var uiRequestInputControl = ""
-    var uiRequestResetControl = ""
-    var uiRequestSessionIdentity = ""
-    var uiRequestEmptyStateControl = ""
-    var uiRequestEmptyStateText = ""
-    var uiRequestSubmitControl = ""
-    var uiRequestFixtureDraft: AutomationUIRequestFixture? {
-        let fields = [uiRequestInputControl, uiRequestResetControl, uiRequestSessionIdentity, uiRequestEmptyStateControl, uiRequestEmptyStateText, uiRequestSubmitControl]
-        guard fields.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf16.count < 512 }) else { return nil }
-        return .init(resetControl: .init(.label, uiRequestResetControl), sessionIdentity: .init(.label, uiRequestSessionIdentity),
-            emptyState: .init(.label, uiRequestEmptyStateControl), expectedEmptyState: uiRequestEmptyStateText,
-            submitControl: .init(.label, uiRequestSubmitControl), requestInputControl: .init(.label, uiRequestInputControl))
-    }
     var searchReport: AutomationFailureSearchReport?
     var savedSearches: [AutomationUIFailureSearchRecord] = []
     var viewedSearch: AutomationUIFailureSearchRecord?
@@ -161,11 +136,11 @@ final class AppAutomationStore {
     let savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])?
     private let savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])?
     let runExecutor: AutomationNativeRunExecutor?
-    private let searchExecutor: AutomationNativeSearchExecutor?
     private let comparisonExecutor: AutomationNativeFixComparisonExecutor?
     private let reproductionExecutor: AutomationNativeReproductionExecutor?
     private let reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))?
     var savedCases: [AutomationFrozenCase] = []
+    var savedHistoryNotice: String?
     private(set) var retainedUnresolvedNormalReport: AutomationAttemptReport?
     private(set) var retainedUnresolvedNormalTarget: TargetIdentity?
     /// Actual destinations of finished requests whose reports or reservations remain unresolved.
@@ -271,7 +246,6 @@ final class AppAutomationStore {
          xcodeSettings: AutomationNativeXcodeSettings? = nil,
          savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])? = nil,
          savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil, runExecutor: AutomationNativeRunExecutor? = nil,
-         searchExecutor: AutomationNativeSearchExecutor? = nil,
          entityQueryExecutor: AutomationNativeEntityQueryExecutor? = nil,
          comparisonExecutor: AutomationNativeFixComparisonExecutor? = nil,
          reproductionExecutor: AutomationNativeReproductionExecutor? = nil,
@@ -305,7 +279,7 @@ final class AppAutomationStore {
         self.evidenceImporter = evidenceImporter
         self.telemetry = telemetry
         support = supportDirectory; self.entityQueryExecutor = entityQueryExecutor; self.comparisonExecutor = comparisonExecutor; self.savedAttemptsReader = savedAttemptsReader
-        self.savedCasesReader = savedCasesReader; self.runExecutor = runExecutor; self.searchExecutor = searchExecutor; self.reproductionExecutor = reproductionExecutor; self.reproductionPreflightReader = reproductionPreflightReader
+        self.savedCasesReader = savedCasesReader; self.runExecutor = runExecutor; self.reproductionExecutor = reproductionExecutor; self.reproductionPreflightReader = reproductionPreflightReader
         ownershipRecoveryTask = Task { [weak self] in await self?.reconcileAbandonedOwnership() }
         loadRecentApplications()
         restoreLatestPreparation()
@@ -315,15 +289,14 @@ final class AppAutomationStore {
     var action: ApplicationSurfaceCatalog.SystemAction? { catalog?.systemActions.first { $0.id == actionID } }
     var canPrepare: Bool { !busy && !closing && candidate?.kind == .sourceTarget && !configuration.isEmpty && sourcePreparationTarget != nil && ((servedJavaScriptProfile == nil && automaticMetroRecipe == nil) || preparationDestination == .simulator) }
     var isInstalledUI: Bool { candidate?.kind == .installedProduct && candidate?.app?.platform == "ios" }
-    var isFreshSearchWorkflow: Bool { candidate?.kind == .sourceTarget && workflowRoute == "freshSearch" }
-    var isFreshRecordWorkflow: Bool { candidate?.kind == .sourceTarget && ["fresh", "freshSearch"].contains(workflowRoute) }
+    var isFreshRecordWorkflow: Bool { candidate?.kind == .sourceTarget && workflowRoute == "fresh" }
     var freshEntity: ApplicationSurfaceCatalog.Entity? {
         guard let action, action.parameters.count == 1, let parameter = action.parameters.first, parameter.family == "entity" else { return nil }
         return catalog?.entities?.first { $0.typeID == parameter.typeID }
     }
     var isUIWorkflow: Bool { isInstalledUI || isInstalledMacUI || (candidate?.kind == .sourceTarget && workflowRoute == "ui") }
     var canRun: Bool {
-        guard !closing, !pairedExecutionUnresolved, !siriResetQualificationUnresolved, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery else { return false }
+        guard !closing, !pairedExecutionUnresolved, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery else { return false }
         if isSiriWorkflow { return canRunSiriSubmission }
         guard prepared?.host.target.kind != .nativeMac, candidate?.kind != .sourceTarget || preparationDestination == .simulator else { return false }
         if isUIWorkflow {
@@ -487,10 +460,10 @@ final class AppAutomationStore {
             digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)))
     }
     private var unresolvedNormalAttempt: Bool { !retainedUnresolvedRequestTargets.isEmpty || retainedUnresolvedNormalReport != nil || report?.result.subjectDispatchUncertain == true || report?.resourcesReleased == false }
-    var hasUnresolvedActiveAttempt: Bool { pairedExecutionUnresolved || siriResetQualificationUnresolved || unresolvedNormalAttempt || unresolvedEntityQuery || unresolvedSearch || unresolvedReproduction || unresolvedComparison }
+    var hasUnresolvedActiveAttempt: Bool { pairedExecutionUnresolved || unresolvedNormalAttempt || unresolvedEntityQuery || unresolvedSearch || unresolvedReproduction || unresolvedComparison }
     var hasUnresolvedOwnership: Bool { !recoveryItems.isEmpty || hasUnresolvedActiveAttempt }
     private var permitsApplicationReview: Bool {
-        !busy && !closing && !pairedExecutionUnresolved && !siriResetQualificationUnresolved &&
+        !busy && !closing && !pairedExecutionUnresolved &&
             !unresolvedNormalAttempt && !unresolvedSearch && !unresolvedReproduction &&
             !unresolvedComparison && !unresolvedEntityQuery
     }
@@ -607,7 +580,7 @@ final class AppAutomationStore {
         guard installApproved else { throw AutomationContractError.conflictingOperation }
         let before = request.subject, after: AutomationApplicationSubject
         switch before {
-        case .installedMacUI: throw AutomationContractError.missingEvidence("Mac installed-app execution is not qualified")
+        case .installedMacUI: throw AutomationContractError.missingEvidence("Mac installed-app execution is unavailable")
         case .installedPhysicalUI:
             throw AutomationContractError.missingEvidence("Unreadable installed apps cannot establish an exact-build comparison")
         case .installedUI(let baseline):
@@ -634,7 +607,7 @@ final class AppAutomationStore {
     private func comparisonBuildDigest(_ subject: AutomationApplicationSubject) throws -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         switch subject {
-        case .installedMacUI: throw AutomationContractError.missingEvidence("Mac installed-app execution is not qualified")
+        case .installedMacUI: throw AutomationContractError.missingEvidence("Mac installed-app execution is unavailable")
         case .installedPhysicalUI: throw AutomationContractError.missingEvidence("Unreadable installed apps cannot establish an exact-build comparison")
         case .installedUI(let app): return AutomationArtifactRegistry.digest(try encoder.encode(app.app))
         case .prepared(let app): return AutomationArtifactRegistry.digest(try encoder.encode(app))
@@ -660,7 +633,7 @@ final class AppAutomationStore {
                     }
                 }
                 try Task.checkCancellation()
-                advanceSelection(); progress = "Checking the unchanged case 30 times on each build…"
+                advanceSelection(); progress = "Checking the unchanged case three times on each build…"
                 executedRequests = [(request.proposal.beforeApproval.runID, request.proposal.baseline.plan.target),
                     (request.proposal.afterApproval.runID, request.proposal.candidate.plan.target)]
                 let result: AutomationFixComparisonReport
@@ -697,54 +670,6 @@ final class AppAutomationStore {
     func clearFixedSelection() {
         if hasFixedSecurityScope { fixedBundleURL?.stopAccessingSecurityScopedResource() }
         hasFixedSecurityScope = false; fixedBundleURL = nil; fixedProduct = nil
-    }
-    var failureSearchUnavailableReason: String? {
-        if isFreshSearchWorkflow || uiVarySubjectRequest {
-            return "This workflow uses concrete controls. Safe request or record mutation needs a qualified controller before repeated trials are available."
-        }
-        return "This workflow follows fixed controls. Alternative navigation instructions do not change its steps."
-    }
-    var canFindFailures: Bool { false }
-    func findFailures(reviewed: AutomationNativeSearchReview? = nil) async {
-        guard canFindFailures else { return }
-        let request: AutomationNativeRunRequest
-        let proposal: AutomationNativeUIFailureSearchProposal
-        let runID = UUID().uuidString
-        do {
-            request = try makeUIRunRequest(runID: runID)
-            proposal = try .compile(plan: request.plan, approval: request.approval, alternatePhrases: uiAlternatePhrases)
-            if let reviewed {
-                guard reviewed.selectionEpoch == selectionEpoch, reviewed.digest == (try Self.nativeSearchDigest(request, proposal)) else {
-                    throw AutomationContractError.conflictingOperation
-                }
-            }
-        } catch { message = errorText(error); return }
-        advanceSelection(); report = nil; reportDirectory = nil; searchReport = nil; message = nil
-        progress = "Exploring the approved UI phrases…"
-        task = Task {
-            defer { progress = nil; task = nil; releaseScopeIfClosing() }
-            do {
-                let result: AutomationFailureSearchReport
-                if let searchExecutor { result = try await searchExecutor(proposal, request.subject, support, request.installApproved) }
-                else { result = try await proposal.execute(subject: request.subject, support: support, developerDirectory: developerDirectory(for: request.subject.target), allowBootAndInstall: request.installApproved) }
-                // Retain uncertain results even if their archive cannot be written.
-                searchReport = result
-                if unresolvedSearch { retainUnresolvedRequest(runID: proposal.approval.run.runID, target: proposal.baseline.plan.target) }
-                for attempt in result.attempts {
-                    if let frozen = ([proposal.baseline] + proposal.mutations.map(\.frozen)).first(where: { $0.digest == attempt.caseDigest }) {
-                        await importEvidence(plan: frozen.plan, report: attempt.report, announce: false)
-                    }
-                }
-                if evidenceImporter != nil { evidenceImportRevision += 1 }
-                let archive = try AutomationUIFailureSearchArchive(caseStoreRoot: support.appendingPathComponent("Cases"))
-                try await archive.save(.init(id: runID, runID: runID, baseline: proposal.baseline, mutations: proposal.mutations, report: result))
-                await refreshSavedCases()
-            } catch {
-                await retainUnresolvedReservation(runID: proposal.approval.run.runID, target: proposal.baseline.plan.target)
-                message = errorText(error); await refreshSavedCases()
-            }
-        }
-        await task?.value
     }
     func select(_ url: URL, rememberHistory: Bool = true) {
         guard canSelectApplicationFromCommand else { return }
@@ -927,7 +852,7 @@ final class AppAutomationStore {
                     guard selectedDeveloper.path == path else { throw AutomationContractError.conflictingOperation }
                     selectedToolchainMetadataDigest = installedToolchainReader(selectedDeveloper).first(where: { $0.directory == selectedDeveloper })?.metadataDigest
                 }
-                let siriProfile = try await AutomationSiriCapabilitySnapshot.resolve(prepared: value, capabilities: AutomationEntityQuery.capabilities(value))
+                let siriProfile = AutomationPreparedCapabilities.base(value)
                 guard selectionEpoch == epoch, sourcePreparationTarget == approval.target,
                       developerDirectory(for: approval.target) == reviewedDeveloper, !closing else { throw AutomationContractError.conflictingOperation }
                 if let digest = reviewedToolchainMetadata {
@@ -1006,11 +931,6 @@ final class AppAutomationStore {
                 } else {
                     let runner = try AutomationApplicationRunner(supportRoot: support, developerDirectory: developerDirectory(for: request.subject.target))
                     result = try await runNativePreparedRequest(request, runner: runner, attemptID: attemptID)
-                    if isFreshRecordWorkflow, !useLearnedSetup,
-                       let bindings = try? AutomationFreshEntityPlanner.bindings(plan: request.plan),
-                       let captured = try? await runner.captureFreshSetup(bindings: bindings) {
-                        retainLearnedSetup(captured)
-                    }
                 }
                 finishTelemetry?(.success(result))
                 report = result
@@ -1084,19 +1004,32 @@ final class AppAutomationStore {
         return try await cases.loadAttempt(id: attemptID, frozen: frozen)
     }
     func refreshSavedCases() async {
+        var notices: [String] = [], skipped = 0
         do {
-            savedCases = try await readSavedCases()
-            if FileManager.default.fileExists(atPath: support.appendingPathComponent("Cases/Searches").path) {
-                savedSearches = try await AutomationUIFailureSearchArchive(caseStoreRoot: support.appendingPathComponent("Cases")).records()
+            if let savedCasesReader { savedCases = try await savedCasesReader() }
+            else {
+                let listing = try await AutomationCaseStore(root: support.appendingPathComponent("Cases")).definitionListing()
+                savedCases = listing.items; skipped += listing.skippedRetiredRecords
             }
-            if FileManager.default.fileExists(atPath: support.appendingPathComponent("Cases/FixComparisons").path) {
-                savedComparisons = try await AutomationFixComparisonArchive(caseStoreRoot: support.appendingPathComponent("Cases")).records()
-            }
-            if FileManager.default.fileExists(atPath: support.appendingPathComponent("Cases/Reproductions").path) {
-                savedReproductions = try await AutomationReproductionArchive(caseStoreRoot: support.appendingPathComponent("Cases")).records()
-            }
+        } catch { notices.append("Saved cases could not be verified.") }
+        if FileManager.default.fileExists(atPath: support.appendingPathComponent("Cases/Searches").path) {
+            do {
+                let listing = try await AutomationUIFailureSearchArchive(caseStoreRoot: support.appendingPathComponent("Cases")).recordListing()
+                savedSearches = listing.items; skipped += listing.skippedRetiredRecords
+            } catch { notices.append("Saved searches could not be verified.") }
         }
-        catch { message = "Saved case integrity could not be verified." }
+        if FileManager.default.fileExists(atPath: support.appendingPathComponent("Cases/FixComparisons").path) {
+            do { savedComparisons = try await AutomationFixComparisonArchive(caseStoreRoot: support.appendingPathComponent("Cases")).records() }
+            catch { notices.append("Saved comparisons could not be verified.") }
+        }
+        if FileManager.default.fileExists(atPath: support.appendingPathComponent("Cases/Reproductions").path) {
+            do { savedReproductions = try await AutomationReproductionArchive(caseStoreRoot: support.appendingPathComponent("Cases")).records() }
+            catch { notices.append("Saved reproductions could not be verified.") }
+        }
+        if skipped > 0 {
+            notices.append("\(skipped) saved records use the retired controller and are unavailable. Their files have been kept.")
+        }
+        savedHistoryNotice = notices.isEmpty ? nil : notices.joined(separator: " ")
     }
     /// Read-only export snapshot. Capsule selection never changes execution approval or the viewed result.
     func capsuleExportSelection(_ frozen: AutomationFrozenCase) async throws -> (AutomationFrozenCase, [AutomationAttemptReport], AutomationEvidenceExposure) {
@@ -1230,7 +1163,7 @@ final class AppAutomationStore {
             environmentID: proposal.baseline.plan.environmentID, caseID: proposal.baseline.plan.id, revision: proposal.baseline.plan.revision,
             caseDigest: proposal.baseline.digest, candidateCaseDigest: proposal.candidate.digest,
             beforeProductDigest: request.before.app.productDigest!, afterProductDigest: request.after.app.productDigest!,
-            originalAttemptID: request.originalAttemptID, requestedAttemptsPerBuild: 30, installApproved: request.before.target.kind == .simulator, disposable: proposal.beforeApproval.disposable)
+            originalAttemptID: request.originalAttemptID, requestedAttemptsPerBuild: proposal.attemptsPerBuild, installApproved: request.before.target.kind == .simulator, disposable: proposal.beforeApproval.disposable)
     }
     func requestComparisonCommand(id: UUID, digest: String, nativeConfirmation: Bool = false) async throws -> AutomationNativeCommandStatus {
         guard !closing else { throw AutomationContractError.targetBusy }
@@ -1247,7 +1180,7 @@ final class AppAutomationStore {
         let status = AutomationNativeCommandStatus(requestID: id, digest: digest, state: "awaitingApproval", kind: .fixComparison,
             originalAttemptID: preview.originalAttemptID, caseID: preview.caseID, revision: preview.revision, caseDigest: preview.caseDigest)
         commandRequests[id] = status; pendingCommand = id; commandHistory.admitted(id)
-        message = "Review both builds and confirm Check fix to compare the unchanged case 30 times per build."
+        message = "Review both builds and confirm Check fix to compare the unchanged case three times per build."
         return status
     }
     func commandStatus(id: UUID) throws -> AutomationNativeCommandStatus {
@@ -1303,8 +1236,7 @@ final class AppAutomationStore {
     private func clearPrepared() {
         firstRunInputReviewID = nil; firstRunInputs = [:]; firstRunEntityQueryTexts = [:]
         firstRunEntityChoices = [:]; firstRunSelectedEntityIDs = [:]
-        useLearnedSetup = false; learnedSetupPersistenceError = nil
-        pairedFeatureID = ""; pairedEffectsConfirmed = false; firstRunIncludesActions = false; firstRunEffectsConfirmed = false; firstRunReports = []; firstRunGaps = []; selectedMacTarget = nil; advanceSelection(); clearEntitySelections(); prepared = nil; siriCapabilities = .init(); siriRequest = ""; siriOracle = .init(); catalog = nil; report = nil; workflowRoute = "ui"; actionID = ""; inputs = [:]; effectChoice = ""; effectsConfirmed = false; uiInstruction = ""; uiEndpoint = ""; freshSaveControl = ""; freshCreateControl = ""; freshNameEntryControl = ""; freshContextEntryControl = ""; uiTapControls = ""; uiTextEntryControl = ""; uiSubmitControl = ""; uiApprovedText = ""; uiExpectedText = ""; uiObservationLabel = ""; uiObservationProperty = "text"; uiAlternatePhrases = ""; uiVarySubjectRequest = false; uiRequestInputControl = ""; uiRequestResetControl = ""; uiRequestSessionIdentity = ""; uiRequestEmptyStateControl = ""; uiRequestEmptyStateText = ""; uiRequestSubmitControl = ""; freshNamePrefix = ""; freshNameProperty = ""; freshStateProperty = ""; freshInitialState = ""; freshExpectedState = ""; freshProtectOtherRecord = false; freshContextProperty = ""; freshSelectedContext = ""; freshProtectedContext = ""; searchReport = nil }
+        pairedFeatureID = ""; pairedEffectsConfirmed = false; firstRunIncludesActions = false; firstRunEffectsConfirmed = false; firstRunReports = []; firstRunGaps = []; selectedMacTarget = nil; advanceSelection(); clearEntitySelections(); prepared = nil; siriCapabilities = .init(); siriRequest = ""; siriOracle = .init(); catalog = nil; report = nil; workflowRoute = "ui"; actionID = ""; inputs = [:]; effectChoice = ""; effectsConfirmed = false; uiInstruction = ""; uiEndpoint = ""; freshSaveControl = ""; freshCreateControl = ""; freshNameEntryControl = ""; freshContextEntryControl = ""; uiTapControls = ""; uiTextEntryControl = ""; uiSubmitControl = ""; uiApprovedText = ""; uiExpectedText = ""; uiObservationLabel = ""; uiObservationProperty = "text"; freshNamePrefix = ""; freshNameProperty = ""; freshStateProperty = ""; freshInitialState = ""; freshExpectedState = ""; freshProtectOtherRecord = false; freshContextProperty = ""; freshSelectedContext = ""; freshProtectedContext = ""; searchReport = nil }
     func errorText(_ error: Error) -> String {
         if error is CancellationError { return "Cancelled. Any pending dispatch is retained for review." }
         if let contract = error as? AutomationContractError {
@@ -1312,7 +1244,7 @@ final class AppAutomationStore {
             case .invalidPlan(let reason), .missingEvidence(let reason): return reason
             case .targetBusy: return "The selected target is owned by another or unresolved run. Review its retained evidence before continuing."
             case .conflictingOperation: return "The selected source or prepared product changed. Prepare a fresh copy."
-            case .ambiguousDispatch, .terminationUnverified: return "An operation or controller release is unresolved. Its journal is retained; it will not be retried automatically."
+            case .ambiguousDispatch, .terminationUnverified: return "An operation or test runner release is unresolved. Its journal is retained; it will not be retried automatically."
             default: break
             }
         }
@@ -1354,7 +1286,6 @@ struct AutomationNativeRunRequest: Sendable {
     var installApproved: Bool
     var digest: String
     var caseDigest: String
-    var siriQualification = false
 }
 typealias AutomationNativeRunExecutor = @Sendable (AutomationApplicationSubject, AutomationCase, RunApproval, CapabilityProfile, String, Bool) async throws -> AutomationAttemptReport
 

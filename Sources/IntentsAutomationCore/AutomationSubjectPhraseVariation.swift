@@ -27,15 +27,13 @@ public enum AutomationSubjectPhraseVariation {
     }
 
     static func validate(_ mutation: AutomationMutationCase, baseline: AutomationFrozenCase) throws {
-        guard let slot = mutation.subjectPhraseSlot, mutation.goalPhraseVariation != true,
+        guard let slot = mutation.subjectPhraseSlot,
               mutation.recipeIDs.isEmpty, mutation.kinds == [.alternatePhrasing], mutation.requiredCapabilities.isEmpty,
               !mutation.semanticJustification.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               mutation.semanticJustification.utf16.count <= 4096 else {
             throw AutomationContractError.invalidPlan("Subject phrase requires an explicit request slot and semantic justification")
         }
         try baseline.validate(); try mutation.frozen.validate()
-        try baseline.plan.uiRequestFixture?.validate(plan: baseline.plan)
-        try mutation.frozen.plan.uiRequestFixture?.validate(plan: mutation.frozen.plan)
         let original = try text(in: baseline.plan, slot: slot), candidate = try text(in: mutation.frozen.plan, slot: slot)
         guard candidate != original, !candidate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               candidate.utf16.count <= 2048, !candidate.contains("\0") else { throw AutomationContractError.invalidPlan("Invalid subject phrase") }
@@ -52,9 +50,9 @@ public enum AutomationSubjectPhraseVariation {
         switch slot {
         case .uiRequestBinding(let name):
             guard plan.execution.kind == .ui, plan.execution.hostProgram == nil, plan.execution.siriProgram == nil,
-                  let program = plan.execution.uiProgram, program.operations.count == 1,
-                  program.operations[0].kind == .navigateGoal, let goal = program.operations[0].goal,
-                  goal.instruction == plan.execution.operation, (goal.allowedFillBindings ?? []).contains(name),
+                  let program = plan.execution.uiProgram,
+                  program.operations.contains(where: { $0.kind == .fillBinding && $0.binding == name }) ||
+                    program.steps?.contains(where: { [.typeText, .clearAndType].contains($0.kind) && $0.binding == name }) == true,
                   !(plan.execution.inputBindings ?? []).contains(where: { $0.destination == .uiBinding && $0.name == name }),
                   plan.execution.attemptTextBindings?[name] == nil,
                   let value = program.bindings[name], !value.isEmpty else {

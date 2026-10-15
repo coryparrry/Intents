@@ -42,6 +42,8 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 /website/WORKLOG.md
 /.codegraph/
 /Verification/**
+/plugins/apple-foundation-evals/WORKLOG.md
+/plugins/apple-foundation-evals/native/WORKLOG.md
 
 # Keep executable verification inputs, developer hosts, and formal models.
 !/Verification/Automation/

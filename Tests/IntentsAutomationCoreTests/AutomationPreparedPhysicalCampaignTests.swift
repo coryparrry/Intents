@@ -122,14 +122,12 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
     }
 
     private func run(_ h: Harness, prepared: AutomationPreparedApplication? = nil, plan: AutomationCase? = nil,
-                     approval: RunApproval? = nil, attemptID: String = "attempt", qualify: Bool = true,
+                     approval: RunApproval? = nil, attemptID: String = "attempt",
                      components: AutomationPreparedPhysicalCampaign.Components) async throws -> AutomationAttemptReport {
         let plan = plan ?? h.plan, approval = approval ?? h.approval
-        var authority: AutomationSiriRouteAuthority?
-        if qualify { authority = try? AutomationSiriRouteAuthority(plan: plan, approval: approval) }
         return try await AutomationPreparedPhysicalCampaign.run(prepared: prepared ?? h.prepared, plan: plan, approval: approval,
             capabilities: h.capabilities, attemptID: attemptID, root: h.attempts, developer: h.developer, leases: h.leases,
-            campaignBudget: nil, siriAuthority: authority, components: components)
+            campaignBudget: nil, components: components)
     }
 
     private func assertNothingReserved(_ h: Harness, _ device: Device, _ installer: Installer, allowStateDirectory: String? = nil,
@@ -171,7 +169,7 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
             let device = Device(), installer = Installer()
             do {
                 _ = try await run(h, prepared: prepared, plan: plan, approval: approval, attemptID: attemptID,
-                    qualify: false, components: components(device, installer))
+                    components: components(device, installer))
                 XCTFail("denial \(index) was admitted")
             } catch { XCTAssertEqual(error as? AutomationContractError, .invalidIdentity, "denial \(index)") }
             try await assertNothingReserved(h, device, installer)
@@ -188,7 +186,7 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
 
     func testSiriOutsideSubjectAndUnsupportedUIAreRefusedBeforeStateOrDeviceReservation() async throws {
         let h = try await fixture()
-        // Use a valid query subject so Siri qualification cannot reject the plan
+        // Use a valid query subject so the Siri workflow contract cannot reject the plan
         // before the cleanup/observation conditions under test are reached.
         var base = h.plan
         base.execution = h.plan.setup[0]
@@ -218,7 +216,7 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
             let device = Device(), installer = Installer()
             let approval = try approved(plan, h.approval)
             do {
-                _ = try await run(h, plan: plan, approval: approval, qualify: false, components: components(device, installer))
+                _ = try await run(h, plan: plan, approval: approval, components: components(device, installer))
                 XCTFail("\(name) admitted")
             } catch { XCTAssertEqual(error as? AutomationContractError, expected, name) }
             try await assertNothingReserved(h, device, installer)
@@ -278,40 +276,6 @@ final class AutomationPreparedPhysicalCampaignTests: XCTestCase, @unchecked Send
         try await assertRetained(h)
     }
 
-    func testFailedQualifiedRerunRevokesRecordedSiriAuthority() async throws {
-        let h = try await fixture(), plan = h.plan, approval = h.approval
-        func records(_ id: String, _ completed: Bool) -> AutomationValue {
-            .array([.object(["entity": .entity(typeID: "TaskEntity", value: id),
-                "properties": .object(["title": .text("Approved disposable task"), "completed": .bool(completed)])])])
-        }
-        let observation = AutomationObservation(id: plan.observations[0].id, app: plan.app, target: plan.target,
-            environmentID: plan.environmentID, attemptID: "qualification", stepID: plan.observations[0].id,
-            route: .systemQuery, proof: .appState, value: records("real-id", true))
-        let segments = plan.setup + [plan.execution] + plan.observations
-        let receipts = segments.enumerated().map { index, segment in
-            AutomationSegmentReceipt(scope: .init(runID: approval.runID, attemptID: "qualification", segmentID: segment.id,
-                leaseGeneration: index + 1), app: plan.app, target: plan.target, segmentID: segment.id,
-                route: segment.kind, dispatched: true, completed: true,
-                observations: segment.phase == .observe ? [observation] : [],
-                artifact: segment.kind == .siriText ? "synthetic-submission-artifact" : nil,
-                verifiedOutputs: segment.kind == .systemQuery ? ["record": records("real-id", segment.phase == .observe)] : nil,
-                environmentID: plan.environmentID)
-        }
-        let result = AutomationAssessment.assess(plan: plan, attemptID: "qualification", subjectDispatched: true,
-            subjectCompleted: true, observations: [observation], receipts: receipts, runID: approval.runID)
-        XCTAssertEqual(result.summary, .passed)
-        let passing = AutomationAttemptReport(attemptID: "qualification", result: result, receipts: receipts, resourcesReleased: true)
-        try await AutomationSiriQualificationAuthority.shared.record(prepared: h.prepared, plan: plan, approval: approval, report: passing,
-            submission: .init(runner: .init(pid: 42, startIdentity: "1:2"), executablePath: "/synthetic",
-                requestDigest: plan.execution.siriProgram!.requestDigest, osBuild: "24B5028f"))
-        let recorded = await AutomationSiriQualificationAuthority.shared.admission(prepared: h.prepared, plan: plan, approval: approval)
-        XCTAssertEqual(recorded?.isQualification, false)
-
-        let report = try await run(h, qualify: false, components: components())
-        XCTAssertEqual(report.result.summary, .infrastructureFailed); XCTAssertTrue(report.resourcesReleased)
-        let revoked = await AutomationSiriQualificationAuthority.shared.admission(prepared: h.prepared, plan: plan, approval: approval)
-        XCTAssertNil(revoked)
-    }
 
     func testCampaignReleaseAlwaysChecksEveryControllerAndRejectsForeignOrDuplicateScopes() async throws {
         let controllers = [Controller(bundleID: "example.Host.xctrunner", executableName: "OwnedHost-Runner"),

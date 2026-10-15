@@ -20,7 +20,7 @@ extension AppAutomationStore {
         guard canReviewFirstChecks, let candidate else { throw AutomationContractError.missingEvidence("Prepare the selected app first") }
         if candidate.platform == "macos" || candidate.app?.platform == "macos" ||
             (candidate.kind == .sourceTarget && (preparationDestination == .macOS || prepared?.host.target.kind == .nativeMac)) {
-            let gaps = ["Native Mac first checks require a qualified associated UI host. No checks will run on this Mac."]
+            let gaps = ["Native Mac first checks require an associated UI host. No checks will run on this Mac."]
             let fields = [candidate.id, configuration, String(firstRunIncludesActions)] + gaps
             return .init(id: AutomationArtifactRegistry.digest(try JSONEncoder().encode(fields)), requests: [], gaps: gaps,
                 appName: candidate.name, targetName: "This Mac")
@@ -47,7 +47,7 @@ extension AppAutomationStore {
         let environment = "selected-simulator:" + subject.target.id
         let approval = RunApproval(runID: "automatic-checks", app: subject.app, target: subject.target, environmentID: environment,
             effects: effects, maximumActions: 30, disposable: disposable)
-        let capabilities = selectedPrepared.map(AutomationNativeFreshFixtures.capabilities) ?? .init()
+        let capabilities = selectedPrepared.map(AutomationPreparedCapabilities.base) ?? .init()
         var gaps: [String] = []
         if selectedPrepared == nil {
             gaps.append("App UI checks need a prepared source build and its XCUITest host.")

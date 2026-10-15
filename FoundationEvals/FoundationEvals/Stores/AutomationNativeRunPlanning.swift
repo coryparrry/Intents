@@ -42,7 +42,7 @@ extension AppAutomationStore {
     func nativeRunVerificationWork(runID: String) throws -> @Sendable () throws -> AutomationNativeRunRequest {
         guard canRun else { throw AutomationContractError.targetBusy }
         guard !isMacWorkflowUnavailable else {
-            throw AutomationContractError.missingEvidence("Native Mac workflow execution is not qualified")
+            throw AutomationContractError.missingEvidence("Native Mac workflow execution is unavailable")
         }
         if isUIWorkflow { return try simulatorUIRunVerificationWork(runID: runID) }
         let request = try makeNativeRunRequest(runID: runID)
@@ -63,12 +63,11 @@ extension AppAutomationStore {
             if selection.effectChoice == "external" { effects.insert(.externalWrite) }
             var approval = RunApproval(runID: runID, app: subject.app, target: subject.target,
                 environmentID: "selected-simulator:" + selection.simulatorID, effects: effects, maximumActions: 30, disposable: selection.disposable)
-            var plan = try AutomationUIOnlyPlanner.compile(app: subject.app, target: subject.target, instruction: selection.instruction,
-                endpoint: selection.endpoint, approvedText: selection.approvedText, expectedVisibleText: selection.expectedText,
+            var plan = try AutomationUIOnlyPlanner.compile(app: subject.app, target: subject.target, program: try AutomationNativeWorkflowSteps.program(tapControls: selection.tapControls,
+                    textEntry: selection.textEntry, approvedText: selection.approvedText, submitControl: selection.submitControl, endpoint: selection.endpoint),
+                description: selection.instruction, expectedVisibleText: selection.expectedText,
                 observationLabel: selection.observationProperty == "text" ? "" : selection.observationLabel,
                 observationProperty: selection.observationProperty, approval: approval, localeIdentifier: locale)
-            plan.execution.uiProgram = try AutomationNativeWorkflowSteps.program(tapControls: selection.tapControls,
-                textEntry: selection.textEntry, approvedText: selection.approvedText, submitControl: selection.submitControl, endpoint: selection.endpoint)
             plan.provenance["ui.backend"] = "xcuitest"
             try AutomationNativePreparedEvidence.attachPreparedEvidence(to: &plan, prepared: prepared)
             try AutomationNativeWorkflowSteps.applyBudget(to: &plan, approval: approval)
@@ -113,7 +112,7 @@ extension AppAutomationStore {
             instruction: uiInstruction, endpoint: uiEndpoint, namePrefix: freshNamePrefix, nameProperty: freshNameProperty,
             stateProperty: freshStateProperty, initialState: freshInitialState == "true", expectedState: freshExpectedState == "true",
             approval: approval, capabilities: capabilities, localeIdentifier: Locale.current.identifier, context: freshContext, purpose: .simulatorDraft,
-            saveControl: try AutomationNativeWorkflowSteps.locator(freshSaveControl), includeProtectedRecord: !isFreshSearchWorkflow,
+            saveControl: try AutomationNativeWorkflowSteps.locator(freshSaveControl), includeProtectedRecord: true,
             createControl: try AutomationNativeWorkflowSteps.optionalLocator(freshCreateControl),
             nameEntry: try AutomationNativeWorkflowSteps.locator(freshNameEntryControl),
             contextEntry: try AutomationNativeWorkflowSteps.optionalLocator(freshContextEntryControl))

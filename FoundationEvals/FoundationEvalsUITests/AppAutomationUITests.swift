@@ -311,10 +311,10 @@ final class AppAutomationUITests: XCTestCase {
         waitForAutomationSelection(in: app)
         let goal = app.textFields["What should the app do?"]
         XCTAssertTrue(goal.waitForExistence(timeout: 10)); goal.click(); goal.typeText("Open tasks")
-        let endpoint = app.textFields["Visible label at the destination"]
+        let endpoint = app.textFields["Destination control"]
         endpoint.click(); endpoint.typeText("Tasks")
         XCTAssertFalse(app.buttons["Run workflow…"].isEnabled)
-        XCTAssertFalse(app.buttons["Find failures…"].isEnabled)
+        XCTAssertFalse(app.buttons["Find failures…"].exists)
         let property = app.popUpButtons["Property to check"]
         selectAutomationMenu(property, item: "Control value")
         let label = app.textFields["Element label for the check"]

@@ -5,7 +5,6 @@ import IntentsAutomationCore
 struct AutomationSourcePreparationControls: View {
     @Bindable var model: AppAutomationStore
     let approveBuild: () -> Void
-    @State private var diagnosticSelection: AutomationInputConversionDiagnostic.Selection?
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -109,19 +108,6 @@ struct AutomationSourcePreparationControls: View {
             Text("For Flutter and Expo projects, copy dependency folders and linked files within the selected source folders. Add any linked external package folder above.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Prepare app…", action: approveBuild).disabled(!model.canPrepare)
-            Button("Check input conversion…") { diagnosticSelection = model.inputConversionSelection }
-                .disabled(model.busy || model.closing || model.inputConversionSelection == nil)
-                .accessibilityIdentifier("automation.preparation.inputConversion")
-            Text("Optional fixed-sample diagnostic for a prepared Mac app with supported inputs. Its result does not restrict workflow execution.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        .confirmationDialog("Check input conversion", isPresented: Binding(
-            get: { diagnosticSelection != nil }, set: { if !$0 { diagnosticSelection = nil } }
-        ), presenting: diagnosticSelection) { selection in
-            Button("Start check") { model.checkInputConversion(expectedSelection: selection); diagnosticSelection = nil }
-            Button("Cancel", role: .cancel) { diagnosticSelection = nil }
-        } message: { selection in
-            Text("Start the private Mac XCTest host and round-trip fixed samples for \(selection.parameterNames.joined(separator: ", ")) in \(selection.actionTitle). This check does not perform the app action.")
         }
     }
     private func chooseJavaScriptRecipe() {

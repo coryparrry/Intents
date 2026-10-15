@@ -38,35 +38,9 @@ public enum AutomationTemplatePlanner {
     public static func compile(catalog: ApplicationSurfaceCatalog, actionID: String, inputs: [String: AutomationActionInput],
                                declaredEffects: AutomationActionEffectDeclaration, approval: RunApproval, capabilities: CapabilityProfile,
                                purpose: AutomationPlanValidationPurpose = .execution) throws -> AutomationCase {
-        try compile(catalog: catalog, actionID: actionID, inputs: inputs, declaredEffects: declaredEffects,
-                    approval: approval, capabilities: capabilities, setup: [], deferredInput: nil, recipeEvidence: [:], purpose: purpose)
-    }
-    public static func compile(catalog: ApplicationSurfaceCatalog, actionID: String, inputs: [String: AutomationActionInput],
-                               declaredEffects: AutomationActionEffectDeclaration, approval: RunApproval, capabilities: CapabilityProfile,
-                               recipe: AutomationQualifiedSetupRecipe, recipeContext: AutomationRecipeContext,
-                               recipeText: String, consumingParameter: String, purpose: AutomationPlanValidationPurpose = .execution) throws -> AutomationCase {
-        guard inputs[consumingParameter] == nil, recipeContext.app == catalog.app,
-              recipeContext.catalogDigest == (try AutomationRecipeContext.catalogDigest(catalog)),
-              recipeContext.target == approval.target, recipeContext.environmentID == approval.environmentID else {
-            throw AutomationContractError.missingEvidence("Recipe does not belong to this action environment")
-        }
-        let setup = try recipe.instantiate(text: recipeText, context: recipeContext, segmentPrefix: "recipe")
-        let binding = AutomationInputBinding(producerSegmentID: setup[1].id, outputID: recipe.candidate.outputID,
-            destination: .hostParameter, operationID: "invoke", name: consumingParameter)
-        return try compile(catalog: catalog, actionID: actionID, inputs: inputs, declaredEffects: declaredEffects,
-            approval: approval, capabilities: capabilities, setup: setup, deferredInput: binding,
-            recipeEvidence: ["recipe": recipe.candidate.id + ":" + String(recipe.candidate.version),
-                             "recipe.qualification": recipe.qualificationReportDigest,
-                             "ui.locale": recipeContext.localeIdentifier], purpose: purpose)
-    }
-    private static func compile(catalog: ApplicationSurfaceCatalog, actionID: String, inputs: [String: AutomationActionInput],
-                                declaredEffects: AutomationActionEffectDeclaration, approval: RunApproval, capabilities: CapabilityProfile,
-                                setup: [AutomationSegment], deferredInput: AutomationInputBinding?, recipeEvidence: [String: String],
-                                purpose: AutomationPlanValidationPurpose) throws -> AutomationCase {
         guard catalog.app == approval.app, let action = catalog.systemActions.first(where: { $0.id == actionID }),
               action.compiled, action.parametersComplete, !approval.effects.isEmpty, approval.maximumActions > 0,
-              Set(inputs.keys).isSubset(of: Set(action.parameters.map(\.name))),
-              deferredInput == nil || action.parameters.contains(where: { $0.name == deferredInput?.name && $0.family == "text" }) else {
+              Set(inputs.keys).isSubset(of: Set(action.parameters.map(\.name))) else {
             throw AutomationContractError.missingEvidence("Action declarations, inputs or effects are not approved")
         }
         guard declaredEffects.app == catalog.app, declaredEffects.actionID == actionID, !declaredEffects.effects.isEmpty,
@@ -74,14 +48,13 @@ public enum AutomationTemplatePlanner {
               declaredEffects.effects.isSubset(of: approval.effects) else { throw AutomationContractError.missingEvidence("The selected action's effects have no scoped developer confirmation") }
         var values: [String: AutomationValue] = [:], evidence: [String: String] = [:]
         for parameter in action.parameters {
-            if let input = try inputs[parameter.name] ?? (deferredInput?.name == parameter.name ? nil : AutomationCodecRegistry.declaredDefault(parameter, catalog: catalog)) {
+            if let input = try inputs[parameter.name] ?? AutomationCodecRegistry.declaredDefault(parameter, catalog: catalog) {
                 guard !input.evidence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AutomationContractError.missingEvidence(parameter.name) }
                 try AutomationCodecRegistry.validate(input.value, parameter: parameter, catalog: catalog)
                 if input.origin == .declaredDefault && input.value != parameter.defaultValue { throw AutomationContractError.conflictingOperation }
                 try input.value.validate(); values[parameter.name] = input.value
                 evidence["input." + parameter.name] = input.origin.rawValue + ": " + input.evidence
-            } else if deferredInput?.name == parameter.name { evidence["input." + parameter.name] = "fresh qualified recipe output" }
-            else if parameter.optional { values[parameter.name] = .omission }
+            } else if parameter.optional { values[parameter.name] = .omission }
             else { throw AutomationContractError.missingEvidence("No trusted input for " + parameter.name) }
         }
         let parameterCodecs = Dictionary(uniqueKeysWithValues: action.parameters.compactMap { parameter -> (String, String)? in
@@ -93,11 +66,10 @@ public enum AutomationTemplatePlanner {
         // This template tests invocation only. Unsupported result types do not become business observations.
         segment.hostProgram = .init(operations: [.init(id: "invoke", kind: .invoke, typeID: action.id, parameters: values, resultCodec: action.resultFamily ?? "noValue", parameterCodecs: parameterCodecs.isEmpty ? nil : parameterCodecs)])
         segment.requiredCapabilities += segment.hostProgram?.requiredCodecCapabilities ?? []
-        if let deferredInput { segment.inputBindings = [deferredInput] }
         var budget = AutomationBudget(); budget.wallClockSeconds = 180
         var plan = AutomationCase(id: "invoke." + action.id, app: catalog.app, target: approval.target, environmentID: approval.environmentID,
-                                  execution: segment, setup: setup, budget: budget)
-        plan.provenance = evidence.merging(["effects": "developer confirmation: " + declaredEffects.developerConfirmation, "expectation": "invocation only; no business assessment"], uniquingKeysWith: { _, new in new }).merging(recipeEvidence, uniquingKeysWith: { _, new in new })
+                                  execution: segment, budget: budget)
+        plan.provenance = evidence.merging(["effects": "developer confirmation: " + declaredEffects.developerConfirmation, "expectation": "invocation only; no business assessment"], uniquingKeysWith: { _, new in new })
         plan = AutomationCodecRequirements.applying(to: plan, catalog: catalog)
         plan.id = "invoke." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
         try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, purpose: purpose)

@@ -46,38 +46,6 @@ final class InputAdapterProbeContractTests: XCTestCase, @unchecked Sendable {
             if family.hasSuffix("Array") { XCTAssertEqual(plan.parameters[0].samples.count, 2) }
         }
     }
-    func testDataOnlyPlanAttachmentBindsExactNativeReviewsAndPreservesVetoes() throws {
-        var prepared = prepared(family: "entity")
-        prepared.catalog.systemActions[0].parameters[0].typeID = "TaskEntity"
-        prepared.catalog.entities = [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "TaskQuery", properties: [:], propertyTitles: [:])]
-        var plan = AutomationCase(id: "native", app: prepared.host.app, target: prepared.host.target, environmentID: "synthetic",
-            execution: .init(id: "subject", kind: .systemIntent, phase: .subject, operation: "Complete selected task",
-                requiredCapabilities: ["apple.intent.invoke", "apple.codec.entity"], effects: [.observe]))
-        plan.execution.hostProgram = .init(operations: [.init(id: "complete", kind: .invoke, typeID: "Subject.Probe",
-            parameters: ["sample": .entity(typeID: "TaskEntity", value: "selected-task")], resultCodec: "noValue")])
-        let originalDigest = try AutomationFrozenCase.planDigest(plan)
-        let attached = try AutomationNativeInputAdapterPlanning.attachReviews(to: plan, prepared: prepared, capabilities: .init())
-        let review = try XCTUnwrap(attached.nativeInputAdapterReviews?.first)
-        XCTAssertEqual(review.app, prepared.host.app); XCTAssertEqual(review.target, prepared.host.target)
-        XCTAssertEqual(review.parameterNames, ["sample"])
-        XCTAssertEqual(review.fixedSamples["sample"], [.entity(typeID: "TaskEntity", value: "intents-adapter-probe")])
-        XCTAssertNotEqual(try AutomationFrozenCase.planDigest(attached), originalDigest)
-        XCTAssertEqual(try AutomationNativeInputAdapterPlanning.attachReviews(to: attached, prepared: prepared, capabilities: .init()), attached)
-        for state in [CapabilityProfile.State.unavailable, .consentRequired] {
-            let profile = CapabilityProfile(records: ["apple.codec.entity": .init(state: state, reason: "caller", probeVersion: "caller", evidence: [])])
-            XCTAssertNil(try AutomationNativeInputAdapterPlanning.attachReviews(to: attached, prepared: prepared, capabilities: profile).nativeInputAdapterReviews)
-        }
-        for version in ["caller", "source-build", "host-v2", "inherited-profile", "unknown-verifier", AutomationNativeCodecQualification.probeVersion] {
-            let declared = CapabilityProfile(records: ["apple.codec.entity": .init(state: .available, reason: "declared", probeVersion: version, evidence: ["claim"])])
-            let restored = try JSONDecoder().decode(CapabilityProfile.self, from: JSONEncoder().encode(declared))
-            let reviewed = try AutomationNativeInputAdapterPlanning.attachReviews(to: plan, prepared: prepared, capabilities: restored)
-            XCTAssertEqual(reviewed.nativeInputAdapterReviews, attached.nativeInputAdapterReviews, version)
-            XCTAssertEqual(try AutomationFrozenCase.planDigest(reviewed), try AutomationFrozenCase.planDigest(attached))
-        }
-        var foreign = prepared; foreign.host.target.loginSession = "foreign-session"
-        XCTAssertThrowsError(try AutomationNativeInputAdapterPlanning.attachReviews(to: plan, prepared: foreign, capabilities: .init()))
-    }
-
     func testProbeReviewDigestIsBoundToSelectedNativeLoginSession() throws {
         let original = prepared()
         var other = original; other.host.target.loginSession = "other-session"

@@ -5,7 +5,6 @@ struct AutomationSiriSearchControls: View {
     @Bindable var model: AppAutomationStore
     @State private var review: AutomationNativeSiriSearchReview?
     @State private var showingReview = false
-    @State private var conversionReview: AutomationNativeSiriConversionReview?
     var body: some View {
         GroupBox("Find failures in approved Siri wording") {
             VStack(alignment: .leading, spacing: 10) {
@@ -22,36 +21,20 @@ struct AutomationSiriSearchControls: View {
                 TextField("One or two requests with the same meaning, one per line", text: $model.siriAlternatePhrases, axis: .vertical)
                     .accessibilityLabel("Approved alternate Siri requests")
                     .onChange(of: model.siriAlternatePhrases) { model.workflowSelectionChanged() }
-                Text("Each exact request must complete two safe live submission-channel checks on this device before search. Wording changes preserve the selected record, initial state, expected state and observer. All qualification and search attempts share one bounded allowance.")
+                Text("Every request restores the selected disposable record and checks its state before and after Siri. Missing evidence stops the campaign.")
                     .font(.callout).foregroundStyle(.secondary)
-                if let gap = model.siriSearchConversionGap {
-                    Text(gap).font(.callout).foregroundStyle(.secondary)
-                }
-                Text("Complete business failures can receive five confirmation trials after submission, record restoration and release are verified. A missing or uncertain submission stops the campaign.")
-                    .font(.callout).foregroundStyle(.secondary)
-                Button("Review read-only physical conversion check…") {
-                    do { conversionReview = try model.reviewSiriResetConversion(); review = nil; showingReview = true }
-                    catch { model.message = model.errorText(error) }
-                }.disabled(!model.canQualifySiriResetConversion)
                 Button("Review Siri failure search…") {
-                    do { review = try model.reviewSiriFailureSearch(); conversionReview = nil; showingReview = true }
+                    do { review = try model.reviewSiriFailureSearch(); showingReview = true }
                     catch { model.message = model.errorText(error) }
                 }.disabled(!model.canFindSiriFailures)
             }.padding(10)
         }.disabled(model.busy)
-        .alert(conversionReview != nil ? "Run the read-only physical conversion check?" : "Run this approved Siri failure search?", isPresented: $showingReview) {
-            if let converted = conversionReview {
-                Button("Check physical conversion") {
-                    conversionReview = nil
-                    Task { await model.qualifySiriResetConversion(reviewed: converted) }
-                }
-            } else {
-                Button("Run approved requests") {
-                    guard let reviewed = review else { return }; review = nil
-                    Task { await model.findSiriFailures(reviewed: reviewed) }
-                }
+        .alert("Run this approved Siri failure search?", isPresented: $showingReview) {
+            Button("Run approved requests") {
+                guard let reviewed = review else { return }; review = nil
+                Task { await model.findSiriFailures(reviewed: reviewed) }
             }
-            Button("Cancel", role: .cancel) { review = nil; conversionReview = nil }
-        } message: { Text(conversionReview?.message ?? review?.message ?? "Review the selected record and requests again.") }
+            Button("Cancel", role: .cancel) { review = nil }
+        } message: { Text(review?.message ?? "Review the selected record and requests again.") }
     }
 }

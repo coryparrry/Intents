@@ -2,10 +2,10 @@ import Foundation
 
 /// One approved reset of the independently selected disposable record, followed
 /// by an independent initial-state query and the original frozen Siri outcome.
-public enum AutomationSiriRepeatableQualification {
+public enum AutomationSiriResetPlan {
     public static func restoring(_ baseline: AutomationCase, catalog: ApplicationSurfaceCatalog,
                                  actionID: String, approval: RunApproval, capabilities: CapabilityProfile) throws -> AutomationCase {
-        try AutomationSiriQualificationProposal.validate(plan: baseline, approval: approval)
+        try AutomationSiriWorkflowContract.validate(plan: baseline, approval: approval)
         guard catalog.app == baseline.app, let action = catalog.systemActions.first(where: { $0.id == actionID }),
               action.compiled, action.registered, action.parametersComplete, action.parameters.count == 2,
               action.resultFamily == nil || action.resultFamily == "noValue",
@@ -38,14 +38,6 @@ public enum AutomationSiriRepeatableQualification {
         return plan
     }
 
-    public static func validate(plan: AutomationCase, approval: RunApproval, authority: AutomationSiriRouteAuthority?) throws {
-        try validateStructure(plan: plan, approval: approval)
-        guard let authority, !authority.isQualification, authority.isRepeatableQualification else {
-            throw AutomationContractError.missingEvidence("Repeated Siri search requires two fresh released submission-channel qualifications of each exact approved phrase")
-        }
-        try authority.validate(plan: plan, approval: approval)
-    }
-
     static func validateStructure(plan: AutomationCase, approval: RunApproval) throws {
         guard plan.setup.count == 3, let action = plan.provenance["siri.repeatableReset"],
               plan.setup[0].id == "siri.select", plan.setup[1].id == "siri.restore",
@@ -72,7 +64,7 @@ public enum AutomationSiriRepeatableQualification {
               operation.parameters[binding.name] == nil else { throw AutomationContractError.invalidPlan("Siri reset must restore only the selected record to the approved initial state") }
         var original = plan; var originalBefore = select; originalBefore.id = before.id
         original.setup = [originalBefore]; original.provenance.removeValue(forKey: "siri.repeatableReset")
-        try AutomationSiriQualificationProposal.validateSingle(plan: original, approval: approval)
+        try AutomationSiriWorkflowContract.validateSingle(plan: original, approval: approval)
         try AutomationInputResolver.validate(plan: plan)
         try AutomationRequirementValidator.validate(plan: plan)
     }

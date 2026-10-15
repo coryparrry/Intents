@@ -122,7 +122,7 @@ final class AutomationCLITests: XCTestCase, @unchecked Sendable {
         let host = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval, attemptID: "mac", leaseGeneration: 1)
         XCTAssertEqual(host.steps.count, 3)
         XCTAssertEqual(approval.maximumActions, host.steps.count)
-        XCTAssertGreaterThanOrEqual(approval.maximumActions, try plan.execution.uiProgram!.approvedActions().count)
+        XCTAssertEqual(host.steps.map(\.kind), [.launch, .tap, .screenshot])
     }
     func testNativeDirectWaitDerivesBudgetFromImplicitLaunchAndScreenshot() throws {
         var plan = fixturePlan()

@@ -288,62 +288,6 @@ import Synchronization
         }
     }
 
-    func testSiriQualificationResetFailureKeepsBlockerUntilItsExactCampaignIsReleased() async throws {
-        let root = URL(fileURLWithPath: "/private/tmp/siri-qualification-reset-" + UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let model = AppAutomationStore(supportDirectory: root, recoverySimulatorShutdown: { _, _, _ in })
-        await model.ownershipRecoveryTask?.value
-        let url = root.appendingPathComponent("target-leases.json")
-        let owner = try AutomationDeviceLeaseManager(storeURL: url)
-        var phone = TargetIdentity(id: "00008140-000E4D803C0B001C", kind: .physical)
-        phone.physicalDeviceIdentifier = "1AD4F755-6F58-58E5-AC71-B1EDFECADA93"
-        let runID = "siri-conversion-unresolved"
-        try await owner.reserveCampaign(runID: runID, target: phone)
-        model.siriResetConversionScopeDigest = String(repeating: "a", count: 64)
-        model.siriResetConversionDeadline = ContinuousClock.now.advanced(by: .seconds(1800))
-        model.retainSiriResetQualificationOwnership(runID: runID, target: phone)
-        XCTAssertTrue(model.siriResetQualificationUnresolved)
-        XCTAssertEqual(model.siriResetQualificationOwnership?.runID, runID)
-        XCTAssertEqual(model.siriResetQualificationOwnership?.target, phone)
-        XCTAssertNil(model.siriResetConversionScopeDigest)
-        XCTAssertNil(model.siriResetConversionDeadline)
-        XCTAssertFalse(model.canSelectApplicationFromCommand)
-        XCTAssertFalse(model.canReviewSelectedApplicationForRun)
-        let unrelated = TargetIdentity(id: UUID().uuidString, kind: .simulator)
-        let lease = try await owner.acquire(runID: "unrelated-live-runner", target: unrelated, control: .ui)
-        let scope = AutomationScope(runID: lease.runID, attemptID: "unrelated", segmentID: "subject", leaseGeneration: lease.generation)
-        let runner = AutomationDeviceLeaseManager.OwnedRunner(scope: scope, process: try .current(), role: .nativeCommand,
-            executablePath: "/usr/bin/xcrun")
-        try await owner.recordRunner(runner, lease: lease)
-        model.retainUnresolvedRequest(runID: lease.runID, target: unrelated)
-        await model.clearUnresolvedAttempt()
-        XCTAssertNotNil(model.recoveryError)
-        XCTAssertTrue(model.siriResetQualificationUnresolved)
-        XCTAssertEqual(model.siriResetQualificationOwnership?.runID, runID)
-        XCTAssertEqual(model.siriResetQualificationOwnership?.target, phone)
-        let held = try await owner.campaignAbsent(target: phone)
-        XCTAssertFalse(held)
-        XCTAssertNil(model.siriResetConversionScopeDigest)
-        XCTAssertNil(model.siriResetConversionDeadline)
-        // Simulate the unrelated synthetic runner stopping; no process is launched by this fixture.
-        var stopped = runner; stopped.process.pid = 999_999_999
-        try AutomationLeaseStore(url: url).transaction { state in
-            state.campaigns[unrelated.leaseKey]?.runners = [stopped]
-        }
-        try await owner.retireNativeCommand(stopped, lease: lease)
-        try await owner.release(lease, commandsDrained: true, ownedRunnerTerminated: true)
-        try await owner.releaseCampaign(runID: lease.runID, target: unrelated)
-        try await owner.releaseCampaign(runID: runID, target: phone)
-        await model.clearUnresolvedAttempt()
-        XCTAssertNil(model.recoveryError)
-        XCTAssertFalse(model.siriResetQualificationUnresolved)
-        XCTAssertNil(model.siriResetQualificationOwnership)
-        XCTAssertNil(model.siriResetConversionScopeDigest)
-        XCTAssertNil(model.siriResetConversionDeadline)
-        XCTAssertTrue(model.retainedUnresolvedRequestTargets.isEmpty)
-        XCTAssertTrue(model.canSelectApplicationFromCommand)
-    }
-
 }
 private actor RecoveryStartupGate {
     private var entered = false
