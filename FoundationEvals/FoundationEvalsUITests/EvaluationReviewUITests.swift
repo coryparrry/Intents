@@ -7,7 +7,7 @@ final class EvaluationReviewUITests: XCTestCase {
         let storage = try reviewStorage()
         defer { try? FileManager.default.removeItem(at: storage) }
         let app = application(storage: storage)
-        app.launch()
+        launchWorkspace(app)
         defer { app.terminate() }
         openReview(app)
         let note = app.textViews["Review note"]
@@ -19,7 +19,7 @@ final class EvaluationReviewUITests: XCTestCase {
         app.textFields["Review tags"].click(); app.textFields["Review tags"].typeText("wrong date")
         app.buttons["Save review"].click()
         XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 3))
-        app.terminate(); app.launch(); openReview(app)
+        app.terminate(); launchWorkspace(app); openReview(app)
         XCTAssertEqual(app.textViews["Review note"].value as? String, "The meeting date is incorrect.")
         app.buttons["Create regression case"].click()
         let expected = app.sheets.textViews["Regression expected answer"]
@@ -35,7 +35,7 @@ final class EvaluationReviewUITests: XCTestCase {
         let storage = try reviewStorage()
         defer { try? FileManager.default.removeItem(at: storage) }
         let app = application(storage: storage)
-        app.launch()
+        launchWorkspace(app)
         defer { app.terminate() }
         openReview(app)
         let note = app.textViews["Review note"]
@@ -69,7 +69,7 @@ final class EvaluationReviewUITests: XCTestCase {
         let storage = try reviewStorage()
         defer { try? FileManager.default.removeItem(at: storage) }
         let app = application(storage: storage)
-        app.launch()
+        launchWorkspace(app)
         defer { app.terminate() }
         openReview(app)
         XCTAssertTrue(app.textViews["Review note"].waitForExistence(timeout: 5))
@@ -90,13 +90,24 @@ final class EvaluationReviewUITests: XCTestCase {
         let storage = try UITestStorage.makeDirectory(prefix: "eval-sidebar-empty")
         defer { try? FileManager.default.removeItem(at: storage) }
         let app = application(storage: storage)
-        app.launch()
+        launchWorkspace(app)
         defer { app.terminate() }
         sidebarDestination("Traces", in: app).click()
         XCTAssertTrue(app.staticTexts["No saved traces yet"].waitForExistence(timeout: 3), app.debugDescription)
         app.buttons["Open evaluations"].click()
         XCTAssertTrue(app.staticTexts["Choose a saved output"].waitForExistence(timeout: 3))
         XCTAssertEqual(app.radioButtons["Review"].value as? String, "1")
+    }
+
+    @MainActor private func launchWorkspace(_ app: XCUIApplication) {
+        app.launch()
+        // Hosted XCTest can launch only the menu bar until the editor command runs.
+        app.activate()
+        app.menuBars.menuBarItems["Evaluation"].click()
+        app.menuItems["Show Suite Editor"].click()
+        app.activate()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5),
+                      "The editor command must present the main window")
     }
 
     @MainActor private func choosePane(_ title: String, app: XCUIApplication) {
