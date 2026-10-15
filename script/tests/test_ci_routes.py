@@ -339,6 +339,23 @@ class CoverageTests(unittest.TestCase):
             python=("script.tests.test_ci_core_scheme",),
         )
 
+    def test_native_cache_changes_require_all_compilation_and_execution_coverage(self):
+        for path in ("script/ci_native_cache.py", "script/tests/test_ci_native_cache.py"):
+            with self.subTest(path=path):
+                plan = routes.coverage([path])
+                self.assertTrue(plan["native"])
+                self.assertTrue(plan["ui"])
+                self.assertTrue(plan["automation_e2e"])
+                self.assertEqual(plan["swift_suites"], ["*"])
+                self.assertEqual(plan["ui_matrix"], routes.full_coverage("fixture")["ui_matrix"])
+                self.assertEqual(plan["python_tests"], sorted(routes.python_test_inventory()))
+
+    def test_workflow_contract_test_change_runs_its_own_module(self):
+        self.assert_selection(
+            ["script/tests/test_ci_workflow.py"],
+            python=("script.tests.test_ci_workflow",),
+        )
+
     def test_removed_or_unmapped_script_uses_remaining_script_inventory(self):
         for path in ("script/tests/test_removed.py", "script/new_tool.py"):
             with self.subTest(path=path):
