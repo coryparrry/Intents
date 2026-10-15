@@ -424,13 +424,9 @@ def coverage_plan(paths, root=ROOT):
             "Sources/IntentsAutomationCore/", "Sources/IntentsAutomationTool/",
             "Integration/AutomationHost/", "examples/AutomationFixture/",
             "Tools/IntentsAutomationApplicationProbe/",
-            "FoundationEvals/FoundationEvals/Stores/AppAutomation",
-            "FoundationEvals/FoundationEvals/Stores/AutomationNative",
         )) or path in {"script/automation_e2e.py", "script/tests/test_automation_e2e.py"}
         input_conversion |= path.startswith((
             "Sources/IntentsAutomationCore/", "Integration/AutomationHost/",
-            "FoundationEvals/FoundationEvals/Stores/AppAutomation",
-            "FoundationEvals/FoundationEvals/Stores/AutomationNative",
         )) or path in {
             "Tests/IntentsAutomationCoreTests/AutomationMacInputProbeFixtureTests.swift",
         }
@@ -488,6 +484,12 @@ def coverage_plan(paths, root=ROOT):
             native = True
             relative = path.removeprefix(APP)
             swift.update(SWIFT_DEPENDENCIES.get(relative, set()))
+            if relative.startswith(("Stores/AppAutomation", "Stores/AutomationNative")) or relative in {
+                "Stores/AutomationCommandHistory.swift", "Stores/AutomationCapsuleExportSelection.swift",
+            }:
+                # These stores belong to IntentsAutomationNativeUI, not the CLI
+                # exercised by simulator and input-conversion canaries.
+                swift.add("*")
             groups = app_ui_groups(relative)
             if groups is None:
                 ui = ui_fallback = True

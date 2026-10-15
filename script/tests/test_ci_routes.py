@@ -29,9 +29,6 @@ class CoverageTests(unittest.TestCase):
         for path in (
             "Sources/IntentsAutomationCore/AutomationApplicationRunner.swift",
             "Integration/AutomationHost/IntentDefinitionsHost.swift",
-            "FoundationEvals/FoundationEvals/Stores/AppAutomationStore.swift",
-            "FoundationEvals/FoundationEvals/Stores/AppAutomationStore+Run.swift",
-            "FoundationEvals/FoundationEvals/Stores/AutomationNativeUIRuntime.swift",
             "Tools/IntentsAutomationApplicationProbe/main.swift",
             "Sources/IntentsAutomationTool/AutomationCLI.swift",
             "examples/AutomationFixture/App/EchoIntents.swift",
@@ -605,6 +602,25 @@ class FeatureOwnershipTests(unittest.TestCase):
         ):
             with self.subTest(source=source):
                 self.assertEqual(self.groups([routes.APP + "Services/" + source]), expected)
+
+    def test_native_automation_stores_run_their_unit_and_ui_tests_without_cli_canaries(self):
+        for source in ("AppAutomationStore.swift", "AutomationNativeRunPlanning.swift",
+                       "AutomationNativeFirstRun.swift", "AutomationCommandHistory.swift",
+                       "AutomationCapsuleExportSelection.swift"):
+            with self.subTest(source=source):
+                plan = routes.coverage([routes.APP + "Stores/" + source])
+                self.assertEqual(plan["swift_suites"], ["*"])
+                self.assertTrue(plan["native"])
+                self.assertEqual({group["name"] for group in plan["ui_matrix"]}, {"automation"})
+                self.assertFalse(plan["automation_e2e"])
+                self.assertFalse(plan["input_conversion"])
+
+        plan = routes.coverage([
+            routes.APP + "Stores/AppAutomationStore.swift",
+            "Sources/IntentsAutomationCore/AutomationApplicationRunner.swift",
+        ])
+        self.assertTrue(plan["automation_e2e"])
+        self.assertTrue(plan["input_conversion"])
 
     def test_all_native_unit_test_only_edits_skip_ui_but_keep_portable_suites(self):
         for suite in ("EvaluationJudgeTests", "MetricScorerTests", "TimelineRenderingTests", "NavigationInteractionTests"):
