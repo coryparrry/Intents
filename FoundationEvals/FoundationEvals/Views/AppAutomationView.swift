@@ -101,6 +101,8 @@ struct AppAutomationView: View {
                                 Text("Checked state").tag("checked")
                                 Text("Selected state").tag("selected")
                             }
+                            .accessibilityLabel("Property to check")
+                            .accessibilityIdentifier("automation.workflow.observationProperty")
                             if model.uiObservationProperty != "text" {
                                 TextField("Element label for the check", text: $model.uiObservationLabel)
                             }

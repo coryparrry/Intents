@@ -143,7 +143,10 @@ jobs:
         if: needs.changes.outputs.swift_suites != '[]'
         env:
           CI_TEST_SELECTION: ${{ needs.changes.outputs.swift_suites }}
-        run: python3 script/ci_run_tests.py swift --scratch-path "$RUNNER_TEMP/portable-build"
+        run: |
+          python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/portable-build"
+          python3 script/ci_run_tests.py swift --scratch-path "$RUNNER_TEMP/portable-build"
+          python3 script/ci_native_cache.py capture --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/portable-build"
 
   macos-script-tests:
     name: macOS script tests
@@ -404,7 +407,10 @@ jobs:
             xcodebuild -downloadPlatform iOS -buildVersion 27.1.0.0 -architectureVariant arm64
           fi
       - name: Reproduce prepared-app automation
-        run: python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build"
+        run: |
+          python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/automation-e2e-build"
+          python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build"
+          python3 script/ci_native_cache.py capture --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/automation-e2e-build"
       - name: Upload automation evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -443,6 +449,7 @@ jobs:
           mkdir -p "$INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT"
           DEVELOPER_DIR="$(xcode-select -p)"
           export DEVELOPER_DIR
+          python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/input-conversion-build"
           set -o pipefail
           swift test --jobs "$(sysctl -n hw.logicalcpu)" \
             --scratch-path "$RUNNER_TEMP/input-conversion-build" \
@@ -457,6 +464,7 @@ jobs:
           assert re.search(r"Test Case .*" + test + r".* passed", log), 'Live input canary did not pass'
           assert 'Authored String setter/readback calibration only;' in log, 'Live calibration did not execute'
           PY
+          python3 script/ci_native_cache.py capture --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/input-conversion-build"
       - name: Upload input conversion diagnostic evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

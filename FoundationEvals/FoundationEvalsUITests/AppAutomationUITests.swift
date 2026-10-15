@@ -311,7 +311,7 @@ final class AppAutomationUITests: XCTestCase {
         try Data([0xcf,0xfa,0xed,0xfe,0x0c,0,0,1,0,0,0,0]).write(to: bundle.appendingPathComponent("Selected"))
         let app = XCUIApplication()
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
-                                "--evaluation-window-width", "1300", "--evaluation-window-height", "1100"]
+                                "--evaluation-window-width", "1300", "--evaluation-window-height", "900"]
         app.launchArguments += ["--automation-select-path", bundle.path]
         app.launch(); defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)
@@ -322,7 +322,18 @@ final class AppAutomationUITests: XCTestCase {
         endpoint.click(); endpoint.typeText("Tasks")
         XCTAssertFalse(app.buttons["Run workflow…"].isEnabled)
         XCTAssertFalse(app.buttons["Find failures…"].exists)
-        let property = app.popUpButtons["Property to check"]
+        let propertyID = "automation.workflow.observationProperty"
+        let property = app.popUpButtons[propertyID]
+        XCTAssertTrue(property.waitForExistence(timeout: 10))
+        XCTAssertEqual(property.label, "Property to check")
+        let content = app.scrollViews.containing(.popUpButton, identifier: propertyID).firstMatch
+        XCTAssertTrue(content.exists)
+        for _ in 0..<6 {
+            if content.frame.contains(property.frame) { break }
+            content.scroll(byDeltaX: 0, deltaY: -300)
+        }
+        XCTAssertTrue(content.frame.contains(property.frame), "The property picker must be visible")
+        XCTAssertTrue(property.isHittable)
         selectAutomationMenu(property, item: "Control value")
         let label = app.textFields["Element label for the check"]
         XCTAssertTrue(label.waitForExistence(timeout: 5)); label.click(); label.typeText("Volume")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preserve unchanged checkout mtimes so cached Xcode builds can be incremental."""
+"""Preserve unchanged checkout mtimes so cached Swift builds can be incremental."""
 import argparse
 import hashlib
 import json
