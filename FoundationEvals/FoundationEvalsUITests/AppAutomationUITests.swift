@@ -123,6 +123,13 @@ final class AppAutomationUITests: XCTestCase {
         selectAutomationMenu(destination, item: "macOS")
         selectAutomationMenu(route, item: "system")
         selectAutomationMenu(destination, item: "simulator")
+        let preparation = app.scrollViews.containing(.popUpButton, identifier: "automation.workflow.route").firstMatch
+        for _ in 0..<6 {
+            if preparation.frame.contains(route.frame) { break }
+            preparation.scroll(byDeltaX: 0, deltaY: -300)
+        }
+        XCTAssertTrue(preparation.frame.contains(route.frame), app.debugDescription)
+        XCTAssertTrue(route.isHittable)
         selectAutomationMenu(route, item: "ui")
         let simulator = app.popUpButtons["automation.preparation.simulator"]
         XCTAssertTrue(simulator.waitForExistence(timeout: 10))
