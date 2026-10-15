@@ -161,15 +161,19 @@ final class EvaluationReviewUITests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 5), app.debugDescription)
         let page = app.scrollViews["Suite editor scroll"]
         XCTAssertTrue(page.exists)
+        let initialFrame = element.frame
         for _ in 0..<16 {
             let viewport = page.frame.intersection(app.windows.firstMatch.frame).insetBy(dx: 0, dy: 12)
             let target = element.frame
             if element.isHittable && viewport.contains(target) { return }
             let delta: CGFloat = target.minY < viewport.minY ? 180 : -180
-            page.scroll(byDeltaX: 0, deltaY: delta)
+            // The page center overlaps nested sample-list and text-editor scroll views.
+            // Send the wheel through its outer padding so only the page receives it.
+            page.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+                .scroll(byDeltaX: 0, deltaY: delta)
         }
         XCTAssertTrue(element.isHittable && page.frame.intersection(app.windows.firstMatch.frame).contains(element.frame),
-                      "The review control must be visible inside the outer editor scroll view: \(element)")
+                      "The review control must be visible inside the outer editor scroll view: \(element); initial: \(initialFrame), final: \(element.frame), page: \(page.frame)")
     }
 
     @MainActor private func application(storage: URL) -> XCUIApplication {
