@@ -409,7 +409,7 @@ class OrchestrationTests(unittest.TestCase):
         for reusable in (False, True):
             with self.subTest(reusable=reusable):
                 commands, _ = self.exercise(reuse_build=reusable)
-                builds = [args for args, _ in commands.calls if args[:2] == ["swift", "build"]]
+                builds = [args for args, _ in commands.calls if args[:3] == ["xcrun", "swift", "build"]]
                 scratch_paths = [args[args.index("--scratch-path") + 1] for args in builds]
                 expected = commands.output.parent / "reusable-swift-cache" if reusable else commands.output / "swift-build"
                 self.assertEqual(scratch_paths, [str(expected), str(expected)])
@@ -624,8 +624,8 @@ class OrchestrationTests(unittest.TestCase):
             with patch.object(driver.subprocess, "Popen", return_value=process), \
                  patch.object(driver.time, "monotonic", side_effect=[10.0, 12.5]), \
                  patch("builtins.print") as report:
-                self.assertEqual(driver.Commands(Path(directory)).run(["swift", "build"]), (0, ""))
-            report.assert_called_once_with("Completed swift build: 2.5s (exit 0)", flush=True)
+                self.assertEqual(driver.Commands(Path(directory)).run(["xcrun", "swift", "build"]), (0, ""))
+            report.assert_called_once_with("Completed xcrun swift: 2.5s (exit 0)", flush=True)
 
     def test_json_command_failures_surface_exit_status_stderr_and_log_paths(self):
         for stdout, stderr, code in (("", '{"error":"timedOut"}', 1), ("invalid JSON", "", 0),

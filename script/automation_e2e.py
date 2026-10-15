@@ -364,7 +364,7 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
         shutil.copytree(ROOT / "examples/AutomationFixture", fixture)
         commands.run(["xcodegen", "generate", "--spec", fixture / "project.yml"], cwd=fixture)
         scratch = build_root or output / "swift-build"
-        commands.run(["swift", "build", "--jobs", str(jobs), "--scratch-path", scratch, "--product", "intents-automation"], timeout=900)
+        commands.run(["xcrun", "swift", "build", "--jobs", str(jobs), "--scratch-path", scratch, "--product", "intents-automation"], timeout=900)
         if record_build_cache:
             try:
                 from ci_native_cache import capture
@@ -373,7 +373,7 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
             capture(ROOT, scratch)
             with Path(github_output).open("a") as state:
                 state.write("cli_built=true\n")
-        _, bin_path = commands.run(["swift", "build", "--scratch-path", scratch, "--show-bin-path"])
+        _, bin_path = commands.run(["xcrun", "swift", "build", "--scratch-path", scratch, "--show-bin-path"])
         cli = Path(bin_path.strip()) / "intents-automation"
         support, reports = output / "support", []
         flags = ["--support-root", support]
