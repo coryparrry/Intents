@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { suite, id, object, nativeResult, MAX_OUTPUT_BYTES } from './validation.mjs';
-import { isAppSuite, revision, portableSuite, parseImport, sampleEnvelope, applyAssessment, validateAppEvidence } from './app-format.mjs';
+import { isAppSuite, revision, portableSuite, parseImport, sampleEnvelope, applyAssessment, validateAppEvidence, importedTimestamp } from './app-format.mjs';
 import { addReferenceFile, exportReferences, importReferences } from './references.mjs';
 import { importCases } from './case-import.mjs';
 import { SPOTLIGHT_DEFAULTS } from './app-defaults.mjs';
@@ -9,7 +9,7 @@ export async function initProjects(app) {
   if (!(await app.store.list('projects')).length) await app.store.write('projects', { id: DEFAULT_PROJECT_ID, name: 'My evaluations', description: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   const projects = await app.store.list('projects');
   app.defaultProjectId = projects.find((item) => item.id === DEFAULT_PROJECT_ID)?.id || projects[0].id;
-  for (const saved of await app.store.list('suites')) if (!saved.projectId || !saved.revision) await app.store.write('suites', { ...saved, projectId: saved.projectId || app.defaultProjectId, revision: revision(saved) });
+  for (const saved of await app.store.list('suites')) if (!saved.projectId || !saved.revision) await app.store.migrateSuite(saved.id, app.defaultProjectId);
   for (const run of await app.store.list('runs')) if (!run.projectId && run.status !== 'running') await app.store.write('runs', { ...run, projectId: run.suite?.projectId || app.defaultProjectId, suiteRevision: run.suiteRevision || (run.suite ? revision(run.suite) : undefined) });
 }
 async function project(app, value) { const projectId = id(value || app.defaultProjectId, 'projectId'); await app.store.read('projects', projectId); return projectId; }
@@ -23,12 +23,8 @@ export async function saveSuite(app, args, { imported = false } = {}) {
   if (imported && isAppSuite(saved)) saved.features.spotlightSearch = structuredClone(SPOTLIGHT_DEFAULTS);
   const old = await existing(app, 'suites', saved.id);
   const expected = args.expectedRevision ?? value.revision;
-  if (expected !== undefined && expected !== (old?.revision || (old ? revision(old) : undefined))) throw new Error('Suite revision conflict: reload the current suite before saving');
   saved.projectId = await project(app, args.projectId || saved.projectId || old?.projectId);
-  saved.revision = revision(saved);
-  saved.updatedAt = saved.revision === old?.revision ? old.updatedAt : new Date().toISOString();
-  await app.store.write('suites', saved);
-  return { suite: saved };
+  return { suite: await app.store.saveSuite(saved, expected) };
 }
 export function health(run, saved) {
   const sourceRevision = run.suiteRevision || (run.suite ? revision(run.suite) : null);
@@ -98,10 +94,11 @@ async function importRun(app, args, { persist = true } = {}) {
     const snapshot = suite(value.suite, randomUUID);
     nativeResult({ ...value, status: value.status === 'completed' ? 'completed' : 'failed' }, snapshot, { allowAssessmentProjection: true });
     if (!['completed', 'failed', 'cancelled'].includes(value.status)) throw new Error('Only terminal runs can be imported');
-    if (!Number.isFinite(Date.parse(value.startedAt)) || !Number.isFinite(Date.parse(value.finishedAt))) throw new Error('Run import requires valid timestamps');
+    const startedAt = importedTimestamp(value.startedAt);
+    const finishedAt = importedTimestamp(value.finishedAt);
     if (id(args.suiteId || value.suiteId, 'suiteId') !== snapshot.id) throw new Error('Run suite identity does not match its snapshot');
     const { ownerPid, ...safeValue } = value;
-    saved = { ...safeValue, id: id(value.id, 'run id'), suiteId: id(args.suiteId || value.suiteId, 'suiteId'), suite: snapshot, projectId: await project(app, args.projectId || value.projectId || snapshot.projectId), suiteRevision: revision(snapshot) };
+    saved = { ...safeValue, startedAt, finishedAt, id: id(value.id, 'run id'), suiteId: id(args.suiteId || value.suiteId, 'suiteId'), suite: snapshot, projectId: await project(app, args.projectId || value.projectId || snapshot.projectId), suiteRevision: revision(snapshot) };
   } else {
     if (value.developerExecution || value.execution?.configuration?.provider && value.execution.configuration.provider !== 'onDevice' || value.results?.some((sample) => sample.judgeIdentity?.mode === 'connection') || value.assessments?.some((assessment) => assessment.judge?.mode === 'connection')) throw new Error('Only local on-device evaluation evidence is supported');
     validateAppEvidence(value);
@@ -119,9 +116,8 @@ async function importRun(app, args, { persist = true } = {}) {
     const status = value.cancelled ? 'cancelled' : value.terminationReason || results.some((result) => result.appSample.status === 'error') ? 'failed' : 'completed';
     nativeResult({ status: status === 'completed' ? 'completed' : 'failed', results }, snapshot);
     results = applyAssessment(value, results);
-    const startedAt = typeof value.startedAt === 'number' ? new Date((value.startedAt + 978307200) * 1000).toISOString() : value.startedAt;
-    const finishedAt = typeof value.completedAt === 'number' ? new Date((value.completedAt + 978307200) * 1000).toISOString() : value.completedAt;
-    if (!Number.isFinite(Date.parse(startedAt)) || !Number.isFinite(Date.parse(finishedAt))) throw new Error('App run requires valid timestamps');
+    const startedAt = importedTimestamp(value.startedAt, { apple: true });
+    const finishedAt = importedTimestamp(value.completedAt, { apple: true });
     saved = { id: id(value.id, 'run id'), suiteId, projectId: await project(app, args.projectId || snapshot.projectId), suite: snapshot, suiteRevision: revision(snapshot), status, startedAt, finishedAt, durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)), model: value.environment?.model, results, appRun: value, importedAt: new Date().toISOString() };
   }
   if (persist && await existing(app, 'runs', saved.id)) throw new Error('A run with this id already exists; imports never overwrite evidence');

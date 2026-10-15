@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { id, MAX_OUTPUT_BYTES } from './validation.mjs';
 import { acquireLease } from './lease.mjs';
+import { saveSuiteTransaction } from './suite-transaction.mjs';
 
 export const dataDirectory = (env = process.env) => resolve(env.FOUNDATION_EVALS_PLUGIN_DATA || env.PLUGIN_DATA || join(homedir(), '.local/share/apple-foundation-evals'));
 export const processAlive = (pid) => {
@@ -15,7 +16,7 @@ export class Store {
   async init() {
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     if ((await lstat(this.root)).isSymbolicLink()) throw new Error('Data directory must not be a symlink');
-    for (const kind of ['suites', 'runs', 'projects', 'experiments', 'baselines', 'corrections']) {
+    for (const kind of ['suites', 'runs', 'projects', 'experiments', 'baselines', 'corrections', '.suite-locks']) {
       const path = join(this.root, kind);
       await mkdir(path, { recursive: true, mode: 0o700 });
       if ((await lstat(path)).isSymbolicLink()) throw new Error('Data subdirectories must not be symlinks');
@@ -62,7 +63,14 @@ export class Store {
       await rename(temporary, path);
     } finally { await unlink(temporary).catch(() => {}); }
   }
+  async saveSuite(value, expectedRevision) { return saveSuiteTransaction(this, value, expectedRevision); }
+  async restoreSuite(value, expectedRevision) {
+    if (typeof expectedRevision !== 'string') throw new Error('Suite restore requires an expected revision');
+    return saveSuiteTransaction(this, value, expectedRevision, { operation: 'restore' });
+  }
+  async migrateSuite(key, projectId) { return saveSuiteTransaction(this, { id: id(key) }, undefined, { operation: 'migrate', projectId: id(projectId) }); }
   async delete(kind, key) {
+    if (kind === 'suites') { await saveSuiteTransaction(this, { id: id(key) }, undefined, { operation: 'delete' }); return; }
     await this.read(kind, key);
     await unlink(this.path(kind, key));
   }

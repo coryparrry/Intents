@@ -173,7 +173,7 @@ struct FoundationModelsRunner {
                         try emit(EvaluationRunComparison(current: request.current, baseline: request.baseline))
                     case "summarize-experiment":
                         let request = try CanonicalJSON.decode(AppEngineWorkflows.SummaryRequest.self, from: input)
-                        try emit(EvaluationExperimentAnalyzer.summarize(current: request.current, candidate: request.candidate))
+                        try emit(AppEngineWorkflows.summarizeExperiment(request))
                     case "release-check":
                         let request = try CanonicalJSON.decode(AppEngineWorkflows.ReleaseRequest.self, from: input)
                         try emit(AppEngineWorkflows.releaseCheck(request))

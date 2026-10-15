@@ -49,6 +49,11 @@ import {
   addCase,
 } from "./case-actions";
 
+import {
+  isAppSuiteFormat,
+  caseEditorDetails,
+  commitCaseEditorDetails,
+} from "../suite-form-state.js";
 type Context = any;
 import { Action, invoke, Choice, TextField } from "./shared";
 export function Cases({ ctx }: { ctx: Context }) {
@@ -58,32 +63,24 @@ export function Cases({ ctx }: { ctx: Context }) {
   const [, redraw] = React.useReducer((value) => value + 1, 0);
   const selection = caseEditingSelection(draft, state.caseId, query);
   const selected = selection.selected;
+  const appFormat = isAppSuiteFormat(draft);
+  const details = caseEditorDetails(selected);
   if (selected) state.caseId = selected.id;
   const edit = (object: any, key: string, value: any) => {
     object[key] = value;
+    commitCaseEditorDetails(draft, selected, details);
     ctx.changed();
     redraw();
   };
   const mutate = (action: () => void) => {
     action();
+    commitCaseEditorDetails(draft, selected, details);
     ctx.changed();
     ctx.renderMain();
   };
-  const conversation = selected
-    ? (selected.conversation ||= {
-        setupTurns: [],
-        historyPolicy: "keepAll",
-        retainedTurnCount: 2,
-      })
-    : null;
-  if (conversation) conversation.setupTurns ||= [];
-  const projection = conversation
-    ? (conversation.modelHistoryProjection ||= {
-        policy: "keepAll",
-        retainedTurnCount: 2,
-      })
-    : null;
-  const checks = selected ? (selected.fieldAssertions ||= []) : [];
+  const conversation = details.conversation;
+  const projection = conversation.modelHistoryProjection;
+  const checks = details.checks;
   return (
     <div className="flex min-h-full flex-col">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-background px-6 py-5">
@@ -100,7 +97,7 @@ export function Cases({ ctx }: { ctx: Context }) {
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>{draft.cases.length} cases</span>
             <span>·</span>
-            <span>{ctx.scoringLabel(draft.scoringMode)}</span>
+            <span>{appFormat ? ctx.scoringLabel(draft.scoringMode) : "Per-case scoring"}</span>
             <span>·</span>
             <span>On this Mac</span>
             <Badge variant="outline">
@@ -323,7 +320,8 @@ export function Cases({ ctx }: { ctx: Context }) {
                   )}
                 </FieldGroup>
               </section>
-              <section
+              {appFormat && (
+                <section
                 className="border-t bg-muted/20 p-5 xl:border-l xl:border-t-0"
                 aria-label="Case inspector"
               >
@@ -541,7 +539,8 @@ export function Cases({ ctx }: { ctx: Context }) {
                     </AccordionContent>
                   </AccordionItem>
                 </Accordion>
-              </section>
+                </section>
+              )}
             </div>
           </div>
         )}

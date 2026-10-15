@@ -8,7 +8,6 @@ from pathlib import Path
 import re
 import stat
 import sys
-import tempfile
 
 
 LOCK_ENV = 'INTENTS_LOCAL_BUILD_LOCK_FD'
@@ -16,7 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def lock_path():
-    directory = Path(tempfile.gettempdir()) / f'intents-local-build-locks-{os.getuid()}'
+    # Every invocation publishes into the same checkout, even when launched by
+    # callers with different TMPDIR/TMP/TEMP values. Keep its lock equally stable.
+    directory = Path('/tmp').resolve() / f'intents-local-build-locks-{os.getuid()}'
     directory.mkdir(mode=0o700, exist_ok=True)
     info = directory.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:

@@ -39,5 +39,8 @@ export function removeCase(draft, id) {
   const index = draft.cases.findIndex((item) => item.id === id);
   if (index < 0) throw Error("Case not found.");
   draft.cases.splice(index, 1);
+  if (draft.releasePolicy?.criticalCaseIDs) {
+    draft.releasePolicy.criticalCaseIDs = draft.releasePolicy.criticalCaseIDs.filter(caseId => caseId.toLowerCase() !== id.toLowerCase());
+  }
   return draft.cases[Math.min(index, draft.cases.length - 1)].id;
 }

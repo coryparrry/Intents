@@ -100,15 +100,17 @@ extension AppAutomationStore {
         message = nil; progress = "Starting checks…"
         task = Task {
             defer { progress = nil; task = nil; releaseScopeIfClosing() }
+            let campaignID = UUID().uuidString
+            var requestTarget: TargetIdentity?
             do {
                 let runner = try AutomationApplicationRunner(supportRoot: support, developerDirectory: developerDirectory)
                 let budget = try AutomationCampaignBudget(limits: .firstCampaign)
-                let campaignID = UUID().uuidString
                 for (index, reviewedRequest) in reviewed.requests.enumerated() {
                     try Task.checkCancellation()
                     var request = reviewedRequest; request.approval.runID = campaignID
                     let attemptID = UUID().uuidString
                     try await budget.reserveAttempt(id: attemptID)
+                    requestTarget = request.plan.target
                     progress = "Check \(index + 1) of \(reviewed.requests.count): " + request.plan.execution.operation
                     let result: AutomationAttemptReport
                     do {
@@ -120,14 +122,21 @@ extension AppAutomationStore {
                                 campaignBudget: budget)
                         }
                     } catch {
+                        await retainUnresolvedReservation(runID: campaignID, target: request.plan.target)
                         if let retained = try await runner.retainedAttempt(attemptID: attemptID, plan: request.plan, runID: campaignID) {
                             report = retained; firstRunReports.append(retained)
+                            if !retained.resourcesReleased || retained.result.subjectDispatchUncertain {
+                                retainUnresolvedRequest(runID: campaignID, target: request.plan.target)
+                            }
                             await importEvidence(plan: request.plan, report: retained)
                         }
                         throw error
                     }
                     try AutomationRecordedEvidence.validate(report: result, plan: request.plan, expectedRunID: campaignID)
                     report = result; firstRunReports.append(result)
+                    if !result.resourcesReleased || result.result.subjectDispatchUncertain {
+                        retainUnresolvedRequest(runID: campaignID, target: request.plan.target)
+                    }
                     reportDirectory = support.appendingPathComponent(attemptID)
                     await importEvidence(plan: request.plan, report: result)
                     guard result.resourcesReleased, !result.result.subjectDispatchUncertain else {
@@ -136,7 +145,10 @@ extension AppAutomationStore {
                     }
                 }
                 await refreshSavedCases()
-            } catch { message = errorText(error); await refreshSavedCases() }
+            } catch {
+                if let requestTarget { await retainUnresolvedReservation(runID: campaignID, target: requestTarget) }
+                message = errorText(error); await refreshSavedCases()
+            }
         }
     }
 }

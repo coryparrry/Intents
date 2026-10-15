@@ -161,7 +161,10 @@ enum AppEngineBridge {
                     name: $0.name,
                     kind: $0.kind,
                     byteCount: $0.byteCount,
-                    sha256: $0.sha256
+                    sha256: $0.sha256,
+                    textSHA256: $0.kind == .text ? $0.text.map {
+                        SHA256.hash(data: Data($0.utf8)).map { String(format: "%02x", $0) }.joined()
+                    } : nil
                 )
             },
             judgeConfiguration: suite.judgeConfiguration,
@@ -195,4 +198,7 @@ private struct RevisionAttachment: Codable {
     var kind: EvaluationAttachmentKind
     var byteCount: Int
     var sha256: String
+    // The file digest describes original bytes; PDF extraction and truncation
+    // produce different executed text that must independently bind the revision.
+    var textSHA256: String?
 }

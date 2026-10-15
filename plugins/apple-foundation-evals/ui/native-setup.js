@@ -1,3 +1,4 @@
+import { isAppSuiteFormat } from './suite-form-state.js';
 import { APP_SCORING, appSelect, appToggle, appNumber, appDisclosure, appSection, appSchemaEditor } from './native-suite.js';
 
 export const APP_SETUP_PAGES = [
@@ -13,10 +14,10 @@ function appFeatureDefaults(draft) { return draft.features ||= { tools:[], outpu
 function appSamplingControls(ctx, config, prefix = '') {
   const result = ctx.node('div',null,'form-stack'), key = name => prefix ? `${prefix}${name[0].toUpperCase()}${name.slice(1)}` : name;
   result.append(appSelect(ctx,'Sampling',config,key('samplingMode'),[['automatic','Automatic'],['greedy','Greedy'],['topK','Top-K'],['probability','Random · probability']],ctx.renderMain));
-  if (config[key('samplingMode')] === 'topK') result.append(appNumber(ctx,'Top-K',config,key('topK'),1,256));
+  if (config[key('samplingMode')] === 'topK') result.append(appNumber(ctx,'Top-K',config,key('topK'),1,1000));
   if (config[key('samplingMode')] === 'probability') result.append(appNumber(ctx,'Probability threshold',config,key('probabilityThreshold'),.01,1,.01));
   result.append(appToggle(ctx,'Set temperature',config,key('temperatureEnabled'),ctx.renderMain));
-  if (config[key('temperatureEnabled')]) result.append(appNumber(ctx,'Temperature',config,key('temperature'),0,2,.05));
+  if (config[key('temperatureEnabled')]) result.append(appNumber(ctx,'Temperature',config,key('temperature'),0,1,.05));
   result.append(appToggle(ctx,'Use a fixed seed',config,key('seedEnabled'),ctx.renderMain));
   if (config[key('seedEnabled')]) result.append(appNumber(ctx,'Seed',config,key('seed'),0,Number.MAX_SAFE_INTEGER));
   return result;
@@ -33,9 +34,9 @@ function appReferenceSection(ctx) {
 }
 function appScoringSection(ctx) {
   const draft = ctx.state.draft;
-  draft.scoringMode ||= ({exact:'exactMatch',contains:'containsExpected',none:'review'})[draft.cases[0]?.scoring] || 'modelJudge';
+  const scoringMode = draft.scoringMode || 'review';
   const descriptions = { modelJudge:'Use AI for free-form requirements and exact: "text" for deterministic exact-output requirements. Every requirement must score at least 3 to pass.', exactMatch:'Pass only when the complete response equals the expected response after trimming outer whitespace.', containsExpected:'Pass when the response contains the required literal text, ignoring case and accents.', review:'Collect responses without a score unless deterministic JSON field checks assign pass or fail.' };
-  const controls = [appSelect(ctx,'Scoring mode',draft,'scoringMode',Object.entries(APP_SCORING),ctx.renderMain),ctx.node('p',descriptions[draft.scoringMode],'hint')];
+  const controls = [appSelect(ctx,'Scoring mode',draft,'scoringMode',Object.entries(APP_SCORING),ctx.renderMain),ctx.node('p',descriptions[scoringMode],'hint')];
   if (draft.scoringMode === 'modelJudge') controls.push(ctx.field('Requirements',draft.criteria || '',value => draft.criteria=value,true,'rubric-editor'));
   const section = appSection(ctx,'Scoring','Define what a good answer means for every case.',controls,'file');
   return section;
@@ -51,7 +52,7 @@ function appReleaseSection(ctx) {
 }
 function appToolsSection(ctx) {
   const features = appFeatureDefaults(ctx.state.draft), model = appModelDefaults(ctx.state.draft), settings = model.customization ||= {saveFullTranscript:true}; features.tools ||= [];
-  const controls = [appSelect(ctx,'Tool calling',settings,'toolCalling',[['automatic','Automatic'],['allowed','Allowed'],['required','Required'],['disallowed','Disallowed']]),appNumber(ctx,'Maximum tool calls',model,'maximumToolCalls',0,100)];
+  const controls = [appSelect(ctx,'Tool calling',settings,'toolCalling',[['automatic','Automatic'],['allowed','Allowed'],['required','Required'],['disallowed','Disallowed']]),appNumber(ctx,'Maximum tool calls',model,'maximumToolCalls',1,4)];
   const section = appSection(ctx,'Custom tools','Give the model functions with typed arguments and recorded outputs.',controls,'tools');
   const list = ctx.node('div',null,'tool-list');
   for (const tool of features.tools) {
@@ -76,13 +77,13 @@ function appOutputSection(ctx) {
 function appProfileSection(ctx) {
   const features = appFeatureDefaults(ctx.state.draft), profile = features.profile ||= {enabled:false};
   const controls = [appToggle(ctx,'Enable session profile',profile,'enabled',ctx.renderMain)];
-  if (profile.enabled) controls.push(ctx.field('Profile name',profile.name || '',value => profile.name=value),ctx.field('Instructions after a tool call',profile.afterToolInstructions || '',value => profile.afterToolInstructions=value,true,'prompt-field'),appToggle(ctx,'Require a tool before the final response',profile,'requireToolFirst'),appSamplingControls(ctx,profile,'afterTool'),appNumber(ctx,'Maximum response tokens after a tool call',profile,'afterToolMaximumResponseTokens',1,4096,1,true),appSelect(ctx,'Reasoning after a tool call',profile,'afterToolReasoningLevel',[['automatic','Automatic'],['light','Light'],['moderate','Moderate'],['deep','Deep'],['custom','Custom']],ctx.renderMain),appSelect(ctx,'Transcript on tool error',profile,'afterToolTranscriptErrorPolicy',[['automatic','Framework default'],['preserve','Preserve failed request'],['revert','Revert failed request']]));
+  if (profile.enabled) controls.push(ctx.field('Profile name',profile.name || '',value => profile.name=value),ctx.field('Instructions after a tool call',profile.afterToolInstructions || '',value => profile.afterToolInstructions=value,true,'prompt-field'),appToggle(ctx,'Require a tool before the final response',profile,'requireToolFirst'),appSamplingControls(ctx,profile,'afterTool'),appNumber(ctx,'Maximum response tokens after a tool call',profile,'afterToolMaximumResponseTokens',128,4096,1,true),appSelect(ctx,'Reasoning after a tool call',profile,'afterToolReasoningLevel',[['automatic','Automatic'],['light','Light'],['moderate','Moderate'],['deep','Deep'],['custom','Custom']],ctx.renderMain),appSelect(ctx,'Transcript on tool error',profile,'afterToolTranscriptErrorPolicy',[['automatic','Framework default'],['preserve','Preserve failed request'],['revert','Revert failed request']]));
   if(profile.enabled && profile.afterToolReasoningLevel==='custom')controls.push(ctx.field('Custom reasoning after a tool call',profile.afterToolCustomReasoning || '',value=>profile.afterToolCustomReasoning=value));
   return appSection(ctx,'Session profile','Change instructions and generation settings between tool calls.',controls,'profile');
 }
 function appModelSection(ctx) {
   const draft=ctx.state.draft,model=appModelDefaults(draft),customization=model.customization ||= {saveFullTranscript:true};
-  const controls=[appSelect(ctx,'Provider',model,'provider',[['onDevice','On device']]),appSelect(ctx,'Use case',customization,'useCase',[['general','General'],['contentTagging','Content tagging']]),appSelect(ctx,'Guardrails',customization,'guardrails',[['standard','Default'],['permissiveContentTransformations','Permissive text transformations']]),appSelect(ctx,'Reasoning',model,'reasoningLevel',[['automatic','Automatic'],['light','Light'],['moderate','Moderate'],['deep','Deep'],['custom','Custom']],ctx.renderMain),appSamplingControls(ctx,model),appNumber(ctx,'Maximum response tokens',model,'maximumResponseTokens',1,4096),appNumber(ctx,'Maximum input tokens',model,'maximumInputTokens',1,1000000,1,true),appNumber(ctx,'Repetitions',draft,'repetitions',1,5),appSelect(ctx,'Reference files',model,'referenceMode',[['inline','Include in prompt'],['lookupTool','Search with a tool']]),appSelect(ctx,'Context policy',model,'contextPolicy',[['fitReferences','Fit reference content'],['requireFullInput','Require full input']])];
+  const controls=[appSelect(ctx,'Provider',model,'provider',[['onDevice','On device']]),appSelect(ctx,'Use case',customization,'useCase',[['general','General'],['contentTagging','Content tagging']]),appSelect(ctx,'Guardrails',customization,'guardrails',[['standard','Default'],['permissiveContentTransformations','Permissive text transformations']]),appSelect(ctx,'Reasoning',model,'reasoningLevel',[['automatic','Automatic'],['light','Light'],['moderate','Moderate'],['deep','Deep'],['custom','Custom']],ctx.renderMain),appSamplingControls(ctx,model),appNumber(ctx,'Maximum response tokens',model,'maximumResponseTokens',128,4096),appNumber(ctx,'Maximum input tokens',model,'maximumInputTokens',512,32768,1,true),appNumber(ctx,'Repetitions',draft,'repetitions',1,5),appSelect(ctx,'Reference files',model,'referenceMode',[['inline','Include in prompt'],['lookupTool','Search with a tool']]),appSelect(ctx,'Context policy',model,'contextPolicy',[['fitReferences','Fit reference content'],['requireFullInput','Require full input']])];
   if(model.reasoningLevel==='custom')controls.push(ctx.field('Custom reasoning preset',customization.customReasoning || '',value=>customization.customReasoning=value));
   return appSection(ctx,'Model & generation','Configure Apple’s on-device model and the workload.',controls,'cpu');
 }
@@ -91,6 +92,15 @@ function appPerformanceSection(ctx) {
   return appSection(ctx,'Performance','Measure streaming, prewarming and session evidence.',[appToggle(ctx,'Stream responses',features,'streamResponse'),appToggle(ctx,'Prewarm session',features,'prewarm'),ctx.field('Prewarm prefix',customization.prewarmPrefix || '',value => customization.prewarmPrefix=value),appNumber(ctx,'Prewarm lead time (seconds)',customization,'prewarmLeadSeconds',0,10,.1),appToggle(ctx,'Save full session transcript',customization,'saveFullTranscript'),appSelect(ctx,'Transcript after an error',customization,'transcriptErrorPolicy',[['automatic','Framework default'],['preserve','Preserve failed request'],['revert','Revert failed request']])],'clock');
 }
 export function renderNativeSetup(ctx) {
+  if (!isAppSuiteFormat(ctx.state.draft)) {
+    const draft = ctx.state.draft;
+    return appSection(ctx, 'Suite setup', 'Each case keeps its own exact, contains, or trace-only scoring.', [
+      ctx.field('Model instructions', draft.instructions || '', value => draft.instructions = value, true, 'instructions-editor'),
+      appNumber(ctx, 'Temperature', draft, 'temperature', 0, 2, .05),
+      appNumber(ctx, 'Maximum response tokens', draft, 'maxTokens', 1, 4096),
+      appNumber(ctx, 'Repetitions', draft, 'repetitions', 1, 10),
+    ], 'instructions');
+  }
   const layout=ctx.node('div',null,'setup-layout'),nav=ctx.node('nav',null,'setup-navigation');nav.setAttribute('aria-label','Suite setup');nav.append(ctx.node('p','Suite setup','sidebar-label'));
   ctx.state.setupPage ||= 'instructions';
   for (const [key,title,subtitle,symbol] of APP_SETUP_PAGES) {

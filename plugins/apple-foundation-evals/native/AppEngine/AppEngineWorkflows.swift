@@ -137,6 +137,89 @@ enum AppEngineWorkflows {
         return ExperimentOutput(experiment: experiment, current: result.current, candidate: result.candidate,
             summary: EvaluationExperimentAnalyzer.summarize(current: result.current, candidate: result.candidate))
     }
+    static func summarizeExperiment(_ request: SummaryRequest) throws -> EvaluationExperimentSummary {
+        let current = request.current
+        let candidate = request.candidate
+        guard current.suiteID == candidate.suiteID,
+              current.repetitions == candidate.repetitions,
+              try summaryScoringContract(for: current) == summaryScoringContract(for: candidate) else {
+            throw RunnerFailure.validation("Experiment summaries require matching saved cases, repetitions, and scoring conditions.")
+        }
+        if try summaryJudgeIdentity(for: current) != summaryJudgeIdentity(for: candidate) {
+            throw RunnerFailure.validation("Experiment summaries require the same judge identity for both variants.")
+        }
+        return EvaluationExperimentAnalyzer.summarize(current: current, candidate: candidate)
+    }
+
+    private static func summaryScoringContract(for run: EvaluationRun) throws -> EvaluationScoringContract {
+        guard let cases = run.plannedCases ?? run.suiteDefinition?.cases,
+              !cases.isEmpty, Set(cases.map(\.id)).count == cases.count else {
+            throw RunnerFailure.validation("Experiment summaries require saved, uniquely identified case definitions.")
+        }
+        let contract = try EvaluationScoringContract(run: run)
+        if run.scoringMode == .modelJudge, let assessment = run.selectedAssessment {
+            let assessedContract = try EvaluationScoringContract(
+                scoringMode: run.scoringMode,
+                rubricCriteria: assessment.rubric.split(whereSeparator: \Character.isNewline)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty },
+                judgePromptVersion: assessment.promptVersion,
+                judgePassingScore: assessment.passingScore,
+                cases: cases
+            )
+            guard assessment.runID == run.id,
+                  assessment.scoringContract.map({ $0 == assessedContract }) != false else {
+                throw RunnerFailure.validation("The selected assessment does not match the run's scoring conditions.")
+            }
+            return assessedContract
+        }
+        return contract
+    }
+
+    private static func summaryJudgeIdentity(for run: EvaluationRun) throws -> EvaluationJudgeIdentity? {
+        guard run.scoringMode == .modelJudge else { return nil }
+        let identities: [EvaluationJudgeIdentity]
+        if let assessment = run.selectedAssessment {
+            identities = (assessment.observedJudgeIdentities ?? []) + [assessment.judge]
+        } else {
+            guard run.selectedAssessmentID == nil else {
+                throw RunnerFailure.validation("The selected experiment assessment is unavailable.")
+            }
+            let scoredSamples = run.effectiveResults.filter { $0.status == .passed || $0.status == .failed }
+            guard scoredSamples.allSatisfy({ $0.judgeIdentity != nil }) else {
+                throw RunnerFailure.validation("Saved model-judged samples require known judge identities before experiment comparison.")
+            }
+            identities = scoredSamples.compactMap(\.judgeIdentity)
+        }
+        guard identities.allSatisfy({ identity in
+            identity.mode == .sameModel
+                && !identity.requestedModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && (identity.provider == nil || identity.provider == "onDevice"
+                    || (identity.requestedModelID == "none" && identity.provider == "local"))
+        }) else {
+            throw RunnerFailure.validation("Experiment summaries support only identified on-device or deterministic judges.")
+        }
+        // Objective-only cases need no model request. Mixed objective/semantic
+        // runs use the actual model identity, matching initial-assessment capture.
+        let modelIdentities = identities.filter { $0.requestedModelID != "none" }
+        let considered = modelIdentities.isEmpty ? identities : modelIdentities
+        guard let identity = considered.first else { return nil }
+        if modelIdentities.isEmpty {
+            let rubric = (run.selectedAssessment?.rubric ?? run.criteria)
+                .split(whereSeparator: \Character.isNewline)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard !rubric.isEmpty,
+                  rubric.allSatisfy({ EvaluationExactCriterion.expectedText(in: $0) != nil }) else {
+                throw RunnerFailure.validation("A no-model judge identity requires an entirely deterministic rubric.")
+            }
+        }
+        guard considered.allSatisfy({ $0 == identity }) else {
+            throw RunnerFailure.validation("An experiment variant contains conflicting judge identities.")
+        }
+        return identity
+    }
+
     static func releaseCheck(_ request: ReleaseRequest) throws -> ReleaseOutput {
         let report = EvaluationReleaseCheckEvaluator.report(projectID: request.projectID, suite: request.suite,
             currentSuiteRevision: try AppEngineBridge.revision(for: request.suite), run: request.run,

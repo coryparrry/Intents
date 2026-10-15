@@ -124,11 +124,15 @@ public actor AutomationApplicationRunner {
         try subject.validate(plan: plan)
         let executionCapabilities = try AutomationPreparedCapabilities.resolving(capabilities, prepared: prepared)
         try PlanValidator.validate(plan, approval: approval, capabilities: executionCapabilities)
+        try await campaignBudget?.available()
+        let javaScriptTiming = try AutomationJavaScriptSessionTiming.workflow(wallClockSeconds: plan.budget.wallClockSeconds,
+            allowBootAndInstall: allowBootAndInstall, campaignDeadline: campaignBudget?.deadline)
         let supervisor = AutomationServedJavaScriptSupervisor()
         return try await supervisor.withSession(profile: profile, manifest: prepared.source,
             app: subject.app, target: subject.target, frozenRoot: URL(fileURLWithPath: path), developerDirectory: developerDirectory,
             supportRoot: supportRoot, expected: expected,
-            requiresNativeConsumer: profile.automaticMetro != nil && (plan.setup + [plan.execution] + plan.observations + plan.cleanup).contains(where: \.usesUIControl)) { _ in
+            requiresNativeConsumer: profile.automaticMetro != nil && (plan.setup + [plan.execution] + plan.observations + plan.cleanup).contains(where: \.usesUIControl),
+            operationTimeout: javaScriptTiming.operationTimeout, campaignDeadline: javaScriptTiming.campaignDeadline) { _ in
                 try await self.runDirect(subject: subject, plan: plan, approval: approval, capabilities: executionCapabilities,
                     attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: campaignBudget, excludedEntityIDs: excludedEntityIDs,
                     javaScriptFinalization: { try await supervisor.finishCurrent(profile: profile, manifest: prepared.source, frozenRoot: URL(fileURLWithPath: path)) },

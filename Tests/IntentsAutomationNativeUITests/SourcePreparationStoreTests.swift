@@ -18,7 +18,8 @@ import XCTest
                        inventory: @escaping AutomationNativeSimulatorInventoryReader = { _, _ in throw AutomationContractError.invalidIdentity },
                        physicalInventory: @escaping AutomationNativePhysicalInventoryReader = { _, _ in throw AutomationContractError.invalidIdentity },
                        physicalTargetResolver: (@Sendable (TargetIdentity, URL, URL) async throws -> TargetIdentity)? = nil,
-                       toolchainReader: @escaping (URL) -> [AutomationNativeToolchainChoice] = { AutomationNativeToolchain.installedChoices(configured: $0) }) async throws -> AppAutomationStore {
+                       toolchainReader: @escaping (URL) -> [AutomationNativeToolchainChoice] = { AutomationNativeToolchain.installedChoices(configured: $0) },
+                       siriSearchExecutor: AutomationNativeSiriSearchExecutor? = nil) async throws -> AppAutomationStore {
         let root = URL(fileURLWithPath: "/private/tmp/source-preparation-" + UUID().uuidString)
         let project = root.appendingPathComponent("Subject.xcodeproj")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
@@ -30,7 +31,7 @@ import XCTest
         let settings = AutomationNativeXcodeSettings(defaults: try XCTUnwrap(UserDefaults(suiteName: suite)))
         addTeardownBlock { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
         let model = AppAutomationStore(supportDirectory: root.appendingPathComponent("support"), developerDirectory: developerDirectory,
-                                       xcodeSettings: settings, nativeMacTargetReader: reader,
+                                       xcodeSettings: settings, siriSearchExecutor: siriSearchExecutor, nativeMacTargetReader: reader,
                                        preparationExecutor: executor, sourceGrants: grants, physicalTargetResolver: physicalTargetResolver ?? { target, _, _ in
                                            var value = target; value.physicalDeviceIdentifier = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"; return value
                                        }, simulatorInventoryReader: inventory, physicalInventoryReader: physicalInventory, installedToolchainReader: toolchainReader)
@@ -162,6 +163,84 @@ import XCTest
         XCTAssertEqual(value.selectedToolchainMetadataDigest, review.toolchainMetadataDigest)
         XCTAssertTrue(value.message?.contains("reviewed Xcode installation changed") == true)
     }
+
+    func testDestinationToolchainsKeepSeparateReviewedMetadataAndDetectReplacementOnReturn() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/native-xcode-destinations-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = try installedXcodeFixture("Xcode", version: "27.0", build: "27A266a", root: root)
+        let beta = try installedXcodeFixture("Xcode-Beta", version: "27.2", build: "27B5028f", root: root)
+        let box = TargetBox()
+        let value = try await model(executor: { candidate, approval, session in
+            var prepared = preparedFixture(candidate, approval, session)
+            prepared.selectedDeveloperDirectoryPath = approval.target.kind == .nativeMac ? beta.path : original.path
+            return prepared
+        }, reader: { box.read() }, developerDirectory: original,
+            toolchainReader: { AutomationNativeToolchain.installedChoices(configured: $0, applications: [root], selected: nil) })
+        value.simulatorID = UUID().uuidString
+        value.xcodeSettings.setPath(beta.path, for: .macOS)
+        try value.selectInstalledToolchain(original.path)
+        let simulatorReview = try value.reviewNativePreparation()
+
+        value.preparationDestination = .macOS; value.preparationSelectionChanged()
+
+        let macReview = try value.reviewNativePreparation()
+        XCTAssertEqual(macReview.developerDirectoryPath, beta.path)
+        XCTAssertNotEqual(macReview.toolchainMetadataDigest, simulatorReview.toolchainMetadataDigest)
+        XCTAssertThrowsError(try value.confirmNativePreparation(simulatorReview))
+        try value.confirmNativePreparation(macReview); await value.waitForPreparation()
+        XCTAssertEqual(value.prepared?.selectedDeveloperDirectoryPath, beta.path)
+
+        _ = try installedXcodeFixture("Xcode", version: "27.0", build: "27A9999", root: root)
+        value.preparationDestination = .simulator; value.preparationSelectionChanged()
+
+        XCTAssertEqual(value.developerDirectory, original)
+        XCTAssertThrowsError(try value.reviewNativePreparation(), "Returning to a path must preserve its reviewed metadata")
+        value.refreshInstalledToolchains()
+        try value.selectInstalledToolchain(original.path)
+        let refreshed = try value.reviewNativePreparation()
+        XCTAssertNotEqual(refreshed.toolchainMetadataDigest, simulatorReview.toolchainMetadataDigest)
+        try value.confirmNativePreparation(refreshed); await value.waitForPreparation()
+        XCTAssertEqual(value.prepared?.selectedDeveloperDirectoryPath, original.path)
+    }
+
+    func testDefaultAndOverrideEditsReviewEffectiveToolchainAndPickerUpdatesActiveOverride() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/native-xcode-overrides-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = try installedXcodeFixture("Xcode", version: "27.0", build: "27A266a", root: root)
+        let beta = try installedXcodeFixture("Xcode-Beta", version: "27.2", build: "27B5028f", root: root)
+        let box = TargetBox()
+        let value = try await model(executor: { candidate, approval, session in
+            var prepared = preparedFixture(candidate, approval, session); prepared.selectedDeveloperDirectoryPath = beta.path
+            return prepared
+        }, reader: { box.read() }, developerDirectory: original,
+            toolchainReader: { AutomationNativeToolchain.installedChoices(configured: $0, applications: [root], selected: nil) })
+        value.preparationDestination = .macOS; value.preparationSelectionChanged()
+        try value.selectInstalledToolchain(original.path)
+        let originalReview = try value.reviewNativePreparation()
+        value.selectedXcodePath = beta.path
+        let defaultReview = try value.reviewNativePreparation()
+        XCTAssertEqual(defaultReview.developerDirectoryPath, beta.path)
+        XCTAssertNotEqual(defaultReview.toolchainMetadataDigest, originalReview.toolchainMetadataDigest)
+        XCTAssertThrowsError(try value.confirmNativePreparation(originalReview))
+
+        value.selectedXcodePath = original.path
+        value.runXcodePathOverride = beta.path
+        XCTAssertEqual(try value.reviewNativePreparation().developerDirectoryPath, beta.path)
+        try value.selectInstalledToolchain(original.path)
+        XCTAssertEqual(value.runXcodePathOverride, original.path)
+        XCTAssertEqual(try value.reviewNativePreparation().developerDirectoryPath, original.path)
+        try value.selectInstalledToolchain(beta.path)
+        XCTAssertEqual(value.runXcodePathOverride, beta.path)
+        XCTAssertEqual(value.selectedXcodePath, original.path, "A picker change during an override must preserve the destination default")
+        let overrideReview = try value.reviewNativePreparation()
+        try value.confirmNativePreparation(overrideReview); await value.waitForPreparation()
+        XCTAssertEqual(value.prepared?.selectedDeveloperDirectoryPath, beta.path)
+
+        value.runXcodePathOverride = ""
+        XCTAssertEqual(value.developerDirectory, original)
+        XCTAssertThrowsError(try value.confirmNativePreparation(overrideReview))
+        XCTAssertEqual(try value.reviewNativePreparation().toolchainMetadataDigest, originalReview.toolchainMetadataDigest)
+    }
     func testPhysicalInventorySelectsOnlySingleAvailableDeviceByExactIdentity() async throws {
         let phone = AutomationPhysicalDevice(id: "00008140-000E4D803C0B001C", name: "iPhone", model: "iPhone", operatingSystem: "27.2", available: true)
         let value = try await model(executor: { _, _, _ in throw AutomationContractError.invalidIdentity },
@@ -236,7 +315,7 @@ import XCTest
         XCTAssertEqual(value.developerDirectory.path, try AutomationPath.canonical(root).path)
         XCTAssertNotNil(value.prepared)
     }
-    func testSiriSearchReviewHashIsStableAndRejectsChangedPhraseAndEpochBeforeExecution() async throws {
+    private func siriSearchModel(executor: AutomationNativeSiriSearchExecutor? = nil) async throws -> AppAutomationStore {
         let box = TargetBox()
         let model = try await model(executor: { candidate, approval, session in
             var value = try preparedPhysicalFixture(candidate, approval, session)
@@ -247,7 +326,7 @@ import XCTest
                     .init(name: "completed", family: "bool", optional: false)], parametersComplete: true,
                 compiled: true, registered: true, executed: false, resultFamily: "noValue")]
             return value
-        }, reader: { box.read() })
+        }, reader: { box.read() }, siriSearchExecutor: executor)
         model.preparationDestination = .physical; model.physicalDeviceID = "00008140-001049013EF3401C"
         model.preparationSelectionChanged(); await model.prepareAndWait()
         model.workflowRoute = "siri"; model.siriRequest = "Complete Approved test task in Example"
@@ -259,6 +338,10 @@ import XCTest
             stateProperty: "completed", initialState: "false", expectedState: "true")
         model.siriResetActionID = "SetStateIntent"; model.siriAccountEnvironment = "disposable/account-A"
         model.siriAlternatePhrases = "Finish Approved test task in Example"
+        return model
+    }
+    func testSiriSearchReviewHashIsStableAndRejectsChangedPhraseAndEpochBeforeExecution() async throws {
+        let model = try await siriSearchModel()
         XCTAssertTrue(model.canFindSiriFailures)
         let first = try model.reviewSiriFailureSearch(), second = try model.reviewSiriFailureSearch()
         XCTAssertEqual(first.digest, second.digest); XCTAssertEqual(first.baseline.digest, second.baseline.digest)
@@ -275,6 +358,31 @@ import XCTest
         model.siriAccountEnvironment = "different-account"
         XCTAssertNotEqual(try model.reviewSiriFailureSearch().digest, first.digest)
         model.close()
+    }
+    func testSiriSearchResetsExactRetainedCampaignAfterInterruptionOrThrow() async throws {
+        for throwsAfterReservation in [false, true] {
+            let model = try await siriSearchModel { review, support in
+                let owner = try AutomationDeviceLeaseManager(storeURL: support.appendingPathComponent("target-leases.json"))
+                try await owner.reserveCampaign(runID: review.approval.run.runID, target: review.baseline.plan.target)
+                if throwsAfterReservation { throw AutomationContractError.terminationUnverified }
+                return .init(baselineDigest: review.baseline.digest, interruptions: [.init(attemptID: UUID().uuidString,
+                    caseDigest: review.baseline.digest, stage: .baseline, dispatchMayHaveOccurred: true, reason: "Retained test campaign")])
+            }
+            await model.ownershipRecoveryTask?.value
+            let review = try model.reviewSiriFailureSearch()
+            await model.findSiriFailures(reviewed: review)
+            XCTAssertEqual(model.retainedUnresolvedRequestTargets[review.approval.run.runID], review.baseline.plan.target)
+            XCTAssertFalse(model.canFindSiriFailures)
+
+            await model.clearUnresolvedAttempt()
+
+            XCTAssertNil(model.recoveryError)
+            let leases = try AutomationDeviceLeaseManager(storeURL: model.support.appendingPathComponent("target-leases.json"))
+            let released = try await leases.campaignAbsent(target: review.baseline.plan.target)
+            XCTAssertTrue(released)
+            XCTAssertTrue(model.canFindSiriFailures)
+            await model.closeAndWait()
+        }
     }
     func testManualPhysicalDestinationResolvesOwnershipBeforeFreezingBuildApproval() async throws {
         let uuid = "1AD4F755-6F58-58E5-AC71-B1EDFECADA93", udid = "00008140-000E4D803C0B001C"

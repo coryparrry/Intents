@@ -8,7 +8,7 @@ import { nativeBinary } from '../scripts/launch.mjs';
 import { invokeNative } from './runtime.mjs';
 import { workflowDispatch } from './workflows.mjs';
 import { initProjects, saveSuite, workspaceDispatch, health, overview } from './workspace.mjs';
-import { isAppSuite, portableSuite, revision, applyAssessment, sampleEnvelope, validateAppEvidence } from './app-format.mjs';
+import { isAppSuite, portableSuite, revision, applyAssessment, sampleEnvelope, validateAppEvidence, importedTimestamp } from './app-format.mjs';
 import { imageInputs, REFERENCE_LIMITS } from './references.mjs';
 import { validateSchema } from './app-schema.mjs';
 
@@ -16,7 +16,16 @@ const pluginURL = new URL('../', import.meta.url);
 const UNCHECKED = { available: null, reason: 'Check model availability' };
 export function summary(run) {
   const results = run.results || [];
-  return { id: run.id, suiteId: run.suiteId, suiteName: run.suite.name, projectId: run.projectId || run.suite.projectId, suiteRevision: run.suiteRevision, revision: publicRun(run).revision, status: run.status, startedAt: run.startedAt, ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}), ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}), ...(run.model ? { model: run.model } : {}), totalResults: results.length, plannedResults: run.suite.cases.length * run.suite.repetitions, passed: results.filter((item) => item.passed === true).length, failed: results.filter((item) => item.passed === false).length, unscored: results.filter((item) => item.passed === null).length, ...(run.error ? { error: run.error } : {}) };
+  const timestamps = {}; const invalidTimestamps = {};
+  for (const key of ['startedAt', 'finishedAt']) {
+    if (key === 'finishedAt' && run[key] === undefined) continue;
+    try { timestamps[key] = importedTimestamp(run[key]); }
+    catch { timestamps[key] = ''; invalidTimestamps[key] = run[key] ?? null; }
+  }
+  // Preserve malformed historical evidence on disk and in exports, while keeping
+  // the catalog usable and showing exactly which original values need attention.
+  const timestampIssue = Object.keys(invalidTimestamps).length ? { timestampWarning: 'Stored run has invalid timestamps', invalidTimestamps } : {};
+  return { id: run.id, suiteId: run.suiteId, suiteName: run.suite.name, projectId: run.projectId || run.suite.projectId, suiteRevision: run.suiteRevision, revision: publicRun(run).revision, status: run.status, ...timestamps, ...timestampIssue, ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}), ...(run.model ? { model: run.model } : {}), totalResults: results.length, plannedResults: run.suite.cases.length * run.suite.repetitions, passed: results.filter((item) => item.passed === true).length, failed: results.filter((item) => item.passed === false).length, unscored: results.filter((item) => item.passed === null).length, ...(run.error ? { error: run.error } : {}) };
 }
 function publicRun(run) { const { ownerPid, ...publicRecord } = run; return { ...publicRecord, revision: revision(publicRecord) }; }
 function validateCall(name, args) {
@@ -43,7 +52,7 @@ export class EvaluationApp {
     const saved = await this.store.list('suites');
     if (!saved.length) {
       const starter = JSON.parse(await readFile(new URL('samples/starter-suite.json', pluginURL), 'utf8'));
-      await this.store.write('suites', suite(starter, randomUUID));
+      await this.store.saveSuite(suite(starter, randomUUID));
     }
     await initProjects(this);
     await this.recover();

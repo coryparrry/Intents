@@ -201,10 +201,16 @@ else: raise AssertionError('Unexpected command: ' + name)
                 self.fail('Timed out waiting for isolated local build gate')
             time.sleep(0.02)
 
-    def assert_concurrent_invocation_rejected(self, gate_variable):
+    def assert_concurrent_invocation_rejected(self, gate_variable, separate_tempdirs=False):
         gate = self.root / 'owner.gate'
         gate.touch()
         first_environment = dict(self.environment, **{gate_variable: str(gate)})
+        second_environment = dict(self.environment)
+        if separate_tempdirs:
+            for environment, name in [(first_environment, 'owner-temp'), (second_environment, 'other-temp')]:
+                directory = self.root / name
+                directory.mkdir()
+                environment.update(TMPDIR=str(directory), TMP=str(directory), TEMP=str(directory))
         first = subprocess.Popen(['/bin/bash', str(self.root / 'script/build_and_run.sh'), 'run'],
                                  env=first_environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  text=True, start_new_session=True)
@@ -215,7 +221,7 @@ else: raise AssertionError('Unexpected command: ' + name)
                 output, error = first.communicate()
                 self.fail(f'First build failed before gate: {output} {error}')
             second = subprocess.Popen(['/bin/bash', str(self.root / 'script/build_and_run.sh'), 'run'],
-                                      env=self.environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      env=second_environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                       text=True, start_new_session=True)
             second_output, second_error = second.communicate(timeout=5)
             self.assertEqual(second.returncode, 3, second_output + second_error)
@@ -248,6 +254,12 @@ else: raise AssertionError('Unexpected command: ' + name)
 
     def testConcurrentInvocationCannotReplaceAppBetweenPublicationAndLaunch(self):
         self.assert_concurrent_invocation_rejected('LOCAL_TEST_OPEN_GATE')
+
+    def testDifferentTemporaryDirectoriesCannotBypassSharedPublicationLock(self):
+        self.assert_concurrent_invocation_rejected('LOCAL_TEST_SEAL_GATE', separate_tempdirs=True)
+
+    def testDifferentTemporaryDirectoriesCannotReplaceAppBeforeLaunch(self):
+        self.assert_concurrent_invocation_rejected('LOCAL_TEST_OPEN_GATE', separate_tempdirs=True)
 
     def testKilledKernelLockOwnerDoesNotLeaveAStaleLock(self):
         script = self.root / 'script/build_and_run.sh'

@@ -11,6 +11,7 @@ struct AutomationNativeSiriSearchReview: Sendable {
     let selectionEpoch: Int
     let message: String
 }
+typealias AutomationNativeSiriSearchExecutor = @Sendable (AutomationNativeSiriSearchReview, URL) async throws -> AutomationFailureSearchReport
 
 extension AppAutomationStore {
     var siriResetActions: [ApplicationSurfaceCatalog.SystemAction] {
@@ -61,11 +62,16 @@ extension AppAutomationStore {
             task = Task {
                 defer { progress = nil; task = nil; releaseScopeIfClosing() }
                 do {
-                    let runner = try AutomationApplicationRunner(supportRoot: support, developerDirectory: developerDirectory)
-                    let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
-                    let result = try await AutomationSiriSearchCampaign.run(baseline: reviewed.baseline, mutations: reviewed.mutations,
-                        approval: reviewed.approval, prepared: prepared, capabilities: reviewed.request.capabilities, runner: runner, cases: cases)
+                    let result: AutomationFailureSearchReport
+                    if let siriSearchExecutor { result = try await siriSearchExecutor(reviewed, support) }
+                    else {
+                        let runner = try AutomationApplicationRunner(supportRoot: support, developerDirectory: developerDirectory)
+                        let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
+                        result = try await AutomationSiriSearchCampaign.run(baseline: reviewed.baseline, mutations: reviewed.mutations,
+                            approval: reviewed.approval, prepared: prepared, capabilities: reviewed.request.capabilities, runner: runner, cases: cases)
+                    }
                     searchReport = result
+                    await retainUnresolvedReservation(runID: reviewed.approval.run.runID, target: reviewed.baseline.plan.target)
                     let definitions = [reviewed.baseline] + reviewed.mutations.map(\.frozen)
                     for attempt in result.qualificationAttempts ?? [] {
                         if let frozen = definitions.first(where: { $0.digest == attempt.caseDigest }) { await importEvidence(plan: frozen.plan, report: attempt.report, announce: false) }
@@ -78,7 +84,10 @@ extension AppAutomationStore {
                     try await archive.save(.init(id: reviewed.request.approval.runID, runID: reviewed.request.approval.runID,
                         baseline: reviewed.baseline, mutations: reviewed.mutations, report: result))
                     await refreshSavedCases()
-                } catch { message = errorText(error); await refreshSavedCases() }
+                } catch {
+                    await retainUnresolvedReservation(runID: reviewed.approval.run.runID, target: reviewed.baseline.plan.target)
+                    message = errorText(error); await refreshSavedCases()
+                }
             }
             await task?.value
         } catch { message = errorText(error) }

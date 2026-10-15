@@ -48,22 +48,32 @@ if(options.has('themeControls')){
  document.body.append(control);
 }
 addEventListener('message',async event=>{
- if(event.source!==frame.contentWindow||event.data?.jsonrpc!=='2.0')return;
+ if(event.source!==frame.contentWindow||event.origin!==location.origin||event.data?.jsonrpc!=='2.0')return;
  const message=event.data;if(message.id==null)return;
  let response;
  try {
   if(message.method==='ui/initialize'){
    response={result:{protocolVersion:'2026-01-26',hostInfo:{name:'Local MCP preview',version:'1'},hostCapabilities:{downloadFile:{},experimental:{'openai/resource':{}}},hostContext:hostContext()}};
-   setTimeout(async()=>{const trace=new URLSearchParams(location.search).get('trace');const tool=trace?{name:'eval_open_trace',arguments:{file:{name:trace,resourceUri:'host-resource://preview/'+trace}}}:{name:'eval_open_workspace',arguments:{}};const r=await fetch('/rpc',{method:'POST',body:JSON.stringify({jsonrpc:'2.0',method:'tools/call',params:tool})}).then(r=>r.json());frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:r.result},location.origin);},20);
-  }else if(message.method==='ui/download-file')response=await fetch('/export',{method:'POST',body:JSON.stringify(message)}).then(r=>r.json());
+   setTimeout(async()=>{const trace=new URLSearchParams(location.search).get('trace');const tool=trace?{name:'eval_open_trace',arguments:{file:{name:trace,resourceUri:'host-resource://preview/'+trace}}}:{name:'eval_open_workspace',arguments:{}};const r=await fetch('/rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',method:'tools/call',params:tool})}).then(r=>r.json());frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:r.result},location.origin);},20);
+  }else if(message.method==='ui/download-file')response=await fetch('/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(message)}).then(r=>r.json());
   else if(message.method==='resources/read'&&message.params?.uri?.startsWith('host-resource://preview/'))response=await fetch('/import?name='+encodeURIComponent(message.params.uri.split('/').pop())).then(r=>r.json());
-  else {const delay=Math.min(5000,Math.max(0,Number(options.get('delayMs'))||0));if(message.method==='tools/call'&&message.params?.name===options.get('delayTool'))await new Promise(resolve=>setTimeout(resolve,delay));response=await fetch('/rpc',{method:'POST',body:JSON.stringify(message)}).then(r=>r.json());}
+  else {const delay=Math.min(5000,Math.max(0,Number(options.get('delayMs'))||0));if(message.method==='tools/call'&&message.params?.name===options.get('delayTool'))await new Promise(resolve=>setTimeout(resolve,delay));response=await fetch('/rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(message)}).then(r=>r.json());}
  }catch(error){response={error:{code:-32603,message:error.message}};}
  frame.contentWindow.postMessage({...response,jsonrpc:'2.0',id:message.id},location.origin);
 });
 </script></body></html>`;
 const server = createServer(async (req, res) => {
   try {
+    const address = server.address();
+    const allowedHosts = new Set([`127.0.0.1:${address.port}`, `localhost:${address.port}`]);
+    const requestHost = req.headers.host;
+    if (!allowedHosts.has(requestHost)) { res.statusCode = 403; return res.end('Invalid preview host'); }
+    if (req.method === 'POST') {
+      if (req.headers.origin !== `http://${requestHost}`) { res.statusCode = 403; return res.end('Preview requests must be same-origin'); }
+      if (req.headers['content-type']?.split(';', 1)[0].trim().toLowerCase() !== 'application/json') {
+        res.statusCode = 415; return res.end('Preview requests require application/json');
+      }
+    }
     if (req.method === 'GET' && req.url === '/') { res.setHeader('Content-Type', 'text/html'); return res.end(host); }
     if (req.method === 'GET' && req.url === '/app') { res.setHeader('Content-Type', 'text/html'); return res.end(await readFile(new URL('ui/app.html', root))); }
     if (req.method === 'GET' && req.url.startsWith('/?')) { res.setHeader('Content-Type', 'text/html'); return res.end(host); }
@@ -87,7 +97,7 @@ const server = createServer(async (req, res) => {
   } catch (error) { res.statusCode = 500; res.end(JSON.stringify({ error: { code: -32603, message: error.message } })); }
 });
 const port = Number(process.env.FOUNDATION_EVALS_PREVIEW_PORT || 4317);
-server.listen(port, '127.0.0.1', () => console.error(`Local MCP preview: http://127.0.0.1:${port}`));
+server.listen(port, '127.0.0.1', () => console.error(`Local MCP preview: http://127.0.0.1:${server.address().port}`));
 function close() { server.close(); child.stdin.end(); child.kill('SIGTERM'); }
 process.on('SIGTERM', close); process.on('SIGINT', close);
 child.on('exit', () => { server.close(); for (const pending of requests.values()) { clearTimeout(pending.timer); pending.reject(Error('MCP server exited')); } });

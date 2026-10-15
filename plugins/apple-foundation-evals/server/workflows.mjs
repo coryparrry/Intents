@@ -163,12 +163,20 @@ export async function workflowDispatch(app, name, args) {
       const record = await app.store.read('experiments', id(args.experimentId)); conflict(record, args.expectedRevision);
       const source = await app.store.read('suites', record.suiteId);
       const updated = { ...record, experiment: { ...record.experiment, decision: args.decision } };
+      let adoptedRevision;
       if (args.decision === 'adoptCandidate') {
         if (record.sourceRevision !== source.revision) throw new Error('The suite changed after this experiment was frozen');
         if (record.status !== 'completed' || record.experiment.runIDs.length !== 2 || (await experimentView(app, record)).missingRunIds.length) throw new Error('Both committed experiment runs are required before adopting the candidate');
-        await saveSuite(app, { suite: { ...source, instructions: record.experiment.candidate.instructions }, expectedRevision: source.revision });
+        const adopted = await saveSuite(app, { suite: { ...source, instructions: record.experiment.candidate.instructions }, expectedRevision: source.revision });
+        adoptedRevision = adopted.suite.revision;
       }
-      try { await app.store.write('experiments', updated); } catch (error) { if (args.decision === 'adoptCandidate') await app.store.write('suites', source); throw error; }
+      try { await app.store.write('experiments', updated); } catch (error) {
+        if (adoptedRevision) {
+          try { await app.store.restoreSuite(source, adoptedRevision); }
+          catch (rollbackError) { throw new Error(`${error.message}; suite rollback was not applied: ${rollbackError.message}`, { cause: error }); }
+        }
+        throw error;
+      }
       return { ...await experimentView(app, updated), suite: await app.store.read('suites', record.suiteId) };
     }
     case 'eval_select_assessment': {

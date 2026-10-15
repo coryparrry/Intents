@@ -1,3 +1,5 @@
+import { removeCase } from './react/case-actions.js';
+import { isAppSuiteFormat, normalizeSchemaType, normalizeSchemaOptional, newSchemaField } from './suite-form-state.js';
 // The case editor follows SuiteCasesView and ConversationConfigurationEditor.
 export const APP_SCORING = { modelJudge: 'AI rubric', exactMatch: 'Exact text', containsExpected: 'Contains text', review: 'Collect only' };
 export function newAppSuite(projectId) {
@@ -11,16 +13,25 @@ export function appSelect(ctx, label, object, key, options, onChange) {
   const wrap = ctx.node('label', label, 'form-control'), input = ctx.node('select'); input.setAttribute('aria-label', label);
   for (const [value, title] of options) input.append(new Option(title, value));
   input.value = object[key] ?? options[0]?.[0];
-  input.onchange = () => { object[key] = input.value; ctx.changed(); if (onChange) onChange(); };
+  input.onchange = () => { if (object[key] === input.value) return; object[key] = input.value; ctx.changed(); if (onChange) onChange(); };
   wrap.append(input); return wrap;
 }
 export function appToggle(ctx, label, object, key, onChange) {
   const wrap = ctx.node('label', null, 'toggle-control'), input = ctx.node('input'); input.type = 'checkbox'; input.checked = !!object[key];
-  input.onchange = () => { object[key] = input.checked; ctx.changed(); if (onChange) onChange(); }; wrap.append(input, ctx.node('span', label)); return wrap;
+  input.onchange = () => { if (!!object[key] === input.checked) return; object[key] = input.checked; ctx.changed(); if (onChange) onChange(); }; wrap.append(input, ctx.node('span', label)); return wrap;
 }
 export function appNumber(ctx, label, object, key, min, max, step = 1, optional = false) {
   const wrap = ctx.node('label', label, 'form-control'), input = ctx.node('input'); input.type = 'number'; input.min = min; input.max = max; input.step = step; input.value = object[key] ?? ''; input.setAttribute('aria-label', label);
-  input.oninput = () => { if (optional && !input.value) delete object[key]; else object[key] = Number(input.value); ctx.changed(); };
+  input.oninput = () => {
+    const value = Number(input.value);
+    const valid = optional && input.value === '' || input.value !== '' && Number.isFinite(value) && value >= min && value <= max && (step !== 1 || Number.isInteger(value));
+    input.setCustomValidity?.(valid ? '' : `Enter a value between ${min} and ${max}.`);
+    input.setAttribute('aria-invalid', String(!valid));
+    if (!valid) return;
+    if (optional && input.value === '') delete object[key]; else object[key] = value;
+    ctx.changed();
+  };
+  input.onchange = () => input.reportValidity?.();
   wrap.append(input); return wrap;
 }
 export function appDisclosure(ctx, title, detail, content, key) {
@@ -33,14 +44,14 @@ export function appSection(ctx, title, detail, contents, symbol = 'file') {
   text.append(ctx.node('h2', title)); if (detail) text.append(ctx.node('p', detail)); header.append(ctx.icon(symbol), text); section.append(header);
   const content = ctx.node('div', null, 'section-body'); content.append(...contents); section.append(content); return section;
 }
-export function appSchemaField() { return { id: crypto.randomUUID(), name: '', description: '', type: 'string', isOptional: false, children: [], enumValues: [], constraints: { stringPattern: '' }, referenceName: '', representNilExplicitlyInGeneratedContent: false }; }
+export function appSchemaField() { return newSchemaField(); }
 export function appSchemaEditor(ctx, fields, label = 'Fields', depth = 0) {
   const list = ctx.node('div', null, 'schema-editor');
   for (const item of fields) {
     item.children ||= []; item.enumValues ||= []; item.constraints ||= { stringPattern: '' };
     const card = ctx.node('div', null, 'schema-field'), header = ctx.node('div', null, 'form-grid');
-    header.append(ctx.field('Field name', item.name, value => item.name = value), appSelect(ctx, 'Type', item, 'type', [['string','Text'],['integer','Integer'],['number','Number'],['boolean','True or false'],['enumeration','Choice'],['object','Object'],['array','Array'],['null','Null'],['union','One of'],['reference','Reference'],['imageReference','Image reference']], ctx.renderMain));
-    card.append(header, ctx.field('Description', item.description, value => item.description = value), appToggle(ctx, 'Optional', item, 'isOptional'));
+    header.append(ctx.field('Field name', item.name, value => item.name = value), appSelect(ctx, 'Type', item, 'type', [['string','Text'],['integer','Integer'],['number','Number'],['boolean','True or false'],['enumeration','Choice'],['object','Object'],['array','Array'],['null','Null'],['union','One of'],['reference','Reference'],['imageReference','Image reference']], () => { normalizeSchemaType(item); ctx.renderMain(); }));
+    card.append(header, ctx.field('Description', item.description, value => item.description = value), appToggle(ctx, 'Optional', item, 'isOptional', () => { normalizeSchemaOptional(item); ctx.renderMain(); }));
     if (item.isOptional) card.append(appToggle(ctx, 'Represent nil explicitly', item, 'representNilExplicitlyInGeneratedContent'));
     if (item.type === 'reference') card.append(ctx.field('Definition name', item.referenceName, value => item.referenceName = value));
     if (item.type === 'enumeration') {
@@ -100,7 +111,7 @@ export function renderNativeCases(ctx) {
   const masterActions = node('div',null,'case-master-actions'); masterActions.append(button('+ Add Case', () => { const item = { id: crypto.randomUUID(), name: 'New case', prompt: '', expected: '', scoring:'none' }; draft.cases.push(item); state.caseId = item.id; state.caseSearch = ''; ctx.changed(); ctx.renderMain(); }, 'quiet',draft.cases.length >= 100), button('Import Cases',ctx.importCases,'icon-button')); master.append(masterActions); layout.append(master);
   if (!test) { layout.append(ctx.empty('Select a test case','Choose a case to edit its prompt and expected response.')); return layout; }
   const editor = node('section',null,'surface case-editor'), header = node('div',null,'case-editor-heading'), title = node('input'); title.className = 'case-name-input'; title.value = test.name || ctx.caseTitle(test,draft.cases.indexOf(test)); title.setAttribute('aria-label','Case name'); title.oninput = () => { test.name = title.value; ctx.changed(); const selected = list.querySelector('[aria-pressed="true"] strong'); if (selected) selected.textContent = title.value || 'Untitled case'; };
-  const menu = node('details',null,'action-menu'); const summary=node('summary');summary.setAttribute('aria-label','Case actions');summary.append(ctx.icon('more'));menu.append(summary); const choices = node('div',null,'menu-items'); choices.append(button('Duplicate Case', () => { const copy = structuredClone(test); copy.id = crypto.randomUUID(); copy.name = `${copy.name || 'Case'} copy`; draft.cases.splice(draft.cases.indexOf(test)+1,0,copy); state.caseId=copy.id; ctx.changed(); ctx.renderMain(); },'quiet',draft.cases.length >= 100),button('Delete Case', () => { draft.cases.splice(draft.cases.indexOf(test),1); state.caseId=draft.cases[0]?.id; ctx.changed(); ctx.renderMain(); },'quiet danger',draft.cases.length === 1)); menu.append(choices); header.append(title,menu); editor.append(header);
+  const menu = node('details',null,'action-menu'); const summary=node('summary');summary.setAttribute('aria-label','Case actions');summary.append(ctx.icon('more'));menu.append(summary); const choices = node('div',null,'menu-items'); choices.append(button('Duplicate Case', () => { const copy = structuredClone(test); copy.id = crypto.randomUUID(); copy.name = `${copy.name || 'Case'} copy`; draft.cases.splice(draft.cases.indexOf(test)+1,0,copy); state.caseId=copy.id; ctx.changed(); ctx.renderMain(); },'quiet',draft.cases.length >= 100),button('Delete Case', () => { state.caseId=removeCase(draft,test.id); ctx.changed(); ctx.renderMain(); },'quiet danger',draft.cases.length === 1)); menu.append(choices); header.append(title,menu); editor.append(header);
   const content = node('div',null,'editor-layout'),fields=node('div',null,'document-fields'),inspector=node('section',null,'case-inspector');inspector.setAttribute('aria-label','Case inspector');inspector.append(node('h2','Case inspector','inspector-title'));fields.append(ctx.field('Prompt',test.prompt,value => { test.prompt=value; const copy=list.querySelector('[aria-pressed="true"] span'); if (copy) copy.textContent=value || 'Add a prompt'; },true,'prompt-field'));
   const writing = node('div',null,'menu-items');
   for (const [id,label] of [['rewrite','Rewrite'],['grammar','Grammar'],['shorten','Shorten'],['tone','Change tone'],['prompt','Custom request']]) writing.append(button(label,()=>ctx.rewritePrompt(test,id),'secondary',!test.prompt.trim() || ctx.active()));
@@ -108,5 +119,5 @@ export function renderNativeCases(ctx) {
   const rubric = draft.scoringMode === 'modelJudge'; fields.append(ctx.field(rubric ? 'Reference answer (recommended for factual tasks)' : 'Expected response',test.expected || '',value => test.expected=value,true,'expected-field'));
   if (rubric) fields.append(node('p','Give the judge a known-good answer when correctness can be verified. Use Exact text scoring for deterministic equality checks. The AI rubric checks every requirement, including when the response matches this reference.','hint'));
   if (!draft.scoringMode) fields.append(appSelect(ctx,'Scoring',test,'scoring',[['exact','Exact match'],['contains','Contains'],['none','Trace only']]));
-  inspector.append(appFieldChecks(ctx,test),appConversation(ctx,test));content.append(fields,inspector);editor.append(content); layout.append(editor); return layout;
+  if (isAppSuiteFormat(draft)) inspector.append(appFieldChecks(ctx,test),appConversation(ctx,test));content.append(fields,inspector);editor.append(content); layout.append(editor); return layout;
 }

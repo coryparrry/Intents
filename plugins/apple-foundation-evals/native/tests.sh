@@ -15,3 +15,5 @@ python3 "$native_dir/tests/protocol.py" "$test_dir/runner" "$@"
 
 python3 "$native_dir/tests/app_protocol.py" "$test_dir/runner" "$@"
 python3 "$native_dir/tests/workflows.py" "$test_dir/runner" "$@"
+
+python3 "$native_dir/tests/revision_summary.py" "$test_dir/runner"

@@ -24,7 +24,7 @@ public struct AutomationMetroAutomaticRecipe: Codable, Equatable, Sendable {
     public var compiledNativeDigest: String? = nil
 
     public static func discover(source: URL, candidate: AutomationApplicationCandidate,
-        nodeTools: [URL] = []) throws -> Self? {
+        nodeTools: [URL]? = nil) throws -> Self? {
         let source = try AutomationPath.canonical(source)
         let project = try AutomationPath.canonical(URL(fileURLWithPath: candidate.containerPath))
         guard candidate.kind == .sourceTarget, project.deletingLastPathComponent().lastPathComponent == "ios",
@@ -77,7 +77,8 @@ public struct AutomationMetroAutomaticRecipe: Codable, Equatable, Sendable {
             throw AutomationContractError.missingEvidence("The project's Metro configuration is ambiguous or outside the recognized installed profile.")
         }
         if let config = configs.first { try pin(app.appendingPathComponent(config)) }
-        let nodes = try Set(nodeTools.filter { FileManager.default.isExecutableFile(atPath: $0.path) }.map { try AutomationPath.canonical($0).path })
+        let tools = nodeTools ?? defaultNodeTools(excluding: source)
+        let nodes = try Set(tools.filter { FileManager.default.isExecutableFile(atPath: $0.path) }.map { try AutomationPath.canonical($0).path })
         guard nodes.count == 1, let node = nodes.first else { throw AutomationContractError.missingEvidence("One installed Node executable is required for the recognized development profile.") }
         let worker = metro.appendingPathComponent("src/DeltaBundler/WorkerFarm.js")
         let workerText = String(decoding: try AutomationReadOnlyFile.read(worker, maximumBytes: 1_048_576), as: UTF8.self)
@@ -98,6 +99,33 @@ public struct AutomationMetroAutomaticRecipe: Codable, Equatable, Sendable {
             metroConfigModuleRelativePath: relative(metroConfigModule),
             nodePath: node, nodeSHA256: AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(URL(fileURLWithPath: node), maximumBytes: 128 * 1024 * 1024)),
             inputs: pins, bundleRoot: ".expo/.virtual-metro-entry")
+    }
+    /// Match the developer's effective PATH first. GUI launches often omit
+    /// Homebrew; inspect known installations without running a shell or Node.
+    static func defaultNodeTools(searchPath: String = ProcessInfo.processInfo.environment["PATH"] ?? "",
+        fallback: [URL] = installedNodeCandidates(), excluding source: URL? = nil) -> [URL] {
+        let pathTools = searchPath.split(separator: ":").filter { $0.hasPrefix("/") }
+            .prefix(128).map { URL(fileURLWithPath: String($0)).appendingPathComponent("node") }
+        for selected in pathTools + fallback {
+            guard FileManager.default.isExecutableFile(atPath: selected.path),
+                  let canonical = try? AutomationPath.canonical(selected), canonical.lastPathComponent == "node",
+                  (try? canonical.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+                  source.map({ canonical.path != $0.path && !canonical.path.hasPrefix($0.path + "/") }) ?? true else { continue }
+            return [canonical]
+        }
+        return []
+    }
+    static func installedNodeCandidates(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [URL] {
+        var result = ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"].map { URL(fileURLWithPath: $0) }
+        for relative in [".nvm/versions/node", ".local/share/mise/installs/node", ".volta/tools/image/node"] {
+            let root = home.appendingPathComponent(relative)
+            let versions = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+            // Bound discovery of manually installed runtimes. Prefer the newest
+            // named version only when no effective PATH or standard install wins.
+            result += versions.sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .numeric) == .orderedDescending }
+                .prefix(64).map { $0.appendingPathComponent("bin/node") }
+        }
+        return result
     }
     static func validateNodeRequirement(_ value: String?) throws {
         guard let value else { return }

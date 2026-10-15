@@ -56,7 +56,50 @@ extension InstalledUIStoreTests {
         XCTAssertTrue(model.firstRunReports[0].resourcesReleased)
         XCTAssertFalse(model.busy)
     }
+
+    func testFirstChecksResetRetainedCampaignAfterUnreleasedResultOrThrow() async throws {
+        for throwsAfterReservation in [false, true] {
+            let facts = FirstRunFacts(uncertainAt: 1)
+            let (model, root, _) = try await fixture(executor: { subject, plan, approval, _, id, _ in
+                guard case .prepared(let prepared) = subject else { throw FirstRunRetainedFailure.unexpectedSubject }
+                let support = URL(fileURLWithPath: prepared.source.sourceRoot).appendingPathComponent("support")
+                let owner = try AutomationDeviceLeaseManager(storeURL: support.appendingPathComponent("target-leases.json"))
+                try await owner.reserveCampaign(runID: approval.runID, target: plan.target)
+                if throwsAfterReservation { throw FirstRunRetainedFailure.failed }
+                let report = await facts.execute(plan: plan, approval: approval, id: id)
+                let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
+                let frozen = try await cases.freeze(plan)
+                try await cases.saveAttempt(report, for: frozen)
+                return report
+            })
+            defer { try? FileManager.default.removeItem(at: root) }
+            await model.ownershipRecoveryTask?.value
+            let review = try model.reviewFirstChecks()
+            let target = try XCTUnwrap(review.requests.first?.plan.target)
+            model.runFirstChecks(review); await model.task?.value
+            XCTAssertEqual(Array(model.retainedUnresolvedRequestTargets.values), [target])
+            XCTAssertFalse(model.canReviewFirstChecks)
+            let cases = try AutomationCaseStore(root: model.support.appendingPathComponent("Cases"))
+            let savedBefore = try await cases.definitions()
+
+            await model.clearUnresolvedAttempt()
+
+            XCTAssertNil(model.recoveryError)
+            let leases = try AutomationDeviceLeaseManager(storeURL: model.support.appendingPathComponent("target-leases.json"))
+            let released = try await leases.campaignAbsent(target: target)
+            XCTAssertTrue(released)
+            XCTAssertTrue(model.canReviewFirstChecks)
+            let savedAfter = try await cases.definitions()
+            XCTAssertEqual(savedAfter, savedBefore)
+            if !throwsAfterReservation {
+                let frozen = try XCTUnwrap(savedAfter.first)
+                let attempts = try await cases.attempts(for: frozen)
+                XCTAssertEqual(attempts, model.firstRunReports, "Recovery keeps the saved failed result")
+            }
+        }
+    }
 }
+private enum FirstRunRetainedFailure: Error { case failed, unexpectedSubject }
 private actor FirstRunFacts {
     let uncertainAt: Int?
     var count = 0

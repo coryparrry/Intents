@@ -116,6 +116,9 @@ extension AppAutomationStore {
                 guard result.report.attemptID == attemptID else { throw AutomationContractError.conflictingOperation }
                 // Preserve target ownership and evidence even when a selection changed during the read.
                 entityQueryReport = result.report; unresolvedEntityQueryAttemptID = nil
+                if !result.report.resourcesReleased || result.report.result.subjectDispatchUncertain {
+                    retainUnresolvedRequest(runID: approval.runID, target: queryPlan.target)
+                }
                 await importEvidence(plan: queryPlan, report: result.report)
                 try Task.checkCancellation()
                 guard !isClosingForFirstRunInputs, selectionEpoch == epoch, self.prepared == prepared,
@@ -132,7 +135,10 @@ extension AppAutomationStore {
                 message = result.selectionGap ?? (result.choices.isEmpty ? "No records returned by this query." : nil)
                 await refreshSavedCases()
             } catch {
-                if queryStarted && entityQueryReport?.attemptID != attemptID { unresolvedEntityQueryAttemptID = attemptID }
+                if queryStarted && entityQueryReport?.attemptID != attemptID {
+                    unresolvedEntityQueryAttemptID = attemptID
+                    retainUnresolvedRequest(runID: approval.runID, target: queryPlan.target)
+                }
                 message = errorText(error) + " (query attempt " + attemptID + ")"
                 await refreshSavedCases()
             }

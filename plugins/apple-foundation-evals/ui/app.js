@@ -1,3 +1,4 @@
+import { createWorkspaceScope, resetSuiteEvidence, mutateSuiteDraft } from "./workspace-state.js";
 import { mountUI, unmountUI, libraryDialog } from "./react/workspace.tsx";
 import { createAppTransport } from "./vendor/transport.js";
 import { applyHostContext } from "./theme.js";
@@ -75,6 +76,7 @@ const state = {
   compareCount: 2,
   disclosures: {},
 };
+const workspaceScope = createWorkspaceScope(state);
 let polling,
   initialResult = false,
   fileSequence = 0,
@@ -186,7 +188,8 @@ async function call(name, args = {}) {
 const clone = (value) => structuredClone(value),
   active = () =>
     state.allRuns.some((run) => run.status === "running") ||
-    state.experiment?.status === "running",
+    state.experiment?.status === "running" ||
+    state.activeExperiment?.status === "running",
   date = (value) =>
     value
       ? new Date(value).toLocaleString(undefined, {
@@ -274,6 +277,9 @@ function empty(title, detail, action) {
 function context() {
   return {
     state,
+    scope: workspaceScope,
+    mutateSuite: mutateDraft,
+    trackExperiment,
     node,
     icon,
     button,
@@ -296,12 +302,16 @@ function context() {
       deleteRun,
       projectReport,
       changeProject: async (id) => {
+        const request = workspaceScope.navigate();
         await flush();
+        if (!workspaceScope.current(request)) return;
         if (id === "__new") {
           await projectDetails(true);
           return;
         }
         state.projectId = id;
+        resetSuiteEvidence(state);
+        state.run = null;
         state.draft = null;
         state.page = "overview";
         filterProject();
@@ -317,11 +327,10 @@ function context() {
         $("main").scrollTop = 0;
       },
       cancelRun: async () => {
-        state.run = (
-          await call("eval_cancel_run", { runId: state.run.id })
-        ).run;
+        const request = workspaceScope.capture(), runId = state.run.id;
+        const result = await call("eval_cancel_run", { runId });
+        if (workspaceScope.current(request) && state.run?.id === runId) state.run = result.run;
         await refresh();
-        render();
       },
     },
     changed: markDirty,
@@ -409,6 +418,30 @@ const autosave = createDraftAutosave({
   status: updateSavedLabel,
   error: fail,
 });
+function trackExperiment(experiment) {
+  if (state.disposed) return;
+  if (experiment?.status === "running") state.activeExperiment = experiment;
+  else if (state.activeExperiment?.id === experiment?.id) state.activeExperiment = null;
+  renderToolbar();
+  schedulePoll();
+}
+async function mutateDraft(mutate, owner = state.draft) {
+  if (!owner || state.draft !== owner) return null;
+  const request = workspaceScope.capture();
+  return mutateSuiteDraft({
+    autosave,
+    read: () => state.draft === owner ? owner : null,
+    mutate,
+    applied: (saved, edited) => {
+      const index = state.allSuites.findIndex(item => item.id === saved.id);
+      if (index < 0) state.allSuites.unshift(saved); else state.allSuites[index] = saved;
+      state.dirty = edited;
+      filterProject();
+      if (workspaceScope.current(request)) render();
+    },
+    changed: markDirty,
+  });
+}
 function markDirty() {
   state.dirty = true;
   autosave.changed();
@@ -417,14 +450,18 @@ async function flush() {
   await autosave.flush();
 }
 async function setPage(page) {
+  const request = workspaceScope.navigate();
   await flush();
+  if (!workspaceScope.current(request)) return;
   state.page = page;
   state.imported = false;
   render();
   $("main").scrollTop = 0;
 }
 async function selectSuite(suite) {
+  const request = workspaceScope.navigate();
   await flush();
+  if (!workspaceScope.current(request)) return;
   state.draft = clone(
     state.allSuites.find((item) => item.id === suite.id) || suite,
   );
@@ -433,14 +470,16 @@ async function selectSuite(suite) {
   state.caseId = state.draft.cases[0]?.id;
   state.caseSearch = "";
   state.imported = false;
-  state.experiments = null;
-  state.experiment = null;
-  state.experimentSummary = null;
+  resetSuiteEvidence(state);
   render();
   $("main").scrollTop = 0;
+  return true;
 }
 async function createSuite() {
+  const request = workspaceScope.navigate();
   await flush();
+  if (!workspaceScope.current(request)) return;
+  resetSuiteEvidence(state);
   state.draft = newAppSuite(state.projectId);
   state.caseId = state.draft.cases[0].id;
   state.page = "suites";
@@ -450,8 +489,11 @@ async function createSuite() {
   render();
 }
 async function selectRun(id, tab = "trace") {
+  const request = workspaceScope.navigate();
   await flush();
+  if (!workspaceScope.current(request)) return;
   const run = (await call("eval_get_run", { runId: id })).run;
+  if (!workspaceScope.current(request)) return;
   state.run = run;
   state.page = "traces";
   state.runTab = tab;
@@ -464,25 +506,24 @@ async function selectRun(id, tab = "trace") {
   $("main").scrollTop = 0;
 }
 async function runSuite(suite) {
-  await selectSuite(suite);
-  await startRun();
+  if (await selectSuite(suite)) await startRun();
 }
 async function startRun() {
+  const request = workspaceScope.navigate(), draft = state.draft;
   await flush();
+  if (!workspaceScope.current(request) || state.draft !== draft) return;
   state.busy = true;
   renderToolbar();
   try {
-    state.run = (
-      await call("eval_start_run", {
-        suiteId: state.draft.id,
-        expectedRevision: state.draft.revision,
-      })
-    ).run;
+    const result = await call("eval_start_run", { suiteId: draft.id, expectedRevision: draft.revision });
+    if (!workspaceScope.current(request)) { await refresh(); return; }
+    state.run = result.run;
     state.page = "traces";
     state.runTab = "trace";
     state.resultId = null;
     state.imported = false;
     await refresh();
+    if (!workspaceScope.current(request)) return;
     notice("Evaluation running on this Mac.");
     render();
   } finally {
@@ -612,12 +653,13 @@ function render() {
   renderMain();
 }
 async function refresh() {
+  const request = workspaceScope.capture("refresh");
   const [projects, suites, runs] = await Promise.all([
     call("eval_list_projects"),
     call("eval_list_suites"),
     call("eval_list_runs"),
   ]);
-  if (state.disposed) return;
+  if (!workspaceScope.current(request)) { schedulePoll(); return; }
   state.projects = projects.projects;
   state.allSuites = suites.suites;
   state.allRuns = runs.runs;
@@ -626,20 +668,23 @@ async function refresh() {
   if (state.run && !state.imported) {
     const id = state.run.id,
       result = await call("eval_get_run", { runId: id });
-    if (id === state.run?.id) {
+    if (workspaceScope.current(request) && id === state.run?.id) {
       const wasRunning = state.run.status === "running";
       state.run = result.run;
       if (wasRunning && result.run.status !== "running")
         notice(`Evaluation ${result.run.status}.`);
     }
   }
-  if (state.experiment?.status === "running") {
-    const data = await call("eval_get_experiment", {
-      experimentId: state.experiment.id,
-    });
-    state.experiment = data.experiment;
-    state.experimentSummary = data.summary;
+  const experiment = state.activeExperiment?.status === "running" ? state.activeExperiment : state.experiment;
+  if (experiment?.status === "running") {
+    const data = await call("eval_get_experiment", { experimentId: experiment.id });
+    trackExperiment(data.experiment);
+    if (workspaceScope.current(request) && state.experiment?.id === experiment.id) {
+      state.experiment = data.experiment;
+      state.experimentSummary = data.summary;
+    }
   }
+  if (!workspaceScope.current(request)) { schedulePoll(); return; }
   renderSidebar();
   renderToolbar();
   if (
@@ -704,7 +749,9 @@ async function projectDetails(isNew = false) {
       button(
         isNew ? "Create project" : "Save",
         async () => {
+          const request = workspaceScope.capture();
           await flush();
+          if (!workspaceScope.current(request)) return;
           const result = await call(
             isNew ? "eval_create_project" : "eval_update_project",
             {
@@ -713,7 +760,13 @@ async function projectDetails(isNew = false) {
               description: description.value,
             },
           );
+          if (!workspaceScope.current(request)) return;
+          await flush();
+          if (!workspaceScope.current(request)) return;
+          workspaceScope.navigate();
+          resetSuiteEvidence(state);
           state.projectId = result.project.id;
+          state.run = null;
           state.draft = null;
           state.page = "overview";
           el.close();
@@ -726,13 +779,16 @@ async function projectDetails(isNew = false) {
   });
 }
 async function duplicateSuite() {
+  const request = workspaceScope.capture();
   await flush();
+  if (!workspaceScope.current(request)) return;
   const suite = duplicateSuiteDraft(state.draft);
   const response = await call("eval_save_suite", {
     projectId: state.projectId,
     suite,
   });
   await refresh();
+  if (!workspaceScope.current(request)) return;
   await selectSuite(response.suite);
   notice("Suite duplicated with its cases and settings.");
 }
@@ -760,8 +816,13 @@ function deleteSuite() {
     "Delete suite?",
     `Delete “${suite.name}”? Saved runs retain their suite definitions. This cannot be undone.`,
     async () => {
+      const request = workspaceScope.capture();
       await flush();
+      if (!workspaceScope.current(request)) return;
       await call("eval_delete_suite", { suiteId: suite.id });
+      if (!workspaceScope.current(request) || state.draft !== suite) { await refresh(); return; }
+      workspaceScope.navigate();
+      resetSuiteEvidence(state);
       state.draft = null;
       state.dirty = false;
       state.comparison = null;
@@ -779,7 +840,10 @@ function deleteRun() {
     "Delete run?",
     `Delete this saved run for “${run.suite?.name || run.suiteName}”? Its recorded evidence will be removed. This cannot be undone.`,
     async () => {
+      const request = workspaceScope.capture();
       await call("eval_delete_run", { runId: run.id });
+      if (!workspaceScope.current(request) || state.run?.id !== run.id) { await refresh(); return; }
+      workspaceScope.navigate();
       state.run = null;
       state.resultId = null;
       state.spanId = null;
@@ -793,8 +857,11 @@ function deleteRun() {
   );
 }
 async function showBaseline() {
+  const request = workspaceScope.capture();
   await flush();
+  if (!workspaceScope.current(request)) return;
   const response = await call("eval_get_baseline", { suiteId: state.draft.id });
+  if (!workspaceScope.current(request)) return;
   dialog("Approved baseline", (el) =>
     el.append(
       node(
@@ -808,10 +875,13 @@ async function showBaseline() {
   );
 }
 async function projectReport() {
+  const request = workspaceScope.capture();
   await flush();
+  if (!workspaceScope.current(request)) return;
   const result = await call("eval_project_release_report", {
     projectId: state.projectId,
   });
+  if (!workspaceScope.current(request)) return;
   dialog("Project release report", (el) =>
     el.append(
       node(
@@ -943,17 +1013,20 @@ async function exportRun() {
   await download(result.filename, result.json);
 }
 function importSuite() {
+  const request = workspaceScope.capture();
   chooseFiles(".json,.afevalsuite,.afevaltrace", false, async (files) => {
     if (!files[0]) return;
     await flush();
     const text = await files[0].text(),
       payload = JSON.parse(text);
+    if (!workspaceScope.current(request)) return;
     if (payload.format === "apple-foundation-evals-trace" || payload.results) {
       const { run } = await call("eval_import_run", {
         json: text,
         projectId: state.projectId,
       });
       await refresh();
+      if (!workspaceScope.current(request)) return;
       await selectRun(run.id);
     } else {
       const { suite } = await call("eval_import_suite", {
@@ -961,12 +1034,14 @@ function importSuite() {
         projectId: state.projectId,
       });
       await refresh();
+      if (!workspaceScope.current(request)) return;
       await selectSuite(suite);
     }
-    notice("Imported with its saved settings and evidence.");
+    if (!state.disposed) notice("Imported with its saved settings and evidence.");
   });
 }
 function importCases() {
+  const owner = state.draft, request = workspaceScope.capture();
   dialog("Import cases", (el) => {
     const format = node("select");
     format.setAttribute("aria-label", "Case file format");
@@ -1011,10 +1086,10 @@ function importCases() {
       button(
         "Import cases",
         async () => {
-          await flush();
-          const result = await call("eval_import_cases", {
-            suiteId: state.draft.id,
-            expectedRevision: state.draft.revision,
+          if (!workspaceScope.current(request)) return;
+          const result = await mutateDraft(base => call("eval_import_cases", {
+            suiteId: base.id,
+            expectedRevision: base.revision,
             format: format.value,
             text: text.value,
             ...(format.value === "csv"
@@ -1026,12 +1101,12 @@ function importCases() {
                   },
                 }
               : {}),
-          });
-          state.draft = clone(result.suite);
-          state.dirty = false;
+          }), owner);
+          if (!result || !workspaceScope.current(request)) return;
           state.caseId = state.draft.cases.at(-1)?.id;
           el.close();
           await refresh();
+          if (!workspaceScope.current(request)) return;
           render();
           notice(`${result.importedCount} cases imported.`);
         },
@@ -1047,13 +1122,14 @@ function fileBase64(bytes) {
   return btoa(string);
 }
 function addReferences() {
+  const owner = state.draft, request = workspaceScope.capture();
   chooseFiles(
     ".txt,.md,.csv,.json,.pdf,.png,.jpg,.jpeg,.heic,.heif,.tiff,.gif,.webp",
     true,
     async (files) => {
-      await flush();
-      const suiteId = state.draft.id;
+      if (!workspaceScope.current(request)) return;
       for (const file of files) {
+        if (!workspaceScope.current(request)) return;
         const image = /\.(png|jpe?g|heic|heif|tiff?|gif|webp)$/i.test(
             file.name,
           ),
@@ -1076,23 +1152,23 @@ function addReferences() {
               tiff: "image/tiff",
             }[extension] ||
             (image ? "image/" + extension : "text/plain");
-        const result = await call("eval_add_reference_file", {
-          suiteId,
+        const bytes = fileBase64(new Uint8Array(await file.arrayBuffer()));
+        if (!workspaceScope.current(request)) return;
+        const result = await mutateDraft(base => call("eval_add_reference_file", {
+          suiteId: base.id,
           name: file.name,
           mimeType: mime,
-          base64: fileBase64(new Uint8Array(await file.arrayBuffer())),
-          expectedRevision: state.draft.revision,
-        });
-        if (state.draft.id !== suiteId)
-          throw Error("The selected suite changed during import.");
-        state.draft = clone(result.suite);
+          base64: bytes,
+          expectedRevision: base.revision,
+        }), owner);
+        if (!result || !workspaceScope.current(request)) return;
         if (result.truncated)
           notice(
             `${file.name}: extracted text was truncated to the app context limit.`,
           );
       }
       await refresh();
-      renderMain();
+      if (workspaceScope.current(request)) renderMain();
     },
   );
 }
@@ -1101,8 +1177,9 @@ async function analyzeRun() {
 }
 async function loadExperiments() {
   const suiteId = state.draft.id,
+    request = workspaceScope.capture("experiment-list"),
     data = await call("eval_list_experiments", { suiteId });
-  if (state.draft?.id === suiteId) {
+  if (workspaceScope.current(request) && state.draft?.id === suiteId) {
     state.experiments = data.experiments;
     renderMain();
   }
@@ -1122,9 +1199,10 @@ function renderCompare(page) {
     picker.value = state.experiment?.id || "";
     picker.onchange = async () => {
       try {
-        const result = await call("eval_get_experiment", {
-          experimentId: picker.value,
-        });
+        const request = workspaceScope.capture("experiment-selection"), suiteId = state.draft.id;
+        const result = await call("eval_get_experiment", { experimentId: picker.value });
+        trackExperiment(result.experiment);
+        if (!workspaceScope.current(request) || state.draft?.id !== suiteId) return;
         state.experiment = result.experiment;
         state.experimentSummary = result.summary;
         renderMain();
@@ -1216,6 +1294,7 @@ function renderCompare(page) {
       async () => {
         if (new Set(state.compareIds).size !== state.compareCount)
           throw Error("Choose different runs for each comparison.");
+        const ownership = workspaceScope.capture("comparison");
         const request = {
           sequence: ++comparisonSequence,
           suiteId: state.draft.id,
@@ -1232,9 +1311,9 @@ function renderCompare(page) {
         ]);
         comparison.evidence = analysis.comparison;
         if (
-          comparisonMatches(request, {
+          workspaceScope.current(ownership) && comparisonMatches(request, {
             sequence: comparisonSequence,
-            suiteId: state.draft.id,
+            suiteId: state.draft?.id,
             runIds: state.compareIds,
           })
         ) {
@@ -1318,7 +1397,9 @@ function renderCompare(page) {
   page.append(panel);
 }
 async function openFile(file) {
+  const request = workspaceScope.navigate();
   await flush();
+  if (!workspaceScope.current(request)) return;
   if (
     !file?.name?.endsWith(".afevaltrace") ||
     typeof file.resourceUri !== "string"
@@ -1340,7 +1421,7 @@ async function openFile(file) {
   if (new TextEncoder().encode(text).length > 32 * 1024 * 1024)
     throw Error("Trace file exceeds32 MiB.");
   const { run } = await call("eval_parse_trace", { json: text });
-  if (sequence !== fileSequence || state.disposed) return;
+  if (sequence !== fileSequence || !workspaceScope.current(request)) return;
   state.run = run;
   state.page = "traces";
   state.runTab = "trace";
@@ -1351,7 +1432,7 @@ async function openFile(file) {
 }
 async function acceptResult(payload) {
   const data = payload?.structuredContent ?? payload?.result?.structuredContent;
-  if (!data) return;
+  if (!data || state.disposed) return;
   initialResult = true;
   if (data.page === "workspace") {
     state.projects = data.projects || [];
@@ -1381,15 +1462,18 @@ $("workspace-search").oninput = (event) => {
   renderSidebar();
 };
 $("project-select").onchange = async (event) => {
-  const id = event.target.value;
+  const id = event.target.value, request = workspaceScope.navigate();
   try {
     await flush();
+    if (!workspaceScope.current(request)) return;
     if (id === "__new") {
       renderSidebar();
       await projectDetails(true);
       return;
     }
     state.projectId = id;
+    resetSuiteEvidence(state);
+    state.run = null;
     state.draft = null;
     state.page = "overview";
     filterProject();
@@ -1445,6 +1529,7 @@ transport.on("ui/notifications/tool-input", (payload) => {
   if (payload.arguments?.file) openFile(payload.arguments.file).catch(fail);
 });
 transport.handle("ui/resource-teardown", async () => {
+  workspaceScope.navigate();
   await flush();
   state.disposed = true;
   clearTimeout(polling);
@@ -1464,6 +1549,7 @@ if (parent !== window) {
       appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
     })
     .then((response) => {
+      if (state.disposed) return;
       if (response.protocolVersion !== "2026-01-26")
         throw Error("Unsupported MCP app UI protocol.");
       applyHostContext(response.hostContext, document);

@@ -35,11 +35,15 @@ public actor AutomationServedJavaScriptSupervisor {
         app: AppIdentity, target: TargetIdentity, frozenRoot: URL, developerDirectory: URL, supportRoot: URL,
         expected: AutomationServedJavaScriptIdentity? = nil,
         requiresNativeConsumer: Bool = false,
+        operationTimeout: Duration = .seconds(240),
+        campaignDeadline: ContinuousClock.Instant? = nil,
         operation: @escaping @Sendable (AutomationServedJavaScriptIdentity) async throws -> Value) async throws -> Value {
         guard !active, !releaseUnverified, worker == nil, target.kind == .simulator,
+              operationTimeout > .zero,
               app.sourceManifestDigest == (try manifest.digest), let product = app.productDigest else {
             throw AutomationContractError.invalidIdentity
         }
+        let timing = AutomationJavaScriptSessionTiming(operationTimeout: operationTimeout, campaignDeadline: campaignDeadline)
         active = true; finalized = false; defer { active = false }
         stage = "verify-executable"; lastListeners = []; lastHTTPStatus = nil; lastResponseSHA256 = nil; lastListenerCensus = ""
         try profile.verifyExecutable()
@@ -74,7 +78,7 @@ public actor AutomationServedJavaScriptSupervisor {
         worker = Task {
             try await childCommand.run(executable: URL(fileURLWithPath: "/usr/bin/sandbox-exec"),
                 arguments: ["-p", sandbox, profile.executablePath, launchScript.path] + launchArguments,
-                directory: frozenRoot, environment: launchEnvironment, timeout: profile.automaticMetro == nil ? .seconds(300) : .seconds(600),
+                directory: frozenRoot, environment: launchEnvironment, timeout: timing.workerTimeout(automaticMetro: profile.automaticMetro != nil),
                 didStart: { started in await self.started(started) })
         }
         let operationGate = AutomationBoundedTask<Value>()
@@ -121,7 +125,7 @@ public actor AutomationServedJavaScriptSupervisor {
                 consumer = monitor; consumerTask = Task { await monitor.monitor() }
             }
             stage = "operation"
-            let result = try await operationGate.run(until: .now.advanced(by: .seconds(240))) { try await operation(observed) }
+            let result = try await operationGate.run(until: timing.operationDeadline(at: .now)) { try await operation(observed) }
             try Task.checkCancellation()
             if !finalized { try await finishCurrent(profile: boundProfile, manifest: manifest, frozenRoot: frozenRoot) }
             return result

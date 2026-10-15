@@ -136,6 +136,7 @@ final class AppAutomationStore {
     let savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])?
     private let savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])?
     let runExecutor: AutomationNativeRunExecutor?
+    let siriSearchExecutor: AutomationNativeSiriSearchExecutor?
     private let comparisonExecutor: AutomationNativeFixComparisonExecutor?
     private let reproductionExecutor: AutomationNativeReproductionExecutor?
     private let reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))?
@@ -195,8 +196,9 @@ final class AppAutomationStore {
     private let physicalInventoryReader: AutomationNativePhysicalInventoryReader
     private(set) var installedToolchains: [AutomationNativeToolchainChoice] = []
     let defaultDeveloperDirectoryPath: String
-    private(set) var hasExplicitToolchainSelection = false
-    private(set) var selectedToolchainMetadataDigest: String?
+    private var reviewedToolchainMetadata: [String: String] = [:]
+    var hasExplicitToolchainSelection: Bool { !reviewedToolchainMetadata.isEmpty }
+    var selectedToolchainMetadataDigest: String? { reviewedToolchainMetadata[developerDirectory.path] }
     private let installedToolchainReader: (URL) -> [AutomationNativeToolchainChoice]
     var hasSecurityScope = false
     var securityScopedURL: URL?
@@ -221,11 +223,11 @@ final class AppAutomationStore {
     let xcodeSettings: AutomationNativeXcodeSettings
     var selectedXcodePath: String {
         get { xcodeSettings.path(for: preparationDestination) }
-        set { guard !busy else { return }; xcodeSettings.setPath(newValue, for: preparationDestination); advanceSelection() }
+        set { guard !busy else { return }; xcodeSettings.setPath(newValue, for: preparationDestination); retainEffectiveToolchainSelection(); advanceSelection() }
     }
     var runXcodePathOverride: String {
         get { xcodeSettings.runOverride }
-        set { guard !busy else { return }; xcodeSettings.runOverride = newValue; advanceSelection() }
+        set { guard !busy else { return }; xcodeSettings.runOverride = newValue; retainEffectiveToolchainSelection(); advanceSelection() }
     }
     var developerDirectory: URL {
         xcodeSettings.developerDirectory(for: isInstalledMacUI ? .macOS : preparationDestination, fallback: preparedDeveloperFallback)
@@ -246,6 +248,7 @@ final class AppAutomationStore {
          xcodeSettings: AutomationNativeXcodeSettings? = nil,
          savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])? = nil,
          savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil, runExecutor: AutomationNativeRunExecutor? = nil,
+         siriSearchExecutor: AutomationNativeSiriSearchExecutor? = nil,
          entityQueryExecutor: AutomationNativeEntityQueryExecutor? = nil,
          comparisonExecutor: AutomationNativeFixComparisonExecutor? = nil,
          reproductionExecutor: AutomationNativeReproductionExecutor? = nil,
@@ -266,7 +269,6 @@ final class AppAutomationStore {
         defaultDeveloperDirectoryPath = developerDirectory.path
         let discoveredToolchains = installedToolchainReader(developerDirectory)
         installedToolchains = discoveredToolchains
-        selectedToolchainMetadataDigest = discoveredToolchains.first(where: { $0.directory == developerDirectory })?.metadataDigest
         self.physicalTargetResolver = physicalTargetResolver
         self.intakeAssessor = intakeAssessor; self.selectionCatalogReader = selectionCatalogReader
         self.recoverySimulatorShutdown = recoverySimulatorShutdown
@@ -279,7 +281,8 @@ final class AppAutomationStore {
         self.evidenceImporter = evidenceImporter
         self.telemetry = telemetry
         support = supportDirectory; self.entityQueryExecutor = entityQueryExecutor; self.comparisonExecutor = comparisonExecutor; self.savedAttemptsReader = savedAttemptsReader
-        self.savedCasesReader = savedCasesReader; self.runExecutor = runExecutor; self.reproductionExecutor = reproductionExecutor; self.reproductionPreflightReader = reproductionPreflightReader
+        self.savedCasesReader = savedCasesReader; self.runExecutor = runExecutor; self.siriSearchExecutor = siriSearchExecutor
+        self.reproductionExecutor = reproductionExecutor; self.reproductionPreflightReader = reproductionPreflightReader
         ownershipRecoveryTask = Task { [weak self] in await self?.reconcileAbandonedOwnership() }
         loadRecentApplications()
         restoreLatestPreparation()
@@ -850,7 +853,6 @@ final class AppAutomationStore {
                 if let path = value.selectedDeveloperDirectoryPath {
                     let selectedDeveloper = try AutomationPath.canonical(URL(fileURLWithPath: path))
                     guard selectedDeveloper.path == path else { throw AutomationContractError.conflictingOperation }
-                    selectedToolchainMetadataDigest = installedToolchainReader(selectedDeveloper).first(where: { $0.directory == selectedDeveloper })?.metadataDigest
                 }
                 let siriProfile = AutomationPreparedCapabilities.base(value)
                 guard selectionEpoch == epoch, sourcePreparationTarget == approval.target,
@@ -870,6 +872,13 @@ final class AppAutomationStore {
     func prepareAndWait() async { prepare(); await task?.value }
     func waitForPreparation() async { let active = task; await active?.value }
     func currentInstalledToolchainChoices() -> [AutomationNativeToolchainChoice] { installedToolchainReader(developerDirectory) }
+    private func retainEffectiveToolchainSelection() {
+        guard hasExplicitToolchainSelection, reviewedToolchainMetadata[developerDirectory.path] == nil,
+              let choice = currentInstalledToolchainChoices().first(where: { $0.directory == developerDirectory }) else { return }
+        // Each path keeps its reviewed identity when moving between destinations.
+        // Returning to an installation that changed still requires explicit reselection.
+        reviewedToolchainMetadata[choice.directory.path] = choice.metadataDigest
+    }
     func refreshInstalledToolchains() {
         guard !busy, !closing else { return }
         installedToolchains = installedToolchainReader(developerDirectory)
@@ -885,8 +894,12 @@ final class AppAutomationStore {
             return
         }
         advanceSelection(); clearEntitySelections()
-        xcodeSettings.setPath(reviewed.directory.path, for: preparationDestination); selectedToolchainMetadataDigest = reviewed.metadataDigest
-        hasExplicitToolchainSelection = true
+        if xcodeSettings.runOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            xcodeSettings.setPath(reviewed.directory.path, for: preparationDestination)
+        } else {
+            xcodeSettings.runOverride = reviewed.directory.path
+        }
+        reviewedToolchainMetadata[reviewed.directory.path] = reviewed.metadataDigest
         prepared = nil; catalog = nil; siriCapabilities = .init(); report = nil; reportDirectory = nil; searchReport = nil
         actionID = ""; inputs = [:]; effectsConfirmed = false
         message = "Using " + reviewed.label + ". Prepare a fresh private copy with this Xcode."
@@ -1212,6 +1225,7 @@ final class AppAutomationStore {
     func preparationSelectionChanged() {
         advanceSelection()
         if let prepared, prepared.generatedHost.configuration != configuration || prepared.host.target != sourcePreparationTarget { clearPrepared() }
+        retainEffectiveToolchainSelection()
     }
     func selectJavaScriptRecipe(_ url: URL?) throws {
         guard !busy, !closing, candidate?.kind == .sourceTarget, let root = selectedSourceRoot else { throw AutomationContractError.targetBusy }

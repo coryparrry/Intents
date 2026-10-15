@@ -52,6 +52,17 @@ export function appSuite(value, generateId = randomUUID, { draft = false } = {})
   const features = { tools: [], profile: {}, outputFields: [], outputSchemaDefinitions: [], outputRepresentNilExplicitlyInGeneratedContent: false, prewarm: false, streamResponse: false, ...clean(sourceFeatures) };
   features.profile = withDefaults(PROFILE_DEFAULTS, features.profile);
   features.spotlightSearch = withDefaults(SPOTLIGHT_DEFAULTS, features.spotlightSearch);
+  if (modelConfiguration.temperatureEnabled && modelConfiguration.temperature > 1) throw new Error('temperature must be between 0 and 1 when enabled');
+  if (modelConfiguration.samplingMode === 'probability' && modelConfiguration.probabilityThreshold < 0.01) throw new Error('probabilityThreshold must be between 0.01 and 1 when selected');
+  const profile = features.profile;
+  if (profile.enabled) {
+    if (profile.afterToolTemperatureEnabled && profile.afterToolTemperature > 1) throw new Error('afterToolTemperature must be between 0 and 1 when enabled');
+    if (profile.afterToolSamplingMode === 'probability' && profile.afterToolProbabilityThreshold < 0.01) throw new Error('afterToolProbabilityThreshold must be between 0.01 and 1 when selected');
+    if (profile.afterToolMaximumResponseTokens != null && profile.afterToolMaximumResponseTokens < 128) throw new Error('afterToolMaximumResponseTokens must be between 128 and 4096 when the profile is enabled');
+  }
+  const vision = modelConfiguration.customization?.visionTools;
+  const hasTools = modelConfiguration.referenceMode === 'lookupTool' || features.tools.length > 0 || features.spotlightSearch.enabled || vision?.ocrEnabled || vision?.barcodeEnabled;
+  if (hasTools && (modelConfiguration.maximumToolCalls < 1 || modelConfiguration.maximumToolCalls > 4)) throw new Error('maximumToolCalls must be between 1 and 4 when tools are configured');
   features.outputFields = fields(features.outputFields, generateId); features.outputSchemaDefinitions = fields(features.outputSchemaDefinitions, generateId);
   if (!draft) schemaCheck(features.outputFields, features.outputSchemaDefinitions);
   const toolIds = new Set(); const toolNames = new Set();
@@ -147,6 +158,20 @@ export function applyAssessment(run, results) {
     const sample = selected?.samples?.find((item) => item.sampleID?.toLowerCase() === original?.id?.toLowerCase());
     return { ...result, passed: sample?.status === 'passed' ? true : ['failed', 'error'].includes(sample?.status) ? false : null, score: sample?.score ?? null, scoreScale: 'appRubric', assessmentId: selected?.id || run.selectedAssessmentID, assessmentSample: sample || null, trace: { ...result.trace, ...(selected ? { assessment: selected } : {}), ...(sample?.trace ? { judge: sample.trace } : {}) } };
   });
+}
+
+// Flat envelopes use ISO strings. Native Codable traces may use seconds since
+// 2001; normalize that explicitly rather than relying on Date.parse coercion.
+export function importedTimestamp(value, { apple = false } = {}) {
+  if (apple && typeof value === 'number' && Number.isFinite(value)) {
+    const date = new Date((value + 978307200) * 1000);
+    if (Number.isFinite(date.getTime())) return importedTimestamp(date.toISOString());
+  }
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(value)) throw new Error('Run import requires valid ISO timestamps');
+  const time = Date.parse(value);
+  const calendarDate = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+  if (!Number.isFinite(time) || !Number.isFinite(calendarDate.getTime()) || !calendarDate.toISOString().startsWith(value.slice(0, 10))) throw new Error('Run import requires valid ISO timestamps');
+  return new Date(time).toISOString();
 }
 
 export function validateAppEvidence(run) {

@@ -10,7 +10,8 @@
     {
       "bundled": "AppEngineBridge.swift",
       "origin": "standalone host adapter",
-      "bundledSHA256": "8162143f180f1204c8f4a0a48a7b36f50eca4370e1785da13a9f7a7eebedbc5b"
+      "bundledSHA256": "ac305b462c6c2ff0ad3214ada644bdaa2fcf744de93bc6b2bf6b5f44c5df2cd0",
+      "adaptation": "Standalone adapter; execution revisions also bind extracted reference text independently of original file metadata."
     },
     {
       "source": "Stores/EvaluationStore.swift",
@@ -30,8 +31,8 @@
       "source": "Stores/EvaluationStore.swift",
       "sha256": "caef7a3e25c3c7f7680b29066edf57f7da4147c83e6527e0f464aaa48df68f26",
       "bundled": "AppEngineWorkflows.swift",
-      "excerpt": "instruction experiment freezing, baseline/correction validation; standalone adapters around app workflow analyzers",
-      "bundledSHA256": "49cd26a2e9513c73bfa459c099a0618208f93c73df7abc95561d87f3b200805a"
+      "excerpt": "instruction experiment freezing, baseline/correction validation, and scoring-contract checks for public experiment summaries; standalone adapters around app workflow analyzers",
+      "bundledSHA256": "ee8c2c9a18984bd19230eb6251efa200a43365f147af1d9a71daf90d1a6d729f"
     },
     {
       "source": "Support/JSONDocument.swift",

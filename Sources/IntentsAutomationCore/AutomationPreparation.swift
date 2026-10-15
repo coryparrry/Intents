@@ -113,9 +113,8 @@ public actor AutomationPreparation {
         }
         try requireActive()
         if approval.target.kind == .physical {
-            try FileManager.default.createDirectory(at: sessionRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            approval.target = try await AutomationPhysicalDeviceInventory.canonicalTarget(approval.target,
-                developerDirectory: developerDirectory, workspace: sessionRoot)
+            approval.target = try await AutomationPreparationTargetResolution.resolve(approval.target,
+                sessionRoot: sessionRoot, developerDirectory: developerDirectory)
             try requireActive()
         }
         let manifest = try AutomationSourceSnapshot.capture(source: source, sessionRoot: sessionRoot, additionalRoots: (approval.additionalSourceRoots ?? []).map { URL(fileURLWithPath: $0) }, includesDependencies: approval.includesDependencies == true)
