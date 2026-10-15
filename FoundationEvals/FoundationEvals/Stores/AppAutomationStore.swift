@@ -2,6 +2,9 @@
 import Foundation
 import Observation
 import IntentsAutomationCore
+#if canImport(FoundationEvalsDeveloper)
+import FoundationEvalsDeveloper
+#endif
 
 @MainActor @Observable
 final class AppAutomationStore {
@@ -12,21 +15,51 @@ final class AppAutomationStore {
     var simulators: [AutomationSimulator] = []
     var simulatorID = ""
     var physicalDeviceID = ""
+    var physicalDevices: [AutomationPhysicalDevice] = []
     var siriRequest = ""
     var siriOracle = AutomationNativeSiriOracle()
+    var siriAlternatePhrases = ""
+    var siriResetActionID = ""
+    var siriAccountEnvironment = ""
+    var siriResetQualificationUnresolved = false
+    var siriResetQualificationOwnership: (runID: String, target: TargetIdentity)?
+    var siriResetConversionScopeDigest: String?
+    var siriResetConversionDeadline: ContinuousClock.Instant?
     var siriCapabilities = CapabilityProfile()
     var preparationDestination: AutomationNativePreparationDestination = .simulator
+    var includesSourceDependencies = false
+    var servedJavaScriptProfile: AutomationServedJavaScriptProfile?
+    var automaticMetroRecipe: AutomationMetroAutomaticRecipe?
     var prepared: AutomationPreparedApplication? {
         didSet {
             if let prepared, !preparedHistory.contains(prepared) {
                 preparedHistory.append(prepared)
                 if preparedHistory.count > 100 { preparedHistory.removeFirst() }
             }
+            reloadSelectedLearnedSetup()
         }
     }
     var preparedHistory: [AutomationPreparedApplication] = []
     var savedPreparedBaseline: AutomationPreparedApplication?
     var catalog: ApplicationSurfaceCatalog?
+    var pairedClient: DeveloperRunnerClient?
+    var pairedCanStart: (@MainActor () -> Bool)?
+    var pairedOwnershipChanged: (@MainActor (Bool) -> Void)?
+    var pairedFeatureID = ""
+    var pairedPrompt = ""
+    var pairedInstructions = ""
+    var pairedExpectedResponse = ""
+    var pairedEffectsConfirmed = false
+    var pairedExecutionUnresolved = false
+    var firstRunIncludesActions = false
+    var firstRunEffectsConfirmed = false
+    var firstRunReports: [AutomationAttemptReport] = []
+    var firstRunGaps: [String] = []
+    var firstRunInputReviewID: String?
+    var firstRunInputs: [String: [String: String]] = [:]
+    var firstRunEntityQueryTexts: [String: [String: String]] = [:]
+    var firstRunEntityChoices: [String: [String: [AutomationQueryEntityChoice]]] = [:]
+    var firstRunSelectedEntityIDs: [String: [String: String]] = [:]
     var workflowRoute = "ui"
     var actionID = ""
     var inputs: [String: String] = [:]
@@ -36,14 +69,16 @@ final class AppAutomationStore {
     var entityExpectedBooleans: [String: String] = [:]
     var protectedEntityIDs: [String: Set<String>] = [:]
     var entityQueryReport: AutomationAttemptReport?
-    private(set) var unresolvedEntityQueryAttemptID: String?
-    private let entityQueryExecutor: AutomationNativeEntityQueryExecutor?
+    var unresolvedEntityQueryAttemptID: String?
+    let entityQueryExecutor: AutomationNativeEntityQueryExecutor?
     var effectChoice = ""
     var effectsConfirmed = false
     var disposable = false
     var installApproved = true
     var learnedSetupAttempts: [AutomationCapturedSetupAttempt] = []
     var learnedSetupRecipe: AutomationQualifiedNavigationSetupRecipe?
+    var savedLearnedSetupRecipe: AutomationSavedNavigationSetupRecipe?
+    var learnedSetupPersistenceError: String?
     var useLearnedSetup = false
     var freshNamePrefix = ""
     var freshNameProperty = ""
@@ -88,6 +123,20 @@ final class AppAutomationStore {
     var uiObservationLabel = ""
     var uiObservationProperty = "text"
     var uiAlternatePhrases = ""
+    var uiVarySubjectRequest = false
+    var uiRequestInputControl = ""
+    var uiRequestResetControl = ""
+    var uiRequestSessionIdentity = ""
+    var uiRequestEmptyStateControl = ""
+    var uiRequestEmptyStateText = ""
+    var uiRequestSubmitControl = ""
+    var uiRequestFixtureDraft: AutomationUIRequestFixture? {
+        let fields = [uiRequestInputControl, uiRequestResetControl, uiRequestSessionIdentity, uiRequestEmptyStateControl, uiRequestEmptyStateText, uiRequestSubmitControl]
+        guard fields.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf16.count < 512 }) else { return nil }
+        return .init(resetControl: .init(.label, uiRequestResetControl), sessionIdentity: .init(.label, uiRequestSessionIdentity),
+            emptyState: .init(.label, uiRequestEmptyStateControl), expectedEmptyState: uiRequestEmptyStateText,
+            submitControl: .init(.label, uiRequestSubmitControl), requestInputControl: .init(.label, uiRequestInputControl))
+    }
     var searchReport: AutomationFailureSearchReport?
     var savedSearches: [AutomationUIFailureSearchRecord] = []
     var viewedSearch: AutomationUIFailureSearchRecord?
@@ -111,7 +160,7 @@ final class AppAutomationStore {
     func canSaveCapsuleExport(_ selection: AutomationCapsuleExportSelection) -> Bool { selection.reviewed && !busy && !closing }
     let savedAttemptsReader: (@Sendable (AutomationFrozenCase) async throws -> [AutomationAttemptReport])?
     private let savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])?
-    private let runExecutor: AutomationNativeRunExecutor?
+    let runExecutor: AutomationNativeRunExecutor?
     private let searchExecutor: AutomationNativeSearchExecutor?
     private let comparisonExecutor: AutomationNativeFixComparisonExecutor?
     private let reproductionExecutor: AutomationNativeReproductionExecutor?
@@ -140,6 +189,9 @@ final class AppAutomationStore {
     private var hasMigratedEvidenceHistory = false
     private var migratingEvidenceHistory = false
     private(set) var evidenceImportRevision = 0
+    func noteCampaignEvidenceImport() {
+        if evidenceImporter != nil { evidenceImportRevision += 1 }
+    }
     private(set) var evidenceImportMessage: String?
     @ObservationIgnored private var canonicalExposure: AutomationEvidenceExposure?
     @ObservationIgnored private var canonicalSavedExposure: AutomationEvidenceExposure?
@@ -153,6 +205,8 @@ final class AppAutomationStore {
     }
     var reportDirectory: URL?
     var message: String?
+    var recentApplications: [AutomationRecentApplication] = []
+    var recentApplicationsError: String?
     var progress: String?
     var selectedMacTarget: TargetIdentity?
     let nativeMacTargetReader: @Sendable () throws -> TargetIdentity
@@ -161,6 +215,14 @@ final class AppAutomationStore {
     var selectedSourceRoot: URL? {
         selectedURL.map { ["xcodeproj", "xcworkspace"].contains($0.pathExtension.lowercased()) ? $0.deletingLastPathComponent() : $0 }
     }
+    var isClosingForFirstRunInputs: Bool { closing }
+    private(set) var requestVerificationCancellationID = UUID()
+    private let physicalInventoryReader: AutomationNativePhysicalInventoryReader
+    private(set) var installedToolchains: [AutomationNativeToolchainChoice] = []
+    let defaultDeveloperDirectoryPath: String
+    private(set) var hasExplicitToolchainSelection = false
+    private(set) var selectedToolchainMetadataDigest: String?
+    private let installedToolchainReader: (URL) -> [AutomationNativeToolchainChoice]
     var hasSecurityScope = false
     var securityScopedURL: URL?
     var closing = false
@@ -191,15 +253,19 @@ final class AppAutomationStore {
         set { guard !busy else { return }; xcodeSettings.runOverride = newValue; advanceSelection() }
     }
     var developerDirectory: URL {
-        xcodeSettings.developerDirectory(for: isInstalledMacUI ? .macOS : preparationDestination, fallback: launchDeveloperDirectory)
+        xcodeSettings.developerDirectory(for: isInstalledMacUI ? .macOS : preparationDestination, fallback: preparedDeveloperFallback)
+    }
+    private var preparedDeveloperFallback: URL {
+        guard let path = prepared?.selectedDeveloperDirectoryPath else { return launchDeveloperDirectory }
+        return URL(fileURLWithPath: path)
     }
     func developerDirectory(for target: TargetIdentity) -> URL {
         let destination: AutomationNativePreparationDestination = switch target.kind {
         case .simulator: .simulator
         case .physical: .physical
-        case .nativeMac: .macOS
+        case .nativeMac, .pairedRunner: .macOS
         }
-        return xcodeSettings.developerDirectory(for: destination, fallback: launchDeveloperDirectory)
+        return xcodeSettings.developerDirectory(for: destination, fallback: preparedDeveloperFallback)
     }
     init(supportDirectory: URL, telemetry: (any AutomationRunTelemetry)? = nil, developerDirectory: URL = AutomationNativeToolchain.developerDirectory(),
          xcodeSettings: AutomationNativeXcodeSettings? = nil,
@@ -218,7 +284,15 @@ final class AppAutomationStore {
          physicalTargetResolver: @escaping @Sendable (TargetIdentity, URL, URL) async throws -> TargetIdentity = { try await AutomationPhysicalDeviceInventory.canonicalTarget($0, developerDirectory: $1, workspace: $2) },
          intakeAssessor: @escaping @Sendable (URL) throws -> AutomationIntakeAssessment = { try AutomationApplicationIntake.assess($0) },
          selectionCatalogReader: @escaping @Sendable (AppIdentity, URL) throws -> ApplicationSurfaceCatalog = { try AutomationSurfaceCatalogReader.read(app: $0, product: $1) },
-         simulatorInventoryReader: @escaping AutomationNativeSimulatorInventoryReader = { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) }) {
+         simulatorInventoryReader: @escaping AutomationNativeSimulatorInventoryReader = { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) },
+         physicalInventoryReader: @escaping AutomationNativePhysicalInventoryReader = { try await AutomationPhysicalDeviceInventory.read(developerDirectory: $0, workspace: $1) },
+         installedToolchainReader: @escaping (URL) -> [AutomationNativeToolchainChoice] = { AutomationNativeToolchain.installedChoices(configured: $0) }) {
+        self.physicalInventoryReader = physicalInventoryReader
+        self.installedToolchainReader = installedToolchainReader
+        defaultDeveloperDirectoryPath = developerDirectory.path
+        let discoveredToolchains = installedToolchainReader(developerDirectory)
+        installedToolchains = discoveredToolchains
+        selectedToolchainMetadataDigest = discoveredToolchains.first(where: { $0.directory == developerDirectory })?.metadataDigest
         self.physicalTargetResolver = physicalTargetResolver
         self.intakeAssessor = intakeAssessor; self.selectionCatalogReader = selectionCatalogReader
         self.recoverySimulatorShutdown = recoverySimulatorShutdown
@@ -233,21 +307,23 @@ final class AppAutomationStore {
         support = supportDirectory; self.entityQueryExecutor = entityQueryExecutor; self.comparisonExecutor = comparisonExecutor; self.savedAttemptsReader = savedAttemptsReader
         self.savedCasesReader = savedCasesReader; self.runExecutor = runExecutor; self.searchExecutor = searchExecutor; self.reproductionExecutor = reproductionExecutor; self.reproductionPreflightReader = reproductionPreflightReader
         ownershipRecoveryTask = Task { [weak self] in await self?.reconcileAbandonedOwnership() }
+        loadRecentApplications()
         restoreLatestPreparation()
     }
     var busy: Bool { progress != nil }
     var candidate: AutomationApplicationCandidate? { intake?.candidates.first { $0.id == candidateID } }
     var action: ApplicationSurfaceCatalog.SystemAction? { catalog?.systemActions.first { $0.id == actionID } }
-    var canPrepare: Bool { !busy && !closing && candidate?.kind == .sourceTarget && !configuration.isEmpty && sourcePreparationTarget != nil }
+    var canPrepare: Bool { !busy && !closing && candidate?.kind == .sourceTarget && !configuration.isEmpty && sourcePreparationTarget != nil && ((servedJavaScriptProfile == nil && automaticMetroRecipe == nil) || preparationDestination == .simulator) }
     var isInstalledUI: Bool { candidate?.kind == .installedProduct && candidate?.app?.platform == "ios" }
-    var isFreshRecordWorkflow: Bool { candidate?.kind == .sourceTarget && workflowRoute == "fresh" }
+    var isFreshSearchWorkflow: Bool { candidate?.kind == .sourceTarget && workflowRoute == "freshSearch" }
+    var isFreshRecordWorkflow: Bool { candidate?.kind == .sourceTarget && ["fresh", "freshSearch"].contains(workflowRoute) }
     var freshEntity: ApplicationSurfaceCatalog.Entity? {
         guard let action, action.parameters.count == 1, let parameter = action.parameters.first, parameter.family == "entity" else { return nil }
         return catalog?.entities?.first { $0.typeID == parameter.typeID }
     }
     var isUIWorkflow: Bool { isInstalledUI || isInstalledMacUI || (candidate?.kind == .sourceTarget && workflowRoute == "ui") }
     var canRun: Bool {
-        guard !closing, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery else { return false }
+        guard !closing, !pairedExecutionUnresolved, !siriResetQualificationUnresolved, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery else { return false }
         if isSiriWorkflow { return canRunSiriSubmission }
         guard prepared?.host.target.kind != .nativeMac, candidate?.kind != .sourceTarget || preparationDestination == .simulator else { return false }
         if isUIWorkflow {
@@ -282,7 +358,8 @@ final class AppAutomationStore {
     }
     private var unresolvedSearch: Bool {
         searchReport?.attempts.contains(where: { !$0.report.resourcesReleased || $0.report.result.subjectDispatchUncertain }) == true ||
-        searchReport?.interruptions.contains(where: \.dispatchMayHaveOccurred) == true
+        searchReport?.interruptions.contains(where: \.dispatchMayHaveOccurred) == true ||
+        searchReport?.qualificationAttempts?.contains(where: { !$0.report.resourcesReleased || $0.report.result.subjectDispatchUncertain }) == true
     }
     private var unresolvedReproduction: Bool {
         reproductionReport?.attempts.contains(where: { !$0.resourcesReleased || $0.result.subjectDispatchUncertain }) == true ||
@@ -352,7 +429,7 @@ final class AppAutomationStore {
                 if let commandID {
                     commandRequests[commandID]?.reproduction = outcome
                     commandRequests[commandID]?.resourcesReleased = outcome.resourcesReleased
-                    commandRequests[commandID]?.state = "completed"
+                    commandRequests[commandID]?.state = result.stopReason == "Cancelled" || result.attempts.contains { $0.result.summary == .cancelled } ? "cancelled" : "completed"
                 }
                 for attempt in [result.originalFailure] + result.attempts { await importEvidence(plan: result.frozen.plan, report: attempt, announce: false) }
                 if evidenceImporter != nil { evidenceImportRevision += 1 }
@@ -361,7 +438,7 @@ final class AppAutomationStore {
             } catch {
                 if let (runID, target) = executedRequest { await retainUnresolvedReservation(runID: runID, target: target) }
                 message = errorText(error)
-                if let commandID, !["completed", "invalidated"].contains(commandRequests[commandID]?.state ?? "") {
+                if let commandID, !["completed", "cancelled", "invalidated"].contains(commandRequests[commandID]?.state ?? "") {
                     pendingCommand = nil
                     commandRequests[commandID]?.state = error is CancellationError ? "cancelled" : "failed"
                 }
@@ -410,11 +487,17 @@ final class AppAutomationStore {
             digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)))
     }
     private var unresolvedNormalAttempt: Bool { !retainedUnresolvedRequestTargets.isEmpty || retainedUnresolvedNormalReport != nil || report?.result.subjectDispatchUncertain == true || report?.resourcesReleased == false }
-    var hasUnresolvedActiveAttempt: Bool { unresolvedNormalAttempt || unresolvedEntityQuery || unresolvedSearch || unresolvedReproduction || unresolvedComparison }
+    var hasUnresolvedActiveAttempt: Bool { pairedExecutionUnresolved || siriResetQualificationUnresolved || unresolvedNormalAttempt || unresolvedEntityQuery || unresolvedSearch || unresolvedReproduction || unresolvedComparison }
     var hasUnresolvedOwnership: Bool { !recoveryItems.isEmpty || hasUnresolvedActiveAttempt }
-    var canSelectApplicationFromCommand: Bool {
-        !busy && !closing && pendingCommandStatus == nil && !unresolvedNormalAttempt && !unresolvedSearch &&
-            !unresolvedReproduction && !unresolvedComparison && !unresolvedEntityQuery
+    private var permitsApplicationReview: Bool {
+        !busy && !closing && !pairedExecutionUnresolved && !siriResetQualificationUnresolved &&
+            !unresolvedNormalAttempt && !unresolvedSearch && !unresolvedReproduction &&
+            !unresolvedComparison && !unresolvedEntityQuery
+    }
+    var canSelectApplicationFromCommand: Bool { permitsApplicationReview && pendingCommandStatus == nil }
+    var canReviewSelectedApplicationForRun: Bool {
+        permitsApplicationReview && (pendingCommandStatus == nil ||
+            (pendingCommandStatus?.kind == nil && pendingCommandStatus?.state == "awaitingApproval"))
     }
     private var unresolvedEntityQuery: Bool {
         if unresolvedEntityQueryAttemptID != nil { return true }
@@ -431,16 +514,20 @@ final class AppAutomationStore {
         entityExpectedBooleans = entityExpectedBooleans.filter { !$0.key.hasPrefix(parameter + ".") }
     }
     func canFindEntities(_ parameter: ApplicationSurfaceCatalog.SystemAction.Parameter) -> Bool {
-        !busy && !closing && !unresolvedNormalAttempt && !unresolvedEntityQuery && !unresolvedSearch && !unresolvedReproduction && !unresolvedComparison &&
+        !busy && !closing && !pairedExecutionUnresolved && !unresolvedNormalAttempt && !unresolvedEntityQuery && !unresolvedSearch && !unresolvedReproduction && !unresolvedComparison &&
             pendingCommand == nil && !isUIWorkflow && preparedUISelectionMatches && parameter.family == "entity" && entityDefinition(parameter) != nil &&
-            AutomationEntityQuery.acceptsQueryText(entityQueryTexts[parameter.name] ?? "")
+            entityDefinition(parameter).map { AutomationEntityQuery.acceptsQuery(entity: $0, text: $0.usesSuggestedQuery ? "" : entityQueryTexts[parameter.name] ?? "") } == true
     }
     func findEntities(_ parameter: ApplicationSurfaceCatalog.SystemAction.Parameter) async {
         guard canFindEntities(parameter), let prepared, let entity = entityDefinition(parameter), let action else { return }
+        if entity.usesSuggestedQuery { entityQueryTexts[parameter.name] = "" }
         let epoch = selectionEpoch, text = entityQueryTexts[parameter.name] ?? "", install = installApproved
         let attemptID = UUID().uuidString
+        let environment = prepared.host.target.kind == .nativeMac
+            ? "selected-mac-session:" + (prepared.host.target.loginSession ?? "")
+            : "selected-simulator:" + prepared.host.target.id
         let approval = RunApproval(runID: UUID().uuidString, app: prepared.host.app, target: prepared.host.target,
-            environmentID: "selected-simulator:" + prepared.host.target.id, effects: [.observe], maximumActions: 20, disposable: disposable)
+            environmentID: environment, effects: [.observe], maximumActions: 20, disposable: disposable)
         let queryPlan: AutomationCase
         do { queryPlan = try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: text, approval: approval) }
         catch { message = errorText(error); return }
@@ -589,7 +676,7 @@ final class AppAutomationStore {
                 let outcome = try AutomationNativeFixComparisonOutcome(result, originalAttemptID: request.originalAttemptID)
                 if let commandID {
                     commandRequests[commandID]?.comparison = outcome; commandRequests[commandID]?.resourcesReleased = outcome.resourcesReleased
-                    commandRequests[commandID]?.state = "completed"
+                    commandRequests[commandID]?.state = result.stopReason == "Cancelled" || (result.before + result.after).contains { $0.result.summary == .cancelled } ? "cancelled" : "completed"
                 }
                 for attempt in result.before { await importEvidence(plan: result.baseline.plan, report: attempt, announce: false) }
                 for attempt in result.after { await importEvidence(plan: result.candidate.plan, report: attempt, announce: false) }
@@ -599,7 +686,7 @@ final class AppAutomationStore {
             } catch {
                 for (runID, target) in executedRequests { await retainUnresolvedReservation(runID: runID, target: target) }
                 message = errorText(error)
-                if let commandID, !["completed", "invalidated"].contains(commandRequests[commandID]?.state ?? "") {
+                if let commandID, !["completed", "cancelled", "invalidated"].contains(commandRequests[commandID]?.state ?? "") {
                     commandRequests[commandID]?.state = error is CancellationError ? "cancelled" : "failed"
                 }
                 await refreshSavedCases()
@@ -612,7 +699,10 @@ final class AppAutomationStore {
         hasFixedSecurityScope = false; fixedBundleURL = nil; fixedProduct = nil
     }
     var failureSearchUnavailableReason: String? {
-        "This workflow follows fixed controls. Alternative navigation instructions do not change its steps."
+        if isFreshSearchWorkflow || uiVarySubjectRequest {
+            return "This workflow uses concrete controls. Safe request or record mutation needs a qualified controller before repeated trials are available."
+        }
+        return "This workflow follows fixed controls. Alternative navigation instructions do not change its steps."
     }
     var canFindFailures: Bool { false }
     func findFailures(reviewed: AutomationNativeSearchReview? = nil) async {
@@ -656,9 +746,11 @@ final class AppAutomationStore {
         }
         await task?.value
     }
-    func select(_ url: URL) {
-        guard !busy else { return }
+    func select(_ url: URL, rememberHistory: Bool = true) {
+        guard canSelectApplicationFromCommand else { return }
+        if url.pathExtension.lowercased() == "ipa" { importIPA(url); return }
         sourceGrants.clear()
+        includesSourceDependencies = false; servedJavaScriptProfile = nil; automaticMetroRecipe = nil
         if hasSecurityScope { securityScopedURL?.stopAccessingSecurityScopedResource() }
         hasSecurityScope = url.startAccessingSecurityScopedResource()
         securityScopedURL = hasSecurityScope ? url : nil
@@ -678,6 +770,7 @@ final class AppAutomationStore {
                 candidateID = assessment.candidates.first?.id ?? ""
                 try await loadSelectedCandidate(epoch: epoch)
                 guard !closing, selectionEpoch == epoch else { return }
+                if rememberHistory, !assessment.candidates.isEmpty { rememberApplication(canonical) }
             } catch {
                 guard !closing, selectionEpoch == epoch else { return }
                 message = errorText(error)
@@ -709,7 +802,7 @@ final class AppAutomationStore {
         try Task.checkCancellation()
         guard !closing, selectionEpoch == epoch else { return }
         guard let selected = candidate else { configuration = ""; return }
-        configuration = selected.configurations.first ?? ""
+        configuration = selected.configurations.first(where: { $0.caseInsensitiveCompare("Debug") == .orderedSame }) ?? selected.configurations.first ?? ""
         if isInstalledMacUI {
             do { selectedMacTarget = try nativeMacTargetReader() }
             catch { message = errorText(error) }
@@ -723,22 +816,36 @@ final class AppAutomationStore {
     }
     func refreshTargets() async {
         guard !busy, !closing else { return }
-        guard needsSimulatorInventory else { return }
+        guard needsSimulatorInventory || needsPhysicalInventory else { return }
         simulatorInventoryRevision += 1
         let revision = simulatorInventoryRevision, selection = simulatorInventorySelection
-        let selectedDeveloper = developerDirectory(for: .init(id: simulatorID, kind: .simulator))
+        let inventoryTarget = TargetIdentity(id: needsPhysicalInventory ? physicalDeviceID : simulatorID, kind: needsPhysicalInventory ? .physical : .simulator)
+        let selectedDeveloper = developerDirectory(for: inventoryTarget)
         do {
             try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            if needsPhysicalInventory {
+                let targets = try await physicalInventoryReader(selectedDeveloper, support)
+                guard !busy, !closing, !Task.isCancelled, simulatorInventoryRevision == revision,
+                      simulatorInventorySelection == selection, needsPhysicalInventory,
+                      developerDirectory(for: inventoryTarget) == selectedDeveloper else { return }
+                physicalDevices = targets
+                let available = targets.filter(\.available)
+                if physicalDeviceID.isEmpty {
+                    if available.count == 1 { physicalDeviceID = available[0].id }
+                } else if !available.contains(where: { $0.id == physicalDeviceID }) { physicalDeviceID = "" }
+                return
+            }
             let targets = try await simulatorInventoryReader(selectedDeveloper, support)
             guard !busy, !closing, !Task.isCancelled, simulatorInventoryRevision == revision,
                   simulatorInventorySelection == selection, needsSimulatorInventory,
-                  developerDirectory(for: .init(id: simulatorID, kind: .simulator)) == selectedDeveloper else { return }
+                  developerDirectory(for: inventoryTarget) == selectedDeveloper else { return }
             simulators = targets
             if !simulators.contains(where: { $0.id == simulatorID }) { simulatorID = simulators.first?.id ?? "" }
         } catch {
             guard !busy, !closing, !Task.isCancelled, simulatorInventoryRevision == revision,
-                  simulatorInventorySelection == selection, needsSimulatorInventory,
-                  developerDirectory(for: .init(id: simulatorID, kind: .simulator)) == selectedDeveloper else { return }
+                  simulatorInventorySelection == selection, needsSimulatorInventory || needsPhysicalInventory,
+                  developerDirectory(for: inventoryTarget) == selectedDeveloper else { return }
+            if needsPhysicalInventory { physicalDevices = []; physicalDeviceID = "" }
             message = errorText(error)
         }
     }
@@ -747,25 +854,45 @@ final class AppAutomationStore {
         guard expectedTarget == nil || target == expectedTarget else { message = "The build destination changed. Review it again."; return }
         message = nil; progress = "Freezing source and building an associated host…"
         let root = ["xcodeproj", "xcworkspace"].contains(selectedURL.pathExtension.lowercased()) ? selectedURL.deletingLastPathComponent() : selectedURL
-        let developerDirectory = developerDirectory(for: target)
         let destination = preparationDestination, epoch = selectionEpoch
-        let selectedConfiguration = configuration, additionalRoots = sourceGrants.urls.map(\.path)
+        let reviewedDeveloper = developerDirectory(for: target)
+        let exactToolchain = hasExplicitToolchainSelection
+        let reviewedToolchainMetadata = exactToolchain ? selectedToolchainMetadataDigest : nil
+        let reviewedApproval = AutomationBuildApproval(sourceRoot: root.path, candidateID: candidate.id, configuration: configuration, target: target,
+            additionalSourceRoots: sourceGrants.urls.map(\.path), includesDependencies: includesSourceDependencies,
+            servedJavaScriptProfile: servedJavaScriptProfile, automaticMetroRecipe: automaticMetroRecipe)
         task = Task {
             defer { progress = nil; task = nil; releaseScopeIfClosing() }
             do {
-                var resolved = target
-                if target.kind == .physical {
-                    try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-                    resolved = try await physicalTargetResolver(target, developerDirectory, support)
-                    try Task.checkCancellation()
-                    guard resolved.id == target.id, resolved.kind == .physical, let identifier = resolved.physicalDeviceIdentifier,
-                          UUID(uuidString: identifier) != nil, !closing, selectionEpoch == epoch,
-                          sourcePreparationTarget?.id == target.id else { throw AutomationContractError.conflictingOperation }
-                    resolvedPhysicalDeviceIdentifiers[target.id.lowercased()] = identifier
+                var approval = reviewedApproval
+                if let digest = reviewedToolchainMetadata {
+                    guard currentInstalledToolchainChoices().contains(where: { $0.directory == reviewedDeveloper && $0.metadataDigest == digest }) else {
+                        throw AutomationContractError.missingEvidence("The reviewed Xcode installation changed. Refresh Xcodes and review the build again.")
+                    }
                 }
-                let approval = AutomationBuildApproval(sourceRoot: root.path, candidateID: candidate.id, configuration: selectedConfiguration,
-                    target: resolved, additionalSourceRoots: additionalRoots)
                 let session = support.appendingPathComponent("prepare-" + UUID().uuidString)
+                if target.kind == .physical {
+                    let workspace = support
+                    try await AutomationNativeOffMainVerification.run {
+                        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true,
+                            attributes: [.posixPermissions: 0o700])
+                    }
+                    let resolved = try await physicalTargetResolver(target, reviewedDeveloper, support)
+                    try Task.checkCancellation()
+                    guard !closing, selectionEpoch == epoch, self.selectedURL == selectedURL, candidateID == candidate.id,
+                          sourcePreparationTarget == target, preparationDestination == destination,
+                          configuration == approval.configuration,
+                          includesSourceDependencies == (approval.includesDependencies == true),
+                          servedJavaScriptProfile == approval.servedJavaScriptProfile,
+                          automaticMetroRecipe == approval.automaticMetroRecipe,
+                          sourceGrants.urls.map(\.path) == (approval.additionalSourceRoots ?? []),
+                          resolved.id == target.id, resolved.kind == .physical,
+                          let identifier = resolved.physicalDeviceIdentifier, UUID(uuidString: identifier) != nil else {
+                        throw AutomationContractError.conflictingOperation
+                    }
+                    resolvedPhysicalDeviceIdentifiers[target.id.lowercased()] = identifier
+                    approval.target = resolved
+                }
                 let value: AutomationPreparedApplication
                 if let preparationExecutor { value = try await preparationExecutor(candidate, approval, session) }
                 else {
@@ -773,26 +900,74 @@ final class AppAutomationStore {
                         throw AutomationContractError.missingEvidence("Associated host templates are missing from this app build")
                     }
                     value = try await preparation.prepare(candidate: candidate, approval: approval, sessionRoot: session,
-                        templates: templates, developerDirectory: developerDirectory)
+                        templates: templates, developerDirectory: reviewedDeveloper, requireConfiguredDeveloperDirectory: exactToolchain, reviewedToolchainMetadataDigest: reviewedToolchainMetadata)
                 }
                 try Task.checkCancellation()
                 guard !closing, self.selectedURL == selectedURL, candidateID == candidate.id,
                       configuration == approval.configuration, preparationDestination == destination,
                       selectionEpoch == epoch, sourcePreparationTarget == approval.target,
+                      developerDirectory(for: approval.target) == reviewedDeveloper,
+                      includesSourceDependencies == (approval.includesDependencies == true),
+                      servedJavaScriptProfile == approval.servedJavaScriptProfile,
+                      automaticMetroRecipe == approval.automaticMetroRecipe,
                       sourceGrants.urls.map(\.path) == (approval.additionalSourceRoots ?? []) else {
                     throw AutomationContractError.conflictingOperation
                 }
+                if let digest = reviewedToolchainMetadata {
+                    guard currentInstalledToolchainChoices().contains(where: { $0.directory == reviewedDeveloper && $0.metadataDigest == digest }) else {
+                        throw AutomationContractError.missingEvidence("The reviewed Xcode installation changed. Refresh Xcodes and review the build again.")
+                    }
+                }
                 try validatePreparedSelection(value, candidate: candidate, approval: approval)
+                if exactToolchain, value.selectedDeveloperDirectoryPath != reviewedDeveloper.path {
+                    throw AutomationContractError.missingEvidence("The selected Xcode could not prepare this app. Refresh or choose another installed Xcode, then review the build again.")
+                }
+                if let path = value.selectedDeveloperDirectoryPath {
+                    let selectedDeveloper = try AutomationPath.canonical(URL(fileURLWithPath: path))
+                    guard selectedDeveloper.path == path else { throw AutomationContractError.conflictingOperation }
+                    selectedToolchainMetadataDigest = installedToolchainReader(selectedDeveloper).first(where: { $0.directory == selectedDeveloper })?.metadataDigest
+                }
                 let siriProfile = try await AutomationSiriCapabilitySnapshot.resolve(prepared: value, capabilities: AutomationEntityQuery.capabilities(value))
-                guard selectionEpoch == epoch, sourcePreparationTarget == approval.target, !closing else { throw AutomationContractError.conflictingOperation }
+                guard selectionEpoch == epoch, sourcePreparationTarget == approval.target,
+                      developerDirectory(for: approval.target) == reviewedDeveloper, !closing else { throw AutomationContractError.conflictingOperation }
+                if let digest = reviewedToolchainMetadata {
+                    guard currentInstalledToolchainChoices().contains(where: { $0.directory == reviewedDeveloper && $0.metadataDigest == digest }) else {
+                        throw AutomationContractError.missingEvidence("The reviewed Xcode installation changed. Refresh Xcodes and review the build again.")
+                    }
+                }
                 prepared = value; siriCapabilities = siriProfile; catalog = value.catalog; actionID = ""; report = nil
-                message = target.kind == .nativeMac ? "Prepared a private Mac copy for inspection. Mac workflow execution is not available yet." : fixedAppName == nil ? "Prepared a private copy. Choose a workflow and its permitted effects." : "Prepared the changed source. The original build and saved checks are retained for Check fix."
+                message = target.kind == .nativeMac
+                    ? "Prepared a private Mac copy for inspection. Mac workflow execution is not available yet."
+                    : fixedAppName == nil ? "Prepared a private copy. Choose a workflow and its permitted effects." : "Prepared the changed source. The original build and saved checks are retained for Check fix."
             } catch { message = errorText(error) }
         }
     }
     func prepareAndWait() async { prepare(); await task?.value }
     func waitForPreparation() async { let active = task; await active?.value }
-    func selectAction() { guard !busy else { return }; advanceSelection(); clearEntitySelections(); inputs = [:]; freshNameProperty = ""; freshStateProperty = ""; freshInitialState = ""; freshExpectedState = ""; freshProtectOtherRecord = false; freshContextProperty = ""; freshSelectedContext = ""; freshProtectedContext = ""; effectChoice = ""; effectsConfirmed = false; report = nil; message = nil }
+    func currentInstalledToolchainChoices() -> [AutomationNativeToolchainChoice] { installedToolchainReader(developerDirectory) }
+    func refreshInstalledToolchains() {
+        guard !busy, !closing else { return }
+        installedToolchains = installedToolchainReader(developerDirectory)
+    }
+    func selectInstalledToolchain(_ id: String) throws {
+        guard !busy, !closing else { throw AutomationContractError.targetBusy }
+        guard let reviewed = installedToolchains.first(where: { $0.id == id }),
+              installedToolchainReader(developerDirectory).contains(reviewed),
+              try AutomationPath.canonical(reviewed.directory) == reviewed.directory else {
+            throw AutomationContractError.missingEvidence("This Xcode installation changed or is unavailable. Refresh the installed Xcodes and choose again.")
+        }
+        guard reviewed.directory != developerDirectory || reviewed.metadataDigest != selectedToolchainMetadataDigest || !hasExplicitToolchainSelection else {
+            return
+        }
+        advanceSelection(); clearEntitySelections()
+        xcodeSettings.setPath(reviewed.directory.path, for: preparationDestination); selectedToolchainMetadataDigest = reviewed.metadataDigest
+        hasExplicitToolchainSelection = true
+        prepared = nil; catalog = nil; siriCapabilities = .init(); report = nil; reportDirectory = nil; searchReport = nil
+        actionID = ""; inputs = [:]; effectsConfirmed = false
+        message = "Using " + reviewed.label + ". Prepare a fresh private copy with this Xcode."
+    }
+
+    func selectAction() { guard !busy else { return }; advanceSelection(); clearEntitySelections(); inputs = [:]; freshNameProperty = ""; freshStateProperty = ""; freshInitialState = ""; freshExpectedState = ""; freshProtectOtherRecord = false; freshContextProperty = ""; freshSelectedContext = ""; freshProtectedContext = ""; effectChoice = ""; effectsConfirmed = false; report = nil; message = nil; applyFreshRecordSetupProposal() }
     func workflowSelectionChanged() { guard !busy else { return }; advanceSelection(); effectsConfirmed = false; report = nil; message = nil }
     func effectSelectionChanged() { invalidatePendingCommand(); effectsConfirmed = false }
     func run() {
@@ -844,7 +1019,7 @@ final class AppAutomationStore {
                     retainUnresolvedRequest(runID: request.approval.runID, target: request.plan.target)
                 }
                 if let commandID {
-                    commandRequests[commandID]?.state = "completed"
+                    commandRequests[commandID]?.state = result.result.summary == .cancelled ? "cancelled" : "completed"
                     commandRequests[commandID]?.result = result.result
                     commandRequests[commandID]?.resourcesReleased = result.resourcesReleased
                 }
@@ -881,7 +1056,9 @@ final class AppAutomationStore {
         migratingEvidenceHistory = true; defer { migratingEvidenceHistory = false }
         do {
             let caseRoot = support.appendingPathComponent("Cases")
-            guard FileManager.default.fileExists(atPath: caseRoot.path) else { hasMigratedEvidenceHistory = true; return }
+            guard FileManager.default.fileExists(atPath: caseRoot.path) else {
+                hasMigratedEvidenceHistory = true; evidenceImportMessage = nil; return
+            }
             let cases = try AutomationCaseStore(readOnlyRoot: caseRoot)
             var count = 0
             for frozen in try await cases.definitions() {
@@ -894,7 +1071,7 @@ final class AppAutomationStore {
                     count += 1
                 }
             }
-            hasMigratedEvidenceHistory = true; evidenceImportRevision += 1
+            hasMigratedEvidenceHistory = true; evidenceImportMessage = nil; evidenceImportRevision += 1
         } catch { evidenceImportMessage = "Existing attempts remain saved; native history import is incomplete: " + errorText(error) }
     }
     func readSavedCases() async throws -> [AutomationFrozenCase] {
@@ -942,7 +1119,67 @@ final class AppAutomationStore {
     private func reserveEvidenceExposure(_ frozen: AutomationFrozenCase, attempts: [AutomationAttemptReport]) throws -> AutomationEvidenceExposure {
         try AutomationEvidenceExposureAuthority(supportRoot: support).reserve(frozen: frozen, attempts: attempts)
     }
-    func cancel() { task?.cancel() }
+    func cancel() {
+        cancelRequestVerification()
+        task?.cancel()
+        if let pendingCommand { _ = try? cancelCommand(id: pendingCommand) }
+    }
+    func retainUnresolvedRequest(runID: String, target: TargetIdentity) {
+        retainedUnresolvedRequestTargets[runID] = target
+    }
+    func finishOwnershipReset() {
+        retainedUnresolvedNormalReport = nil; retainedUnresolvedNormalTarget = nil
+        retainedUnresolvedRequestTargets = [:]
+        if report?.resourcesReleased == false || report?.result.subjectDispatchUncertain == true { report = nil }
+        unresolvedEntityQueryAttemptID = nil
+        if entityQueryReport?.resourcesReleased == false || entityQueryReport?.result.subjectDispatchUncertain == true { entityQueryReport = nil }
+        if unresolvedSearch { searchReport = nil }
+        if unresolvedReproduction { reproductionReport = nil }
+        if unresolvedComparison { comparisonReport = nil }
+    }
+    /// Cancels a view-owned preview only; another pending or running operation keeps its ownership.
+    func cancelRequestVerification() { requestVerificationCancellationID = UUID() }
+    func validateRequestVerificationCancellation(_ id: UUID) throws {
+        try Task.checkCancellation()
+        guard requestVerificationCancellationID == id else { throw CancellationError() }
+    }
+    /// Installs one just-verified immutable preview; does not grant execution approval.
+    func installVerifiedConfirmation(id: UUID, digest: String, kind: AutomationNativeCommandKind?,
+                                     originalAttemptID: String? = nil, caseID: String? = nil,
+                                     revision: Int? = nil, caseDigest: String? = nil) throws -> AutomationNativeCommandStatus {
+        if kind == nil { return try requestCommand(id: id, digest: digest, nativeConfirmation: true) }
+        if let prior = commandRequests[id] {
+            guard prior.digest == digest, prior.kind == kind else { throw AutomationContractError.conflictingOperation }
+            return prior
+        }
+        guard !closing, pendingCommand == nil, commandHistory.canAdmit(id, nativeConfirmation: true, requests: commandRequests) else { throw AutomationContractError.targetBusy }
+        let status = AutomationNativeCommandStatus(requestID: id, digest: digest, state: "awaitingApproval", kind: kind,
+            originalAttemptID: originalAttemptID, caseID: caseID, revision: revision, caseDigest: caseDigest)
+        commandRequests[id] = status; pendingCommand = id; commandHistory.admitted(id)
+        return status
+    }
+    func verifiedPreviewCommand() async throws -> AutomationNativeCommandPreview {
+        let request = try await verifiedNativeRunRequest(runID: "preview")
+        return .init(digest: request.digest, bundleID: request.plan.app.bundleID, targetID: request.plan.target.id,
+            environmentID: request.plan.environmentID, action: request.plan.execution.operation,
+            effects: request.approval.effects.map(\.rawValue).sorted(), maximumActions: request.approval.maximumActions,
+            installApproved: request.installApproved, disposable: request.approval.disposable)
+    }
+
+    func verifiedRequestCommand(id: UUID, digest: String) async throws -> AutomationNativeCommandStatus {
+        try Task.checkCancellation()
+        guard !closing else { throw AutomationContractError.targetBusy }
+        if let existing = commandRequests[id] {
+            guard existing.digest == digest, existing.kind == nil else { throw AutomationContractError.conflictingOperation }
+            return existing
+        }
+        guard pendingCommand == nil, !busy, commandRequests.count < 50 else { throw AutomationContractError.targetBusy }
+        let preview = try await verifiedPreviewCommand()
+        try Task.checkCancellation()
+        guard preview.digest == digest else { throw AutomationContractError.conflictingOperation }
+        return try installVerifiedConfirmation(id: id, digest: digest, kind: nil)
+    }
+
     func previewCommand() throws -> AutomationNativeCommandPreview {
         let request = try makeNativeRunRequest(runID: "preview")
         return .init(digest: request.digest, bundleID: request.plan.app.bundleID, targetID: request.plan.target.id,
@@ -952,7 +1189,9 @@ final class AppAutomationStore {
     }
     func previewReproductionCommand() async throws -> AutomationNativeReproductionPreview {
         guard canReproduceSavedFailure else { throw AutomationContractError.targetBusy }
+        let cancellationID = requestVerificationCancellationID
         let request = try await makeReproductionRequest(runID: "preview")
+        try validateRequestVerificationCancellation(cancellationID)
         return .init(digest: request.digest, bundleID: request.subject.app.bundleID, targetID: request.subject.target.id,
             environmentID: request.proposal.frozen.plan.environmentID, caseID: request.proposal.frozen.plan.id,
             revision: request.proposal.frozen.plan.revision, caseDigest: request.proposal.frozen.digest,
@@ -983,7 +1222,9 @@ final class AppAutomationStore {
     }
     func previewComparisonCommand() async throws -> AutomationNativeFixComparisonPreview {
         guard canCheckFix else { throw AutomationContractError.targetBusy }
+        let cancellationID = requestVerificationCancellationID
         let request = try await makeComparisonRequest(runID: "preview")
+        try validateRequestVerificationCancellation(cancellationID)
         let proposal = request.proposal
         return .init(digest: request.digest, bundleID: request.before.app.bundleID, targetID: request.before.target.id,
             environmentID: proposal.baseline.plan.environmentID, caseID: proposal.baseline.plan.id, revision: proposal.baseline.plan.revision,
@@ -1039,6 +1280,11 @@ final class AppAutomationStore {
         advanceSelection()
         if let prepared, prepared.generatedHost.configuration != configuration || prepared.host.target != sourcePreparationTarget { clearPrepared() }
     }
+    func selectJavaScriptRecipe(_ url: URL?) throws {
+        guard !busy, !closing, candidate?.kind == .sourceTarget, let root = selectedSourceRoot else { throw AutomationContractError.targetBusy }
+        let value = try url.map { try AutomationServedJavaScriptProfile.load(source: root, url: $0) }
+        clearPrepared(); servedJavaScriptProfile = value; automaticMetroRecipe = nil; message = nil
+    }
     func selectAdditionalSourceFolder(_ url: URL) throws {
         guard !busy, !closing, candidate?.kind == .sourceTarget, let root = selectedSourceRoot else { throw AutomationContractError.targetBusy }
         try sourceGrants.add(url, primary: root)
@@ -1053,21 +1299,12 @@ final class AppAutomationStore {
         if closing, hasSecurityScope { securityScopedURL?.stopAccessingSecurityScopedResource(); securityScopedURL = nil; hasSecurityScope = false }
     }
     func clearSavedView() { if !busy { clearFixedSelection() }; viewedComparison = nil; savedPreparedBaseline = nil; savedViewRequestID = nil; savedViewedReport = nil; savedViewedAttempts = []; savedAttemptLoading = false; canonicalSavedEvidence = nil; savedViewedCase = nil; savedViewedDirectory = nil; viewedSearch = nil; viewedReproduction = nil }
-    private func advanceSelection() { invalidatePendingCommand(); selectionEpoch += 1; clearSavedView() }
-    private func clearPrepared() { selectedMacTarget = nil; advanceSelection(); clearEntitySelections(); prepared = nil; siriCapabilities = .init(); siriRequest = ""; siriOracle = .init(); catalog = nil; report = nil; workflowRoute = "ui"; actionID = ""; inputs = [:]; effectChoice = ""; effectsConfirmed = false; uiInstruction = ""; uiEndpoint = ""; freshSaveControl = ""; freshCreateControl = ""; freshNameEntryControl = ""; freshContextEntryControl = ""; uiTapControls = ""; uiTextEntryControl = ""; uiSubmitControl = ""; uiApprovedText = ""; uiExpectedText = ""; uiObservationLabel = ""; uiObservationProperty = "text"; uiAlternatePhrases = ""; freshNamePrefix = ""; freshNameProperty = ""; freshStateProperty = ""; freshInitialState = ""; freshExpectedState = ""; freshProtectOtherRecord = false; freshContextProperty = ""; freshSelectedContext = ""; freshProtectedContext = ""; searchReport = nil }
-    func retainUnresolvedRequest(runID: String, target: TargetIdentity) {
-        retainedUnresolvedRequestTargets[runID] = target
-    }
-    func finishOwnershipReset() {
-        retainedUnresolvedNormalReport = nil; retainedUnresolvedNormalTarget = nil
-        retainedUnresolvedRequestTargets = [:]
-        if report?.resourcesReleased == false || report?.result.subjectDispatchUncertain == true { report = nil }
-        unresolvedEntityQueryAttemptID = nil
-        if entityQueryReport?.resourcesReleased == false || entityQueryReport?.result.subjectDispatchUncertain == true { entityQueryReport = nil }
-        if unresolvedSearch { searchReport = nil }
-        if unresolvedReproduction { reproductionReport = nil }
-        if unresolvedComparison { comparisonReport = nil }
-    }
+    func advanceSelection() { invalidatePendingCommand(); selectionEpoch += 1; clearSavedView() }
+    private func clearPrepared() {
+        firstRunInputReviewID = nil; firstRunInputs = [:]; firstRunEntityQueryTexts = [:]
+        firstRunEntityChoices = [:]; firstRunSelectedEntityIDs = [:]
+        useLearnedSetup = false; learnedSetupPersistenceError = nil
+        pairedFeatureID = ""; pairedEffectsConfirmed = false; firstRunIncludesActions = false; firstRunEffectsConfirmed = false; firstRunReports = []; firstRunGaps = []; selectedMacTarget = nil; advanceSelection(); clearEntitySelections(); prepared = nil; siriCapabilities = .init(); siriRequest = ""; siriOracle = .init(); catalog = nil; report = nil; workflowRoute = "ui"; actionID = ""; inputs = [:]; effectChoice = ""; effectsConfirmed = false; uiInstruction = ""; uiEndpoint = ""; freshSaveControl = ""; freshCreateControl = ""; freshNameEntryControl = ""; freshContextEntryControl = ""; uiTapControls = ""; uiTextEntryControl = ""; uiSubmitControl = ""; uiApprovedText = ""; uiExpectedText = ""; uiObservationLabel = ""; uiObservationProperty = "text"; uiAlternatePhrases = ""; uiVarySubjectRequest = false; uiRequestInputControl = ""; uiRequestResetControl = ""; uiRequestSessionIdentity = ""; uiRequestEmptyStateControl = ""; uiRequestEmptyStateText = ""; uiRequestSubmitControl = ""; freshNamePrefix = ""; freshNameProperty = ""; freshStateProperty = ""; freshInitialState = ""; freshExpectedState = ""; freshProtectOtherRecord = false; freshContextProperty = ""; freshSelectedContext = ""; freshProtectedContext = ""; searchReport = nil }
     func errorText(_ error: Error) -> String {
         if error is CancellationError { return "Cancelled. Any pending dispatch is retained for review." }
         if let contract = error as? AutomationContractError {
@@ -1109,7 +1346,7 @@ struct AutomationNativeCommandStatus: Codable, Sendable {
     var revision: Int? = nil
     var caseDigest: String? = nil
 }
-struct AutomationNativeRunRequest {
+struct AutomationNativeRunRequest: Sendable {
     var subject: AutomationApplicationSubject
     var plan: AutomationCase
     var approval: RunApproval

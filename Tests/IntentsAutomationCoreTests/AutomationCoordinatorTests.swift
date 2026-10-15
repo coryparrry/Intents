@@ -47,7 +47,7 @@ final class AutomationCoordinatorTests: XCTestCase, @unchecked Sendable {
             execution: .init(id: "subject", kind: .systemIntent, phase: .subject, operation: "Complete"),
             setup: [.init(id: "setup", kind: .ui, phase: .setup, operation: "Create")],
             observations: [.init(id: "readback", kind: .systemQuery, phase: .observe, operation: "Find")],
-            requirements: [.init(observationID: "readback", expected: .bool(true), proof: .persistedState, justification: "Confirmed saved state")],
+            requirements: [.init(observationID: "readback", expected: .bool(true), proof: .appState, justification: "Confirmed independently queried app state")],
             cleanup: cleanup)
         return (plan, RunApproval(runID: "run", app: app, target: target, environmentID: "disposable", effects: [.observe], maximumActions: 10, disposable: true, approvedCaseDigest: try! AutomationFrozenCase.planDigest(plan)))
     }
@@ -83,6 +83,29 @@ final class AutomationCoordinatorTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(report.result.summary, .passed); XCTAssertTrue(report.resourcesReleased)
         let history = await driver.history
         XCTAssertEqual(history, ["acquire:setup:ui", "execute:setup", "release:setup", "acquire:subject:system", "execute:subject", "release:subject", "acquire:readback:system", "execute:readback", "release:readback"])
+    }
+    func testReleasedQueryReceiptCannotBePromotedFromAppStateToDurableProof() async throws {
+        let (plan, approval) = fixture(), driver = ContractDriver()
+        let report = try await coordinator().run(plan: plan, approval: approval, capabilities: .init(), attemptID: "attempt", driver: driver)
+        XCTAssertEqual(report.result.summary, .passed); XCTAssertTrue(report.resourcesReleased)
+        let observed = try XCTUnwrap(report.receipts.last)
+        XCTAssertEqual(observed.route, .systemQuery); XCTAssertEqual(observed.observations.first?.proof, .appState)
+        XCTAssertNil(observed.durableStateRead)
+        var persisted = plan; persisted.requirements[0].proof = .persistedState
+        for relabel in [false, true] {
+            var receipts = report.receipts
+            if relabel {
+                for index in receipts.indices {
+                    for observation in receipts[index].observations.indices { receipts[index].observations[observation].proof = .persistedState }
+                }
+            }
+            let result = AutomationAssessment.assess(plan: persisted, attemptID: report.attemptID,
+                subjectDispatched: report.result.subjectDispatched, subjectCompleted: report.result.subjectCompleted,
+                observations: receipts.flatMap(\.observations), receipts: receipts, runID: approval.runID)
+            XCTAssertEqual(result.summary, .needsReview)
+            XCTAssertFalse(result.assessed); XCTAssertFalse(result.evidenceComplete)
+            XCTAssertEqual(result.missingObservations, ["readback"])
+        }
     }
     func testMissingIndependentEvidenceNeverBecomesNavigationPass() async throws {
         let (plan, approval) = fixture(), driver = ContractDriver(omitObservation: true)
@@ -383,9 +406,9 @@ private actor ContractDriver: AutomationRouteDriver {
         if let delay { try await Task.sleep(for: delay) }
         let observations: [AutomationObservation] = segment.phase == .observe && !omitObservation ? [AutomationObservation(id: segment.id, app: plan.app,
             target: plan.target, environmentID: plan.environmentID, attemptID: scope.attemptId, stepID: segment.id,
-            route: segment.kind, proof: .persistedState, value: .bool(true))] : []
+            route: segment.kind, proof: .appState, value: .bool(true))] : []
         var receipt = AutomationSegmentReceipt(scope: scope, app: plan.app, target: plan.target, segmentID: segment.id, route: segment.kind,
-                                               dispatched: true, completed: segment.id != incompleteSegment, observations: observations)
+                                               dispatched: true, completed: segment.id != incompleteSegment, observations: observations, environmentID: plan.environmentID)
         if let forgery, forgery.segmentID == segment.id { forgery.kind.apply(to: &receipt) }
         return receipt
     }

@@ -10,16 +10,22 @@ import IntentsAutomationCore
 final class ScenarioExecutionAdmission {
     static let shared = ScenarioExecutionAdmission()
     private(set) var ownerID: UUID?
+    private var automationOwners: Set<UUID> = []
+
+    func setAutomationBlocked(_ blocked: Bool, ownerID: UUID) {
+        if blocked { automationOwners.insert(ownerID) }
+        else { automationOwners.remove(ownerID) }
+    }
 
     func acquire(_ requestedID: UUID) throws {
-        guard ownerID == nil else {
+        guard ownerID == nil, automationOwners.isEmpty else {
             throw EvaluationStoreError.resourceConflict("Another app or device run is already in progress.")
         }
         ownerID = requestedID
     }
 
     func allows(_ requestedID: UUID?) -> Bool {
-        ownerID == nil || (requestedID != nil && ownerID == requestedID)
+        automationOwners.isEmpty && (ownerID == nil || (requestedID != nil && ownerID == requestedID))
     }
 
     func release(_ requestedID: UUID) {
@@ -175,7 +181,8 @@ final class ScenarioCoordinator {
     /// lease before dispatching an app action.
     private func acquireExecutionOwner(_ id: UUID) throws {
         guard !evaluationStore.hasActiveExecution,
-              developerRunnerStore?.executingRunID == nil else {
+              developerRunnerStore?.executingRunID == nil,
+              developerRunnerStore?.automationExecutionBlocked != true else {
             throw EvaluationStoreError.resourceConflict(
                 "Finish the active evaluation or developer runner action before starting an Intent Lab execution."
             )

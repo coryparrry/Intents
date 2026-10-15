@@ -48,6 +48,7 @@ public actor AutomationXCUITestRouteDriver {
         case .simulator: return "platform=iOS Simulator,id=" + target.id
         case .physical: return "platform=iOS,id=" + target.id
         case .nativeMac: return "platform=macOS"
+        case .pairedRunner: throw AutomationContractError.missingEvidence("Paired target has no in-host UI test destination")
         }
     }
 

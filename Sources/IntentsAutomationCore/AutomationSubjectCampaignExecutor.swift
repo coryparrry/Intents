@@ -2,7 +2,7 @@
 import Foundation
 
 /// Retains the exact selected subject across campaign attempts without changing route qualification.
-public struct AutomationSubjectCampaignExecutor: AutomationFreshFixtureAttemptExecutor {
+public struct AutomationSubjectCampaignExecutor: AutomationFreshFixtureAttemptExecutor, AutomationUIRequestFixtureAttemptExecutor {
     struct Invocation: Sendable {
         let subject: AutomationApplicationSubject
         let frozen: AutomationFrozenCase
@@ -10,6 +10,7 @@ public struct AutomationSubjectCampaignExecutor: AutomationFreshFixtureAttemptEx
         let capabilities: CapabilityProfile
         let attemptID: String
         let budget: AutomationCampaignBudget
+        let uiRequestFixtureTracker: AutomationUIRequestFixtureTracker?
         let fixtureTracker: AutomationFreshFixtureTracker?
         let allowBootAndInstall: Bool
     }
@@ -22,7 +23,7 @@ public struct AutomationSubjectCampaignExecutor: AutomationFreshFixtureAttemptEx
         self.init(subject: subject, capabilities: capabilities, allowBootAndInstall: allowBootAndInstall, run: { invocation in
             try await runner.run(subject: invocation.subject, plan: invocation.frozen.plan, approval: invocation.approval,
                 capabilities: invocation.capabilities, attemptID: invocation.attemptID, allowBootAndInstall: invocation.allowBootAndInstall,
-                campaignBudget: invocation.budget, fixtureTracker: invocation.fixtureTracker)
+                campaignBudget: invocation.budget, fixtureTracker: invocation.fixtureTracker, uiRequestFixtureTracker: invocation.uiRequestFixtureTracker)
         })
     }
     init(subject: AutomationApplicationSubject, capabilities: CapabilityProfile, allowBootAndInstall: Bool = false,
@@ -32,18 +33,22 @@ public struct AutomationSubjectCampaignExecutor: AutomationFreshFixtureAttemptEx
     }
     public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
                         budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
-        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, tracker: nil)
+        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, tracker: nil, uiTracker: nil)
     }
     public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
                         budget: AutomationCampaignBudget, fixtureTracker: AutomationFreshFixtureTracker) async throws -> AutomationAttemptReport {
-        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, tracker: fixtureTracker)
+        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, tracker: fixtureTracker, uiTracker: nil)
+    }
+    public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
+                        budget: AutomationCampaignBudget, uiRequestFixtureTracker: AutomationUIRequestFixtureTracker) async throws -> AutomationAttemptReport {
+        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, tracker: nil, uiTracker: uiRequestFixtureTracker)
     }
     private func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
-                         budget: AutomationCampaignBudget, tracker: AutomationFreshFixtureTracker?) async throws -> AutomationAttemptReport {
+                         budget: AutomationCampaignBudget, tracker: AutomationFreshFixtureTracker?, uiTracker: AutomationUIRequestFixtureTracker?) async throws -> AutomationAttemptReport {
         try frozen.validate(); try subject.validate(plan: frozen.plan)
         if subject.prepared == nil {
             let segments = frozen.plan.setup + [frozen.plan.execution] + frozen.plan.observations + frozen.plan.cleanup
-            guard tracker == nil, segments.allSatisfy({ $0.effects.isSubset(of: [.observe, .navigate]) }) else {
+            guard tracker == nil, uiTracker != nil && frozen.plan.uiRequestFixture != nil || segments.allSatisfy({ $0.effects.isSubset(of: [.observe, .navigate]) }) else {
                 throw AutomationContractError.missingEvidence("Installed campaigns require a read-only workflow")
             }
         }
@@ -51,7 +56,7 @@ public struct AutomationSubjectCampaignExecutor: AutomationFreshFixtureAttemptEx
             throw AutomationContractError.missingEvidence("Mac fresh-fixture campaigns require qualified setup and reset equivalence")
         }
         return try await run(.init(subject: subject, frozen: frozen, approval: approval, capabilities: capabilities, attemptID: attemptID,
-            budget: budget, fixtureTracker: tracker, allowBootAndInstall: allowBootAndInstall))
+            budget: budget, uiRequestFixtureTracker: uiTracker, fixtureTracker: tracker, allowBootAndInstall: allowBootAndInstall))
     }
 }
 #endif

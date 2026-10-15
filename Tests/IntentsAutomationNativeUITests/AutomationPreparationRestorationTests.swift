@@ -5,6 +5,38 @@ import XCTest
 @testable import IntentsAutomationNativeUI
 
 @MainActor final class AutomationPreparationRestorationTests: XCTestCase {
+    func testLaunchRestoresDependencyInclusiveBuildWithoutPreparingOrRestoringEffectsApproval() async throws {
+        let fixture = try RetainedPreparationFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let dependency = fixture.source.appendingPathComponent("node_modules/fixture/index.js")
+        try FileManager.default.createDirectory(at: dependency.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("export const retainedDependency = true;".utf8).write(to: dependency)
+        let prepared = try fixture.savePreparation(includesDependencies: true)
+        XCTAssertEqual(prepared.source.includesDependencies, true)
+        XCTAssertTrue(prepared.source.files.contains { $0.relativePath.hasSuffix("node_modules/fixture/index.js") })
+        XCTAssertEqual(prepared.host.app.sourceManifestDigest, try prepared.source.digest)
+        let model = AppAutomationStore(supportDirectory: fixture.support, preparationExecutor: { _, _, _ in
+            XCTFail("Reopening a retained dependency-inclusive build must not rebuild")
+            throw AutomationContractError.invalidIdentity
+        })
+        await model.waitForPreparation()
+        XCTAssertEqual(model.prepared, prepared)
+        XCTAssertEqual(model.catalog, prepared.catalog)
+        XCTAssertEqual(model.candidate?.id, prepared.host.app.logicalID)
+        XCTAssertEqual(model.candidateID, prepared.host.app.logicalID)
+        XCTAssertEqual(model.sourcePreparationTarget, prepared.host.target)
+        XCTAssertTrue(model.includesSourceDependencies)
+        XCTAssertFalse(model.effectsConfirmed)
+        XCTAssertFalse(model.firstRunEffectsConfirmed)
+        XCTAssertFalse(model.canRun)
+        XCTAssertNil(model.report)
+        XCTAssertNil(model.pendingCommandStatus)
+        model.candidateSelectionChanged()
+        XCTAssertEqual(model.prepared, prepared)
+        XCTAssertTrue(model.includesSourceDependencies)
+        await model.closeAndWait()
+    }
+
     func testLaunchRestoresSelectionSourceGrantsAndPreparedBuildWithoutPreparingAgain() async throws {
         let fixture = try RetainedPreparationFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -126,13 +158,13 @@ private struct RetainedPreparationFixture {
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-120)], ofItemAtPath: oldRecord.path)
         try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: newRecord.path)
     }
-    func savePreparation(appName: String = "Subject") throws -> AutomationPreparedApplication {
+    func savePreparation(appName: String = "Subject", includesDependencies: Bool = false) throws -> AutomationPreparedApplication {
         let selectedProject = source.appendingPathComponent(appName + ".xcodeproj")
         if selectedProject != project {
             try FileManager.default.copyItem(at: project, to: selectedProject)
         }
         let session = support.appendingPathComponent("prepare-" + UUID().uuidString)
-        let manifest = try AutomationSourceSnapshot.capture(source: source, sessionRoot: session, additionalRoots: [library])
+        let manifest = try AutomationSourceSnapshot.capture(source: source, sessionRoot: session, additionalRoots: [library], includesDependencies: includesDependencies)
         let subject = session.appendingPathComponent("Subject.app"), host = session.appendingPathComponent("Owned.app")
         for product in [subject, host] {
             try FileManager.default.createDirectory(at: product, withIntermediateDirectories: true)

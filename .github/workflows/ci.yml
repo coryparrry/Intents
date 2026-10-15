@@ -190,6 +190,7 @@ jobs:
             -only-testing:FoundationEvalsUITests/AppAutomationUITests/testXcodeDefaultsFollowDestinationAndRestoreWithoutRunOverride \
             -only-testing:FoundationEvalsUITests/AppAutomationUITests/testEmptyAutomationAndPickerCancellationRemainReadOnly \
             -only-testing:FoundationEvalsUITests/AppAutomationUITests/testOwnershipResetConfirmationCanBeCancelledWithoutChangingTheReservation \
+            -only-testing:FoundationEvalsUITests/AutomationDependencyControlsUITests \
             CODE_SIGNING_ALLOWED=NO
       - name: Repeat Phase 0 preparation picker ten times
         if: ${{ needs.changes.outputs.ui == 'true' }}

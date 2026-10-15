@@ -11,6 +11,28 @@ public struct AutomationNavigationGoal: Codable, Equatable, Sendable {
     /// Existing option values to select; their observed selected state is not save evidence.
     public var selectionBindings: [String]?
     public var saveControl: AutomationUIProgram.Locator? = nil
+    public var requestInputControl: AutomationUIProgram.Locator? = nil
+    /// Positive, unambiguous current evidence only. The executor independently
+    /// observes the endpoint again after a finish decision.
+    func observesEndpoint(in request: AutomationControllerRequest) -> Bool {
+        guard !request.truncated, request.omittedNodes == 0 else { return false }
+        let matches = request.nodes.filter {
+            switch endpoint.kind {
+            case .testId: return $0.testId == endpoint.value
+            case .label: return ($0.name?.utf16.count ?? 512) < 512 && $0.name == endpoint.value
+            case .role: return false
+            }
+        }
+        return matches.count == 1 && matches[0].visible && !matches[0].disabled && !matches[0].secure
+    }
+    func completesNavigation(in request: AutomationControllerRequest, bindings: [String: String]) -> Bool {
+        // Only simple navigation can finish from positive UI evidence. Input,
+        // option-selection and save workflows retain their full planning path.
+        minimumBindingUses == nil && (allowedFillBindings ?? []).isEmpty &&
+            (selectionBindings ?? []).isEmpty && saveControl == nil && bindings.isEmpty &&
+            !request.verbs.contains("fill") && (request.approvedNavigationActions ?? 0) > 0 &&
+            observesEndpoint(in: request)
+    }
     public init(id: String, instruction: String, endpoint: AutomationUIProgram.Locator, maximumCalls: Int = 12, maximumActions: Int = 30, minimumBindingUses: [String: Int]? = nil, allowedFillBindings: [String]? = nil, selectionBindings: [String]? = nil) {
         self.id = id; self.instruction = instruction; self.endpoint = endpoint; self.maximumCalls = maximumCalls; self.maximumActions = maximumActions; self.minimumBindingUses = minimumBindingUses; self.allowedFillBindings = allowedFillBindings
         self.selectionBindings = selectionBindings
@@ -38,12 +60,23 @@ public struct AutomationNavigationGoal: Codable, Equatable, Sendable {
                 throw AutomationContractError.invalidPlan("Malformed option selection bindings")
             }
         }
+        if let requestInputControl {
+            guard requestInputControl.kind != .role, requestInputControl.role == nil, !requestInputControl.value.isEmpty,
+                  requestInputControl.value.utf16.count <= 1024,
+                  requestInputControl.kind != .label || requestInputControl.value.utf16.count < 512,
+                  let binding = allowedFillBindings?.first, allowedFillBindings == [binding], minimumBindingUses == [binding: 1],
+                  saveControl != nil, saveControl != requestInputControl else {
+                throw AutomationContractError.invalidPlan("A frozen request control requires one exact fill and a distinct submit control")
+            }
+        }
         if let saveControl {
             guard saveControl.kind != .role, saveControl.role == nil, !saveControl.value.isEmpty,
                   saveControl.value.utf16.count <= 1024,
                   saveControl.kind != .label || saveControl.value.utf16.count < 512 else { throw AutomationContractError.invalidPlan("Malformed save control") }
         }
     }
+    // The trusted sidecar projects exact Mac AXButton roles to canonical button.
+    // Raw/unknown SDK roles never gain submit authority through substring matching.
     func matchesSaveControl(_ node: AutomationControllerRequest.Node) -> Bool {
         guard let saveControl, node.role == "button", node.visible, !node.disabled, !node.secure else { return false }
         return saveControl.kind == .testId ? node.testId == saveControl.value
@@ -75,9 +108,20 @@ public struct AutomationControllerRequest: Codable, Equatable, Sendable {
     public var recentActions: [String]
     public var remainingActions: Int
     public var remainingMs: Int
+    public var completedBindingUses: [String: Int]? = nil
     public var approvedBindingUses: [String: Int]? = nil
     public var approvedSaveTap: Bool? = nil
+    /// Filled from consumed native grants; never trust a worker's supplied count.
+    var approvedNavigationActions: Int? = nil
     public func validate() throws {
+        if let approvedNavigationActions, !(0...30).contains(approvedNavigationActions) {
+            throw AutomationContractError.invalidPlan("Malformed navigation activity")
+        }
+        if let completedBindingUses {
+            guard completedBindingUses.count <= 30,
+                  completedBindingUses.allSatisfy({ AutomationHostProgram.identifier($0.key) && (1...30).contains($0.value) }),
+                  completedBindingUses.values.reduce(0,+) <= 30 else { throw AutomationContractError.invalidPlan("Malformed completed input activity") }
+        }
         if let approvedBindingUses {
             guard approvedBindingUses.count <= 30, approvedBindingUses.allSatisfy({ AutomationHostProgram.identifier($0.key) && (0...30).contains($0.value) }),
                   approvedBindingUses.values.reduce(0,+) <= 30 else { throw AutomationContractError.invalidPlan("Malformed input activity") }
@@ -123,7 +167,7 @@ public struct AutomationControllerDecision: Codable, Equatable, Sendable {
         return .object(fields)
     }
     /// A decision can only nominate an action that the native engine and frozen input bindings support.
-    public func action(request: AutomationControllerRequest, bindings: [String: String], phase: AutomationSegment.Phase, allowedFillBindings: [String]? = nil) throws -> AutomationRunAuthority.Action? {
+    public func action(request: AutomationControllerRequest, bindings: [String: String], phase: AutomationSegment.Phase, allowedFillBindings: [String]? = nil, targetKind: TargetIdentity.Kind? = nil) throws -> AutomationRunAuthority.Action? {
         try request.validate()
         if kind == "finish" {
             guard node == nil, textBinding == nil, direction == nil, key == nil, reason == nil else { throw AutomationContractError.invalidIdentity }
@@ -138,7 +182,8 @@ public struct AutomationControllerDecision: Codable, Equatable, Sendable {
         let selected = node.flatMap { id in request.nodes.first { $0.id == id } }
         switch kind {
         case "tap":
-            guard let selected, selected.visible, !selected.disabled, textBinding == nil, direction == nil else { throw AutomationContractError.invalidIdentity }
+            guard let selected, selected.visible, !selected.disabled, textBinding == nil, direction == nil,
+                  AutomationControllerContextSelection.permitsTap(selected, targetKind: targetKind) else { throw AutomationContractError.invalidIdentity }
             return .tap
         case "fill":
             guard phase != .observe, let selected, selected.visible, selected.editable != false, (selected.editable == true || selected.fillSupported == true), !selected.disabled, !selected.secure,

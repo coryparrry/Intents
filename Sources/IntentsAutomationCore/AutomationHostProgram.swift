@@ -13,14 +13,15 @@ public struct AutomationHostProgram: Codable, Equatable, Sendable {
         public var parameters: [String: AutomationValue]
         public var resultCodec: String?
         public var queryText: String?
+        public var querySuggested: Bool?
         public var attemptQueryPrefix: String?
         public var queryIDs: [String]?
         public var properties: [String: String]?
         public var parameterCodecs: [String: String]?
         public init(id: String, kind: Kind, typeID: String, parameters: [String: AutomationValue] = [:], resultCodec: String? = nil,
-                    queryText: String? = nil, attemptQueryPrefix: String? = nil, queryIDs: [String]? = nil, properties: [String: String]? = nil, parameterCodecs: [String: String]? = nil) {
+                    queryText: String? = nil, querySuggested: Bool? = nil, attemptQueryPrefix: String? = nil, queryIDs: [String]? = nil, properties: [String: String]? = nil, parameterCodecs: [String: String]? = nil) {
             self.id = id; self.kind = kind; self.typeID = typeID; self.parameters = parameters; self.resultCodec = resultCodec
-            self.queryText = queryText; self.attemptQueryPrefix = attemptQueryPrefix; self.queryIDs = queryIDs; self.properties = properties
+            self.querySuggested = querySuggested; self.queryText = queryText; self.attemptQueryPrefix = attemptQueryPrefix; self.queryIDs = queryIDs; self.properties = properties
             self.parameterCodecs = parameterCodecs
         }
     }
@@ -28,11 +29,11 @@ public struct AutomationHostProgram: Codable, Equatable, Sendable {
     public init(operations: [Operation]) { self.operations = operations }
     public func validate(route: AutomationSegment.Kind, phase: AutomationSegment.Phase) throws {
         guard (1...10).contains(operations.count), Set(operations.map(\.id)).count == operations.count,
-              route == .systemIntent || route == .systemQuery else { throw AutomationContractError.invalidPlan("Invalid Apple program") }
+              route == .systemIntent || route == .systemQuery || route == .storageRead else { throw AutomationContractError.invalidPlan("Invalid Apple program") }
         for operation in operations {
             guard Self.identifier(operation.id), Self.identifier(operation.typeID), operation.parameters.count <= 50 else { throw AutomationContractError.invalidIdentity }
             if operation.kind == .invoke {
-                guard route == .systemIntent, phase != .observe, operation.queryText == nil, operation.attemptQueryPrefix == nil, operation.queryIDs == nil, operation.properties == nil,
+                guard route == .systemIntent, phase != .observe, operation.queryText == nil, operation.querySuggested == nil, operation.attemptQueryPrefix == nil, operation.queryIDs == nil, operation.properties == nil,
                       operation.resultCodec.map({ ["noValue", "text", "bool", "integer", "decimal", "date", "textArray", "boolArray", "integerArray", "decimalArray", "dateArray", "duration", "calendarComponents", "url", "intentFile"].contains($0) }) ?? true,
                       Set((operation.parameterCodecs ?? [:]).keys).isSubset(of: Set(operation.parameters.keys)),
                       (operation.parameterCodecs ?? [:]).values.allSatisfy(AutomationCodecRegistry.parameterFamilies.contains) else {
@@ -51,8 +52,9 @@ public struct AutomationHostProgram: Codable, Equatable, Sendable {
                     _ = try Self.hostInput(value, parameterCodec: codec)
                 }
             } else {
-                guard route == .systemQuery, operation.parameters.isEmpty, operation.resultCodec == nil, operation.parameterCodecs == nil,
-                      [operation.queryText != nil, operation.queryIDs != nil, operation.attemptQueryPrefix != nil].filter({ $0 }).count == 1 else { throw AutomationContractError.invalidPlan("Exactly one Apple query selector required") }
+                guard (route == .systemQuery || route == .storageRead), operation.parameters.isEmpty, operation.resultCodec == nil, operation.parameterCodecs == nil,
+                      [operation.queryText != nil, operation.queryIDs != nil, operation.attemptQueryPrefix != nil, operation.querySuggested == true].filter({ $0 }).count == 1 else { throw AutomationContractError.invalidPlan("Exactly one Apple query selector required") }
+                guard operation.querySuggested == nil || operation.querySuggested == true, route != .storageRead || operation.querySuggested == nil else { throw AutomationContractError.invalidPlan("Invalid suggested query selector") }
                 if let prefix = operation.attemptQueryPrefix { try AutomationAttemptText.validatePrefix(prefix) }
                 if let text = operation.queryText, text.utf16.count > 32768 { throw AutomationContractError.invalidIdentity }
                 if let ids = operation.queryIDs, !(1...100).contains(ids.count) || ids.contains(where: { $0.isEmpty || $0.utf16.count > 1024 }) { throw AutomationContractError.invalidIdentity }
@@ -67,6 +69,7 @@ public struct AutomationHostProgram: Codable, Equatable, Sendable {
     var usesFiles: Bool { operations.contains { $0.resultCodec == "intentFile" || $0.parameterCodecs?.values.contains("intentFile") == true } }
     func executionPayload(scope: AutomationScope, app: AppIdentity, route: AutomationSegment.Kind, phase: AutomationSegment.Phase,
                           fileInputs: [AutomationFileDestination: AutomationJSON], activateSubject: Bool = false) throws -> Data {
+        guard route != .storageRead else { throw AutomationContractError.invalidPlan("A storage read is not an Apple host dispatch") }
         try scope.validate(); try validate(route: route, phase: phase)
         guard let digest = app.productDigest, digest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw AutomationContractError.invalidIdentity }
         guard app.productDigestVersion == nil || app.productDigestVersion == 1 || app.productDigestVersion == 2 else { throw AutomationContractError.invalidIdentity }
@@ -85,6 +88,7 @@ public struct AutomationHostProgram: Codable, Equatable, Sendable {
             if let codecs = operation.parameterCodecs { fields["parameterCodecs"] = .object(codecs.mapValues(AutomationJSON.string)) }
             if let codec = operation.resultCodec { fields["resultCodec"] = .string(codec) }
             if let text = operation.queryText { fields["queryText"] = .string(text) }
+            if let suggested = operation.querySuggested { fields["querySuggested"] = .bool(suggested) }
             if let ids = operation.queryIDs { fields["queryIDs"] = .array(ids.map(AutomationJSON.string)) }
             if let properties = operation.properties { fields["properties"] = .object(properties.mapValues(AutomationJSON.string)) }
             values.append(.object(fields))

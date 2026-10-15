@@ -5,6 +5,8 @@ public struct AutomationImportedSiriSubmission: Sendable {
     public let executablePath: String
     public let requestDigest: String
     public let osBuild: String?
+    /// Exact text sent through XCTest. This does not claim acoustic recognition.
+    public var submittedRecognizedText: String? = nil
 }
 
 /// A returned XCTest submission is neither recognised speech nor an observed app invocation.
@@ -22,11 +24,16 @@ public enum AutomationSiriSubmissionReceipt {
             "bundleID", "productDigest", "requestDigest", "submissionStarted", "submissionReturned"]
         if app.productDigestVersion != nil { keys.insert("productDigestVersion") }
         let version = root["schemaVersion"]
-        if version == .number(2) { keys.insert("osBuild") }
+        if version == .number(2) || version == .number(3) { keys.insert("osBuild") }
+        if version == .number(3) { keys.insert("submittedRecognizedText") }
         let osBuild: String?
-        if version == .number(2), case .string(let build) = root["osBuild"],
+        if version == .number(2) || version == .number(3), case .string(let build) = root["osBuild"],
            build.range(of: #"^[A-Za-z0-9._-]{1,128}$"#, options: .regularExpression) != nil { osBuild = build }
         else if version == .number(1) { osBuild = nil }
+        else { throw AutomationContractError.invalidIdentity }
+        let submitted: String?
+        if version == .number(3), root["submittedRecognizedText"] == .string(program.request) { submitted = program.request }
+        else if version != .number(3) { submitted = nil }
         else { throw AutomationContractError.invalidIdentity }
         guard Set(root.keys) == keys,
               root["runID"] == .string(scope.runId), root["attemptID"] == .string(scope.attemptId),
@@ -40,6 +47,6 @@ public enum AutomationSiriSubmissionReceipt {
               case .string(let start) = runner["startIdentity"], start.range(of: #"^[0-9]{1,20}:[0-9]{1,6}$"#, options: .regularExpression) != nil,
               case .string(let path) = runner["executablePath"], path.hasPrefix("/"), path.utf16.count <= 4096,
               !path.contains("\0"), !path.contains("\n") else { throw AutomationContractError.invalidIdentity }
-        return .init(runner: .init(pid: Int32(pid), startIdentity: start), executablePath: path, requestDigest: program.requestDigest, osBuild: osBuild)
+        return .init(runner: .init(pid: Int32(pid), startIdentity: start), executablePath: path, requestDigest: program.requestDigest, osBuild: osBuild, submittedRecognizedText: submitted)
     }
 }

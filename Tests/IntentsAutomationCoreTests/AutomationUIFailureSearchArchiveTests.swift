@@ -13,6 +13,37 @@ final class AutomationUIFailureSearchArchiveTests: XCTestCase, @unchecked Sendab
         let phrase = try AutomationGoalPhraseVariation.propose(baseline: base, instruction: "Show tasks", semanticJustification: "Same approved destination")
         return (root, base, approval, phrase)
     }
+    func testDiversityMeasurementsRoundTripAndRejectTampering() async throws {
+        let (root, base, approval, phrase) = try fixture()
+        let report = try await AutomationFailureSearch(cases: .init(root: root)).run(baseline: base, mutations: [phrase],
+            approval: .init(run: approval, approvedDigests: [base.digest, phrase.frozen.digest]), capabilities: .init(), executor: ArchiveFactExecutor())
+        let archive = try AutomationUIFailureSearchArchive(caseStoreRoot: root)
+        try await archive.save(.init(id: "subject-phrase", runID: approval.runID, baseline: base, mutations: [phrase], report: report))
+        let loaded = try await archive.load(id: "subject-phrase")
+        XCTAssertEqual(loaded.mutations, [phrase]); XCTAssertEqual(loaded.report.discoveryDiversity?.count, 1)
+        for field in 0..<3 {
+            var tampered = report
+            switch field {
+            case 0: tampered.discoveryDiversity![0].newCategories = ["invented-behaviour"]
+            case 1: tampered.discoveryDiversity![0].priorityNumerator += 1
+            default: tampered.discoveryDiversity![0].categories = ["invented-behaviour"]
+            }
+            do {
+                try await archive.save(.init(id: "novelty-tamper-\(field)", runID: approval.runID, baseline: base, mutations: [phrase], report: tampered))
+                XCTFail("Invented diversity or priority accepted")
+            } catch {}
+        }
+    }
+    func testLegacyArchiveWithoutDiversityMeasurementsRemainsReadable() async throws {
+        let (root, base, approval, phrase) = try fixture()
+        var report = try await AutomationFailureSearch(cases: .init(root: root)).run(baseline: base, mutations: [phrase],
+            approval: .init(run: approval, approvedDigests: [base.digest, phrase.frozen.digest]), capabilities: .init(), executor: ArchiveFactExecutor())
+        report.discoveryDiversity = nil
+        let archive = try AutomationUIFailureSearchArchive(caseStoreRoot: root)
+        try await archive.save(.init(id: "legacy", runID: approval.runID, baseline: base, mutations: [phrase], report: report))
+        let loaded = try await archive.load(id: "legacy")
+        XCTAssertNil(loaded.report.discoveryDiversity); XCTAssertEqual(loaded.report.attempts, report.attempts)
+    }
     func testSavedSearchRevalidatesCanonicalFactsAndRefusesOverwrite() async throws {
         let (root, base, approval, phrase) = try fixture(), cases = try AutomationCaseStore(root: root)
         let report = try await AutomationFailureSearch(cases: cases).run(baseline: base, mutations: [phrase],

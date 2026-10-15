@@ -9,7 +9,7 @@ public struct AutomationBudget: Codable, Equatable, Sendable {
     public init() {}
 }
 public struct AutomationSegment: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable { case ui, systemIntent, systemQuery, siriText, pairedFeature, observeOnly }
+    public enum Kind: String, Codable, Sendable { case ui, systemIntent, systemQuery, siriText, pairedFeature, observeOnly, storageRead }
     public enum Phase: String, Codable, Sendable { case setup, subject, observe, cleanup }
     public enum Lifecycle: String, Codable, Sendable { case persistedStateAcrossSegments, processContinuityRequired, noActivation }
     public var id: String
@@ -39,9 +39,11 @@ public struct AutomationSegment: Codable, Equatable, Sendable {
     public var effects: Set<AutomationEffect>
     public var uiProgram: AutomationUIProgram?
     public var hostProgram: AutomationHostProgram?
+    public var durableStateReader: AutomationDurableStateReader?
+    public var pairedProgram: AutomationPairedFeatureProgram?
     public var siriProgram: AutomationSiriTextProgram?
     private enum CodingKeys: String, CodingKey {
-        case id, kind, phase, requiredCapabilities, lifecycle, operation, inputs, inputBindings, attemptTextBindings, effects, uiProgram, hostProgram, siriProgram
+        case id, kind, phase, requiredCapabilities, lifecycle, operation, inputs, inputBindings, attemptTextBindings, effects, uiProgram, hostProgram, siriProgram, pairedProgram, durableStateReader
     }
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -59,6 +61,8 @@ public struct AutomationSegment: Codable, Equatable, Sendable {
         effects = Set(declared)
         uiProgram = try container.decodeIfPresent(AutomationUIProgram.self, forKey: .uiProgram)
         hostProgram = try container.decodeIfPresent(AutomationHostProgram.self, forKey: .hostProgram)
+        durableStateReader = try container.decodeIfPresent(AutomationDurableStateReader.self, forKey: .durableStateReader)
+        pairedProgram = try container.decodeIfPresent(AutomationPairedFeatureProgram.self, forKey: .pairedProgram)
         siriProgram = try container.decodeIfPresent(AutomationSiriTextProgram.self, forKey: .siriProgram)
     }
     public func encode(to encoder: Encoder) throws {
@@ -71,12 +75,14 @@ public struct AutomationSegment: Codable, Equatable, Sendable {
         try container.encode(effects.sorted { $0.rawValue < $1.rawValue }, forKey: .effects)
         try container.encodeIfPresent(uiProgram, forKey: .uiProgram); try container.encodeIfPresent(hostProgram, forKey: .hostProgram)
         try container.encodeIfPresent(siriProgram, forKey: .siriProgram)
+        try container.encodeIfPresent(durableStateReader, forKey: .durableStateReader)
+        try container.encodeIfPresent(pairedProgram, forKey: .pairedProgram)
     }
     public init(id: String, kind: Kind, phase: Phase, operation: String, inputs: [String: AutomationValue] = [:],
                 requiredCapabilities: [String] = [], effects: Set<AutomationEffect> = [.observe], lifecycle: Lifecycle = .noActivation) {
         self.id = id; self.kind = kind; self.phase = phase; self.operation = operation
         self.inputs = inputs; self.requiredCapabilities = requiredCapabilities; self.effects = effects; self.lifecycle = lifecycle
-        self.uiProgram = nil; self.hostProgram = nil; self.siriProgram = nil
+        self.durableStateReader = nil; self.uiProgram = nil; self.hostProgram = nil; self.siriProgram = nil; self.pairedProgram = nil
     }
 }
 public struct AutomationRequirement: Codable, Equatable, Sendable {
@@ -101,6 +107,7 @@ public struct AutomationCase: Codable, Equatable, Sendable {
     public var environmentID: String
     public var setup: [AutomationSegment]
     public var setupChecks: [AutomationRequirement]?
+    public var uiRequestFixture: AutomationUIRequestFixture?
     public var execution: AutomationSegment
     public var observations: [AutomationSegment]
     public var requirements: [AutomationRequirement]
@@ -109,6 +116,7 @@ public struct AutomationCase: Codable, Equatable, Sendable {
     public var provenance: [String: String]
     public var preparedMacBuildArtifacts: AutomationPreparedMacBuildArtifacts?
     public var preparedSimulatorBuildArtifacts: AutomationPreparedSimulatorBuildArtifacts?
+    public var nativeInputAdapterReviews: [AutomationNativeInputAdapterReview]?
     public init(id: String, app: AppIdentity, target: TargetIdentity, environmentID: String, execution: AutomationSegment,
                 setup: [AutomationSegment] = [], observations: [AutomationSegment] = [], requirements: [AutomationRequirement] = [],
                 cleanup: [AutomationSegment] = [], budget: AutomationBudget = .init(), setupChecks: [AutomationRequirement]? = nil) {
@@ -125,6 +133,8 @@ public enum PlanValidator {
               plan.app == approval.app, plan.target == approval.target, plan.environmentID == approval.environmentID else {
             throw AutomationContractError.invalidPlan("Identity or required subject route is invalid")
         }
+        try AutomationNativeInputAdapterReview.validate(plan.nativeInputAdapterReviews, plan: plan)
+        try plan.uiRequestFixture?.validate(plan: plan)
         try AutomationAttemptText.validate(plan: plan, approval: approval)
         if plan.execution.kind == .siriText {
             try AutomationSiriTextProgram.validateAdmission(plan: plan, approval: approval, capabilities: capabilities, authority: siriAuthority, purpose: purpose)
@@ -141,13 +151,20 @@ public enum PlanValidator {
         guard plan.budget.attempts > 0, plan.budget.subjectOperations > 0, plan.budget.wallClockSeconds > 0,
               plan.budget.uiActions > 0, plan.budget.controllerCalls >= 0 else { throw AutomationContractError.invalidPlan("Invalid budget") }
         for segment in segments {
+            guard (segment.kind == .pairedFeature) == (segment.pairedProgram != nil) else { throw AutomationContractError.invalidPlan("Paired route requires a registered feature program") }
+            if let paired = segment.pairedProgram {
+                guard segment.uiProgram == nil, segment.hostProgram == nil, segment.siriProgram == nil else { throw AutomationContractError.invalidPlan("Ambiguous paired program") }
+                try paired.validate(segment: segment, target: plan.target)
+            }
+            guard (segment.kind == .storageRead) == (segment.durableStateReader != nil) else { throw AutomationContractError.invalidPlan("Storage route requires its exact source-qualified reader") }
+            try segment.durableStateReader?.validate(plan: plan, segment: segment)
             try segment.validateObservationOnly()
             guard (segment.kind == .siriText) == (segment.siriProgram != nil) else {
                 throw AutomationContractError.invalidPlan("Siri route requires its frozen recognised-text program")
             }
             if let program = segment.siriProgram { try program.validate(segment: segment, target: plan.target) }
             guard segment.uiProgram == nil || (segment.usesUIControl && segment.hostProgram == nil),
-                  segment.hostProgram == nil || ([.systemIntent, .systemQuery].contains(segment.kind) && segment.uiProgram == nil) else {
+                  segment.hostProgram == nil || ([.systemIntent, .systemQuery, .storageRead].contains(segment.kind) && segment.uiProgram == nil) else {
                 throw AutomationContractError.invalidPlan("Program does not match its route")
             }
             if var program = segment.uiProgram {

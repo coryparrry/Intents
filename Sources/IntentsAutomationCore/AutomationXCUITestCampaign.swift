@@ -14,6 +14,8 @@ enum AutomationXCUITestCampaign {
                     releaseCampaignOnCompletion: Bool = true,
                     fixtureTracker: AutomationFreshFixtureTracker? = nil,
                     qualificationFence: AutomationFreshFixtureQualificationFence? = nil) async throws -> AutomationAttemptReport {
+        let planDeadline = ContinuousClock.now.advanced(by: .seconds(plan.budget.wallClockSeconds))
+        let deadline = min(planDeadline, campaignBudget?.deadline ?? planDeadline)
         try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
         let preflight = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval,
             attemptID: attemptID, leaseGeneration: 1)
@@ -98,8 +100,27 @@ enum AutomationXCUITestCampaign {
             }
             try await leases.release(lease, commandsDrained: proof.commandsDrained,
                                      ownedRunnerTerminated: released)
-            if releaseCampaignOnCompletion { try await leases.releaseCampaign(runID: approval.runID, target: plan.target) }
         } catch { released = false }
+
+        // Continue only after the hosted controller has independently released its
+        // lease. An unresolved native child closure cannot authorize storage reads.
+        if released, termination == nil, subject?.completed == true {
+            do {
+                let continuation = try await AutomationXCUITestDurableObservations.execute(plan: plan,
+                    approval: approval, capabilities: capabilities, attemptID: attemptID,
+                    priorReceipts: receipts, deadline: deadline, leases: leases, artifacts: artifacts,
+                    journal: journal, campaignBudget: campaignBudget)
+                receipts.append(contentsOf: continuation.receipts)
+                released = continuation.resourcesReleased
+                termination = continuation.termination
+            } catch {
+                termination = error is CancellationError ? .cancelled : .infrastructureFailed
+            }
+        }
+        if released, releaseCampaignOnCompletion {
+            do { try await leases.releaseCampaign(runID: approval.runID, target: plan.target) }
+            catch { released = false }
+        }
 
         let observations = receipts.filter { receipt in
             plan.observations.contains { $0.id == receipt.segmentID && $0.kind == receipt.route }
@@ -121,7 +142,7 @@ enum AutomationXCUITestCampaign {
     static func reserveBudget(_ uiPlan: UIHostPlan, plan: AutomationCase, attemptID: String,
                               budget: AutomationCampaignBudget?) async throws {
         guard let budget else { return }
-        for segment in plan.setup + [plan.execution] + plan.observations + plan.cleanup {
+        for segment in plan.setup + [plan.execution] + plan.observations + plan.cleanup where segment.kind != .storageRead {
             let steps = uiPlan.steps.filter { $0.segmentID == segment.id }
             let actions = steps.filter { [.launch, .tap, .typeText, .clearAndType, .swipe].contains($0.kind) }.count
             try await budget.reserveOperations(id: attemptID + ":xcuitest:" + segment.id,

@@ -18,7 +18,7 @@ public enum AutomationAttemptText {
         var available = Set<String>()
         for segment in plan.setup + [plan.execution] + plan.observations + plan.cleanup {
             let declared = segment.attemptTextBindings ?? [:]
-            guard declared.count <= 1, declared.isEmpty || (segment.kind == .ui && segment.phase == .setup &&
+            guard declared.count <= 2, declared.isEmpty || (segment.kind == .ui && segment.phase == .setup &&
                 segment.effects.contains(.fixtureWrite) && segment.effects.isSubset(of: [.observe, .navigate, .fixtureWrite]) &&
                 approval.disposable && segment.uiProgram != nil) else {
                 throw AutomationContractError.invalidPlan("Fresh names require disposable UI fixture setup")

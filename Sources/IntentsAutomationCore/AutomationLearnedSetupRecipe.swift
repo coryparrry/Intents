@@ -56,6 +56,7 @@ public struct AutomationCapturedSetupAttempt: Sendable {
     let live: AutomationLiveRecipeEvidence
     let capture: AutomationControllerSetupCapture
     let bindings: [AutomationFreshFixtureBinding]
+    public var context: AutomationRecipeContext { live.context }
     init(live: AutomationLiveRecipeEvidence, capture: AutomationControllerSetupCapture,
          bindings: [AutomationFreshFixtureBinding]) throws {
         try AutomationQualifiedFreshFixture.validateLiveAttempt(bindings: bindings, evidence: live)
@@ -141,6 +142,14 @@ public struct AutomationQualifiedNavigationSetupRecipe: Sendable {
         context = fixture.context; fixtureDigest = fixture.fixtureDigest
         qualificationAttemptIDs = fixture.qualificationAttemptIDs; qualificationReportDigests = fixture.qualificationReportDigests
         segmentID = attempts[0].capture.scope.segmentId; operations = attempts[0].capture.operations
+    }
+    /// Persist a proposal and evidence references, never a live fixture authority.
+    public func savedProposal() throws -> AutomationSavedNavigationSetupRecipe {
+        let proposal = AutomationSavedNavigationSetupRecipe(context: context,
+            qualificationAttemptIDs: qualificationAttemptIDs, qualificationReportDigests: qualificationReportDigests,
+            fixtureDigest: fixtureDigest, segmentID: segmentID, operations: operations)
+        try proposal.validate()
+        return proposal
     }
     public func propose(plan: AutomationCase, context: AutomationRecipeContext) throws -> AutomationCase {
         try context.validate()

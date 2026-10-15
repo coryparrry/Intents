@@ -60,6 +60,8 @@ struct AutomationNativeUIReproductionProposal: Sendable {
         var value = AutomationCampaignLimits.firstCampaign
         value.attempts = 5; value.subjectOperations = 5
         value.uiActions = 150; value.controllerCalls = 60; value.wallClockSeconds = 900
+        // Native navigation reserves bounded readbacks before dispatch as well as UI actions.
+        value.subjectOperations = value.uiActions + 2 * value.controllerCalls
         return value
     }
     static func compile(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
@@ -93,13 +95,18 @@ struct AutomationNativeUIReproductionProposal: Sendable {
         if let freshBindings { try AutomationQualifiedFreshFixture.validateProposal(bindings: freshBindings, plan: plan, approval: approval, capabilities: capabilities, purpose: .review) }
         return .init(frozen: frozen, originalAttemptID: original.attemptID, approval: approval, capabilities: capabilities)
     }
-    func execute(subject: AutomationApplicationSubject, support: URL, developerDirectory: URL, allowBootAndInstall: Bool) async throws -> AutomationReproductionReport {
+    @concurrent func execute(subject: AutomationApplicationSubject, support: URL, developerDirectory: URL, allowBootAndInstall: Bool,
+                 onProgress: AutomationReproductionProgressHandler? = nil) async throws -> AutomationReproductionReport {
+        try Task.checkCancellation()
+        guard subject.target.kind == .simulator else {
+            throw AutomationContractError.missingEvidence("This workflow requires a prepared simulator host")
+        }
         let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
         let runner = try AutomationApplicationRunner(supportRoot: support,
             developerDirectory: developerDirectory)
         var verified = self
         verified.capabilities = try await runner.capabilitiesForExecution(subject: subject, plan: frozen.plan,
-            capabilities: capabilities)
+            capabilities: capabilities, approval: approval)
         var fixture: AutomationQualifiedFreshFixture?
         if usesFreshFixture {
             guard case .prepared(let prepared) = subject else { throw AutomationContractError.invalidIdentity }
@@ -110,12 +117,12 @@ struct AutomationNativeUIReproductionProposal: Sendable {
         }
         let executor = AutomationSubjectCampaignExecutor(runner: runner, subject: subject, capabilities: verified.capabilities,
             allowBootAndInstall: allowBootAndInstall)
-        return try await verified.runCampaign(cases: cases, executor: executor, fixture: fixture)
+        return try await verified.runCampaign(cases: cases, executor: executor, fixture: fixture, onProgress: onProgress)
     }
     func runCampaign(cases: AutomationCaseStore, executor: any AutomationCampaignAttemptExecutor,
-                     fixture: AutomationQualifiedFreshFixture?) async throws -> AutomationReproductionReport {
+                     fixture: AutomationQualifiedFreshFixture?, onProgress: AutomationReproductionProgressHandler? = nil) async throws -> AutomationReproductionReport {
         try await AutomationReproduction(cases: cases).run(frozen: frozen, originalAttemptID: originalAttemptID,
-            approval: approval, capabilities: capabilities, limits: limits, executor: executor, fixture: fixture)
+            approval: approval, capabilities: capabilities, limits: limits, executor: executor, fixture: fixture, onProgress: onProgress)
     }
 
 }

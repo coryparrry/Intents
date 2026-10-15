@@ -30,12 +30,14 @@ struct AppAutomationView: View {
                     Text("Attempt " + unresolved.attemptID + " has unresolved device ownership. Further execution remains blocked.")
                         .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                 }
+                AutomationSelectionHistoryControls(model: model)
+                AutomationSourceRecipeControls(model: model)
                 AutomationRecoveryControls(model: model)
                 if let intake = model.intake {
                     GroupBox("Selected app") {
                         VStack(alignment: .leading, spacing: 12) {
                             Picker("App", selection: $model.candidateID) {
-                                ForEach(intake.candidates) { Text($0.name).tag($0.id) }
+                                ForEach(intake.candidates) { Text($0.name + ($0.workspacePath.map { " · " + URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "")).tag($0.id) }
                             }.onChange(of: model.candidateID) { model.candidateSelectionChanged() }
                             if model.candidate?.kind == .sourceTarget {
                                 DisclosureGroup("Build settings") {
@@ -62,6 +64,7 @@ struct AppAutomationView: View {
                                     Text("App workflow").tag("ui").accessibilityIdentifier("ui")
                                     Text("System action").tag("system").accessibilityIdentifier("system")
                                     Text("Action on a new test record").tag("fresh").accessibilityIdentifier("fresh")
+                                    if model.preparationDestination == .simulator { Text("Find record failures").tag("freshSearch").accessibilityIdentifier("freshSearch") }
                                     if model.preparationDestination == .physical { Text("Siri recognised-text submission").tag("siri").accessibilityIdentifier("siri") }
                                 }.accessibilityLabel("What to test").accessibilityIdentifier("automation.workflow.route").onChange(of: model.workflowRoute) { model.workflowSelectionChanged() }
                             }
@@ -71,6 +74,10 @@ struct AppAutomationView: View {
                 } else {
                     ContentUnavailableView("Choose an app to begin", systemImage: "app",
                         description: Text("Select an Xcode project, workspace, source folder or packaged app. Selection only inspects files."))
+                }
+                if model.candidate != nil {
+                    AutomationFirstRunControls(model: model)
+                    AutomationPairedFeatureControls(model: model)
                 }
                 if model.isUIWorkflow && model.isMacWorkflowUnavailable {
                     Text("Mac workflow execution is unavailable.").font(.callout).foregroundStyle(.secondary)
@@ -113,8 +120,21 @@ struct AppAutomationView: View {
                             Text(model.uiExpectedText.isEmpty ? "Navigation completion will be unassessed. Add a visible-state check to assess a requirement." : "The visible-state check runs separately after navigation.").font(.callout).foregroundStyle(.secondary)
                             Button("Run workflow…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
                             Divider()
+                            Picker("Wording to vary", selection: $model.uiVarySubjectRequest) {
+                                Text("Navigation instructions").tag(false)
+                                Text("Actual AI request text").tag(true)
+                            }
+                            if model.uiVarySubjectRequest {
+                                Text("Choose Disposable fixture effects. The selected AI must keep all changes inside the disposable local session. Search stays unavailable without independently observable fresh session identity and empty state.").font(.callout).foregroundStyle(.secondary)
+                                TextField("Request input control label (must be empty after reset)", text: $model.uiRequestInputControl)
+                                TextField("New-session control label", text: $model.uiRequestResetControl)
+                                TextField("Current session ID control label (reads its value)", text: $model.uiRequestSessionIdentity)
+                                TextField("Empty-state control label", text: $model.uiRequestEmptyStateControl)
+                                TextField("Expected empty-state text", text: $model.uiRequestEmptyStateText)
+                                TextField("Submit request control label", text: $model.uiRequestSubmitControl)
+                            }
                             TextField("Alternative phrases, one per line (up to two)", text: $model.uiAlternatePhrases, axis: .vertical)
-                            Text("Phrase trials keep the destination, inputs and business check fixed. Up to 20 attempts, 1,000 UI actions and 300 controller calls; at most one hour.").font(.callout).foregroundStyle(.secondary)
+                            Text(model.uiVarySubjectRequest ? "Use only when Approved text is a request sent to the app’s AI. Review each alternative for the same meaning. The destination, controller instructions and business check stay fixed. Every request needs a live-verified new empty session and exact submit tap. Up to 100 attempts, 5,500 reserved subject operations, 1,000 UI actions and 300 controller calls; at most one hour." : "Navigation wording trials keep the destination, approved text and business check fixed. Up to 100 attempts, 5,500 reserved subject operations, 1,000 UI actions and 300 controller calls; at most one hour.").font(.callout).foregroundStyle(.secondary)
                             Button("Find failures…") {
                                 do { searchReview = try model.reviewNativeSearch(); approveSearch = true }
                                 catch { model.message = "The workflow or phrases changed. Review them before searching." }
@@ -158,7 +178,17 @@ struct AppAutomationView: View {
                                     Toggle("Allow starting this simulator and installing the prepared app", isOn: $model.installApproved)
                                 }
                                 Text("Only the expected record states you choose are assessed. Invocation alone remains unassessed.").font(.callout).foregroundStyle(.secondary)
-                                Button(model.isFreshRecordWorkflow ? "Run test record workflow…" : "Run action…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
+                                if model.isFreshSearchWorkflow {
+                                    Button("Find record failures…") {
+                                        do { searchReview = try model.reviewNativeSearch(); approveSearch = true }
+                                        catch { model.message = model.errorText(error) }
+                                    }.disabled(!model.canFindFailures)
+                                    if let reason = model.failureSearchUnavailableReason {
+                                        Text(reason).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                } else {
+                                    Button(model.isFreshRecordWorkflow ? "Run test record workflow…" : "Run action…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
+                                }
                             }
                             ForEach(catalog.gaps, id: \.self) { Text($0).font(.callout).foregroundStyle(.secondary) }
                             if model.prepared == nil { Text("Prepare an associated host to run this app's system actions.").font(.callout) }
@@ -185,7 +215,10 @@ struct AppAutomationView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(Array(model.savedSearches.prefix(savedCaseLimit)), id: \.id) { record in
                                 HStack {
-                                    Text(record.baseline.plan.execution.operation).lineLimit(2)
+                                    VStack(alignment: .leading) {
+                                        Text(record.baseline.plan.execution.operation).lineLimit(2)
+                                        if let notice = record.historicalQualificationNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
+                                    }
                                     Spacer()
                                     Button("View search") { model.viewedSearch = record }.disabled(model.busy)
                                 }
@@ -195,6 +228,7 @@ struct AppAutomationView: View {
                 }
                 if let viewed = model.viewedSearch {
                     searchResult(viewed.report, title: "Saved search outcomes")
+                    if let notice = viewed.historicalQualificationNotice { Text(notice).font(.callout).foregroundStyle(.secondary) }
                     Button("Close saved search") { model.viewedSearch = nil }
                 }
                 if let pending = model.pendingCommandStatus {
@@ -332,7 +366,7 @@ struct AppAutomationView: View {
             }
             Button("Cancel", role: .cancel) { preparationReview = nil }
         } message: { Text(preparationReview?.message ?? "Review the selected build again.") }
-        .alert("Explore these approved phrases?", isPresented: $approveSearch) {
+        .alert(model.isFreshSearchWorkflow ? "Search with fresh test records?" : "Explore these approved phrases?", isPresented: $approveSearch) {
             Button("Find failures") {
                 guard let review = searchReview else { return }; searchReview = nil
                 Task { await model.findFailures(reviewed: review) }
@@ -395,6 +429,17 @@ struct AppAutomationView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("\(report.counters.failed) requirement failures · \(report.counters.assessed) assessed · \(report.counters.unassessed) unassessed")
                 Text("\(report.attempts.count) recorded attempts · \(report.interruptions.count) interrupted")
+                if let qualification = report.qualificationAttempts, !qualification.isEmpty {
+                    Text("\(qualification.count) setup qualification attempts").font(.callout).foregroundStyle(.secondary)
+                }
+                if let measurements = report.discoveryDiversity {
+                    Text("\(measurements.flatMap(\.newCategories).count) new retained behaviour categories across \(measurements.count) discovery attempts. This measures observed diversity, not code or model coverage.").font(.callout).foregroundStyle(.secondary)
+                }
+                if !report.capabilityGaps.isEmpty {
+                    DisclosureGroup("Search limits") {
+                        ForEach(report.capabilityGaps, id: \.self) { gap in Text(gap).font(.callout) }
+                    }
+                }
                 if let final = report.finalReproduction {
                     Text("Final reproduction: \(final.matchingFailures) matching failures / \(final.attempts.count) attempts")
                     Text("\(final.assessedPasses) passes · \(final.otherFailures) other failures · \(final.unassessed) unassessed").font(.callout).foregroundStyle(.secondary)
@@ -404,7 +449,8 @@ struct AppAutomationView: View {
         }
     }
     @ViewBuilder private var freshRecordInputs: some View {
-        if let entity = model.freshEntity {
+        if let proposal = model.freshRecordSetupProposal {
+            let entity = proposal.entity
             Text("Each attempt creates a new record in the app, runs this action on that record, then checks its state independently.")
                 .font(.callout).foregroundStyle(.secondary)
             TextField("How should the app create and save the record?", text: $model.uiInstruction, axis: .vertical)
@@ -421,38 +467,58 @@ struct AppAutomationView: View {
             Text("Intents adds a unique suffix to this name for each attempt and enters it in the selected name field.")
                 .font(.caption).foregroundStyle(.secondary)
             Picker("Record name", selection: $model.freshNameProperty) {
-                Text("Choose name property").tag("")
-                ForEach(entity.properties.keys.filter { entity.properties[$0] == "text" }.sorted(), id: \.self) { name in
-                    Text(entity.propertyTitles[name] ?? name).tag(name)
+                Text("Choose the field for the test name").tag("")
+                ForEach(proposal.nameFields, id: \.self) { name in
+                    Text(AutomationNativeRecordSetupProposal.title(for: name, in: entity)).tag(name)
                 }
             }.accessibilityLabel("Record name")
-            Toggle("Check another record with the same name stays unchanged", isOn: $model.freshProtectOtherRecord)
+            if proposal.proposedNameField == nil {
+                Text("This record has several text fields. Choose which one holds the test name.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Toggle(model.workflowRoute == "freshSearch" ? "Also search with duplicate names" : "Check another record with the same name stays unchanged", isOn: $model.freshProtectOtherRecord)
             if model.freshProtectOtherRecord {
                 Picker("Distinguish records by", selection: $model.freshContextProperty) {
-                    Text("Choose owner or list property").tag("")
+                    Text("Choose the field that distinguishes the records").tag("")
                     ForEach(entity.properties.keys.filter { entity.properties[$0] == "text" && $0 != model.freshNameProperty }.sorted(), id: \.self) { name in
-                        Text(entity.propertyTitles[name] ?? name).tag(name)
+                        Text(AutomationNativeRecordSetupProposal.title(for: name, in: entity)).tag(name)
                     }
                 }.accessibilityLabel("Distinguish records by")
                 TextField("Context text field (optional; otherwise select named option)", text: $model.freshContextEntryControl)
                     .onChange(of: model.freshContextEntryControl) { _, _ in model.workflowSelectionChanged() }
                 TextField("Owner or list of the record to act on", text: $model.freshSelectedContext)
-                TextField("Owner or list of the record to keep unchanged", text: $model.freshProtectedContext)
-                Text("Both records use the same test name. Intents queries each real record by its owner or list and checks both after the action.")
+                TextField(model.workflowRoute == "freshSearch" ? "Owner or list for additional test records" : "Owner or list of the record to keep unchanged", text: $model.freshProtectedContext)
+                Text(model.workflowRoute == "freshSearch" ? "Intents checks that each added record exists before running the action. Every variation assesses the same selected record and expected state." : "Both records use the same test name. Intents queries each real record by its owner or list and checks both after the action.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Picker("State to check", selection: $model.freshStateProperty) {
-                Text("Choose state property").tag("")
-                ForEach(entity.properties.keys.filter { entity.properties[$0] == "bool" }.sorted(), id: \.self) { name in
-                    Text(entity.propertyTitles[name] ?? name).tag(name)
+                Text("Choose what should change").tag("")
+                ForEach(proposal.stateFields, id: \.self) { name in
+                    Text(AutomationNativeRecordSetupProposal.title(for: name, in: entity)).tag(name)
                 }
             }.accessibilityLabel("State to check")
-            Picker("State before the action", selection: $model.freshInitialState) {
+            if proposal.proposedStateField == nil {
+                Text("This record has several yes/no states. Choose the one this action should affect.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            let stateTitle = proposal.stateFields.contains(model.freshStateProperty)
+                ? AutomationNativeRecordSetupProposal.title(for: model.freshStateProperty, in: entity) : "State"
+            Text("Choose the intended outcome. The app's declarations identify fields; they do not establish what this action should do.")
+                .font(.caption).foregroundStyle(.secondary)
+            Picker(stateTitle + " before the action", selection: $model.freshInitialState) {
                 Text("Choose initial state").tag(""); Text("True").tag("true"); Text("False").tag("false")
             }.accessibilityLabel("State before the action")
-            Picker("Expected state after the action", selection: $model.freshExpectedState) {
+            Picker("Expected " + stateTitle + " after the action", selection: $model.freshExpectedState) {
                 Text("Choose expected state").tag(""); Text("True").tag("true"); Text("False").tag("false")
             }.accessibilityLabel("Expected state after the action")
+            DisclosureGroup("Advanced record details") {
+                Text("Record type: " + entity.typeID)
+                Text("Independent query: " + entity.queryIdentifier)
+                ForEach((proposal.nameFields + proposal.stateFields).sorted(), id: \.self) { field in
+                    Text(AutomationNativeRecordSetupProposal.title(for: field, in: entity) + ": " + field + " (" + (entity.properties[field] ?? "") + ")")
+                }
+                Text("True means yes; false means no. Only your chosen before and after values define the expected outcome.")
+            }.font(.caption).foregroundStyle(.secondary)
         } else {
             Text("This workflow needs an action with one record input and readable name and Boolean state properties.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -498,10 +564,12 @@ struct AppAutomationView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(entity.title + (parameter.optional ? " (optional)" : "")).font(.headline)
                 HStack {
-                    TextField("Search existing records", text: Binding(get: { model.entityQueryTexts[parameter.name] ?? "" }, set: {
-                        model.entityQueryTexts[parameter.name] = $0; model.entityQueryChanged(parameter.name)
-                    })).disabled(model.busy)
-                    Button("Find records") { Task { await model.findEntities(parameter) } }.disabled(!model.canFindEntities(parameter))
+                    if !entity.usesSuggestedQuery {
+                        TextField("Search existing records", text: Binding(get: { model.entityQueryTexts[parameter.name] ?? "" }, set: {
+                            model.entityQueryTexts[parameter.name] = $0; model.entityQueryChanged(parameter.name)
+                        })).disabled(model.busy)
+                    }
+                    Button(entity.usesSuggestedQuery ? "Read suggested records" : "Find records") { Task { await model.findEntities(parameter) } }.disabled(!model.canFindEntities(parameter))
                 }
                 let choices = model.entityChoices[parameter.name] ?? []
                 let labels = choices.map { AutomationNativeEntitySelection.label($0, entity: entity) }
@@ -518,7 +586,7 @@ struct AppAutomationView: View {
                     if unique.count < choices.count { Text("Some records share all displayed properties. Refine the search before choosing them.").font(.caption) }
                     if unique.count > 100 { Text("Showing the first 100 distinct records. Refine the search for others.").font(.caption) }
                 }
-                if model.selectedEntity(parameter.name) != nil {
+                if model.selectedEntity(parameter.name) != nil && !entity.properties.isEmpty {
                     Text("Choose up to two other records to keep unchanged.").font(.caption)
                     ForEach(unique.filter { $0.id != model.selectedEntityIDs[parameter.name] }.prefix(100)) { other in
                         let selected = model.protectedEntityIDs[parameter.name] ?? []
@@ -569,7 +637,7 @@ struct AppAutomationView: View {
         panel.allowsMultipleSelection = false
         panel.treatsFilePackagesAsDirectories = false
         panel.prompt = "Choose app"
-        panel.message = "Choose an app, Xcode project, workspace or source folder. Selection only inspects files."
+        panel.message = "Choose an app, IPA, Xcode archive, project, workspace or source folder. Selection only inspects or extracts files."
         let completion: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let url = panel.url else { return }
             model.select(url)

@@ -81,20 +81,20 @@ public enum AutomationApplicationSubject: Sendable {
         guard plan.app == app, plan.target == target else { throw AutomationContractError.invalidIdentity }
         if case .installedUI(let installed) = self {
             let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
-            guard segments.allSatisfy({ $0.kind == .ui && $0.uiProgram != nil && $0.hostProgram == nil }) else {
+            guard segments.allSatisfy({ $0.usesUIControl && $0.uiProgram != nil && $0.hostProgram == nil }) else {
                 throw AutomationContractError.invalidPlan("Installed UI-only checks cannot dispatch an Apple host or system route")
             }
             try installed.verifySelectedProduct()
         }
         if case .installedPhysicalUI = self {
             let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
-            guard segments.allSatisfy({ $0.kind == .ui && $0.uiProgram != nil && $0.hostProgram == nil && $0.effects.isSubset(of: [.observe, .navigate]) }) else {
+            guard segments.allSatisfy({ $0.usesUIControl && $0.uiProgram != nil && $0.hostProgram == nil && $0.effects.isSubset(of: [.observe, .navigate]) }) else {
                 throw AutomationContractError.invalidPlan("Unreadable physical apps support visible-state UI checks only")
             }
         }
         if case .installedMacUI(let installed) = self {
             let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
-            guard segments.allSatisfy({ $0.kind == .ui && $0.uiProgram != nil && $0.hostProgram == nil }) else {
+            guard segments.allSatisfy({ $0.usesUIControl && $0.uiProgram != nil && $0.hostProgram == nil }) else {
                 throw AutomationContractError.invalidPlan("Installed Mac checks require typed UI programs")
             }
             for segment in segments { try AutomationMacUIProgramPreflight.validate(segment) }

@@ -24,14 +24,19 @@ extension AppAutomationStore {
                 }
                 try Task.checkCancellation()
                 guard !closing, selectionEpoch == epoch, let (value, assessment) = restored else { return }
-                guard let candidate = assessment.candidates.first(where: { $0.id == value.host.app.logicalID }),
+                guard value.host.target.kind != .pairedRunner,
+                      let candidate = assessment.candidates.first(where: { $0.id == value.host.app.logicalID }),
                       candidate.kind == .sourceTarget, candidate.configurations.contains(value.generatedHost.configuration) else {
                     throw AutomationContractError.conflictingOperation
                 }
                 let source = URL(fileURLWithPath: value.source.sourceRoot)
                 let additional = Array((value.source.capturedRoots?.map(\.inputPath) ?? []).dropFirst())
+                let automaticMetro = value.servedJavaScriptProfile?.automaticMetro
+                let javaScriptProfile = automaticMetro == nil ? value.servedJavaScriptProfile : nil
                 let approval = AutomationBuildApproval(sourceRoot: source.path, candidateID: candidate.id,
-                    configuration: value.generatedHost.configuration, target: value.host.target, additionalSourceRoots: additional)
+                    configuration: value.generatedHost.configuration, target: value.host.target, additionalSourceRoots: additional,
+                    includesDependencies: value.source.includesDependencies == true,
+                    servedJavaScriptProfile: javaScriptProfile, automaticMetroRecipe: automaticMetro)
                 try validatePreparedSelection(value, candidate: candidate, approval: approval)
                 let siriProfile = try await AutomationSiriCapabilitySnapshot.resolve(prepared: value,
                     capabilities: AutomationEntityQuery.capabilities(value))
@@ -44,6 +49,8 @@ extension AppAutomationStore {
                 securityScopedURL = hasSecurityScope ? source : nil
                 selectedURL = source; intake = assessment; restoredCandidateID = candidate.id; candidateID = candidate.id
                 configuration = value.generatedHost.configuration
+                includesSourceDependencies = approval.includesDependencies == true
+                servedJavaScriptProfile = javaScriptProfile; automaticMetroRecipe = automaticMetro
                 switch value.host.target.kind {
                 case .simulator:
                     preparationDestination = .simulator; simulatorID = value.host.target.id
@@ -54,6 +61,8 @@ extension AppAutomationStore {
                     }
                 case .nativeMac:
                     preparationDestination = .macOS; selectedMacTarget = value.host.target
+                case .pairedRunner:
+                    throw AutomationContractError.invalidIdentity
                 }
                 prepared = value; catalog = value.catalog; siriCapabilities = siriProfile
                 message = "Restored the prepared app. Saved checks can run without rebuilding."

@@ -41,6 +41,16 @@ A run request contains a concrete `AutomationCase` plan and explicit install/boo
 
 The legacy `IntentsAutomationApplicationProbe --profile` and `--plan-profile` modes remain available for existing planning tools. Their profiles also cannot carry capabilities. The e2e script provides concrete plan examples in its temporary output.
 
+## Review checks in the app
+
+App automation can inspect a selected app, an IPA archive, a source folder, or a repository checkout. Source preparation can review XcodeGen, Tuist, or a selected packaging script before running it in a frozen source copy. The review binds the selected toolchain and captured dependencies; changing them requires a new review. A recipe is not approval to invoke the app's actions.
+
+After preparation, **Run checks** lists the initial observations and discovered actions that have enough input evidence. Supply typed values or choose a freshly queried entity where required, then choose the actions' effects and review the proposed checks. Missing input or observation evidence remains a visible gap. Successful invocation alone does not establish business correctness.
+
+**Connected app feature** runs a feature registered through an existing trusted connection. Review its app version, feature version, effects, and request before sending it. An expected response stays in Intents for independent comparison. A timeout or disconnect leaves the outcome unresolved and prevents automatic repetition; registration does not verify remote build bytes or model internals.
+
+Physical Siri failure search additionally requires a reviewed disposable record, its initial and expected state, an independent observer, and a matching reset action. Exact requests need submission-channel qualification before search. Qualification, restoration, trials, and confirmation share the reviewed budget, and uncertain submission or release stops the campaign. Local unit tests do not qualify a real device or account.
+
 ## Evidence boundaries
 
 The required Phase 3 checks run the CLI on an iOS simulator. They do not qualify iPhone, Siri or Mac subject execution, or Intent Lab. The fixture declares a Siri phrase for the later physical-device phase. Opt-in native UI tests use a staged copy of this same committed fixture and runtime settings, without private profiles. The live setter/readback diagnostic is Mac-only and runs in the separate **Input conversion diagnostic (Mac)** CI job. It checks an authored String parameter without invoking its business action. Simulator echo tests exercise conversion directly; the diagnostic never grants capabilities or gates execution.

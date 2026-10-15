@@ -8,6 +8,9 @@ extension ApplicationSurfaceCatalog {
         public var queryIdentifier: String
         public var properties: [String: String]
         public var propertyTitles: [String: String]
+        public enum QueryMode: String, Codable, Sendable { case matching, suggested }
+        public var queryMode: QueryMode? = nil
+        public var usesSuggestedQuery: Bool { queryMode == .suggested }
         public var id: String { typeID }
     }
 }
@@ -42,9 +45,10 @@ enum AutomationEntityMetadata {
                   matching.value["identifier"] as? String == matching.key,
                   matching.value["entityType"] as? String == typeID,
                   matching.value["defaultQueryForEntity"] as? Bool == true,
-                  matching.value["capabilities"] as? Int == 70,
+                  let capabilities = matching.value["capabilities"] as? Int, [66, 70].contains(capabilities),
                   entityType(matching.value["resultValueType"] as? [String: Any]) == typeID,
-                  let properties = entity["properties"] as? [[String: Any]], (1...50).contains(properties.count) else { return nil }
+                  let properties = entity["properties"] as? [[String: Any]], properties.count <= 50,
+                  (capabilities == 66 ? properties.isEmpty : !properties.isEmpty) else { return nil }
             var codecs: [String: String] = [:], titles: [String: String] = [:]
             for property in properties {
                 guard let name = property["identifier"] as? String, AutomationHostProgram.identifier(name), codecs[name] == nil,
@@ -54,9 +58,9 @@ enum AutomationEntityMetadata {
                 codecs[name] = codec
                 titles[name] = (property["title"] as? [String: Any])?["key"] as? String ?? name
             }
-            guard codecs.values.contains("text") else { return nil }
+            guard capabilities == 66 || codecs.values.contains("text") else { return nil }
             return .init(typeID: typeID, title: (entity["displayTypeName"] as? [String: Any])?["key"] as? String ?? typeID,
-                         queryIdentifier: queryID, properties: codecs, propertyTitles: titles)
+                         queryIdentifier: queryID, properties: codecs, propertyTitles: titles, queryMode: capabilities == 66 ? .suggested : nil)
         }
     }
 }

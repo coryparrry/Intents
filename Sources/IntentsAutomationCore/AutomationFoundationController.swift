@@ -4,12 +4,16 @@ import FoundationModels
 
 /// The controller uses the local system model independently of the app's subject model and judge.
 public actor AutomationFoundationController: AutomationControllerDecisionProvider {
-    public init() {}
+    private let targetKind: TargetIdentity.Kind?
+    public init(targetKind: TargetIdentity.Kind? = nil) { self.targetKind = targetKind }
     public func decide(goal: AutomationNavigationGoal, request: AutomationControllerRequest, bindings: [String: String]) async throws -> AutomationControllerDecision {
         try goal.validate(); try request.validate(); try Task.checkCancellation()
+        // Completion of simple navigation is an observed state, not a model
+        // opinion. The executor still observes the endpoint independently.
+        if goal.completesNavigation(in: request, bindings: bindings) { return .init(kind: "finish") }
         guard SystemLanguageModel.default.availability == .available else { return .init(kind: "cannotProceed", reason: "modelUnavailable") }
         // Deliberately clip again for the local model's context. Missing nodes never prove absence.
-        let grammar = try AutomationGuidedNavigationDecision(goal: goal, request: request, bindings: bindings)
+        let grammar = try AutomationGuidedNavigationDecision(goal: goal, request: request, bindings: bindings, targetKind: targetKind)
         let projection = grammar.projection, selected = projection.nodes
         let lines = selected.enumerated().map { index, node in
             let matchingBindings = bindings.keys.sorted().filter { node.value == bindings[$0] }
@@ -34,15 +38,23 @@ public actor AutomationFoundationController: AutomationControllerDecisionProvide
         """)
         let prompt = """
         Approved navigation goal: \(goal.instruction)
+        Declared endpoint: \(goal.endpoint.kind.rawValue)=\(goal.endpoint.value)
+        Declared endpoint currently observed: \(goal.observesEndpoint(in: request)). Finish is unavailable until the endpoint is observed and required input/save activity is satisfied.
         Allowed verbs: \(request.verbs.joined(separator: ", "))
         Eligible fill node aliases: \(grammar.fillBindingOptions.keys.sorted().joined(separator: ", "))
         Eligible tap node aliases: \(grammar.tapAliases.joined(separator: ", "))
+        Eligible tap controls: \(grammar.tapAliases.compactMap { alias -> String? in
+            guard let index = Int(alias.dropFirst()), selected.indices.contains(index) else { return nil }
+            let node = selected[index]
+            return "\(alias): \(node.role ?? "control") \(String((node.name ?? node.text ?? node.testId ?? "unlabelled").prefix(128)))"
+        }.joined(separator: "; "))
         Fill binding options per eligible alias: \(grammar.fillBindingOptions.keys.sorted().map { "\($0)=\(grammar.fillBindingOptions[$0]!.joined(separator: ","))" }.joined(separator: "; "))
         Approved binding names: \(bindings.keys.sorted().joined(separator: ", "))
         Permitted fill binding names: \(grammar.bindingNames.joined(separator: ", "))
         Option selection binding names: \((goal.selectionBindings ?? []).joined(separator: ", "))
         Remaining actions: \(request.remainingActions)
         Required save control: \(goal.saveControl?.value ?? "none"); save tap approved in this attempt: \(request.approvedSaveTap == true)
+        Navigation actions approved in this attempt: \(request.approvedNavigationActions ?? 0)
         Minimum approved binding uses before finish: \((goal.minimumBindingUses ?? [:]).sorted(by: { $0.key < $1.key }).map { "\($0.key)=\($0.value)" }.joined(separator: ", "))
         Uses already approved in this attempt: \((request.approvedBindingUses ?? [:]).sorted(by: { $0.key < $1.key }).map { "\($0.key)=\($0.value)" }.joined(separator: ", "))
         Observation partial: \(request.truncated || selected.count < request.nodes.count). Omitted nodes: \(request.omittedNodes + request.nodes.count - selected.count)
@@ -58,7 +70,7 @@ public actor AutomationFoundationController: AutomationControllerDecisionProvide
 }
 #else
 public actor AutomationFoundationController: AutomationControllerDecisionProvider {
-    public init() {}
+    public init(targetKind: TargetIdentity.Kind? = nil) {}
     public func decide(goal: AutomationNavigationGoal, request: AutomationControllerRequest, bindings: [String: String]) async throws -> AutomationControllerDecision {
         .init(kind: "cannotProceed", reason: "modelUnavailable")
     }

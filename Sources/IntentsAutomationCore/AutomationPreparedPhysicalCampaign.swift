@@ -103,10 +103,12 @@ enum AutomationPreparedPhysicalCampaign {
                 capabilities: capabilities, attemptID: attemptID, driver: driver, siriAuthority: authority)
             try persist(JSONEncoder().encode(report), state.appendingPathComponent("report.json"))
             try await cases.saveAttempt(report, for: frozen)
-            if report.result.summary != .passed {
+            if !report.resourcesReleased || report.result.subjectDispatchUncertain || !report.result.subjectCompleted ||
+                ![.passed, .assertionFailed].contains(report.result.summary) {
                 await AutomationSiriQualificationAuthority.shared.revoke(prepared: prepared, plan: plan)
             }
-            if authority?.isQualification == true, report.result.summary == .passed,
+            if authority?.isQualification == true,
+               report.result.summary == .passed || (plan.provenance["siri.repeatableReset"] != nil && report.result.summary == .assertionFailed),
                let submission = await siri.qualificationSubmission() {
                 try await AutomationSiriQualificationAuthority.shared.record(prepared: prepared, plan: plan,
                     approval: approval, report: report, submission: submission)

@@ -264,6 +264,21 @@ final class AutomationSourceGraphTests: XCTestCase {
             objects["REMOTE"] = ["isa": "XCRemoteSwiftPackageReference", "repositoryURL": location, "requirement": requirement]
         }
     }
+    func testWorkspaceResolutionTakesPrecedenceAndRetainsItsIdentity() throws {
+        let fixture = try fixture(additionalFiles: ["App.xcworkspace/xcshareddata/swiftpm/Package.resolved": remoteResolution,
+            "App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": "{}"] ) { objects in
+            objects["APP"]?["packageProductDependencies"] = ["REMOTE_PRODUCT"]
+            objects["REMOTE_PRODUCT"] = ["isa": "XCSwiftPackageProductDependency", "productName": "Remote", "package": "REMOTE"]
+            objects["REMOTE"] = ["isa": "XCRemoteSwiftPackageReference", "repositoryURL": "https://example.invalid/Remote.git", "requirement": ["kind": "exactVersion", "version": "1.2.3"]]
+        }
+        let graph = try AutomationSourceGraphReader.read(manifest: fixture.manifest, frozenRoot: fixture.session.appendingPathComponent("source"),
+            projectRelativePath: "App.xcodeproj", targetID: "APP", configuration: "Debug",
+            projectData: Data(contentsOf: fixture.session.appendingPathComponent("source/App.xcodeproj/project.pbxproj")), workspaceRelativePath: "App.xcworkspace")
+        XCTAssertEqual(graph.workspaceRelativePath, "App.xcworkspace")
+        XCTAssertEqual(graph.packagePins?.first?.requirementState, "satisfied")
+        XCTAssertEqual(graph.packagePins?.first?.resolutionPath, "App.xcworkspace/xcshareddata/swiftpm/Package.resolved")
+        XCTAssertEqual(graph, try JSONDecoder().decode(AutomationSourceGraph.self, from: JSONEncoder().encode(graph)))
+    }
     func testCapturedRemotePinsBindExactFrozenFileAndDeclaredRequirementWithoutCheckoutClaims() throws {
         let fixture = try remoteFixture(), graph = try fixture.read()
         let pin = try XCTUnwrap(graph.packagePins?.first)

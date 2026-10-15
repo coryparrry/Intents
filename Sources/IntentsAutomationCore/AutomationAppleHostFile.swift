@@ -5,7 +5,7 @@ enum AutomationAppleHostFile {
     enum Purpose { case segment, inputAdapterProbe, siriSubmission }
     static func freeze(_ value: Any, testRoot: URL, expectedHost: URL, expectedSubject: URL, testTarget: String, payload: Data,
                        platform: AutomationAssociatedHostPlatform = .iosSimulator, purpose: Purpose = .segment) throws -> [String: Any] {
-        guard purpose == .segment || (purpose == .inputAdapterProbe && platform == .macOS)
+        guard purpose == .segment || (purpose == .inputAdapterProbe && (platform == .macOS || platform == .physicalIOS))
             || (purpose == .siriSubmission && platform == .physicalIOS) else { throw AutomationContractError.invalidIdentity }
         func paths(_ value: Any) -> Any {
             if let value = value as? String { return value.replacingOccurrences(of: "__TESTROOT__", with: testRoot.path).replacingOccurrences(of: "__TESTHOST__", with: expectedHost.path) }

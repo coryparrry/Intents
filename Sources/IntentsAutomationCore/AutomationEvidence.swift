@@ -82,6 +82,21 @@ public enum AutomationAssessment {
                 && $0.route == requiredRoute
             }
             guard candidates.count == 1 else { missing.append(checkID); continue }
+            if requirement.proof == .persistedState {
+                guard let runID, let segment = plan.observations.first(where: { $0.id == requirement.observationID }),
+                      receipts.filter({ $0.segmentID == segment.id }).count == 1,
+                      let receipt = receipts.first(where: { $0.segmentID == segment.id }),
+                      let subjectReceipt = receipts.first(where: { $0.segmentID == plan.execution.id }),
+                      subjectReceipt.scope.runId == runID, subjectReceipt.scope.attemptId == attemptID,
+                      subjectReceipt.scope.leaseGeneration < receipt.scope.leaseGeneration,
+                      subjectReceipt.dispatched, subjectReceipt.completed, subjectReceipt.app == plan.app, subjectReceipt.target == plan.target,
+                      subjectReceipt.environmentID == plan.environmentID,
+                      let proof = receipt.durableStateRead,
+                      proof.validates(receipt: receipt, segment: segment, plan: plan, runID: runID, attemptID: attemptID),
+                      receipt.observations == candidates, receipt.artifact == candidates[0].artifact else {
+                    missing.append(checkID); continue
+                }
+            }
             let value: AutomationValue
             if let predicate = requirement.entityProperty {
                 guard let segment = plan.observations.first(where: { $0.id == requirement.observationID }) else { missing.append(checkID); continue }

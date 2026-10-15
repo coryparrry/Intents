@@ -15,6 +15,11 @@ final class SegmentTests: XCTestCase {
               Set(plan.operations.map(\.id)).count == plan.operations.count,
               plan.productDigest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
               plan.productDigestVersion == nil || plan.productDigestVersion == 1 || plan.productDigestVersion == 2 else { throw HostError.invalidPlan }
+        if let expected = plan.expectedOSBuild {
+            var buffer = [CChar](repeating: 0, count: 256), count = 256
+            guard sysctlbyname("kern.osversion", &buffer, &count, nil, 0) == 0, count > 1, count <= buffer.count,
+                  String(cString: buffer) == expected else { throw HostError.invalidPlan }
+        }
         var kernel = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.size
         var mib = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]

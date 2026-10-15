@@ -23,12 +23,15 @@ public enum AutomationSiriCapabilitySnapshot {
         if result.records["siri.actualRoute"] == nil {
             result.records["siri.actualRoute"] = .init(state: .unknown, reason: "No live independent Siri routing or app-outcome evidence", probeVersion: "siri-route-v1", evidence: [])
         }
+        if let plan {
+            result = await AutomationPhysicalInputAdapterAuthority.shared.applying(prepared: prepared, plan: plan, capabilities: result)
+        }
         if let plan, let approval, let authority, !authority.isQualification,
            result.records["siri.actualRoute"]?.state == .unknown,
            let evidence = authority.evidenceDigest {
             try authority.validate(plan: plan, approval: approval)
             result.records["siri.actualRoute"] = .init(state: .available,
-                reason: "Live Siri submission, independent record-state transition and release qualified only this frozen workflow; remote installed bytes remain unverified.",
+                reason: authority.isRepeatableQualification ? "Live exact recognised-text submission channel, verified restoration, same-record observation and release qualified this frozen phrase; business correctness and intended app/action invocation are assessed separately." : "Live Siri submission, independent record-state transition and release qualified only this frozen workflow; remote installed bytes remain unverified.",
                 probeVersion: "siri-exact-case-v1", evidence: [evidence, prepared.host.xctestrunDigest])
         }
         return result

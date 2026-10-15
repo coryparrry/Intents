@@ -135,6 +135,7 @@ public enum AutomationFreshEntityPlanner {
     }
 
     public static func bindings(plan: AutomationCase) throws -> [AutomationFreshFixtureBinding] {
+        if plan.provenance["fixture.mutation"] != nil { return try AutomationStateMutationPlanner.bindings(plan: plan) }
         let creationSteps = plan.setup.dropLast()
         guard (2...3).contains(plan.setup.count),
               creationSteps.allSatisfy({ $0.kind == .ui && $0.attemptTextBindings?.count == 1 }),

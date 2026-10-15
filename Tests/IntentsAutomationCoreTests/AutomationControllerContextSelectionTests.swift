@@ -2,6 +2,22 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationControllerContextSelectionTests: XCTestCase {
+    func testMacStaticTextRemainsEvidenceButCannotBecomeAnActionChoice() throws {
+        var result = node("result", role: "text"); result.name = "Result"; result.value = "Pending"
+        let roles = ["button", "AXRow", "AXMenuItem", "AXCheckBox", "link", "other"]
+        var nodes = roles.map { node($0, role: $0) } + [result, node("raw-static", role: "AXStaticText")]
+        var unknown = node("unknown"); unknown.role = nil; nodes.append(unknown)
+        let request = AutomationControllerRequest(goalId: "goal", revision: "1", nodes: nodes, truncated: false,
+            omittedNodes: 0, verbs: ["tap"], recentActions: [], remainingActions: 30, remainingMs: 120000)
+        let mac = try AutomationControllerContextSelection.project(request, targetKind: .nativeMac)
+        XCTAssertTrue(mac.nodes.contains(result))
+        XCTAssertEqual(Set(mac.tapAliases.compactMap { mac.nodeIDs[$0] }), Set(roles + ["unknown"]))
+        let ios = try AutomationControllerContextSelection.project(request, targetKind: .simulator)
+        XCTAssertTrue(ios.tapAliases.compactMap { ios.nodeIDs[$0] }.contains("result"))
+        let tap = AutomationControllerDecision(kind: "tap", node: "result")
+        XCTAssertThrowsError(try tap.action(request: request, bindings: [:], phase: .subject, targetKind: .nativeMac))
+        XCTAssertEqual(try tap.action(request: request, bindings: [:], phase: .subject, targetKind: .simulator), .tap)
+    }
     func testActualInputAndButtonsAfterStructuralAncestorsRemainInBoundedPrompt() {
         var nodes = (0..<55).map { node("container-\($0)") }
         let input = node("title", role: "text-field", editable: true)

@@ -11,6 +11,14 @@ public struct AutomationQueryEntityChoice: Equatable, Sendable, Identifiable {
     let target: TargetIdentity
     let environmentID: String
     let catalogDigest: String
+    let expiresAt: Date
+    init(id: String, typeID: String, properties: [String: AutomationValue], sourceAttemptID: String,
+         app: AppIdentity, target: TargetIdentity, environmentID: String, catalogDigest: String,
+         expiresAt: Date = Date().addingTimeInterval(300)) {
+        self.id = id; self.typeID = typeID; self.properties = properties; self.sourceAttemptID = sourceAttemptID
+        self.app = app; self.target = target; self.environmentID = environmentID; self.catalogDigest = catalogDigest
+        self.expiresAt = expiresAt
+    }
 }
 public struct AutomationEntityQueryResult: Sendable {
     public let report: AutomationAttemptReport
@@ -26,6 +34,9 @@ public enum AutomationEntityQuery {
     public static func acceptsQueryText(_ text: String) -> Bool {
         text.utf16.count <= 32768 && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+    public static func acceptsQuery(entity: ApplicationSurfaceCatalog.Entity, text: String) -> Bool {
+        entity.usesSuggestedQuery ? text.isEmpty : acceptsQueryText(text)
+    }
     public static func capabilities(_ prepared: AutomationPreparedApplication) -> CapabilityProfile {
         .init(records: ["apple.entity.query": .init(state: .available,
             reason: "Associated host supports typed queries; subject registration is checked during the actual query",
@@ -35,12 +46,12 @@ public enum AutomationEntityQuery {
                             text: String, approval: RunApproval) throws -> AutomationCase {
         guard prepared.catalog.app == prepared.host.app, prepared.catalog.entities?.contains(entity) == true,
               approval.app == prepared.host.app, approval.target == prepared.host.target, approval.effects == [.observe],
-              acceptsQueryText(text) else {
+              acceptsQuery(entity: entity, text: text) else {
             throw AutomationContractError.missingEvidence("Select a declared query and approve reading records on this app and target")
         }
         var segment = AutomationSegment(id: "query", kind: .systemQuery, phase: .subject, operation: entity.title,
             requiredCapabilities: ["apple.entity.query"], effects: [.observe], lifecycle: .persistedStateAcrossSegments)
-        segment.hostProgram = .init(operations: [.init(id: "records", kind: .query, typeID: entity.typeID, queryText: text, properties: entity.properties)])
+        segment.hostProgram = .init(operations: [.init(id: "records", kind: .query, typeID: entity.typeID, queryText: entity.usesSuggestedQuery ? nil : text, querySuggested: entity.usesSuggestedQuery ? true : nil, properties: entity.properties)])
         var plan = AutomationCase(id: "query." + entity.typeID, app: prepared.host.app, target: prepared.host.target,
             environmentID: approval.environmentID, execution: segment)
         plan.provenance = ["catalog": try AutomationRecipeContext.catalogDigest(prepared.catalog), "expectation": "live query selection only; no business assessment"]

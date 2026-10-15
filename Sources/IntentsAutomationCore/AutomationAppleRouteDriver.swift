@@ -112,8 +112,14 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         try program.validate(route: segment.kind, phase: segment.phase)
         preparing = true; defer { preparing = false }
         let fileInputs = try await authority?.fileInputs(plan: plan, segment: segment, scope: scope, artifacts: artifacts) ?? [:]
-        let payload = try program.executionPayload(scope: scope, app: plan.app, route: segment.kind, phase: segment.phase, fileInputs: fileInputs,
+        var payload = try program.executionPayload(scope: scope, app: plan.app, route: segment.kind, phase: segment.phase, fileInputs: fileInputs,
                                                    activateSubject: segment.effects.contains(.navigate))
+        if plan.provenance["siri.repeatableReset"] != nil, segment.id == "siri.restore" {
+            let osBuild = try await AutomationPhysicalInputAdapterAuthority.shared.validateReset(host: prepared, plan: plan, segment: segment)
+            guard var fields = try JSONDecoder().decode(AutomationJSON.self, from: payload).object else { throw AutomationContractError.invalidIdentity }
+            fields["expectedOSBuild"] = .string(osBuild)
+            payload = try AutomationFrozenCase.canonicalData(AutomationJSON.object(fields))
+        }
         guard await leases.isCurrent(lease), !revoked.contains(lease.generation) else { throw AutomationContractError.unknownLease }
         try Task.checkCancellation()
         do {
@@ -158,6 +164,9 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         let current = await leases.isCurrent(lease)
         guard current, !releasing, !revoked.contains(lease.generation), control?.scope == scope,
               control?.executing == true, control?.issued == true else { throw AutomationContractError.unknownLease }
+        if plan.provenance["siri.repeatableReset"] != nil, segment.id == "siri.restore" {
+            _ = try await AutomationPhysicalInputAdapterAuthority.shared.validateReset(host: prepared, plan: plan, segment: segment)
+        }
         try verifyPreparedHost(); try await verifySubject(plan)
         try await authorizeLaunch(scope: scope, lease: lease)
         try await campaignBudget?.reserveOperations(id: scope.attemptId + "." + scope.segmentId, phase: segment.phase, count: program.operations.count)
@@ -278,6 +287,9 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         guard let active = control,
               AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(active.testFile, maximumBytes: 4 * 1024 * 1024)) == active.testFileDigest else {
             throw AutomationContractError.conflictingOperation
+        }
+        if active.plan.provenance["siri.repeatableReset"] != nil, active.segment.id == "siri.restore" {
+            _ = try await AutomationPhysicalInputAdapterAuthority.shared.validateReset(host: prepared, plan: active.plan, segment: active.segment)
         }
         try campaignBudget?.validateDeadline()
     }

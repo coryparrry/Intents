@@ -513,6 +513,33 @@ struct IntentLabRegressionTests {
     }
 
     @MainActor
+    @Test func pairedAutomationBlocksScenarioEvenWithSeparateAdmission() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let evaluation = EvaluationStore(supportDirectory: root)
+        let runners = DeveloperRunnerStore(evaluationStore: evaluation)
+        let admission = ScenarioExecutionAdmission()
+        let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: evaluation,
+            executionAdmission: admission)
+        coordinator.bindRunnerStore(runners)
+        await coordinator.load()
+        #expect(coordinator.hasLoaded)
+        runners.automationExecutionBlocked = true
+        defer { runners.automationExecutionBlocked = false }
+
+        await coordinator.run()
+
+        #expect(coordinator.notice?.contains("active evaluation") == true)
+        #expect(!coordinator.isRunning)
+        #expect(coordinator.executionStage == nil)
+        #expect(admission.ownerID == nil)
+        #expect(coordinator.runs.isEmpty)
+        #expect(!evaluation.hasActiveExecution)
+        runners.automationExecutionBlocked = false
+        #expect(admission.allows(nil))
+    }
+
+    @MainActor
     @Test func savedBatchExportRetainsFullMembershipAndOnlyFreshCaseEvidence() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

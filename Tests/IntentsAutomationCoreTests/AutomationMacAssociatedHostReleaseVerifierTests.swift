@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import Darwin
 import XCTest
 @testable import IntentsAutomationCore
 
@@ -13,9 +14,17 @@ final class AutomationMacAssociatedHostReleaseVerifierTests: XCTestCase {
     private actor State {
         var frames: [AutomationMacProcessInventory], calls = 0, drained = true
         var failure: AutomationMacProcessInventory.KernelObservationFailure?
-        init(_ frames: [AutomationMacProcessInventory]) { self.frames = frames }
+        var failures: [Int: AutomationMacProcessInventory.KernelObservationFailure]
+        var cancelOnCalls: Set<Int>
+        init(_ frames: [AutomationMacProcessInventory],
+             failures: [Int: AutomationMacProcessInventory.KernelObservationFailure] = [:],
+             cancelOnCalls: Set<Int> = []) {
+            self.frames = frames; self.failures = failures; self.cancelOnCalls = cancelOnCalls
+        }
         func inspect() throws -> AutomationMacProcessInventory {
             calls += 1
+            if cancelOnCalls.contains(calls) { withUnsafeCurrentTask { $0?.cancel() } }
+            if let failure = failures[calls] { throw failure }
             if let failure { throw failure }
             return frames[min(calls - 1, frames.count - 1)]
         }
@@ -40,6 +49,17 @@ final class AutomationMacAssociatedHostReleaseVerifierTests: XCTestCase {
                         validate: @escaping AutomationMacAssociatedHostReleaseVerifier.TargetValidator = { _ in }) throws -> AutomationMacAssociatedHostReleaseVerifier {
         try .init(host: host, userID: uid, inspector: { try await state.inspect() }, drain: { await state.drained }, validateTarget: validate)
     }
+    private func live(_ host: AutomationPreparedAppleHost) -> AutomationMacProcessInventory {
+        .init(userID: uid, complete: true, processes: [unrelated,
+            .init(identity: .init(pid: 43, startIdentity: "100:0"), userID: uid,
+                  executablePath: host.hostBundlePath + "/Contents/MacOS/OwnedHost-Runner")])
+    }
+    private var retryableFailures: [AutomationMacProcessInventory.KernelObservationFailure] {
+        [.init(stage: .metadata, pid: 43, errorNumber: ESRCH),
+         .init(stage: .executablePath, pid: 43, errorNumber: ESRCH),
+         .init(stage: .codeIdentity, pid: 43, errorNumber: ESRCH),
+         .init(stage: .executableSetChanged, pid: nil, errorNumber: 0)]
+    }
     func testExactHostAbsenceRequiresSeparateCompletePrepareAndReleaseInventories() async throws {
         let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])
         let state = State([clean, clean]), verifier = try reader(host, state)
@@ -55,11 +75,142 @@ final class AutomationMacAssociatedHostReleaseVerifierTests: XCTestCase {
         for start in ["100:0", "101:0"] {
             let live = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated,
                 .init(identity: .init(pid: 43, startIdentity: start), userID: uid, executablePath: host.hostBundlePath + "/Contents/MacOS/OwnedHost-Runner")])
-            let busy = try reader(host, State([live]))
-            do { try await busy.prepare(target: target, controllerBundleIDs: [host.hostBundleID]); XCTFail("Live host admitted") } catch {}
-            let verifier = try reader(host, State([clean, live])); try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID])
+            let busyState = State([live, clean]), busy = try reader(host, busyState)
+            do { try await busy.prepare(target: target, controllerBundleIDs: [host.hostBundleID]); XCTFail("Live host admitted") }
+            catch { XCTAssertEqual(error as? AutomationContractError, .targetBusy) }
+            let busyCalls = await busyState.calls; XCTAssertEqual(busyCalls, 1)
+            let releaseState = State([clean, live]), verifier = try reader(host, releaseState)
+            try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID])
             let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertFalse(released)
+            let releaseCalls = await releaseState.calls, observations = await verifier.retainedObservations()
+            XCTAssertEqual(releaseCalls, 11); XCTAssertEqual(observations.count, 11)
+            XCTAssertTrue(observations.dropFirst().allSatisfy { !$0.accepted && $0.failure == nil })
         }
+    }
+    func testTransientExitAndExecutableSetChangeRequireReplacementInventoriesAtBothBoundaries() async throws {
+        let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])
+        for failure in retryableFailures {
+            let state = State([clean], failures: [1: failure, 3: failure]), verifier = try reader(host, state)
+            try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID])
+            let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertTrue(released)
+            let calls = await state.calls, observations = await verifier.retainedObservations()
+            XCTAssertEqual(calls, 4); XCTAssertEqual(observations.map(\.stage), ["prepare", "prepare", "release", "release"])
+            XCTAssertEqual(observations.map(\.accepted), [false, true, false, true])
+            XCTAssertEqual(observations[0].failure, failure); XCTAssertNil(observations[0].inventory)
+            XCTAssertEqual(observations[2].failure, failure); XCTAssertNil(observations[2].inventory)
+        }
+    }
+    func testReleaseWaitsForObservedHostExitAndRetainsPresence() async throws {
+        let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])
+        let state = State([clean, live(host), live(host), clean]), verifier = try reader(host, state)
+        try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID])
+        let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertTrue(released)
+        let calls = await state.calls, observations = await verifier.retainedObservations()
+        XCTAssertEqual(calls, 4); XCTAssertEqual(observations.map(\.accepted), [true, false, false, true])
+        XCTAssertEqual(observations[1].inventory, live(host)); XCTAssertEqual(observations[2].inventory, live(host))
+    }
+    func testPersistentKernelRaceIsBoundedAtBothBoundaries() async throws {
+        let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])
+        for prepareFailure in [true, false] {
+            let state = State([clean]), verifier = try reader(host, state)
+            if !prepareFailure { try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID]) }
+            let failure = retryableFailures[0]; await state.setFailure(failure)
+            if prepareFailure {
+                do { try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID]); XCTFail("Exhausted race admitted") }
+                catch { XCTAssertEqual(error as? AutomationMacProcessInventory.KernelObservationFailure, failure) }
+                let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertFalse(released)
+            } else {
+                let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertFalse(released)
+            }
+            let calls = await state.calls, observations = await verifier.retainedObservations()
+            XCTAssertEqual(calls, prepareFailure ? 10 : 11); XCTAssertEqual(observations.count, calls)
+            XCTAssertEqual(observations.filter { $0.failure == failure }.count, 10)
+            XCTAssertTrue(observations.suffix(10).allSatisfy { !$0.accepted && $0.inventory == nil })
+        }
+    }
+    func testPermissionAndOtherKernelStagesNeverRetryIntoCleanInventory() async throws {
+        let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])
+        let failures: [AutomationMacProcessInventory.KernelObservationFailure] = [
+            .init(stage: .executablePath, pid: 43, errorNumber: EPERM),
+            .init(stage: .metadata, pid: 43, errorNumber: EACCES),
+            .init(stage: .codeIdentity, pid: 43, errorNumber: EPERM),
+            .init(stage: .identityFields, pid: 43, errorNumber: ESRCH),
+            .init(stage: .pidList, pid: nil, errorNumber: ESRCH),
+            .init(stage: .absenceUnconfirmed, pid: 43, errorNumber: ESRCH),
+            .init(stage: .executableSetChanged, pid: nil, errorNumber: ESRCH)]
+        for failure in failures {
+            let state = State([clean], failures: [2: failure]), verifier = try reader(host, state)
+            try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID])
+            let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertFalse(released)
+            let calls = await state.calls, observations = await verifier.retainedObservations()
+            XCTAssertEqual(calls, 2); XCTAssertEqual(observations.count, 2)
+            XCTAssertEqual(observations.last?.failure, failure); XCTAssertFalse(observations.last?.accepted ?? true)
+        }
+    }
+    func testTransientKernelFailureWithUnprovedDrainCannotRetryOrReuse() async throws {
+        let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])
+        let state = State([clean], failures: [2: retryableFailures[0]]), verifier = try reader(host, state)
+        try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID]); await state.setDrained(false)
+        let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertFalse(released)
+        await state.setDrained(true)
+        let reused = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertFalse(reused)
+        do { try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID]); XCTFail("Unproved inspector reused") }
+        catch { XCTAssertEqual(error as? AutomationContractError, .terminationUnverified) }
+        let calls = await state.calls, observations = await verifier.retainedObservations()
+        XCTAssertEqual(calls, 2); XCTAssertEqual(observations.count, 2)
+        XCTAssertEqual(observations.last?.failure, retryableFailures[0]); XCTAssertFalse(observations.last?.accepted ?? true)
+    }
+    func testCancellationDuringReleaseCensusCannotAcceptOrRetry() async throws {
+        let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])
+        let state = State([clean], cancelOnCalls: [2]), verifier = try reader(host, state)
+        try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID])
+        let release = Task { await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]) }
+        let released = await release.value; XCTAssertFalse(released)
+        let calls = await state.calls, observations = await verifier.retainedObservations()
+        XCTAssertEqual(calls, 2); XCTAssertEqual(observations.count, 2)
+        XCTAssertEqual(observations.last?.inventory, clean); XCTAssertFalse(observations.last?.accepted ?? true)
+    }
+    func testReplacementCensusRevalidatesPreparedHostProduct() async throws {
+        let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])
+        let state = State([clean]), failure = retryableFailures[0]
+        let executable = URL(fileURLWithPath: host.hostBundlePath).appendingPathComponent("Contents/MacOS/OwnedHost-Runner")
+        let verifier = try AutomationMacAssociatedHostReleaseVerifier(host: host, userID: uid, inspector: {
+            let inventory = try await state.inspect()
+            if await state.calls == 2 {
+                try Data("changed during rejected census".utf8).write(to: executable)
+                throw failure
+            }
+            return inventory
+        }, drain: { true }, validateTarget: { _ in })
+        try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID])
+        let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertFalse(released)
+        let calls = await state.calls, observations = await verifier.retainedObservations()
+        XCTAssertEqual(calls, 2); XCTAssertEqual(observations.count, 3)
+        XCTAssertEqual(observations[1].failure, failure); XCTAssertFalse(observations[1].accepted)
+        XCTAssertNil(observations[2].inventory); XCTAssertNil(observations[2].failure); XCTAssertFalse(observations[2].accepted)
+    }
+    func testMalformedReleaseInventoryNeverRetriesIntoCleanInventory() async throws {
+        let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])
+        for invalid in [AutomationMacProcessInventory(userID: uid, complete: false, processes: [unrelated]),
+                        AutomationMacProcessInventory(userID: uid + 1, complete: true, processes: [unrelated])] {
+            let state = State([clean, invalid, clean]), verifier = try reader(host, state)
+            try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID])
+            let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertFalse(released)
+            let calls = await state.calls, observations = await verifier.retainedObservations()
+            XCTAssertEqual(calls, 2); XCTAssertEqual(observations.last?.inventory, invalid)
+            XCTAssertFalse(observations.last?.accepted ?? true)
+        }
+    }
+    func testTotalObservationBudgetCannotBeExtendedByRepeatedReleaseChecks() async throws {
+        let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])
+        let state = State([clean]), verifier = try reader(host, state)
+        try await verifier.prepare(target: target, controllerBundleIDs: [host.hostBundleID])
+        for _ in 0..<63 {
+            let released = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertTrue(released)
+        }
+        let exhausted = await verifier.verifyReleased(target: target, controllerBundleIDs: [host.hostBundleID]); XCTAssertFalse(exhausted)
+        let calls = await state.calls, observations = await verifier.retainedObservations()
+        XCTAssertEqual(calls, 64); XCTAssertEqual(observations.count, 64)
     }
     func testCompleteUIDAndExactBundleSessionScopesAreRequired() async throws {
         let host = try host(), clean = AutomationMacProcessInventory(userID: uid, complete: true, processes: [unrelated])

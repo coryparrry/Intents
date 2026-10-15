@@ -88,10 +88,13 @@ enum IntentDefinitionsHost {
             default: throw HostError.unsupportedCodec(operation.resultCodec ?? "unknown")
             }
         case .query:
+            guard [operation.queryIDs != nil, operation.queryText != nil, operation.querySuggested == true].filter({ $0 }).count == 1,
+                  operation.querySuggested == nil || operation.querySuggested == true else { throw HostError.invalidPlan }
             let definition = definitions.entities[operation.typeID]
             let entities: [AnyAppEntity]
             if let ids = operation.queryIDs { entities = try await definition.entities(identifiers: ids) }
             else if let text = operation.queryText { entities = try await definition.entities(matching: text) }
+            else if operation.querySuggested == true { entities = try await definition.suggestedEntities() }
             else { throw HostError.unsupportedCodec("Query requires explicit IDs or matching text") }
             guard entities.count <= 1000 else { throw HostError.unsupportedCodec("Collection limit") }
             var output: [HostValue] = []

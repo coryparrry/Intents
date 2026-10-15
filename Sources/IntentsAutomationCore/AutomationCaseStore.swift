@@ -26,6 +26,7 @@ public struct AutomationFrozenCase: Codable, Equatable, Sendable {
     /// fingerprints while retaining the host template and declared schema.
     /// Cases without typed artifacts keep the original strict projection.
     public static func comparisonContractDigest(_ plan: AutomationCase) throws -> String {
+        try AutomationNativeInputAdapterReview.validate(plan.nativeInputAdapterReviews, plan: plan)
         var contract = plan
         contract.revision = 1
         contract.app.canonicalBundlePath = nil; contract.app.productDigest = nil; contract.app.productDigestVersion = nil
@@ -47,6 +48,19 @@ public struct AutomationFrozenCase: Codable, Equatable, Sendable {
             contract.app.sourceSyntaxIndexDigest = nil
             contract.preparedSimulatorBuildArtifacts = artifacts.comparisonProjection
             if contract.provenance["catalog"] != nil { contract.provenance["catalog"] = artifacts.catalogSurfaceDigest }
+        }
+        if let reviews = plan.nativeInputAdapterReviews {
+            contract.nativeInputAdapterReviews = reviews.map { review in
+                .init(probeDigest: String(repeating: "0", count: 64), app: contract.app, target: review.target,
+                    actionID: review.actionID, parameterNames: review.parameterNames,
+                    purpose: review.purpose, fixedSamples: review.fixedSamples)
+            }
+        }
+        for index in contract.observations.indices {
+            if let reader = plan.observations[index].durableStateReader {
+                try reader.validate(plan: plan, segment: plan.observations[index])
+                contract.observations[index].durableStateReader = reader.comparisonProjection
+            }
         }
         return try canonicalDigest(contract)
     }
@@ -168,6 +182,8 @@ public actor AutomationCaseStore {
     public func attempts(for frozen: AutomationFrozenCase) throws -> [AutomationAttemptReport] {
         try frozen.validate()
         _ = try load(id: frozen.plan.id, revision: frozen.plan.revision, digest: frozen.digest)
+        if readOnly, try !AutomationReadOnlyFile.directoryExists(root: root,
+            relativePath: "Attempts/" + frozen.digest, requirePrivateOwnership: true) { return [] }
         let folder = try directory(["Attempts", frozen.digest])
         let names = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".json") }.sorted()
         guard names.count <= 1000 else { throw AutomationContractError.invalidIdentity }

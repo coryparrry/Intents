@@ -2,6 +2,31 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationControllerTests: XCTestCase, @unchecked Sendable {
+    func testTrustedMacTargetRejectsInjectedStaticTapButAdmitsItsRealButton() async throws {
+        for role in ["text", "AXStaticText", "button"] {
+            var app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "macos")
+            app.canonicalBundlePath = "/Applications/Chosen.app"
+            let target = TargetIdentity(id: "unit-mac-static-text", kind: .nativeMac, loginSession: "unit-mac-static-text")
+            let approval = RunApproval(runID: "run", app: app, target: target, environmentID: "unit", effects: [.navigate], maximumActions: 4, disposable: true)
+            let leases = AutomationDeviceLeaseManager(), lease = try await leases.acquire(runID: "run", target: target, control: .ui)
+            let authority = AutomationRunAuthority(approval: approval, leases: leases, controller: FixedNavigationProvider(.init(kind: "tap", node: "node")))
+            let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: lease.generation)
+            let goal = AutomationNavigationGoal(id: "subject", instruction: "Click Run check", endpoint: .init(.label, "Check complete"))
+            var segment = AutomationSegment(id: "subject", kind: .ui, phase: .subject, operation: goal.instruction, effects: [.navigate], lifecycle: .persistedStateAcrossSegments)
+            segment.uiProgram = .init(operations: [.init(id: "subject", kind: .navigateGoal, goal: goal)])
+            try await authority.approve(scope: scope, lease: lease, segment: segment, actions: [.activate], maximumControllerCalls: 1, maximumUIActions: 4)
+            var activation = fields(scope); activation["effect"] = .string("activate")
+            activation["target"] = .object(["id": .string(target.id), "platform": .string("macos"), "kind": .string("nativeMac"), "bundleId": .string(app.bundleID), "bundlePath": .string(app.canonicalBundlePath!), "loginSession": .string(target.loginSession!)])
+            let activated = await authority.review(method: "policy.reviewAction", params: .object(activation))
+            XCTAssertEqual(activated.object?["allowed"], .bool(true))
+            let request = AutomationControllerRequest(goalId: "subject", revision: "1", nodes: [
+                .init(id: "node", role: role, name: role == "button" ? "Run check" : "Result", editable: false, visible: true, disabled: false, secure: false)],
+                truncated: false, omittedNodes: 0, verbs: ["tap"], recentActions: [], remainingActions: 30, remainingMs: 120000)
+            let decision = await authority.review(method: "controller.decide", params: try decisionFields(scope, request))
+            XCTAssertEqual(decision.object?["kind"], .string(role == "button" ? "tap" : "cannotProceed"))
+            try await leases.release(lease, commandsDrained: true, ownedRunnerTerminated: true)
+        }
+    }
     private let app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "ios")
     private let target = TargetIdentity(id: "unit-policy-target", kind: .simulator)
     private func request() -> AutomationControllerRequest {
@@ -202,6 +227,25 @@ final class AutomationControllerTests: XCTestCase, @unchecked Sendable {
         let result = await authority.review(method: "controller.decide", params: try decisionFields(scope, forged))
         XCTAssertEqual(result.object?["kind"], .string("cannotProceed"))
     }
+    func testNavigationActivityIgnoresWorkerCountsAndRequiresConsumption() async throws {
+        let provider = NavigationActivityProvider()
+        let (authority, scope) = try await grant(provider: provider, phase: .observe, writes: false, maximumControllerCalls: 3)
+        var observed = request(); observed.verbs = ["tap"]; observed.nodes[0].role = "button"
+        observed.approvedNavigationActions = 30
+        let tap = await authority.review(method: "controller.decide", params: try decisionFields(scope, observed))
+        XCTAssertEqual(tap.object?["kind"], .string("tap"))
+        let pending = await authority.review(method: "controller.decide", params: try decisionFields(scope, observed))
+        XCTAssertEqual(pending.object?["kind"], .string("cannotProceed"))
+        var action = fields(scope); action["controllerNode"] = .string("n1")
+        action["action"] = .object(["kind": .string("tap")])
+        let allowed = await authority.review(method: "policy.reviewAction", params: .object(action))
+        XCTAssertEqual(allowed.object?["allowed"], .bool(true))
+        observed.approvedNavigationActions = 0
+        let finish = await authority.review(method: "controller.decide", params: try decisionFields(scope, observed))
+        XCTAssertEqual(finish.object?["kind"], .string("finish"))
+        let counts = await provider.counts
+        XCTAssertEqual(counts, [0, 1], "Activation and unconsumed choices cannot count; worker claims are overwritten")
+    }
     func testSaveCannotBeReplacedByVisibleEndpointOrForgedTap() async throws {
         let (authority, scope) = try await grant(provider: FixedNavigationProvider(.init(kind: "finish")), saveControl: .init(.label, "Save"))
         var forged = request(); forged.approvedSaveTap = true
@@ -383,5 +427,12 @@ private actor InputProgressNavigationProvider: AutomationControllerDecisionProvi
     func decide(goal: AutomationNavigationGoal, request: AutomationControllerRequest, bindings: [String: String]) async throws -> AutomationControllerDecision {
         let count = request.approvedBindingUses?["approved"] ?? 0; progress.append(count)
         return count == 0 ? .init(kind: "fill", node: "n1", textBinding: "approved") : .init(kind: "finish")
+    }
+}
+private actor NavigationActivityProvider: AutomationControllerDecisionProvider {
+    var counts: [Int] = []
+    func decide(goal: AutomationNavigationGoal, request: AutomationControllerRequest, bindings: [String: String]) async throws -> AutomationControllerDecision {
+        let count = request.approvedNavigationActions ?? -1; counts.append(count)
+        return count == 0 ? .init(kind: "tap", node: "n1") : .init(kind: "finish")
     }
 }

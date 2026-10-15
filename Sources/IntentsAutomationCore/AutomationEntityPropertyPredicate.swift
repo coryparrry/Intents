@@ -29,7 +29,7 @@ public struct AutomationEntityPropertyPredicate: Codable, Equatable, Sendable {
         throw AutomationInputBindingError.inputUnavailable
     }
     func value(observation: AutomationObservation, segment: AutomationSegment) throws -> AutomationValue {
-        guard segment.kind == .systemQuery, let program = segment.hostProgram,
+        guard [.systemQuery, .storageRead].contains(segment.kind), let program = segment.hostProgram,
               let query = program.operations.first(where: { $0.id == operationID }) else { throw AutomationInputBindingError.inputUnavailable }
         let result: AutomationValue
         if program.operations.count == 1 { result = observation.value }
@@ -53,10 +53,12 @@ enum AutomationRequirementValidator {
                     throw AutomationContractError.invalidPlan("Case check has no justified independent source")
                 }
                 if let predicate = check.entityProperty {
-                    guard check.checkID != nil, check.proof == .appState, segment.kind == .systemQuery,
+                    guard check.checkID != nil, ((check.proof == .appState && segment.kind == .systemQuery && segment.durableStateReader == nil) ||
+                           (!setup && check.proof == .persistedState && segment.kind == .storageRead && segment.durableStateReader != nil)),
                           let query = segment.hostProgram?.operations.first(where: { $0.id == predicate.operationID }) else {
                         throw AutomationContractError.invalidPlan("Entity property checks need named real query app-state evidence")
                     }
+                    try segment.durableStateReader?.validate(plan: plan, segment: segment)
                     try predicate.validate(query: query, expected: check.expected)
                     if setup, let index = plan.setup.firstIndex(where: { $0.id == segment.id }) {
                         // A later UI action or intent may invalidate this precondition.

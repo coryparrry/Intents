@@ -1,0 +1,39 @@
+# Native on-device runner
+
+Build with the installed Xcode macOS SDK:
+
+```sh
+sh native/build.sh /tmp/apple-foundation-evals-native
+sh native/tests.sh
+sh native/tests.sh --infer
+```
+
+The executable targets Apple silicon and macOS 26 or later. It imports only Foundation and Apple's public FoundationModels SDK. Apple Intelligence must be enabled and the on-device model must be ready. Tests use Swift and Python 3; `--infer` requires successful access to the real model service. A restricted execution sandbox can report availability while denying inference; run the MCP host in an environment that can access the model service.
+
+The legacy request adapter stays within the SDK 26 API surface; the bundled app engine uses SDK 27 APIs behind macOS 27 runtime gates. Legacy generation errors receive specific classifications; errors from newer SDK types retain their actual localized message under `generationError`. The source guard catches known SDK 27-only dependencies, but does not replace compilation with Xcode 26 of the legacy adapter alone.
+
+Send one JSON object on stdin and close stdin. The executable writes one JSON object on stdout; diagnostics go to stderr. Structured request and inference failures use exit code zero so callers can consume `status` and `error`. Transport failures and termination remain process failures. Terminating the process cancels its work; the host owns timeout and cancellation policy.
+
+`availability` accepts only `operation`. `evaluate` requires all documented request fields. Limits are 1 MiB input; 1...100 cases; 1...10 repetitions; at most 100 generations; 16 KiB instructions; 32 KiB per prompt or expected response; 256-byte unique IDs; 512 KiB instructions plus prompts expanded across repetitions; 1...4096 output tokens per generation; and 65536 requested output tokens across the run. Temperature is 0...2. Scored cases require nonempty expected text.
+
+Each repetition creates a fresh session and runs serially. Temperature zero uses Apple's greedy sampler. Positive temperature uses Apple's random sampler with probability threshold 0.95 and the requested temperature. No seed is forced. Exact equality and substring scoring preserve case, punctuation, and whitespace; scores are 1 or 0. `none` returns explicit null `passed` and `score`. An inference failure returns false/0 regardless of scoring, records the error and actual session transcript, and continues.
+
+`completed` means all generations ran successfully; a scoring mismatch still completes. Any generation error makes the run `failed`, retains every result, and includes the first error at run level. An unavailable model fails before producing results. Durations use a monotonic clock; timestamps use ISO 8601 UTC.
+
+Traces contain only real `session.transcript` entries. The runner uses Apple's Codable Transcript container for each entry, preserving the SDK's entry fields. If encoding fails, a marked `textFallback` includes the SDK's actual entry description and serialization error. Unfamiliar Codable envelopes are preserved unchanged. No token usage, tool calls, or responses are invented.
+
+## Standalone app engine
+
+The checked-in `AppEngine` sources reuse the app's evaluation actor and Codable models. Installation does not load the app, its repository, or an app process. `AppEngine/provenance.json` records the original source hashes, bundled hashes, and bounded adaptations. Execution supports the on-device Apple model and same-model rubric judging. Imported cloud, custom model-provider, Core AI, or external-judge settings are rejected. Local HTTP **tools** remain supported.
+
+Build with the Xcode 27 SDK. The binary deployment target remains macOS 26 for the legacy request above. Full app-engine requests require macOS 27 and return `unsupportedOS` on older systems. Model status reports actual Apple model readiness and per-capability availability; runtime gates never substitute a reduced generation path.
+
+`{"operation":"evaluate","suite":<EvaluationSuite>}` executes the app's full suite format. Optional `runID` is a UUID; optional `suiteRevision` must match the app's canonical execution suite revision (`EvaluationStore.revision`, including attachment digests); this differs from the portable repository definition revision. Image references use `images:[{"label":"image.png","url":"file:///absolute/image.png"}]` in attachment order, and original byte counts and SHA-256 hashes are checked before execution. The response preserves the existing result envelope and adds `appRun` (the complete `EvaluationRun`) and `analysis` (the app's run analysis). Each compatibility result includes `trace.appSample`, retaining every field, assertion result, tool call, usage, workflow, refusal, conversation, and judge trace. Scores retain the app's rubric scale. Transcript capture follows `modelConfiguration.customization.saveFullTranscript`; when enabled, both original Apple Codable transcript bytes and decoded entries are returned.
+
+The engine retains schema definitions, nested fields/constraints, fixture and loopback HTTP tools, dynamic profiles, conversations and restored transcripts, history policies and projections, reference lookup, image/OCR/barcode tools, Spotlight configuration, sampling/seed/context controls, customization, prewarm, streaming, deterministic scoring, same-model rubric checking, and field assertions. Native stream timing and final evidence are retained. Optional `emitEvents:true` sends actual `liveResponse` and completed `sample` events as stderr NDJSON while stdout remains one terminal JSON object. The host retains these real samples if a later cancellation requires a bounded hard-kill fallback. SIGTERM/SIGINT cancels the app evaluation task cooperatively; the terminal run preserves the app actor's completed/interrupted samples when the framework returns within the host grace period. Experiment and bounded CSV/JSONL import helpers are bundled for host integration.
+
+Additional operations: `suite-defaults`, `validate-suite` with `suite`, `export-suite` with `suite`, `analyze-run` with `run`, and `extract-reference` with `fileURL`, `name`, and `mimeType`. Reference extraction uses the app's actual PDFKit/UTF8/ImageIO preparation rules: 5 MB text/PDF, 10 MB image, and 16,000 extracted characters plus an explicit truncation marker. Unsupported file types fail; PDF text is never replaced with placeholder content. App requests have a bounded 32 MiB transport input; the legacy request retains its 1 MiB parser limit.
+
+Run `native/tests.sh --infer` outside a shell sandbox that prevents model-service access to verify real model generation, full transcript restoration, setup/history, nested schemas/assertions, fixture and local HTTP tool/profile traces, prewarm/stream timing, and rubric judge evidence. A model availability response alone is not proof of a successful inference.
+
+The workflow operations also use the app algorithms: `create-experiment` freezes current/candidate instructions and balanced interleaving; `run-experiment` executes that frozen record through `EvaluationExperimentRunner` and returns two complete runs plus the actual statistical summary. Optional caller UUIDs `currentRunID`/`candidateRunID` identify progress events. `compare-runs` and `summarize-experiment` analyze actual runs; `release-check` and `project-release-check` return app reports and Markdown. `approve-baseline` captures the app scoring contract. `select-assessment` changes the selected assessment pointer. `correct-judgment` returns a separate human correction and optional reviewed example while retaining the original run and judgment unchanged. Host persistence and explicit user decisions remain outside the native engine.

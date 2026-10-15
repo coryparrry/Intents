@@ -87,6 +87,7 @@ struct NativeAutomationEvidenceView: View {
         case .systemQuery: "System entity query"
         case .siriText: "Siri text route"
         case .pairedFeature: "Paired app feature"
+        case .storageRead: "Stored state observation"
         case .observeOnly: "Observation"
         }
     }

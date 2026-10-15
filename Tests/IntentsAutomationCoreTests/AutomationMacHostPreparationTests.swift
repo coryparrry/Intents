@@ -9,6 +9,7 @@ final class AutomationMacHostPreparationTests: XCTestCase, @unchecked Sendable {
         let root = URL(fileURLWithPath: "/private/tmp/product-alias-" + UUID().uuidString)
         let project = root.appendingPathComponent("Subject.xcodeproj"), products = root.appendingPathComponent("Products")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: products.appendingPathComponent("Debug"), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         var settings = ["TARGET_NAME": "Subject", "CONFIGURATION": "Debug", "PROJECT_FILE_PATH": project.path.replacingOccurrences(of: "/private/tmp/", with: "/tmp/"),
                         "PLATFORM_NAME": "macosx", "SDKROOT": "macosx", "SUPPORTED_PLATFORMS": "macosx",
@@ -21,8 +22,12 @@ final class AutomationMacHostPreparationTests: XCTestCase, @unchecked Sendable {
         XCTAssertThrowsError(try AutomationAssociatedHostPlatform.subjectProduct(bytes(), platform: platform, products: products))
     }
     func testSelectedProductSettingsRequireExactTargetAndOwnedDirectory() throws {
-        let products = URL(fileURLWithPath: "/private/tmp/owned/DerivedData/Build/Products")
-        let project = URL(fileURLWithPath: "/private/tmp/owned/source/Subject.xcodeproj")
+        let root = URL(fileURLWithPath: "/private/tmp/product-owned-" + UUID().uuidString)
+        let products = root.appendingPathComponent("DerivedData/Build/Products")
+        let project = root.appendingPathComponent("source/Subject.xcodeproj")
+        try FileManager.default.createDirectory(at: products.appendingPathComponent("Debug"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         let settings = ["TARGET_NAME": "Subject", "CONFIGURATION": "Debug", "PROJECT_FILE_PATH": project.path,
                         "PLATFORM_NAME": "macosx", "SDKROOT": "macosx", "SUPPORTED_PLATFORMS": "macosx",
                         "TARGET_BUILD_DIR": products.path + "/Debug", "FULL_PRODUCT_NAME": "Subject.app", "PRODUCT_BUNDLE_IDENTIFIER": "example.Subject"]
@@ -33,8 +38,18 @@ final class AutomationMacHostPreparationTests: XCTestCase, @unchecked Sendable {
             developer: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
         let selected = try AutomationAssociatedHostPlatform.subjectProduct(bytes(settings), platform: platform, products: products)
         XCTAssertEqual(selected.path, products.path + "/Debug/Subject.app"); XCTAssertEqual(selected.bundleID, "example.Subject")
+        var aliased = settings
+        aliased["TARGET_BUILD_DIR"] = settings["TARGET_BUILD_DIR"]!.replacingOccurrences(of: "/private/tmp/", with: "/tmp/")
+        XCTAssertEqual(try AutomationAssociatedHostPlatform.subjectProduct(bytes(aliased), platform: platform, products: products).path, selected.path)
+        let outside = root.appendingPathComponent("Outside")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: false)
+        try FileManager.default.createSymbolicLink(at: products.appendingPathComponent("Escaped"), withDestinationURL: outside)
+        let aliasedRoot = root.appendingPathComponent("AliasedProducts")
+        try FileManager.default.createSymbolicLink(at: aliasedRoot, withDestinationURL: products)
+        XCTAssertThrowsError(try AutomationAssociatedHostPlatform.subjectProduct(bytes(settings), platform: platform, products: aliasedRoot))
         for (key, value) in [("TARGET_NAME", "Foreign"), ("CONFIGURATION", "Release"), ("PROJECT_FILE_PATH", "/foreign/Subject.xcodeproj"),
                              ("TARGET_BUILD_DIR", "/foreign/Products/Debug"), ("TARGET_BUILD_DIR", products.path + "/Debug/../Foreign"),
+                             ("TARGET_BUILD_DIR", products.path + "/Escaped"), ("TARGET_BUILD_DIR", products.path + "//Debug"),
                              ("FULL_PRODUCT_NAME", "../Foreign.app"), ("PRODUCT_BUNDLE_IDENTIFIER", "$(UNRESOLVED)")] {
             var changed = settings; changed[key] = value
             XCTAssertThrowsError(try AutomationAssociatedHostPlatform.subjectProduct(bytes(changed), platform: platform, products: products))

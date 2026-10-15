@@ -15,7 +15,7 @@ public struct AutomationMacProcessInventory: Codable, Equatable, Sendable {
         public var awaitingParentCollection: Bool { status == UInt32(SZOMB) }
     }
     public struct KernelObservationFailure: Error, Codable, Equatable, Sendable, CustomStringConvertible {
-        public enum Stage: String, Codable, Sendable { case metadata, identityFields, executablePath, pidList, absenceUnconfirmed }
+        public enum Stage: String, Codable, Sendable { case metadata, identityFields, executablePath, codeIdentity, pidList, absenceUnconfirmed, executableSetChanged }
         public let stage: Stage
         public let pid: Int32?
         public let errorNumber: Int32
@@ -98,6 +98,7 @@ public struct AutomationMacProcessInventory: Codable, Equatable, Sendable {
         var executablePath: @Sendable (Int32) throws -> String
         var facts: (@Sendable (Int32, UInt32) throws -> ProcessFacts)? = nil
         var maximumConcurrentReads: Int = 1
+        var excludesUnreadableExecutable: (@Sendable (Int32, UInt32) throws -> Bool)? = nil
     }
 
     /// Two matching, bounded observations; never an atomic kernel snapshot.
@@ -110,7 +111,10 @@ public struct AutomationMacProcessInventory: Codable, Equatable, Sendable {
         if !helperExecutablePaths.isEmpty {
             return try collectExecutables(userID: getuid(), paths: helperExecutablePaths,
                 reader: .init(processIDs: { try processIDs(userID: $0) },
-                    identity: { try info(pid: $0, userID: $1) }, executablePath: { try executablePath(pid: $0) }),
+                    identity: { try info(pid: $0, userID: $1) }, executablePath: { try executablePath(pid: $0) },
+                    excludesUnreadableExecutable: { pid, userID in
+                        try AutomationMacExecutableCodeIdentity.excludes(pid: pid, userID: userID, paths: helperExecutablePaths)
+                    }),
                 inactive: { try inactiveProcess(pid: $0, userID: getuid()) })
         }
         return try collectReconciled(userID: getuid(), observerPID: getpid(), helperExecutablePaths: helperExecutablePaths, reader: .init(
@@ -256,7 +260,7 @@ public struct AutomationMacProcessInventory: Codable, Equatable, Sendable {
               validExecutablePath(path) else { throw AutomationContractError.terminationUnverified }
         return path
     }
-    private static func info(pid: Int32, userID: UInt32) throws -> AutomationProcessIdentity {
+    static func info(pid: Int32, userID: UInt32) throws -> AutomationProcessIdentity {
         let facts = try processFacts(pid: pid, userID: userID)
         guard let start = facts.startIdentity else { throw AutomationContractError.terminationUnverified }
         return .init(pid: pid, startIdentity: start)

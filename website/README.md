@@ -69,7 +69,7 @@ source synchronization and publication.
 - Lucide Static **1.16.0**, the same version used by the native app. Symbols are
   extracted from its original SVGs. ISC licence in `dist/vendor/LUCIDE-LICENSE.txt`.
 - Intents icon and app example: the Intents repository, MIT licence.
-- System fonts only. No analytics, external form, remote model call, or cookie.
+- System fonts only. PostHog EU provides anonymous, cookieless website analytics. No session recordings, form capture, or remote model calls.
 
 Motion follows the operating system's reduced-motion preference. The page also
 has a pause control with an optional local preference. App selection, filtering,
@@ -129,3 +129,13 @@ References: [Google AI search guidance](https://developers.google.com/search/doc
 [OpenAI crawlers](https://developers.openai.com/api/docs/bots),
 [Anthropic crawlers](https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler),
 [llms.txt proposal](https://llmstxt.org/), and [Schema.org SoftwareApplication](https://schema.org/SoftwareApplication).
+
+## Website analytics
+
+PostHog EU project 266962 measures anonymous, cookieless traffic. Both product pages and the privacy page load `analytics.mjs` asynchronously. Preview/localhost domains do not initialize PostHog. Production events have `site: intents`, `analytics_source: website`, and `is_test: false`.
+
+- `$pageview` / `$pageleave`: visits, daily anonymous visitors, pages, referrals, campaign sources and session duration.
+- `website_download_clicked`: `download_location` (navigation, hero, closing, getting_started), `download_type` (release_page or disk_image), `release_version`, `platform`, `download_url`. It measures clicks, not completed downloads or installs.
+- `?analytics_test=1` marks a manual verification visit and its clicks as `is_test: true`; the dedicated dashboard excludes these.
+
+Cookieless server hash mode is enabled in PostHog. IP-derived country enrichment and reliable returning-user counts across days are unavailable in this mode. No session replay, text/form autocapture, heatmaps or exception capture is enabled by this integration. Only UTM campaign parameters survive URL sanitization. Browser privacy signals prevent SDK loading. The privacy page can store an opt-out preference, propagated to other open tabs.

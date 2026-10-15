@@ -29,7 +29,7 @@ extension AppAutomationStore {
 
     var isSiriWorkflow: Bool { candidate?.kind == .sourceTarget && workflowRoute == "siri" }
     var canRunSiriSubmission: Bool {
-        !busy && preparationDestination == .physical && prepared?.host.target.kind == .physical &&
+        !busy && !siriResetQualificationUnresolved && preparationDestination == .physical && prepared?.host.target.kind == .physical &&
             prepared?.generatedHost.includesSiri == true &&
             prepared?.host.target == sourcePreparationTarget && prepared?.host.app.logicalID == candidateID &&
             prepared?.host.app.configuration == configuration && prepared?.generatedHost.configuration == configuration &&

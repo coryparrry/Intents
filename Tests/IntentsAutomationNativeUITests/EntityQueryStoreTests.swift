@@ -48,7 +48,7 @@ import XCTest
         XCTAssertFalse(saved[0].report.resourcesReleased); XCTAssertNil(stale.entityChoices["task"])
         XCTAssertFalse(stale.canRun)
     }
-    func testTypedInputsUseDeclaredDefaultsAndBindValidChangesToConfirmationDigest() throws {
+    func testTypedInputsUseDeclaredDefaultsAndBindValidChangesToConfirmationDigest() async throws {
         let (model, original, _) = try fixture { _, _, _, _, _, _, _ in throw QueryFixtureError.failed }
         var prepared = original
         var number = ApplicationSurfaceCatalog.SystemAction.Parameter(name: "count", family: "integer", optional: false)
@@ -76,6 +76,7 @@ import XCTest
         _ = try model.requestCommand(id: requestID, digest: initial.digest)
         model.inputs["count"] = "9007199254740993"
         model.run()
+        await model.waitForPreparation()
         XCTAssertEqual(try model.commandStatus(id: requestID).state, "invalidated")
         XCTAssertFalse(model.busy); XCTAssertNil(model.report)
     }
@@ -95,10 +96,28 @@ import XCTest
         XCTAssertFalse(model.canRun); XCTAssertThrowsError(try model.previewCommand())
     }
     nonisolated private static func result(prepared: AutomationPreparedApplication, entity: ApplicationSurfaceCatalog.Entity, approval: RunApproval, attemptID: String, released: Bool = true) throws -> AutomationEntityQueryResult {
-        let plan = try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "Send invoice", approval: approval)
+        let plan = try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: entity.usesSuggestedQuery ? "" : "Send invoice", approval: approval)
         let report = AutomationAttemptReport(attemptID: attemptID, result: AutomationAssessment.assess(plan: plan, attemptID: attemptID, subjectDispatched: false, subjectCompleted: false, observations: [], termination: released ? .infrastructureFailed : .unresolved), receipts: [], resourcesReleased: released)
-        let choice = AutomationQueryEntityChoice(id: "personal", typeID: entity.typeID, properties: ["title": .text("Send invoice"), "owner": .text("Personal"), "completed": .bool(false)], sourceAttemptID: attemptID, app: prepared.host.app, target: prepared.host.target, environmentID: approval.environmentID, catalogDigest: try AutomationRecipeContext.catalogDigest(prepared.catalog))
+        let choice = AutomationQueryEntityChoice(id: "personal", typeID: entity.typeID, properties: entity.usesSuggestedQuery ? [:] : ["title": .text("Send invoice"), "owner": .text("Personal"), "completed": .bool(false)], sourceAttemptID: attemptID, app: prepared.host.app, target: prepared.host.target, environmentID: approval.environmentID, catalogDigest: try AutomationRecipeContext.catalogDigest(prepared.catalog))
         return .init(report: report, choices: released ? [choice] : [], selectionGap: nil)
+    }
+    func testAdvancedIdentifierOnlySuggestionsExposeRealIDsAndRequireScopedChoice() async throws {
+        let (model, original, parameter) = try fixture { prepared, entity, text, approval, attemptID, _, _ in
+            XCTAssertEqual(text, "")
+            return try Self.result(prepared: prepared, entity: entity, approval: approval, attemptID: attemptID)
+        }
+        var prepared = original
+        prepared.catalog.entities = [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "Subject.TaskQuery", properties: [:], propertyTitles: [:], queryMode: .suggested)]
+        model.prepared = prepared; model.catalog = prepared.catalog
+        XCTAssertTrue(model.canFindEntities(parameter))
+        await model.findEntities(parameter)
+        let choice = try XCTUnwrap(model.entityChoices["task"]?.first)
+        XCTAssertEqual(AutomationNativeEntitySelection.label(choice, entity: prepared.catalog.entities![0]), "personal")
+        XCTAssertFalse(model.canRun)
+        model.selectedEntityIDs["task"] = "personal"
+        XCTAssertTrue(model.canRun)
+        model.entityQueryChanged("task")
+        XCTAssertFalse(model.canRun)
     }
     func testActualScopedChoicesAreRequiredAndQueryChangeInvalidatesThem() async throws {
         let (model, _, parameter) = try fixture { prepared, entity, _, approval, attemptID, _, _ in try Self.result(prepared: prepared, entity: entity, approval: approval, attemptID: attemptID) }

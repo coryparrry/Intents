@@ -5,7 +5,7 @@ import XCTest
 @testable import IntentsAutomationCore
 
 @MainActor final class InstalledUIStoreTests: XCTestCase {
-    func fixture(runtime: RuntimeIdentity = RuntimeIdentity(), executor: AutomationNativeRunExecutor? = nil, searchExecutor: AutomationNativeSearchExecutor? = nil, comparisonExecutor: AutomationNativeFixComparisonExecutor? = nil, reproductionExecutor: AutomationNativeReproductionExecutor? = nil, reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))? = nil, evidenceImporter: (@Sendable (AutomationCase, AutomationAttemptReport, URL, AutomationEvidenceExposure) async throws -> AutomationNativeEvidenceDocument)? = nil, simulatorInventoryReader: AutomationNativeSimulatorInventoryReader? = nil) async throws -> (AppAutomationStore, URL, URL) {
+    func fixture(runtime: RuntimeIdentity = RuntimeIdentity(), executor: AutomationNativeRunExecutor? = nil, searchExecutor: AutomationNativeSearchExecutor? = nil, comparisonExecutor: AutomationNativeFixComparisonExecutor? = nil, reproductionExecutor: AutomationNativeReproductionExecutor? = nil, reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))? = nil, evidenceImporter: (@Sendable (AutomationCase, AutomationAttemptReport, URL, AutomationEvidenceExposure) async throws -> AutomationNativeEvidenceDocument)? = nil, simulatorInventoryReader: AutomationNativeSimulatorInventoryReader? = nil, recoverySimulatorShutdown: @escaping @Sendable (TargetIdentity, URL, URL) async throws -> Void = { _, _, _ in }) async throws -> (AppAutomationStore, URL, URL) {
         let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent("native-ui-test-" + UUID().uuidString)
         let bundle = root.appendingPathComponent("Subject.app")
         try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
@@ -16,7 +16,7 @@ import XCTest
         try Data([0xcf,0xfa,0xed,0xfe,0x0c,0,0,1,0,0,0,0]).write(to: bundle.appendingPathComponent("Subject"))
         let model = AppAutomationStore(supportDirectory: root.appendingPathComponent("support"), savedCasesReader: { [] },
             runExecutor: executor ?? { _, _, _, _, _, _ in throw NativeTestError.unexpectedExecution },
-            searchExecutor: searchExecutor, comparisonExecutor: comparisonExecutor, reproductionExecutor: reproductionExecutor, reproductionPreflightReader: reproductionPreflightReader, evidenceImporter: evidenceImporter, recoverySimulatorShutdown: { _, _, _ in }, simulatorInventoryReader: simulatorInventoryReader ?? { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) })
+            searchExecutor: searchExecutor, comparisonExecutor: comparisonExecutor, reproductionExecutor: reproductionExecutor, reproductionPreflightReader: reproductionPreflightReader, evidenceImporter: evidenceImporter, recoverySimulatorShutdown: recoverySimulatorShutdown, simulatorInventoryReader: simulatorInventoryReader ?? { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) })
         model.select(bundle); await model.task?.value; model.simulatorID = UUID().uuidString
         model.uiInstruction = "Open the tasks screen"; model.uiEndpoint = "Tasks"; model.uiApprovedText = "Approved input"
         model.effectChoice = "navigation"; model.effectsConfirmed = true
@@ -59,7 +59,7 @@ import XCTest
         model.freshInitialState = "false"; model.freshExpectedState = "true"
         model.effectChoice = "fixture"; model.disposable = true; model.effectsConfirmed = true
     }
-    private func learnedCapture(_ request: AutomationNativeRunRequest, prepared: AutomationPreparedApplication, id: String) throws -> AutomationCapturedSetupAttempt {
+    func learnedCapture(_ request: AutomationNativeRunRequest, prepared: AutomationPreparedApplication, id: String) throws -> AutomationCapturedSetupAttempt {
         let report = nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: id, completed: true)
         let context = AutomationRecipeContext(app: request.plan.app, target: request.plan.target, environmentID: request.plan.environmentID,
             catalogDigest: try AutomationRecipeContext.catalogDigest(prepared.catalog), hostDigest: prepared.host.hostProductDigest,
@@ -69,6 +69,32 @@ import XCTest
             .init(id: "learned.endpoint", kind: .assertEndpoint, locator: .init(.label, "Tasks"))])
         return try .init(live: .init(context: context, plan: request.plan, approval: request.approval, report: report), capture: capture,
             bindings: AutomationFreshEntityPlanner.bindings(plan: request.plan))
+    }
+    func testPreparedFreshComparisonRefreshesFingerprintsAndRejectsTemplateDrift() async throws {
+        let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
+        let request = try model.makeNativeRunRequest(runID: "fingerprints"), before = try XCTUnwrap(model.prepared)
+        let frozen = try AutomationFrozenCase(plan: request.plan)
+        let original = nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: "original", completed: false)
+        var after = try changedPreparedSource(before)
+        let comparison = try AutomationNativeUIFixComparisonProposal.compile(frozen: frozen, original: original,
+            before: .prepared(before), after: .prepared(after), runID: "compare", disposable: true)
+        // Versioned artifacts are the sole simulator build authority; the comparison
+        // refreshes build fingerprints without changing its declared surface or oracle.
+        XCTAssertEqual(comparison.baseline.plan.preparedSimulatorBuildArtifacts, try .init(prepared: before))
+        XCTAssertEqual(comparison.candidate.plan.preparedSimulatorBuildArtifacts, try .init(prepared: after))
+        let catalogDigest = try AutomationRecipeContext.catalogDigest(after.catalog)
+        XCTAssertEqual(comparison.candidate.plan.provenance["catalog"], catalogDigest)
+        for key in ["ui.preparedHostDigest", "ui.preparedXctestrunDigest", "ui.preparedCatalogDigest", "ui.hostTemplateDigest"] {
+            XCTAssertNil(comparison.baseline.plan.provenance[key])
+            XCTAssertNil(comparison.candidate.plan.provenance[key])
+        }
+        XCTAssertEqual(comparison.baseline.contractDigest, comparison.candidate.contractDigest)
+        XCTAssertEqual(comparison.baseline.oracleDigest, comparison.candidate.oracleDigest)
+        _ = try nativeFreshToken(plan: comparison.candidate.plan, approval: comparison.afterApproval,
+            prepared: after, prefix: "correct-after-")
+        after.generatedHost.templateDigest = String(repeating: "f", count: 64)
+        XCTAssertThrowsError(try AutomationNativeUIFixComparisonProposal.compile(frozen: frozen, original: original,
+            before: .prepared(before), after: .prepared(after), runID: "wrong-template", disposable: true))
     }
     func testCapsuleSelectionRetainsTrustedCampaignFenceAndDeniesAfterTaint() async throws {
         let (model, root, _) = try await fixture()
@@ -602,14 +628,17 @@ import XCTest
                 frozen: proposal.frozen, originalAttemptID: proposal.originalAttemptID, approval: proposal.approval,
                 limits: proposal.limits, executor: NativeSearchFactExecutor(fails: true))
         })
-        try await saveFailure(model: model, root: root)
+        let original = try await saveFailure(model: model, root: root)
         model.uiInstruction = ""; model.uiEndpoint = ""; model.uiExpectedText = "changed expectation ignored"
         XCTAssertFalse(model.canRun); XCTAssertTrue(model.canReproduceSavedFailure)
         await model.reproduceSavedFailure()
         XCTAssertNil(model.message); XCTAssertFalse(model.busy)
         let result = try XCTUnwrap(model.reproductionReport)
         XCTAssertTrue(result.complete); XCTAssertEqual(result.matchingFailures, 5)
-        XCTAssertEqual(result.frozen.plan.requirements.first?.expected, .text("Complete"))
+        XCTAssertEqual(result.frozen.plan.requirements.first?.expected, .object(["visible-text": .text("Complete")]))
+        XCTAssertEqual(result.frozen.plan.requirements, original.plan.requirements)
+        XCTAssertEqual(result.frozen.oracleDigest, original.oracleDigest)
+        XCTAssertEqual(result.frozen.digest, original.digest)
         XCTAssertEqual(model.savedReproductions.count, 1)
         XCTAssertFalse(result.attempts.contains { $0.attemptID == "original" })
     }
@@ -978,7 +1007,7 @@ private actor NativeSearchAlternatingExecutor: AutomationCampaignAttemptExecutor
     var count = 0
     func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
         count += 1
-        return await NativeSearchFactExecutor(fails: count % 2 == 0).execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget)
+        return try await NativeSearchFactExecutor(fails: count % 2 == 0).execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget)
     }
 }
 private actor NativeSearchInterruptedExecutor: AutomationCampaignAttemptExecutor {
@@ -992,11 +1021,13 @@ private actor NativeSearchInterruptedExecutor: AutomationCampaignAttemptExecutor
 actor NativeSearchFactExecutor: AutomationCampaignAttemptExecutor {
     let fails: Bool
     init(fails: Bool = false) { self.fails = fails }
-    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) -> AutomationAttemptReport {
+    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) throws -> AutomationAttemptReport {
         // Source contract fixture; not a device or accessibility proof.
-        let plan = frozen.plan, observer = plan.observations[0]
+        let plan = frozen.plan
+        let observer = try XCTUnwrap(plan.observations.first, "NativeSearchFactExecutor requires an authored observation")
+        let requirement = try XCTUnwrap(plan.requirements.first, "NativeSearchFactExecutor requires an authored requirement")
         let fact = AutomationObservation(id: observer.id, app: plan.app, target: plan.target, environmentID: plan.environmentID,
-            attemptID: attemptID, stepID: observer.id, route: .ui, proof: .visibleState, value: fails ? .text("unexpected observed value") : plan.requirements[0].expected)
+            attemptID: attemptID, stepID: observer.id, route: .ui, proof: .visibleState, value: fails ? .text("unexpected observed value") : requirement.expected)
         let receipts = [plan.execution, observer].enumerated().map { index, segment in
             AutomationSegmentReceipt(scope: .init(runID: approval.runID, attemptID: attemptID, segmentID: segment.id, leaseGeneration: index + 1),
                 app: plan.app, target: plan.target, segmentID: segment.id, route: .ui, dispatched: true, completed: true,

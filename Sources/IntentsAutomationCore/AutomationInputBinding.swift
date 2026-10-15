@@ -108,10 +108,10 @@ public enum AutomationInputResolver {
                         throw AutomationContractError.invalidPlan("Invalid UI input destination or literal replacement")
                     }
                 case .hostQueryIDs:
-                    guard binding.name == "queryIDs", binding.uniqueEntity != nil, segment.kind == .systemQuery, segment.effects.isSubset(of: [.observe]),
+                    guard binding.name == "queryIDs", binding.uniqueEntity != nil, [.systemQuery, .storageRead].contains(segment.kind), segment.effects.isSubset(of: [.observe]),
                           let operationID = binding.operationID, identifier(operationID),
                           let operation = segment.hostProgram?.operations.first(where: { $0.id == operationID }), operation.kind == .query,
-                          operation.queryIDs == nil, operation.queryText == nil, operation.attemptQueryPrefix == nil else {
+                          operation.queryIDs == nil, operation.queryText == nil, operation.querySuggested == nil, operation.attemptQueryPrefix == nil else {
                         throw AutomationContractError.invalidPlan("Query identity binding cannot replace a selector")
                     }
                 case .hostParameter:
@@ -137,7 +137,7 @@ public enum AutomationInputResolver {
         resolved.attemptTextBindings = nil
         for index in 0..<(resolved.hostProgram?.operations.count ?? 0) {
             if let prefix = resolved.hostProgram?.operations[index].attemptQueryPrefix {
-                guard resolved.hostProgram?.operations[index].queryText == nil, resolved.hostProgram?.operations[index].queryIDs == nil else { throw AutomationInputBindingError.inputUnavailable }
+                guard resolved.hostProgram?.operations[index].queryText == nil, resolved.hostProgram?.operations[index].queryIDs == nil, resolved.hostProgram?.operations[index].querySuggested == nil else { throw AutomationInputBindingError.inputUnavailable }
                 resolved.hostProgram?.operations[index].queryText = try AutomationAttemptText.value(prefix: prefix, attemptID: attemptID)
                 resolved.hostProgram?.operations[index].attemptQueryPrefix = nil
             }
@@ -169,7 +169,7 @@ public enum AutomationInputResolver {
                 guard case .entity(let type, let id) = value,
                       let index = resolved.hostProgram?.operations.firstIndex(where: { $0.id == binding.operationID }),
                       resolved.hostProgram?.operations[index].typeID == type, resolved.hostProgram?.operations[index].queryIDs == nil,
-                      resolved.hostProgram?.operations[index].queryText == nil else { throw AutomationInputBindingError.inputUnavailable }
+                      resolved.hostProgram?.operations[index].queryText == nil, resolved.hostProgram?.operations[index].querySuggested == nil else { throw AutomationInputBindingError.inputUnavailable }
                 resolved.hostProgram?.operations[index].queryIDs = [id]
             case .hostParameter:
                 guard let index = resolved.hostProgram?.operations.firstIndex(where: { $0.id == binding.operationID }), resolved.hostProgram?.operations[index].parameters[binding.name] == nil else { throw AutomationContractError.invalidPlan("Missing host binding destination") }

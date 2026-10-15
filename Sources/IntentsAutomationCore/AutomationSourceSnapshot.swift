@@ -9,6 +9,7 @@ public struct AutomationSourceManifest: Codable, Equatable, Sendable {
         public var symbolicLink: String?
         public var frozenSymbolicLink: String?
         public var permissions: Int
+        public var materializedSourcePath: String? = nil
     }
     public var schemaVersion = 1
     public var sourceRoot: String
@@ -17,6 +18,14 @@ public struct AutomationSourceManifest: Codable, Equatable, Sendable {
     public var files: [File]
     public var directories: [String]
     public var excludedPaths: [String]
+    public var includesDependencies: Bool? = nil
+    public var materializedLinks: [MaterializedLink]? = nil
+    public struct MaterializedLink: Codable, Equatable, Sendable {
+        public var relativePath: String
+        public var destination: String
+        public var resolvedPath: String
+        public var directory: Bool
+    }
     public var digest: String {
         get throws {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -27,16 +36,22 @@ public struct AutomationSourceManifest: Codable, Equatable, Sendable {
 
 /// Captures the current checkout, including dirty and untracked files. Never runs hooks or writes to it.
 public enum AutomationSourceSnapshot {
+    // Dependency manifests can exceed 16 MiB while remaining within the
+    // shared 100,000-entry / 2-GiB content budget. All replay readers share this cap.
+    static let maximumManifestBytes = 64 * 1024 * 1024
+    static func manifestStore(sessionRoot: URL) throws -> AutomationDurableFile {
+        try AutomationDurableFile(url: sessionRoot.appendingPathComponent("source-manifest.json"), maximumBytes: maximumManifestBytes)
+    }
     private static let excludedDirectories: Set<String> = [".git", ".build", "DerivedData", "node_modules", ".runtime", ".codex", ".agents", ".aws", ".asc", ".signing", ".wrangler", ".ssh", ".gnupg"]
-    private static func excludes(_ path: String) -> Bool {
+    static func excludes(_ path: String, includesDependencies: Bool = false) -> Bool {
         let parts = path.split(separator: "/").map(String.init)
-        return parts.contains(where: excludedDirectories.contains)
+        return parts.contains(where: { excludedDirectories.contains($0) && !(includesDependencies && $0 == "node_modules") })
             || parts.contains(where: { $0 == ".env" || $0.hasPrefix(".env.") || $0.hasSuffix(".p12") || $0.hasSuffix(".p8") || $0 == ".DS_Store" })
     }
-    public static func capture(source: URL, sessionRoot: URL, additionalRoots: [URL] = []) throws -> AutomationSourceManifest {
-        try capture(source: source, sessionRoot: sessionRoot, additionalRoots: additionalRoots, limits: .standard)
+    public static func capture(source: URL, sessionRoot: URL, additionalRoots: [URL] = [], includesDependencies: Bool = false) throws -> AutomationSourceManifest {
+        try capture(source: source, sessionRoot: sessionRoot, additionalRoots: additionalRoots, limits: .standard, includesDependencies: includesDependencies)
     }
-    static func capture(source: URL, sessionRoot: URL, additionalRoots: [URL], limits: AutomationSourceReadBudget.Limits) throws -> AutomationSourceManifest {
+    static func capture(source: URL, sessionRoot: URL, additionalRoots: [URL], limits: AutomationSourceReadBudget.Limits, includesDependencies: Bool = false) throws -> AutomationSourceManifest {
         _ = try AutomationSourceReadBudget(limits: limits)
         let roots = try validateRoots(source: source, additionalRoots: additionalRoots)
         let original = roots[0]
@@ -46,7 +61,7 @@ public enum AutomationSourceSnapshot {
               roots.allSatisfy({ !destination.path.hasPrefix($0.path + "/") && !$0.path.hasPrefix(destination.path + "/") }) else {
             throw AutomationContractError.invalidIdentity
         }
-        return try captureValidated(roots: roots, destination: destination, limits: limits)
+        return try captureValidated(roots: roots, destination: destination, limits: limits, includesDependencies: includesDependencies)
     }
     /// Checks only the explicitly selected folders, without enumerating their shared ancestor.
     public static func validateRoots(source: URL, additionalRoots: [URL]) throws -> [URL] {
@@ -60,18 +75,21 @@ public enum AutomationSourceSnapshot {
         if roots.count > 1 { _ = try AutomationSourceCaptureLayout.commonAncestor(roots.map(\.path)) }
         return roots
     }
-    private static func captureValidated(roots: [URL], destination: URL, limits: AutomationSourceReadBudget.Limits) throws -> AutomationSourceManifest {
+    private static func captureValidated(roots: [URL], destination: URL, limits: AutomationSourceReadBudget.Limits, includesDependencies: Bool) throws -> AutomationSourceManifest {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        var stage = "opening the source manifest"
         do {
-            let manifestStore = try AutomationDurableFile(url: destination.appendingPathComponent("source-manifest.json"), maximumBytes: 16 * 1024 * 1024)
+            let manifestStore = try manifestStore(sessionRoot: destination)
             for attempt in 1...2 {
                 let staging = destination.appendingPathComponent("source-attempt-\(attempt)")
                 try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
                 do {
-                    let before = try readRoots(roots, limits: limits)
+                    stage = "reading approved source folders"
+                    let before = try readRoots(roots, limits: limits, includesDependencies: includesDependencies)
                     for relative in before.directories { try FileManager.default.createDirectory(at: staging.appendingPathComponent(relative), withIntermediateDirectories: true) }
                     for file in before.files where file.symbolicLink == nil {
-                        let (inputRoot, inputRelative) = try before.origin(for: file.relativePath)
+                        stage = "copying " + file.relativePath
+                        let (inputRoot, inputRelative) = try before.readOrigin(for: file)
                         let data = try AutomationReadOnlyFile.read(root: inputRoot, relativePath: inputRelative, maximumBytes: max(1, file.bytes))
                         guard data.count == file.bytes, AutomationArtifactRegistry.digest(data) == file.sha256 else { throw AutomationContractError.conflictingOperation }
                         let output = staging.appendingPathComponent(file.relativePath)
@@ -81,15 +99,19 @@ public enum AutomationSourceSnapshot {
                         try FileManager.default.setAttributes([.posixPermissions: file.permissions & 0o700], ofItemAtPath: output.path)
                     }
                     for file in before.files where file.symbolicLink != nil {
+                        stage = "rebasing " + file.relativePath
                         let output = staging.appendingPathComponent(file.relativePath)
                         try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
                         try FileManager.default.createSymbolicLink(atPath: output.path, withDestinationPath: file.frozenSymbolicLink!)
                     }
-                    guard before == (try readRoots(roots, limits: limits)) else { throw AutomationContractError.conflictingOperation }
+                    stage = "verifying unchanged source folders"
+                    guard before == (try readRoots(roots, limits: limits, includesDependencies: includesDependencies)) else { throw AutomationContractError.conflictingOperation }
                     let frozen = destination.appendingPathComponent("source")
                     try FileManager.default.moveItem(at: staging, to: frozen)
                     let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-                    try manifestStore.withLock { try manifestStore.write(try encoder.encode(before)) }
+                    let encoded = try encoder.encode(before)
+                    stage = "saving the source manifest (" + String(encoded.count) + " bytes)"
+                    try manifestStore.withLock { try manifestStore.write(encoded) }
                     return before
                 } catch {
                     try? FileManager.default.removeItem(at: staging)
@@ -98,27 +120,31 @@ public enum AutomationSourceSnapshot {
                 }
             }
             throw AutomationContractError.conflictingOperation
-        } catch { try? FileManager.default.removeItem(at: destination); throw error }
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            if error as? AutomationContractError == .invalidIdentity { throw AutomationContractError.invalidPlan("Source capture failed while " + stage) }
+            throw error
+        }
     }
     public static func verifyOriginal(_ manifest: AutomationSourceManifest) throws {
         try verifyOriginal(manifest, limits: .standard)
     }
     static func verifyOriginal(_ manifest: AutomationSourceManifest, limits: AutomationSourceReadBudget.Limits) throws {
         try manifest.validateCaptureLayout()
-        guard manifest == (try readRoots(manifest.approvedRoots.map { URL(fileURLWithPath: $0) }, limits: limits)) else { throw AutomationContractError.conflictingOperation }
+        guard manifest == (try readRoots(manifest.approvedRoots.map { URL(fileURLWithPath: $0) }, limits: limits, includesDependencies: manifest.includesDependencies == true)) else { throw AutomationContractError.conflictingOperation }
     }
-    private static func rebasedLink(relativePath: String, target: String) -> String {
+    static func rebasedLink(relativePath: String, target: String) -> String {
         let parent = relativePath.split(separator: "/").dropLast().map(String.init), destination = target.split(separator: "/").map(String.init)
         var common = 0
         while common < parent.count && common < destination.count && parent[common] == destination[common] { common += 1 }
         return (Array(repeating: "..", count: parent.count - common) + destination.dropFirst(common)).joined(separator: "/")
     }
-    private static func readRoots(_ roots: [URL], limits: AutomationSourceReadBudget.Limits) throws -> AutomationSourceManifest {
+    private static func readRoots(_ roots: [URL], limits: AutomationSourceReadBudget.Limits, includesDependencies: Bool) throws -> AutomationSourceManifest {
         var budget = try AutomationSourceReadBudget(limits: limits), values: [AutomationSourceManifest] = []
         for root in roots {
             try budget.requireAvailable()
             guard !excludes(root.lastPathComponent), try AutomationPath.canonical(root).path == root.path else { throw AutomationContractError.invalidIdentity }
-            values.append(try manifest(root: root, budget: &budget))
+            values.append(try includesDependencies ? AutomationDependencySourceReader.manifest(root: root, approvedRoots: roots, budget: &budget) : manifest(root: root, budget: &budget))
         }
         return try AutomationSourceCaptureLayout.aggregate(values)
     }

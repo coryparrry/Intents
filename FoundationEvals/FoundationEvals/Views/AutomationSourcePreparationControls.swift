@@ -8,6 +8,22 @@ struct AutomationSourcePreparationControls: View {
     @State private var diagnosticSelection: AutomationInputConversionDiagnostic.Selection?
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Picker("Xcode", selection: Binding(get: { model.developerDirectory.path }, set: { id in
+                    do { try model.selectInstalledToolchain(id) }
+                    catch { model.message = model.errorText(error) }
+                })) {
+                    if !model.installedToolchains.contains(where: { $0.id == model.developerDirectory.path }) {
+                        Text("Current Xcode · unavailable").tag(model.developerDirectory.path)
+                    }
+                    ForEach(model.installedToolchains) { choice in
+                        Text(choice.label + (choice.id == model.defaultDeveloperDirectoryPath ? " · Default" : ""))
+                            .tag(choice.id)
+                    }
+                }.accessibilityIdentifier("automation.preparation.xcode").disabled(model.busy)
+                Button("Refresh Xcodes") { model.refreshInstalledToolchains() }.disabled(model.busy)
+            }
+
             Picker("Prepare for", selection: $model.preparationDestination) {
                 ForEach(AutomationNativePreparationDestination.allCases) { Text($0.title).tag($0).accessibilityIdentifier($0.rawValue) }
             }.accessibilityLabel("Prepare for").accessibilityIdentifier("automation.preparation.destination")
@@ -40,9 +56,15 @@ struct AutomationSourcePreparationControls: View {
                 Button("Refresh simulators") { Task { await model.refreshTargets() } }
                     .disabled(model.busy).accessibilityIdentifier("automation.preparation.refreshSimulators")
             } else if model.preparationDestination == .physical {
-                TextField("Exact physical device ID", text: $model.physicalDeviceID)
-                    .accessibilityLabel("Exact physical device ID")
-                Text("Choose the device identifier shown in Xcode. Preparation builds a private device copy; it does not install or run it.")
+                Picker("iPhone or iPad", selection: $model.physicalDeviceID) {
+                    Text("Choose a device").tag("")
+                    ForEach(model.physicalDevices) { device in
+                        Text(device.selectionLabel + (device.available ? "" : " · Unavailable"))
+                            .tag(device.id).disabled(!device.available)
+                    }
+                }.accessibilityLabel("iPhone or iPad")
+                Button("Refresh devices") { Task { await model.refreshTargets() } }.disabled(model.busy)
+                Text(model.physicalDevices.isEmpty ? "Connect and unlock your iPhone or iPad, then refresh devices." : "Preparation builds a private copy for the selected device. Installation is reviewed separately.")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
                 Text("Build a private Mac copy for inspection. Mac workflow execution is not available yet.")
@@ -61,6 +83,31 @@ struct AutomationSourcePreparationControls: View {
                 }
                 Button("Add source folder…", action: chooseSourceFolder).disabled(model.busy || model.sourceGrants.urls.count >= 8)
             }
+            Toggle("Copy installed native dependencies", isOn: $model.includesSourceDependencies).disabled(model.busy)
+            HStack {
+                Menu("Advanced JavaScript preparation") {
+                    Button("Choose existing server qualification…", action: chooseJavaScriptRecipe)
+                }.disabled(model.busy)
+                if model.servedJavaScriptProfile != nil {
+                    Button("Remove server recipe") {
+                        do { try model.selectJavaScriptRecipe(nil) }
+                        catch { model.message = model.errorText(error) }
+                    }.disabled(model.busy)
+                }
+            }
+            if let recipe = model.servedJavaScriptProfile {
+                Text("JavaScript endpoint: \(recipe.bundleURL). The approved recipe runs in a private copy and stops after each use.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if model.preparationDestination != .simulator {
+                    Text("This loopback server recipe requires iOS Simulator.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if model.servedJavaScriptProfile == nil {
+                Text("Recognized installed Expo development tools are detected when you review the build. Intents prepares their private server and verifies the selected app receives the pinned JavaScript.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text("For Flutter and Expo projects, copy dependency folders and linked files within the selected source folders. Add any linked external package folder above.")
+                .font(.caption).foregroundStyle(.secondary)
             Button("Prepare app…", action: approveBuild).disabled(!model.canPrepare)
             Button("Check input conversion…") { diagnosticSelection = model.inputConversionSelection }
                 .disabled(model.busy || model.closing || model.inputConversionSelection == nil)
@@ -76,6 +123,20 @@ struct AutomationSourcePreparationControls: View {
         } message: { selection in
             Text("Start the private Mac XCTest host and round-trip fixed samples for \(selection.parameterNames.joined(separator: ", ")) in \(selection.actionTitle). This check does not perform the app action.")
         }
+    }
+    private func chooseJavaScriptRecipe() {
+        guard let root = model.selectedSourceRoot else { return }
+        let panel = NSOpenPanel()
+        panel.directoryURL = root; panel.canChooseFiles = true; panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
+        panel.message = "Choose the existing qualified JavaScript server JSON. It must pin installed Node, a leaf server script, the loopback bundle URL, served bytes and the native runtime binding."
+        let epoch = model.selectionEpoch
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url, model.selectionEpoch == epoch else { return }
+            do { try model.selectJavaScriptRecipe(url) }
+            catch { model.message = model.errorText(error) }
+        }
+        if let window = NSApplication.shared.keyWindow { panel.beginSheetModal(for: window, completionHandler: completion) }
+        else { panel.begin(completionHandler: completion) }
     }
     private func chooseSourceFolder() {
         let panel = NSOpenPanel()

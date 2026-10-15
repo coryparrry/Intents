@@ -12,7 +12,8 @@ public enum AutomationUIOnlyPlanner {
               ["text", "value", "checked", "selected"].contains(observationProperty), approvedText.utf16.count <= 32768,
               approval.maximumActions >= 30 else { throw AutomationContractError.invalidPlan("Invalid UI workflow approval") }
         let goal = AutomationNavigationGoal(id: "navigate", instruction: instruction,
-            endpoint: .init(.label, endpoint), maximumCalls: 12, maximumActions: 30)
+            endpoint: .init(.label, endpoint), maximumCalls: 12, maximumActions: 30,
+            allowedFillBindings: approvedText.isEmpty ? [] : ["approvedText"])
         try goal.validate()
         var subject = AutomationSegment(id: "subject", kind: .ui, phase: .subject, operation: instruction,
             effects: approval.effects, lifecycle: .persistedStateAcrossSegments)
@@ -30,7 +31,8 @@ public enum AutomationUIOnlyPlanner {
             observer.uiProgram = .init(operations: [.init(id: "visible-text", kind: .observeProperty,
                 locator: .init(.label, observationLabel.isEmpty ? expectedVisibleText : observationLabel), property: observationProperty)])
             observers = [observer]
-            requirements = [.init(observationID: observer.id, expected: expected, proof: .visibleState,
+            // Both UI route drivers retain verified properties by operation ID.
+            requirements = [.init(observationID: observer.id, expected: .object(["visible-text": expected]), proof: .visibleState,
                 justification: "Developer approved this property independently of navigation",
                 checkID: observationProperty == "text" ? "business.visible-text" : "business.visible-property")]
         }

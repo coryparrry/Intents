@@ -29,8 +29,67 @@ extension AutomationSourceManifest {
         return (URL(fileURLWithPath: sourceRoot), relativePath)
     }
 
+    func readOrigin(for file: File) throws -> (URL, String) {
+        guard let path = file.materializedSourcePath else { return try origin(for: file.relativePath) }
+        guard includesDependencies == true, let root = approvedRoots.first(where: { path.hasPrefix($0 + "/") }),
+              !AutomationSourceSnapshot.excludes(String(path.dropFirst(root.count + 1)), includesDependencies: true),
+              try AutomationPath.canonical(URL(fileURLWithPath: path)).path == path else { throw AutomationContractError.invalidIdentity }
+        return (URL(fileURLWithPath: root), String(path.dropFirst(root.count + 1)))
+    }
+
+    private func validateDependencyInputs() throws {
+        guard includesDependencies == true else {
+            guard materializedLinks == nil, files.allSatisfy({ $0.materializedSourcePath == nil }) else { throw AutomationContractError.invalidIdentity }
+            return
+        }
+        guard let links = materializedLinks, links.count <= 100_000,
+              Set(links.map(\.relativePath)).count == links.count else { throw AutomationContractError.invalidIdentity }
+        let linksByPath = Dictionary(uniqueKeysWithValues: links.map { ($0.relativePath, $0) })
+        let filePaths = Set(files.map(\.relativePath))
+        let symbolicFilePaths = Set(files.filter { $0.symbolicLink != nil }.map(\.relativePath))
+        let directoryPaths = Set(directories)
+        let regularInputPaths = Set(files.filter { $0.symbolicLink == nil && $0.frozenSymbolicLink == nil }.map(\.inputPath))
+        guard files.allSatisfy({ file in
+            if file.symbolicLink == nil && file.frozenSymbolicLink == nil { return true }
+            guard file.materializedSourcePath == nil,
+                  let link = linksByPath[file.relativePath],
+                  AutomationDependencySourceReader.preservesAlias(relativePath: file.relativePath, directory: link.directory),
+                  link.directory || regularInputPaths.contains(link.resolvedPath) else { return false }
+            return file.symbolicLink == link.destination &&
+                file.frozenSymbolicLink == AutomationSourceSnapshot.rebasedLink(relativePath: file.inputPath, target: link.resolvedPath) &&
+                file.bytes == link.destination.utf8.count && file.sha256 == AutomationArtifactRegistry.digest(Data(link.destination.utf8))
+        }) else { throw AutomationContractError.invalidIdentity }
+        func allowed(_ path: String) -> Bool {
+            guard AutomationSourceCaptureLayout.absolute(path), let root = approvedRoots.first(where: { path == $0 || path.hasPrefix($0 + "/") }) else { return false }
+            return !AutomationSourceSnapshot.excludes(String(path.dropFirst(root.count + 1)), includesDependencies: true)
+        }
+        for link in links {
+            guard AutomationSourceCaptureLayout.relative(link.relativePath), allowed(link.resolvedPath),
+                  !link.destination.isEmpty, link.destination.utf8.count <= 4096, !link.destination.contains("\0"),
+                  link.directory ? (directoryPaths.contains(link.relativePath) || symbolicFilePaths.contains(link.relativePath)) : filePaths.contains(link.relativePath) else { throw AutomationContractError.invalidIdentity }
+        }
+        for file in files where file.materializedSourcePath != nil {
+            guard AutomationSourceCaptureLayout.relative(file.relativePath) else { throw AutomationContractError.invalidIdentity }
+            // Walk at most 64 components, choosing the nearest exact receipt or
+            // directory ancestor without scanning every captured dependency link.
+            var components = file.relativePath.split(separator: "/").map(String.init)
+            var owner: MaterializedLink?
+            while !components.isEmpty {
+                let candidate = components.joined(separator: "/")
+                if let link = linksByPath[candidate], candidate == file.relativePath || link.directory {
+                    owner = link
+                    break
+                }
+                components.removeLast()
+            }
+            guard allowed(file.materializedSourcePath!), let link = owner,
+                  file.materializedSourcePath == link.resolvedPath + String(file.relativePath.dropFirst(link.relativePath.count)) else { throw AutomationContractError.invalidIdentity }
+        }
+    }
+
     /// Pure replay validation. Never walks the virtual ancestor or serialized live roots.
     func validateCaptureLayout() throws {
+        try validateDependencyInputs()
         if schemaVersion == 1 {
             guard captureLayoutRoot == nil, capturedRoots == nil else { throw AutomationContractError.invalidIdentity }
             return
@@ -59,9 +118,13 @@ extension AutomationSourceManifest {
                       file.inputPath == root.inputPath + "/" + value.relativePath else { throw AutomationContractError.invalidIdentity }
                 covered.insert(file.relativePath); return value
             }
-            let manifest = Self(sourceRoot: root.inputPath, files: local.sorted { $0.relativePath < $1.relativePath },
+            var manifest = Self(sourceRoot: root.inputPath, files: local.sorted { $0.relativePath < $1.relativePath },
                 directories: directories.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) },
                 excludedPaths: excludedPaths.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) })
+            manifest.includesDependencies = includesDependencies
+            manifest.materializedLinks = materializedLinks.map { links in links.filter { $0.relativePath.hasPrefix(prefix) }.map { link in
+                var value = link; value.relativePath = String(link.relativePath.dropFirst(prefix.count)); return value
+            } }
             guard try manifest.digest == root.contentDigest else { throw AutomationContractError.conflictingOperation }
         }
         guard covered.count == files.count, excludedPaths.allSatisfy({ path in roots.contains { path.hasPrefix($0.relativePath + "/") } }),
@@ -110,6 +173,12 @@ enum AutomationSourceCaptureLayout {
             files += manifest.files.map { file in var value = file; value.relativePath = prefix + "/" + file.relativePath; return value }
         }
         var result = AutomationSourceManifest(sourceRoot: primary.sourceRoot, files: files.sorted { $0.relativePath < $1.relativePath }, directories: dirs.sorted(), excludedPaths: excluded.sorted())
+        guard manifests.allSatisfy({ $0.includesDependencies == primary.includesDependencies }) else { throw AutomationContractError.invalidIdentity }
+        result.includesDependencies = primary.includesDependencies
+        result.materializedLinks = primary.materializedLinks == nil ? nil : ordered.flatMap { manifest in
+            let prefix = String(manifest.sourceRoot.dropFirst(layout.count + 1))
+            return (manifest.materializedLinks ?? []).map { link in var value = link; value.relativePath = prefix + "/" + link.relativePath; return value }
+        }.sorted { $0.relativePath < $1.relativePath }
         result.schemaVersion = 2; result.captureLayoutRoot = layout; result.capturedRoots = roots
         try result.validateCaptureLayout(); return result
     }

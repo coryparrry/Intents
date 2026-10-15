@@ -6,6 +6,7 @@ public struct AutomationApplicationCandidate: Codable, Equatable, Sendable, Iden
     public var name: String
     public var kind: Kind
     public var containerPath: String
+    public var workspacePath: String? = nil
     public var targetID: String?
     public var bundleID: String?
     public var platform: String?
@@ -31,19 +32,69 @@ public enum AutomationApplicationIntake {
         case "xcworkspace":
             let resolved = try AutomationWorkspaceProjects.resolve(canonical)
             var candidates: [AutomationApplicationCandidate] = [], gaps = resolved.gaps
-            for projectURL in resolved.projects { let assessment = try project(projectURL); candidates += assessment.candidates; gaps += assessment.gaps }
+            for projectURL in resolved.projects { let assessment = try project(projectURL); candidates += assessment.candidates.map { inWorkspace($0, canonical) }; gaps += assessment.gaps }
             if candidates.isEmpty { gaps.append("No in-root application target was resolved from this workspace.") }
             return .init(candidates: candidates, gaps: gaps, requiresBuildApproval: true)
-        case "xcarchive", "ipa":
-            return .init(candidates: [], gaps: ["Archive/export preparation requires an authorised qualified recipe."], requiresBuildApproval: true)
+        case "xcarchive": return try archive(canonical)
+        case "ipa":
+            return .init(candidates: [], gaps: ["Select this IPA in App automation to inspect and extract it into a private app copy. Device installation eligibility is checked separately."], requiresBuildApproval: false)
         default:
-            let contents = try FileManager.default.contentsOfDirectory(at: canonical, includingPropertiesForKeys: [.isDirectoryKey])
-            let projects = contents.filter { $0.pathExtension == "xcodeproj" }.sorted { $0.path < $1.path }
-            var candidates: [AutomationApplicationCandidate] = [], gaps: [String] = []
-            for entry in projects { let result = try project(entry); candidates += result.candidates; gaps += result.gaps }
-            if projects.isEmpty { gaps.append("No top-level Xcode app project found. Select the actual workspace, generated project or packaged app.") }
-            return .init(candidates: candidates, gaps: gaps, requiresBuildApproval: true)
+            return try folder(canonical)
         }
+    }
+    private static func folder(_ root: URL) throws -> AutomationIntakeAssessment {
+        let entries = try AutomationSourceEntryPoints.discover(root)
+        var projects = Set(entries.projects), gaps = entries.gaps
+        var contexts: [URL: [URL]] = [:]
+        for workspace in entries.workspaces {
+            guard projects.count < 256 else { gaps.append("Repository project inspection reached its limit. Select a more specific app folder."); break }
+            do {
+                let resolved = try AutomationWorkspaceProjects.resolve(workspace, authorizedRoot: root)
+                for project in resolved.projects where AutomationSourceEntryPoints.isPrimary(project, under: root) {
+                    guard projects.count < 256 else { gaps.append("Repository project inspection reached its limit. Select a more specific app folder."); break }
+                    projects.insert(project)
+                    contexts[project, default: []].append(workspace)
+                }
+                gaps += resolved.gaps
+            } catch { gaps.append("Could not inspect workspace " + workspace.lastPathComponent + ". Other app projects remain available.") }
+        }
+        var candidates: [AutomationApplicationCandidate] = []
+        for entry in projects.sorted(by: { $0.path < $1.path }) {
+            do {
+                let result = try project(entry)
+                if let workspaces = contexts[entry], !workspaces.isEmpty {
+                    candidates += workspaces.sorted { $0.path < $1.path }.flatMap { workspace in
+                        result.candidates.map { inWorkspace($0, workspace) }
+                    }
+                } else { candidates += result.candidates }
+                gaps += result.gaps
+            }
+            catch { gaps.append("Could not inspect project " + entry.lastPathComponent + ". Other app projects remain available.") }
+        }
+        if candidates.isEmpty { gaps.append("No application target was resolved. Select a workspace, app project or packaged app, or review the discovery details.") }
+        return .init(candidates: candidates.sorted { $0.id < $1.id }, gaps: Array(Set(gaps)).sorted(), requiresBuildApproval: true)
+    }
+    static func inWorkspace(_ candidate: AutomationApplicationCandidate, _ workspace: URL) -> AutomationApplicationCandidate {
+        var value = candidate
+        value.workspacePath = workspace.path
+        value.id = workspace.path + "::" + candidate.id
+        return value
+    }
+    private static func archive(_ archive: URL) throws -> AutomationIntakeAssessment {
+        let products = archive.appendingPathComponent("Products/Applications")
+        guard try AutomationPath.canonical(products).path == products.path else { throw AutomationContractError.invalidIdentity }
+        let entries = try FileManager.default.contentsOfDirectory(at: products, includingPropertiesForKeys: nil)
+        guard entries.count <= 64 else { throw AutomationContractError.invalidPlan("The archive contains too many application entries") }
+        var candidates: [AutomationApplicationCandidate] = [], gaps: [String] = []
+        for entry in entries.filter({ $0.pathExtension.lowercased() == "app" }).sorted(by: { $0.path < $1.path }) {
+            do {
+                guard try AutomationPath.canonical(entry).path == entry.path else { throw AutomationContractError.invalidIdentity }
+                let result = try product(entry); candidates += result.candidates; gaps += result.gaps
+            } catch { gaps.append("Could not validate archived app " + entry.lastPathComponent + ". It cannot be selected for execution.") }
+        }
+        if candidates.isEmpty { gaps.append("No eligible app product was found in the archive.") }
+        gaps.append("Archived products retain their original signing. Device installation and system-action eligibility are checked separately.")
+        return .init(candidates: candidates, gaps: Array(Set(gaps)).sorted(), requiresBuildApproval: false)
     }
     private static func project(_ url: URL) throws -> AutomationIntakeAssessment {
         guard try AutomationPath.canonical(url).path == url.path,

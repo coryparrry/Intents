@@ -1,9 +1,11 @@
 #if os(macOS)
 import Foundation
 
-/// A retained preparation remains usable while its generated sources and built products match.
-/// Verification uses disk contents, so relaunching the app does not require rebuilding the host.
+/// Generated-host source and product validation survives relaunch. Explicit
+/// native/physical qualifications also retain separate process-local evidence.
 public enum AutomationPreparedCodecAuthority {
+    static let shared = AutomationPreparedCodecRegistry()
+
     public static func verify(_ prepared: AutomationPreparedApplication) throws {
         try AutomationHostGenerator.verifyGeneratedSources(prepared.generatedHost,
             sessionRoot: URL(fileURLWithPath: prepared.buildLogPath).deletingLastPathComponent())
@@ -16,6 +18,17 @@ public enum AutomationPreparedCodecAuthority {
                   maximumBytes: 4_194_304)) == prepared.host.xctestrunDigest else {
             throw AutomationContractError.conflictingOperation
         }
+    }
+}
+
+actor AutomationPreparedCodecRegistry {
+    private var preparations: [AutomationPreparedApplication] = []
+    func register(_ prepared: AutomationPreparedApplication) {
+        preparations.append(prepared)
+        if preparations.count > 32 { preparations.removeFirst() }
+    }
+    func contains(_ prepared: AutomationPreparedApplication) -> Bool {
+        preparations.contains(prepared)
     }
 }
 #endif

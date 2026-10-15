@@ -60,6 +60,11 @@ import IntentsAutomationCore
     }
     static func main() async {
         do {
+            if CommandLine.arguments.dropFirst().first == "--current-mac-target" {
+                guard CommandLine.arguments.count == 2 else { throw AutomationContractError.invalidIdentity }
+                try FileHandle.standardOutput.write(contentsOf: JSONEncoder().encode(AutomationMacGUIIdentity.currentTarget()) + Data([10]))
+                return
+            }
             if !["--profile", "--plan-profile"].contains(CommandLine.arguments.dropFirst().first ?? "") {
                 let succeeded = try await AutomationCLI.execute(Array(CommandLine.arguments.dropFirst()))
                 if !succeeded { Foundation.exit(1) }
@@ -71,7 +76,7 @@ import IntentsAutomationCore
             try AutomationCLI.rejectCapabilityRecords(bytes)
             let profile = try JSONDecoder().decode(Profile.self, from: bytes)
             let prepared = try JSONDecoder().decode(AutomationPreparedApplication.self,
-                from: read(profile.preparedPath, maximumBytes: 16 * 1024 * 1024))
+                from: read(profile.preparedPath, maximumBytes: AutomationPreparedApplicationRecord.maximumRecordBytes))
             let baseCapabilities = AutomationPreparedCapabilities.base(prepared)
             var plan: AutomationCase
             if let fresh = profile.freshRecordWorkflow {

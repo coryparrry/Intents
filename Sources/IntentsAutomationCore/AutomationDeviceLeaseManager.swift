@@ -96,6 +96,11 @@ public actor AutomationDeviceLeaseManager {
         try mutate { state in
             let key = target.leaseKey, previous = state.generations[target.leaseKey] ?? 0
             guard !Self.physicalConflict(target, excludingKey: nil, state: state) else { throw AutomationContractError.targetBusy }
+            // Paired registration does not expose a qualified device alias. Fence
+            // other device campaigns until the registered feature has drained.
+            if target.kind == .pairedRunner || state.campaigns.values.contains(where: { $0.target.kind == .pairedRunner }) {
+                guard state.campaigns.isEmpty else { throw AutomationContractError.targetBusy }
+            }
             guard state.campaigns[key] == nil else { throw AutomationContractError.targetBusy }
             guard previous < Int.max - 1 else { throw AutomationContractError.invalidIdentity }
             // Reserve idle ownership without admitting a retained earlier campaign.
@@ -115,6 +120,9 @@ public actor AutomationDeviceLeaseManager {
         return try mutate { state in
             let key = target.leaseKey
             guard !Self.physicalConflict(target, excludingKey: key, state: state) else { throw AutomationContractError.targetBusy }
+            if target.kind == .pairedRunner || state.campaigns.values.contains(where: { $0.target.kind == .pairedRunner }) {
+                guard !state.campaigns.values.contains(where: { $0.target.leaseKey != key }) else { throw AutomationContractError.targetBusy }
+            }
             if let prior = state.campaigns[key] {
                 guard owns(prior), prior.runID == runID, prior.target == target, prior.lease == nil else { throw AutomationContractError.targetBusy }
             }
@@ -269,6 +277,9 @@ public actor AutomationDeviceLeaseManager {
     }
     /// Reconciliation frees control only; it never clears the dispatch journal or authorises repetition.
     public func reconcile(_ record: RecoveryRecord, commandsDrained: Bool, ownedRunnerTerminated: Bool) throws {
+        // Local owner/child absence cannot prove that a remote feature stopped.
+        // Paired dispatches retain their fence until the paired owner proves completion.
+        guard record.target.kind != .pairedRunner else { throw AutomationContractError.terminationUnverified }
         guard commandsDrained else { throw AutomationContractError.commandsPending }
         guard ownedRunnerTerminated else { throw AutomationContractError.terminationUnverified }
         switch record.owner.presence() {
@@ -294,6 +305,7 @@ public actor AutomationDeviceLeaseManager {
     /// Explicit user recovery for a finished attempt retained by this app process.
     /// Live runners and changed snapshots keep ownership; this never signals a process.
     public func resetCurrentProcessCampaign(_ record: RecoveryRecord) throws {
+        guard record.target.kind != .pairedRunner else { throw AutomationContractError.terminationUnverified }
         guard record.owner == owner, record.owner.presence() == .matching else {
             throw AutomationContractError.targetBusy
         }

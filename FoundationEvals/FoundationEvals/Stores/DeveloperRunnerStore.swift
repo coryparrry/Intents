@@ -23,6 +23,10 @@ final class DeveloperRunnerStore {
     private(set) var activeRuns: [UUID: DeveloperRunStatus] = [:]
     private(set) var executingRunID: UUID?
     var selectedFeatureID: String?
+    var automationExecutionBlocked = false {
+        didSet { ScenarioExecutionAdmission.shared.setAutomationBlocked(automationExecutionBlocked, ownerID: automationAdmissionID) }
+    }
+    @ObservationIgnored private let automationAdmissionID = UUID()
 
     @ObservationIgnored private let evaluationStore: EvaluationStore
     @ObservationIgnored private var runTasks: [UUID: Task<Void, Never>] = [:]
@@ -109,7 +113,7 @@ final class DeveloperRunnerStore {
         timeout: Duration = .seconds(120)
     ) throws -> UUID {
         guard ScenarioExecutionAdmission.shared.allows(nil),
-              executingRunID == nil, !evaluationStore.hasActiveExecution else {
+              executingRunID == nil, !evaluationStore.hasActiveExecution, !automationExecutionBlocked else {
             throw EvaluationStoreError.resourceConflict("Another evaluation is already running.")
         }
         guard let runner = runners.first(where: { $0.id == runnerID && $0.state == .connected }) else {
@@ -179,7 +183,7 @@ final class DeveloperRunnerStore {
         adapter: any EvaluationFeatureAdapter
     ) async throws -> EvaluationRun {
         guard ScenarioExecutionAdmission.shared.allows(executionOwnerID),
-              executingRunID == nil else {
+              !automationExecutionBlocked, executingRunID == nil else {
             throw EvaluationStoreError.resourceConflict("Another developer runner execution is active.")
         }
         guard let runner = runners.first(where: { $0.id == runnerID && $0.state == .connected }) else {

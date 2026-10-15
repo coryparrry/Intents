@@ -15,6 +15,8 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
         var value = AutomationCampaignLimits()
         value.attempts = 30; value.subjectOperations = 30
         value.uiActions = 900; value.controllerCalls = 360; value.wallClockSeconds = 5400
+        // Native navigation reserves bounded readbacks before dispatch as well as UI actions.
+        value.subjectOperations = value.uiActions + 2 * value.controllerCalls
         return value
     }
     static func compile(frozen: AutomationFrozenCase, original: AutomationAttemptReport,
@@ -58,16 +60,17 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
         try PlanValidator.validate(candidate.plan, approval: afterApproval, capabilities: afterCapabilities, purpose: .review)
         return .init(baseline: baseline, candidate: candidate, beforeApproval: beforeApproval, afterApproval: afterApproval, beforeCapabilities: reproduction.capabilities, afterCapabilities: afterCapabilities)
     }
-    func execute(before: AutomationApplicationSubject, after: AutomationApplicationSubject,
-                 support: URL, developerDirectory: URL) async throws -> AutomationFixComparisonReport {
+    @concurrent func execute(before: AutomationApplicationSubject, after: AutomationApplicationSubject,
+                 support: URL, developerDirectory: URL,
+                 onProgress: AutomationFixComparisonProgressHandler? = nil) async throws -> AutomationFixComparisonReport {
         let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
         let runner = try AutomationApplicationRunner(supportRoot: support,
             developerDirectory: developerDirectory)
         var verified = self
         verified.beforeCapabilities = try await runner.capabilitiesForExecution(subject: before, plan: baseline.plan,
-            capabilities: beforeCapabilities)
+            capabilities: beforeCapabilities, approval: beforeApproval)
         verified.afterCapabilities = try await runner.capabilitiesForExecution(subject: after, plan: candidate.plan,
-            capabilities: afterCapabilities)
+            capabilities: afterCapabilities, approval: afterApproval)
         var beforeFixture: AutomationQualifiedFreshFixture?, afterFixture: AutomationQualifiedFreshFixture?
         if usesFreshFixture {
             guard case .prepared(let a) = before, case .prepared(let b) = after else { throw AutomationContractError.invalidIdentity }
@@ -77,15 +80,16 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
         return try await verified.runCampaign(cases: cases,
             beforeExecutor: Self.executor(subject: before, runner: runner, capabilities: verified.beforeCapabilities),
             afterExecutor: Self.executor(subject: after, runner: runner, capabilities: verified.afterCapabilities),
-            beforeFixture: beforeFixture, afterFixture: afterFixture)
+            beforeFixture: beforeFixture, afterFixture: afterFixture, onProgress: onProgress)
     }
     func runCampaign(cases: AutomationCaseStore, beforeExecutor: any AutomationCampaignAttemptExecutor,
                      afterExecutor: any AutomationCampaignAttemptExecutor,
-                     beforeFixture: AutomationQualifiedFreshFixture?, afterFixture: AutomationQualifiedFreshFixture?) async throws -> AutomationFixComparisonReport {
+                     beforeFixture: AutomationQualifiedFreshFixture?, afterFixture: AutomationQualifiedFreshFixture?,
+                     onProgress: AutomationFixComparisonProgressHandler? = nil) async throws -> AutomationFixComparisonReport {
         try await AutomationFixComparison(cases: cases).run(baseline: baseline, candidate: candidate,
             attemptsPerBuild: attemptsPerBuild, beforeApproval: beforeApproval, afterApproval: afterApproval,
             beforeCapabilities: beforeCapabilities, afterCapabilities: afterCapabilities, limits: limits,
-            beforeExecutor: beforeExecutor, afterExecutor: afterExecutor, beforeFixture: beforeFixture, afterFixture: afterFixture)
+            beforeExecutor: beforeExecutor, afterExecutor: afterExecutor, beforeFixture: beforeFixture, afterFixture: afterFixture, onProgress: onProgress)
     }
     static func validatePreparedCandidate(before: AutomationPreparedApplication, after: AutomationPreparedApplication) throws {
         let a = before.host.app, b = after.host.app

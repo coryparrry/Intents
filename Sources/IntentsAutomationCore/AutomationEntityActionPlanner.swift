@@ -38,13 +38,15 @@ public enum AutomationEntityActionPlanner {
                       let entity = catalog.entities?.first(where: { $0.typeID == choice.typeID }),
                       choice.app == catalog.app, choice.target == approval.target, choice.environmentID == approval.environmentID,
                       choice.catalogDigest == catalogDigest, AutomationUIFailureSearchRecord.identifier(choice.sourceAttemptID),
+                      !entity.properties.isEmpty || choice.expiresAt > Date(),
                       Set(choice.properties.keys) == Set(entity.properties.keys),
                       choice.properties.allSatisfy({ AutomationEntitySelection.matchesCodec($0.value, entity.properties[$0.key]) }) else {
                     throw AutomationContractError.conflictingOperation
                 }
                 try AutomationValue.entity(typeID: choice.typeID, value: choice.id).validate()
                 let matching = choice.properties.filter { entity.properties[$0.key] == "text" }
-                let selection = AutomationEntitySelection(typeID: choice.typeID, matchingProperties: matching)
+                let selection = AutomationEntitySelection(typeID: choice.typeID, matchingProperties: matching,
+                    expectedIdentifier: entity.properties.isEmpty ? choice.id : nil, expiresAt: entity.properties.isEmpty ? choice.expiresAt : nil)
                 let query = AutomationHostProgram.Operation(id: "records", kind: .query, typeID: choice.typeID,
                     queryIDs: [choice.id], properties: entity.properties)
                 try selection.validate(query: query)
@@ -52,7 +54,7 @@ public enum AutomationEntityActionPlanner {
                     requiredCapabilities: ["apple.entity.query"], effects: [.observe], lifecycle: .persistedStateAcrossSegments)
                 var queries = [query]
                 let protected = protectedSelections[parameter.name] ?? []
-                guard protected.count <= 2, Set(protected.map(\.id)).count == protected.count,
+                guard !entity.properties.isEmpty || protected.isEmpty, protected.count <= 2, Set(protected.map(\.id)).count == protected.count,
                       !protected.contains(where: { $0.id == choice.id }) else { throw AutomationContractError.invalidPlan("Choose up to two distinct other records to preserve") }
                 for (index, other) in protected.enumerated() {
                     guard other.typeID == choice.typeID, other.app == choice.app, other.target == choice.target,

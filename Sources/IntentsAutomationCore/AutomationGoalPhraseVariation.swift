@@ -23,7 +23,7 @@ public enum AutomationGoalPhraseVariation {
     }
     static func validateBaseline(_ plan: AutomationCase) throws { _ = try contractDigest(plan) }
     static func validate(_ mutation: AutomationMutationCase, baseline: AutomationFrozenCase) throws {
-        guard mutation.goalPhraseVariation == true, mutation.kinds == [.alternatePhrasing], mutation.recipeIDs.isEmpty,
+        guard mutation.goalPhraseVariation == true, mutation.subjectPhraseSlot == nil, mutation.kinds == [.alternatePhrasing], mutation.recipeIDs.isEmpty,
               mutation.requiredCapabilities.isEmpty, !mutation.semanticJustification.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               mutation.semanticJustification.utf16.count <= 4096,
               mutation.frozen.plan.execution.operation != baseline.plan.execution.operation,

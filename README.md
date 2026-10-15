@@ -121,6 +121,10 @@ On-device evaluations run locally. Custom HTTP providers and tools receive the c
 
 Usage statistics are **on by default** and can be disabled in **Settings → Privacy → Share usage statistics**. They send app sessions, first observed use, fixed screen names, completed features, app/build and macOS versions, and random installation/session identifiers. Development builds, tests, previews and demos are excluded; a host-local policy can also exclude every updated build on a development Mac. **Diagnostic sharing is separate and off by default**; it sends fixed operation names, outcomes, timings, safe error categories, build/platform details and automatic native crash reports with content-free stack addresses and binary IDs. Crash reports are sent on the next launch; readable function names require matching release symbols. Prompts, responses, scores, names, files, provider addresses, credentials and raw error messages are excluded. Privacy settings also show recent issues and let you copy a safe local diagnostic report without enabling sharing. Consent changes cancel uploads and revoke queued events; they do not delete data already received by PostHog. See [telemetry details](docs/telemetry.md).
 
+## Standalone Codex plugin
+
+The [Apple Foundation Evals plugin](plugins/apple-foundation-evals/README.md) runs local Apple Foundation Models evaluations and displays their saved traces inside Codex. It bundles its own native engine and does not require the Intents app. Its README covers local installation, testing, and packaging.
+
 ## Build from source
 
 Use Xcode 27 with its command-line tools selected. From the repository root:

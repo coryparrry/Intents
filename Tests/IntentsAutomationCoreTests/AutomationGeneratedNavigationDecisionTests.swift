@@ -4,6 +4,23 @@ import FoundationModels
 @testable import IntentsAutomationCore
 
 final class AutomationGeneratedNavigationDecisionTests: XCTestCase {
+    func testMacGrammarCannotSelectStaticResultAndStillObservesStaticEndpoint() throws {
+        let nodes: [AutomationControllerRequest.Node] = [
+            .init(id: "result", role: "text", name: "Result", value: "Pending", editable: false, visible: true, disabled: false, secure: false),
+            .init(id: "run", role: "button", name: "Run check", editable: false, visible: true, disabled: false, secure: false)]
+        var request = AutomationControllerRequest(goalId: "goal", revision: "1", nodes: nodes, truncated: false,
+            omittedNodes: 0, verbs: ["tap"], recentActions: [], remainingActions: 30, remainingMs: 120000)
+        let goal = AutomationNavigationGoal(id: "goal", instruction: "Click Run check", endpoint: .init(.label, "Check complete"))
+        let grammar = try AutomationGuidedNavigationDecision(goal: goal, request: request, bindings: [:], targetKind: .nativeMac)
+        let resultAlias = try XCTUnwrap(grammar.projection.nodeIDs.first { $0.value == "result" }?.key)
+        let runAlias = try XCTUnwrap(grammar.projection.nodeIDs.first { $0.value == "run" }?.key)
+        XCTAssertThrowsError(try grammar.decision(.init(json: "{\"kind\":\"tap\",\"node\":\"" + resultAlias + "\"}")))
+        XCTAssertEqual(try grammar.decision(.init(json: "{\"kind\":\"tap\",\"node\":\"" + runAlias + "\"}")).node, "run")
+        request.nodes.append(.init(id: "endpoint", role: "text", name: "Check complete", visible: true, disabled: false, secure: false))
+        let completed = try AutomationGuidedNavigationDecision(goal: goal, request: request, bindings: [:], targetKind: .nativeMac)
+        XCTAssertTrue(completed.kinds.contains("finish"))
+        XCTAssertEqual(try completed.decision(.init(json: #"{"kind":"finish"}"#)).kind, "finish")
+    }
     func testFieldsAtClippingLimitsCannotProveExactSelection() throws {
         for (length, field) in [(512, "name"), (512, "text"), (1024, "value")] {
             let prefix = String(repeating: "a", count: length)
@@ -50,7 +67,8 @@ final class AutomationGeneratedNavigationDecisionTests: XCTestCase {
             maximumCalls: 12, maximumActions: 30, minimumBindingUses: required.map { ["approved": $0] })
         let nodes: [AutomationControllerRequest.Node] = [
             .init(id: "exact-field", role: "text-field", editable: nil, fillSupported: true, visible: true, disabled: false, secure: false),
-            .init(id: "exact-button", role: "button", editable: nil, visible: true, disabled: false, secure: false)]
+            .init(id: "exact-button", role: "button", editable: nil, visible: true, disabled: false, secure: false),
+            .init(id: "endpoint", role: "text", name: "Done", visible: true, disabled: false, secure: false)]
         let request = AutomationControllerRequest(goalId: "goal", revision: "1", nodes: nodes, truncated: false,
             omittedNodes: 0, verbs: verbs, recentActions: [], remainingActions: remaining, remainingMs: 120000, approvedBindingUses: ["approved": used])
         return try .init(goal: goal, request: request, bindings: ["approved": "private-approved-value"])
@@ -134,6 +152,42 @@ final class AutomationGeneratedNavigationDecisionTests: XCTestCase {
         let observe = try grammar(verbs: ["scroll"])
         XCTAssertFalse(observe.kinds.contains("fill")); XCTAssertFalse(observe.kinds.contains("tap"))
         XCTAssertTrue(observe.kinds.contains("scroll"))
+    }
+    func testFinishRequiresOneExactVisibleEndpointInCompleteObservation() throws {
+        let goal = AutomationNavigationGoal(id: "goal", instruction: "Click Run check, then finish at Check complete",
+            endpoint: .init(.label, "Check complete"))
+        let endpoint = AutomationControllerRequest.Node(id: "endpoint", role: "text", name: "Check complete",
+            visible: true, disabled: false, secure: false)
+        var request = AutomationControllerRequest(goalId: "goal", revision: "1", nodes: [endpoint], truncated: false,
+            omittedNodes: 0, verbs: ["tap"], recentActions: [], remainingActions: 30, remainingMs: 120000)
+        func finish(_ request: AutomationControllerRequest) throws -> Bool {
+            try AutomationGuidedNavigationDecision(goal: goal, request: request, bindings: [:]).kinds.contains("finish")
+        }
+        XCTAssertTrue(try finish(request))
+        var hidden = endpoint; hidden.visible = false; request.nodes = [hidden]; XCTAssertFalse(try finish(request))
+        var disabled = endpoint; disabled.disabled = true; request.nodes = [disabled]; XCTAssertFalse(try finish(request))
+        var secure = endpoint; secure.secure = true; request.nodes = [secure]; XCTAssertFalse(try finish(request))
+        var ready = endpoint; ready.name = "Ready"; request.nodes = [ready]; XCTAssertFalse(try finish(request))
+        var other = endpoint; other.id = "duplicate"; request.nodes = [endpoint, other]; XCTAssertFalse(try finish(request))
+        request.nodes = [endpoint]; request.truncated = true; XCTAssertFalse(try finish(request))
+        request.truncated = false; request.omittedNodes = 1; XCTAssertFalse(try finish(request))
+    }
+    func testPositiveNavigationCompletionRequiresNativeActivityAndExcludesWriteWorkflows() throws {
+        var goal = AutomationNavigationGoal(id: "goal", instruction: "Navigate", endpoint: .init(.label, "Done"))
+        var request = AutomationControllerRequest(goalId: "goal", revision: "1", nodes: [
+            .init(id: "done", role: "text", name: "Done", visible: true, disabled: false, secure: false)
+        ], truncated: false, omittedNodes: 0, verbs: ["tap"], recentActions: [], remainingActions: 29, remainingMs: 120000)
+        XCTAssertFalse(goal.completesNavigation(in: request, bindings: [:]))
+        request.approvedNavigationActions = 1
+        XCTAssertTrue(goal.completesNavigation(in: request, bindings: [:]))
+        XCTAssertFalse(goal.completesNavigation(in: request, bindings: ["input": "value"]))
+        request.truncated = true; XCTAssertFalse(goal.completesNavigation(in: request, bindings: [:])); request.truncated = false
+        request.verbs.append("fill"); XCTAssertFalse(goal.completesNavigation(in: request, bindings: [:])); request.verbs = ["tap"]
+        goal.minimumBindingUses = ["input": 1]; XCTAssertFalse(goal.completesNavigation(in: request, bindings: [:])); goal.minimumBindingUses = nil
+        goal.allowedFillBindings = ["input"]; XCTAssertFalse(goal.completesNavigation(in: request, bindings: [:])); goal.allowedFillBindings = []
+        goal.selectionBindings = ["option"]; XCTAssertFalse(goal.completesNavigation(in: request, bindings: [:])); goal.selectionBindings = nil
+        goal.saveControl = .init(.label, "Save"); XCTAssertFalse(goal.completesNavigation(in: request, bindings: [:]))
+        request.approvedNavigationActions = 31; XCTAssertThrowsError(try request.validate())
     }
 }
 #endif

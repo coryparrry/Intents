@@ -12,11 +12,11 @@ struct AutomationGuidedNavigationDecision {
     let kinds: Set<String>
     let schema: GenerationSchema
 
-    init(goal: AutomationNavigationGoal, request: AutomationControllerRequest, bindings: [String: String]) throws {
+    init(goal: AutomationNavigationGoal, request: AutomationControllerRequest, bindings: [String: String], targetKind: TargetIdentity.Kind? = nil) throws {
         try goal.validate(); try request.validate()
         guard request.goalId == goal.id, bindings.count <= 30,
               bindings.keys.allSatisfy(AutomationHostProgram.identifier) else { throw AutomationContractError.invalidIdentity }
-        projection = try AutomationControllerContextSelection.project(request)
+        projection = try AutomationControllerContextSelection.project(request, targetKind: targetKind)
         guard Set(goal.allowedFillBindings ?? []).isSubset(of: Set(bindings.keys)) else { throw AutomationContractError.invalidIdentity }
         guard Set(goal.selectionBindings ?? []).isSubset(of: Set(bindings.keys)) else { throw AutomationContractError.invalidIdentity }
         bindingNames = bindings.keys.sorted().filter { goal.allowedFillBindings == nil || goal.allowedFillBindings!.contains($0) }
@@ -54,11 +54,19 @@ struct AutomationGuidedNavigationDecision {
             .init(type: String.self, guides: [.anyOf(choices)])
         }
         func branch(_ name: String, _ kind: String, _ fields: [DynamicGenerationSchema.Property] = []) -> DynamicGenerationSchema {
-            .init(name: name, description: kind == "finish" ? "The entire requested UI workflow is complete. Approved input activity alone does not mean records were saved. Do not choose this while a requested save or next step remains." : nil, properties: [.init(name: "kind", schema: strings([kind]))] + fields)
+            let description: String?
+            switch kind {
+            case "tap": description = "Tap a current visible enabled control toward the approved goal. Choose the observed control requested by the goal."
+            case "finish": description = "The entire requested UI workflow is complete. Approved input activity alone does not mean records were saved. Do not choose this while a requested save or next step remains."
+            case "cannotProceed": description = "No safe current action can advance the approved goal. Do not choose this when an eligible observed control directly advances it."
+            default: description = nil
+            }
+            return .init(name: name, description: description, properties: [.init(name: "kind", schema: strings([kind]))] + fields)
         }
-        var choices: [DynamicGenerationSchema] = [branch("ControllerCannotProceed", "cannotProceed", [
-            .init(name: "reason", schema: strings(["unsupportedObservation", "navigationStalled", "budgetExhausted", "noSafeAction"]))])]
-        var available: Set<String> = ["cannotProceed"]
+        // Put actionable cases first, while always retaining a refusal case.
+        // On a fresh request there is no prior action from which to infer a stall.
+        var choices: [DynamicGenerationSchema] = []
+        var available: Set<String> = []
         if request.remainingActions > 0 {
             if !tapAliases.isEmpty {
                 choices.append(branch("ControllerTap", "tap", [.init(name: "node", schema: strings(tapAliases))])); available.insert("tap")
@@ -72,10 +80,14 @@ struct AutomationGuidedNavigationDecision {
                 choices.append(branch("ControllerScroll", "scroll", [.init(name: "direction", schema: strings(["up", "down", "left", "right"]))])); available.insert("scroll")
             }
         }
-        if (goal.minimumBindingUses ?? [:]).allSatisfy({ (request.approvedBindingUses?[$0.key] ?? 0) >= $0.value }),
+        if goal.observesEndpoint(in: request),
+           (goal.minimumBindingUses ?? [:]).allSatisfy({ (request.approvedBindingUses?[$0.key] ?? 0) >= $0.value }),
            goal.saveControl == nil || request.approvedSaveTap == true {
-            choices.append(branch("ControllerFinishRequestedWorkflow", "finish")); available.insert("finish")
+            choices.insert(branch("ControllerFinishRequestedWorkflow", "finish"), at: 0); available.insert("finish")
         }
+        let reasons = request.recentActions.isEmpty ? ["noSafeAction"] : ["navigationStalled", "noSafeAction"]
+        choices.append(branch("ControllerCannotProceed", "cannotProceed", [.init(name: "reason", schema: strings(reasons))]))
+        available.insert("cannotProceed")
         kinds = available
         schema = try .init(root: .init(name: "ControllerDecision", anyOf: choices), dependencies: [])
     }

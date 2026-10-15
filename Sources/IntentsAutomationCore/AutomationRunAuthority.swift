@@ -34,6 +34,10 @@ public actor AutomationRunAuthority {
         var approvedBindingUses: [String: Int] = [:]
         var pendingSaveTap = false
         var approvedSaveTap = false
+        var requestFillGranted = false
+        var requestFillAcknowledged = false
+        var requestSubmissionGranted = false
+        var requestFlowFailed = false
     }
     private let approval: RunApproval
     private let leases: AutomationDeviceLeaseManager
@@ -47,14 +51,18 @@ public actor AutomationRunAuthority {
     private let artifacts: AutomationArtifactRegistry?
     private let campaignBudget: AutomationCampaignBudget?
     private let now: @Sendable () -> ContinuousClock.Instant
-    public init(approval: RunApproval, leases: AutomationDeviceLeaseManager, controller: any AutomationControllerDecisionProvider = AutomationFoundationController(), artifacts: AutomationArtifactRegistry? = nil, campaignBudget: AutomationCampaignBudget? = nil, now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }) {
-        self.approval = approval; self.leases = leases; self.controller = controller; self.artifacts = artifacts
+    public init(approval: RunApproval, leases: AutomationDeviceLeaseManager, controller: (any AutomationControllerDecisionProvider)? = nil, artifacts: AutomationArtifactRegistry? = nil, campaignBudget: AutomationCampaignBudget? = nil, now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }) {
+        self.approval = approval; self.leases = leases; self.controller = controller ?? AutomationFoundationController(targetKind: approval.target.kind); self.artifacts = artifacts
         self.now = now; self.campaignBudget = campaignBudget
     }
     public func approve(scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease,
                         segment: AutomationSegment, actions: [Action], maximumControllerCalls: Int = 0, maximumUIActions: Int? = nil) async throws {
         try scope.validate()
         try segment.uiProgram?.validate(phase: segment.phase)
+        try segment.validateObservationOnly()
+        guard segment.kind != .observeOnly || actions == [.activate] else {
+            throw AutomationContractError.invalidPlan("Observation-only authority cannot grant UI mutations")
+        }
         guard grant == nil, scope.runId == approval.runID, scope.segmentId == segment.id,
               scope.leaseGeneration == lease.generation, lease.runID == approval.runID, lease.target == approval.target,
               lease.control == .ui, await leases.isCurrent(lease),
@@ -76,7 +84,7 @@ public actor AutomationRunAuthority {
         let reads = segment.uiProgram?.operations.reduce(0) { count, operation in
             switch operation.kind {
             case .observeProperty, .readProperty, .locate, .assertEndpoint: return count + 1
-            case .navigateGoal: return count + (operation.goal?.maximumCalls ?? 12) * 2
+            case .navigateGoal: return count + (operation.goal?.maximumCalls ?? 12) * 2 + (operation.goal?.requestInputControl == nil ? 0 : 1)
             default: return count
             }
         } ?? 0
@@ -130,14 +138,32 @@ public actor AutomationRunAuthority {
         if active.goal != nil && candidate != .activate {
             guard let deadline = active.deadline, now() < deadline else { return await policyDenied(scope: active.scope, reason: .deadline) }
         }
+        if active.goal?.requestInputControl != nil {
+            guard !active.requestFlowFailed, !active.requestSubmissionGranted else { return await policyDenied(scope: active.scope, reason: .actionMismatch) }
+            if case .fill = candidate {
+                guard !active.requestFillGranted else { return await policyDenied(scope: active.scope, reason: .actionMismatch) }
+            }
+            if active.requestFillGranted {
+                guard candidate == .tap, active.pendingSaveTap else { return await policyDenied(scope: active.scope, reason: .actionMismatch) }
+            }
+            if case .tap = candidate, active.pendingSaveTap {
+                guard active.requestFillAcknowledged else { return await policyDenied(scope: active.scope, reason: .actionMismatch) }
+            }
+        }
         if let campaignBudget {
             do { try await campaignBudget.reserveOperations(id: active.scope.attemptId + "." + active.scope.segmentId + "." + String(active.consumed), phase: active.phase, count: 1, uiActions: 1) }
             catch { return await policyDenied(scope: active.scope, reason: .budget) }
             guard await leases.isCurrent(expectedLease), grant?.scope == active.scope else { return await policyDenied(scope: active.scope, reason: .scopeLease) }
         }
         do { try campaignBudget?.validateDeadline() } catch { return await policyDenied(scope: active.scope, reason: .budget) }
-        if case .fill = candidate, let name = active.pendingBinding { active.approvedBindingUses[name, default: 0] += 1 }
-        if case .tap = candidate, active.pendingSaveTap { active.approvedSaveTap = true }
+        if case .fill = candidate, let name = active.pendingBinding {
+            if active.goal?.requestInputControl != nil { active.requestFillGranted = true }
+            else { active.approvedBindingUses[name, default: 0] += 1 }
+        }
+        if case .tap = candidate, active.pendingSaveTap {
+            if active.goal?.requestInputControl != nil { active.requestSubmissionGranted = true }
+            else { active.approvedSaveTap = true }
+        }
         if active.goal != nil && candidate != .activate { active.setupTrace.consume() }
         active.pendingBinding = nil
         active.pendingSaveTap = false
@@ -183,6 +209,32 @@ public actor AutomationRunAuthority {
             stage = "requestValidation"
             var request = try JSONDecoder().decode(AutomationControllerRequest.self, from: JSONEncoder().encode(fields["request"]!))
             try request.validate(); validatedRequest = request
+            if goal.requestInputControl != nil {
+                guard !active.requestFlowFailed, !request.truncated, request.omittedNodes == 0 else { throw AutomationContractError.ambiguousDispatch }
+                let completed = request.completedBindingUses ?? [:]
+                let binding = goal.allowedFillBindings!.first!
+                if active.requestFillGranted && !active.requestFillAcknowledged {
+                    guard completed == [binding: 1] else {
+                        active.requestFlowFailed = true; grant = active
+                        throw AutomationContractError.missingEvidence("Exact request fill did not acknowledge success")
+                    }
+                    active.requestFillAcknowledged = true; active.approvedBindingUses = completed
+                } else if completed != active.approvedBindingUses {
+                    active.requestFlowFailed = true; grant = active
+                    throw AutomationContractError.missingEvidence("Request input acknowledgement changed or was invented")
+                }
+                if active.requestSubmissionGranted && !active.approvedSaveTap {
+                    guard request.approvedSaveTap == true else {
+                        active.requestFlowFailed = true; grant = active
+                        throw AutomationContractError.ambiguousDispatch
+                    }
+                    active.approvedSaveTap = true
+                } else if request.approvedSaveTap == true && !active.requestSubmissionGranted {
+                    active.requestFlowFailed = true; grant = active
+                    throw AutomationContractError.missingEvidence("Request submission acknowledgement was invented")
+                }
+                grant = active
+            }
             stage = "requestPolicy"
             guard request.goalId == goal.id, active.calls < goal.maximumCalls, controllerCalls < active.maximumCalls,
                   active.actions.count < active.maximumActions,
@@ -200,7 +252,9 @@ public actor AutomationRunAuthority {
             active.calls += 1; controllerCalls += 1; grant = active
             request.approvedBindingUses = active.approvedBindingUses
             request.approvedSaveTap = active.approvedSaveTap
+            request.approvedNavigationActions = active.actions.prefix(active.consumed).filter { $0 != .activate }.count
             request.remainingActions = min(request.remainingActions, active.maximumActions - active.actions.count, goal.maximumActions - active.actions.count + 1)
+            validatedRequest = request
             let callDeadline = min(deadline, campaignBudget?.deadline ?? deadline, ContinuousClock.now.advanced(by: .milliseconds(min(30_000, request.remainingMs))))
             let provider = controller, bindings = active.bindings, boundedRequest = request
             stage = "provider"
@@ -211,7 +265,7 @@ public actor AutomationRunAuthority {
             }
             returnedDecision = decision
             stage = "decisionValidation"
-            let action = try decision.action(request: request, bindings: active.bindings, phase: active.phase, allowedFillBindings: goal.allowedFillBindings)
+            let action = try decision.action(request: request, bindings: active.bindings, phase: active.phase, allowedFillBindings: goal.allowedFillBindings, targetKind: approval.target.kind)
             if decision.kind == "finish", !(goal.minimumBindingUses ?? [:]).allSatisfy({ active.approvedBindingUses[$0.key, default: 0] >= $0.value }) {
                 throw AutomationContractError.missingEvidence("Required approved input activity is incomplete")
             }
@@ -219,6 +273,35 @@ public actor AutomationRunAuthority {
                 throw AutomationContractError.missingEvidence("Required save control activity is incomplete")
             }
             let saveTap = decision.kind == "tap" && request.nodes.contains { $0.id == decision.node && goal.matchesSaveControl($0) }
+            if let input = goal.requestInputControl {
+                if !active.requestFillGranted && decision.kind != "fill" && decision.kind != "finish" && decision.kind != "cannotProceed" {
+                    throw AutomationContractError.invalidPlan("The qualified request session permits only its frozen input fill before submission")
+                }
+                guard !active.requestSubmissionGranted || decision.kind == "finish" || decision.kind == "cannotProceed" else {
+                    throw AutomationContractError.conflictingOperation
+                }
+                if decision.kind == "fill" {
+                    let matches = request.nodes.filter { input.kind == .testId ? $0.testId == input.value : ($0.name?.utf16.count ?? 512) < 512 && $0.name == input.value }
+                    guard !active.requestFillGranted, matches.count == 1, matches[0].id == decision.node else {
+                        throw AutomationContractError.invalidPlan("Request binding targets an unrelated or ambiguous input control")
+                    }
+                }
+                if active.requestFillAcknowledged && !active.requestSubmissionGranted && decision.kind != "finish" && decision.kind != "cannotProceed" && !saveTap {
+                    throw AutomationContractError.invalidPlan("Only the frozen submit action is allowed after request fill")
+                }
+                if saveTap {
+                    let inputs = request.nodes.filter { input.kind == .testId ? $0.testId == input.value : ($0.name?.utf16.count ?? 512) < 512 && $0.name == input.value }
+                    guard inputs.count == 1, inputs[0].visible, !inputs[0].disabled, !inputs[0].secure,
+                          let value = inputs[0].value, let binding = goal.allowedFillBindings?.first,
+                          let approved = active.bindings[binding], value.utf16.elementsEqual(approved.utf16) else {
+                        throw AutomationContractError.missingEvidence("Current request input no longer contains the exact approved text")
+                    }
+                    let matches = request.nodes.filter { goal.matchesSaveControl($0) }
+                    guard active.requestFillAcknowledged, !active.requestSubmissionGranted, matches.count == 1, matches[0].id == decision.node else {
+                        throw AutomationContractError.missingEvidence("Submission requires the successful exact request fill first")
+                    }
+                }
+            }
             if saveTap && active.approvedSaveTap { throw AutomationContractError.conflictingOperation }
             guard await leases.isCurrent(lease), grant?.scope == active.scope, grant?.calls == active.calls, now() < deadline else { return denied }
             let response = try JSONDecoder().decode(AutomationJSON.self, from: JSONEncoder().encode(decision))

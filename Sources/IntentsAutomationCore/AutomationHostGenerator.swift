@@ -25,6 +25,11 @@ public enum AutomationHostGenerator {
     static let templateFiles = ["AutomationDateCodec.swift", "AutomationDurationCodec.swift", "AutomationCalendarCodec.swift", "AutomationURLCodec.swift", "AutomationIntentFileCodec.swift", "HostPlan.swift", "HostFixtureRegistration.swift", "HostReceipt.swift", "IntentDefinitionsHost.swift", "SegmentTests.swift", "UIHostPlan.swift", "UIStepTests.swift", "HostInputAdapterProbePlan.swift", "InputAdapterProbeTests.swift"]
     static let physicalTemplateFiles = templateFiles + ["SiriSubmissionTests.swift"]
 
+    static let nativeTemplateOverrides: Set<String> = ["HostInputAdapterProbePlan.swift", "InputAdapterProbeTests.swift", "HostReceipt.swift", "SegmentTests.swift"]
+    static func templateRelativePath(_ file: String, macOS: Bool) -> String {
+        macOS && nativeTemplateOverrides.contains(file) ? "NativeMac/" + file : file
+    }
+
     static func verifyGeneratedSources(_ generated: AutomationGeneratedHost, sessionRoot: URL) throws {
         guard generated.scheme.range(of: #"^[A-Za-z_][A-Za-z0-9_]{0,127}$"#, options: .regularExpression) == (generated.scheme.startIndex..<generated.scheme.endIndex) else {
             throw AutomationContractError.invalidIdentity
@@ -58,7 +63,7 @@ public enum AutomationHostGenerator {
     }
     static func isolateProject(sessionRoot: URL, projectRelativePath: String) throws -> AutomationRebasedProject {
         let session = try AutomationPath.canonical(sessionRoot), source = session.appendingPathComponent("source")
-        let manifestData = try AutomationReadOnlyFile.read(root: session, relativePath: "source-manifest.json", maximumBytes: 16 * 1024 * 1024)
+        let manifestData = try AutomationReadOnlyFile.read(root: session, relativePath: "source-manifest.json", maximumBytes: AutomationSourceSnapshot.maximumManifestBytes)
         let manifest = try JSONDecoder().decode(AutomationSourceManifest.self, from: manifestData)
         try manifest.validateCaptureLayout()
         guard manifest.files.contains(where: { $0.relativePath == projectRelativePath + "/project.pbxproj" }),
@@ -101,7 +106,7 @@ public enum AutomationHostGenerator {
         _ = try selectedTargetName(rebased: rebased, targetID: subjectTargetID, configuration: configuration)
         let session = rebased.session, source = session.appendingPathComponent("source"), project = rebased.project
         let projectFile = project.appendingPathComponent("project.pbxproj")
-        let manifestData = try AutomationReadOnlyFile.read(root: session, relativePath: "source-manifest.json", maximumBytes: 16 * 1024 * 1024)
+        let manifestData = try AutomationReadOnlyFile.read(root: session, relativePath: "source-manifest.json", maximumBytes: AutomationSourceSnapshot.maximumManifestBytes)
         let manifest = try JSONDecoder().decode(AutomationSourceManifest.self, from: manifestData)
         let data = try AutomationReadOnlyFile.read(root: source, relativePath: rebased.relativePath + "/project.pbxproj", maximumBytes: 16 * 1024 * 1024)
         guard AutomationArtifactRegistry.digest(data) == rebased.digest,
@@ -123,7 +128,8 @@ public enum AutomationHostGenerator {
         func insert(_ value: [String: Any]) throws -> String { let key = id(); guard objects[key] == nil else { throw AutomationContractError.conflictingOperation }; objects[key] = value; return key }
         var references: [String] = [], builds: [String] = [], templateRecords: [String: String] = [:]
         for file in includesSiri ? physicalTemplateFiles : templateFiles {
-            let bytes = try AutomationReadOnlyFile.read(root: templates, relativePath: file, maximumBytes: 1_048_576)
+            let bytes = try AutomationReadOnlyFile.read(root: templates,
+                relativePath: templateRelativePath(file, macOS: macOS), maximumBytes: 1_048_576)
             try bytes.write(to: sources.appendingPathComponent(file), options: .withoutOverwriting)
             templateRecords[file] = AutomationArtifactRegistry.digest(bytes)
             let reference = try insert(["isa": "PBXFileReference", "lastKnownFileType": "sourcecode.swift", "path": file, "sourceTree": "<group>"])

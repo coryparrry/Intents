@@ -152,6 +152,9 @@ public actor AutomationSiriRouteDriver: AutomationRouteDriver {
                 bundleName: URL(fileURLWithPath: prepared.host.hostBundlePath).lastPathComponent, executableName: executable) else {
             throw AutomationContractError.ambiguousDispatch
         }
+        if siriAuthority?.isRepeatableQualification == true {
+            guard receipt.submittedRecognizedText == program.request else { throw AutomationContractError.missingEvidence("Current submitted recognised text is unknown") }
+        }
         guard siriAuthority?.expectedOSBuild == nil || receipt.osBuild == siriAuthority?.expectedOSBuild else { throw AutomationContractError.conflictingOperation }
         liveSubmission = receipt
         // Remote PIDs are never inspected or signalled on this Mac. Device release uses CoreDevice inventory.

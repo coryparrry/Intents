@@ -10,7 +10,7 @@ enum AutomationControllerContextSelection {
         let fillAliases: [String]
         let tapAliases: [String]
     }
-    static func project(_ request: AutomationControllerRequest) throws -> Projection {
+    static func project(_ request: AutomationControllerRequest, targetKind: TargetIdentity.Kind? = nil) throws -> Projection {
         try request.validate()
         let nodes = select(request.nodes)
         let entries = nodes.enumerated().map { (alias: "n" + String($0.offset), node: $0.element) }
@@ -25,7 +25,13 @@ enum AutomationControllerContextSelection {
                 // child buttons own selection; tapping the container cannot
                 // identify which option was approved.
                 && $0.node.role?.lowercased() != "segmented-control"
+                && permitsTap($0.node, targetKind: targetKind)
             }.map(\.alias))
+    }
+    /// The Mac adapter maps AXStaticText to text. Its hittable geometry does not
+    /// make it an action control; preserve it for observation and endpoint proof.
+    static func permitsTap(_ node: AutomationControllerRequest.Node, targetKind: TargetIdentity.Kind?) -> Bool {
+        targetKind != .nativeMac || !["text", "AXStaticText"].contains(node.role ?? "")
     }
     static func select(_ nodes: [AutomationControllerRequest.Node], maximum: Int = 48) -> [AutomationControllerRequest.Node] {
         let limit = min(48, max(0, maximum))

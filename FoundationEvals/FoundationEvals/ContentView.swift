@@ -29,6 +29,10 @@ struct ContentView: View {
         .toolbar(removing: .title)
         .background { SuiteAutosaveObserver(store: store) }
         .task {
+            automationStore.pairedClient = runners.client
+            automationStore.pairedCanStart = { ScenarioExecutionAdmission.shared.allows(nil) && runners.executingRunID == nil && !store.hasActiveExecution && !runners.automationExecutionBlocked }
+            automationStore.pairedOwnershipChanged = { runners.automationExecutionBlocked = $0 }
+            await automationStore.restorePairedOwnership()
             await automationStore.migrateEvidenceHistory()
             #if DEBUG
             if !appliedAutomationLaunchSelection {

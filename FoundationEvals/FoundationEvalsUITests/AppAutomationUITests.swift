@@ -138,6 +138,7 @@ final class AppAutomationUITests: XCTestCase {
         // A second lookup uses the UDID even when the displayed state changes between runs.
         selectAutomationMenu(simulator, item: simulatorID)
         XCTAssertFalse(app.buttons["Run action…"].exists)
+        XCTAssertFalse(app.buttons["Build private copy"].exists)
         XCTAssertFalse(app.buttons["Run approved workflow"].exists)
         captureEmptyFlow(app.windows.firstMatch, name: "Stable automation pickers")
     }
@@ -155,8 +156,7 @@ final class AppAutomationUITests: XCTestCase {
         app.launch(); defer { app.terminate() }; app.activate(); app.typeKey("3", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "physical")
-        let device = app.textFields["Exact physical device ID"]
-        XCTAssertTrue(device.waitForExistence(timeout: 5)); device.click(); device.typeText("00008140-0000000000000001")
+        XCTAssertTrue(app.popUpButtons["iPhone or iPad"].waitForExistence(timeout: 5))
         selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "siri")
         let request = app.textFields["Exact request to submit to Siri"]; XCTAssertTrue(request.waitForExistence(timeout: 5))
         request.click(); request.typeText("Open the approved test app")

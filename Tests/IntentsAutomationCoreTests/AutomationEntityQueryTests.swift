@@ -52,5 +52,18 @@ final class AutomationEntityQueryTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).sorted(), before)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: outside.path), ["report.json"])
     }
+    func testSuggestedQueryFreezesItsExplicitModeAndRejectsStringMatching() throws {
+        var (prepared, entity, approval) = try fixture(root: root())
+        entity.properties = [:]; entity.queryMode = .suggested
+        prepared.catalog.entities = [entity]
+        let plan = try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "", approval: approval)
+        XCTAssertEqual(plan.execution.hostProgram?.operations.first?.querySuggested, true)
+        XCTAssertNil(plan.execution.hostProgram?.operations.first?.queryText)
+        XCTAssertThrowsError(try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "invented search", approval: approval))
+        var foreign = entity; foreign.queryMode = nil
+        XCTAssertThrowsError(try AutomationEntityQuery.plan(prepared: prepared, entity: foreign, text: "Search", approval: approval))
+        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+        XCTAssertEqual(try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "", approval: approval), plan)
+    }
 }
 #endif

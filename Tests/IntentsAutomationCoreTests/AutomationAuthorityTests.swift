@@ -2,6 +2,20 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationAuthorityTests: XCTestCase, @unchecked Sendable {
+    func testObservationOnlyRouteCannotAcquireHiddenTapAuthority() async throws {
+        let app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "ios"), target = TargetIdentity(id: "device", kind: .simulator)
+        let approval = RunApproval(runID: "run", app: app, target: target, environmentID: "test", effects: [.observe, .navigate], maximumActions: 10, disposable: true)
+        let leases = AutomationDeviceLeaseManager(), lease = try await leases.acquire(runID: "run", target: target, control: .ui)
+        let authority = AutomationRunAuthority(approval: approval, leases: leases)
+        let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "read", leaseGeneration: lease.generation)
+        var segment = AutomationSegment(id: "read", kind: .observeOnly, phase: .subject, operation: "Read app", effects: [.observe, .navigate], lifecycle: .persistedStateAcrossSegments)
+        segment.uiProgram = .init(operations: [.init(id: "read", kind: .locate, locator: .init(.label, "App"))])
+        do { try await authority.approve(scope: scope, lease: lease, segment: segment, actions: [.activate, .tap]); XCTFail("Read route granted a tap") } catch {}
+        segment.uiProgram?.operations[0].kind = .tap
+        do { try await authority.approve(scope: scope, lease: lease, segment: segment, actions: [.activate]); XCTFail("Read route admitted a mutating program") } catch {}
+        segment.uiProgram?.operations[0].kind = .locate
+        try await authority.approve(scope: scope, lease: lease, segment: segment, actions: [.activate])
+    }
     func testObserveOnlyAndNoActivationCannotGrantFilling() async throws {
         let app = AppIdentity(logicalID: "app", bundleID: "example.App", platform: "ios"), target = TargetIdentity(id: "device", kind: .simulator)
         let approval = RunApproval(runID: "run", app: app, target: target, environmentID: "test", effects: [.observe], maximumActions: 10, disposable: true)

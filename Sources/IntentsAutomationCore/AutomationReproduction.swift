@@ -1,5 +1,16 @@
 import Foundation
 
+/// UI progress carries verified, saved and released counts, never execution authority.
+public struct AutomationReproductionProgress: Equatable, Sendable {
+    public enum Event: Equatable, Sendable { case attemptStarted, attemptSaved }
+    public let event: Event
+    public let recordedAttempts: Int
+    public let requestedAttempts: Int
+    public let attemptNumber: Int
+    public let attemptID: String
+}
+public typealias AutomationReproductionProgressHandler = @Sendable (AutomationReproductionProgress) async -> Void
+
 /// Counts from fresh executions of one frozen case; imported records grant no authority.
 public struct AutomationReproductionReport: Codable, Equatable, Sendable {
     public var schemaVersion = 1
@@ -90,7 +101,8 @@ public actor AutomationReproduction {
     public func run(frozen: AutomationFrozenCase, originalAttemptID: String, approval: RunApproval,
                     capabilities: CapabilityProfile = .init(), limits: AutomationCampaignLimits,
                     executor: any AutomationCampaignAttemptExecutor,
-                    fixture: AutomationQualifiedFreshFixture? = nil) async throws -> AutomationReproductionReport {
+                    fixture: AutomationQualifiedFreshFixture? = nil,
+                    onProgress: AutomationReproductionProgressHandler? = nil) async throws -> AutomationReproductionReport {
         guard !running else { throw AutomationContractError.targetBusy }
         running = true; defer { running = false }
         try frozen.validate(); try limits.validate()
@@ -125,6 +137,9 @@ public actor AutomationReproduction {
             do {
                 try Task.checkCancellation()
                 try await budget.reserveAttempt(id: id); reserved = true
+                await onProgress?(.init(event: .attemptStarted, recordedAttempts: result.attempts.count,
+                    requestedAttempts: 5, attemptNumber: result.attempts.count + 1, attemptID: id))
+                try Task.checkCancellation()
                 entered = true
                 let report: AutomationAttemptReport
                 if let tracker, let fresh = executor as? any AutomationFreshFixtureAttemptExecutor {
@@ -144,6 +159,8 @@ public actor AutomationReproduction {
                 guard report.resourcesReleased, !report.result.subjectDispatchUncertain else {
                     result.stopReason = "Unresolved dispatch or release; reproduction stopped"; break
                 }
+                await onProgress?(.init(event: .attemptSaved, recordedAttempts: result.attempts.count,
+                    requestedAttempts: 5, attemptNumber: result.attempts.count, attemptID: id))
             } catch {
                 result.stopReason = error is CancellationError ? "Cancelled" : "Reproduction stopped before canonical evidence could be verified"
                 if reserved {

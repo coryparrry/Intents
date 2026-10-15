@@ -86,6 +86,15 @@ final class AutomationEntityBindingTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(report.result.summary, .inputUnavailable); XCTAssertFalse(report.result.subjectDispatched)
         let acquired = await driver.acquired; XCTAssertEqual(acquired, ["lookup"])
     }
+    func testDeferredIdentityCannotReplaceSuggestedQuerySelector() throws {
+        var value = plan()
+        value.execution.kind = .systemQuery
+        value.execution.effects = [.observe]
+        value.execution.hostProgram = .init(operations: [.init(id: "invoke", kind: .query, typeID: "Task", querySuggested: true, properties: [:])])
+        value.execution.inputBindings![0].destination = .hostQueryIDs
+        value.execution.inputBindings![0].name = "queryIDs"
+        XCTAssertThrowsError(try AutomationInputResolver.validate(plan: value))
+    }
 }
 private actor EntityBindingDriver: AutomationRouteDriver {
     let output: AutomationValue

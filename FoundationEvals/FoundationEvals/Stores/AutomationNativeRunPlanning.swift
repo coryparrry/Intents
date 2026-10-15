@@ -13,7 +13,91 @@ enum AutomationNativeOffMainVerification {
     }
 }
 
+struct AutomationNativeRunSelection: Equatable, Sendable {
+    let epoch: Int
+    let candidateID: String
+    let workflowRoute: String
+    let simulatorID: String
+    let installApproved: Bool
+    let candidate: AutomationApplicationCandidate?
+    let prepared: AutomationPreparedApplication?
+    let target: TargetIdentity?
+    let configuration: String
+    let instruction: String, endpoint: String, approvedText: String, expectedText: String
+    let observationLabel: String, observationProperty: String, effectChoice: String
+    let disposable: Bool, effectsConfirmed: Bool
+    let tapControls: String, textEntry: String, submitControl: String
+}
+
 extension AppAutomationStore {
+    var nativeRunSelection: AutomationNativeRunSelection {
+        .init(epoch: selectionEpoch, candidateID: candidateID, workflowRoute: workflowRoute,
+            simulatorID: simulatorID, installApproved: installApproved, candidate: candidate, prepared: prepared,
+            target: prepared?.host.target, configuration: configuration,
+            instruction: uiInstruction, endpoint: uiEndpoint, approvedText: uiApprovedText, expectedText: uiExpectedText,
+            observationLabel: uiObservationLabel, observationProperty: uiObservationProperty, effectChoice: effectChoice,
+            disposable: disposable, effectsConfirmed: effectsConfirmed, tapControls: uiTapControls, textEntry: uiTextEntryControl, submitControl: uiSubmitControl)
+    }
+    /// Capture value snapshots on the main actor; verify retained prepared artifacts off it.
+    func nativeRunVerificationWork(runID: String) throws -> @Sendable () throws -> AutomationNativeRunRequest {
+        guard canRun else { throw AutomationContractError.targetBusy }
+        guard !isMacWorkflowUnavailable else {
+            throw AutomationContractError.missingEvidence("Native Mac workflow execution is not qualified")
+        }
+        if isUIWorkflow { return try simulatorUIRunVerificationWork(runID: runID) }
+        let request = try makeNativeRunRequest(runID: runID)
+        return { request }
+    }
+    private func simulatorUIRunVerificationWork(runID: String) throws -> @Sendable () throws -> AutomationNativeRunRequest {
+        guard let candidate else { throw AutomationContractError.invalidIdentity }
+        let retainedPrepared = prepared, selection = nativeRunSelection
+        let locale = Locale.current.identifier
+        guard candidate.kind == .sourceTarget && workflowRoute == "ui" && preparedUISelectionMatches && retainedPrepared != nil else {
+            throw AutomationContractError.missingEvidence("Prepare this source app for the selected configuration and simulator")
+        }
+        return {
+            guard let prepared = retainedPrepared else { throw AutomationContractError.invalidIdentity }
+            let subject = AutomationApplicationSubject.prepared(prepared)
+            var effects: Set<AutomationEffect> = [.observe, .navigate]
+            if selection.effectChoice == "fixture" { effects.insert(.fixtureWrite) }
+            if selection.effectChoice == "external" { effects.insert(.externalWrite) }
+            var approval = RunApproval(runID: runID, app: subject.app, target: subject.target,
+                environmentID: "selected-simulator:" + selection.simulatorID, effects: effects, maximumActions: 30, disposable: selection.disposable)
+            var plan = try AutomationUIOnlyPlanner.compile(app: subject.app, target: subject.target, instruction: selection.instruction,
+                endpoint: selection.endpoint, approvedText: selection.approvedText, expectedVisibleText: selection.expectedText,
+                observationLabel: selection.observationProperty == "text" ? "" : selection.observationLabel,
+                observationProperty: selection.observationProperty, approval: approval, localeIdentifier: locale)
+            plan.execution.uiProgram = try AutomationNativeWorkflowSteps.program(tapControls: selection.tapControls,
+                textEntry: selection.textEntry, approvedText: selection.approvedText, submitControl: selection.submitControl, endpoint: selection.endpoint)
+            plan.provenance["ui.backend"] = "xcuitest"
+            try AutomationNativePreparedEvidence.attachPreparedEvidence(to: &plan, prepared: prepared)
+            try AutomationNativeWorkflowSteps.applyBudget(to: &plan, approval: approval)
+            plan.id = "ui." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
+            let digest = try AutomationFrozenCase.planDigest(plan); approval.approvedCaseDigest = digest
+            try PlanValidator.validate(plan, approval: approval, capabilities: .init(), purpose: .review)
+            let fields = ["plan": digest,
+                "install": String(selection.installApproved), "disposable": String(selection.disposable), "maximumActions": String(approval.maximumActions)]
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            return .init(subject: subject, plan: plan, approval: approval, capabilities: .init(),
+                installApproved: selection.installApproved, digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: digest)
+        }
+    }
+    func verifiedNativeRunRequest(runID: String) async throws -> AutomationNativeRunRequest {
+        let epoch = selectionEpoch, selection = nativeRunSelection, pending = pendingCommandStatus
+        let cancellationID = requestVerificationCancellationID
+        let verify = try nativeRunVerificationWork(runID: runID)
+        let request = try await AutomationNativeOffMainVerification.run(verify)
+        try Task.checkCancellation()
+        try validateRequestVerificationCancellation(cancellationID)
+        guard canRun, selectionEpoch == epoch, nativeRunSelection == selection,
+              pendingCommandStatus?.requestID == pending?.requestID,
+              pendingCommandStatus?.state == pending?.state else { throw AutomationContractError.conflictingOperation }
+        if !isUIWorkflow {
+            guard try makeNativeRunRequest(runID: runID).digest == request.digest else { throw AutomationContractError.conflictingOperation }
+        }
+        return request
+    }
+
     var preparedUISelectionMatches: Bool {
         prepared?.host.app.logicalID == candidateID && prepared?.host.app.platform == "ios" &&
         prepared?.host.app.configuration == configuration && prepared?.generatedHost.configuration == configuration &&
@@ -29,7 +113,7 @@ extension AppAutomationStore {
             instruction: uiInstruction, endpoint: uiEndpoint, namePrefix: freshNamePrefix, nameProperty: freshNameProperty,
             stateProperty: freshStateProperty, initialState: freshInitialState == "true", expectedState: freshExpectedState == "true",
             approval: approval, capabilities: capabilities, localeIdentifier: Locale.current.identifier, context: freshContext, purpose: .simulatorDraft,
-            saveControl: try AutomationNativeWorkflowSteps.locator(freshSaveControl),
+            saveControl: try AutomationNativeWorkflowSteps.locator(freshSaveControl), includeProtectedRecord: !isFreshSearchWorkflow,
             createControl: try AutomationNativeWorkflowSteps.optionalLocator(freshCreateControl),
             nameEntry: try AutomationNativeWorkflowSteps.locator(freshNameEntryControl),
             contextEntry: try AutomationNativeWorkflowSteps.optionalLocator(freshContextEntryControl))
@@ -61,7 +145,7 @@ extension AppAutomationStore {
         var effects: Set<AutomationEffect> = [.observe, .navigate]
         if effectChoice == "fixture" { effects.insert(.fixtureWrite) }
         if effectChoice == "external" { effects.insert(.externalWrite) }
-        let approval = RunApproval(runID: runID, app: prepared.host.app, target: prepared.host.target,
+        var approval = RunApproval(runID: runID, app: prepared.host.app, target: prepared.host.target,
             environmentID: "selected-simulator:" + prepared.host.target.id, effects: effects, maximumActions: 20, disposable: disposable)
         let capabilities = AutomationPreparedCapabilities.base(prepared)
         var values: [String: AutomationActionInput] = [:]
@@ -94,6 +178,7 @@ extension AppAutomationStore {
                 declaredEffects: declaration, approval: approval, capabilities: capabilities, purpose: .review)
         }
         let caseDigest = try AutomationFrozenCase.planDigest(plan)
+        approval.approvedCaseDigest = caseDigest
         let fields = ["plan": caseDigest, "host": prepared.host.hostProductDigest,
             "xctestrun": prepared.host.xctestrunDigest, "catalog": try AutomationRecipeContext.catalogDigest(prepared.catalog),
             "install": String(installApproved), "disposable": String(disposable), "maximumActions": String(approval.maximumActions)]
@@ -102,33 +187,7 @@ extension AppAutomationStore {
             digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: caseDigest)
     }
     func makeUIRunRequest(runID: String) throws -> AutomationNativeRunRequest {
-        guard let candidate else { throw AutomationContractError.invalidIdentity }
-        guard candidate.kind == .sourceTarget, workflowRoute == "ui", preparedUISelectionMatches, let prepared else {
-            throw AutomationContractError.missingEvidence("Prepare this source app for the selected configuration and simulator")
-        }
-        let subject = AutomationApplicationSubject.prepared(prepared)
-        var effects: Set<AutomationEffect> = [.observe, .navigate]
-        if effectChoice == "fixture" { effects.insert(.fixtureWrite) }
-        if effectChoice == "external" { effects.insert(.externalWrite) }
-        var approval = RunApproval(runID: runID, app: subject.app, target: subject.target,
-            environmentID: "selected-simulator:" + simulatorID, effects: effects, maximumActions: 30, disposable: disposable)
-        var plan = try AutomationUIOnlyPlanner.compile(app: subject.app, target: subject.target, instruction: uiInstruction,
-            endpoint: uiEndpoint, approvedText: uiApprovedText, expectedVisibleText: uiExpectedText,
-            observationLabel: uiObservationProperty == "text" ? "" : uiObservationLabel,
-            observationProperty: uiObservationProperty, approval: approval, localeIdentifier: Locale.current.identifier)
-        if case .prepared(let prepared) = subject { try AutomationNativePreparedEvidence.attachPreparedEvidence(to: &plan, prepared: prepared) }
-        plan.execution.uiProgram = try AutomationNativeWorkflowSteps.program(tapControls: uiTapControls, textEntry: uiTextEntryControl,
-            approvedText: uiApprovedText, submitControl: uiSubmitControl, endpoint: uiEndpoint)
-        plan.provenance["ui.backend"] = "xcuitest"
-        try AutomationNativeWorkflowSteps.applyBudget(to: &plan, approval: approval)
-        plan.id = "ui." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
-        let caseDigest = try AutomationFrozenCase.planDigest(plan)
-        approval.approvedCaseDigest = caseDigest
-        let fields = ["plan": caseDigest,
-            "install": String(installApproved), "disposable": String(disposable), "maximumActions": String(approval.maximumActions)]
-        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return .init(subject: subject, plan: plan, approval: approval, capabilities: .init(),
-            installApproved: installApproved, digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: caseDigest)
+        try simulatorUIRunVerificationWork(runID: runID)()
     }
 }
 #endif

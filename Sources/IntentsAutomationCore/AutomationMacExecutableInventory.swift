@@ -11,6 +11,12 @@ extension AutomationMacProcessInventory {
         guard (1...10).contains(paths.count), paths.allSatisfy(validExecutablePath) else {
             throw AutomationContractError.invalidIdentity
         }
+        func validatedRecord(_ identity: AutomationProcessIdentity, pid: Int32, path: String) throws -> Record {
+            guard identity.pid == pid else { throw AutomationContractError.terminationUnverified }
+            let record = Record(identity: identity, userID: userID, executablePath: path)
+            try Self(userID: userID, complete: true, processes: [record]).validate(expectedUserID: userID)
+            return record
+        }
         func scan() throws -> [Record] {
             try Task.checkCancellation()
             let pids = try reader.processIDs(userID)
@@ -25,22 +31,32 @@ extension AutomationMacProcessInventory {
                 catch {
                     // A missing path alone never means absent. A kernel-confirmed
                     // exited process cannot execute a helper, even before its parent reaps it.
-                    guard try inactive(pid) else { throw error }
+                    if try inactive(pid) { continue }
+                    guard let failure = error as? KernelObservationFailure,
+                          failure.stage == .executablePath, failure.errorNumber == ENOENT,
+                          try reader.excludesUnreadableExecutable?(pid, userID) == true else { throw error }
                     continue
                 }
                 guard validExecutablePath(path) else { throw AutomationContractError.terminationUnverified }
                 guard paths.contains(path) else { continue }
-                let identity = try reader.identity(pid, userID)
-                guard identity.pid == pid, try reader.executablePath(pid) == path,
-                      try reader.identity(pid, userID) == identity else {
-                    throw AutomationContractError.terminationUnverified
+                let record = try validatedRecord(reader.identity(pid, userID), pid: pid, path: path)
+                let confirmedPath = try reader.executablePath(pid)
+                guard validExecutablePath(confirmedPath) else { throw AutomationContractError.terminationUnverified }
+                guard confirmedPath == path else {
+                    // A valid exec transition invalidates the entire observation.
+                    // Only a new complete scan can establish helper absence.
+                    throw KernelObservationFailure(stage: .executableSetChanged, pid: pid, errorNumber: 0)
                 }
-                records.append(.init(identity: identity, userID: userID, executablePath: path))
+                let confirmed = try validatedRecord(reader.identity(pid, userID), pid: pid, path: confirmedPath)
+                guard confirmed.identity == record.identity else {
+                    throw KernelObservationFailure(stage: .executableSetChanged, pid: pid, errorNumber: 0)
+                }
+                records.append(record)
             }
             return records
         }
         let first = try scan(), second = try scan()
-        guard first == second else { throw AutomationContractError.terminationUnverified }
+        guard first == second else { throw KernelObservationFailure(stage: .executableSetChanged, pid: nil, errorNumber: 0) }
         var result = Self(userID: userID, complete: true, processes: first)
         result.executableScope = paths.sorted()
         try result.validate(expectedUserID: userID, matchingExecutablePaths: paths)

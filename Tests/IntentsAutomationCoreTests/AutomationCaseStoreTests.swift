@@ -109,6 +109,41 @@ final class AutomationCaseStoreTests: XCTestCase, @unchecked Sendable {
         do { _ = try await store.freeze(changed); XCTFail("Same revision overwrite accepted") } catch { }
         changed.revision += 1; _ = try await store.freeze(changed)
     }
+    func testReadOnlyPreparedCaseWithoutAttemptsIsEmptyAndDoesNotCreateHistory() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = try AutomationCaseStore(root: root)
+        let frozen = try await writer.freeze(plan())
+        let reader = try AutomationCaseStore(readOnlyRoot: root)
+        let attempts = try await reader.attempts(for: frozen)
+        XCTAssertTrue(attempts.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Attempts").path))
+        do { _ = try await reader.loadAttempt(id: "missing", frozen: frozen); XCTFail("Invented a missing attempt") } catch {}
+        let originalReport = report(frozen.plan)
+        try await writer.saveAttempt(originalReport, for: frozen)
+        var next = frozen.plan; next.revision += 1
+        let unused = try await writer.freeze(next)
+        let unusedAttempts = try await reader.attempts(for: unused)
+        XCTAssertTrue(unusedAttempts.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Attempts/" + unused.digest).path))
+        let originalAttempts = try await reader.attempts(for: frozen)
+        XCTAssertEqual(originalAttempts, [originalReport])
+    }
+    func testReadOnlyAttemptListingRejectsSymlinksAndFilesInsteadOfTreatingThemAsEmpty() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = try AutomationCaseStore(root: root)
+        let frozen = try await writer.freeze(plan())
+        let reader = try AutomationCaseStore(readOnlyRoot: root)
+        let attempts = root.appendingPathComponent("Attempts")
+        for destination in [root.appendingPathComponent("Definitions"), root.appendingPathComponent("absent")] {
+            try FileManager.default.createSymbolicLink(at: attempts, withDestinationURL: destination)
+            do { _ = try await reader.attempts(for: frozen); XCTFail("Accepted a history directory alias") } catch {}
+            try FileManager.default.removeItem(at: attempts)
+        }
+        try Data().write(to: attempts)
+        do { _ = try await reader.attempts(for: frozen); XCTFail("Accepted a file as history") } catch {}
+    }
     func testCaseApprovalBindsInputsRouteObserversAndOracleExactly() throws {
         let plan = plan()
         var approval = RunApproval(runID: "run", app: plan.app, target: plan.target, environmentID: plan.environmentID, effects: [.observe], maximumActions: 10, disposable: true)

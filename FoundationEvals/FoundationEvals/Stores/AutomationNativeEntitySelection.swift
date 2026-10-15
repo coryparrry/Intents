@@ -6,11 +6,12 @@ typealias AutomationNativeEntityQueryExecutor = @Sendable (AutomationPreparedApp
 
 enum AutomationNativeEntitySelection {
     static func label(_ choice: AutomationQueryEntityChoice, entity: ApplicationSurfaceCatalog.Entity) -> String {
-        choice.properties.sorted(by: { $0.key < $1.key }).compactMap { name, value in
+        let label = choice.properties.sorted(by: { $0.key < $1.key }).compactMap { name, value in
             if case .text(let text) = value { return (entity.propertyTitles[name] ?? name) + ": " + text }
             if case .bool(let flag) = value { return (entity.propertyTitles[name] ?? name) + ": " + (flag ? "yes" : "no") }
             return nil
         }.joined(separator: " · ")
+        return label.isEmpty ? choice.id : label
     }
 }
 #endif
