@@ -44,7 +44,8 @@ def prepared():
     return {"host": {"app": {"bundleID": "example.fixture"},
                      "target": {"id": "11111111-1111-1111-1111-111111111111", "kind": "simulator"},
                      "subjectProductPath": "/prepared/AutomationFixture.app"},
-            "catalog": catalog()}
+            "catalog": catalog(), "selectedDeveloperDirectoryPath": "/Applications/Xcode_27.app/Contents/Developer",
+            "sourceGraph": {"platformContext": {"developerDirectory": "/Applications/Xcode_27.app/Contents/Developer"}}}
 
 
 def report(summary="executedUnassessed", values=None):
@@ -168,6 +169,7 @@ class FakeCommands:
     def __init__(self, output, failure=None):
         self.output, self.failure, self.calls, self.saved = output, failure, [], {}
         self.envelopes = []
+        self.env = {"DEVELOPER_DIR": "/Applications/Xcode_27.app/Contents/Developer"}
 
     def run(self, arguments, **options):
         args = [str(a) for a in arguments]
@@ -178,6 +180,8 @@ class FakeCommands:
             return 0, prepared()["host"]["target"]["id"]
         if "--show-sdk-version" in args:
             return 0, "27.0"
+        if args == ["xcode-select", "-p"]:
+            return 0, "/Applications/Xcode_27.app/Contents/Developer\n"
         if "--show-bin-path" in args:
             return 0, str(Path(args[args.index("--scratch-path") + 1]) / "debug")
         return 0, ""
@@ -440,6 +444,59 @@ class OrchestrationTests(unittest.TestCase):
         self.assertLess(position("boot"), position("--jobs"))
         self.assertLess(position("--jobs"), position("bootstatus"))
         self.assertLess(position("bootstatus"), position("prepare"))
+
+    def test_prepare_explicitly_pins_same_xcode_as_simulator_sdk(self):
+        commands, _ = self.exercise()
+        prepare = next(args for args, _ in commands.calls if "prepare" in args)
+        self.assertEqual(prepare[prepare.index("--xcode") + 1], commands.env["DEVELOPER_DIR"])
+
+    def test_xcode_selection_falls_back_once_when_environment_is_missing(self):
+        original = FakeCommands.__init__
+        def without_environment(commands, *args, **options):
+            original(commands, *args, **options)
+            commands.env.clear()
+        with patch.object(FakeCommands, "__init__", without_environment):
+            commands, _ = self.exercise()
+        self.assertEqual(sum(args == ["xcode-select", "-p"] for args, _ in commands.calls), 1)
+        prepare = next(args for args, _ in commands.calls if "prepare" in args)
+        self.assertEqual(prepare[prepare.index("--xcode") + 1], commands.env["DEVELOPER_DIR"])
+
+    def test_mismatched_prepared_xcode_fails_before_install_and_releases_owned_simulator(self):
+        original = FakeCommands.json
+        for field in ("selectedDeveloperDirectoryPath", "sourceGraph"):
+            observed = []
+            def mismatch(commands, arguments, **options):
+                code, value = original(commands, arguments, **options)
+                if "prepare" in arguments:
+                    observed.append(commands)
+                    value[field] = "/Applications/Wrong.app/Contents/Developer" if field == "selectedDeveloperDirectoryPath" else {
+                        "platformContext": {"developerDirectory": "/Applications/Wrong.app/Contents/Developer"}}
+                return code, value
+            with self.subTest(field=field), patch.object(FakeCommands, "json", mismatch):
+                with self.assertRaisesRegex(AssertionError, "different Xcode"):
+                    self.exercise()
+                calls = [args for args, _ in observed[0].calls]
+                self.assertFalse(any(args[:3] == ["xcrun", "simctl", "install"] for args in calls))
+                self.assertFalse(any("run" in args for args in calls))
+                self.assertIn(["xcrun", "simctl", "delete", prepared()["host"]["target"]["id"]], calls)
+
+    def test_missing_run_toolchain_context_fails_before_install_and_execution(self):
+        original = FakeCommands.json
+        for graph in (None, {}, {"platformContext": {}}, {"platformContext": {"developerDirectory": ""}}):
+            observed = []
+            def missing_context(commands, arguments, **options):
+                code, value = original(commands, arguments, **options)
+                if "prepare" in arguments:
+                    observed.append(commands)
+                    value["sourceGraph"] = graph
+                return code, value
+            with self.subTest(graph=graph), patch.object(FakeCommands, "json", missing_context):
+                with self.assertRaisesRegex(AssertionError, "run context is missing"):
+                    self.exercise()
+                calls = [args for args, _ in observed[0].calls]
+                self.assertFalse(any(args[:3] == ["xcrun", "simctl", "install"] for args in calls))
+                self.assertFalse(any("run" in args for args in calls))
+                self.assertIn(["xcrun", "simctl", "delete", prepared()["host"]["target"]["id"]], calls)
 
     def test_cache_checkpoint_requires_external_cache_and_github_output_before_commands(self):
         with tempfile.TemporaryDirectory() as directory:

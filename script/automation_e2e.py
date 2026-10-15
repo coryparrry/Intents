@@ -339,6 +339,14 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
                "--record-build-cache requires an existing GITHUB_OUTPUT file")
     jobs = build_jobs if build_jobs is not None else (os.cpu_count() or 1)
     ensure(jobs > 0, "Build jobs must be positive")
+    selected_developer = commands.env.get("DEVELOPER_DIR")
+    if not selected_developer:
+        _, selected_developer = commands.run(["xcode-select", "-p"])
+    ensure(selected_developer.strip(), "No Xcode developer directory is selected")
+    developer = Path(selected_developer.strip()).resolve()
+    if developer.suffix == ".app":
+        developer = developer / "Contents/Developer"
+    commands.env["DEVELOPER_DIR"] = str(developer)
     _, runtimes = commands.json(["xcrun", "simctl", "list", "runtimes", "--json"])
     _, types = commands.json(["xcrun", "simctl", "list", "devicetypes", "--json"])
     _, sdk_version = commands.run(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-version"])
@@ -371,8 +379,17 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
         flags = ["--support-root", support]
         commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
         _, prepared = commands.json([cli, "prepare", "--project", fixture / "AutomationFixture.xcodeproj",
-                                     "--scheme", "AutomationFixture", "--destination", "sim:" + simulator, *flags], timeout=1200)
+                                     "--scheme", "AutomationFixture", "--destination", "sim:" + simulator,
+                                     "--xcode", developer, *flags], timeout=1200)
         (output / "prepared.json").write_text(json.dumps(prepared, indent=2))
+        prepared_developer = prepared.get("selectedDeveloperDirectoryPath")
+        ensure(isinstance(prepared_developer, str) and prepared_developer
+               and Path(prepared_developer).resolve() == developer,
+               "Prepared app used a different Xcode developer directory than the selected simulator SDK")
+        graph_developer = ((prepared.get("sourceGraph") or {}).get("platformContext") or {}).get("developerDirectory")
+        ensure(isinstance(graph_developer, str) and graph_developer
+               and Path(graph_developer).resolve() == developer,
+               "Prepared run context is missing or uses a different Xcode developer directory")
         _, catalog = commands.json([cli, "actions", *flags])
         ensure(catalog == prepared["catalog"], "actions differs from prepared catalog")
         def execute(plan, summary, expected=None, file=False):
