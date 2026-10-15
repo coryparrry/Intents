@@ -686,6 +686,97 @@ class FeatureOwnershipTests(unittest.TestCase):
         self.assertEqual(routes.coverage(None)["native_tests"], ["FoundationEvalsTests"])
         self.assertEqual(routes.coverage(["script/ci_native_routes.py"])["native_tests"], ["FoundationEvalsTests"])
 
+    def test_production_package_code_runs_native_consumers_without_unrelated_ui(self):
+        for path in (
+            "Sources/ProductionEvals/Services/ProductionJobs.swift",
+            "Package.swift", "Package.resolved", "new-runtime.swift",
+        ):
+            with self.subTest(path=path):
+                plan = routes.coverage([routes.PRODUCTION_PACKAGE + path])
+                self.assertTrue(plan["native"])
+                self.assertEqual(plan["native_tests"], ["FoundationEvalsTests"])
+                self.assertEqual(plan["swift_suites"], sorted(routes.PRODUCTION_DEVELOPER_SUITES))
+                self.assertFalse(plan["ui"])
+                self.assertEqual(plan["ui_matrix"], [])
+                self.assertFalse(plan["automation_e2e"])
+                self.assertFalse(plan["input_conversion"])
+
+    def test_production_package_tests_and_docs_use_the_dedicated_workflow(self):
+        for path in (
+            "Tests/ProductionEvalsTests/ProductionWorkflowTests.swift",
+            "Tests/ProductionEvalsTests/Fixtures/input.json", "README.md",
+            "docs/architecture.md", "Documentation/usage.rst", "LICENSE",
+        ):
+            with self.subTest(path=path):
+                plan = routes.coverage([routes.PRODUCTION_PACKAGE + path])
+                self.assertFalse(plan["native"])
+                self.assertEqual(plan["native_tests"], [])
+                self.assertEqual(plan["swift_suites"], [])
+                self.assertFalse(plan["ui"])
+                self.assertFalse(plan["automation_e2e"])
+                self.assertFalse(plan["input_conversion"])
+
+    def test_production_package_unions_features_and_keeps_shared_fallback(self):
+        production = routes.PRODUCTION_PACKAGE + "Sources/ProductionEvals/Models/ProductionModels.swift"
+        settings = routes.APP + "Views/MCPSettingsView.swift"
+        for paths in ([production, settings], [settings, production]):
+            with self.subTest(paths=paths):
+                plan = routes.coverage(paths)
+                self.assertEqual({group["name"] for group in plan["ui_matrix"]}, {"settings"})
+                self.assertEqual(plan["native_tests"], ["FoundationEvalsTests"])
+                self.assertFalse(plan["automation_e2e"])
+                self.assertFalse(plan["input_conversion"])
+        shared = routes.coverage([production, ".github/workflows/ci.yml"])
+        self.assertEqual(shared["swift_suites"], ["*"])
+        self.assertLessEqual(set(routes.UI_BASELINE), {group["name"] for group in shared["ui_matrix"]})
+        self.assertTrue(shared["automation_e2e"])
+        self.assertTrue(shared["input_conversion"])
+
+    def test_production_developer_bridge_suites_exist(self):
+        source = (ROOT / "Tests/FoundationEvalsDeveloperTests/DeveloperProtocolTests.swift").read_text()
+        for suite in routes.PRODUCTION_DEVELOPER_SUITES:
+            self.assertRegex(source, r"\bstruct " + re.escape(suite) + r"\b")
+
+    def test_standalone_plugin_changes_use_only_the_plugin_workflow(self):
+        for path in (
+            "plugins/apple-foundation-evals/server/main.mjs",
+            "plugins/apple-foundation-evals/native/AppEngine/EvaluationRunner.swift",
+            "plugins/apple-foundation-evals/README.md", ".github/workflows/plugin.yml",
+            ".agents/plugins/marketplace.json",
+        ):
+            with self.subTest(path=path):
+                plan = routes.coverage([path])
+                for flag in ("native", "ui", "automation_e2e", "input_conversion"):
+                    self.assertFalse(plan[flag], flag)
+                for selection in ("native_tests", "swift_suites", "python_tests", "macos_tests", "ui_matrix", "python_matrix"):
+                    self.assertEqual(plan[selection], [], selection)
+
+    def test_plugin_changes_do_not_add_or_remove_mixed_app_coverage(self):
+        plugin = "plugins/apple-foundation-evals/native/RunnerCore.swift"
+        for app in (
+            routes.APP + "Views/MCPSettingsView.swift",
+            routes.UI_TESTS + "EvaluationReviewUITests.swift",
+            routes.PRODUCTION_PACKAGE + "Sources/ProductionEvals/Models/ProductionModels.swift",
+        ):
+            expected = routes.coverage([app])
+            for paths in ([plugin, app], [app, plugin]):
+                with self.subTest(paths=paths):
+                    actual = routes.coverage(paths)
+                    self.assertEqual({key: value for key, value in actual.items() if key != "reasons"},
+                                     {key: value for key, value in expected.items() if key != "reasons"})
+
+    def test_plugin_exemption_is_exact_and_keeps_shared_ci_fallback(self):
+        for path in ("plugins/another-plugin/native.swift", "script/native-benchmark.sh"):
+            with self.subTest(path=path):
+                self.assertFalse(routes.standalone_plugin_path(path))
+        plan = routes.coverage([".github/workflows/plugin.yml", ".github/workflows/ci.yml"])
+        self.assertTrue(plan["native"])
+        self.assertTrue(plan["ui"])
+        self.assertTrue(plan["automation_e2e"])
+        self.assertTrue(plan["input_conversion"])
+        self.assertEqual(plan["native_tests"], ["FoundationEvalsTests"])
+        self.assertEqual(plan["swift_suites"], ["*"])
+
     def test_every_feature_catalog_path_and_selector_exists(self):
         for path in routes.UI_APP_GROUPS:
             self.assertTrue((ROOT / routes.APP / path).is_file(), path)

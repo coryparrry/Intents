@@ -24,3 +24,13 @@ jobs:
     name: Retargeted pull request CI
     if: ${{ github.event.changes.base != null }}
     uses: ./.github/workflows/ci.yml
+
+  retarget-production:
+    name: Retargeted production fixtures
+    if: ${{ github.event.changes.base != null }}
+    uses: ./.github/workflows/production-evals.yml
+
+  retarget-plugin:
+    name: Retargeted plugin checks
+    if: ${{ github.event.changes.base != null }}
+    uses: ./.github/workflows/plugin.yml

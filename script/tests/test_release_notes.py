@@ -1,6 +1,7 @@
 """Release-note policy for squash-merged pull requests."""
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -185,9 +186,16 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def test_only_base_edits_invoke_code_ci_and_later_body_edits_cannot_cancel_it(self):
         metadata = (ROOT / ".github/workflows/pr-metadata.yml").read_text()
-        retarget = metadata.split("  retarget:\n", 1)[1]
+        jobs = dict(re.findall(r"(?ms)^  ([\w-]+):\n(.*?)(?=^  [\w-]+:|\Z)", metadata))
+        retarget = jobs["retarget"]
         self.assertIn("if: ${{ github.event.changes.base != null }}", retarget)
         self.assertIn("uses: ./.github/workflows/ci.yml", retarget)
+        for name, workflow in (("retarget-production", "production-evals"), ("retarget-plugin", "plugin")):
+            with self.subTest(workflow=workflow):
+                component = jobs[name]
+                self.assertIn("if: ${{ github.event.changes.base != null }}", component)
+                self.assertIn("uses: ./.github/workflows/" + workflow + ".yml", component)
+                self.assertIn("  workflow_call:", (ROOT / (".github/workflows/" + workflow + ".yml")).read_text())
         self.assertNotIn("concurrency:", metadata)
         self.assertNotIn("Compile app and tests", metadata)
         self.assertNotIn("Workflow and script checks", metadata)

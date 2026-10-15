@@ -16,6 +16,13 @@ APP = "FoundationEvals/FoundationEvals/"
 TESTS = "FoundationEvals/FoundationEvalsTests/"
 UI_TESTS = "FoundationEvals/FoundationEvalsUITests/"
 UI_TARGET = "FoundationEvalsUITests/"
+PRODUCTION_PACKAGE = "Packages/ProductionEvals/"
+PRODUCTION_DEVELOPER_SUITES = {
+    "DeveloperProtocolTests", "DeveloperFeatureRegistryTests", "DeveloperRunnerHostEngineTests",
+}
+STANDALONE_PLUGIN_METADATA = {
+    ".github/workflows/plugin.yml", ".agents/plugins/marketplace.json",
+}
 # Keep the existing PR baseline, including the picker once, across independent desktops.
 UI_BASELINE = {
     "suite-editor": [UI_TARGET + "FoundationEvalsUITests"],
@@ -314,6 +321,21 @@ def python_test_inventory(root=ROOT):
     } - MACOS_TESTS
 
 
+def standalone_plugin_path(path):
+    return path.startswith("plugins/apple-foundation-evals/") or path in STANDALONE_PLUGIN_METADATA
+
+
+def production_package_runtime(path):
+    if not path.startswith(PRODUCTION_PACKAGE):
+        return False
+    relative = path.removeprefix(PRODUCTION_PACKAGE)
+    return not (
+        relative.startswith(("Tests/", "docs/", "Documentation/"))
+        or Path(relative).suffix.lower() in {".md", ".rst"}
+        or Path(relative).name in {"LICENSE", "LICENSE.txt", "NOTICE"}
+    )
+
+
 def package_test_suites(path, root):
     source = root / path
     if not path.endswith(".swift") or not source.is_file():
@@ -466,6 +488,21 @@ def coverage_plan(paths, root=ROOT):
             if module in NATIVE_UI_HELPERS.values():
                 native = ui = ui_fallback = True
             reasons.add("Test-only changes select the changed suites.")
+        elif standalone_plugin_path(path):
+            reasons.add(
+                "Standalone plugin changes use the dedicated plugin workflow for Node, native-engine, protocol and package coverage."
+            )
+        elif path.startswith(PRODUCTION_PACKAGE):
+            if production_package_runtime(path):
+                native = True
+                swift.update(PRODUCTION_DEVELOPER_SUITES)
+                reasons.add(
+                    "Production package code builds its native consumers and Developer bridge; its dedicated workflow runs package and worker-protocol tests."
+                )
+            else:
+                reasons.add(
+                    "Production package tests and documentation use the dedicated production-evals workflow without unrelated root runtime checks."
+                )
         elif path.startswith("Tests/"):
             swift.update(package_test_suites(path, root))
             reasons.add("Package test changes select declared suites; helper and fixture changes select the full package.")
@@ -556,7 +593,13 @@ def coverage_plan(paths, root=ROOT):
 
 def coverage(paths, root=ROOT):
     plan = coverage_plan(paths, root)
-    plan["native_tests"] = select_native_tests(paths, plan["native"], root, full=plan.get("full_coverage", False))
+    full_native = plan.get("full_coverage", False) or any(production_package_runtime(path) for path in paths or ())
+    native_paths = None if paths is None else [
+        path for path in paths
+        if not standalone_plugin_path(path)
+        and not (path.startswith(PRODUCTION_PACKAGE) and not production_package_runtime(path))
+    ]
+    plan["native_tests"] = select_native_tests(native_paths, plan["native"], root, full=full_native)
     return plan
 
 
