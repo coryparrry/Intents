@@ -73,7 +73,7 @@ final class EvaluationReviewUITests: XCTestCase {
         defer { app.terminate() }
         openReview(app)
         XCTAssertTrue(app.textViews["Review note"].waitForExistence(timeout: 5))
-        sidebarDestination("Traces", in: app).click()
+        sidebarDestination("Sidebar traces", in: app).click()
         XCTAssertTrue(app.staticTexts["Saved traces"].waitForExistence(timeout: 3), app.debugDescription)
         let trace = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "Open saved trace ")).firstMatch
         XCTAssertTrue(trace.waitForExistence(timeout: 3))
@@ -92,7 +92,7 @@ final class EvaluationReviewUITests: XCTestCase {
         let app = application(storage: storage)
         launchWorkspace(app)
         defer { app.terminate() }
-        sidebarDestination("Traces", in: app).click()
+        sidebarDestination("Sidebar traces", in: app).click()
         XCTAssertTrue(app.staticTexts["No saved traces yet"].waitForExistence(timeout: 3), app.debugDescription)
         app.buttons["Open evaluations"].click()
         XCTAssertTrue(app.staticTexts["Choose a saved output"].waitForExistence(timeout: 3))
@@ -116,12 +116,12 @@ final class EvaluationReviewUITests: XCTestCase {
         else { app.buttons[title].click() }
     }
 
-    @MainActor private func sidebarDestination(_ title: String, in app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", title)).firstMatch
+    @MainActor private func sidebarDestination(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        app.staticTexts[identifier]
     }
 
     @MainActor private func openReview(_ app: XCUIApplication) {
-        let destination = sidebarDestination("Evaluations", in: app)
+        let destination = sidebarDestination("Sidebar evaluations", in: app)
         XCTAssertTrue(destination.waitForExistence(timeout: 5), app.debugDescription)
         destination.click()
         XCTAssertTrue(app.radioButtons["Review"].waitForExistence(timeout: 5), app.debugDescription)
