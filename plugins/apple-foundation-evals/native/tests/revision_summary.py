@@ -23,7 +23,7 @@ def check(condition, detail=""):
 
 def uid(): return str(uuid.uuid4())
 def invoke(request):
-    check(request["operation"] in {"suite-defaults", "validate-suite", "release-check", "project-release-check", "summarize-experiment"})
+    check(request["operation"] in {"suite-defaults", "validate-suite", "release-check", "project-release-check", "summarize-experiment", "approve-baseline"})
     process = subprocess.run([args.binary], input=json.dumps(request), text=True,
                              capture_output=True, timeout=60, check=True)
     check(len(process.stdout.strip().splitlines()) == 1, process.stdout[:500])
@@ -153,6 +153,37 @@ if args.only in ("all", "summary"):
     incompatible = copy.deepcopy(selected_candidate)
     incompatible["assessments"][0]["judge"]["requestedModelID"] = "another-judge"
     rejected_summary(selected_current, incompatible)
+    # Reassessment can legitimately attach a modelJudge score set to a run
+    # originally collected under deterministic scoring. Compare selected policy
+    # on both sides, including the implicit last-assessment selection path.
+    deterministic_selected_current = copy.deepcopy(selected_current)
+    deterministic_selected_candidate = copy.deepcopy(selected_candidate)
+    selected_approval = invoke({"operation": "approve-baseline", "suite": suite, "run": selected_current})
+    check(selected_approval["scoringContract"]["scoringMode"] == "modelJudge", selected_approval)
+    for run in (deterministic_selected_current, deterministic_selected_candidate):
+        run["scoringMode"] = "exactMatch"
+        run["assessments"][0]["scoringContract"] = copy.deepcopy(selected_approval["scoringContract"])
+    rejected_summary(current, deterministic_selected_candidate)
+    control = invoke({"operation": "summarize-experiment", "current": deterministic_selected_current,
+                      "candidate": deterministic_selected_candidate})
+    check(control.get("suggestedDecision") == "adoptCandidate", control)
+    implicit_current = copy.deepcopy(deterministic_selected_current)
+    implicit_candidate = copy.deepcopy(deterministic_selected_candidate)
+    implicit_current.pop("selectedAssessmentID")
+    implicit_candidate.pop("selectedAssessmentID")
+    control = invoke({"operation": "summarize-experiment", "current": implicit_current, "candidate": implicit_candidate})
+    check(control.get("suggestedDecision") == "adoptCandidate", control)
+    rejected_summary(current, implicit_candidate)
+    unavailable_selection = copy.deepcopy(candidate)
+    unavailable_selection["selectedAssessmentID"] = uid()
+    rejected_summary(current, unavailable_selection)
+    # The original deterministic scoring contract is valid by itself, but
+    # contradicts the selected rubric assessment and must not be trusted there.
+    approval = invoke({"operation": "approve-baseline", "suite": suite, "run": current})
+    check(approval["scoringContract"]["scoringMode"] == "exactMatch", approval)
+    contradictory_capture = copy.deepcopy(deterministic_selected_candidate)
+    contradictory_capture["assessments"][0]["scoringContract"] = approval["scoringContract"]
+    rejected_summary(deterministic_selected_current, contradictory_capture)
     # Original legacy score sets and selected assessments must resolve the
     # same effective judge; known conflicts cannot hide behind missing wrappers.
     incompatible = copy.deepcopy(judged_candidate)

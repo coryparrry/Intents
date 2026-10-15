@@ -32,7 +32,7 @@
       "sha256": "caef7a3e25c3c7f7680b29066edf57f7da4147c83e6527e0f464aaa48df68f26",
       "bundled": "AppEngineWorkflows.swift",
       "excerpt": "instruction experiment freezing, baseline/correction validation, and scoring-contract checks for public experiment summaries; standalone adapters around app workflow analyzers",
-      "bundledSHA256": "ee8c2c9a18984bd19230eb6251efa200a43365f147af1d9a71daf90d1a6d729f"
+      "bundledSHA256": "a3fd29631a7fb355a5877a526bbbe6cef607b0e97f1f4a47bc04ec685512d1d3"
     },
     {
       "source": "Support/JSONDocument.swift",

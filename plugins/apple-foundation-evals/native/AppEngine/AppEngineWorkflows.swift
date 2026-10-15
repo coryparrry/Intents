@@ -156,10 +156,13 @@ enum AppEngineWorkflows {
               !cases.isEmpty, Set(cases.map(\.id)).count == cases.count else {
             throw RunnerFailure.validation("Experiment summaries require saved, uniquely identified case definitions.")
         }
+        guard run.selectedAssessmentID == nil || run.selectedAssessment != nil else {
+            throw RunnerFailure.validation("The selected experiment assessment is unavailable.")
+        }
         let contract = try EvaluationScoringContract(run: run)
-        if run.scoringMode == .modelJudge, let assessment = run.selectedAssessment {
+        if let assessment = run.selectedAssessment {
             let assessedContract = try EvaluationScoringContract(
-                scoringMode: run.scoringMode,
+                scoringMode: .modelJudge,
                 rubricCriteria: assessment.rubric.split(whereSeparator: \Character.isNewline)
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .filter { !$0.isEmpty },
@@ -177,7 +180,7 @@ enum AppEngineWorkflows {
     }
 
     private static func summaryJudgeIdentity(for run: EvaluationRun) throws -> EvaluationJudgeIdentity? {
-        guard run.scoringMode == .modelJudge else { return nil }
+        guard run.scoringMode == .modelJudge || run.selectedAssessment != nil else { return nil }
         let identities: [EvaluationJudgeIdentity]
         if let assessment = run.selectedAssessment {
             identities = (assessment.observedJudgeIdentities ?? []) + [assessment.judge]
