@@ -3,6 +3,7 @@ import { suite, id, object, nativeResult, MAX_OUTPUT_BYTES } from './validation.
 import { isAppSuite, revision, portableSuite, parseImport, sampleEnvelope, applyAssessment, validateAppEvidence } from './app-format.mjs';
 import { addReferenceFile, exportReferences, importReferences } from './references.mjs';
 import { importCases } from './case-import.mjs';
+import { SPOTLIGHT_DEFAULTS } from './app-defaults.mjs';
 const DEFAULT_PROJECT_ID = '00000000-0000-4000-8000-000000000001';
 export async function initProjects(app) {
   if (!(await app.store.list('projects')).length) await app.store.write('projects', { id: DEFAULT_PROJECT_ID, name: 'My evaluations', description: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
@@ -15,9 +16,11 @@ async function project(app, value) { const projectId = id(value || app.defaultPr
 async function existing(app, kind, key) {
   try { return await app.store.read(kind, key); } catch (error) { if (/not found$/.test(error.message)) return null; throw error; }
 }
-export async function saveSuite(app, args) {
+export async function saveSuite(app, args, { imported = false } = {}) {
   const value = args.suite;
   const saved = suite(value?.formatVersion === 1 ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'formatVersion')) : value, randomUUID, { draft: true });
+  // Imported configuration cannot authorize access to this Mac's indexed data.
+  if (imported && isAppSuite(saved)) saved.features.spotlightSearch = structuredClone(SPOTLIGHT_DEFAULTS);
   const old = await existing(app, 'suites', saved.id);
   const expected = args.expectedRevision ?? value.revision;
   if (expected !== undefined && expected !== (old?.revision || (old ? revision(old) : undefined))) throw new Error('Suite revision conflict: reload the current suite before saving');
@@ -50,7 +53,7 @@ export async function workspaceDispatch(app, name, args) {
       await app.store.write('projects', saved); return { project: saved };
     }
     case 'eval_project_overview': return overview(app, args.projectId);
-    case 'eval_import_suite': { const imported = parseImport(args, 'suite'); let definition = imported.suite || imported; const files = args.referenceFiles || imported.referenceFiles; if (files) definition = await importReferences(app, definition, files); return saveSuite(app, { ...args, suite: definition }); }
+    case 'eval_import_suite': { const imported = parseImport(args, 'suite'); let definition = imported.suite || imported; const files = args.referenceFiles || imported.referenceFiles; if (files) definition = await importReferences(app, definition, files); return saveSuite(app, { ...args, suite: definition }, { imported: true }); }
     case 'eval_export_suite': { const saved = await app.store.read('suites', id(args.suiteId, 'suiteId')); const value = portableSuite(saved); const referenceFiles = await exportReferences(app, saved); return { suite: value, ...(referenceFiles.length ? { referenceFiles } : {}), revision: saved.revision, json: JSON.stringify(referenceFiles.length ? { suite: value, referenceFiles } : value, null, 2), filename: `${saved.name.replace(/[^a-z0-9_-]/gi, '-')}.json` }; }
     case 'eval_import_cases': {
       const saved = await app.store.read('suites', id(args.suiteId, 'suiteId'));

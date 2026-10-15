@@ -144,7 +144,12 @@ arrow keys, Home and End in a tab group; use Command-F (Control-F on other hosts
 to focus workspace search. Escape dismisses action menus and the narrow sidebar.
 
 Suite actions include duplication, portable export/import, approved baseline
-inspection and deletion. Run deletion is available after execution stops;
+inspection and deletion. Imported suites reset the Spotlight configuration to
+its defaults. Search, Core Spotlight, Mail access, and contact identity are
+disabled; imported scopes and requested attributes are cleared. Review and
+enable search locally after importing if you want to use it.
+
+Run deletion is available after execution stops;
 confirmation dialogs explain what will be removed. Deleting a suite retains
 its saved run snapshots. Overview offers a project release report. Compare
 supports two to four saved runs; a two-run comparison also shows the app's

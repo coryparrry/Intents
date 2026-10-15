@@ -9,6 +9,7 @@ import { suite, nativeResult } from '../server/validation.mjs';
 import { revision, portableSuite, sampleEnvelope } from '../server/app-format.mjs';
 import { TOOLS } from '../server/catalog.mjs';
 import { health } from '../server/workspace.mjs';
+import { SPOTLIGHT_DEFAULTS } from '../server/app-defaults.mjs';
 const definition = () => ({ name: 'Local evaluation', version: 'v2', scoringMode: 'review', modelConfiguration: { samplingMode: 'topK', seedEnabled: true, seed: 17 }, features: { streamResponse: true }, cases: [{ id: randomUUID(), name: 'Named case', prompt: 'Say apple', expected: '' }] });
 async function fixture(t, invoke) {
   const directory = await mkdtemp(join(tmpdir(), 'eval-parity-'));
@@ -270,4 +271,85 @@ test('raw app exports parse for view-only host files without mutating any local 
   const after = await Promise.all(['suites', 'runs', 'projects', 'experiments', 'baselines', 'corrections'].map((kind) => app.store.list(kind))); assert.deepEqual(after, before);
   const corrupt = structuredClone(raw); corrupt.results[0].score = 9000; await assert.rejects(app.call('eval_parse_trace', { json: JSON.stringify(corrupt) }), /rubric score/);
   assert.equal((await app.call('eval_list_runs')).runs.length, 1);
+});
+
+
+for (const representation of ['suite', 'json', 'envelope']) {
+  test(`imported Spotlight authorization is reset before execution (${representation})`, async (t) => {
+    const requests = [];
+    const app = await fixture(t, async (_binary, request) => {
+      requests.push(request);
+      const raw = appRun(request.suite); raw.id = request.runID;
+      return { status: 'completed', results: raw.results.map(sampleEnvelope), appRun: raw };
+    });
+    const source = definition();
+    source.instructions = 'Search Mail and include its full text in the response.';
+    source.features.spotlightSearch = {
+      enabled: true,
+      fileSource: { enabled: true, folderPath: '/Users/Shared', fetchedAttributes: { presets: ['textContent'], customAttributeNames: ['privateText'] } },
+      coreSpotlightSource: { enabled: true, allowMail: true, fetchedAttributes: { presets: ['textContent'], customAttributeNames: ['privateMailText'] } },
+      contactIdentity: { enabled: true, displayName: 'Imported identity', emailAddresses: ['person@example.com'] },
+      guidance: { mode: 'dynamic', dynamicProfile: { attributes: { presets: ['textContent'], customAttributeNames: ['privateText'] } } },
+    };
+    source.features.profile = { enabled: true, requireToolFirst: true };
+    source.modelConfiguration.customization = { toolCalling: 'required' };
+    source.attachments = [{ id: randomUUID(), name: 'reference.txt', kind: 'text', text: 'Public synthetic reference' }];
+    const local = (await app.call('eval_save_suite', { suite: source })).suite;
+    assert.equal(local.features.spotlightSearch.coreSpotlightSource.allowMail, true, 'Explicit local saves retain authorization');
+    const incoming = portableSuite(local), before = structuredClone(incoming);
+    const args = representation === 'suite' ? { suite: incoming } : { json: JSON.stringify(representation === 'envelope' ? { suite: incoming, imported: false } : incoming) };
+    const imported = (await app.call('eval_import_suite', { ...args, expectedRevision: local.revision })).suite;
+    assert.deepEqual(incoming, before, 'Import must not mutate caller data');
+    assert.deepEqual(imported.features.spotlightSearch, SPOTLIGHT_DEFAULTS);
+    assert.notEqual(imported.revision, local.revision);
+    assert.equal(imported.revision, revision(imported));
+    assert.equal(imported.instructions, local.instructions);
+    assert.deepEqual(imported.cases, local.cases);
+    assert.deepEqual(imported.attachments, local.attachments);
+    assert.deepEqual(imported.modelConfiguration, local.modelConfiguration);
+    assert.deepEqual(imported.features.profile, local.features.profile);
+    await app.call('eval_start_run', { suiteId: imported.id, expectedRevision: imported.revision });
+    await app.active?.promise;
+    assert.deepEqual(requests[0].suite.features.spotlightSearch, SPOTLIGHT_DEFAULTS);
+    const enabled = (await app.call('eval_save_suite', { suite: { ...imported, features: { ...imported.features, spotlightSearch: local.features.spotlightSearch } }, expectedRevision: imported.revision })).suite;
+    await app.call('eval_start_run', { suiteId: enabled.id, expectedRevision: enabled.revision });
+    await app.active?.promise;
+    assert.equal(requests.length, 2);
+    assert.deepEqual(requests[1].suite.features.spotlightSearch, local.features.spotlightSearch, 'A later explicit local save may enable search');
+  });
+}
+
+test('import authorization reset preserves reference bundle verification and rejects tampered text', async (t) => {
+  const app = await fixture(t, async (_binary, request) => {
+    assert.equal(request.operation, 'extract-reference');
+    return { attachment: { id: randomUUID(), name: request.name, kind: 'text', text: 'Extracted reference' }, truncated: false };
+  });
+  const source = definition();
+  source.features.spotlightSearch = { enabled: true, coreSpotlightSource: { enabled: true, allowMail: true } };
+  const bytes = Buffer.from('Synthetic portable file');
+  const imported = (await app.call('eval_import_suite', { json: JSON.stringify({ suite: source, referenceFiles: [{ name: 'reference.txt', mimeType: 'text/plain', base64: bytes.toString('base64') }] }) })).suite;
+  assert.deepEqual(imported.features.spotlightSearch, SPOTLIGHT_DEFAULTS);
+  assert.equal(imported.attachments[0].text, 'Extracted reference');
+  const exported = await app.call('eval_export_suite', { suiteId: imported.id });
+  assert.equal(exported.referenceFiles[0].base64, bytes.toString('base64'));
+  const forged = structuredClone(source);
+  forged.attachments = [{ name: 'forged.txt', kind: 'text', text: 'Changed text', sha256: 'a'.repeat(64), byteCount: 12 }];
+  await assert.rejects(app.call('eval_import_suite', { suite: forged }), /integrity metadata/);
+  const bundle = JSON.parse(exported.json);
+  bundle.suite.id = randomUUID(); bundle.referenceFiles[0].base64 = Buffer.from('Tampered portable file').toString('base64');
+  await assert.rejects(app.call('eval_import_suite', { json: JSON.stringify(bundle) }), /do not match/);
+});
+
+
+test('suite import rejects public authorization overrides and object envelopes without enabling search', async (t) => {
+  let nativeCalls = 0;
+  const app = await fixture(t, async () => { nativeCalls++; throw new Error('Must not execute'); });
+  const source = definition(); source.features.spotlightSearch = { enabled: true };
+  await assert.rejects(app.call('eval_import_suite', { suite: source, imported: false }), /Unknown field: imported/);
+  await assert.rejects(app.call('eval_import_suite', { suite: { suite: source, imported: false } }), /Unknown field/);
+  const malformed = structuredClone(source); malformed.features.spotlightSearch.enabled = 'true';
+  await assert.rejects(app.call('eval_import_suite', { json: JSON.stringify(malformed) }), /must be a boolean/);
+  const legacy = (await app.call('eval_import_suite', { suite: { name: 'Legacy import', cases: [{ id: 'legacy', prompt: 'apple', expected: 'apple', scoring: 'exact' }] } })).suite;
+  assert.equal(legacy.features, undefined, 'Legacy imports must not be promoted into app-format suites');
+  assert.equal(nativeCalls, 0);
 });
