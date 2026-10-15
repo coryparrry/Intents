@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -230,6 +231,7 @@ class Commands:
         stem = self.output / f"{self.sequence:02d}-{Path(str(arguments[0])).name}"
         stem.with_suffix(".command.json").write_text(json.dumps([str(a) for a in arguments], indent=2))
         with stem.with_suffix(".stdout.log").open("wb") as out, stem.with_suffix(".stderr.log").open("wb") as err:
+            started = time.monotonic()
             process = subprocess.Popen([str(a) for a in arguments], cwd=cwd, env=self.env,
                                        stdout=out, stderr=err, start_new_session=True)
             try:
@@ -244,6 +246,9 @@ class Commands:
                 except ProcessLookupError:
                     pass
                 raise
+        elapsed = time.monotonic() - started
+        command = " ".join(str(a) for a in arguments[:2])
+        print(f"Completed {command}: {elapsed:.1f}s (exit {code})", flush=True)
         stdout = stem.with_suffix(".stdout.log").read_text()
         ensure(code in allowed, f"Command exited {code}: {arguments[0]}; see {stem}.stderr.log")
         return code, stdout
@@ -317,7 +322,9 @@ def simulator_configuration(runtimes, device_types, sdk_version=None):
     return runtime["identifier"], phone["identifier"]
 
 
-def run_contract(commands, output, build_root=None):
+def run_contract(commands, output, build_root=None, build_jobs=None):
+    jobs = build_jobs if build_jobs is not None else (os.cpu_count() or 1)
+    ensure(jobs > 0, "Build jobs must be positive")
     _, runtimes = commands.json(["xcrun", "simctl", "list", "runtimes", "--json"])
     _, types = commands.json(["xcrun", "simctl", "list", "devicetypes", "--json"])
     _, sdk_version = commands.run(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-version"])
@@ -330,16 +337,17 @@ def run_contract(commands, output, build_root=None):
         simulator = created
         (output / "owned-simulator.json").write_text(json.dumps({"id": simulator, "runtime": runtime}))
         commands.run(["xcrun", "simctl", "boot", simulator])
-        commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
+        # Boot continues asynchronously while the independent CLI build runs.
         fixture = output / "AutomationFixture"
         shutil.copytree(ROOT / "examples/AutomationFixture", fixture)
         commands.run(["xcodegen", "generate", "--spec", fixture / "project.yml"], cwd=fixture)
         scratch = build_root or output / "swift-build"
-        commands.run(["swift", "build", "--jobs", "2", "--scratch-path", scratch, "--product", "intents-automation"], timeout=900)
+        commands.run(["swift", "build", "--jobs", str(jobs), "--scratch-path", scratch, "--product", "intents-automation"], timeout=900)
         _, bin_path = commands.run(["swift", "build", "--scratch-path", scratch, "--show-bin-path"])
         cli = Path(bin_path.strip()) / "intents-automation"
         support, reports = output / "support", []
         flags = ["--support-root", support]
+        commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
         _, prepared = commands.json([cli, "prepare", "--project", fixture / "AutomationFixture.xcodeproj",
                                      "--scheme", "AutomationFixture", "--destination", "sim:" + simulator, *flags], timeout=1200)
         (output / "prepared.json").write_text(json.dumps(prepared, indent=2))
@@ -396,7 +404,10 @@ def main(argv=None):
     parser.add_argument("--xcode", type=Path, help="Xcode.app or Contents/Developer")
     parser.add_argument("--output-root", type=Path, help="Fresh artifact directory outside the repository")
     parser.add_argument("--build-root", type=Path, help="Reusable Swift build cache outside the repository")
+    parser.add_argument("--jobs", type=int, help="Swift build jobs (defaults to the runner CPU count)")
     args = parser.parse_args(argv)
+    if args.jobs is not None and args.jobs < 1:
+        parser.error("--jobs must be positive")
     output = (args.output_root or Path(tempfile.mkdtemp(prefix="intents-automation-e2e-"))).resolve()
     ensure(output != ROOT and ROOT not in output.parents, "Artifacts must stay outside the repository")
     ensure(not output.exists() or not any(output.iterdir()), "Output root must be empty")
@@ -413,7 +424,8 @@ def main(argv=None):
         raise KeyboardInterrupt(f"Interrupted by signal {signum}")
     previous_term = signal.signal(signal.SIGTERM, interrupted)
     try:
-        summary["cases"] = run_contract(Commands(output, developer), output, build_root=build_root)
+        summary["cases"] = run_contract(Commands(output, developer), output, build_root=build_root,
+                                        build_jobs=args.jobs)
         summary.update(status="passed", codecFamiliesCompared=list(FAMILIES))
         print("Automation contract passed: 16 codec families, mixed assessment, failure and timeout recovery.")
         return 0

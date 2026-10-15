@@ -345,7 +345,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT: ${{ runner.temp }}/input-conversion", job)
         self.assertIn('DEVELOPER_DIR="$(xcode-select -p)"', job)
         self.assertIn('export DEVELOPER_DIR\n', job)
-        self.assertIn("swift test --jobs 2", job)
+        self.assertIn('swift test --jobs "$(sysctl -n hw.logicalcpu)"', job)
         self.assertIn("--filter 'AutomationMacInputProbeFixtureTests/testAuthoredInputProbeFixtureWhenRequested'", job)
         self.assertIn('--scratch-path "$RUNNER_TEMP/input-conversion-build"', job)
         self.assertIn("set -o pipefail", job)
@@ -358,7 +358,7 @@ class WorkflowTests(unittest.TestCase):
 
 
 class OrchestrationTests(unittest.TestCase):
-    def exercise(self, failure=None, reuse_build=False):
+    def exercise(self, failure=None, reuse_build=False, build_jobs=None):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -376,7 +376,7 @@ class OrchestrationTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "injected"):
                     driver.run_contract(commands, output)
             else:
-                results = driver.run_contract(commands, output, build_root=build_root)
+                results = driver.run_contract(commands, output, build_root=build_root, build_jobs=build_jobs)
         if build_root:
             self.assertEqual((build_root / "keep-cache").read_text(), "reusable")
         return commands, results if not failure else None
@@ -409,6 +409,36 @@ class OrchestrationTests(unittest.TestCase):
                 scratch_paths = [args[args.index("--scratch-path") + 1] for args in builds]
                 expected = commands.output.parent / "reusable-swift-cache" if reusable else commands.output / "swift-build"
                 self.assertEqual(scratch_paths, [str(expected), str(expected)])
+
+    def test_cli_build_uses_runner_cpus_or_explicit_override(self):
+        for cpu_count, override, expected in ((6, None, "6"), (None, None, "1"), (6, 3, "3")):
+            with self.subTest(cpu_count=cpu_count, override=override), \
+                 patch.object(driver.os, "cpu_count", return_value=cpu_count):
+                commands, _ = self.exercise(build_jobs=override)
+                build = next(args for args, _ in commands.calls if "--jobs" in args)
+                self.assertEqual(build[build.index("--jobs") + 1], expected)
+
+    def test_cli_rejects_nonpositive_build_job_counts(self):
+        for jobs in ("0", "-1"):
+            with self.subTest(jobs=jobs), self.assertRaises(SystemExit) as failure:
+                driver.main(["--jobs", jobs])
+            self.assertEqual(failure.exception.code, 2)
+
+    def test_cli_forwards_build_job_override_and_external_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(driver, "run_contract", return_value=[]) as run:
+                self.assertEqual(driver.main(["--output-root", str(root / "evidence"),
+                                              "--build-root", str(root / "cache"), "--jobs", "4"]), 0)
+            self.assertEqual(run.call_args.kwargs, {"build_root": (root / "cache").resolve(), "build_jobs": 4})
+
+    def test_boot_overlaps_cli_build_and_finishes_before_prepare(self):
+        commands, _ = self.exercise()
+        calls = [args for args, _ in commands.calls]
+        position = lambda token: next(index for index, args in enumerate(calls) if token in args)
+        self.assertLess(position("boot"), position("--jobs"))
+        self.assertLess(position("--jobs"), position("bootstatus"))
+        self.assertLess(position("bootstatus"), position("prepare"))
 
     def test_cli_rejects_reusable_build_cache_inside_the_checkout(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -456,7 +486,7 @@ class OrchestrationTests(unittest.TestCase):
     def test_sigterm_enters_python_cleanup_and_restores_original_handler(self):
         with tempfile.TemporaryDirectory() as directory:
             original = driver.signal.getsignal(driver.signal.SIGTERM)
-            def terminate(commands, output, build_root=None):
+            def terminate(commands, output, build_root=None, build_jobs=None):
                 handler = driver.signal.getsignal(driver.signal.SIGTERM)
                 handler(driver.signal.SIGTERM, None)
             with patch.object(driver, "run_contract", side_effect=terminate):
@@ -478,6 +508,16 @@ class OrchestrationTests(unittest.TestCase):
             terminate.assert_called_once_with(12345, driver.signal.SIGTERM)
             self.assertTrue((Path(directory) / "01-owned.command.json").exists())
             self.assertTrue((Path(directory) / "01-owned.stdout.log").exists())
+
+    def test_command_duration_identifies_expensive_build_and_prepare_steps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            process = unittest.mock.Mock()
+            process.wait.return_value = 0
+            with patch.object(driver.subprocess, "Popen", return_value=process), \
+                 patch.object(driver.time, "monotonic", side_effect=[10.0, 12.5]), \
+                 patch("builtins.print") as report:
+                self.assertEqual(driver.Commands(Path(directory)).run(["swift", "build"]), (0, ""))
+            report.assert_called_once_with("Completed swift build: 2.5s (exit 0)", flush=True)
 
 
 if __name__ == "__main__":

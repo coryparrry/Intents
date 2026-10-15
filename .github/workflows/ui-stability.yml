@@ -1,0 +1,19 @@
+name: Nightly CI and UI stability
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qualification:
+    uses: ./.github/workflows/ci.yml
+    with:
+      stability: true

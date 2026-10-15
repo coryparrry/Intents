@@ -362,6 +362,138 @@ class CoverageTests(unittest.TestCase):
             self.assertFalse(plan["ui"])
 
 
+class MatrixTests(unittest.TestCase):
+    def selected_ui(self, paths):
+        return {
+            test for group in routes.coverage(paths)["ui_matrix"] for test in group["tests"]
+        }
+
+    def test_full_matrix_preserves_every_previous_selector_and_picker_once(self):
+        expected = {
+            "FoundationEvalsUITests/FoundationEvalsUITests",
+            "FoundationEvalsUITests/IntentLabGuidanceUITests",
+            "FoundationEvalsUITests/SimplificationUITests",
+            "FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration",
+            "FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence",
+            "FoundationEvalsUITests/AutomationDependencyControlsUITests",
+        } | {"FoundationEvalsUITests/AppAutomationUITests/" + method for method in (
+            "testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled",
+            "testXcodeDefaultsFollowDestinationAndRestoreWithoutRunOverride",
+            "testEmptyAutomationAndPickerCancellationRemainReadOnly",
+            "testOwnershipResetConfirmationCanBeCancelledWithoutChangingTheReservation",
+            "testPreparationPickersUseStableIdentifiers",
+        )}
+        matrix = routes.full_coverage("fixture")["ui_matrix"]
+        selections = [test for group in matrix for test in group["tests"]]
+        self.assertEqual(set(selections), expected)
+        self.assertEqual(len(selections), len(expected))
+        self.assertEqual(len(matrix), 5)
+
+    def test_feature_view_runs_its_full_regression_class_without_other_features(self):
+        for view, expected, unrelated in (
+            ("WorkflowTraceView", "WorkflowTraceUITests", "IntentLabGuidanceUITests"),
+            ("AppAutomationView", "AppAutomationUITests", "WorkflowTraceUITests"),
+            ("IntentLabView", "IntentLabArrayEntryUITests", "AppAutomationUITests"),
+        ):
+            with self.subTest(view=view):
+                selected = self.selected_ui([routes.APP + "Views/" + view + ".swift"])
+                self.assertIn(routes.UI_TARGET + expected, selected)
+                self.assertFalse(any(test.startswith(routes.UI_TARGET + unrelated) for test in selected))
+                self.assertFalse(any(test.startswith(routes.UI_TARGET + expected + "/") for test in selected))
+
+    def test_shared_and_unknown_ui_sources_keep_the_full_baseline(self):
+        baseline = self.selected_ui(None)
+        for path in (
+            "Views/Components/SidebarNavigationList.swift", "Views/UnmappedView.swift",
+            "Stores/EvaluationStore.swift", "Models/EvaluationScoringTypes.swift",
+            "Views/Components/WorkflowTraceView.swift",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(self.selected_ui([routes.APP + path]), baseline)
+
+    def test_changed_ui_class_runs_whole_class_including_previously_unselected_tests(self):
+        for suite in ("WorkflowTraceUITests", "AppAutomationUITests", "EvaluationReviewUITests"):
+            with self.subTest(suite=suite):
+                self.assertEqual(
+                    self.selected_ui([routes.UI_TESTS + suite + ".swift"]),
+                    {routes.UI_TARGET + suite},
+                )
+
+    def test_mixed_changes_deduplicate_whole_classes_and_preserve_affected_new_class(self):
+        paths = [
+            ".github/workflows/ci.yml", routes.UI_TESTS + "EvaluationReviewUITests.swift",
+            routes.UI_TESTS + "AppAutomationUITests.swift",
+            routes.APP + "Views/WorkflowTraceView.swift",
+        ]
+        selected = self.selected_ui(paths)
+        self.assertIn(routes.UI_TARGET + "EvaluationReviewUITests", selected)
+        self.assertIn(routes.UI_TARGET + "AppAutomationUITests", selected)
+        self.assertIn(routes.UI_TARGET + "WorkflowTraceUITests", selected)
+        self.assertFalse(any(test.startswith(routes.UI_TARGET + "AppAutomationUITests/") for test in selected))
+        self.assertEqual(selected, self.selected_ui(list(reversed(paths))))
+
+    def test_new_class_name_is_discovered_without_a_manual_catalog_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = routes.UI_TESTS + "NewFeature.swift"
+            source = root / path
+            source.parent.mkdir(parents=True)
+            source.write_text("final class NewFeatureUITests: XCTestCase { func testNewCase() {} }")
+            plan = routes.coverage([path], root=root)
+            self.assertEqual(plan["ui_matrix"], [{
+                "name": "suite-editor", "tests": [routes.UI_TARGET + "NewFeatureUITests"],
+            }])
+
+    def test_changed_ui_support_or_removed_ui_test_uses_baseline(self):
+        baseline = self.selected_ui(None)
+        for path in ("Support/UITestStorage.swift", "RemovedUITests.swift"):
+            with self.subTest(path=path):
+                self.assertEqual(self.selected_ui([routes.UI_TESTS + path]), baseline)
+
+    def test_native_ui_helpers_and_tests_route_real_native_execution(self):
+        for path, module in routes.NATIVE_UI_HELPERS.items():
+            for changed in (path, module.replace(".", "/") + ".py"):
+                with self.subTest(path=changed):
+                    plan = routes.coverage([changed])
+                    self.assertTrue(plan["native"])
+                    self.assertTrue(plan["ui"])
+                    self.assertEqual(plan["ui_matrix"], routes.full_coverage("fixture")["ui_matrix"])
+                    self.assertIn(module, plan["python_tests"])
+        self.assertEqual(
+            routes.coverage([".github/workflows/ui-stability.yml"])["ui_matrix"],
+            routes.full_coverage("fixture")["ui_matrix"],
+        )
+
+    def test_script_matrix_runs_selected_modules_exactly_once_in_up_to_four_jobs(self):
+        for count in range(10):
+            with self.subTest(count=count):
+                modules = [f"script.tests.test_{index}" for index in range(count)]
+                matrix = routes.python_matrix(modules + modules)
+                self.assertEqual(matrix, routes.python_matrix(list(reversed(modules))))
+                self.assertEqual(sorted(test for group in matrix for test in group["tests"]), sorted(modules))
+                self.assertEqual(len(matrix), min(4, count))
+                if matrix:
+                    lengths = [len(group["tests"]) for group in matrix]
+                    self.assertLessEqual(max(lengths) - min(lengths), 1)
+        self.assertEqual(routes.coverage(["README.md"])["python_matrix"], [])
+        self.assertEqual(routes.coverage(["README.md"])["ui_matrix"], [])
+
+    def test_leaf_routes_only_name_existing_top_level_views(self):
+        for path in routes.UI_VIEW_GROUPS:
+            self.assertEqual(len(Path(path).parts), 2)
+            self.assertTrue((ROOT / routes.APP / path).is_file(), path)
+
+    def test_every_ui_selector_names_a_current_test_class_and_method(self):
+        for group in routes.full_coverage("fixture")["ui_matrix"]:
+            for selection in group["tests"]:
+                with self.subTest(selection=selection):
+                    _, suite, *method = selection.split("/")
+                    source = (ROOT / routes.UI_TESTS / (suite + ".swift")).read_text()
+                    self.assertRegex(source, r"\bclass " + re.escape(suite) + r"\s*:\s*XCTestCase")
+                    if method:
+                        self.assertRegex(source, r"\bfunc " + re.escape(method[0]) + r"\(")
+
+
 class CatalogTests(unittest.TestCase):
     def test_every_portable_source_and_suite_has_a_route(self):
         manifest = (ROOT / "Package.swift").read_text()
@@ -458,6 +590,8 @@ class GitEventTests(unittest.TestCase):
         self.assertTrue(result["regression"])
         self.assertEqual(result["swift_suites"], ["MetricScorerTests"])
         self.assertEqual(result["python_tests"], [])
+        self.assertEqual(result["ui_matrix"], [])
+        self.assertEqual(result["python_matrix"], [])
 
     def test_push_uses_previous_tip_not_parent(self):
         self.commit(routes.APP + "Views/Components/RunToolbarProgress.swift", "UI")
