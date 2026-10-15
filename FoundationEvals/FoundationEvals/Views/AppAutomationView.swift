@@ -180,24 +180,12 @@ struct AppAutomationView: View {
                     Button("Close saved reproduction") { model.viewedReproduction = nil }
                 }
                 if !model.savedSearches.isEmpty {
-                    GroupBox("Saved searches") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(Array(model.savedSearches.prefix(savedCaseLimit)), id: \.id) { record in
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(record.baseline.plan.execution.operation).lineLimit(2)
-                                        if let notice = record.historicalQualificationNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-                                    }
-                                    Spacer()
-                                    Button("View search") { model.viewedSearch = record }.disabled(model.busy)
-                                }
-                            }
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                    AutomationSavedSearchesSection(records: Array(model.savedSearches.prefix(savedCaseLimit)), busy: model.busy) {
+                        model.viewedSearch = $0
                     }
                 }
                 if let viewed = model.viewedSearch {
                     searchResult(viewed.report, title: "Saved search outcomes")
-                    if let notice = viewed.historicalQualificationNotice { Text(notice).font(.callout).foregroundStyle(.secondary) }
                     Button("Close saved search") { model.viewedSearch = nil }
                 }
                 if let pending = model.pendingCommandStatus {
