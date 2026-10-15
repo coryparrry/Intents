@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 import textwrap
 import unittest
 
@@ -69,6 +70,46 @@ class GateTests(unittest.TestCase):
         self.assertIn("steps.cli-cache.outputs.cache-hit != 'true'", workflow)
         self.assertIn("uses: actions/cache/save@", workflow)
         self.assertIn("key: ${{ steps.cli-cache.outputs.cache-primary-key }}", workflow)
+
+    def test_native_cache_fallback_keeps_toolchain_and_manifest_boundaries(self):
+        build = job("native-build")
+        prefixes = build.split("          restore-keys: |\n", 1)[1].split("      - name:", 1)[0].strip().splitlines()
+        self.assertEqual(len(prefixes), 2)
+        self.assertEqual(prefixes[1].strip(), prefixes[0].strip().replace(
+            "${{ needs.changes.outputs.ui }}", "${{ needs.changes.outputs.ui != 'true' }}"))
+        self.assertIn("${{ steps.toolchain.outputs.version }}", prefixes[0])
+        self.assertIn("${{ hashFiles(", prefixes[0])
+
+    def test_native_descriptors_refresh_without_removing_compiled_products(self):
+        build = job("native-build")
+        cleanup = re.search(r"(?m)^          rm -f .+$", build)[0].strip()
+        self.assertLess(build.index(cleanup), build.index("xcodebuild build-for-testing"))
+        guard = re.search(r"(?m)^          descriptors=.+\n          \[\[ .+$", build)[0]
+        self.assertGreater(build.index(guard), build.index("xcodebuild build-for-testing"))
+        with tempfile.TemporaryDirectory(prefix="native cache ") as directory:
+            products = Path(directory) / "DerivedData/Build/Products"
+            products.mkdir(parents=True)
+            binary = products / "Debug/Intents.app/Contents/MacOS/Intents"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"compiled app")
+            foreign = products / "Other_macosx.xctestrun"
+            foreign.touch()
+            for name in ("FoundationEvals", "FoundationEvalsCoreCI"):
+                (products / f"{name}_macosx27.0-arm64.xctestrun").touch()
+            environment = {**os.environ, "RUNNER_TEMP": directory, "scheme": "FoundationEvalsCoreCI"}
+            subprocess.run(["bash", "-e", "-c", cleanup], env=environment, check=True)
+            self.assertEqual(binary.read_bytes(), b"compiled app")
+            self.assertTrue(foreign.exists())
+            descriptor = products / "FoundationEvalsCoreCI_macosx27.0-arm64.xctestrun"
+            def status():
+                return subprocess.run(["bash", "-c", textwrap.dedent(guard)], env=environment).returncode
+            self.assertNotEqual(status(), 0)
+            descriptor.touch()
+            self.assertEqual(status(), 0)
+            environment["scheme"] = "FoundationEvals"
+            self.assertNotEqual(status(), 0)
+            (products / "FoundationEvals_macosx27.0-arm64.xctestrun").touch()
+            self.assertNotEqual(status(), 0)
 
 
 if __name__ == "__main__":

@@ -210,6 +210,7 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-native-v1-${{ steps.toolchain.outputs.version }}-${{ needs.changes.outputs.ui }}-${{ hashFiles('**/project.pbxproj', '**/*.xcscheme', 'Package.swift', '**/Package.resolved') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-native-v1-${{ steps.toolchain.outputs.version }}-${{ needs.changes.outputs.ui }}-${{ hashFiles('**/project.pbxproj', '**/*.xcscheme', 'Package.swift', '**/Package.resolved') }}-
+            ${{ runner.os }}-${{ runner.arch }}-native-v1-${{ steps.toolchain.outputs.version }}-${{ needs.changes.outputs.ui != 'true' }}-${{ hashFiles('**/project.pbxproj', '**/*.xcscheme', 'Package.swift', '**/Package.resolved') }}-
       - name: Build app and selected test bundles once
         env:
           INCLUDE_UI: ${{ needs.changes.outputs.ui }}
@@ -219,12 +220,16 @@ jobs:
           python3 script/ci_core_scheme.py
           scheme=FoundationEvalsCoreCI
           if [[ "$INCLUDE_UI" == true ]]; then scheme=FoundationEvals; fi
+          # Share compiled products across full/core builds, but regenerate their scheme descriptors.
+          rm -f "$RUNNER_TEMP/DerivedData/Build/Products"/FoundationEvals*_macosx*.xctestrun
           xcodebuild build-for-testing \
             -project FoundationEvals/FoundationEvals.xcodeproj \
             -scheme "$scheme" -configuration Debug \
             -destination 'platform=macOS' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO
+          descriptors=("$RUNNER_TEMP/DerivedData/Build/Products"/FoundationEvals*_macosx*.xctestrun)
+          [[ ${#descriptors[@]} == 1 && -f ${descriptors[0]} && ${descriptors[0]##*/} == "${scheme}_macosx"*.xctestrun ]]
           python3 script/ci_native_cache.py capture --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/DerivedData"
       - name: Archive test products with executable modes and symlinks
         run: tar -cf "$RUNNER_TEMP/native-tests.tar" -C "$RUNNER_TEMP/DerivedData/Build" Products
