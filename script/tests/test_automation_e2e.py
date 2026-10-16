@@ -548,6 +548,77 @@ class OrchestrationTests(unittest.TestCase):
                     cache_module.capture.assert_not_called()
                     self.assertEqual(marker.read_text(), "existing=value\n")
 
+    def test_verified_executable_skips_both_swiftpm_calls_but_runs_complete_contract(self):
+        commands, results, cache_module = self.exercise_executable_cache(damage=False)
+        self.assertFalse(any(args[:3] == ["xcrun", "swift", "build"] for args, _ in commands.calls))
+        cache_module.record_cli.assert_not_called()
+        self.assertEqual(len(results), 7)
+        self.assertEqual(results[-1]["case"], "phase3.after-timeout")
+        self.assertTrue(any("prepare" in args for args, _ in commands.calls))
+
+    def test_damaged_executable_forces_empty_scratch_build_before_new_checkpoint(self):
+        commands, results, cache_module = self.exercise_executable_cache(damage=True)
+        self.assertEqual(sum(args[:3] == ["xcrun", "swift", "build"] for args, _ in commands.calls), 2)
+        cache_module.record_cli.assert_called_once()
+        self.assertEqual(len(results), 7)
+
+    def test_inputs_changed_during_compile_do_not_receive_reusable_executable_receipt(self):
+        _, results, cache_module = self.exercise_executable_cache(damage=True, changed_during_build=True)
+        self.assertIsNone(cache_module.record_cli.call_args.args[1])
+        self.assertEqual(len(results), 7)
+
+    def exercise_executable_cache(self, damage, changed_during_build=False):
+        from script import ci_automation_build as real_cache
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name).resolve()
+        repository, scratch = root / "repo", root / "cache"
+        (repository / "examples/AutomationFixture").mkdir(parents=True)
+        (repository / "examples/AutomationFixture/project.yml").write_text("name: fixture")
+        output = root / "evidence"
+        output.mkdir()
+        marker = root / "github-output"
+        marker.touch()
+        cli = scratch / "debug/intents-automation"
+        host = cli.parent / "Package_IntentsAutomationCLIResources.bundle/AutomationHost/HostPlan.swift"
+        def compile_products():
+            cli.parent.mkdir(parents=True, exist_ok=True)
+            cli.write_bytes(b"correct executable")
+            cli.chmod(0o755)
+            host.parent.mkdir(parents=True, exist_ok=True)
+            host.write_text("correct template")
+        compile_products()
+        real_cache.record_cli(scratch, "fingerprint", cli)
+        if damage:
+            cli.write_bytes(b"corrupt executable")
+            (scratch / "corrupt-intermediate").write_text("must not survive")
+        commands = FakeCommands(output)
+        commands.env["RUNNER_TEMP"] = str(root)
+        original_run = commands.run
+        def run(arguments, **options):
+            if "--product" in arguments:
+                self.assertFalse(scratch.exists(), "Damaged build must start with an empty owned scratch")
+                compile_products()
+            return original_run(arguments, **options)
+        commands.run = run
+        cache_module = unittest.mock.Mock()
+        cache_module.build_fingerprint.return_value = "fingerprint"
+        if changed_during_build:
+            cache_module.build_fingerprint.side_effect = ["fingerprint", "changed inputs"]
+        cache_module.cached_cli.side_effect = real_cache.cached_cli
+        cache_module.record_cli.side_effect = real_cache.record_cli
+        native_cache = unittest.mock.Mock()
+        with patch.object(driver, "ROOT", repository), \
+             patch.dict(driver.os.environ, {"GITHUB_OUTPUT": str(marker)}), \
+             patch.dict(driver.sys.modules, {"ci_native_cache": native_cache, "ci_automation_build": cache_module}):
+            results = driver.run_contract(commands, output, build_root=scratch, record_build_cache=True)
+        self.assertEqual(real_cache.cached_cli(scratch, "fingerprint"),
+                         (None, False) if changed_during_build else (cli, False))
+        self.assertEqual(cli.read_bytes(), b"correct executable")
+        self.assertEqual(marker.read_text(), "cli_built=true\n")
+        native_cache.capture.assert_called_once_with(repository, scratch)
+        return commands, results, cache_module
+
     def test_cli_rejects_reusable_build_cache_inside_the_checkout(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(AssertionError, "Build cache must stay outside"):

@@ -364,17 +364,40 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
         shutil.copytree(ROOT / "examples/AutomationFixture", fixture)
         commands.run(["xcodegen", "generate", "--spec", fixture / "project.yml"], cwd=fixture)
         scratch = build_root or output / "swift-build"
-        commands.run(["xcrun", "swift", "build", "--jobs", str(jobs), "--scratch-path", scratch, "--product", "intents-automation"], timeout=900)
+        build_arguments = ["xcrun", "swift", "build", "--jobs", str(jobs), "--scratch-path", scratch, "--product", "intents-automation"]
+        cli, build_fingerprint = None, None
         if record_build_cache:
             try:
                 from ci_native_cache import capture
             except ModuleNotFoundError:
                 from script.ci_native_cache import capture
+            try:
+                from ci_automation_build import build_fingerprint as fingerprint_build, cached_cli, record_cli
+            except ModuleNotFoundError:
+                from script.ci_automation_build import build_fingerprint as fingerprint_build, cached_cli, record_cli
+            build_fingerprint = fingerprint_build(commands, ROOT, scratch, build_arguments)
+            cli, damaged_products = cached_cli(scratch, build_fingerprint)
+            if damaged_products:
+                runner_temp = Path(commands.env.get("RUNNER_TEMP", "")).resolve()
+                ensure(commands.env.get("RUNNER_TEMP") and scratch.resolve() == scratch.absolute()
+                       and runner_temp in scratch.resolve().parents and not scratch.is_symlink()
+                       and scratch.resolve() != ROOT.resolve() and ROOT.resolve() not in scratch.resolve().parents,
+                       "Refusing to clean a damaged CLI cache outside the owned runner scratch directory")
+                shutil.rmtree(scratch)
+        if cli is None:
+            commands.run(build_arguments, timeout=900)
+            _, bin_path = commands.run(["xcrun", "swift", "build", "--scratch-path", scratch, "--show-bin-path"])
+            cli = Path(bin_path.strip()) / "intents-automation"
+            if record_build_cache:
+                if build_fingerprint != fingerprint_build(commands, ROOT, scratch, build_arguments):
+                    build_fingerprint = None
+                record_cli(scratch, build_fingerprint, cli)
+        else:
+            print("Reusing verified automation CLI and resources; compiled inputs and toolchain are unchanged.", flush=True)
+        if record_build_cache:
             capture(ROOT, scratch)
             with Path(github_output).open("a") as state:
                 state.write("cli_built=true\n")
-        _, bin_path = commands.run(["xcrun", "swift", "build", "--scratch-path", scratch, "--show-bin-path"])
-        cli = Path(bin_path.strip()) / "intents-automation"
         support, reports = output / "support", []
         flags = ["--support-root", support]
         commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)

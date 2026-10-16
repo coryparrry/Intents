@@ -32,7 +32,7 @@ class CoverageTests(unittest.TestCase):
             "Tools/IntentsAutomationApplicationProbe/main.swift",
             "Sources/IntentsAutomationTool/AutomationCLI.swift",
             "examples/AutomationFixture/App/EchoIntents.swift",
-            "script/automation_e2e.py", "script/tests/test_automation_e2e.py",
+            "script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py",
             "Package.swift", ".github/workflows/ci.yml",
         ):
             with self.subTest(path=path):
@@ -48,6 +48,15 @@ class CoverageTests(unittest.TestCase):
         for path in ("script/update_homebrew.py", ".github/workflows/update-homebrew.yml"):
             with self.subTest(path=path):
                 self.assert_selection([path], python=("script.tests.test_update_homebrew",))
+
+    def test_cli_checkpoint_changes_cover_reuse_and_live_execution(self):
+        path = "script/ci_automation_build.py"
+        self.assert_selection([path], python=("script.tests.test_ci_automation_build", "script.tests.test_automation_e2e"))
+        self.assertTrue(routes.coverage([path])["automation_e2e"])
+        self.assertFalse(routes.coverage([path])["input_conversion"])
+        tests = "script/tests/test_ci_automation_build.py"
+        self.assert_selection([tests], python=("script.tests.test_ci_automation_build",))
+        self.assertFalse(routes.coverage([tests])["automation_e2e"])
 
     def assert_selection(
         self, paths, native=False, ui=False, swift=(), python=(), macos=()

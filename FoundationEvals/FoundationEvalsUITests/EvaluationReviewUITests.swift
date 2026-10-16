@@ -62,9 +62,10 @@ final class EvaluationReviewUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Meeting date")).firstMatch.click()
         XCTAssertTrue(app.textViews["Review note"].waitForExistence(timeout: 3))
         let window = app.windows.firstMatch
-        let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -2, dy: -2))
-        let target = corner.withOffset(CGVector(dx: 1000 - window.frame.width, dy: 0))
-        corner.press(forDuration: 0.1, thenDragTo: target)
+        let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -1, dy: 0))
+        let target = edge.withOffset(CGVector(dx: 1000 - window.frame.width, dy: 0))
+        edge.hover()
+        edge.press(forDuration: 0.25, thenDragTo: target)
         XCTAssertLessThanOrEqual(window.frame.width, 1050, "Resize must actually exercise the narrow layout")
         XCTAssertTrue(app.popUpButtons["Review"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Save review"].exists)
