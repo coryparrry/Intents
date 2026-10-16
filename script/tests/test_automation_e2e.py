@@ -437,13 +437,15 @@ class OrchestrationTests(unittest.TestCase):
             self.assertEqual(run.call_args.kwargs, {"build_root": (root / "cache").resolve(),
                                                    "build_jobs": 4, "record_build_cache": False})
 
-    def test_boot_overlaps_cli_build_and_finishes_before_prepare(self):
+    def test_build_and_prepare_finish_before_boot_install_and_execution(self):
         commands, _ = self.exercise()
         calls = [args for args, _ in commands.calls]
         position = lambda token: next(index for index, args in enumerate(calls) if token in args)
-        self.assertLess(position("boot"), position("--jobs"))
-        self.assertLess(position("--jobs"), position("bootstatus"))
-        self.assertLess(position("bootstatus"), position("prepare"))
+        self.assertLess(position("--jobs"), position("prepare"))
+        self.assertLess(position("prepare"), position("boot"))
+        self.assertLess(position("boot"), position("bootstatus"))
+        self.assertLess(position("bootstatus"), position("install"))
+        self.assertLess(position("install"), position("run"))
 
     def test_prepare_explicitly_pins_same_xcode_as_simulator_sdk(self):
         commands, _ = self.exercise()
@@ -566,7 +568,7 @@ class OrchestrationTests(unittest.TestCase):
         _, results, cache_module = self.exercise_executable_cache(damage=True)
         before, after = cache_module.probe_command_snapshots
         self.assertFalse(any(args[:2] == ["xcrun", "simctl"] for args in before))
-        self.assertTrue(any(args[:3] == ["xcrun", "simctl", "boot"] for args in after))
+        self.assertFalse(any(args[:3] == ["xcrun", "simctl", "boot"] for args in after))
         self.assertTrue(any("--product" in args for args in after))
         self.assertEqual(len(results), 7)
 
@@ -668,6 +670,13 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(cli.read_bytes(), b"correct executable")
         self.assertEqual(marker.read_text(), "cli_built=true\n")
         native_cache.capture.assert_called_once_with(repository, scratch)
+        calls = [args for args, _ in commands.calls]
+        position = lambda token: next(index for index, args in enumerate(calls) if token in args)
+        self.assertLess(position("prepare"), position("actions"))
+        self.assertLess(position("actions"), position("boot"))
+        self.assertLess(position("boot"), position("bootstatus"))
+        self.assertLess(position("bootstatus"), position("install"))
+        self.assertLess(position("install"), position("run"))
         return commands, results, cache_module
 
     def test_cli_rejects_reusable_build_cache_inside_the_checkout(self):
@@ -682,6 +691,8 @@ class OrchestrationTests(unittest.TestCase):
                 calls = [args for args, _ in commands.calls]
                 self.assertIn(["xcrun", "simctl", "delete", prepared()["host"]["target"]["id"]], calls)
                 self.assertFalse(any("run" in args for args in calls))
+                if failure == "prepare":
+                    self.assertFalse(any(args[:3] == ["xcrun", "simctl", "boot"] for args in calls))
 
     def test_simulator_selection_requires_available_ios_and_supported_iphone(self):
         runtimes = {"runtimes": [{"identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0", "version": "27.0",

@@ -380,8 +380,6 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
         ensure(re.fullmatch(r"[A-Fa-f0-9-]{36}", created), "Invalid owned simulator UUID")
         simulator = created
         (output / "owned-simulator.json").write_text(json.dumps({"id": simulator, "runtime": runtime}))
-        commands.run(["xcrun", "simctl", "boot", simulator])
-        # Boot continues asynchronously while the independent CLI build runs.
         fixture = output / "AutomationFixture"
         shutil.copytree(ROOT / "examples/AutomationFixture", fixture)
         commands.run(["xcodegen", "generate", "--spec", fixture / "project.yml"], cwd=fixture)
@@ -401,7 +399,6 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
                 state.write("cli_built=true\n")
         support, reports = output / "support", []
         flags = ["--support-root", support]
-        commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
         _, prepared = commands.json([cli, "prepare", "--project", fixture / "AutomationFixture.xcodeproj",
                                      "--scheme", "AutomationFixture", "--destination", "sim:" + simulator,
                                      "--xcode", developer, *flags], timeout=1200)
@@ -430,6 +427,9 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
             print(f"Verified {plan['id']}: {summary}", flush=True)
             reports.append({"case": plan["id"], "attemptID": attempt, "summary": summary,
                             "exactOutputsCompared": expected is not None or file})
+        # Generic simulator builds and toolchain validation need no running device.
+        commands.run(["xcrun", "simctl", "boot", simulator])
+        commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
         # Install once: reinstalling before each case invalidates the metadata index again.
         commands.run(["xcrun", "simctl", "install", simulator, prepared["host"]["subjectProductPath"]], timeout=180)
         wait_for_registration(commands, cli, support, output, prepared)
