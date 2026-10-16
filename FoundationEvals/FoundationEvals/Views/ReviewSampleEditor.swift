@@ -108,6 +108,7 @@ struct ReviewSampleEditor: View {
             }.padding(18).workspaceSurface()
             proposals
         }
+        .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             loadAnnotation()
             if let draft = store.reviewDrafts.draft(for: draftKey) {
