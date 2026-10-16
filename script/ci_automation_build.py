@@ -71,6 +71,22 @@ def tree(root, directory, *, sources=False):
 def build_fingerprint(commands, root, scratch, arguments):
     """None disables executable reuse for an unsupported package layout."""
     try:
+        developer = commands.env.get("DEVELOPER_DIR", "")
+        overrides = ("TOOLCHAIN", "DT_TOOLCHAIN", "SWIFT_EXEC", "SWIFT_FRONTEND", "SWIFT_DRIVER_",
+                     "XCODE_DEFAULT_TOOLCHAIN")
+        if not developer or not Path(developer).is_absolute():
+            return None
+        if any(value and key.startswith(overrides) for key, value in commands.env.items()):
+            print("CLI cache reuse disabled: a toolchain or compiler override is configured; building normally.", flush=True)
+            return None
+        compiler_directory = Path(developer).resolve() / "Toolchains/XcodeDefault.xctoolchain/usr/bin"
+        identity = {}
+        for name, filename in (("compiler", "swift"), ("frontend", "swift-frontend")):
+            path = (compiler_directory / filename).resolve()
+            binary = file_entry(path)
+            if not binary["mode"] & 0o111:
+                return None
+            identity[name] = {"path": str(path), **binary}
         files = {}
         for directory in SOURCE_ROOTS:
             path = safe_path(root, directory)
@@ -94,13 +110,11 @@ def build_fingerprint(commands, root, scratch, arguments):
             if configuration.exists():
                 safe_path(root, configuration.relative_to(root).as_posix())
                 files.update(tree(root, configuration))
-        queries = (("compiler", ["xcrun", "--find", "swift"]),
-                   ("version", ["xcrun", "swift", "--version"]),
+        queries = (("version", ["xcrun", "swift", "--version"]),
                    ("xcode", ["xcodebuild", "-version"]),
                    ("sdk", ["xcrun", "--sdk", "macosx", "--show-sdk-path"]),
                    ("sdkBuild", ["xcrun", "--sdk", "macosx", "--show-sdk-build-version"]),
                    ("architecture", ["uname", "-m"]), ("osBuild", ["sw_vers", "-buildVersion"]))
-        identity = {}
         for name, command in queries:
             try:
                 code, raw = commands.run(command, timeout=30)
@@ -114,7 +128,6 @@ def build_fingerprint(commands, root, scratch, arguments):
                 print(f"CLI cache reuse disabled: {name} identity probe returned no valid identity; building normally.", flush=True)
                 return None
             identity[name] = raw.strip()
-        identity["compilerDigest"] = sha256(Path(identity["compiler"]).resolve())
         environment = {key: value for key, value in commands.env.items() if key.startswith(BUILD_ENV) or key == "PATH"}
         return fingerprint({"schema": 1, "inputs": files, "identity": identity, "environment": environment,
                             "root": str(root.resolve()), "scratch": str(scratch.resolve()),

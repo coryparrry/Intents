@@ -610,9 +610,26 @@ class OrchestrationTests(unittest.TestCase):
             (scratch / "corrupt-intermediate").write_text("must not survive")
         commands = FakeCommands(output)
         commands.env["RUNNER_TEMP"] = str(root)
+        if identity_failure:
+            developer = root / "Selected.app/Contents/Developer"
+            directory = developer / "Toolchains/XcodeDefault.xctoolchain/usr/bin"
+            directory.mkdir(parents=True)
+            for name in ("swift", "swift-frontend"):
+                binary = directory / name
+                binary.write_bytes(b"fake selected compiler")
+                binary.chmod(0o755)
+            commands.env["DEVELOPER_DIR"] = str(developer)
+            original_json = commands.json
+            def json_command(arguments, **options):
+                code, value = original_json(arguments, **options)
+                if "prepare" in arguments:
+                    value["selectedDeveloperDirectoryPath"] = str(developer)
+                    value["sourceGraph"]["platformContext"]["developerDirectory"] = str(developer)
+                return code, value
+            commands.json = json_command
         original_run = commands.run
         def run(arguments, **options):
-            if identity_failure and arguments == ["xcrun", "--find", "swift"]:
+            if identity_failure and arguments == ["xcrun", "swift", "--version"]:
                 self.assertEqual(options["timeout"], 30)
                 if identity_failure == "timeout":
                     raise subprocess.TimeoutExpired(arguments, options["timeout"])

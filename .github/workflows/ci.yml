@@ -310,6 +310,9 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p "$RUNNER_TEMP/ui-snapshots"
+          if [[ -d /private/tmp/foundation-evals-ui-tests/Screenshots ]]; then
+            cp -R /private/tmp/foundation-evals-ui-tests/Screenshots "$RUNNER_TEMP/ui-snapshots/screenshots"
+          fi
           if [[ -d "$RUNNER_TEMP/ui-tests.xcresult" ]]; then
             xcrun xcresulttool export attachments --path "$RUNNER_TEMP/ui-tests.xcresult" --output-path "$RUNNER_TEMP/ui-snapshots"
           fi

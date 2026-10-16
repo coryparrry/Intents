@@ -16,13 +16,12 @@ spec.loader.exec_module(cache)
 class Tools:
     def __init__(self, compiler):
         self.compiler = compiler
-        self.env = {"DEVELOPER_DIR": "/Applications/Selected.app/Contents/Developer", "PATH": "/usr/bin"}
+        self.env = {"DEVELOPER_DIR": str(compiler.parents[4]), "PATH": "/usr/bin"}
         self.responses = {}
 
     def run(self, command, **options):
         key = " ".join(command)
-        default = str(self.compiler) if command == ["xcrun", "--find", "swift"] else "identity:" + key
-        return 0, self.responses.get(key, default)
+        return 0, self.responses.get(key, "identity:" + key)
 
 
 class AutomationExecutableTests(unittest.TestCase):
@@ -43,8 +42,13 @@ class AutomationExecutableTests(unittest.TestCase):
         self.addCleanup(supported.stop)
         self.source = self.root / "Sources/Core.swift"
         self.source.write_text("let value = 1")
-        self.compiler = base / "swift"
+        self.compiler = base / "Selected.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift"
+        self.compiler.parent.mkdir(parents=True)
         self.compiler.write_bytes(b"compiler")
+        self.compiler.chmod(0o755)
+        self.frontend = self.compiler.with_name("swift-frontend")
+        self.frontend.write_bytes(b"frontend")
+        self.frontend.chmod(0o755)
         self.tools = Tools(self.compiler)
         self.arguments = ["xcrun", "swift", "build", "--product", "intents-automation", "--scratch-path", str(self.scratch)]
         self.cli = self.scratch / "out/Products/Debug/intents-automation"
@@ -128,6 +132,9 @@ class AutomationExecutableTests(unittest.TestCase):
         self.compiler.write_bytes(b"different compiler")
         self.assertNotEqual(self.current(), expected)
         self.compiler.write_bytes(b"compiler")
+        self.frontend.write_bytes(b"different frontend")
+        self.assertNotEqual(self.current(), expected)
+        self.frontend.write_bytes(b"frontend")
         self.arguments.extend(["-Xswiftc", "-DCHANGED"])
         self.assertNotEqual(self.current(), expected)
         del self.arguments[-2:]
@@ -138,14 +145,61 @@ class AutomationExecutableTests(unittest.TestCase):
         self.tools.responses["xcrun swift --version"] = ""
         self.assertIsNone(self.current())
 
+    def test_selected_xcode_paths_and_both_binary_digests_are_in_fingerprint(self):
+        with patch.object(cache, "fingerprint", wraps=cache.fingerprint) as encode, \
+             patch.object(self.tools, "run", wraps=self.tools.run) as query:
+            self.assertIsInstance(self.current(), str)
+        identity = encode.call_args.args[0]["identity"]
+        self.assertEqual(identity["compiler"]["path"], str(self.compiler.resolve()))
+        self.assertEqual(identity["frontend"]["path"], str(self.frontend.resolve()))
+        self.assertEqual(identity["compiler"]["sha256"], cache.sha256(self.compiler))
+        self.assertEqual(identity["frontend"]["sha256"], cache.sha256(self.frontend))
+        self.assertFalse(any(call.args[0] == ["xcrun", "--find", "swift"] for call in query.call_args_list))
+
+    def test_missing_or_nonexecutable_selected_toolchain_binaries_disable_reuse(self):
+        for binary in (self.compiler, self.frontend):
+            with self.subTest(binary=binary.name):
+                contents = binary.read_bytes()
+                binary.chmod(0o644)
+                self.assertIsNone(self.current())
+                binary.chmod(0o755)
+                binary.unlink()
+                self.assertIsNone(self.current())
+                binary.write_bytes(contents)
+                binary.chmod(0o755)
+
+    def test_missing_developer_and_nonempty_toolchain_or_compiler_overrides_disable_reuse(self):
+        selected = self.tools.env.pop("DEVELOPER_DIR")
+        self.assertIsNone(self.current())
+        self.tools.env["DEVELOPER_DIR"] = selected
+        for key in ("TOOLCHAINS", "TOOLCHAIN_DIR", "DT_TOOLCHAIN_DIR", "SWIFT_EXEC", "SWIFT_EXEC_MANIFEST",
+                    "SWIFT_FRONTEND_EXEC", "SWIFT_DRIVER_SWIFT_FRONTEND_EXEC", "XCODE_DEFAULT_TOOLCHAIN_OVERRIDE"):
+            with self.subTest(variable=key), patch.object(self.tools, "run") as query:
+                self.tools.env[key] = "custom"
+                self.assertIsNone(self.current())
+                query.assert_not_called()
+                del self.tools.env[key]
+
+    def test_changing_selected_xcode_path_invalidates_even_identical_toolchain_bytes(self):
+        expected = self.checkpoint()
+        alternate = self.root.parent / "Other.app/Contents/Developer"
+        directory = alternate / "Toolchains/XcodeDefault.xctoolchain/usr/bin"
+        directory.mkdir(parents=True)
+        for source in (self.compiler, self.frontend):
+            target = directory / source.name
+            target.write_bytes(source.read_bytes())
+            target.chmod(0o755)
+        self.tools.env["DEVELOPER_DIR"] = str(alternate)
+        self.assertNotEqual(self.current(), expected)
+
     def test_timed_out_or_failed_optional_identity_falls_back_without_error_details(self):
         for error in (subprocess.TimeoutExpired("private command details", 30), AssertionError("private stderr")):
             with self.subTest(error=type(error).__name__), \
                  patch.object(self.tools, "run", side_effect=error) as query, patch("builtins.print") as report:
                 self.assertIsNone(self.current())
-                query.assert_called_once_with(["xcrun", "--find", "swift"], timeout=30)
+                query.assert_called_once_with(["xcrun", "swift", "--version"], timeout=30)
                 message = report.call_args.args[0]
-                self.assertIn("CLI cache reuse disabled: compiler identity probe", message)
+                self.assertIn("CLI cache reuse disabled: version identity probe", message)
                 self.assertIn("building normally", message)
                 self.assertNotIn("private", message)
 
