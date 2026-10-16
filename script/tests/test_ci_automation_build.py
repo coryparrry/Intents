@@ -2,6 +2,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -18,7 +19,7 @@ class Tools:
         self.env = {"DEVELOPER_DIR": "/Applications/Selected.app/Contents/Developer", "PATH": "/usr/bin"}
         self.responses = {}
 
-    def run(self, command):
+    def run(self, command, **options):
         key = " ".join(command)
         default = str(self.compiler) if command == ["xcrun", "--find", "swift"] else "identity:" + key
         return 0, self.responses.get(key, default)
@@ -136,6 +137,21 @@ class AutomationExecutableTests(unittest.TestCase):
     def test_missing_or_empty_toolchain_identity_disables_reuse(self):
         self.tools.responses["xcrun swift --version"] = ""
         self.assertIsNone(self.current())
+
+    def test_timed_out_or_failed_optional_identity_falls_back_without_error_details(self):
+        for error in (subprocess.TimeoutExpired("private command details", 30), AssertionError("private stderr")):
+            with self.subTest(error=type(error).__name__), \
+                 patch.object(self.tools, "run", side_effect=error) as query, patch("builtins.print") as report:
+                self.assertIsNone(self.current())
+                query.assert_called_once_with(["xcrun", "--find", "swift"], timeout=30)
+                message = report.call_args.args[0]
+                self.assertIn("CLI cache reuse disabled: compiler identity probe", message)
+                self.assertIn("building normally", message)
+                self.assertNotIn("private", message)
+
+    def test_nonzero_optional_identity_falls_back_even_without_driver_assertion(self):
+        with patch.object(self.tools, "run", return_value=(1, "private stderr")):
+            self.assertIsNone(self.current())
 
     def test_header_pkg_config_and_dynamic_loader_environment_changes_invalidate(self):
         expected = self.checkpoint()

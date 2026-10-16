@@ -65,7 +65,7 @@ final class EvaluationReviewUITests: XCTestCase {
         let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -1, dy: 0))
         let target = edge.withOffset(CGVector(dx: 1000 - window.frame.width, dy: 0))
         edge.hover()
-        edge.press(forDuration: 0.25, thenDragTo: target)
+        edge.click(forDuration: 0.25, thenDragTo: target)
         XCTAssertLessThanOrEqual(window.frame.width, 1050, "Resize must actually exercise the narrow layout")
         XCTAssertTrue(app.popUpButtons["Review"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Save review"].exists)

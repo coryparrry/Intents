@@ -567,7 +567,17 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIsNone(cache_module.record_cli.call_args.args[1])
         self.assertEqual(len(results), 7)
 
-    def exercise_executable_cache(self, damage, changed_during_build=False):
+    def test_optional_identity_failures_still_build_and_run_all_seven_scenarios(self):
+        for failure in ("timeout", "nonzero"):
+            with self.subTest(identity_failure=failure):
+                commands, results, cache_module = self.exercise_executable_cache(damage=False, identity_failure=failure)
+                self.assertEqual(sum(args[:3] == ["xcrun", "swift", "build"] for args, _ in commands.calls), 2)
+                self.assertEqual(len(results), 7)
+                self.assertEqual(results[-1]["case"], "phase3.after-timeout")
+                self.assertIsNone(cache_module.record_cli.call_args.args[1])
+                self.assertEqual(cache_module.build_fingerprint.call_count, 1)
+
+    def exercise_executable_cache(self, damage, changed_during_build=False, identity_failure=None):
         from script import ci_automation_build as real_cache
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -575,6 +585,12 @@ class OrchestrationTests(unittest.TestCase):
         repository, scratch = root / "repo", root / "cache"
         (repository / "examples/AutomationFixture").mkdir(parents=True)
         (repository / "examples/AutomationFixture/project.yml").write_text("name: fixture")
+        manifests = real_cache.MANIFESTS
+        if identity_failure:
+            for directory in real_cache.SOURCE_ROOTS:
+                (repository / directory).mkdir()
+            (repository / "Package.swift").write_text("supported fixture")
+            manifests = {"Package.swift": real_cache.sha256(repository / "Package.swift")}
         output = root / "evidence"
         output.mkdir()
         marker = root / "github-output"
@@ -596,8 +612,14 @@ class OrchestrationTests(unittest.TestCase):
         commands.env["RUNNER_TEMP"] = str(root)
         original_run = commands.run
         def run(arguments, **options):
+            if identity_failure and arguments == ["xcrun", "--find", "swift"]:
+                self.assertEqual(options["timeout"], 30)
+                if identity_failure == "timeout":
+                    raise subprocess.TimeoutExpired(arguments, options["timeout"])
+                raise AssertionError("identity command exited nonzero")
             if "--product" in arguments:
-                self.assertFalse(scratch.exists(), "Damaged build must start with an empty owned scratch")
+                if damage:
+                    self.assertFalse(scratch.exists(), "Damaged build must start with an empty owned scratch")
                 compile_products()
             return original_run(arguments, **options)
         commands.run = run
@@ -605,15 +627,17 @@ class OrchestrationTests(unittest.TestCase):
         cache_module.build_fingerprint.return_value = "fingerprint"
         if changed_during_build:
             cache_module.build_fingerprint.side_effect = ["fingerprint", "changed inputs"]
+        if identity_failure:
+            cache_module.build_fingerprint.side_effect = real_cache.build_fingerprint
         cache_module.cached_cli.side_effect = real_cache.cached_cli
         cache_module.record_cli.side_effect = real_cache.record_cli
         native_cache = unittest.mock.Mock()
-        with patch.object(driver, "ROOT", repository), \
+        with patch.object(driver, "ROOT", repository), patch.object(real_cache, "MANIFESTS", manifests), \
              patch.dict(driver.os.environ, {"GITHUB_OUTPUT": str(marker)}), \
              patch.dict(driver.sys.modules, {"ci_native_cache": native_cache, "ci_automation_build": cache_module}):
             results = driver.run_contract(commands, output, build_root=scratch, record_build_cache=True)
         self.assertEqual(real_cache.cached_cli(scratch, "fingerprint"),
-                         (None, False) if changed_during_build else (cli, False))
+                         (None, False) if changed_during_build or identity_failure else (cli, False))
         self.assertEqual(cli.read_bytes(), b"correct executable")
         self.assertEqual(marker.read_text(), "cli_built=true\n")
         native_cache.capture.assert_called_once_with(repository, scratch)

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import stat
+import subprocess
 import tempfile
 
 RECEIPT = "ci-automation-executable.json"
@@ -101,8 +102,16 @@ def build_fingerprint(commands, root, scratch, arguments):
                    ("architecture", ["uname", "-m"]), ("osBuild", ["sw_vers", "-buildVersion"]))
         identity = {}
         for name, command in queries:
-            _, raw = commands.run(command)
-            if not raw.strip() or len(raw) > 8192:
+            try:
+                code, raw = commands.run(command, timeout=30)
+            except subprocess.TimeoutExpired:
+                print(f"CLI cache reuse disabled: {name} identity probe timed out; building normally.", flush=True)
+                return None
+            except AssertionError:
+                print(f"CLI cache reuse disabled: {name} identity probe failed; building normally.", flush=True)
+                return None
+            if code != 0 or not raw.strip() or len(raw) > 8192:
+                print(f"CLI cache reuse disabled: {name} identity probe returned no valid identity; building normally.", flush=True)
                 return None
             identity[name] = raw.strip()
         identity["compilerDigest"] = sha256(Path(identity["compiler"]).resolve())

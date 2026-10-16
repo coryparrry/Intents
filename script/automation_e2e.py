@@ -389,7 +389,7 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
             _, bin_path = commands.run(["xcrun", "swift", "build", "--scratch-path", scratch, "--show-bin-path"])
             cli = Path(bin_path.strip()) / "intents-automation"
             if record_build_cache:
-                if build_fingerprint != fingerprint_build(commands, ROOT, scratch, build_arguments):
+                if build_fingerprint is not None and build_fingerprint != fingerprint_build(commands, ROOT, scratch, build_arguments):
                     build_fingerprint = None
                 record_cli(scratch, build_fingerprint, cli)
         else:
