@@ -22,8 +22,7 @@ final class AutomationSimulatorInventoryTests: XCTestCase {
     func testBudgetedReadRetainsFreshExactDeviceStateAndFiltersOtherRuntimes() async throws {
         let payload = """
         {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-1":[
-          {"isAvailable":true,"udid":"\(deviceID)","name":"Owned","state":"Booted"},
-          {"isAvailable":false,"udid":"unavailable","name":"Hidden","state":"Shutdown"}],
+          {"isAvailable":true,"udid":"\(deviceID)","name":"Owned","state":"Booted"}],
           "com.apple.CoreSimulator.SimRuntime.iOS-26-0":[{"isAvailable":true,"udid":"old"}]}}
         """
         for duration in [Duration.seconds(60), .seconds(600), .milliseconds(250)] {
@@ -33,9 +32,10 @@ final class AutomationSimulatorInventoryTests: XCTestCase {
     }
     func testFailedTruncatedMalformedAndIncompleteInventoryCannotAuthorizeDevice() async throws {
         let invalidDevice = "{\"devices\":{\"com.apple.CoreSimulator.SimRuntime.iOS-27-1\":[{\"isAvailable\":true,\"udid\":\"booted\",\"name\":\"Alias\",\"state\":\"Booted\"}]}}"
+        let unavailableDevice = "{\"devices\":{\"com.apple.CoreSimulator.SimRuntime.iOS-27-1\":[{\"isAvailable\":false,\"udid\":\"\(deviceID)\",\"name\":\"Hidden\",\"state\":\"Shutdown\"}]}}"
         let missingState = "{\"devices\":{\"com.apple.CoreSimulator.SimRuntime.iOS-27-1\":[{\"isAvailable\":true,\"udid\":\"\(deviceID)\",\"name\":\"Owned\"}]}}"
         for (payload, status, truncated) in [("{}", Int32(1), false), ("{}", 0, true), ("", 0, false),
-                                             ("{}", 0, false), (invalidDevice, 0, false), (missingState, 0, false)] {
+                                             ("{}", 0, false), (invalidDevice, 0, false), (missingState, 0, false), (unavailableDevice, 0, false)] {
             do { _ = try await read(payload, status: status, truncated: truncated); XCTFail("Accepted invalid inventory") }
             catch { }
         }
