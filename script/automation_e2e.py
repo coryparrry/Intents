@@ -16,6 +16,7 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+FIXTURE_BUNDLE_ID = "com.coryparry.IntentsAutomation.AutomationFixture"
 ARRAYS = ("textArray", "boolArray", "integerArray", "decimalArray", "dateArray")
 FAMILIES = ("text", "bool", "integer", "decimal", "date", "enum", "entity", "duration",
             "calendarComponents", "url", "intentFile", *ARRAYS)
@@ -321,6 +322,22 @@ def registration_pending(report, support, attempt, bundle_id):
                for path in (support / attempt / "artifacts").glob(pattern))
 
 
+def launch_fixture(commands, simulator, prepared, output):
+    # CI setup only: this authored fixture reads saved state at startup and performs no actions.
+    host = prepared["host"]
+    ensure(host["app"]["bundleID"] == FIXTURE_BUNDLE_ID
+           and host["target"] == {"id": simulator, "kind": "simulator"},
+           "Fixture launch requires the authored fixture on the owned simulator")
+    code, raw = commands.run(["xcrun", "simctl", "launch", simulator, FIXTURE_BUNDLE_ID], timeout=180)
+    match = re.fullmatch(re.escape(FIXTURE_BUNDLE_ID) + r": ([1-9][0-9]{0,9})\s*", raw)
+    ensure(code == 0 and match is not None and int(match[1]) <= 2_147_483_647,
+           "Fixture setup launch did not return its exact bundle ID and a valid PID")
+    # Diagnostic metadata only; this PID never authorizes process control or proves readiness.
+    (output / "fixture-launch.json").write_text(json.dumps({
+        "bundleID": FIXTURE_BUNDLE_ID, "simulatorID": simulator, "pid": int(match[1]),
+    }, indent=2))
+
+
 def wait_for_registration(commands, cli, support, output, prepared):
     # This authored fixture echo has no writes; never retry customer/business actions.
     declared = action(prepared["catalog"], "EchoTextIntent")
@@ -467,6 +484,7 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
         commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
         # Install once: reinstalling before each case invalidates the metadata index again.
         commands.run(["xcrun", "simctl", "install", simulator, prepared["host"]["subjectProductPath"]], timeout=180)
+        launch_fixture(commands, simulator, prepared, output)
         wait_for_registration(commands, cli, support, output, prepared)
         for index, (operations, expected) in enumerate(echo_batches(catalog), 1):
             if f"codec-{index}" in selected:

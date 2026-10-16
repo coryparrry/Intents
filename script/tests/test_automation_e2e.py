@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / "automation_e2e.py"
 spec = importlib.util.spec_from_file_location("automation_e2e", SCRIPT)
@@ -41,7 +41,7 @@ def catalog():
 
 
 def prepared():
-    return {"host": {"app": {"bundleID": "example.fixture"},
+    return {"host": {"app": {"bundleID": "com.coryparry.IntentsAutomation.AutomationFixture"},
                      "target": {"id": "11111111-1111-1111-1111-111111111111", "kind": "simulator"},
                      "subjectProductPath": "/prepared/AutomationFixture.app"},
             "catalog": catalog(), "selectedDeveloperDirectoryPath": "/Applications/Xcode_27.app/Contents/Developer",
@@ -178,6 +178,8 @@ class FakeCommands:
             raise RuntimeError("injected command failure")
         if args[:3] == ["xcrun", "simctl", "create"]:
             return 0, prepared()["host"]["target"]["id"]
+        if args[:3] == ["xcrun", "simctl", "launch"]:
+            return 0, driver.FIXTURE_BUNDLE_ID + ": 123\n"
         if "--show-sdk-version" in args:
             return 0, "27.0"
         if args == ["xcode-select", "-p"]:
@@ -232,6 +234,46 @@ class FakeCommands:
         raise AssertionError(f"Unhandled fake JSON command: {args}")
 
 
+class FixtureLaunchTests(unittest.TestCase):
+    def exercise(self, response=(0, driver.FIXTURE_BUNDLE_ID + ": 123\n"), mutation=None):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        commands = Mock()
+        commands.run.return_value = response
+        value = prepared()
+        if mutation:
+            mutation(value)
+        driver.launch_fixture(commands, value["host"]["target"]["id"], value, output)
+        return commands, json.loads((output / "fixture-launch.json").read_text())
+
+    def test_launches_exact_owned_fixture_once_before_measuring_readiness(self):
+        commands, metadata = self.exercise()
+        simulator = prepared()["host"]["target"]["id"]
+        commands.run.assert_called_once_with(
+            ["xcrun", "simctl", "launch", simulator, driver.FIXTURE_BUNDLE_ID], timeout=180)
+        self.assertEqual(metadata, {"bundleID": driver.FIXTURE_BUNDLE_ID, "simulatorID": simulator, "pid": 123})
+
+    def test_launch_failure_and_malformed_identity_cannot_pass_setup(self):
+        for code, raw in ((1, driver.FIXTURE_BUNDLE_ID + ": 123"), (0, ""), (0, "other.app: 123"),
+                          (0, driver.FIXTURE_BUNDLE_ID + ": 0"), (0, driver.FIXTURE_BUNDLE_ID + ": -1"),
+                          (0, driver.FIXTURE_BUNDLE_ID + ": 2147483648"),
+                          (0, driver.FIXTURE_BUNDLE_ID + ": 123\nother.app: 456")):
+            with self.subTest(code=code, raw=raw), self.assertRaises(AssertionError):
+                self.exercise((code, raw))
+
+    def test_unexpected_prepared_app_or_target_never_launches(self):
+        for mutation in (lambda value: value["host"]["app"].update(bundleID="other.app"),
+                         lambda value: value["host"]["target"].update(kind="device")):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                commands = Mock()
+                value = prepared()
+                mutation(value)
+                with self.assertRaises(AssertionError):
+                    driver.launch_fixture(commands, prepared()["host"]["target"]["id"], value, Path(temporary))
+                commands.run.assert_not_called()
+
+
 class RegistrationReadinessTests(unittest.TestCase):
     def exercise(self, failures=0, mutation=None, quick_exit=False):
         temporary = tempfile.TemporaryDirectory()
@@ -253,9 +295,9 @@ class RegistrationReadinessTests(unittest.TestCase):
                 result["receipts"] = []
                 artifact = support / attempt / "artifacts"
                 artifact.mkdir(parents=True)
-                marker = 'Error Domain=AppIntentsServicesMetadataErrorDomain Code=400 "example.fixture is not present"'
+                marker = 'Error Domain=AppIntentsServicesMetadataErrorDomain Code=400 "com.coryparry.IntentsAutomation.AutomationFixture is not present"'
                 if mutation in ("other-error", "other-bundle"):
-                    marker = marker.replace("Code=400", "Code=401") if mutation == "other-error" else marker.replace("example.fixture", "other.fixture")
+                    marker = marker.replace("Code=400", "Code=401") if mutation == "other-error" else marker.replace("com.coryparry.IntentsAutomation.AutomationFixture", "other.fixture")
                 if mutation != "missing-log":
                     name = "apple-log-4.txt" if quick_exit else "apple-command-failure-4-test.txt"
                     (artifact / name).write_text(marker)
@@ -393,7 +435,10 @@ class OrchestrationTests(unittest.TestCase):
         installs = [args for args in calls if args[:3] == ["xcrun", "simctl", "install"]]
         self.assertEqual(installs, [["xcrun", "simctl", "install", prepared()["host"]["target"]["id"],
                                     prepared()["host"]["subjectProductPath"]]])
-        self.assertLess(calls.index(installs[0]), next(i for i, args in enumerate(calls) if "run" in args))
+        launches = [args for args in calls if args[:3] == ["xcrun", "simctl", "launch"]]
+        self.assertEqual(launches, [["xcrun", "simctl", "launch", prepared()["host"]["target"]["id"], driver.FIXTURE_BUNDLE_ID]])
+        self.assertLess(calls.index(installs[0]), calls.index(launches[0]))
+        self.assertLess(calls.index(launches[0]), next(i for i, args in enumerate(calls) if "run" in args))
         self.assertEqual(commands.envelopes[0]["plan"]["id"], "phase3.registration")
         self.assertTrue(all(e["allowBootAndInstall"] is False for e in commands.envelopes))
         self.assertEqual([r["summary"] for r in results], ["executedUnassessed"] * 3 +
@@ -439,6 +484,16 @@ class OrchestrationTests(unittest.TestCase):
                     runs = [args for args in calls if "run" in args]
                     self.assertEqual(len({args[args.index("--support-root") + 1] for args in runs}), 1)
                     self.assertEqual([result["summary"] for result in results], ["timedOut", "executedUnassessed"])
+
+    def test_setup_launch_failure_aborts_before_registration_and_cleans_owned_simulator(self):
+        commands, _ = self.exercise(failure="launch")
+        self.assertEqual(commands.envelopes, [])
+        launches = [args for args, _ in commands.calls if args[:3] == ["xcrun", "simctl", "launch"]]
+        self.assertEqual(len(launches), 1)
+        cleanup = [args for args, _ in commands.calls if args[:3] in (
+            ["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"])]
+        owned = prepared()["host"]["target"]["id"]
+        self.assertEqual(cleanup, [["xcrun", "simctl", verb, owned] for verb in ("shutdown", "delete")])
 
     def test_each_group_failure_still_cleans_only_its_owned_simulator(self):
         for group in driver.SCENARIO_GROUPS:
