@@ -562,6 +562,14 @@ class OrchestrationTests(unittest.TestCase):
         cache_module.record_cli.assert_called_once()
         self.assertEqual(len(results), 7)
 
+    def test_initial_identity_is_before_simulator_commands_and_postcompile_recheck_is_retained(self):
+        _, results, cache_module = self.exercise_executable_cache(damage=True)
+        before, after = cache_module.probe_command_snapshots
+        self.assertFalse(any(args[:2] == ["xcrun", "simctl"] for args in before))
+        self.assertTrue(any(args[:3] == ["xcrun", "simctl", "boot"] for args in after))
+        self.assertTrue(any("--product" in args for args in after))
+        self.assertEqual(len(results), 7)
+
     def test_inputs_changed_during_compile_do_not_receive_reusable_executable_receipt(self):
         _, results, cache_module = self.exercise_executable_cache(damage=True, changed_during_build=True)
         self.assertIsNone(cache_module.record_cli.call_args.args[1])
@@ -629,7 +637,7 @@ class OrchestrationTests(unittest.TestCase):
             commands.json = json_command
         original_run = commands.run
         def run(arguments, **options):
-            if identity_failure and arguments == ["xcrun", "swift", "--version"]:
+            if identity_failure and arguments == ["xcodebuild", "-version"]:
                 self.assertEqual(options["timeout"], 30)
                 if identity_failure == "timeout":
                     raise subprocess.TimeoutExpired(arguments, options["timeout"])
@@ -641,11 +649,13 @@ class OrchestrationTests(unittest.TestCase):
             return original_run(arguments, **options)
         commands.run = run
         cache_module = unittest.mock.Mock()
-        cache_module.build_fingerprint.return_value = "fingerprint"
-        if changed_during_build:
-            cache_module.build_fingerprint.side_effect = ["fingerprint", "changed inputs"]
-        if identity_failure:
-            cache_module.build_fingerprint.side_effect = real_cache.build_fingerprint
+        cache_module.probe_command_snapshots = []
+        def fingerprint(*arguments):
+            cache_module.probe_command_snapshots.append([args for args, _ in commands.calls])
+            if identity_failure:
+                return real_cache.build_fingerprint(*arguments)
+            return "changed inputs" if changed_during_build and len(cache_module.probe_command_snapshots) > 1 else "fingerprint"
+        cache_module.build_fingerprint.side_effect = fingerprint
         cache_module.cached_cli.side_effect = real_cache.cached_cli
         cache_module.record_cli.side_effect = real_cache.record_cli
         native_cache = unittest.mock.Mock()

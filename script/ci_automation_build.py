@@ -110,8 +110,7 @@ def build_fingerprint(commands, root, scratch, arguments):
             if configuration.exists():
                 safe_path(root, configuration.relative_to(root).as_posix())
                 files.update(tree(root, configuration))
-        queries = (("version", ["xcrun", "swift", "--version"]),
-                   ("xcode", ["xcodebuild", "-version"]),
+        queries = (("xcode", ["xcodebuild", "-version"]),
                    ("sdk", ["xcrun", "--sdk", "macosx", "--show-sdk-path"]),
                    ("sdkBuild", ["xcrun", "--sdk", "macosx", "--show-sdk-build-version"]),
                    ("architecture", ["uname", "-m"]), ("osBuild", ["sw_vers", "-buildVersion"]))

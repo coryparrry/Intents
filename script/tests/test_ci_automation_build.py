@@ -121,9 +121,9 @@ class AutomationExecutableTests(unittest.TestCase):
         configuration.write_text("configuration")
         self.assertNotEqual(self.current(), expected)
 
-    def test_compiler_binary_version_sdk_xcode_architecture_flags_and_environment_invalidate(self):
+    def test_compiler_binary_sdk_xcode_architecture_flags_and_environment_invalidate(self):
         expected = self.checkpoint()
-        for query in ("xcrun swift --version", "xcodebuild -version", "xcrun --sdk macosx --show-sdk-path",
+        for query in ("xcodebuild -version", "xcrun --sdk macosx --show-sdk-path",
                       "xcrun --sdk macosx --show-sdk-build-version", "uname -m", "sw_vers -buildVersion"):
             with self.subTest(query=query):
                 self.tools.responses[query] = "different identity"
@@ -142,7 +142,7 @@ class AutomationExecutableTests(unittest.TestCase):
         self.assertNotEqual(self.current(), expected)
 
     def test_missing_or_empty_toolchain_identity_disables_reuse(self):
-        self.tools.responses["xcrun swift --version"] = ""
+        self.tools.responses["xcodebuild -version"] = ""
         self.assertIsNone(self.current())
 
     def test_selected_xcode_paths_and_both_binary_digests_are_in_fingerprint(self):
@@ -155,6 +155,7 @@ class AutomationExecutableTests(unittest.TestCase):
         self.assertEqual(identity["compiler"]["sha256"], cache.sha256(self.compiler))
         self.assertEqual(identity["frontend"]["sha256"], cache.sha256(self.frontend))
         self.assertFalse(any(call.args[0] == ["xcrun", "--find", "swift"] for call in query.call_args_list))
+        self.assertFalse(any(call.args[0] == ["xcrun", "swift", "--version"] for call in query.call_args_list))
 
     def test_missing_or_nonexecutable_selected_toolchain_binaries_disable_reuse(self):
         for binary in (self.compiler, self.frontend):
@@ -197,9 +198,9 @@ class AutomationExecutableTests(unittest.TestCase):
             with self.subTest(error=type(error).__name__), \
                  patch.object(self.tools, "run", side_effect=error) as query, patch("builtins.print") as report:
                 self.assertIsNone(self.current())
-                query.assert_called_once_with(["xcrun", "swift", "--version"], timeout=30)
+                query.assert_called_once_with(["xcodebuild", "-version"], timeout=30)
                 message = report.call_args.args[0]
-                self.assertIn("CLI cache reuse disabled: version identity probe", message)
+                self.assertIn("CLI cache reuse disabled: xcode identity probe", message)
                 self.assertIn("building normally", message)
                 self.assertNotIn("private", message)
 
