@@ -98,6 +98,9 @@ final class AutomationAppleRouteDriverTests: XCTestCase, @unchecked Sendable {
         approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
         let commands = AutomationAppleRouteDriver.Commands(run: { arguments, _, timeout in
             await timeouts.record(timeout)
+            if arguments.first == "xcodebuild" {
+                XCTAssertEqual(arguments.drop(while: { $0 != "-collect-test-diagnostics" }).dropFirst().first, "never")
+            }
             if failDuringExport && arguments.first == "xcodebuild" {
                 return .init(exitStatus: 0, stdout: Data(), stderr: Data(), logsTruncated: false)
             }

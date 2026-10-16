@@ -164,7 +164,7 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         let resultPath = active.directory.appendingPathComponent("system.xcresult")
         let result = try await run(["xcodebuild", "test-without-building", "-xctestrun", active.testFile.path,
             "-destination", plan.target.kind == .physical ? "platform=iOS,id=" + plan.target.id : Self.simulatorDestination(targetID: plan.target.id), "-only-testing:" + prepared.testTarget + "/SegmentTests/testSegment",
-            "-jobs", "2", "-parallel-testing-enabled", "NO", "-resultBundlePath", resultPath.path], scope: scope, lease: lease,
+            "-jobs", "2", "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never", "-resultBundlePath", resultPath.path], scope: scope, lease: lease,
             timeout: .seconds(plan.budget.wallClockSeconds))
         if program.usesFiles { _ = try await artifacts.storeNativeEvidence(data: result.stdout + result.stderr, scope: scope) }
         else { _ = try await artifacts.store(data: result.stdout + result.stderr, name: "apple-log-\(lease.generation).txt", scope: scope) }

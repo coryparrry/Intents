@@ -26,7 +26,6 @@ final class SegmentTests: XCTestCase {
         var receipt = HostReceipt(runner: runner, runID: plan.runID, attemptID: plan.attemptID, segmentID: plan.segmentID,
                                   leaseGeneration: plan.leaseGeneration, bundleID: plan.bundleID, productDigest: plan.productDigest)
         receipt.productDigestVersion = plan.productDigestVersion
-        let deadline = ContinuousClock.now.advanced(by: .seconds(120))
         if plan.activateSubject == true {
             let app = XCUIApplication(bundleIdentifier: plan.bundleID)
             let previousFailures = (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0)
@@ -38,6 +37,9 @@ final class SegmentTests: XCTestCase {
                 throw HostError.invalidPlan
             }
         }
+        try Task.checkCancellation()
+        // The caller's absolute case deadline bounds activation; this allowance covers readiness and operations.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(120))
         #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
         try await HostFixtureRegistration.waitForAuthoredFixture(bundleID: plan.bundleID, deadline: deadline, record: { diagnostic in
             attach(name: "intents-fixture-registration-\(diagnostic.index)", data: try JSONEncoder().encode(diagnostic))

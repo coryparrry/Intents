@@ -122,15 +122,22 @@ final class HostFixtureRegistrationTests: XCTestCase {
         }
         do { try await task.value; XCTFail("Cancellation ignored") } catch { XCTAssertTrue(error is CancellationError) }
     }
-    func testSimulatorOnlyCallerRunsPreflightBeforeActualDispatchLoop() throws {
+    func testSystemHostStartsSharedOperationDeadlineAfterVerifiedActivation() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Integration/AutomationHost/SegmentTests.swift"), encoding: .utf8)
         XCTAssertTrue(source.contains("#if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)"))
         let activation = try XCTUnwrap(source.range(of: "app.activate()"))
+        let foreground = try XCTUnwrap(source.range(of: "guard app.wait(for: .runningForeground"))
+        let cancellation = try XCTUnwrap(source.range(of: "try Task.checkCancellation()"))
+        let deadline = try XCTUnwrap(source.range(of: "let deadline = ContinuousClock.now.advanced(by: .seconds(120))"))
         let readiness = try XCTUnwrap(source.range(of: "HostFixtureRegistration.waitForAuthoredFixture("))
         let operations = try XCTUnwrap(source.range(of: "for operation in plan.operations"))
         let marker = try XCTUnwrap(source.range(of: "intents-dispatch-"))
-        XCTAssertLessThan(activation.lowerBound, readiness.lowerBound)
+        XCTAssertLessThan(activation.lowerBound, foreground.lowerBound)
+        XCTAssertLessThan(foreground.lowerBound, cancellation.lowerBound)
+        XCTAssertLessThan(cancellation.lowerBound, deadline.lowerBound)
+        XCTAssertLessThan(deadline.lowerBound, readiness.lowerBound)
+        XCTAssertEqual(source.components(separatedBy: "let deadline =").count - 1, 1)
         XCTAssertLessThan(readiness.lowerBound, operations.lowerBound)
         XCTAssertLessThan(operations.lowerBound, marker.lowerBound)
         XCTAssertTrue(source.contains("intents-fixture-registration-"))
