@@ -40,7 +40,6 @@ jobs:
       python_tests: ${{ steps.route.outputs.python_tests }}
       macos_tests: ${{ steps.route.outputs.macos_tests }}
       ui_matrix: ${{ steps.route.outputs.ui_matrix }}
-      python_matrix: ${{ steps.route.outputs.python_matrix }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -85,22 +84,18 @@ jobs:
           node --test tests/*.test.mjs
 
   script-tests:
-    name: Script tests (${{ matrix.name }})
+    name: Script tests
     needs: changes
     if: ${{ needs.changes.outputs.python_tests != '[]' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.changes.outputs.python_matrix) }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
       - name: Run selected script unit tests
         env:
-          CI_TEST_SELECTION: ${{ toJSON(matrix.tests) }}
+          CI_TEST_SELECTION: ${{ needs.changes.outputs.python_tests }}
         run: python3 script/ci_run_tests.py python
 
   quality:
@@ -386,15 +381,11 @@ jobs:
           if [[ "$STABILITY_SELECTED" == true ]]; then test "$STABILITY" = success; else test "$STABILITY" = skipped; fi
 
   automation-e2e-scenarios:
-    name: Automation scenario (${{ matrix.group }})
+    name: Simulator acceptance tests
     needs: changes
     if: ${{ needs.changes.outputs.automation_e2e == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        group: [codec-1, codec-2, codec-file, mixed, wrong-assertion, timeout-recovery]
     env:
       # Exercise the cross-build acceptance from Phase 1, beyond local Xcode 27.0.
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
@@ -425,13 +416,11 @@ jobs:
           fi
       - name: Reproduce prepared-app automation
         id: contract
-        env:
-          SCENARIO_GROUP: ${{ matrix.group }}
         run: |
           python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/automation-e2e-build"
-          python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --record-build-cache --scenario-group "$SCENARIO_GROUP"
+          python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --record-build-cache --scenario-group all
       - name: Save successfully compiled automation CLI
-        if: ${{ !cancelled() && matrix.group == 'codec-1' && steps.contract.outputs.cli_built == 'true' && steps.cli-cache.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && steps.contract.outputs.cli_built == 'true' && steps.cli-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/automation-e2e-build
@@ -440,7 +429,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: automation-e2e-${{ matrix.group }}
+          name: automation-e2e
           path: ${{ runner.temp }}/automation-e2e
           if-no-files-found: error
 

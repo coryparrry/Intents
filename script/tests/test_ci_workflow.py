@@ -57,9 +57,8 @@ class GateTests(unittest.TestCase):
             self.assertIn("name: native-test-products", job(name))
             self.assertIn("tar -xf", job(name))
             self.assertNotIn("xcodebuild build", job(name))
-        for name in ("script-tests", "ui-tests"):
-            self.assertIn("fail-fast: false", job(name))
-            self.assertNotIn("max-parallel:", job(name))
+        self.assertIn("fail-fast: false", job("ui-tests"))
+        self.assertNotIn("max-parallel:", job("ui-tests"))
         self.assertNotIn("--iterations", job("ui-tests"))
 
     def test_simulator_cache_is_saved_only_after_successful_compilation(self):
@@ -71,21 +70,22 @@ class GateTests(unittest.TestCase):
         self.assertIn("uses: actions/cache/save@", workflow)
         self.assertIn("key: ${{ steps.cli-cache.outputs.cache-primary-key }}", workflow)
 
-    def test_simulator_groups_run_in_parallel_with_unique_evidence_and_one_cache_writer(self):
+    def test_simulator_runs_every_scenario_with_one_setup_and_cache_writer(self):
         workflow = job("automation-e2e-scenarios")
-        groups = re.search(r"group: \[([^\]]+)\]", workflow)[1].split(", ")
-        self.assertEqual(groups, ["codec-1", "codec-2", "codec-file", "mixed", "wrong-assertion", "timeout-recovery"])
         self.assertIn("needs: changes", workflow)
-        self.assertIn("fail-fast: false", workflow)
-        self.assertNotIn("max-parallel:", workflow)
-        self.assertIn('--scenario-group "$SCENARIO_GROUP"', workflow)
-        self.assertIn("SCENARIO_GROUP: ${{ matrix.group }}", workflow)
-        self.assertIn("name: automation-e2e-${{ matrix.group }}", workflow)
+        self.assertNotIn("matrix", workflow)
+        self.assertIn("--scenario-group all", workflow)
+        self.assertIn("name: automation-e2e", workflow)
         condition = re.search(r"Save successfully compiled automation CLI\n        if: (.+)", workflow)[1]
         self.assertIn("!cancelled()", condition)
-        self.assertIn("matrix.group == 'codec-1'", condition)
         self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
         self.assertNotIn("success()", condition)
+
+    def test_scripts_run_all_selected_modules_in_one_job(self):
+        workflow = job("script-tests")
+        self.assertNotIn("matrix", workflow)
+        self.assertIn("CI_TEST_SELECTION: ${{ needs.changes.outputs.python_tests }}", workflow)
+        self.assertIn("python3 script/ci_run_tests.py python", workflow)
 
     def test_evidence_is_retained_after_failure_without_blocking_cancellation(self):
         # A status function overrides implicit success(), preserving failed-run evidence.

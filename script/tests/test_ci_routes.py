@@ -427,7 +427,7 @@ class MatrixTests(unittest.TestCase):
         selections = [test for group in matrix for test in group["tests"]]
         self.assertEqual(set(selections), expected)
         self.assertEqual(len(selections), len(expected))
-        self.assertEqual(len(matrix), 8)
+        self.assertEqual(len(matrix), 3)
 
     def test_feature_view_runs_its_full_regression_class_without_other_features(self):
         for view, expected, unrelated in (
@@ -504,18 +504,17 @@ class MatrixTests(unittest.TestCase):
             routes.full_coverage("fixture")["ui_matrix"],
         )
 
-    def test_script_matrix_runs_selected_modules_exactly_once_in_up_to_four_jobs(self):
-        for count in range(10):
-            with self.subTest(count=count):
-                modules = [f"script.tests.test_{index}" for index in range(count)]
-                matrix = routes.python_matrix(modules + modules)
-                self.assertEqual(matrix, routes.python_matrix(list(reversed(modules))))
-                self.assertEqual(sorted(test for group in matrix for test in group["tests"]), sorted(modules))
-                self.assertEqual(len(matrix), min(4, count))
-                if matrix:
-                    lengths = [len(group["tests"]) for group in matrix]
-                    self.assertLessEqual(max(lengths) - min(lengths), 1)
-        self.assertEqual(routes.coverage(["README.md"])["python_matrix"], [])
+    def test_ui_jobs_are_bounded_and_deterministic(self):
+        groups = sorted(routes.ALL_UI_GROUPS)
+        for count in range(len(groups) + 1):
+            selected = groups[:count]
+            matrix = routes.ui_matrix(selected)
+            self.assertEqual(matrix, routes.ui_matrix(reversed(selected)))
+            self.assertLessEqual(len(matrix), 3)
+            tests = [test for job in matrix for test in job["tests"]]
+            expected = {test for group in selected for job in routes.ui_matrix([group]) for test in job["tests"]}
+            self.assertEqual(set(tests), expected)
+            self.assertEqual(len(tests), len(expected))
         self.assertEqual(routes.coverage(["README.md"])["ui_matrix"], [])
 
     def test_leaf_routes_only_name_existing_top_level_views(self):
@@ -536,7 +535,7 @@ class MatrixTests(unittest.TestCase):
 
 class FeatureOwnershipTests(unittest.TestCase):
     def groups(self, paths):
-        return {group["name"] for group in routes.coverage(paths)["ui_matrix"]}
+        return {name for group in routes.coverage(paths)["ui_matrix"] for name in group["name"].split("+")}
 
     def test_isolated_features_do_not_run_unrelated_ui(self):
         cases = {
@@ -580,7 +579,7 @@ class FeatureOwnershipTests(unittest.TestCase):
         self.assertEqual(self.groups(paths), {"settings", "traces"})
         self.assertEqual(self.groups(paths), self.groups(list(reversed(paths))))
         shared = routes.coverage(paths + [routes.APP + "ContentView.swift"])
-        self.assertLessEqual(set(routes.UI_BASELINE) | {"settings"}, {group["name"] for group in shared["ui_matrix"]})
+        self.assertLessEqual(set(routes.UI_BASELINE) | {"settings"}, {name for group in shared["ui_matrix"] for name in group["name"].split("+")})
 
     def test_shared_lifecycle_navigation_and_storage_keep_full_baseline(self):
         for path in (
@@ -737,7 +736,7 @@ class FeatureOwnershipTests(unittest.TestCase):
                 self.assertFalse(plan["input_conversion"])
         shared = routes.coverage([production, ".github/workflows/ci.yml"])
         self.assertEqual(shared["swift_suites"], ["*"])
-        self.assertLessEqual(set(routes.UI_BASELINE), {group["name"] for group in shared["ui_matrix"]})
+        self.assertLessEqual(set(routes.UI_BASELINE), {name for group in shared["ui_matrix"] for name in group["name"].split("+")})
         self.assertTrue(shared["automation_e2e"])
         self.assertTrue(shared["input_conversion"])
 
@@ -757,7 +756,7 @@ class FeatureOwnershipTests(unittest.TestCase):
                 plan = routes.coverage([path])
                 for flag in ("native", "ui", "automation_e2e", "input_conversion"):
                     self.assertFalse(plan[flag], flag)
-                for selection in ("native_tests", "swift_suites", "python_tests", "macos_tests", "ui_matrix", "python_matrix"):
+                for selection in ("native_tests", "swift_suites", "python_tests", "macos_tests", "ui_matrix"):
                     self.assertEqual(plan[selection], [], selection)
 
     def test_plugin_changes_do_not_add_or_remove_mixed_app_coverage(self):
@@ -896,7 +895,7 @@ class GitEventTests(unittest.TestCase):
         self.assertEqual(result["python_tests"], [])
         self.assertEqual(result["native_tests"], ["FoundationEvalsTests"])
         self.assertEqual({group["name"] for group in result["ui_matrix"]}, {"runs"})
-        self.assertEqual(result["python_matrix"], [])
+        self.assertEqual(result["python_tests"], [])
 
     def test_push_uses_previous_tip_not_parent(self):
         self.commit(routes.APP + "Views/Components/RunToolbarProgress.swift", "UI")

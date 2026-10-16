@@ -364,16 +364,6 @@ def package_ui_groups(path):
     return None
 
 
-def python_matrix(selection):
-    """Spread selected modules deterministically across at most four Linux jobs."""
-    names = sorted(set(selection))
-    count = min(4, len(names))
-    return [
-        {"name": f"scripts-{index + 1}", "tests": names[index::count]}
-        for index in range(count)
-    ]
-
-
 def ui_matrix(groups, extra_classes=(), targeted=False):
     catalog = {**UI_BASELINE, **UI_FEATURE_TESTS}
     selections = {
@@ -394,7 +384,17 @@ def ui_matrix(groups, extra_classes=(), targeted=False):
         selections.setdefault(owner, set()).add(selector)
         for tests in selections.values():
             tests.difference_update(test for test in list(tests) if test.startswith(selector + "/"))
-    return [{"name": name, "tests": sorted(tests)} for name, tests in sorted(selections.items()) if tests]
+    # Three desktops bound runner demand while retaining every selected test.
+    jobs = [{"groups": [], "tests": set()} for _ in range(min(3, len(selections)))]
+    for name, tests in sorted(selections.items(), key=lambda item: (-len(item[1]), item[0])):
+        if tests:
+            target = min(jobs, key=lambda job: (len(job["tests"]), len(job["groups"])))
+            target["groups"].append(name)
+            target["tests"].update(tests)
+    return sorted([
+        {"name": "+".join(sorted(job["groups"])), "tests": sorted(job["tests"])}
+        for job in jobs if job["tests"]
+    ], key=lambda job: job["name"])
 
 
 def changed_ui_classes(paths, root):
@@ -407,7 +407,6 @@ def changed_ui_classes(paths, root):
 
 def with_matrices(plan, groups=(), extra_classes=(), targeted=False):
     plan["ui_matrix"] = ui_matrix(groups, extra_classes, targeted) if plan["ui"] else []
-    plan["python_matrix"] = python_matrix(plan["python_tests"])
     return plan
 
 
@@ -658,7 +657,7 @@ def main():
     outputs.update(
         {
             key: json.dumps(plan[key])
-            for key in ("swift_suites", "python_tests", "macos_tests", "ui_matrix", "python_matrix", "native_tests")
+            for key in ("swift_suites", "python_tests", "macos_tests", "ui_matrix", "native_tests")
         }
     )
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
@@ -675,7 +674,7 @@ def main():
         )
         summary.write(
             "UI groups: " + (", ".join(group["name"] for group in plan["ui_matrix"]) or "none")
-            + f". Script test jobs: {len(plan['python_matrix'])}.\n\n"
+            + f". Script test jobs: {int(bool(plan['python_tests']))}.\n\n"
         )
         summary.writelines(
             f"- {label}: {', '.join(plan[key]) or 'none'}\n"
