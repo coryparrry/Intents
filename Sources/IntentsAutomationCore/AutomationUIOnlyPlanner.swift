@@ -8,7 +8,7 @@ public enum AutomationUIOnlyPlanner {
                                approval: RunApproval, localeIdentifier: String) throws -> AutomationCase {
         let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !description.isEmpty, description.utf16.count <= 4096, !description.contains("\0"),
-              app == approval.app, target == approval.target, target.kind == .simulator,
+              app == approval.app, target == approval.target, [.simulator, .nativeMac].contains(target.kind),
               !localeIdentifier.isEmpty, localeIdentifier.utf16.count <= 128,
               expectedVisibleText.utf16.count <= 1024, observationLabel.utf16.count <= 1024,
               ["text", "value", "checked", "selected"].contains(observationProperty),
@@ -34,7 +34,7 @@ public enum AutomationUIOnlyPlanner {
                 justification: "Developer approved this property independently of navigation",
                 checkID: observationProperty == "text" ? "business.visible-text" : "business.visible-property")]
         }
-        var budget = AutomationBudget(); budget.subjectOperations = 1; budget.attempts = 1
+        var budget = AutomationBudget(); budget.subjectOperations = target.kind == .nativeMac ? (program.steps?.count ?? program.operations.count) + 2 : 1; budget.attempts = 1
         budget.uiActions = 30; budget.controllerCalls = 0; budget.wallClockSeconds = 180
         var plan = AutomationCase(id: "ui-workflow", app: app, target: target, environmentID: approval.environmentID,
             execution: subject, observations: observers, requirements: requirements, budget: budget)

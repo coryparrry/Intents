@@ -18,6 +18,20 @@ Use `--xcode <Xcode.app>` to select a toolchain, `--output-root <empty-directory
 
 The hosted **Automation e2e (simulator)** job runs the same command on relevant PRs. Echo attempts remain `executedUnassessed`; the script compares their actual returned values exactly. The mixed workflow must have the app's assessed `passed` verdict. The negative checks must report `assertionFailed` and `timedOut`, release resources, and leave no held campaign.
 
+## Reproduce the native Mac checks
+
+Run from an active local Mac GUI login session with Xcode and XcodeGen installed:
+
+```sh
+python3 script/automation_mac_e2e.py --xcode /Applications/Xcode.app --build-root /private/tmp/intents-mac-build
+```
+
+Use `--cli <executable>` to reuse an existing CLI with its resource bundle instead of building it, or `--jobs <count>` to change the default of two Swift build jobs. `--output-root <empty-directory>` retains evidence at a chosen external path. The harness stages disposable fixture copies outside the checkout and prepares `AutomationFixtureMac` with `--destination mac`. It uses the captured GUI login session, ordinary CLI capability resolution, and no simulator.
+
+The six checks compare exact outputs for all 16 codec families and empty arrays, run UI creation → App Intent → independent entity query, require a deliberately wrong assertion to fail, and then require another exact echo to succeed. Each attempt must release resources, leave no held campaign, and match its saved CLI report. Echoes remain `executedUnassessed`.
+
+The harness also stages a source defect that persists `completed = false`, records one genuine failing task-completion attempt, restores the original source, and compares three fresh attempts against each separately prepared build. Every repeat creates a unique task through the UI and checks its initial state before the intent. A successful harness result requires all three baseline assertions to fail, all three candidate assertions to pass, identical frozen checks, different source and product digests, and the CLI comparison outcome `fixed`. This is finite evidence for that fixture and current Mac session. Raw command logs, prepared products, reports, source hashes, and the comparison remain outside Git in the evidence directory.
+
 ## Use the CLI
 
 Build the supported product:

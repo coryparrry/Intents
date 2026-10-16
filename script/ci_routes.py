@@ -265,6 +265,7 @@ PYTHON_DEPENDENCIES = {
     "script/verify_installer.sh": RELEASE_VALIDATION,
     "script/ci_core_scheme.py": {"script.tests.test_ci_core_scheme"},
     "script/automation_e2e.py": {"script.tests.test_automation_e2e", "script.tests.test_ci_automation_build"},
+    "script/automation_mac_e2e.py": {"script.tests.test_automation_mac_e2e"},
     "script/ci_automation_build.py": {"script.tests.test_ci_automation_build", "script.tests.test_automation_e2e"},
     **{path: {module} for path, module in NATIVE_UI_HELPERS.items()},
     "release-please-config.json": {
@@ -446,7 +447,8 @@ def coverage_plan(paths, root=ROOT):
             "Sources/IntentsAutomationCore/", "Sources/IntentsAutomationTool/",
             "Integration/AutomationHost/", "examples/AutomationFixture/",
             "Tools/IntentsAutomationApplicationProbe/",
-        )) or path in {"script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py"}
+        )) or path in {"script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py",
+                      "script/automation_mac_e2e.py", "script/tests/test_automation_mac_e2e.py"}
         input_conversion |= path.startswith((
             "Sources/IntentsAutomationCore/", "Integration/AutomationHost/",
         )) or path in {

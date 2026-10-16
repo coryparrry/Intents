@@ -16,6 +16,9 @@ final class UIStepTests: XCTestCase {
         let plan = try JSONDecoder().decode(UIHostPlan.self, from: bytes)
         try plan.validate()
         let app = XCUIApplication(bundleIdentifier: plan.bundleID)
+        // This invocation owns the XCUIApplication controller across every step and
+        // terminates it on success and thrown failures. The Mac release observer
+        // never signals processes merely because their executable paths match.
         defer { app.terminate() }
         bindings = plan.bindings
         #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)

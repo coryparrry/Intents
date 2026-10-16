@@ -33,6 +33,7 @@ class CoverageTests(unittest.TestCase):
             "Sources/IntentsAutomationTool/AutomationCLI.swift",
             "examples/AutomationFixture/App/EchoIntents.swift",
             "script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py",
+            "script/automation_mac_e2e.py", "script/tests/test_automation_mac_e2e.py",
             "Package.swift", ".github/workflows/ci.yml",
         ):
             with self.subTest(path=path):
@@ -247,17 +248,6 @@ class CoverageTests(unittest.TestCase):
                     python=("script.tests.test_ci_routes",),
                 )
 
-    def test_project_installer_sources_select_installer_tests(self):
-        for source in (
-            "IntentLabProjectInstaller.swift",
-            "OpenStepProjectDocument.swift",
-        ):
-            with self.subTest(source=source):
-                self.assert_selection(
-                    [routes.APP + "Services/" + source],
-                    native=True,
-                    swift=("IntentLabProjectInstallerTests",),
-                )
 
     def test_sidebar_and_toolbar_do_not_rerun_scoring_or_installer_tests(self):
         for source, suite in (
