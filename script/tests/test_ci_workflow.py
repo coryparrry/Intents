@@ -63,13 +63,44 @@ class GateTests(unittest.TestCase):
         self.assertNotIn("--iterations", job("ui-tests"))
 
     def test_simulator_cache_is_saved_only_after_successful_compilation(self):
-        workflow = job("automation-e2e")
+        workflow = job("automation-e2e-scenarios")
         self.assertIn("uses: actions/cache/restore@", workflow)
         self.assertIn("--record-build-cache", workflow)
-        self.assertIn("always() && steps.contract.outputs.cli_built == 'true'", workflow)
+        self.assertIn("steps.contract.outputs.cli_built == 'true'", workflow)
         self.assertIn("steps.cli-cache.outputs.cache-hit != 'true'", workflow)
         self.assertIn("uses: actions/cache/save@", workflow)
         self.assertIn("key: ${{ steps.cli-cache.outputs.cache-primary-key }}", workflow)
+
+    def test_simulator_groups_run_in_parallel_with_unique_evidence_and_one_cache_writer(self):
+        workflow = job("automation-e2e-scenarios")
+        groups = re.search(r"group: \[([^\]]+)\]", workflow)[1].split(", ")
+        self.assertEqual(groups, ["codec-1", "codec-2", "codec-file", "mixed", "wrong-assertion", "timeout-recovery"])
+        self.assertIn("needs: changes", workflow)
+        self.assertIn("fail-fast: false", workflow)
+        self.assertNotIn("max-parallel:", workflow)
+        self.assertIn('--scenario-group "$SCENARIO_GROUP"', workflow)
+        self.assertIn("SCENARIO_GROUP: ${{ matrix.group }}", workflow)
+        self.assertIn("name: automation-e2e-${{ matrix.group }}", workflow)
+        condition = re.search(r"Save successfully compiled automation CLI\n        if: (.+)", workflow)[1]
+        self.assertIn("always()", condition)
+        self.assertIn("matrix.group == 'codec-1'", condition)
+        self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
+        self.assertNotIn("success()", condition)
+
+    def test_stable_simulator_gate_requires_all_selected_groups(self):
+        workflow = job("automation-e2e")
+        self.assertIn("name: Automation e2e (simulator)", workflow)
+        self.assertIn("needs: [changes, automation-e2e-scenarios]", workflow)
+        self.assertIn("if: ${{ always() }}", workflow)
+        self.assertEqual(gate("automation-e2e", ROUTING="success", SELECTED="true", SCENARIOS="success"), 0)
+        for result in ("failure", "cancelled", "skipped", ""):
+            with self.subTest(result=result):
+                self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="true", SCENARIOS=result), 0)
+        self.assertNotEqual(gate("automation-e2e", ROUTING="failure", SELECTED="true", SCENARIOS="success"), 0)
+        self.assertEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="skipped"), 0)
+        self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="failure"), 0)
+        self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="success"), 0)
+        self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="", SCENARIOS="skipped"), 0)
 
     def test_native_cache_fallback_keeps_toolchain_and_manifest_boundaries(self):
         build = job("native-build")

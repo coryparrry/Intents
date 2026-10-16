@@ -362,7 +362,7 @@ class WorkflowTests(unittest.TestCase):
 
 
 class OrchestrationTests(unittest.TestCase):
-    def exercise(self, failure=None, reuse_build=False, build_jobs=None):
+    def exercise(self, failure=None, reuse_build=False, build_jobs=None, scenario_group="all"):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -378,9 +378,10 @@ class OrchestrationTests(unittest.TestCase):
         with patch.object(driver, "ROOT", root / "repo"):
             if failure:
                 with self.assertRaisesRegex(RuntimeError, "injected"):
-                    driver.run_contract(commands, output)
+                    driver.run_contract(commands, output, scenario_group=scenario_group)
             else:
-                results = driver.run_contract(commands, output, build_root=build_root, build_jobs=build_jobs)
+                results = driver.run_contract(commands, output, build_root=build_root, build_jobs=build_jobs,
+                                              scenario_group=scenario_group)
         if build_root:
             self.assertEqual((build_root / "keep-cache").read_text(), "reusable")
         return commands, results if not failure else None
@@ -404,6 +405,99 @@ class OrchestrationTests(unittest.TestCase):
         owned = prepared()["host"]["target"]["id"]
         self.assertTrue(all(args[-1] == owned for args in calls if args[:3] in
                             (["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"])))
+
+    def test_groups_cover_all_seven_cases_once_and_keep_recovery_together(self):
+        expected = {
+            "codec-1": ("codec-1",), "codec-2": ("codec-2",), "codec-file": ("codec-file",),
+            "mixed": ("mixed",), "wrong-assertion": ("wrong-assertion",),
+            "timeout-recovery": ("timeout", "after-timeout"),
+        }
+        self.assertEqual(driver.SCENARIO_GROUPS, expected)
+        all_cases = driver.scenario_cases("all")
+        self.assertEqual(all_cases, tuple(case for cases in expected.values() for case in cases))
+        self.assertEqual(len(all_cases), 7)
+        self.assertEqual(len(set(all_cases)), 7)
+
+    def test_each_group_prepares_registers_checks_reports_and_cleans_its_owned_device(self):
+        for group, selected in driver.SCENARIO_GROUPS.items():
+            with self.subTest(group=group):
+                commands, results = self.exercise(scenario_group=group)
+                calls = [args for args, _ in commands.calls]
+                self.assertEqual(sum("prepare" in args for args in calls), 1)
+                self.assertEqual(sum(args[:3] == ["xcrun", "simctl", "create"] for args in calls), 1)
+                self.assertEqual([envelope["plan"]["id"] for envelope in commands.envelopes],
+                                 ["phase3.registration", *("phase3." + case for case in selected)])
+                self.assertEqual([result["case"] for result in results], ["phase3." + case for case in selected])
+                self.assertTrue(all(envelope["allowBootAndInstall"] is False for envelope in commands.envelopes))
+                self.assertEqual(sum("show" in args for args in calls), len(selected))
+                owned = prepared()["host"]["target"]["id"]
+                cleanup = [args for args in calls if args[:3] in (
+                    ["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"],
+                )]
+                self.assertEqual(cleanup, [["xcrun", "simctl", verb, owned] for verb in ("shutdown", "delete")])
+                if group == "timeout-recovery":
+                    runs = [args for args in calls if "run" in args]
+                    self.assertEqual(len({args[args.index("--support-root") + 1] for args in runs}), 1)
+                    self.assertEqual([result["summary"] for result in results], ["timedOut", "executedUnassessed"])
+
+    def test_each_group_failure_still_cleans_only_its_owned_simulator(self):
+        for group in driver.SCENARIO_GROUPS:
+            with self.subTest(group=group):
+                commands, _ = self.exercise(failure="run", scenario_group=group)
+                cleanup = [args for args, _ in commands.calls if args[:3] in (
+                    ["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"],
+                )]
+                owned = prepared()["host"]["target"]["id"]
+                self.assertEqual(cleanup, [["xcrun", "simctl", verb, owned] for verb in ("shutdown", "delete")])
+
+    def test_partial_duplicate_extra_reordered_or_invalid_reports_cannot_pass(self):
+        _, reports = self.exercise()
+        variants = [reports[:-1], reports + reports[:1], list(reversed(reports)), None, [None]]
+        for field, value in (("summary", "passed"), ("exactOutputsCompared", False), ("case", "phase3.unknown")):
+            altered = copy.deepcopy(reports)
+            altered[0][field] = value
+            variants.append(altered)
+        for altered in variants:
+            with self.subTest(reports=altered), self.assertRaises(AssertionError):
+                driver.verify_scenario_selection(altered, "all")
+        with self.assertRaisesRegex(AssertionError, "coverage"):
+            driver.verify_scenario_selection(reports[:1], "codec-2")
+
+    def test_unknown_groups_and_standalone_after_timeout_are_rejected_before_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = FakeCommands(Path(directory))
+            for group in ("unknown", "after-timeout", "timeout"):
+                with self.subTest(group=group), self.assertRaisesRegex(AssertionError, "Unknown scenario group"):
+                    driver.run_contract(commands, Path(directory), scenario_group=group)
+            self.assertEqual(commands.calls, [])
+        with self.assertRaises(SystemExit):
+            driver.main(["--scenario-group", "after-timeout"])
+
+    def test_cli_group_summaries_only_claim_the_cases_and_codecs_actually_compared(self):
+        for group, expected_families in (
+            ("codec-1", set(driver.FAMILIES[:7]) | set(driver.ARRAYS[:3])),
+            ("codec-2", set(driver.ARRAYS) | {"duration", "calendarComponents", "url"}),
+            ("codec-file", {"intentFile"}), ("mixed", set()), ("wrong-assertion", set()),
+            ("timeout-recovery", {"text"}), ("all", set(driver.FAMILIES)),
+        ):
+            with self.subTest(group=group), tempfile.TemporaryDirectory() as directory:
+                _, reports = self.exercise(scenario_group=group)
+                with patch.object(driver, "run_contract", return_value=reports) as run:
+                    self.assertEqual(driver.main(["--output-root", directory, "--scenario-group", group]), 0)
+                self.assertEqual(run.call_args.kwargs["scenario_group"], group)
+                summary = json.loads((Path(directory) / "summary.json").read_text())
+                self.assertEqual(summary["scenarioGroup"], group)
+                self.assertEqual(summary["cases"], reports)
+                self.assertEqual(summary["status"], "passed")
+                self.assertEqual(set(summary["codecFamiliesCompared"]), expected_families)
+
+    def test_cli_keeps_failure_summary_when_selected_group_returns_no_cases(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(driver, "run_contract", return_value=[]):
+            self.assertEqual(driver.main(["--output-root", directory, "--scenario-group", "codec-file"]), 1)
+            summary = json.loads((Path(directory) / "summary.json").read_text())
+            self.assertEqual(summary["status"], "failed")
+            self.assertEqual(summary["scenarioGroup"], "codec-file")
+            self.assertIn("coverage", summary["error"])
 
     def test_swift_build_and_bin_path_use_the_same_external_reusable_cache(self):
         for reusable in (False, True):
@@ -441,11 +535,13 @@ class OrchestrationTests(unittest.TestCase):
     def test_cli_forwards_build_job_override_and_external_cache(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with patch.object(driver, "run_contract", return_value=[]) as run:
+            _, reports = self.exercise()
+            with patch.object(driver, "run_contract", return_value=reports) as run:
                 self.assertEqual(driver.main(["--output-root", str(root / "evidence"),
                                               "--build-root", str(root / "cache"), "--jobs", "4"]), 0)
             self.assertEqual(run.call_args.kwargs, {"build_root": (root / "cache").resolve(),
-                                                   "build_jobs": 4, "record_build_cache": False})
+                                                   "build_jobs": 4, "record_build_cache": False,
+                                                   "scenario_group": "all"})
 
     def test_build_and_prepare_finish_before_boot_install_and_execution(self):
         commands, _ = self.exercise()
@@ -525,8 +621,9 @@ class OrchestrationTests(unittest.TestCase):
             root = Path(directory)
             marker = root / "github-output"
             marker.touch()
+            _, reports = self.exercise()
             with patch.dict(driver.os.environ, {"GITHUB_OUTPUT": str(marker)}), \
-                 patch.object(driver, "run_contract", return_value=[]) as run:
+                 patch.object(driver, "run_contract", return_value=reports) as run:
                 self.assertEqual(driver.main(["--output-root", str(root / "evidence"),
                                               "--build-root", str(root / "cache"), "--record-build-cache"]), 0)
             self.assertIs(run.call_args.kwargs["record_build_cache"], True)
@@ -737,7 +834,8 @@ class OrchestrationTests(unittest.TestCase):
     def test_sigterm_enters_python_cleanup_and_restores_original_handler(self):
         with tempfile.TemporaryDirectory() as directory:
             original = driver.signal.getsignal(driver.signal.SIGTERM)
-            def terminate(commands, output, build_root=None, build_jobs=None, record_build_cache=False):
+            def terminate(commands, output, build_root=None, build_jobs=None, record_build_cache=False,
+                          scenario_group="all"):
                 handler = driver.signal.getsignal(driver.signal.SIGTERM)
                 handler(driver.signal.SIGTERM, None)
             with patch.object(driver, "run_contract", side_effect=terminate):

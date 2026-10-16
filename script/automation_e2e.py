@@ -22,11 +22,42 @@ FAMILIES = ("text", "bool", "integer", "decimal", "date", "enum", "entity", "dur
 INTENTS = {f: "Echo" + f[0].upper() + f[1:] + "Intent" for f in FAMILIES}
 INTENTS["url"] = "EchoURLIntent"
 FILE_SHA = hashlib.sha256(b"phase3 fixture").hexdigest()
+SCENARIO_GROUPS = {
+    "codec-1": ("codec-1",),
+    "codec-2": ("codec-2",),
+    "codec-file": ("codec-file",),
+    "mixed": ("mixed",),
+    "wrong-assertion": ("wrong-assertion",),
+    "timeout-recovery": ("timeout", "after-timeout"),
+}
+SCENARIO_SUMMARIES = {
+    "codec-1": "executedUnassessed", "codec-2": "executedUnassessed",
+    "codec-file": "executedUnassessed", "mixed": "passed",
+    "wrong-assertion": "assertionFailed", "timeout": "timedOut",
+    "after-timeout": "executedUnassessed",
+}
 
 
 def ensure(condition, message):
     if not condition:
         raise AssertionError(message)
+
+
+def scenario_cases(group):
+    ensure(group == "all" or group in SCENARIO_GROUPS, "Unknown scenario group: " + str(group))
+    return tuple(case for cases in SCENARIO_GROUPS.values() for case in cases) if group == "all" else SCENARIO_GROUPS[group]
+
+
+def verify_scenario_selection(reports, group):
+    selected = scenario_cases(group)
+    ensure(isinstance(reports, list) and all(isinstance(report, dict) for report in reports),
+           "Scenario reports must be an array of objects")
+    ensure([report.get("case") for report in reports] == ["phase3." + case for case in selected],
+           "Scenario coverage differs from selected group " + group)
+    for case, report in zip(selected, reports):
+        ensure(report.get("summary") == SCENARIO_SUMMARIES[case], "Scenario summary differs for " + case)
+        if case.startswith("codec-") or case == "after-timeout":
+            ensure(report.get("exactOutputsCompared") is True, "Missing exact output comparison for " + case)
 
 
 def tagged(kind, value, **extra):
@@ -331,7 +362,8 @@ def simulator_configuration(runtimes, device_types, sdk_version=None):
     return runtime["identifier"], phone["identifier"]
 
 
-def run_contract(commands, output, build_root=None, build_jobs=None, record_build_cache=False):
+def run_contract(commands, output, build_root=None, build_jobs=None, record_build_cache=False, scenario_group="all"):
+    selected = scenario_cases(scenario_group)
     github_output = os.environ.get("GITHUB_OUTPUT")
     if record_build_cache:
         ensure(build_root is not None, "--record-build-cache requires --build-root")
@@ -426,7 +458,10 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
             ensure(saved == report, "Saved report differs from run output")
             print(f"Verified {plan['id']}: {summary}", flush=True)
             reports.append({"case": plan["id"], "attemptID": attempt, "summary": summary,
-                            "exactOutputsCompared": expected is not None or file})
+                            "exactOutputsCompared": expected is not None or file,
+                            "codecFamiliesCompared": ["intentFile"] if file else sorted({
+                                family.removeprefix("empty.") for family in expected or {}
+                            })})
         # Generic simulator builds and toolchain validation need no running device.
         commands.run(["xcrun", "simctl", "boot", simulator])
         commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
@@ -434,15 +469,21 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
         commands.run(["xcrun", "simctl", "install", simulator, prepared["host"]["subjectProductPath"]], timeout=180)
         wait_for_registration(commands, cli, support, output, prepared)
         for index, (operations, expected) in enumerate(echo_batches(catalog), 1):
-            execute(case(prepared, f"codec-{index}", host_segment("subject", "subject", operations)),
-                    "executedUnassessed", expected)
-        execute(file_case(prepared), "executedUnassessed", file=True)
-        execute(mixed_case(prepared, "mixed"), "passed")
-        execute(mixed_case(prepared, "wrong-assertion", expected=False), "assertionFailed")
-        execute(timeout_case(prepared), "timedOut")
-        operations, expected = echo_batches(catalog)[0]
-        execute(case(prepared, "after-timeout", host_segment("subject", "subject", operations[:1])),
-                "executedUnassessed", {operations[0]["id"]: expected[operations[0]["id"]]})
+            if f"codec-{index}" in selected:
+                execute(case(prepared, f"codec-{index}", host_segment("subject", "subject", operations)),
+                        "executedUnassessed", expected)
+        if "codec-file" in selected:
+            execute(file_case(prepared), "executedUnassessed", file=True)
+        if "mixed" in selected:
+            execute(mixed_case(prepared, "mixed"), "passed")
+        if "wrong-assertion" in selected:
+            execute(mixed_case(prepared, "wrong-assertion", expected=False), "assertionFailed")
+        if "timeout" in selected:
+            execute(timeout_case(prepared), "timedOut")
+            operations, expected = echo_batches(catalog)[0]
+            execute(case(prepared, "after-timeout", host_segment("subject", "subject", operations[:1])),
+                    "executedUnassessed", {operations[0]["id"]: expected[operations[0]["id"]]})
+        verify_scenario_selection(reports, scenario_group)
         return reports
     finally:
         if simulator:
@@ -470,6 +511,8 @@ def main(argv=None):
     parser.add_argument("--jobs", type=int, help="Swift build jobs (defaults to the runner CPU count)")
     parser.add_argument("--record-build-cache", action="store_true",
                         help="Checkpoint a successful CLI build for GitHub Actions cache saving")
+    parser.add_argument("--scenario-group", choices=("all", *SCENARIO_GROUPS), default="all",
+                        help="Independent scenario group; timeout and recovery always run together")
     args = parser.parse_args(argv)
     if args.jobs is not None and args.jobs < 1:
         parser.error("--jobs must be positive")
@@ -484,15 +527,20 @@ def main(argv=None):
     if developer and developer.suffix == ".app":
         developer = developer / "Contents/Developer"
     print(f"Automation evidence: {output}", flush=True)
-    summary = {"schemaVersion": 1, "status": "failed", "echoAssessment": "executedUnassessed"}
+    summary = {"schemaVersion": 1, "status": "failed", "scenarioGroup": args.scenario_group,
+               "echoAssessment": "executedUnassessed"}
     def interrupted(signum, frame):
         raise KeyboardInterrupt(f"Interrupted by signal {signum}")
     previous_term = signal.signal(signal.SIGTERM, interrupted)
     try:
         summary["cases"] = run_contract(Commands(output, developer), output, build_root=build_root,
-                                        build_jobs=args.jobs, record_build_cache=args.record_build_cache)
-        summary.update(status="passed", codecFamiliesCompared=list(FAMILIES))
-        print("Automation contract passed: 16 codec families, mixed assessment, failure and timeout recovery.")
+                                        build_jobs=args.jobs, record_build_cache=args.record_build_cache,
+                                        scenario_group=args.scenario_group)
+        verify_scenario_selection(summary["cases"], args.scenario_group)
+        compared = {family for report in summary["cases"] for family in report.get("codecFamiliesCompared", [])}
+        summary.update(status="passed", codecFamiliesCompared=[family for family in FAMILIES if family in compared])
+        print(f"Automation contract passed: {args.scenario_group}, {len(summary['cases'])} scenarios, "
+              f"{len(summary['codecFamiliesCompared'])} codec families compared.")
         return 0
     except (Exception, KeyboardInterrupt) as error:
         summary["error"] = str(error)
