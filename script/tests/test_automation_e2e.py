@@ -170,6 +170,8 @@ class FakeCommands:
         self.output, self.failure, self.calls, self.saved = output, failure, [], {}
         self.envelopes = []
         self.env = {"DEVELOPER_DIR": "/Applications/Xcode_27.app/Contents/Developer"}
+        self.installed_container = output / "installed/AutomationFixture.app"
+        self.installed_container.mkdir(parents=True, exist_ok=True)
 
     def run(self, arguments, **options):
         args = [str(a) for a in arguments]
@@ -178,6 +180,8 @@ class FakeCommands:
             raise RuntimeError("injected command failure")
         if args[:3] == ["xcrun", "simctl", "create"]:
             return 0, prepared()["host"]["target"]["id"]
+        if args[:3] == ["xcrun", "simctl", "get_app_container"]:
+            return 0, str(self.installed_container) + "\n"
         if "--show-sdk-version" in args:
             return 0, "27.0"
         if args == ["xcode-select", "-p"]:
@@ -413,6 +417,41 @@ class OrchestrationTests(unittest.TestCase):
                 scratch_paths = [args[args.index("--scratch-path") + 1] for args in builds]
                 expected = commands.output.parent / "reusable-swift-cache" if reusable else commands.output / "swift-build"
                 self.assertEqual(scratch_paths, [str(expected), str(expected)])
+
+    def test_installed_container_readiness_uses_owned_target_before_registration(self):
+        commands, results = self.exercise()
+        calls = [args for args, _ in commands.calls]
+        lookup, options = next(call for call in commands.calls if call[0][:3] == ["xcrun", "simctl", "get_app_container"])
+        self.assertEqual(lookup, ["xcrun", "simctl", "get_app_container", prepared()["host"]["target"]["id"],
+                                  prepared()["host"]["app"]["bundleID"], "app"])
+        self.assertEqual(options["timeout"], 180)
+        self.assertLess(next(index for index, args in enumerate(calls) if "install" in args), calls.index(lookup))
+        self.assertLess(calls.index(lookup), next(index for index, args in enumerate(calls) if "run" in args))
+        self.assertEqual(len(results), 7)
+
+    def test_invalid_or_missing_installed_container_fails_before_campaign_and_cleans_owned_simulator(self):
+        original = FakeCommands.run
+        for invalid in ("", "\n", "/first\n/second\n", "relative.app\n", "/path\0invalid\n", "missing", "file"):
+            observed = []
+            def bad_container(commands, arguments, **options):
+                code, raw = original(commands, arguments, **options)
+                if list(arguments)[:3] == ["xcrun", "simctl", "get_app_container"]:
+                    observed.append(commands)
+                    if invalid == "missing":
+                        raw = str(commands.output / "missing.app") + "\n"
+                    elif invalid == "file":
+                        regular_file = commands.output / "regular-file"
+                        regular_file.write_text("not a directory")
+                        raw = str(regular_file) + "\n"
+                    else:
+                        raw = invalid
+                return code, raw
+            with self.subTest(container=invalid), patch.object(FakeCommands, "run", bad_container):
+                with self.assertRaisesRegex(AssertionError, "container readiness"):
+                    self.exercise()
+                calls = [args for args, _ in observed[0].calls]
+                self.assertFalse(any("run" in args for args in calls))
+                self.assertIn(["xcrun", "simctl", "delete", prepared()["host"]["target"]["id"]], calls)
 
     def test_cli_build_uses_runner_cpus_or_explicit_override(self):
         for cpu_count, override, expected in ((6, None, "6"), (None, None, "1"), (6, 3, "3")):
@@ -685,7 +724,7 @@ class OrchestrationTests(unittest.TestCase):
                 driver.main(["--output-root", directory, "--build-root", str(driver.ROOT / "cache")])
 
     def test_prepare_or_boot_failure_still_deletes_only_owned_simulator(self):
-        for failure in ("prepare", "bootstatus", "install"):
+        for failure in ("prepare", "bootstatus", "install", "get_app_container"):
             with self.subTest(failure=failure):
                 commands, _ = self.exercise(failure)
                 calls = [args for args, _ in commands.calls]
