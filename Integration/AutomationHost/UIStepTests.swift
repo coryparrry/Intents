@@ -18,7 +18,26 @@ final class UIStepTests: XCTestCase {
         let app = XCUIApplication(bundleIdentifier: plan.bundleID)
         defer { app.terminate() }
         bindings = plan.bindings
+        #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+        let fixtureRegistrationDeadline = ContinuousClock.now.advanced(by: .seconds(120))
+        var fixtureRegistrationNeeded = true
+        #endif
         for (index, step) in plan.steps.enumerated() {
+            #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+            if fixtureRegistrationNeeded && (step.kind == .invokeIntent || step.kind == .query) {
+                let previousFailures = (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0)
+                app.activate()
+                guard app.wait(for: .runningForeground, timeout: 10),
+                      (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0) == previousFailures else {
+                    throw UIHostError.invalidPlan
+                }
+                try await HostFixtureRegistration.waitForAuthoredFixture(bundleID: plan.bundleID,
+                    deadline: fixtureRegistrationDeadline, record: { diagnostic in
+                        attach("intents-fixture-registration-\(diagnostic.index)", try JSONEncoder().encode(diagnostic))
+                    })
+                fixtureRegistrationNeeded = false
+            }
+            #endif
             attach("intents-ui-dispatch-\(index)", try JSONEncoder().encode(
                 UIHostStepReceipt(plan: plan, index: index, dispatched: true, completed: false)))
             var value: UIHostValue?
@@ -26,6 +45,9 @@ final class UIStepTests: XCTestCase {
                 let previousFailures = (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0)
                 value = try await execute(step, app: app, plan: plan)
                 guard (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0) == previousFailures else { throw UIHostError.assertionFailed }
+                #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+                if step.kind == .launch { fixtureRegistrationNeeded = true }
+                #endif
                 if let value { outputs[step.segmentID, default: [:]][step.id] = value }
                 for check in step.setupChecks ?? [] {
                     guard let output = outputs[step.segmentID]?[check.outputID] else { throw UIHostError.bindingUnavailable }

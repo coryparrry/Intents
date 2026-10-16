@@ -1,9 +1,6 @@
 import XCTest
 import Foundation
 import Darwin
-#if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
-import AppIntentsTesting
-#endif
 
 @MainActor
 final class SegmentTests: XCTestCase {
@@ -42,17 +39,7 @@ final class SegmentTests: XCTestCase {
             }
         }
         #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
-        try await HostFixtureRegistration.wait(bundleID: plan.bundleID, deadline: deadline, probe: { typeID, value in
-            let definitions = IntentDefinitions(bundleIdentifier: plan.bundleID)
-            let definition = definitions.intents[typeID]
-            var intent = definition.makeIntent()
-            try HostIntentIdentity.validate(bundle: plan.bundleID, action: typeID, definitionsBundle: definitions.bundleIdentifier,
-                definitionBundle: definition.bundleIdentifier, definitionID: definition.identifier, intentBundle: intent.bundleIdentifier, intentID: intent.identifier)
-            intent[dynamicMember: "value"] = value
-            let result = try await intent.run()
-            let output: String = try result.value
-            return output
-        }, record: { diagnostic in
+        try await HostFixtureRegistration.waitForAuthoredFixture(bundleID: plan.bundleID, deadline: deadline, record: { diagnostic in
             attach(name: "intents-fixture-registration-\(diagnostic.index)", data: try JSONEncoder().encode(diagnostic))
         })
         #endif
