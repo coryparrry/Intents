@@ -157,9 +157,9 @@ final class AutomationContractsTests: XCTestCase {
               target: .init(id: "udid", kind: .simulator), environmentID: "owned", execution:
                 .init(id: "invoke", kind: .systemIntent, phase: .subject, operation: "CompleteTask"),
               observations: [.init(id: "read", kind: .systemQuery, phase: .observe, operation: "ReadTask")],
-              requirements: [.init(observationID: "read", expected: .bool(true), proof: .persistedState, justification: "Approved completion requirement")])
+              requirements: [.init(observationID: "read", expected: .bool(true), proof: .appState, justification: "Approved independent app-state completion requirement")])
     }
-    private func observation(_ plan: AutomationCase, value: AutomationValue, proof: AutomationObservation.Proof = .persistedState) -> AutomationObservation {
+    private func observation(_ plan: AutomationCase, value: AutomationValue, proof: AutomationObservation.Proof = .appState) -> AutomationObservation {
         .init(id: "read", app: plan.app, target: plan.target, environmentID: plan.environmentID, attemptID: "attempt", stepID: "read",
               route: .systemQuery, proof: proof, value: value)
     }
@@ -167,11 +167,43 @@ final class AutomationContractsTests: XCTestCase {
         let result = AutomationAssessment.assess(plan: plan(), attemptID: "attempt", subjectDispatched: true, subjectCompleted: true, observations: [])
         XCTAssertEqual(result.summary, .needsReview); XCTAssertFalse(result.assessed)
     }
-    func testC20SuccessTextDoesNotProvePersistedChange() {
+    func testSuccessTextDoesNotProveIndependentAppStateChange() {
         let p = plan(), observation = observation(plan(), value: .text("Completed"), proof: .visibleState)
         XCTAssertEqual(AutomationAssessment.assess(plan: p, attemptID: "attempt", subjectDispatched: true, subjectCompleted: true, observations: [observation]).summary, .needsReview)
         let unchanged = self.observation(p, value: .bool(false))
         XCTAssertEqual(AutomationAssessment.assess(plan: p, attemptID: "attempt", subjectDispatched: true, subjectCompleted: true, observations: [unchanged]).summary, .assertionFailed)
+    }
+    func testC20SuccessTextDoesNotProvePersistedChange() {
+        var persisted = plan(); persisted.requirements[0].proof = .persistedState
+        let success = observation(persisted, value: .text("Completed"), proof: .visibleState)
+        let unchanged = observation(persisted, value: .bool(false), proof: .appState)
+        for value in [success, unchanged] {
+            let result = AutomationAssessment.assess(plan: persisted, attemptID: "attempt", subjectDispatched: true,
+                subjectCompleted: true, observations: [value])
+            // Neither success text nor a query-only value establishes durable storage.
+            // A qualified false durable read is covered by AutomationDurableStateObserverTests.
+            XCTAssertEqual(result.summary, .needsReview)
+            XCTAssertFalse(result.assessed); XCTAssertFalse(result.evidenceComplete)
+        }
+    }
+    func testC20UnqualifiedQueryMemoryCannotProvePersistedCompletionEvenAfterRelabeling() {
+        var persisted = plan(); persisted.requirements[0].proof = .persistedState
+        // This query-only fixture has no qualified storage reader. A success
+        // message, cache value or caller-selected proof label cannot replace it.
+        for value in [
+            observation(persisted, value: .text("Completed"), proof: .visibleState),
+            observation(persisted, value: .bool(true), proof: .appState),
+            observation(persisted, value: .bool(true), proof: .persistedState),
+            observation(persisted, value: .bool(false), proof: .persistedState)
+        ] {
+            let result = AutomationAssessment.assess(plan: persisted, attemptID: "attempt", subjectDispatched: true, subjectCompleted: true,
+                observations: [value])
+            XCTAssertEqual(result.summary, .needsReview)
+            XCTAssertFalse(result.assessed); XCTAssertFalse(result.evidenceComplete)
+            XCTAssertEqual(result.missingObservations, ["read"]); XCTAssertTrue(result.failedObservations.isEmpty)
+        }
+        // Qualified false persisted facts produce assertionFailed in
+        // AutomationDurableStateObserverTests; missing proof stays unassessed.
     }
     func testCompleteIndependentStatePassesButWrongIdentityAndDuplicatesDoNot() {
         let p = plan(), correct = observation(plan(), value: .bool(true))

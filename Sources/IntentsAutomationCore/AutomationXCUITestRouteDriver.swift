@@ -48,16 +48,25 @@ public actor AutomationXCUITestRouteDriver {
         case .simulator: return "platform=iOS Simulator,id=" + target.id
         case .physical: return "platform=iOS,id=" + target.id
         case .nativeMac: return "platform=macOS"
+        case .pairedRunner: throw AutomationContractError.missingEvidence("Paired target has no in-host UI test destination")
         }
     }
 
     public func execute(plan: AutomationCase, approval: RunApproval, attemptID: String,
                         leaseGeneration: Int = 1, timeout: Duration? = nil, excludedEntityIDs: Set<String> = []) async throws -> [AutomationSegmentReceipt] {
+        try await execute(plan: plan, approval: approval, attemptID: attemptID, leaseGeneration: leaseGeneration,
+            timeout: timeout, absoluteDeadline: nil, excludedEntityIDs: excludedEntityIDs)
+    }
+    func execute(plan: AutomationCase, approval: RunApproval, attemptID: String,
+                 leaseGeneration: Int = 1, timeout: Duration? = nil, absoluteDeadline: ContinuousClock.Instant?,
+                 excludedEntityIDs: Set<String> = []) async throws -> [AutomationSegmentReceipt] {
         guard !executing, !revoked, payloadFile == nil, prepared.app == plan.app, prepared.target == plan.target else { throw AutomationContractError.targetBusy }
         executing = true; defer { executing = false }
         let uiPlan = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval, attemptID: attemptID, leaseGeneration: leaseGeneration,
                                                        excludedEntityIDs: excludedEntityIDs)
         let commandTimeout = min(timeout ?? .seconds(plan.budget.wallClockSeconds), .seconds(plan.budget.wallClockSeconds))
+        let relativeDeadline = ContinuousClock.now.advanced(by: commandTimeout)
+        let deadline = min(relativeDeadline, absoluteDeadline ?? relativeDeadline)
         guard commandTimeout > .zero else { throw AutomationRPCError.timedOut }
         let directory = root.appendingPathComponent("xcuitest-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -86,7 +95,7 @@ public actor AutomationXCUITestRouteDriver {
                 "-destination", Self.destination(plan.target), "-only-testing:" + prepared.testTarget + "/UIStepTests/testUISteps",
                 // The host retains failure receipts/screenshots; a sysdiagnose can consume the entire attempt deadline.
                 "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never", "-resultBundlePath", resultPath.path],
-                directory: directory, timeout: commandTimeout, testInvocation: true)
+                directory: directory, timeout: commandTimeout, absoluteDeadline: deadline, testInvocation: true)
             exitStatus = result.exitStatus
             _ = try await artifacts.store(data: result.stdout + result.stderr, name: "xcuitest-log-" + UUID().uuidString + ".txt", scope: scope)
         } catch { executionError = error }
@@ -245,7 +254,8 @@ public actor AutomationXCUITestRouteDriver {
         }
         return receipts
     }
-    private func run(_ arguments: [String], directory: URL, timeout: Duration, authorize: Bool = true, testInvocation: Bool = false) async throws -> AutomationOwnedCommand.Result {
+    private func run(_ arguments: [String], directory: URL, timeout: Duration, absoluteDeadline: ContinuousClock.Instant? = nil,
+                     authorize: Bool = true, testInvocation: Bool = false) async throws -> AutomationOwnedCommand.Result {
         // Job control creates a dedicated group for xcrun and all its descendants. The owned shell's
         // termination trap stops that group before returning, including timeout and cancellation.
         let beforeStart: @Sendable () async throws -> Void
@@ -265,7 +275,7 @@ public actor AutomationXCUITestRouteDriver {
         return try await command.run(executable: URL(fileURLWithPath: "/bin/sh"),
             arguments: ["-c", Self.processGroupScript, "intents-xcuitest", "/usr/bin/xcrun"] + arguments,
             directory: directory, environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DEVELOPER_DIR": developerDirectory.path],
-            timeout: timeout, willStart: beforeStart, didStart: afterStart)
+            timeout: timeout, absoluteDeadline: absoluteDeadline, willStart: beforeStart, didStart: afterStart)
     }
     func markTestStarted() { testStarted = true; subjectStarted = true }
     private func verifyPayload() throws {

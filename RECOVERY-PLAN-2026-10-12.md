@@ -244,7 +244,7 @@ The fix is in Phase 0.
 
 ### Phase 0 — Stabilize (small PR)
 
-Status: **complete, 2026-10-13**. Merged in [PR 134](https://github.com/coryparrry/Intents/pull/134) as `c9972a3e698be8ed68f904a8af57a8379667437f`; [CI is green on main](https://github.com/coryparrry/Intents/actions/runs/38323206793) after one targeted portable-test retry. The local Developer ID signed picker passed 10/10 with `-test-iterations 10`, and cancel/reset/rerun recovery tests passed. Main also passed all 21 selected UI tests and ten picker repetitions. See `Verification/Recovery-Phase0-20261012/WORKLOG.md` for scope, signing and verification details.
+Status: **complete, 2026-10-13**. Merged in [PR 134](https://github.com/coryparrry/Intents/pull/134) as `c9972a3e698be8ed68f904a8af57a8379667437f`; [CI is green on main](https://github.com/coryparrry/Intents/actions/runs/38323206793) after one targeted portable-test retry. The local Developer ID signed picker passed 10/10 with `-test-iterations 10`, and cancel/reset/rerun recovery tests passed. Main also passed all 21 selected UI tests and ten picker repetitions. See [PR 134](https://github.com/coryparrry/Intents/pull/134) for scope, signing and verification details.
 
 1. **CI green.** Fix `testOwnedLiveRunnerIsAdoptedAndTerminatedBeforeTheLeaseCanRelease`: replace the fixed wait with polling until a deadline. Alternatively, do Phase 8's parking of the private-Mac subsystem first, which removes the test with its code. Do not skip or disable the test while its code still ships.
 2. **Quarantine recovery in App automation.**
@@ -265,7 +265,7 @@ Acceptance: CI green on `main`. A test cancels an unresolved attempt, resets it 
 
 ### Phase 1 — Make typed App Intent testing work on any supported Mac
 
-**Execution update, 2026-10-13:** Phase 1 merged in [PR 136](https://github.com/coryparrry/Intents/pull/136) as `f205bc9ba`, after every hosted check passed. PR 135 had already merged before this work. The item 6 regression failed first; local CLI mixed workflows then passed on iOS simulators with Xcode 27.0/iOS 27.0 and Xcode 27.2 beta 2/iOS 27.2 through the app's capability resolver, with no supplied capabilities. Review repaired retained-host compatibility, diagnostic recovery and latest-preparation restoration; 1,087 core tests and 170 native XCTest tests plus two Swift Testing checks passed locally. No iPhone, Mac subject or Intent Lab run was performed. This change is merged, not released. See [Phase 1 verification](Verification/Recovery-Phase1-20261013/README.md). The original amended instructions below record the intended merge order.
+**Execution update, 2026-10-13:** Phase 1 merged in [PR 136](https://github.com/coryparrry/Intents/pull/136) as `f205bc9ba`, after every hosted check passed. PR 135 had already merged before this work. The item 6 regression failed first; local CLI mixed workflows then passed on iOS simulators with Xcode 27.0/iOS 27.0 and Xcode 27.2 beta 2/iOS 27.2 through the app's capability resolver, with no supplied capabilities. Review repaired retained-host compatibility, diagnostic recovery and latest-preparation restoration; 1,087 core tests and 170 native XCTest tests plus two Swift Testing checks passed locally. No iPhone, Mac subject or Intent Lab run was performed. This change is merged, not released. See [Phase 1 verification](https://github.com/coryparrry/Intents/pull/136). The original amended instructions below record the intended merge order.
 
 *Amended 2026-10-13.* Status: **not started, and now required before PR 135 merges.**
 - PR 135 adds `UIHostPlan.swift` and `UIStepTests.swift` to the host templates, so the prepared host's template digest becomes `815a51c0…`.
@@ -295,7 +295,7 @@ The test iPhone is on iOS 27.2, so once the gate is gone, a single Xcode that ma
 
 ### Phase 2 — Replace the Node/agent-device UI stack with in-host XCUITest steps
 
-Status: **completed locally on 2026-10-13**. The mixed simulator case passes in one Xcode test invocation using templates bundled in an ad hoc Intents Debug build with no Team ID. Deliberate UI assertion failure persists with scoped evidence and verified cleanup. Core/native regressions and independent review pass; one unrelated portable startup test passed on isolated retry after failing under parallel load. See [Phase 2 verification](Verification/Recovery-Phase2-20261013/README.md). Physical/Mac UI qualification remains in Phases 4 and 5.
+Status: **completed locally on 2026-10-13**. The mixed simulator case passes in one Xcode test invocation using templates bundled in an ad hoc Intents Debug build with no Team ID. Deliberate UI assertion failure persists with scoped evidence and verified cleanup. Core/native regressions and independent review pass; one unrelated portable startup test passed on isolated retry after failing under parallel load. See [Phase 2 verification](https://github.com/coryparrry/Intents/pull/135). Physical/Mac UI qualification remains in Phases 4 and 5.
 
 *Amended 2026-10-13:*
 - **PR status.** PR 135 is open at `8f0234c26`, with CI green. **Hold the merge until Phase 1 lands** (see Phase 1).
@@ -337,7 +337,7 @@ Acceptance:
 
 ### Phase 3 — Headless CLI and CI end-to-end job (the source of truth for agents)
 
-**Implementation update, 2026-10-13:** Phase 3 is a separate PR from main after PR 136. It supplies `intents-automation`, the all-codec committed fixture, a simulator e2e job, the live Mac input-conversion diagnostic CI job required by Phase 1, and opt-in UI tests without private profiles. The complete CLI simulator command passed locally: all 16 codec families, mixed workflow, deliberate failure, timeout release and immediate rerun. Fixture builds, six model tests, 19 CLI regressions and 53 Python checks also pass. Hosted simulator and diagnostic checks passed at `6082d6235`, but the runner default was also `27A266a`. The simulator job now selects installed Xcode 27.1 (`27A9269`) with its matching runtime; acceptance remains current-head CI, including Phase 1's inherited non-`27A266a` codec requirement. A cold Xcode 27.2 beta run exposed a fixture-registration race and remains unqualified; an unsupported destination-artifacts workaround was removed. This phase is not merged or released, and release PR 130 remains held. See [Phase 3 verification](Verification/Recovery-Phase3-20261013/README.md).
+**Implementation update, 2026-10-13:** Phase 3 is a separate PR from main after PR 136. It supplies `intents-automation`, the all-codec committed fixture, a simulator e2e job, the live Mac input-conversion diagnostic CI job required by Phase 1, and opt-in UI tests without private profiles. The complete CLI simulator command passed locally: all 16 codec families, mixed workflow, deliberate failure, timeout release and immediate rerun. Fixture builds, six model tests, 19 CLI regressions and 53 Python checks also pass. Hosted simulator and diagnostic checks passed at `6082d6235`, but the runner default was also `27A266a`. The simulator job now selects installed Xcode 27.1 (`27A9269`) with its matching runtime; acceptance remains current-head CI, including Phase 1's inherited non-`27A266a` codec requirement. A cold Xcode 27.2 beta run exposed a fixture-registration race and remains unqualified; an unsupported destination-artifacts workaround was removed. This phase is not merged or released, and release PR 130 remains held. See [Phase 3 verification](https://github.com/coryparrry/Intents/commit/87f431c7e).
 
 1. Add a committed fixture app, `examples/AutomationFixture`, generated with XcodeGen like the other examples. It needs:
    - echo intents for every codec family;
@@ -430,7 +430,7 @@ Acceptance: a Mac build of the fixture (add a macOS target) passes the same inte
 
 1. A saved case is the frozen plan JSON plus the prepared source digest. **Re-run** rebuilds from the current source, runs the same plan and compares assertions and outputs with the saved attempt.
 2. Reuse `AutomationFixComparison` but drop the requirements for installed-byte equivalence and "30+30" attempts. Default to N=3 attempts per side, configurable.
-3. **Find failures** (phrase variations) stays, using deterministic step plans. Model-generated variations are optional (Phase 7).
+3. **Find failures** stays where a variation changes an executed input, including recognised-text Siri requests. Use deterministic step plans; changing a plan's description without changing its executed steps is not a distinct trial. Model-generated variations are optional (Phase 7).
 
 Acceptance: the CI e2e job saves a failing case against a deliberately broken fixture variant, then re-runs it against the fixed variant and reports "fixed".
 

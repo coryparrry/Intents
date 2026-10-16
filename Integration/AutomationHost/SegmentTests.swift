@@ -1,9 +1,6 @@
 import XCTest
 import Foundation
 import Darwin
-#if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
-import AppIntentsTesting
-#endif
 
 @MainActor
 final class SegmentTests: XCTestCase {
@@ -15,6 +12,11 @@ final class SegmentTests: XCTestCase {
               Set(plan.operations.map(\.id)).count == plan.operations.count,
               plan.productDigest.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
               plan.productDigestVersion == nil || plan.productDigestVersion == 1 || plan.productDigestVersion == 2 else { throw HostError.invalidPlan }
+        if let expected = plan.expectedOSBuild {
+            var buffer = [CChar](repeating: 0, count: 256), count = 256
+            guard sysctlbyname("kern.osversion", &buffer, &count, nil, 0) == 0, count > 1, count <= buffer.count,
+                  String(cString: buffer) == expected else { throw HostError.invalidPlan }
+        }
         var kernel = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.size
         var mib = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
@@ -24,7 +26,6 @@ final class SegmentTests: XCTestCase {
         var receipt = HostReceipt(runner: runner, runID: plan.runID, attemptID: plan.attemptID, segmentID: plan.segmentID,
                                   leaseGeneration: plan.leaseGeneration, bundleID: plan.bundleID, productDigest: plan.productDigest)
         receipt.productDigestVersion = plan.productDigestVersion
-        let deadline = ContinuousClock.now.advanced(by: .seconds(120))
         if plan.activateSubject == true {
             let app = XCUIApplication(bundleIdentifier: plan.bundleID)
             let previousFailures = (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0)
@@ -36,18 +37,11 @@ final class SegmentTests: XCTestCase {
                 throw HostError.invalidPlan
             }
         }
+        try Task.checkCancellation()
+        // The caller's absolute case deadline bounds activation; this allowance covers readiness and operations.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(120))
         #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
-        try await HostFixtureRegistration.wait(bundleID: plan.bundleID, deadline: deadline, probe: { typeID, value in
-            let definitions = IntentDefinitions(bundleIdentifier: plan.bundleID)
-            let definition = definitions.intents[typeID]
-            var intent = definition.makeIntent()
-            try HostIntentIdentity.validate(bundle: plan.bundleID, action: typeID, definitionsBundle: definitions.bundleIdentifier,
-                definitionBundle: definition.bundleIdentifier, definitionID: definition.identifier, intentBundle: intent.bundleIdentifier, intentID: intent.identifier)
-            intent[dynamicMember: "value"] = value
-            let result = try await intent.run()
-            let output: String = try result.value
-            return output
-        }, record: { diagnostic in
+        try await HostFixtureRegistration.waitForAuthoredFixture(bundleID: plan.bundleID, deadline: deadline, record: { diagnostic in
             attach(name: "intents-fixture-registration-\(diagnostic.index)", data: try JSONEncoder().encode(diagnostic))
         })
         #endif

@@ -1,0 +1,12 @@
+{
+  "name": "apple-foundation-evals-local",
+  "interface": { "displayName": "Foundation Evals local" },
+  "plugins": [
+    {
+      "name": "apple-foundation-evals",
+      "source": { "source": "local", "path": "./plugins/apple-foundation-evals" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Coding"
+    }
+  ]
+}

@@ -1,4 +1,7 @@
 import Foundation
+#if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+import AppIntentsTesting
+#endif
 
 /// A diagnostic for the authored CI fixture, never a retry policy for tested operations.
 @MainActor
@@ -12,6 +15,23 @@ enum HostFixtureRegistration {
         let succeeded: Bool
         let error: String?
     }
+
+    #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+    static func waitForAuthoredFixture(bundleID: String, deadline: ContinuousClock.Instant,
+                                       record: (Attempt) throws -> Void) async throws {
+        try await wait(bundleID: bundleID, deadline: deadline, probe: { typeID, value in
+            let definitions = IntentDefinitions(bundleIdentifier: bundleID)
+            let definition = definitions.intents[typeID]
+            var intent = definition.makeIntent()
+            try HostIntentIdentity.validate(bundle: bundleID, action: typeID, definitionsBundle: definitions.bundleIdentifier,
+                definitionBundle: definition.bundleIdentifier, definitionID: definition.identifier, intentBundle: intent.bundleIdentifier, intentID: intent.identifier)
+            intent[dynamicMember: "value"] = value
+            let result = try await intent.run()
+            let output: String = try result.value
+            return output
+        }, record: record)
+    }
+    #endif
 
     static func wait(bundleID selectedBundle: String, deadline: ContinuousClock.Instant,
                      now: () -> ContinuousClock.Instant = { .now },

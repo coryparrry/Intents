@@ -5,7 +5,7 @@ import IntentsAutomationDateCodec
 /// A calibration payload, never an AutomationCase or a business-action receipt.
 /// Launch ownership/release qualification must precede execution; no customer route calls this yet.
 struct AutomationInputAdapterProbePlan: Sendable {
-    struct Parameter: Sendable { let name: String; let family: String; let samples: [AutomationValue] }
+    struct Parameter: Sendable { let name: String; let family: String; let samples: [AutomationValue]; let entityType: String? }
     let prepared: AutomationPreparedApplication
     let actionID: String
     let parameters: [Parameter]
@@ -32,20 +32,29 @@ struct AutomationInputAdapterProbePlan: Sendable {
                   let parameter = action.parameters.first(where: { $0.name == name }), let family = parameter.family else {
                 throw AutomationContractError.conflictingOperation
             }
-            return .init(name: name, family: family, samples: try Self.samples(family: family))
+            let entityType = family == "entity" ? parameter.typeID : nil
+            if family == "entity" {
+                guard let type = entityType, prepared.catalog.entities?.filter({ $0.typeID == type }).count == 1 else {
+                    throw AutomationContractError.missingEvidence("Entity probe requires the selected catalog entity type")
+                }
+            }
+            return .init(name: name, family: family, samples: try Self.samples(family: family, entityType: entityType), entityType: entityType)
         }
         guard [prepared.host.app.productDigest, prepared.host.hostProductDigest, prepared.host.xctestrunDigest,
                prepared.generatedHost.templateDigest].allSatisfy({ value in
                    value?.count == 64 && value?.allSatisfy { $0.isASCII && "0123456789abcdef".contains($0) } == true
                }) else { throw AutomationContractError.invalidIdentity }
     }
-    static func samples(family: String) throws -> [AutomationValue] {
+    static func samples(family: String, entityType: String? = nil) throws -> [AutomationValue] {
         if family.hasSuffix("Array") {
             let element = String(family.dropLast(5))
             guard ["text", "bool", "integer", "decimal", "date"].contains(element) else { throw AutomationContractError.invalidIdentity }
             return [.array([]), .array(try samples(family: element))]
         }
         switch family {
+        case "entity":
+            guard let type = entityType, AutomationHostProgram.identifier(type) else { throw AutomationContractError.invalidIdentity }
+            return [.entity(typeID: type, value: "intents-adapter-probe")]
         case "intentFile": return [.artifact(handle: "file-calibration", sha256: AutomationIntentFileMetadata.digest(AutomationIntentFileCalibration.data))]
         case "text": return [.text("Intents adapter probe")]
         case "bool": return [.bool(true)]
@@ -55,7 +64,7 @@ struct AutomationInputAdapterProbePlan: Sendable {
         case "url": return [.object(["url": .text("https://example.invalid/intents-adapter-probe")])]
         case "duration": return [.object(["seconds": .integer("1"), "attoseconds": .integer("0")])]
         case "calendarComponents": return [.object(["components": .object(["year": .integer("2001"), "month": .integer("1"), "day": .integer("1")])])]
-        default: throw AutomationContractError.invalidPlan("Input adapter probe excludes entities, enums, null, omission and unsupported families")
+        default: throw AutomationContractError.invalidPlan("Input adapter probe excludes enums, null, omission and unsupported families")
         }
     }
     func payload(scope: AutomationScope) throws -> Data {
@@ -63,18 +72,21 @@ struct AutomationInputAdapterProbePlan: Sendable {
         let host = prepared.host
         let wire = AutomationJSON.object(["schemaVersion": .number(1), "purpose": .string("inputAdapterRoundTrip"),
             "runID": .string(scope.runId), "attemptID": .string(scope.attemptId), "segmentID": .string(scope.segmentId), "leaseGeneration": .number(Double(scope.leaseGeneration)),
-            "bundleID": .string(host.app.bundleID), "actionID": .string(actionID), "productDigest": .string(host.app.productDigest!), "productDigestVersion": .number(2),
+            "bundleID": .string(host.app.bundleID), "actionID": .string(actionID),
+            "targetID": .string(host.target.id), "loginSession": .string(host.target.loginSession ?? ""), "productDigest": .string(host.app.productDigest!), "productDigestVersion": .number(2),
             "hostProductDigest": .string(host.hostProductDigest), "xctestrunDigest": .string(host.xctestrunDigest),
             "catalogDigest": .string(catalogDigest), "sourceDigest": .string(sourceDigest), "templateDigest": .string(prepared.generatedHost.templateDigest),
             "parameters": .array(try parameters.map { parameter in
-                .object(["name": .string(parameter.name), "family": .string(parameter.family),
-                         "samples": .array(try parameter.samples.map { sample in
+                var fields: [String: AutomationJSON] = ["name": .string(parameter.name), "family": .string(parameter.family)]
+                if let type = parameter.entityType { fields["entityType"] = .string(type) }
+                fields["samples"] = .array(try parameter.samples.map { sample in
                              if parameter.family == "intentFile" {
                                  let metadata = try JSONDecoder().decode(AutomationJSON.self, from: JSONEncoder().encode(AutomationIntentFileCalibration.metadata()))
                                  return .object(["kind": .string("intentFile"), "value": .string(AutomationIntentFileCalibration.data.base64EncodedString()), "file": metadata])
                              }
                              return try AutomationHostProgram.hostInput(sample, parameterCodec: parameter.family)
-                         })])
+                         })
+                return .object(fields)
             })])
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(wire)
@@ -110,7 +122,8 @@ struct AutomationInputAdapterProbeObservation: Sendable {
               case .array(let parameters) = fields["parameters"], parameters.count == plan.parameters.count else { throw AutomationContractError.conflictingOperation }
         var echoes: [String: [AutomationValue]] = [:]
         for (field, parameter) in zip(parameters, plan.parameters) {
-            guard let object = field.object, Set(object.keys) == ["name", "family", "samples"],
+            guard let object = field.object, Set(object.keys) == (parameter.entityType == nil ? Set(["name", "family", "samples"]) : Set(["name", "family", "samples", "entityType"])),
+                  object["entityType"] == parameter.entityType.map(AutomationJSON.string),
                   object["name"] == .string(parameter.name), object["family"] == .string(parameter.family),
                   case .array(let samples) = object["samples"], samples.count == parameter.samples.count else { throw AutomationContractError.conflictingOperation }
             let values: [AutomationValue]
@@ -123,7 +136,19 @@ struct AutomationInputAdapterProbeObservation: Sendable {
                 }
                 values = imported
             } else {
-                values = try samples.map { try AutomationHostReceiptImporter.decodeValue($0, depth: 0) }
+                if parameter.family == "entity" {
+                    // A setter's bare reference is different from a query/result
+                    // entity record, which also carries observed properties.
+                    values = try samples.map { sample in
+                        guard let fields = sample.object, Set(fields.keys) == ["kind", "value", "typeId"],
+                              fields["kind"] == .string("entity"), case .string(let id) = fields["value"],
+                              case .string(let type) = fields["typeId"] else { throw AutomationContractError.invalidIdentity }
+                        let value = AutomationValue.entity(typeID: type, value: id)
+                        try value.validate(); return value
+                    }
+                } else {
+                    values = try samples.map { try AutomationHostReceiptImporter.decodeValue($0, depth: 0) }
+                }
                 guard values == parameter.samples else { throw AutomationContractError.conflictingOperation }
             }
             echoes[parameter.name] = values

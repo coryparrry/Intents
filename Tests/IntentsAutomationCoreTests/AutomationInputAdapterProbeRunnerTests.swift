@@ -152,9 +152,13 @@ extension AutomationPreparedMacContractTests {
         try await h.leases.release(next, commandsDrained: true, ownedRunnerTerminated: true)
     }
     private func inputProbe(_ h: ProbeHarness, family: String = "text") throws -> AutomationInputAdapterProbePlan {
-        let catalog = ApplicationSurfaceCatalog(app: h.host.app, systemActions: [.init(id: "Probe", typeName: "Probe", title: "Probe",
+        var catalog = ApplicationSurfaceCatalog(app: h.host.app, systemActions: [.init(id: "Probe", typeName: "Probe", title: "Probe",
             parameters: [.init(name: "sample", family: family, optional: false)], parametersComplete: true, compiled: true, registered: false, executed: false)],
             systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: [])
+        if family == "entity" {
+            catalog.systemActions[0].parameters[0].typeID = "TaskEntity"
+            catalog.entities = [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "TaskQuery", properties: [:], propertyTitles: [:])]
+        }
         let prepared = AutomationPreparedApplication(source: .init(sourceRoot: h.root.path, files: [], directories: [], excludedPaths: []),
             generatedHost: .init(projectPath: "synthetic", scheme: h.host.testTarget, targetID: h.host.testTarget, bundleID: h.host.hostBundleID,
                 configuration: "Debug", templateDigest: String(repeating: "d", count: 64)), host: h.host, catalog: catalog, buildLogPath: "synthetic", buildLogTruncated: false)
@@ -168,6 +172,24 @@ extension AutomationPreparedMacContractTests {
             artifacts: AutomationArtifactRegistry(root: h.root.appendingPathComponent("probe-artifacts")), subject: Subject(app: h.host.app, target: h.host.target),
             release: release ?? h.release, commands: commands.adapter, validateTarget: { _ in })
     }
+    func testEntityProbeOwnerPublishesExactReadbackWithoutBusinessDispatch() async throws {
+        let h = try await probeFixture(), commands = InputProbeCommands(host: h.host)
+        try await h.leases.release(h.lease, commandsDrained: true, ownedRunnerTerminated: true)
+        let plan = try inputProbe(h, family: "entity")
+        let owner = try AutomationInputAdapterProbeRunner(plan: plan,
+            approval: .init(runID: h.runID, probeDigest: plan.digest, app: h.host.app, target: h.host.target),
+            developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"), state: h.root.appendingPathComponent("entity-probe"),
+            leases: h.leases, artifacts: AutomationArtifactRegistry(root: h.root.appendingPathComponent("entity-artifacts")),
+            subject: Subject(app: h.host.app, target: h.host.target), release: h.release, commands: commands.adapter, validateTarget: { _ in })
+        let report = try await owner.run(attemptID: "entity-probe")
+        XCTAssertTrue(report.resourcesReleased); XCTAssertNil(report.failure)
+        XCTAssertEqual(report.observation?.echoedSamples["sample"], [.entity(typeID: "TaskEntity", value: "intents-adapter-probe")])
+        let calls = await commands.calls
+        XCTAssertEqual(calls, ["xcodebuild", "xcresulttool"])
+        let next = try await h.leases.acquire(runID: "next", target: h.host.target, control: .system)
+        try await h.leases.release(next, commandsDrained: true, ownedRunnerTerminated: true)
+    }
+
     func testSeparateProbeOwnerReturnsOnlyReleasedReadbackAndReleasesItsLease() async throws {
         let h = try await probeFixture(), commands = InputProbeCommands(host: h.host), owner = try await probeOwner(h, commands: commands)
         let report = try await owner.run(attemptID: "probe")

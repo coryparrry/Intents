@@ -23,6 +23,7 @@ public struct AutomationSourceGraph: Codable, Equatable, Sendable {
     public var schemaVersion = currentSchemaVersion
     public var sourceManifestDigest: String
     public var projectRelativePath: String
+    public var workspaceRelativePath: String? = nil
     public var targetID: String
     public var configuration: String
     public var nodes: [Node]
@@ -58,15 +59,17 @@ public enum AutomationSourceGraphReader {
     // its separately retained original bytes, still checked against the manifest.
     static func read(manifest: AutomationSourceManifest, frozenRoot: URL,
                      projectRelativePath: String, targetID: String,
-                     configuration: String, projectData: Data, resolutionData: Data? = nil,
+                     configuration: String, projectData: Data, workspaceRelativePath: String? = nil, resolutionData: Data? = nil,
                      platformSettings: Data? = nil, developerDirectory: URL? = nil, resolvePackagePlatformConditions: Bool? = nil, resolveSynchronizedMembership: Bool? = nil) throws -> AutomationSourceGraph {
         var reader = try Reader(manifest: manifest, frozenRoot: frozenRoot,
-                                project: projectRelativePath, target: targetID, configuration: configuration, projectData: projectData, resolutionData: resolutionData, platformSettings: platformSettings, developerDirectory: developerDirectory, resolvePackagePlatformConditions: resolvePackagePlatformConditions, resolveSynchronizedMembership: resolveSynchronizedMembership)
+                                project: projectRelativePath, target: targetID, configuration: configuration, projectData: projectData, workspaceRelativePath: workspaceRelativePath, resolutionData: resolutionData, platformSettings: platformSettings, developerDirectory: developerDirectory, resolvePackagePlatformConditions: resolvePackagePlatformConditions, resolveSynchronizedMembership: resolveSynchronizedMembership)
         return try reader.read()
     }
 
     private struct Reader {
         let manifest: AutomationSourceManifest, frozenRoot: URL, project: String, target: String, configuration: String
+        let workspaceRelativePath: String?
+        var resolutionPath: String { workspaceRelativePath.map(AutomationWorkspaceBuildContext.packageResolutionPath) ?? project + "/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" }
         let resolutionData: Data?
         let platformContext: AutomationSourcePlatformContext?
         let resolvePackagePlatformConditions: Bool
@@ -90,7 +93,8 @@ public enum AutomationSourceGraphReader {
         var resolutionRecords: [String: AutomationPackageResolution.Index] = [:], unavailableResolutions: Set<String> = []
         struct InputKey: Hashable { let path: String, owner: String, role: String }
 
-        init(manifest: AutomationSourceManifest, frozenRoot: URL, project: String, target: String, configuration: String, projectData: Data?, resolutionData: Data? = nil, platformSettings: Data? = nil, developerDirectory: URL? = nil, resolvePackagePlatformConditions: Bool? = nil, resolveSynchronizedMembership: Bool? = nil) throws {
+        init(manifest: AutomationSourceManifest, frozenRoot: URL, project: String, target: String, configuration: String, projectData: Data?, workspaceRelativePath: String? = nil, resolutionData: Data? = nil, platformSettings: Data? = nil, developerDirectory: URL? = nil, resolvePackagePlatformConditions: Bool? = nil, resolveSynchronizedMembership: Bool? = nil) throws {
+            self.workspaceRelativePath = workspaceRelativePath
             self.resolutionData = resolutionData
             self.resolvePackagePlatformConditions = resolvePackagePlatformConditions ?? (platformSettings != nil)
             self.resolveSynchronizedMembership = resolveSynchronizedMembership ?? true
@@ -135,7 +139,7 @@ public enum AutomationSourceGraphReader {
             var seen: Set<String> = []
             try group(main, parent: URL(fileURLWithPath: manifest.layoutRoot).appendingPathComponent(project).deletingLastPathComponent(), depth: 0, seen: &seen)
             try visit(target, depth: 0)
-            return .init(sourceManifestDigest: try manifest.digest, projectRelativePath: project, targetID: target,
+            return .init(sourceManifestDigest: try manifest.digest, projectRelativePath: project, workspaceRelativePath: workspaceRelativePath, targetID: target,
                          configuration: configuration, nodes: nodes.sorted { $0.id < $1.id },
                          edges: edges.sorted { ($0.from, $0.kind, $0.to) < ($1.from, $1.kind, $1.to) },
                          inputs: inputs.sorted { ($0.owner, $0.relativePath, $0.role) < ($1.owner, $1.relativePath, $1.role) },
@@ -347,7 +351,7 @@ public enum AutomationSourceGraphReader {
             } else { gaps.insert("Remote package checkout and resolved revision are unavailable at " + ref) }
         }
         mutating func remotePackage(_ ref: String, package: [String: Any], product: String) throws {
-            let path = project + "/project.xcworkspace/xcshareddata/swiftpm/Package.resolved", reference = nodeID(ref)
+            let path = resolutionPath, reference = nodeID(ref)
             gaps.insert("Remote source checkout and actual build consumption remain unresolved at " + ref)
             guard let location = package["repositoryURL"] as? String, let identity = AutomationPackageResolution.identity(location),
                   let file = files[path], file.symbolicLink == nil else { gaps.insert("Captured remote resolution is absent or unsupported at " + ref); return }
@@ -525,7 +529,7 @@ public enum AutomationSourceGraphReader {
             guard inputs.count < 10_000 else { throw AutomationContractError.invalidIdentity }
             guard let file = files[path], file.symbolicLink == nil else { gaps.insert("Source input is absent or linked in the frozen manifest: " + path); return }
             let data: Data
-            if role == "packageResolution", path == project + "/project.xcworkspace/xcshareddata/swiftpm/Package.resolved", let resolutionData { data = resolutionData }
+            if role == "packageResolution", path == resolutionPath, let resolutionData { data = resolutionData }
             else { data = try AutomationReadOnlyFile.read(root: frozenRoot, relativePath: path, maximumBytes: 16 * 1024 * 1024) }
             guard data.count == file.bytes, AutomationArtifactRegistry.digest(data) == file.sha256 else { throw AutomationContractError.conflictingOperation }
             totalSourceBytes += data.count

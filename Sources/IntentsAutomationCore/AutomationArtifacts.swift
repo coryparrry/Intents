@@ -50,7 +50,6 @@ public actor AutomationArtifactRegistry {
     }
     /// A campaign-shared fence also covers separate per-attempt registries.
     func canExposeEvidence(scope: AutomationScope) -> Bool { secretEvidence.permits(scope) }
-    func reserveModelEvidence(scope: AutomationScope) throws -> AutomationSecretEvidencePermit { try secretEvidence.reserve(scope) }
     public func register(relativePath: String, scope: AutomationScope) throws -> Artifact {
         try scope.validate()
         guard canExposeEvidence(scope: scope) else { throw AutomationContractError.missingEvidence("Secret-tainted evidence is withheld") }

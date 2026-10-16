@@ -5,7 +5,7 @@ import XCTest
 @testable import IntentsAutomationCore
 
 @MainActor final class InstalledUIStoreTests: XCTestCase {
-    func fixture(runtime: RuntimeIdentity = RuntimeIdentity(), executor: AutomationNativeRunExecutor? = nil, searchExecutor: AutomationNativeSearchExecutor? = nil, comparisonExecutor: AutomationNativeFixComparisonExecutor? = nil, reproductionExecutor: AutomationNativeReproductionExecutor? = nil, reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))? = nil, evidenceImporter: (@Sendable (AutomationCase, AutomationAttemptReport, URL, AutomationEvidenceExposure) async throws -> AutomationNativeEvidenceDocument)? = nil, simulatorInventoryReader: AutomationNativeSimulatorInventoryReader? = nil) async throws -> (AppAutomationStore, URL, URL) {
+    func fixture(runtime: RuntimeIdentity = RuntimeIdentity(), executor: AutomationNativeRunExecutor? = nil, comparisonExecutor: AutomationNativeFixComparisonExecutor? = nil, reproductionExecutor: AutomationNativeReproductionExecutor? = nil, reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))? = nil, evidenceImporter: (@Sendable (AutomationCase, AutomationAttemptReport, URL, AutomationEvidenceExposure) async throws -> AutomationNativeEvidenceDocument)? = nil, simulatorInventoryReader: AutomationNativeSimulatorInventoryReader? = nil, recoverySimulatorShutdown: @escaping @Sendable (TargetIdentity, URL, URL) async throws -> Void = { _, _, _ in }) async throws -> (AppAutomationStore, URL, URL) {
         let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent("native-ui-test-" + UUID().uuidString)
         let bundle = root.appendingPathComponent("Subject.app")
         try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
@@ -16,12 +16,12 @@ import XCTest
         try Data([0xcf,0xfa,0xed,0xfe,0x0c,0,0,1,0,0,0,0]).write(to: bundle.appendingPathComponent("Subject"))
         let model = AppAutomationStore(supportDirectory: root.appendingPathComponent("support"), savedCasesReader: { [] },
             runExecutor: executor ?? { _, _, _, _, _, _ in throw NativeTestError.unexpectedExecution },
-            searchExecutor: searchExecutor, comparisonExecutor: comparisonExecutor, reproductionExecutor: reproductionExecutor, reproductionPreflightReader: reproductionPreflightReader, evidenceImporter: evidenceImporter, recoverySimulatorShutdown: { _, _, _ in }, simulatorInventoryReader: simulatorInventoryReader ?? { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) })
+            comparisonExecutor: comparisonExecutor, reproductionExecutor: reproductionExecutor, reproductionPreflightReader: reproductionPreflightReader, evidenceImporter: evidenceImporter, recoverySimulatorShutdown: recoverySimulatorShutdown, simulatorInventoryReader: simulatorInventoryReader ?? { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) })
         model.select(bundle); await model.task?.value; model.simulatorID = UUID().uuidString
         model.uiInstruction = "Open the tasks screen"; model.uiEndpoint = "Tasks"; model.uiApprovedText = "Approved input"
         model.effectChoice = "navigation"; model.effectsConfirmed = true
         model.uiTextEntryControl = "id:title"; model.uiTapControls = "Tasks"
-        if executor != nil || searchExecutor != nil { try selectPreparedSource(model: model, root: root) }
+        if executor != nil { try selectPreparedSource(model: model, root: root) }
         return (model, root, bundle)
     }
     func selectPreparedSource(model: AppAutomationStore, root: URL) throws {
@@ -59,16 +59,29 @@ import XCTest
         model.freshInitialState = "false"; model.freshExpectedState = "true"
         model.effectChoice = "fixture"; model.disposable = true; model.effectsConfirmed = true
     }
-    private func learnedCapture(_ request: AutomationNativeRunRequest, prepared: AutomationPreparedApplication, id: String) throws -> AutomationCapturedSetupAttempt {
-        let report = nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: id, completed: true)
-        let context = AutomationRecipeContext(app: request.plan.app, target: request.plan.target, environmentID: request.plan.environmentID,
-            catalogDigest: try AutomationRecipeContext.catalogDigest(prepared.catalog), hostDigest: prepared.host.hostProductDigest,
-            localeIdentifier: request.plan.provenance["ui.locale"]!, uiRuntimeManifestDigest: request.plan.provenance["ui.runtimeManifestDigest"])
-        let capture = AutomationControllerSetupCapture(scope: report.receipts[0].scope, operations: [
-            .init(id: "learned.0", kind: .fillBinding, locator: .init(.testId, "task.title"), binding: "approvedText"),
-            .init(id: "learned.endpoint", kind: .assertEndpoint, locator: .init(.label, "Tasks"))])
-        return try .init(live: .init(context: context, plan: request.plan, approval: request.approval, report: report), capture: capture,
-            bindings: AutomationFreshEntityPlanner.bindings(plan: request.plan))
+    func testPreparedFreshComparisonRefreshesFingerprintsAndRejectsTemplateDrift() async throws {
+        let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
+        let request = try model.makeNativeRunRequest(runID: "fingerprints"), before = try XCTUnwrap(model.prepared)
+        let frozen = try AutomationFrozenCase(plan: request.plan)
+        let original = nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: "original", completed: false)
+        var after = try changedPreparedSource(before)
+        let comparison = try AutomationNativeUIFixComparisonProposal.compile(frozen: frozen, original: original,
+            before: .prepared(before), after: .prepared(after), runID: "compare", disposable: true)
+        // Versioned artifacts are the sole simulator build authority; the comparison
+        // refreshes build fingerprints without changing its declared surface or oracle.
+        XCTAssertEqual(comparison.baseline.plan.preparedSimulatorBuildArtifacts, try .init(prepared: before))
+        XCTAssertEqual(comparison.candidate.plan.preparedSimulatorBuildArtifacts, try .init(prepared: after))
+        let catalogDigest = try AutomationRecipeContext.catalogDigest(after.catalog)
+        XCTAssertEqual(comparison.candidate.plan.provenance["catalog"], catalogDigest)
+        for key in ["ui.preparedHostDigest", "ui.preparedXctestrunDigest", "ui.preparedCatalogDigest", "ui.hostTemplateDigest"] {
+            XCTAssertNil(comparison.baseline.plan.provenance[key])
+            XCTAssertNil(comparison.candidate.plan.provenance[key])
+        }
+        XCTAssertEqual(comparison.baseline.contractDigest, comparison.candidate.contractDigest)
+        XCTAssertEqual(comparison.baseline.oracleDigest, comparison.candidate.oracleDigest)
+        after.generatedHost.templateDigest = String(repeating: "f", count: 64)
+        XCTAssertThrowsError(try AutomationNativeUIFixComparisonProposal.compile(frozen: frozen, original: original,
+            before: .prepared(before), after: .prepared(after), runID: "wrong-template", disposable: true))
     }
     func testCapsuleSelectionRetainsTrustedCampaignFenceAndDeniesAfterTaint() async throws {
         let (model, root, _) = try await fixture()
@@ -158,11 +171,9 @@ import XCTest
         XCTAssertFalse(FileManager.default.fileExists(atPath: rejected.path))
         XCTAssertNil(model.report); XCTAssertNil(model.savedViewedReport); XCTAssertNil(model.canonicalEvidence)
     }
-    func testDeterministicSetupRejectsControllerLearningAndFreezesFormChanges() async throws {
+    func testDeterministicSetupFreezesFormChanges() async throws {
         let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
         let original = try model.makeNativeRunRequest(runID: "source"), prepared = try XCTUnwrap(model.prepared)
-        XCTAssertThrowsError(try learnedCapture(original, prepared: prepared, id: "one"))
-        XCTAssertNil(model.learnedSetupRecipe); XCTAssertTrue(model.learnedSetupAttempts.isEmpty)
         let preview = try model.previewCommand(), command = UUID()
         _ = try model.requestCommand(id: command, digest: preview.digest)
         model.freshNameEntryControl = "id:changed-name"; model.workflowSelectionChanged()
@@ -178,20 +189,6 @@ import XCTest
         var changed = prepared; changed.catalog.gaps.append("changed catalog")
         model.prepared = changed
         XCTAssertNotEqual(try model.makeNativeRunRequest(runID: "changed-context").caseDigest, original.caseDigest)
-    }
-    func testFakeExecutorAndImportedFreshReportCannotLearnSetup() async throws {
-        let (model, root, _) = try await fixture(executor: { _, plan, approval, _, id, _ in
-            nativeFreshFact(plan: plan, approval: approval, attemptID: id, completed: true)
-        })
-        try selectFreshSource(model: model, root: root)
-        let preview = try model.previewCommand(), command = UUID()
-        _ = try model.requestCommand(id: command, digest: preview.digest); model.run()
-        for _ in 0..<1000 { if !model.busy { break }; await Task.yield() }
-        XCTAssertFalse(model.busy); XCTAssertTrue(model.report?.result.subjectCompleted == true)
-        XCTAssertTrue(model.learnedSetupAttempts.isEmpty); XCTAssertNil(model.learnedSetupRecipe)
-        let request = try model.makeNativeRunRequest(runID: "import")
-        await model.importEvidence(plan: request.plan, report: nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: "imported", completed: true))
-        XCTAssertTrue(model.learnedSetupAttempts.isEmpty); XCTAssertNil(model.learnedSetupRecipe)
     }
     func testFreshRecordPreviewBindsPreparedRuntimeAndExplicitBusinessChoices() async throws {
         let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
@@ -263,17 +260,18 @@ import XCTest
         let original = nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: "original", completed: false)
         try await cases.saveAttempt(original, for: frozen)
         var reproduction = try AutomationNativeUIReproductionProposal.compile(frozen: frozen, original: original, subject: .prepared(before), runID: "reproduce", disposable: true)
-        XCTAssertTrue(reproduction.usesFreshFixture)
-        let beforeToken = try nativeFreshToken(plan: frozen.plan, approval: reproduction.approval, prepared: before, prefix: "before-qualification")
-        // This executor is synthetic. Structural review deliberately leaves real conversion unknown.
-        XCTAssertNotEqual(reproduction.capabilities.records["apple.codec.entity"]?.state, .available)
-        do {
-            _ = try await reproduction.runCampaign(cases: cases, executor: NativeFreshFactExecutor(completed: false), fixture: beforeToken)
-            XCTFail("Unqualified entity conversion entered a campaign")
-        } catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Input and result conversion has not been verified for this app and target")) }
-        let syntheticConversion = CapabilityProfile.Record(state: .available, reason: "Synthetic executor fixture only", probeVersion: "test-v1", evidence: ["synthetic"])
+        // Synthetic executor facts isolate campaign behavior from retained-file verification.
+        let syntheticConversion = CapabilityProfile.Record(state: .available, reason: "Synthetic executor fixture", probeVersion: "test", evidence: [])
         reproduction.capabilities.records["apple.codec.entity"] = syntheticConversion
-        let report = try await reproduction.runCampaign(cases: cases, executor: NativeFreshFactExecutor(completed: false), fixture: beforeToken)
+        let rejectedBudget = try AutomationCampaignBudget(limits: .firstCampaign)
+        do {
+            _ = try await NativeFreshFactExecutor(completed: false).execute(frozen: frozen, approval: reproduction.approval,
+                attemptID: "reused", budget: rejectedBudget, excludedEntityIDs: ["TaskEntity:entity-reused"])
+            XCTFail("Repeated record identity reached the synthetic subject")
+        } catch { XCTAssertEqual(error as? AutomationFixtureFreshnessError, .invalidFixture) }
+        let rejectedUsage = await rejectedBudget.snapshot()
+        XCTAssertEqual(rejectedUsage.reservedSubjectOperations, 0)
+        let report = try await reproduction.runCampaign(cases: cases, executor: NativeFreshFactExecutor(completed: false))
         XCTAssertTrue(report.complete); XCTAssertEqual(report.matchingFailures, 5)
         let after = try changedPreparedSource(before)
         var comparison = try AutomationNativeUIFixComparisonProposal.compile(frozen: frozen, original: original, before: .prepared(before), after: .prepared(after), runID: "compare", disposable: true)
@@ -281,113 +279,19 @@ import XCTest
         comparison.afterCapabilities.records["apple.codec.entity"] = syntheticConversion
         XCTAssertEqual(comparison.baseline.oracleDigest, comparison.candidate.oracleDigest)
         XCTAssertEqual(comparison.baseline.plan.requirements, comparison.candidate.plan.requirements)
-        let tokenA = try nativeFreshToken(plan: comparison.baseline.plan, approval: comparison.beforeApproval, prepared: before, prefix: "compare-before")
-        let tokenB = try nativeFreshToken(plan: comparison.candidate.plan, approval: comparison.afterApproval, prepared: after, prefix: "compare-after")
-        let result = try await comparison.runCampaign(cases: cases, beforeExecutor: NativeFreshFactExecutor(completed: false), afterExecutor: NativeFreshFactExecutor(completed: true), beforeFixture: tokenA, afterFixture: tokenB)
-        XCTAssertEqual(result.before.count, 30); XCTAssertEqual(result.after.count, 30)
-        XCTAssertEqual(result.beforeCounters.failed, 30); XCTAssertEqual(result.afterCounters.failed, 0)
-    }
-    private func freshQualificationInputs() async throws -> FreshQualificationInputs {
-        let (model, root, _) = try await fixture(); try selectFreshSource(model: model, root: root)
-        let request = try model.makeNativeRunRequest(runID: "original-run"), prepared = try XCTUnwrap(model.prepared)
-        let cases = try AutomationCaseStore(root: root.appendingPathComponent("support/Cases")), frozen = try await cases.freeze(request.plan)
-        let original = nativeFreshFact(plan: request.plan, approval: request.approval, attemptID: "original", completed: false)
-        try await cases.saveAttempt(original, for: frozen)
-        var reproduction = try AutomationNativeUIReproductionProposal.compile(frozen: frozen, original: original, subject: .prepared(prepared), runID: "reproduce", disposable: true)
-        XCTAssertTrue(reproduction.usesFreshFixture)
-        reproduction.capabilities.records["apple.codec.entity"] = .init(state: .available, reason: "Synthetic executor fixture only", probeVersion: "test-v1", evidence: ["synthetic"])
-        let token = try nativeFreshToken(plan: reproduction.frozen.plan, approval: reproduction.approval, prepared: prepared, prefix: "qualified")
-        return .init(frozen: reproduction.frozen, approval: reproduction.approval, capabilities: reproduction.capabilities, prepared: prepared, token: token)
-    }
-    private func qualify(_ inputs: FreshQualificationInputs, runner: FreshQualificationRunner, capabilities: CapabilityProfile? = nil,
-                         installApproved: Bool = true) async throws -> AutomationQualifiedFreshFixture {
-        try await AutomationNativeFreshFixtures.qualify(frozen: inputs.frozen, prepared: inputs.prepared, approval: inputs.approval,
-            capabilities: capabilities ?? inputs.capabilities, runner: runner, installApproved: installApproved)
-    }
-    func testFreshFixtureQualificationRunsTwoReleasedAttemptsUnderItsOwnBudgetBeforeMintingFixture() async throws {
-        let inputs = try await freshQualificationInputs(), bindings = try AutomationFreshEntityPlanner.bindings(plan: inputs.frozen.plan)
-        XCTAssertFalse(bindings.isEmpty, "Qualification must exercise nonempty fixture bindings")
-        var expectedLimits = AutomationCampaignLimits.firstCampaign
-        expectedLimits.attempts = 2; expectedLimits.subjectOperations = 2; expectedLimits.uiActions = 60
-        expectedLimits.controllerCalls = 24; expectedLimits.wallClockSeconds = 1200
-        for installApproved in [false, true] {
-            let runner = FreshQualificationRunner(token: inputs.token)
-            let fixture = try await qualify(inputs, runner: runner, installApproved: installApproved)
-            XCTAssertEqual(fixture.fixtureDigest, inputs.token.fixtureDigest)
-            XCTAssertEqual(fixture.qualificationAttemptIDs, inputs.token.qualificationAttemptIDs)
-            let capabilityCalls = await runner.capabilityCalls, runs = await runner.runs
-            let validations = await runner.validations, qualifications = await runner.qualifications
-            XCTAssertEqual(capabilityCalls, 1); XCTAssertEqual(runs.count, 2)
-            XCTAssertEqual(validations, 2); XCTAssertEqual(qualifications, 1)
-            let validatedBindings = await runner.validatedBindings, qualifiedBindings = await runner.qualifiedBindings
-            XCTAssertEqual(validatedBindings, [bindings, bindings], "Each attempt is validated against the plan's bindings")
-            XCTAssertEqual(qualifiedBindings, [bindings], "The fixture is minted from the plan's bindings")
-            XCTAssertEqual(Set(runs.map(\.attemptID)).count, 2)
-            for (index, run) in runs.enumerated() {
-                XCTAssertTrue(run.preparedSubjectChecked)
-                XCTAssertEqual(run.plan, inputs.frozen.plan); XCTAssertEqual(run.approval, inputs.approval)
-                XCTAssertEqual(run.allowBootAndInstall, installApproved)
-                XCTAssertTrue(run.receivedVerifiedCapabilities, "Run must use the capabilities verified by this runner")
-                XCTAssertTrue(run.hasPreparedHostEvidence)
-                XCTAssertFalse(run.hadFixtureTracker)
-                XCTAssertEqual(run.qualifyingBindings, bindings)
-                XCTAssertEqual(run.limits, expectedLimits)
-                XCTAssertEqual(run.usage?.attempts, index + 1, "Each attempt reserves budget before it runs")
-            }
-        }
-    }
-    func testFreshFixtureQualificationRejectsUnreleasedIncompleteUncertainOrUnassessableAttempts() async throws {
-        let inputs = try await freshQualificationInputs()
-        let defects: [(String, @Sendable (inout AutomationAttemptReport) -> Void)] = [
-            ("resources not released", { $0.resourcesReleased = false }),
-            ("subject incomplete", { $0.result.subjectCompleted = false }),
-            ("dispatch uncertain", { $0.result.subjectDispatchUncertain = true }),
-            ("unresolved", { $0.result.summary = .unresolved }),
-            ("needs review", { $0.result.summary = .needsReview }),
-            ("infrastructure failed", { $0.result.summary = .infrastructureFailed })]
-        for (label, defect) in defects {
-            for failingAttempt in 0..<2 {
-                let runner = FreshQualificationRunner(token: inputs.token, alter: { index, report in if index == failingAttempt { defect(&report) } })
-                do {
-                    _ = try await qualify(inputs, runner: runner)
-                    XCTFail("Qualification accepted attempt \(failingAttempt) with \(label)")
-                } catch {
-                    XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Fresh fixture qualification did not complete and release; inspect its saved attempt before continuing"), label)
-                }
-                let runs = await runner.runs.count, validations = await runner.validations, qualifications = await runner.qualifications
-                XCTAssertEqual(runs, failingAttempt + 1, label)
-                XCTAssertEqual(validations, failingAttempt, "\(label): a rejected attempt must not be validated")
-                XCTAssertEqual(qualifications, 0, "\(label): no fixture may be minted")
-            }
-        }
-    }
-    func testFreshFixtureQualificationStopsWhenLiveAttemptValidationFails() async throws {
-        let inputs = try await freshQualificationInputs()
-        for failingValidation in 1...2 {
-            let runner = FreshQualificationRunner(token: inputs.token, validationFailure: failingValidation)
-            do { _ = try await qualify(inputs, runner: runner); XCTFail("Qualification ignored a failed live validation") }
-            catch { XCTAssertEqual(error as? AutomationContractError, FreshQualificationRunner.validationError) }
-            let runs = await runner.runs.count, validations = await runner.validations, qualifications = await runner.qualifications
-            XCTAssertEqual(runs, failingValidation); XCTAssertEqual(validations, failingValidation); XCTAssertEqual(qualifications, 0)
-        }
-    }
-    func testFreshFixtureQualificationRejectsUnverifiedProposalBeforeAnyAttempt() async throws {
-        let inputs = try await freshQualificationInputs(), runner = FreshQualificationRunner(token: inputs.token)
-        var unverified = inputs.capabilities; unverified.records["apple.codec.entity"] = nil
-        do { _ = try await qualify(inputs, runner: runner, capabilities: unverified); XCTFail("Unverified conversion entered qualification") }
-        catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Input and result conversion has not been verified for this app and target")) }
-        let capabilityCalls = await runner.capabilityCalls, runs = await runner.runs.count, qualifications = await runner.qualifications
-        XCTAssertEqual(capabilityCalls, 1); XCTAssertEqual(runs, 0); XCTAssertEqual(qualifications, 0)
-    }
-    func testFreshFixtureQualificationCancelledAfterFirstAttemptDoesNotRunSecond() async throws {
-        let inputs = try await freshQualificationInputs(), runner = FreshQualificationRunner(token: inputs.token, cancelAfterRun: 0)
-        let task = Task { try await self.qualify(inputs, runner: runner) }
-        switch await task.result {
-        case .success: XCTFail("Cancelled qualification minted a fixture")
-        case .failure(let error): XCTAssertTrue(error is CancellationError, "\(error)")
-        }
-        let runs = await runner.runs.count, validations = await runner.validations, qualifications = await runner.qualifications
-        XCTAssertEqual(runs, 1); XCTAssertEqual(validations, 1); XCTAssertEqual(qualifications, 0)
+        let result = try await comparison.runCampaign(cases: cases, beforeExecutor: NativeFreshFactExecutor(completed: false), afterExecutor: NativeFreshFactExecutor(completed: true))
+        XCTAssertEqual(result.before.count, 3); XCTAssertEqual(result.after.count, 3)
+        XCTAssertEqual(result.beforeCounters.failed, 3); XCTAssertEqual(result.afterCounters.failed, 0)
+        var configured = try AutomationNativeUIFixComparisonProposal.compile(frozen: frozen, original: original,
+            before: .prepared(before), after: .prepared(after), runID: "configured-compare", disposable: true)
+        configured.attemptsPerBuild = 2
+        configured.beforeCapabilities = comparison.beforeCapabilities
+        configured.afterCapabilities = comparison.afterCapabilities
+        let configuredResult = try await configured.runCampaign(cases: cases,
+            beforeExecutor: NativeFreshFactExecutor(completed: false), afterExecutor: NativeFreshFactExecutor(completed: true))
+        XCTAssertTrue(configuredResult.complete)
+        XCTAssertEqual(configuredResult.requestedAttemptsPerBuild, 2)
+        XCTAssertEqual(configuredResult.before.count, 2); XCTAssertEqual(configuredResult.after.count, 2)
     }
     func changedPreparedSource(_ before: AutomationPreparedApplication) throws -> AutomationPreparedApplication {
         var after = before
@@ -420,7 +324,7 @@ import XCTest
         _ = try await model.requestComparisonCommand(id: id, digest: preview.digest)
         await model.checkFix()
         let result = try XCTUnwrap(model.comparisonReport)
-        XCTAssertTrue(result.complete); XCTAssertEqual(result.before.count, 30); XCTAssertEqual(result.after.count, 30)
+        XCTAssertTrue(result.complete); XCTAssertEqual(result.before.count, 3); XCTAssertEqual(result.after.count, 3)
         XCTAssertNotEqual(result.baseline.plan.id, original.plan.id)
         XCTAssertEqual(result.baseline.plan.provenance["comparison.sourceCaseDigest"], original.digest)
         XCTAssertEqual(result.baseline.plan.preparedSimulatorBuildArtifacts, try .init(prepared: baseline))
@@ -549,7 +453,9 @@ import XCTest
         let app = try XCTUnwrap(model.candidate?.app ?? model.prepared?.host.app), target = TargetIdentity(id: model.simulatorID, kind: .simulator)
         var approval = RunApproval(runID: "original", app: app, target: target, environmentID: "selected-simulator:" + target.id,
             effects: [.observe, .navigate], maximumActions: 30, disposable: false)
-        var plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, instruction: "Open tasks", endpoint: "Tasks",
+        let program = try AutomationNativeWorkflowSteps.program(tapControls: "Tasks", textEntry: "",
+            approvedText: "", submitControl: "", endpoint: "Tasks")
+        var plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, program: program,
             expectedVisibleText: "Complete", approval: approval, localeIdentifier: Locale.current.identifier)
         plan.provenance["ui.runtimeManifestDigest"] = String(repeating: "a", count: 64)
         plan.provenance["ui.runtimeTeamID"] = "AAAAAAAAAA"
@@ -602,14 +508,17 @@ import XCTest
                 frozen: proposal.frozen, originalAttemptID: proposal.originalAttemptID, approval: proposal.approval,
                 limits: proposal.limits, executor: NativeSearchFactExecutor(fails: true))
         })
-        try await saveFailure(model: model, root: root)
+        let original = try await saveFailure(model: model, root: root)
         model.uiInstruction = ""; model.uiEndpoint = ""; model.uiExpectedText = "changed expectation ignored"
         XCTAssertFalse(model.canRun); XCTAssertTrue(model.canReproduceSavedFailure)
         await model.reproduceSavedFailure()
         XCTAssertNil(model.message); XCTAssertFalse(model.busy)
         let result = try XCTUnwrap(model.reproductionReport)
         XCTAssertTrue(result.complete); XCTAssertEqual(result.matchingFailures, 5)
-        XCTAssertEqual(result.frozen.plan.requirements.first?.expected, .text("Complete"))
+        XCTAssertEqual(result.frozen.plan.requirements.first?.expected, .object(["visible-text": .text("Complete")]))
+        XCTAssertEqual(result.frozen.plan.requirements, original.plan.requirements)
+        XCTAssertEqual(result.frozen.oracleDigest, original.oracleDigest)
+        XCTAssertEqual(result.frozen.digest, original.digest)
         XCTAssertEqual(model.savedReproductions.count, 1)
         XCTAssertFalse(result.attempts.contains { $0.attemptID == "original" })
     }
@@ -697,7 +606,7 @@ import XCTest
         try Data("actual changed product fixture".utf8).write(to: fixed.appendingPathComponent("changed-resource"))
         return fixed
     }
-    func testNativeCheckFixKeepsOracleAndUsesThirtyFreshAttemptsOnBothRetainedProducts() async throws {
+    func testNativeCheckFixKeepsOracleAndUsesThreeFreshAttemptsOnBothRetainedProducts() async throws {
         let (model, root, bundle) = try await fixture(comparisonExecutor: { proposal, before, after, support in
             guard case .installedUI(let beforeProduct) = before, case .installedUI(let afterProduct) = after else { throw NativeTestError.unexpectedExecution }
             XCTAssertNotEqual(beforeProduct.bundleURL, afterProduct.bundleURL)
@@ -713,7 +622,7 @@ import XCTest
         XCTAssertTrue(model.canCheckFix)
         model.uiExpectedText = "ignore edited expectation"
         let preview = try await model.previewComparisonCommand(), commandID = UUID()
-        XCTAssertEqual(preview.requestedAttemptsPerBuild, 30)
+        XCTAssertEqual(preview.requestedAttemptsPerBuild, 3)
         let queued = try await model.requestComparisonCommand(id: commandID, digest: preview.digest)
         XCTAssertEqual(queued.state, "awaitingApproval")
         model.run(); await model.reproduceSavedFailure()
@@ -721,13 +630,13 @@ import XCTest
         XCTAssertTrue(model.canCheckFix)
         await model.checkFix()
         let result = try XCTUnwrap(model.comparisonReport)
-        XCTAssertTrue(result.complete); XCTAssertEqual(result.before.count, 30); XCTAssertEqual(result.after.count, 30)
-        XCTAssertEqual(result.beforeCounters.failed, 30); XCTAssertEqual(result.afterCounters.failed, 0)
+        XCTAssertTrue(result.complete); XCTAssertEqual(result.before.count, 3); XCTAssertEqual(result.after.count, 3)
+        XCTAssertEqual(result.beforeCounters.failed, 3); XCTAssertEqual(result.afterCounters.failed, 0)
         XCTAssertEqual(result.baseline.digest, original.digest); XCTAssertEqual(result.candidate.oracleDigest, original.oracleDigest)
         XCTAssertEqual(model.savedComparisons.count, 1); XCTAssertNil(model.message); XCTAssertNil(model.fixedAppName)
         let status = try model.commandStatus(id: commandID)
         XCTAssertEqual(status.kind, .fixComparison); XCTAssertEqual(status.state, "completed")
-        XCTAssertEqual(status.comparison?.before.count, 30); XCTAssertEqual(status.comparison?.after.count, 30)
+        XCTAssertEqual(status.comparison?.before.count, 3); XCTAssertEqual(status.comparison?.after.count, 3)
         XCTAssertEqual(status.resourcesReleased, true); XCTAssertNil(status.result); XCTAssertNil(status.attemptID)
         let repeated = try await model.requestComparisonCommand(id: commandID, digest: preview.digest)
         XCTAssertEqual(repeated.state, "completed")
@@ -900,26 +809,6 @@ import XCTest
             XCTAssertFalse(model.busy); XCTAssertNil(model.report)
         }
     }
-    func testFixedControlWorkflowDoesNotSearchNavigationPhrases() async throws {
-        let (model, root, _) = try await fixture()
-        try selectPreparedSource(model: model, root: root)
-        model.uiExpectedText = "Complete"; model.uiAlternatePhrases = "Show tasks"
-        XCTAssertTrue(model.canRun); XCTAssertFalse(model.canFindFailures)
-        await model.findFailures()
-        XCTAssertNil(model.searchReport); XCTAssertTrue(model.savedSearches.isEmpty)
-    }
-    func testPhraseSearchCannotEnterFixtureOrExternalWritesOrUnassessedWorkflow() async throws {
-        let (model, root, _) = try await fixture()
-        try selectPreparedSource(model: model, root: root)
-        model.uiAlternatePhrases = "Show tasks"; XCTAssertFalse(model.canFindFailures)
-        model.uiExpectedText = "Complete"; XCTAssertFalse(model.canFindFailures)
-        for effects in ["fixture", "external"] {
-            model.effectChoice = effects; model.disposable = true
-            XCTAssertFalse(model.canFindFailures)
-        }
-        model.effectChoice = "navigation"; model.uiAlternatePhrases = "A\nB\nC"; XCTAssertFalse(model.canFindFailures)
-        model.uiAlternatePhrases = "A\nA"; XCTAssertFalse(model.canFindFailures)
-    }
     func testPropertyChecksRequireAVisibleLocatorAndTextIgnoresHiddenPreviousLabel() async throws {
         let (model, root, _) = try await fixture()
         try selectPreparedSource(model: model, root: root)
@@ -930,20 +819,6 @@ import XCTest
         let preview = try model.previewCommand()
         model.uiObservationLabel = ""
         XCTAssertEqual(try model.previewCommand().digest, preview.digest)
-    }
-    func testUnavailableSearchLeavesWorkflowApprovalUsable() async throws {
-        let (model, root, _) = try await fixture()
-        try selectPreparedSource(model: model, root: root)
-        model.uiExpectedText = "Complete"; model.uiAlternatePhrases = "Show tasks"
-        await model.findFailures()
-        XCTAssertNil(model.searchReport); XCTAssertTrue(model.canRun)
-    }
-    func testClosedWorkflowCannotDispatchUnsupportedSearch() async throws {
-        let (model, root, _) = try await fixture()
-        try selectPreparedSource(model: model, root: root)
-        model.uiExpectedText = "Complete"; model.uiAlternatePhrases = "Show tasks"
-        await model.closeAndWait(); await model.findFailures()
-        XCTAssertFalse(model.busy); XCTAssertFalse(model.canFindFailures); XCTAssertNil(model.searchReport)
     }
     func testChangedPreparedHostInvalidatesWorkflowPreview() async throws {
         let (model, root, _) = try await fixture()
@@ -978,7 +853,7 @@ private actor NativeSearchAlternatingExecutor: AutomationCampaignAttemptExecutor
     var count = 0
     func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
         count += 1
-        return await NativeSearchFactExecutor(fails: count % 2 == 0).execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget)
+        return try await NativeSearchFactExecutor(fails: count % 2 == 0).execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget)
     }
 }
 private actor NativeSearchInterruptedExecutor: AutomationCampaignAttemptExecutor {
@@ -992,11 +867,13 @@ private actor NativeSearchInterruptedExecutor: AutomationCampaignAttemptExecutor
 actor NativeSearchFactExecutor: AutomationCampaignAttemptExecutor {
     let fails: Bool
     init(fails: Bool = false) { self.fails = fails }
-    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) -> AutomationAttemptReport {
+    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) throws -> AutomationAttemptReport {
         // Source contract fixture; not a device or accessibility proof.
-        let plan = frozen.plan, observer = plan.observations[0]
+        let plan = frozen.plan
+        let observer = try XCTUnwrap(plan.observations.first, "NativeSearchFactExecutor requires an authored observation")
+        let requirement = try XCTUnwrap(plan.requirements.first, "NativeSearchFactExecutor requires an authored requirement")
         let fact = AutomationObservation(id: observer.id, app: plan.app, target: plan.target, environmentID: plan.environmentID,
-            attemptID: attemptID, stepID: observer.id, route: .ui, proof: .visibleState, value: fails ? .text("unexpected observed value") : plan.requirements[0].expected)
+            attemptID: attemptID, stepID: observer.id, route: .ui, proof: .visibleState, value: fails ? .text("unexpected observed value") : requirement.expected)
         let receipts = [plan.execution, observer].enumerated().map { index, segment in
             AutomationSegmentReceipt(scope: .init(runID: approval.runID, attemptID: attemptID, segmentID: segment.id, leaseGeneration: index + 1),
                 app: plan.app, target: plan.target, segmentID: segment.id, route: .ui, dispatched: true, completed: true,
@@ -1060,90 +937,19 @@ private func nativeFreshFact(plan: AutomationCase, approval: RunApproval, attemp
     return .init(attemptID: attemptID, result: AutomationAssessment.assess(plan: plan, attemptID: attemptID, subjectDispatched: true,
         subjectCompleted: true, observations: [fact], receipts: receipts, runID: approval.runID), receipts: receipts, resourcesReleased: true)
 }
-private func nativeFreshToken(plan: AutomationCase, approval: RunApproval, prepared: AutomationPreparedApplication, prefix: String) throws -> AutomationQualifiedFreshFixture {
-    let context = AutomationRecipeContext(app: plan.app, target: plan.target, environmentID: plan.environmentID,
-        catalogDigest: try AutomationRecipeContext.catalogDigest(prepared.catalog), hostDigest: prepared.host.hostProductDigest,
-        localeIdentifier: plan.provenance["ui.locale"]!, uiRuntimeManifestDigest: plan.provenance["ui.runtimeManifestDigest"])
-    return try .init(bindings: AutomationFreshEntityPlanner.bindings(plan: plan), evidence: [1, 2].map { index in
-        .init(context: context, plan: plan, approval: approval, report: nativeFreshFact(plan: plan, approval: approval, attemptID: prefix + String(index), completed: false))
-    })
-}
-private struct FreshQualificationInputs: Sendable {
-    let frozen: AutomationFrozenCase
-    let approval: RunApproval
-    let capabilities: CapabilityProfile
-    let prepared: AutomationPreparedApplication
-    let token: AutomationQualifiedFreshFixture
-}
-// Records the qualification gate's calls; reports are synthetic contract facts, not device execution.
-private actor FreshQualificationRunner: AutomationFreshFixtureQualifyingRunner {
-    struct Run: Sendable {
-        let attemptID: String
-        let preparedSubjectChecked: Bool
-        let plan: AutomationCase
-        let approval: RunApproval
-        let allowBootAndInstall: Bool
-        let receivedVerifiedCapabilities: Bool
-        let hasPreparedHostEvidence: Bool
-        let hadFixtureTracker: Bool
-        let qualifyingBindings: [AutomationFreshFixtureBinding]?
-        let limits: AutomationCampaignLimits?
-        let usage: AutomationCampaignUsage?
-    }
-    static let validationError = AutomationContractError.missingEvidence("Fake live attempt validation failed")
-    private static let marker = "test.freshQualification.verified"
-    let token: AutomationQualifiedFreshFixture
-    let alter: @Sendable (Int, inout AutomationAttemptReport) -> Void
-    let validationFailure: Int?
-    let cancelAfterRun: Int?
-    private(set) var capabilityCalls = 0
-    private(set) var runs: [Run] = []
-    private(set) var validatedBindings: [[AutomationFreshFixtureBinding]] = []
-    private(set) var qualifiedBindings: [[AutomationFreshFixtureBinding]] = []
-    var validations: Int { validatedBindings.count }
-    var qualifications: Int { qualifiedBindings.count }
-    private var capabilitySubjectWasPrepared = false
-    init(token: AutomationQualifiedFreshFixture, alter: @escaping @Sendable (Int, inout AutomationAttemptReport) -> Void = { _, _ in },
-         validationFailure: Int? = nil, cancelAfterRun: Int? = nil) {
-        self.token = token; self.alter = alter; self.validationFailure = validationFailure; self.cancelAfterRun = cancelAfterRun
-    }
-    func capabilitiesForExecution(subject: AutomationApplicationSubject, plan: AutomationCase, capabilities: CapabilityProfile) -> CapabilityProfile {
-        capabilityCalls += 1
-        if case .prepared = subject { capabilitySubjectWasPrepared = true }
-        var verified = capabilities
-        verified.records[Self.marker] = .init(state: .available, reason: "Fake runner verification", probeVersion: "test-v1", evidence: ["fake"])
-        return verified
-    }
-    func run(prepared: AutomationPreparedApplication, plan: AutomationCase, approval: RunApproval, capabilities: CapabilityProfile,
-             attemptID: String, allowBootAndInstall: Bool, campaignBudget: AutomationCampaignBudget?, fixtureTracker: AutomationFreshFixtureTracker?, qualifyingFreshBindings: [AutomationFreshFixtureBinding]?) async throws -> AutomationAttemptReport {
-        let index = runs.count
-        let limits = await campaignBudget?.limits, usage = await campaignBudget?.snapshot()
-        runs.append(.init(attemptID: attemptID, preparedSubjectChecked: capabilitySubjectWasPrepared, plan: plan, approval: approval,
-            allowBootAndInstall: allowBootAndInstall, receivedVerifiedCapabilities: capabilities.records[Self.marker] != nil,
-            hasPreparedHostEvidence: plan.preparedSimulatorBuildArtifacts != nil, hadFixtureTracker: fixtureTracker != nil, qualifyingBindings: qualifyingFreshBindings,
-            limits: limits, usage: usage))
-        var report = nativeFreshFact(plan: plan, approval: approval, attemptID: attemptID, completed: false)
-        alter(index, &report)
-        if cancelAfterRun == index { withUnsafeCurrentTask { $0?.cancel() } }
-        return report
-    }
-    func validateFreshFixtureAttempt(bindings: [AutomationFreshFixtureBinding]) throws {
-        validatedBindings.append(bindings)
-        if validations == validationFailure { throw Self.validationError }
-    }
-    func qualifyFreshFixture(bindings: [AutomationFreshFixtureBinding]) -> AutomationQualifiedFreshFixture {
-        qualifiedBindings.append(bindings)
-        return token
-    }
-}
-private struct NativeFreshFactExecutor: AutomationFreshFixtureAttemptExecutor {
+private struct NativeFreshFactExecutor: AutomationCampaignAttemptExecutor {
     let completed: Bool
     func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
-        XCTFail("Mutating repetition skipped fresh fixture authority"); throw NativeTestError.unexpectedExecution
+        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, excludedEntityIDs: [])
     }
-    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget, fixtureTracker: AutomationFreshFixtureTracker) async throws -> AutomationAttemptReport {
+    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget,
+                 excludedEntityIDs: Set<String>) async throws -> AutomationAttemptReport {
         let report = nativeFreshFact(plan: frozen.plan, approval: approval, attemptID: attemptID, completed: completed)
-        try await fixtureTracker.reserveBeforeSubject(receipts: Array(report.receipts.prefix(2)), plan: frozen.plan, approval: approval, attemptID: attemptID)
+        let setup = report.receipts.filter { receipt in frozen.plan.setup.contains { $0.id == receipt.segmentID } }
+        let identities = try AutomationFreshFixtureEvidence.identitiesBeforeSubject(receipts: setup,
+            plan: frozen.plan, runID: approval.runID, attemptID: attemptID)
+        guard !identities.isEmpty, identities.isDisjoint(with: excludedEntityIDs) else { throw AutomationFixtureFreshnessError.invalidFixture }
+        // The synthetic subject operation is reserved only after setup identity checks.
         try await budget.reserveOperations(id: attemptID + ".subject", phase: .subject, count: 1)
         return report
     }

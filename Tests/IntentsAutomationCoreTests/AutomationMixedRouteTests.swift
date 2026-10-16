@@ -8,7 +8,7 @@ final class AutomationMixedRouteTests: XCTestCase, @unchecked Sendable {
             execution: .init(id: "subject", kind: .systemIntent, phase: .subject, operation: "Complete"),
             setup: [.init(id: "setup", kind: .ui, phase: .setup, operation: "Create")],
             observations: [.init(id: "readback", kind: .systemQuery, phase: .observe, operation: "Find")],
-            requirements: [.init(observationID: "readback", expected: .bool(true), proof: .persistedState, justification: "Actual independent state")])
+            requirements: [.init(observationID: "readback", expected: .bool(true), proof: .appState, justification: "Independently queried app state")])
         return (plan, .init(runID: "run", app: app, target: plan.target, environmentID: plan.environmentID,
             effects: [.observe], maximumActions: 10, disposable: true, approvedCaseDigest: try! AutomationFrozenCase.planDigest(plan)))
     }
@@ -16,7 +16,7 @@ final class AutomationMixedRouteTests: XCTestCase, @unchecked Sendable {
         let (plan, _) = fixture(), events = MixedEvents(), leases = AutomationDeviceLeaseManager()
         let driver = AutomationMixedRouteDriver(apple: MixedFixtureDriver(name: "apple", events: events))
         let lease = try await leases.acquire(runID: "run", target: plan.target, control: .ui)
-        for kind in [AutomationSegment.Kind.ui] {
+        for kind in [AutomationSegment.Kind.ui, .observeOnly] {
             let segment = AutomationSegment(id: "setup", kind: kind, phase: .setup, operation: "Create")
             let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: segment.id, leaseGeneration: lease.generation)
             do { try await driver.acquire(plan: plan, segment: segment, scope: scope, lease: lease); XCTFail("Legacy UI route acquired") }
@@ -127,23 +127,24 @@ final class AutomationMixedRouteTests: XCTestCase, @unchecked Sendable {
     }
     func testLeaseControlMismatchIsDeniedBeforeAnyDriverAcquires() async throws {
         let simulator = TargetIdentity(id: "owned", kind: .simulator)
-        try await assertAcquireDenied(target: simulator, control: .system, kind: .ui, expected: .unknownLease)
+        let generatedHostOnly = AutomationContractError.missingEvidence("UI workflows execute as a single generated-host XCUITest plan")
+        try await assertAcquireDenied(target: simulator, control: .system, kind: .ui, expected: generatedHostOnly)
         try await assertAcquireDenied(target: simulator, control: .ui, kind: .systemIntent, expected: .unknownLease)
         try await assertAcquireDenied(target: simulator, control: .ui, kind: .systemQuery, expected: .unknownLease)
-        try await assertAcquireDenied(target: phone, control: .system, kind: .ui, expected: .unknownLease)
+        try await assertAcquireDenied(target: phone, control: .system, kind: .ui, expected: generatedHostOnly)
     }
     func testUnsupportedSegmentKindsHaveNoProductionDriver() async throws {
-        let unsupported = AutomationContractError.missingEvidence("No qualified production driver for this segment route")
-        for kind in [AutomationSegment.Kind.pairedFeature, .observeOnly] {
-            for control in [AutomationDeviceLeaseManager.Lease.Control.ui, .system] {
-                try await assertAcquireDenied(target: phone, control: control, kind: kind, expected: unsupported)
-            }
+        for control in [AutomationDeviceLeaseManager.Lease.Control.ui, .system] {
+            try await assertAcquireDenied(target: phone, control: control, kind: .pairedFeature,
+                expected: .missingEvidence("The approved paired feature runtime is unavailable"))
+            try await assertAcquireDenied(target: phone, control: control, kind: .observeOnly,
+                expected: .missingEvidence("UI workflows execute as a single generated-host XCUITest plan"))
         }
     }
     func testDeniedRouteLeavesDriverFreeForTheCorrectlyControlledSegment() async throws {
         let (driver, plan, segment, scope, lease, events) = try await routedDriver(target: phone, control: .system, kind: .ui)
         do { try await driver.acquire(plan: plan, segment: segment, scope: scope, lease: lease); XCTFail("UI segment acquired under system lease") }
-        catch { XCTAssertEqual(error as? AutomationContractError, .unknownLease) }
+        catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("UI workflows execute as a single generated-host XCUITest plan")) }
         var siriSegment = segment; siriSegment.kind = .siriText
         try await driver.acquire(plan: plan, segment: siriSegment, scope: scope, lease: lease)
         let proof = await driver.release(scope: scope, lease: lease); XCTAssertTrue(proof.commandsDrained)
@@ -171,7 +172,7 @@ private actor MixedFixtureDriver: AutomationRouteDriver {
         while holdExecute { try await Task.sleep(for: .milliseconds(10)) }
         let observations: [AutomationObservation] = segment.phase == .observe && !omitObservation ? [.init(id: segment.id,
             app: plan.app, target: plan.target, environmentID: plan.environmentID, attemptID: scope.attemptId, stepID: segment.id,
-            route: segment.kind, proof: .persistedState, value: .bool(true))] : []
+            route: segment.kind, proof: .appState, value: .bool(true))] : []
         return .init(scope: scope, app: plan.app, target: plan.target, segmentID: segment.id, route: segment.kind,
             dispatched: true, completed: true, observations: observations, environmentID: plan.environmentID)
     }

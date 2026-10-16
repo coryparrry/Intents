@@ -17,6 +17,7 @@ enum AutomationAssociatedHostPlatform: Equatable, Sendable {
                 throw AutomationContractError.invalidIdentity
             }
             self = .macOS
+        case .pairedRunner: throw AutomationContractError.invalidPlan("Paired features use their registered runtime, not an Apple host build")
         case .physical:
             try AutomationPhysicalExecutable.validateTarget(target)
             self = .physicalIOS
@@ -61,11 +62,19 @@ enum AutomationAssociatedHostPlatform: Equatable, Sendable {
               case .string(let name) = settings["FULL_PRODUCT_NAME"],
               case .string(let bundleID) = settings["PRODUCT_BUNDLE_IDENTIFIER"],
               directory.utf8.count <= 4096, !directory.contains("\0"),
-              directory.hasPrefix(products.path + "/"), URL(fileURLWithPath: directory).standardizedFileURL.path == directory,
+              directory.hasPrefix("/"), directory.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
+                  .allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
               name.utf8.count <= 1024, name.hasSuffix(".app"), !name.contains("/"), !name.contains("\0"),
               bundleID.range(of: #"^[A-Za-z0-9.-]{1,256}$"#, options: .regularExpression) != nil else {
             throw AutomationContractError.missingEvidence("Selected target product identity was not resolved inside owned Products")
         }
-        return (directory + "/" + name, bundleID)
+        // Xcode and Foundation can spell the same existing directory as /tmp
+        // or /private/tmp. Compare actual owned locations after the baseline build.
+        let ownedProducts = try AutomationPath.canonical(products)
+        let selectedDirectory = try AutomationPath.canonical(URL(fileURLWithPath: directory))
+        guard ownedProducts.path == products.path, selectedDirectory.path.hasPrefix(ownedProducts.path + "/") else {
+            throw AutomationContractError.missingEvidence("Selected target product directory escapes owned Products")
+        }
+        return (selectedDirectory.appendingPathComponent(name).path, bundleID)
     }
 }

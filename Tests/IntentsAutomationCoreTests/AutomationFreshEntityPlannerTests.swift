@@ -2,61 +2,117 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationFreshEntityPlannerTests: XCTestCase, @unchecked Sendable {
-    func testTwoAttemptsUseFreshNamesActualIDsAndIndependentChecksWithoutChangingContract() async throws {
-        let fixture = try FreshRecordPlanFixture()
-        let driver = FreshRecordPlanDriver()
+    func testEachDeterministicAttemptCreatesAndChecksItsOwnRecord() async throws {
+        let fixture = try FreshRecordPlanFixture(), driver = FreshRecordPlanDriver()
         let coordinator = try fixture.coordinator()
-        let original = try AutomationFrozenCase.planDigest(fixture.plan)
-        var reports: [AutomationAttemptReport] = []
-        for id in ["first", "second"] {
-            let report = try await coordinator.run(plan: fixture.plan, approval: fixture.approval, capabilities: fixture.capabilities, attemptID: id, driver: driver)
-            XCTAssertEqual(report.result.summary, .passed); XCTAssertTrue(report.resourcesReleased)
-            reports.append(report)
+        var identities: Set<String> = []
+        for attempt in ["first", "second"] {
+            let report = try await coordinator.run(plan: fixture.plan, approval: fixture.approval,
+                capabilities: fixture.capabilities, attemptID: attempt, driver: driver)
+            XCTAssertEqual(report.result.summary, .passed)
+            let current = try AutomationFreshFixtureEvidence.recordedIdentities(report: report, plan: fixture.plan)
+            XCTAssertFalse(current.isEmpty)
+            XCTAssertTrue(identities.isDisjoint(with: current))
+            identities.formUnion(current)
         }
-        let names = await driver.names
-        XCTAssertEqual(names, try ["first", "second"].map { try AutomationAttemptText.value(prefix: "Invoice", attemptID: $0) })
-        XCTAssertNotEqual(names[0], names[1])
-        let observedIDs = await driver.observedIDs
-        XCTAssertEqual(observedIDs, ["id-first", "id-second"])
-        XCTAssertEqual(try AutomationFrozenCase.planDigest(fixture.plan), original)
-        let context = AutomationRecipeContext(app: fixture.plan.app, target: fixture.plan.target, environmentID: fixture.plan.environmentID,
-            catalogDigest: try XCTUnwrap(fixture.plan.provenance["catalog"]), hostDigest: String(repeating: "d", count: 64), localeIdentifier: "en_GB", uiRuntimeManifestDigest: nil)
-        let token = try AutomationQualifiedFreshFixture(bindings: AutomationFreshEntityPlanner.bindings(plan: fixture.plan),
-            evidence: reports.map { .init(context: context, plan: fixture.plan, approval: fixture.approval, report: $0) })
-        let tracker = AutomationFreshFixtureTracker(fixture: token)
-        await driver.setReusedID("id-first")
-        let reused = try await coordinator.run(plan: fixture.plan, approval: fixture.approval, capabilities: fixture.capabilities, attemptID: "third", driver: driver, fixtureTracker: tracker)
-        XCTAssertEqual(reused.result.summary, .invalidFixture); XCTAssertFalse(reused.result.subjectDispatched)
         let invocations = await driver.invocations
         XCTAssertEqual(invocations, 2)
     }
-    func testQualificationFenceRejectsPriorIdentityAcrossBuildsAndAcceptsNewIdentity() async throws {
+
+
+
+    func testReusedRecordWithCurrentAttemptNameStopsBeforeSubject() async throws {
         let fixture = try FreshRecordPlanFixture(), driver = FreshRecordPlanDriver()
         let coordinator = try fixture.coordinator()
-        let original = try await coordinator.run(plan: fixture.plan, approval: fixture.approval, capabilities: fixture.capabilities, attemptID: "original", driver: driver)
-        let context = AutomationRecipeContext(app: fixture.plan.app, target: fixture.plan.target, environmentID: fixture.plan.environmentID,
-            catalogDigest: try XCTUnwrap(fixture.plan.provenance["catalog"]), hostDigest: String(repeating: "d", count: 64), localeIdentifier: "en_GB", uiRuntimeManifestDigest: nil)
-        let prior = AutomationLiveRecipeEvidence(context: context, plan: fixture.plan, approval: fixture.approval, report: original)
-        var plan = fixture.plan; plan.app.productDigest = String(repeating: "b", count: 64); plan.revision += 1
-        plan.provenance["catalog"] = String(repeating: "f", count: 64)
-        var approval = fixture.approval; approval.app = plan.app; approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
-        let changedContext = AutomationRecipeContext(app: plan.app, target: plan.target, environmentID: plan.environmentID,
-            catalogDigest: String(repeating: "f", count: 64), hostDigest: String(repeating: "a", count: 64), localeIdentifier: "en_GB", uiRuntimeManifestDigest: context.uiRuntimeManifestDigest)
-        let fence = try AutomationFreshFixtureQualificationFence(bindings: AutomationFreshEntityPlanner.bindings(plan: plan), plan: plan, approval: approval,
-            capabilities: fixture.capabilities, context: changedContext, previous: [prior])
-        await driver.setReusedID("id-original")
-        let rejected = try await coordinator.run(plan: plan, approval: approval, capabilities: fixture.capabilities, attemptID: "reused", driver: driver, qualificationFence: fence)
-        XCTAssertEqual(rejected.result.summary, .invalidFixture); XCTAssertFalse(rejected.result.subjectDispatched)
-        let accepted = try await coordinator.run(plan: plan, approval: approval, capabilities: fixture.capabilities, attemptID: "fresh", driver: FreshRecordPlanDriver(), qualificationFence: fence)
-        XCTAssertEqual(accepted.result.summary, .passed)
-        plan.environmentID = "another-test-environment"; approval.environmentID = plan.environmentID; approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
-        let separateContext = AutomationRecipeContext(app: plan.app, target: plan.target, environmentID: plan.environmentID,
-            catalogDigest: changedContext.catalogDigest, hostDigest: changedContext.hostDigest, localeIdentifier: "en_GB", uiRuntimeManifestDigest: context.uiRuntimeManifestDigest)
-        let separateFence = try AutomationFreshFixtureQualificationFence(bindings: AutomationFreshEntityPlanner.bindings(plan: plan), plan: plan, approval: approval,
-            capabilities: fixture.capabilities, context: separateContext, previous: [prior])
-        let isolated = try await coordinator.run(plan: plan, approval: approval, capabilities: fixture.capabilities, attemptID: "separate", driver: driver, qualificationFence: separateFence)
-        XCTAssertEqual(isolated.result.summary, .passed)
+        let first = try await coordinator.run(plan: fixture.plan, approval: fixture.approval,
+            capabilities: fixture.capabilities, attemptID: "first", driver: driver)
+        let excluded = try AutomationFreshFixtureEvidence.recordedIdentities(report: first, plan: fixture.plan)
+        await driver.setReusedID("id-first")
+        let second = try await coordinator.run(plan: fixture.plan, approval: fixture.approval,
+            capabilities: fixture.capabilities, attemptID: "second", driver: driver, excludedEntityIDs: excluded)
+        XCTAssertEqual(second.result.summary, .invalidFixture)
+        XCTAssertFalse(second.result.subjectDispatched)
+        XCTAssertTrue(second.resourcesReleased)
+        let names = await driver.names
+        XCTAssertEqual(names.last, try AutomationAttemptText.value(prefix: "Invoice", attemptID: "second"))
+        let invocations = await driver.invocations
+        XCTAssertEqual(invocations, 1)
     }
+
+    func testReproductionSeedsOriginalFailureIdentityBeforeDispatch() async throws {
+        let fixture = try FreshRecordPlanFixture(), originalDriver = FreshRecordPlanDriver(mode: .noChange)
+        let original = try await fixture.coordinator().run(plan: fixture.plan, approval: fixture.approval,
+            capabilities: fixture.capabilities, attemptID: "original", driver: originalDriver)
+        XCTAssertEqual(original.result.summary, .assertionFailed)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cases = try AutomationCaseStore(root: root), frozen = try await cases.freeze(fixture.plan)
+        try await cases.saveAttempt(original, for: frozen)
+        let driver = FreshRecordPlanDriver(); await driver.setReusedID("id-original")
+        let executor = FreshRecordCampaignExecutor(fixture: fixture, driver: driver)
+        let result = try await AutomationReproduction(cases: cases).run(frozen: frozen, originalAttemptID: "original",
+            approval: fixture.approval, capabilities: fixture.capabilities, limits: .init(), executor: executor)
+        XCTAssertEqual(result.attempts.count, 1)
+        XCTAssertEqual(result.attempts.first?.result.summary, .invalidFixture)
+        XCTAssertFalse(result.attempts.first?.result.subjectDispatched ?? true)
+        let invocations = await driver.invocations; XCTAssertEqual(invocations, 0)
+        XCTAssertNoThrow(try result.validate())
+    }
+
+    func testComparisonSharesIdentityHistoryAcrossBuilds() async throws {
+        let fixture = try FreshRecordPlanFixture(), baseline = try AutomationFrozenCase(plan: fixture.plan)
+        var changedApp = fixture.plan.app; changedApp.productDigest = String(repeating: "b", count: 64)
+        let candidate = try AutomationFixContract.candidate(from: baseline, app: changedApp)
+        var afterApproval = fixture.approval; afterApproval.runID = "after"; afterApproval.app = changedApp
+        afterApproval.approvedCaseDigest = candidate.digest
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let driver = FreshRecordPlanDriver(); await driver.setReusedID("same-record")
+        let executor = FreshRecordCampaignExecutor(fixture: fixture, driver: driver)
+        let result = try await AutomationFixComparison(cases: .init(root: root)).run(baseline: baseline, candidate: candidate,
+            attemptsPerBuild: 1, beforeApproval: fixture.approval, afterApproval: afterApproval,
+            beforeCapabilities: fixture.capabilities, afterCapabilities: fixture.capabilities, limits: .init(),
+            beforeExecutor: executor, afterExecutor: executor)
+        XCTAssertEqual(result.before.first?.result.summary, .passed)
+        XCTAssertEqual(result.after.first?.result.summary, .invalidFixture)
+        XCTAssertFalse(result.after.first?.result.subjectDispatched ?? true)
+        let invocations = await driver.invocations; XCTAssertEqual(invocations, 1)
+        XCTAssertNoThrow(try result.validate())
+    }
+
+    func testOrdinarySameRecordResetAllowsIdentityReuse() async throws {
+        let fixture = try FreshRecordPlanFixture(), driver = FreshRecordPlanDriver()
+        let bytes = try JSONEncoder().encode(fixture.plan)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        func fixedSelection(_ value: Any) -> Any {
+            if let values = value as? [Any] { return values.map(fixedSelection) }
+            guard var fields = value as? [String: Any] else { return value }
+            if fields.removeValue(forKey: "attemptProperties") != nil {
+                var properties = fields["matchingProperties"] as? [String: Any] ?? [:]
+                properties["title"] = ["kind": "text", "value": "Invoice"]
+                fields["matchingProperties"] = properties
+            }
+            if fields.removeValue(forKey: "attemptQueryPrefix") != nil { fields["queryText"] = "Invoice" }
+            if fields.removeValue(forKey: "attemptTextBindings") != nil,
+               var program = fields["uiProgram"] as? [String: Any] {
+                program["bindings"] = ["approvedText": "Invoice"]; fields["uiProgram"] = program
+            }
+            return fields.mapValues(fixedSelection)
+        }
+        object = try XCTUnwrap(fixedSelection(object) as? [String: Any])
+        let plan = try JSONDecoder().decode(AutomationCase.self, from: JSONSerialization.data(withJSONObject: object))
+        var approval = fixture.approval; approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+        XCTAssertFalse(AutomationFreshFixtureEvidence.requiresFreshIdentities(plan))
+        await driver.setReusedID("same-record")
+        let coordinator = try fixture.coordinator()
+        for attempt in ["first", "second"] {
+            let report = try await coordinator.run(plan: plan, approval: approval, capabilities: fixture.capabilities,
+                attemptID: attempt, driver: driver, excludedEntityIDs: ["TaskEntity:same-record"])
+            XCTAssertEqual(report.result.summary, .passed)
+        }
+        let invocations = await driver.invocations; XCTAssertEqual(invocations, 2)
+    }
+
     func testAmbiguousOrWrongAttemptFixtureNeverInvokesSubject() async throws {
         for mode in [FreshRecordPlanDriver.Mode.duplicate, .wrongName] {
             let fixture = try FreshRecordPlanFixture(), driver = FreshRecordPlanDriver(mode: mode)
@@ -106,7 +162,6 @@ final class AutomationFreshEntityPlannerTests: XCTestCase, @unchecked Sendable {
             XCTAssertEqual(program.operations.map(\.locator), [.init(.testId, "task.create"), .init(.testId, "task.title"),
                 .init(.label, contextValue, role: .button), .init(.testId, "task.add"), .init(.label, "Tasks")])
             XCTAssertEqual(program.operations.map(\.binding), [nil, "approvedText", nil, nil, nil])
-            XCTAssertTrue(program.operations.allSatisfy { $0.goal == nil })
         }
         let filledContexts = await driver.contexts
         XCTAssertEqual(filledContexts, ["Work", "Personal"])
@@ -145,7 +200,6 @@ final class AutomationFreshEntityPlannerTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(program.operations.map(\.binding), [nil, "approvedText", nil, nil])
         XCTAssertEqual(program.bindings, [:], "The attempt name is supplied only when the approved case runs")
         XCTAssertEqual(fixture.plan.setup.first?.attemptTextBindings, ["approvedText": "Invoice"])
-        XCTAssertTrue(program.operations.allSatisfy { $0.goal == nil })
         let alreadyOpen = try FreshRecordPlanFixture(createControl: nil)
         XCTAssertEqual(alreadyOpen.plan.setup.first?.uiProgram?.operations.map(\.kind), [.fillBinding, .tap, .assertEndpoint])
     }
@@ -158,7 +212,6 @@ final class AutomationFreshEntityPlannerTests: XCTestCase, @unchecked Sendable {
             XCTAssertEqual(program.operations.map(\.locator), [.init(.testId, "task.create"), .init(.testId, "task.title"),
                 .init(.testId, "task.owner"), .init(.testId, "task.add"), .init(.label, "Tasks")])
             XCTAssertEqual(program.operations.map(\.binding), [nil, "approvedText", "context", nil, nil])
-            XCTAssertTrue(program.operations.allSatisfy { $0.goal == nil })
         }
         let driver = FreshRecordPlanDriver()
         let report = try await fixture.coordinator().run(plan: fixture.plan, approval: fixture.approval,
@@ -302,4 +355,18 @@ actor FreshRecordPlanDriver: AutomationRouteDriver {
         return .array(records)
     }
     func release(scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease) async -> AutomationReleaseProof { .init(commandsDrained: true, runnerTerminated: true) }
+}
+
+private struct FreshRecordCampaignExecutor: AutomationCampaignAttemptExecutor {
+    let fixture: FreshRecordPlanFixture
+    let driver: FreshRecordPlanDriver
+    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
+                 budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
+        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, excludedEntityIDs: [])
+    }
+    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
+                 budget: AutomationCampaignBudget, excludedEntityIDs: Set<String>) async throws -> AutomationAttemptReport {
+        try await fixture.coordinator().run(plan: frozen.plan, approval: approval, capabilities: fixture.capabilities,
+            attemptID: attemptID, driver: driver, excludedEntityIDs: excludedEntityIDs)
+    }
 }

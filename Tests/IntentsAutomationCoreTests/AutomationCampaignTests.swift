@@ -55,13 +55,12 @@ final class AutomationCampaignTests: XCTestCase, @unchecked Sendable {
         let calls = await executor.calls; XCTAssertEqual(calls, 1)
     }
     func testCapsAreSharedAtomicAndNeverRefundAmbiguousReservations() async throws {
-        var limits = AutomationCampaignLimits(); limits.subjectOperations = 1; limits.uiActions = 1; limits.controllerCalls = 0
+        var limits = AutomationCampaignLimits(); limits.subjectOperations = 1; limits.uiActions = 1
         let budget = try AutomationCampaignBudget(limits: limits)
         try await budget.reserveOperations(id: "first", phase: .subject, count: 1, uiActions: 1)
         do { try await budget.reserveOperations(id: "retry", phase: .subject, count: 1); XCTFail() } catch { }
         do { try await budget.reserveOperations(id: "first", phase: .setup, count: 1); XCTFail() } catch { }
-        do { try await budget.reserveControllerCall(id: "model"); XCTFail() } catch { }
-        let usage = await budget.snapshot(); XCTAssertEqual(usage.reservedSubjectOperations, 1); XCTAssertEqual(usage.reservedSetupOperations, 0); XCTAssertEqual(usage.controllerCalls, 0)
+        let usage = await budget.snapshot(); XCTAssertEqual(usage.reservedSubjectOperations, 1); XCTAssertEqual(usage.reservedSetupOperations, 0)
     }
     func testForeignRunFactsAreRetainedAsInterruptionAndNeverCountedAsPass() async throws {
         let (base, variants, approval, capabilities) = try fixture(), executor = CampaignFixtureExecutor(mode: .foreignRun)
@@ -97,14 +96,14 @@ final class AutomationCampaignTests: XCTestCase, @unchecked Sendable {
         clock.advance(seconds: 11)
         await assertExhausted("wall clock") { try await budget.reserveOperations(id: "late", phase: .cleanup, count: 1) }
         await assertExhausted("wall clock") { try await budget.reserveAttempt(id: "late") }
-        await assertExhausted("wall clock") { try await budget.reserveControllerCall(id: "late") }
+        await assertExhausted("wall clock") { try await budget.reserveOperations(id: "late-ui", phase: .subject, count: 1, uiActions: 1) }
         try await budget.reserveResourceRelease(id: "simulator")
         do { try await budget.reserveResourceRelease(id: "simulator"); XCTFail("Duplicate release accepted") } catch {
             XCTAssertEqual(error as? AutomationContractError, .ambiguousDispatch)
         }
         let usage = await budget.snapshot()
         XCTAssertEqual(usage.reservedResourceReleaseOperations, 2)
-        XCTAssertEqual(usage.attempts, 0); XCTAssertEqual(usage.reservedCleanupOperations, 0); XCTAssertEqual(usage.controllerCalls, 0)
+        XCTAssertEqual(usage.attempts, 0); XCTAssertEqual(usage.reservedCleanupOperations, 0)
     }
     func testEachPhaseCapExhaustsOnlyItsOwnCounterWithExactLabel() async throws {
         let cases: [(AutomationSegment.Phase, WritableKeyPath<AutomationCampaignLimits, Int>, KeyPath<AutomationCampaignUsage, Int>, String)] = [

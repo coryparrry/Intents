@@ -51,7 +51,7 @@ enum AutomationNativeWorkflowSteps {
     }
     /// Count the actual lowered host steps, including launch, freshness and screenshot steps.
     static func applyBudget(to plan: inout AutomationCase, approval: RunApproval) throws {
-        plan.budget.controllerCalls = 1
+        plan.budget.controllerCalls = 0
         plan.budget.uiActions = approval.maximumActions
         plan.budget.subjectOperations = approval.maximumActions
         var reviewed = approval

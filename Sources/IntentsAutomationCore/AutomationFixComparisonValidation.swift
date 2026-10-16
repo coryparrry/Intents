@@ -16,13 +16,12 @@ extension AutomationFixComparisonReport {
         let ids = (before + after).map(\.attemptID) + (interruption.map { [$0.attemptID] } ?? [])
         guard ids.allSatisfy(AutomationUIFailureSearchRecord.identifier), Set(ids).count == ids.count else { throw AutomationContractError.conflictingOperation }
         var beforeComputed = ScopeCounters(), afterComputed = ScopeCounters(), seen = Set<String>()
-        let segments = baseline.plan.setup + [baseline.plan.execution] + baseline.plan.observations + baseline.plan.cleanup
-        let mutating = !segments.allSatisfy { $0.effects.isSubset(of: [.observe, .navigate]) }
+        let requiresFreshIdentities = (baseline.plan.setupChecks ?? []).contains { $0.entityProperty?.selection.attemptProperties?.isEmpty == false }
         for (frozen, reports, runID, isBefore) in [(baseline, before, beforeRunID, true), (candidate, after, afterRunID, false)] {
             for (index, report) in reports.enumerated() {
                 try AutomationRecordedEvidence.validate(report: report, plan: frozen.plan, expectedRunID: runID)
-                if mutating && (report.result.subjectDispatched || report.result.subjectDispatchUncertain) {
-                    let identities = try AutomationQualifiedFreshFixture.recordedIdentities(report: report, plan: frozen.plan)
+                if requiresFreshIdentities && (report.result.subjectDispatched || report.result.subjectDispatchUncertain) {
+                    let identities = try AutomationFreshFixtureEvidence.recordedIdentities(report: report, plan: frozen.plan)
                     guard seen.isDisjoint(with: identities) else { throw AutomationFixtureFreshnessError.invalidFixture }
                     seen.formUnion(identities)
                 }

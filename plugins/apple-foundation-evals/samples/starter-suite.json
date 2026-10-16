@@ -1,0 +1,39 @@
+{
+  "name": "On-device essentials",
+  "version": "v1",
+  "instructions": "Follow each instruction carefully. Keep answers concise.",
+  "criteria": "The response follows every requested format and answers the prompt accurately.",
+  "scoringMode": "modelJudge",
+  "modelConfiguration": {
+    "provider": "onDevice",
+    "samplingMode": "greedy",
+    "maximumResponseTokens": 256,
+    "customization": {
+      "saveFullTranscript": true
+    }
+  },
+  "features": {
+    "streamResponse": true
+  },
+  "cases": [
+    {
+      "id": "8ed3104a-2617-4890-9230-06c3734cf5be",
+      "name": "Follow an exact instruction",
+      "prompt": "Reply with exactly the word apple in lowercase.",
+      "expected": "apple"
+    },
+    {
+      "id": "a664de12-c831-48cf-b2c4-d2548d8a2518",
+      "name": "Extract a fruit",
+      "prompt": "Extract the fruit from: I bought a banana and a notebook. Reply with only the fruit.",
+      "expected": "banana"
+    },
+    {
+      "id": "df1602e0-48aa-4fcd-8521-0b9de08417b0",
+      "name": "Summarize a schedule change",
+      "prompt": "Summarize in one sentence: The team moved the meeting to Thursday because two people were traveling on Wednesday.",
+      "expected": "The meeting moved to Thursday because two people were traveling on Wednesday."
+    }
+  ],
+  "repetitions": 1
+}

@@ -8,22 +8,27 @@ public struct AutomationUIFailureSearchRecord: Codable, Equatable, Sendable {
     public let baseline: AutomationFrozenCase
     public let mutations: [AutomationMutationCase]
     public let report: AutomationFailureSearchReport
+    public var reductions: [AutomationReductionEdge]? = nil
     public var verificationScope: String { "historicalValidatedFacts" }
-    public init(id: String, runID: String, baseline: AutomationFrozenCase, mutations: [AutomationMutationCase], report: AutomationFailureSearchReport) {
-        schemaVersion = 1; self.id = id; self.runID = runID; self.baseline = baseline; self.mutations = mutations; self.report = report
+    public init(id: String, runID: String, baseline: AutomationFrozenCase, mutations: [AutomationMutationCase], report: AutomationFailureSearchReport, reductions: [AutomationReductionEdge] = []) {
+        schemaVersion = 1
+        self.reductions = reductions.isEmpty ? nil : reductions
+        self.id = id; self.runID = runID; self.baseline = baseline; self.mutations = mutations; self.report = report
     }
     func validate() throws {
+        guard report.qualificationAttempts == nil else { throw AutomationContractError.conflictingOperation }
+        guard reductions?.isEmpty != false else { throw AutomationContractError.conflictingOperation }
         guard schemaVersion == 1, Self.identifier(id), Self.identifier(runID), mutations.count <= 2,
               report.schemaVersion == 1, report.baselineDigest == baseline.digest,
-              report.attempts.count <= 20, report.interruptions.count <= 1, report.confirmations.count <= 2,
+              report.attempts.count + report.interruptions.count + (report.qualificationAttempts?.count ?? 0) <= 100, report.interruptions.count <= 1, report.confirmations.count <= 2,
               report.stopReason.map({ $0.utf16.count <= 4096 }) ?? true,
               report.capabilityGaps.count <= 20, report.capabilityGaps.allSatisfy({ $0.utf16.count <= 4096 }) else { throw AutomationContractError.invalidIdentity }
-        try baseline.validate(); try AutomationGoalPhraseVariation.validateBaseline(baseline.plan)
+        try baseline.validate()
         let definitions = [baseline] + mutations.map(\.frozen)
         guard Set(definitions.map(\.digest)).count == definitions.count else { throw AutomationContractError.conflictingOperation }
-        for mutation in mutations { try mutation.frozen.validate(); try AutomationGoalPhraseVariation.validate(mutation, baseline: baseline) }
+        for mutation in mutations { try mutation.frozen.validate(); try AutomationSubjectPhraseVariation.validate(mutation, baseline: baseline) }
         let byDigest = Dictionary(uniqueKeysWithValues: definitions.map { ($0.digest, $0) })
-        let ids = report.attempts.map { $0.report.attemptID } + report.interruptions.map(\.attemptID)
+        let ids = report.attempts.map { $0.report.attemptID } + report.interruptions.map(\.attemptID) + (report.qualificationAttempts ?? []).map { $0.report.attemptID }
         guard ids.allSatisfy(Self.identifier), Set(ids).count == ids.count else { throw AutomationContractError.invalidIdentity }
         let mutationDigests = Set(mutations.map { $0.frozen.digest })
         let baselineAttempts = report.attempts.filter { $0.stage == .baseline }
@@ -32,8 +37,8 @@ public struct AutomationUIFailureSearchRecord: Codable, Equatable, Sendable {
               discoveries.allSatisfy({ mutationDigests.contains($0.caseDigest) }),
               Set(discoveries.map(\.caseDigest)).count == discoveries.count,
               Set(report.confirmations.map(\.caseDigest)).count == report.confirmations.count else { throw AutomationContractError.conflictingOperation }
-        guard discoveries.map(\.caseDigest) == Array(mutationDigests.sorted().prefix(discoveries.count)),
-              report.attempts.allSatisfy({ $0.stage == .baseline }) || baselineAttempts.count == 3 else { throw AutomationContractError.conflictingOperation }
+        try validateDiscoveryOrder()
+        guard report.attempts.allSatisfy({ $0.stage == .baseline }) || baselineAttempts.count == 3 else { throw AutomationContractError.conflictingOperation }
         var candidates: [(String, [String])] = []
         for attempt in report.attempts where attempt.stage == .baseline || attempt.stage == .discovery {
             let result = attempt.report.result
@@ -85,10 +90,10 @@ public struct AutomationUIFailureSearchRecord: Codable, Equatable, Sendable {
         let usage = report.usage
         let values = [usage.attempts, usage.reservedSubjectOperations, usage.reservedSetupOperations, usage.reservedObserverOperations,
             usage.reservedCleanupOperations, usage.reservedUIActions, usage.controllerCalls, usage.reservedResourceReleaseOperations]
-        guard values.allSatisfy({ (0...100_000).contains($0) }), usage.attempts == report.attempts.count + report.interruptions.count,
+        guard values.allSatisfy({ (0...100_000).contains($0) }), usage.attempts == report.attempts.count + report.interruptions.count + (report.qualificationAttempts?.count ?? 0),
               usage.appModelRequests == nil else { throw AutomationContractError.invalidIdentity }
     }
-    private func validate(_ confirmation: AutomationFailureConfirmation, stage: AutomationSearchAttempt.Stage,
+    func validate(_ confirmation: AutomationFailureConfirmation, stage: AutomationSearchAttempt.Stage,
                           byDigest: [String: AutomationFrozenCase]) throws {
         guard let frozen = byDigest[confirmation.caseDigest], confirmation.attempts.count <= 5,
               Set(confirmation.attempts).count == confirmation.attempts.count, !confirmation.signature.isEmpty,
@@ -150,19 +155,31 @@ public actor AutomationUIFailureSearchArchive {
         guard record.id == id else { throw AutomationContractError.conflictingOperation }
         try await validateStoredFacts(record); return (record, data.count)
     }
-    public func records() async throws -> [AutomationUIFailureSearchRecord] {
+    public func records() async throws -> [AutomationUIFailureSearchRecord] { try await recordListing().items }
+    public func recordListing() async throws -> AutomationHistoryListing<AutomationUIFailureSearchRecord> {
         guard try AutomationPath.canonical(root).path == root.path else { throw AutomationContractError.invalidIdentity }
         let names = try FileManager.default.contentsOfDirectory(atPath: root.path)
         guard names.count <= 200 else { throw AutomationContractError.invalidIdentity }
         var records: [AutomationUIFailureSearchRecord] = []
-        var totalBytes = 0
+        var totalBytes = 0, skipped = 0
         for name in names.filter({ $0.hasSuffix(".json") }).sorted() {
-            let (record, bytes) = try await read(id: String(name.dropLast(5)), maximumBytes: min(2_097_152, 16_777_216 - totalBytes))
-            totalBytes += bytes
+            let id = String(name.dropLast(5))
+            guard AutomationUIFailureSearchRecord.identifier(id) else { throw AutomationContractError.invalidIdentity }
+            let data = try AutomationReadOnlyFile.read(root: root, relativePath: name,
+                maximumBytes: min(2_097_152, 16_777_216 - totalBytes), requirePrivateOwnership: true)
+            totalBytes += data.count
+            let record: AutomationUIFailureSearchRecord
+            do { record = try JSONDecoder().decode(AutomationUIFailureSearchRecord.self, from: data) }
+            catch {
+                if try AutomationRetiredUIHistory.search(data, id: id) { skipped += 1; continue }
+                throw error
+            }
+            guard record.id == id else { throw AutomationContractError.conflictingOperation }
+            try await validateStoredFacts(record)
             guard totalBytes <= 16_777_216 else { throw AutomationContractError.invalidIdentity }
             records.append(record)
         }
-        return records
+        return .init(items: records, skippedRetiredRecords: skipped)
     }
     private func validateStoredFacts(_ record: AutomationUIFailureSearchRecord) async throws {
         try record.validate()
@@ -171,7 +188,8 @@ public actor AutomationUIFailureSearchArchive {
             guard stored.plan == frozen.plan else { throw AutomationContractError.conflictingOperation }
         }
         let definitions = Dictionary(uniqueKeysWithValues: ([record.baseline] + record.mutations.map(\.frozen)).map { ($0.digest, $0) })
-        for attempt in record.report.attempts {
+        let recordedAttempts = record.report.attempts.map { AutomationSearchQualification(caseDigest: $0.caseDigest, report: $0.report) } + (record.report.qualificationAttempts ?? [])
+        for attempt in recordedAttempts {
             guard let frozen = definitions[attempt.caseDigest] else { throw AutomationContractError.conflictingOperation }
             guard try await cases.loadAttempt(id: attempt.report.attemptID, frozen: frozen) == attempt.report else { throw AutomationContractError.conflictingOperation }
         }

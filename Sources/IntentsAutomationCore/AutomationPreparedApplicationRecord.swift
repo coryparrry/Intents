@@ -4,6 +4,8 @@ import Foundation
 /// Resolves one saved preparation from its exact retained product path. It
 /// neither searches other projects nor authorises a build or device command.
 public enum AutomationPreparedApplicationRecord {
+    // Includes the bounded source manifest plus up to 16 MiB of host/catalog evidence.
+    public static let maximumRecordBytes = AutomationSourceSnapshot.maximumManifestBytes + 16 * 1024 * 1024
     /// Reuses the newest completed preparation without rebuilding. Unfinished
     /// directories are ignored; a damaged newest record requires preparation again.
     public static func loadLatest(supportRoot: URL) throws -> AutomationPreparedApplication? {
@@ -24,14 +26,14 @@ public enum AutomationPreparedApplicationRecord {
         do {
             let relative = record.deletingLastPathComponent().lastPathComponent + "/prepared-application.json"
             let data = try AutomationReadOnlyFile.read(root: root, relativePath: relative,
-                maximumBytes: 16 * 1024 * 1024, requirePrivateOwnership: true)
+                maximumBytes: maximumRecordBytes, requirePrivateOwnership: true)
             let expected = try JSONDecoder().decode(AutomationPreparedApplication.self, from: data)
             guard expected.host.subjectProductPath.hasPrefix(record.deletingLastPathComponent().path + "/") else {
                 throw AutomationContractError.conflictingOperation
             }
             let prepared = try load(app: expected.host.app, supportRoot: root)
             guard prepared == expected else { throw AutomationContractError.conflictingOperation }
-            try AutomationPreparedCodecAuthority.verify(prepared)
+            try AutomationPreparedArtifactIntegrity.verify(prepared)
             return prepared
         } catch {
             throw AutomationContractError.missingEvidence("The latest saved prepared files changed or are missing. Prepare the app again.")
@@ -52,7 +54,7 @@ public enum AutomationPreparedApplicationRecord {
         let product = try AutomationPath.canonical(URL(fileURLWithPath: path))
         guard try AutomationPath.canonical(session).path == session.path, product.path == path,
               product.path.hasPrefix(session.path + "/") else { throw AutomationContractError.invalidIdentity }
-        let bytes = try AutomationReadOnlyFile.read(root: root, relativePath: parts[0] + "/prepared-application.json", maximumBytes: 16 * 1024 * 1024, requirePrivateOwnership: true)
+        let bytes = try AutomationReadOnlyFile.read(root: root, relativePath: parts[0] + "/prepared-application.json", maximumBytes: maximumRecordBytes, requirePrivateOwnership: true)
         let prepared = try JSONDecoder().decode(AutomationPreparedApplication.self, from: bytes)
         guard prepared.host.app == app, prepared.catalog.app == app,
               prepared.host.subjectProductPath == path,
@@ -60,7 +62,9 @@ public enum AutomationPreparedApplicationRecord {
             throw AutomationContractError.conflictingOperation
         }
         try prepared.source.validateCaptureLayout()
+        try prepared.workspace?.verify(session: session, manifest: prepared.source)
         if let graph = prepared.sourceGraph {
+            guard graph.workspaceRelativePath == prepared.workspace?.relativePath else { throw AutomationContractError.conflictingOperation }
             guard graph.schemaVersion >= 2, prepared.sourceSyntax.map({ $0.schemaVersion == 2 }) ?? true else {
                 throw AutomationContractError.missingEvidence("Retained source evidence predates conditional-compilation tracking; prepare this source target again")
             }
@@ -68,7 +72,7 @@ public enum AutomationPreparedApplicationRecord {
                 throw AutomationContractError.missingEvidence("Retained source evidence lacks current local-package dependency tracking; prepare this source target again")
             }
             guard graph.configuration == app.configuration,
-                  app.logicalID == prepared.source.layoutRoot + "/" + graph.projectRelativePath + "#" + graph.targetID,
+                  app.logicalID == (graph.workspaceRelativePath.map { prepared.source.layoutRoot + "/" + $0 + "::" } ?? "") + prepared.source.layoutRoot + "/" + graph.projectRelativePath + "#" + graph.targetID,
                   prepared.catalog.sourceGraphDigest == (try graph.digest) else { throw AutomationContractError.conflictingOperation }
             guard graph.packagePlatformConditionVersion == nil || graph.packagePlatformConditionVersion == 1 else { throw AutomationContractError.conflictingOperation }
             guard graph.synchronizedMembershipVersion == nil || graph.synchronizedMembershipVersion == 1 else { throw AutomationContractError.conflictingOperation }
@@ -83,6 +87,7 @@ public enum AutomationPreparedApplicationRecord {
                 frozenRoot: session.appendingPathComponent("source"), projectRelativePath: graph.projectRelativePath,
                 targetID: graph.targetID, configuration: graph.configuration,
                 projectData: AutomationReadOnlyFile.read(root: session, relativePath: "source-graph-project.pbxproj", maximumBytes: 16 * 1024 * 1024, requirePrivateOwnership: true),
+                workspaceRelativePath: graph.workspaceRelativePath,
                 resolutionData: graph.inputs.contains(where: { $0.role == "packageResolution" })
                     ? AutomationReadOnlyFile.read(root: session, relativePath: "source-graph-resolution.json", maximumBytes: 16 * 1024 * 1024, requirePrivateOwnership: true) : nil,
                 platformSettings: platformSettings, developerDirectory: graph.platformContext.map { URL(fileURLWithPath: $0.developerDirectory) },

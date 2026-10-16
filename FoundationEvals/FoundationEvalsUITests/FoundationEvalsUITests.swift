@@ -15,6 +15,10 @@ final class FoundationEvalsUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         app.activate()
+        // XCTest can launch with only the menu bar; open the editor explicitly.
+        app.menuBars.menuBarItems["Evaluation"].click()
+        app.menuItems["Show Suite Editor"].click()
+        app.activate()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
 
         let appMenu = app.menuBars.menuBarItems["Intents"]

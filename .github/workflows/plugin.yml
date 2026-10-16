@@ -1,0 +1,46 @@
+name: Plugin
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/apple-foundation-evals/**'
+      - '.agents/plugins/marketplace.json'
+      - '.github/workflows/plugin.yml'
+  pull_request:
+    paths:
+      - 'plugins/apple-foundation-evals/**'
+      - '.agents/plugins/marketplace.json'
+      - '.github/workflows/plugin.yml'
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plugin:
+    name: Validate standalone plugin
+    runs-on: xcode-27
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: plugins/apple-foundation-evals
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned dependencies
+        run: npm ci
+      - name: Check types and rebuild the bundled interface
+        run: |
+          npm run typecheck
+          npm run build:ui
+      - name: Test the server, interface, and installed package
+        run: npm test
+      - name: Test bundled native engine and protocol
+        run: npm run test:native
+      - name: Build the distributable package
+        run: node scripts/package.mjs "$RUNNER_TEMP/apple-foundation-evals.zip"

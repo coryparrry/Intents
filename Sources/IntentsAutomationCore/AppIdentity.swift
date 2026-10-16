@@ -14,6 +14,8 @@ public struct AppIdentity: Codable, Equatable, Sendable {
     public var platform: String
     public var sourceManifestDigest: String?
     public var sourceSyntaxIndexDigest: String? = nil
+    /// Actual approved served JavaScript bytes and their native/source bindings.
+    public var servedJavaScriptDigest: String? = nil
     public var provenanceStrength: String
     public init(logicalID: String, bundleID: String, platform: String, productDigest: String? = nil) {
         self.logicalID = logicalID; self.bundleID = bundleID; self.platform = platform
@@ -22,22 +24,24 @@ public struct AppIdentity: Codable, Equatable, Sendable {
 }
 
 public struct TargetIdentity: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable { case simulator, physical, nativeMac }
+    public enum Kind: String, Codable, Sendable { case simulator, physical, nativeMac, pairedRunner }
     public var id: String
     public var kind: Kind
     public var osBuild: String?
     public var transport: String?
     public var toolchain: String?
     public var loginSession: String?
-    /// CoreDevice UUID; id remains the approved Xcode destination identifier.
+    /// CoreDevice UUID resolved at discovery; `id` remains the Xcode destination UDID.
     public var physicalDeviceIdentifier: String?
     public init(id: String, kind: Kind, loginSession: String? = nil) {
         self.id = id; self.kind = kind; self.loginSession = loginSession
     }
     public var leaseKey: String {
+        if kind == .pairedRunner { return "paired:\(id)" }
         if kind == .nativeMac { return "mac:\(loginSession ?? "unknown")" }
-        // Preserve pre-resolution campaign keys so the original owner can release them.
-        guard kind == .physical, let identifier = physicalDeviceIdentifier else { return "ios:\(id)" }
+        guard kind == .physical else { return "ios:\(id)" }
+        // Preserve keys of pre-resolution campaigns so their original owner can release them.
+        guard let identifier = physicalDeviceIdentifier else { return "ios:\(id)" }
         return "ios:\(UUID(uuidString: identifier)?.uuidString ?? identifier)"
     }
 }

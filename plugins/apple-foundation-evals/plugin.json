@@ -1,0 +1,42 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "apple-foundation-evals",
+  "version": "0.5.0",
+  "description": "Run Apple Foundation Models evaluations on your Mac and inspect real session traces inside Codex.",
+  "author": {
+    "name": "Cory Parry"
+  },
+  "repository": "https://github.com/coryparrry/Intents",
+  "license": "MIT",
+  "keywords": [
+    "apple",
+    "foundation-models",
+    "evals",
+    "traces",
+    "local",
+    "codex"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Foundation Evals",
+        "shortDescription": "On-device Apple model evals and traces",
+        "longDescription": "Create reusable evaluation suites, run Apple's on-device Foundation Models, compare results, and inspect the actual session transcript in an embedded workspace. Runs and suites stay in a separate local plugin store. Requires macOS 27+, Apple Intelligence, Node.js 22+, and Xcode 27 for the first native build. Intents and remote model providers are excluded.",
+        "developerName": "Cory Parry",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Interactive",
+          "Read",
+          "Write"
+        ],
+        "defaultPrompt": [
+          "Evaluate Apple's on-device model against these prompts and expected answers",
+          "Open my local evaluation workspace",
+          "Compare two evaluation runs and inspect their session traces"
+        ],
+        "composerIcon": "./assets/icon.svg",
+        "logo": "./assets/icon.svg"
+      }
+    }
+  }
+}

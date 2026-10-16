@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / "automation_e2e.py"
 spec = importlib.util.spec_from_file_location("automation_e2e", SCRIPT)
@@ -41,10 +41,11 @@ def catalog():
 
 
 def prepared():
-    return {"host": {"app": {"bundleID": "example.fixture"},
+    return {"host": {"app": {"bundleID": "com.coryparry.IntentsAutomation.AutomationFixture"},
                      "target": {"id": "11111111-1111-1111-1111-111111111111", "kind": "simulator"},
                      "subjectProductPath": "/prepared/AutomationFixture.app"},
-            "catalog": catalog()}
+            "catalog": catalog(), "selectedDeveloperDirectoryPath": "/Applications/Xcode_27.app/Contents/Developer",
+            "sourceGraph": {"platformContext": {"developerDirectory": "/Applications/Xcode_27.app/Contents/Developer"}}}
 
 
 def report(summary="executedUnassessed", values=None):
@@ -168,6 +169,7 @@ class FakeCommands:
     def __init__(self, output, failure=None):
         self.output, self.failure, self.calls, self.saved = output, failure, [], {}
         self.envelopes = []
+        self.env = {"DEVELOPER_DIR": "/Applications/Xcode_27.app/Contents/Developer"}
 
     def run(self, arguments, **options):
         args = [str(a) for a in arguments]
@@ -176,8 +178,12 @@ class FakeCommands:
             raise RuntimeError("injected command failure")
         if args[:3] == ["xcrun", "simctl", "create"]:
             return 0, prepared()["host"]["target"]["id"]
+        if args[:3] == ["xcrun", "simctl", "launch"]:
+            return 0, driver.FIXTURE_BUNDLE_ID + ": 123\n"
         if "--show-sdk-version" in args:
             return 0, "27.0"
+        if args == ["xcode-select", "-p"]:
+            return 0, "/Applications/Xcode_27.app/Contents/Developer\n"
         if "--show-bin-path" in args:
             return 0, str(Path(args[args.index("--scratch-path") + 1]) / "debug")
         return 0, ""
@@ -228,6 +234,46 @@ class FakeCommands:
         raise AssertionError(f"Unhandled fake JSON command: {args}")
 
 
+class FixtureLaunchTests(unittest.TestCase):
+    def exercise(self, response=(0, driver.FIXTURE_BUNDLE_ID + ": 123\n"), mutation=None):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name)
+        commands = Mock()
+        commands.run.return_value = response
+        value = prepared()
+        if mutation:
+            mutation(value)
+        driver.launch_fixture(commands, value["host"]["target"]["id"], value, output)
+        return commands, json.loads((output / "fixture-launch.json").read_text())
+
+    def test_launches_exact_owned_fixture_once_before_measuring_readiness(self):
+        commands, metadata = self.exercise()
+        simulator = prepared()["host"]["target"]["id"]
+        commands.run.assert_called_once_with(
+            ["xcrun", "simctl", "launch", simulator, driver.FIXTURE_BUNDLE_ID], timeout=180)
+        self.assertEqual(metadata, {"bundleID": driver.FIXTURE_BUNDLE_ID, "simulatorID": simulator, "pid": 123})
+
+    def test_launch_failure_and_malformed_identity_cannot_pass_setup(self):
+        for code, raw in ((1, driver.FIXTURE_BUNDLE_ID + ": 123"), (0, ""), (0, "other.app: 123"),
+                          (0, driver.FIXTURE_BUNDLE_ID + ": 0"), (0, driver.FIXTURE_BUNDLE_ID + ": -1"),
+                          (0, driver.FIXTURE_BUNDLE_ID + ": 2147483648"),
+                          (0, driver.FIXTURE_BUNDLE_ID + ": 123\nother.app: 456")):
+            with self.subTest(code=code, raw=raw), self.assertRaises(AssertionError):
+                self.exercise((code, raw))
+
+    def test_unexpected_prepared_app_or_target_never_launches(self):
+        for mutation in (lambda value: value["host"]["app"].update(bundleID="other.app"),
+                         lambda value: value["host"]["target"].update(kind="device")):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                commands = Mock()
+                value = prepared()
+                mutation(value)
+                with self.assertRaises(AssertionError):
+                    driver.launch_fixture(commands, prepared()["host"]["target"]["id"], value, Path(temporary))
+                commands.run.assert_not_called()
+
+
 class RegistrationReadinessTests(unittest.TestCase):
     def exercise(self, failures=0, mutation=None, quick_exit=False):
         temporary = tempfile.TemporaryDirectory()
@@ -249,9 +295,9 @@ class RegistrationReadinessTests(unittest.TestCase):
                 result["receipts"] = []
                 artifact = support / attempt / "artifacts"
                 artifact.mkdir(parents=True)
-                marker = 'Error Domain=AppIntentsServicesMetadataErrorDomain Code=400 "example.fixture is not present"'
+                marker = 'Error Domain=AppIntentsServicesMetadataErrorDomain Code=400 "com.coryparry.IntentsAutomation.AutomationFixture is not present"'
                 if mutation in ("other-error", "other-bundle"):
-                    marker = marker.replace("Code=400", "Code=401") if mutation == "other-error" else marker.replace("example.fixture", "other.fixture")
+                    marker = marker.replace("Code=400", "Code=401") if mutation == "other-error" else marker.replace("com.coryparry.IntentsAutomation.AutomationFixture", "other.fixture")
                 if mutation != "missing-log":
                     name = "apple-log-4.txt" if quick_exit else "apple-command-failure-4-test.txt"
                     (artifact / name).write_text(marker)
@@ -338,14 +384,14 @@ class WorkflowTests(unittest.TestCase):
         workflow = (SCRIPT.parents[1] / ".github/workflows/ci.yml").read_text()
         job = workflow.split("\n  input-conversion:\n", 1)[1]
         self.assertIn("name: Input conversion diagnostic (Mac)", job)
-        self.assertIn("needs.changes.outputs.automation_e2e == 'true'", job)
+        self.assertIn("needs.changes.outputs.input_conversion == 'true'", job)
         self.assertIn("runs-on: xcode-27", job)
         self.assertIn("timeout-minutes: 30", job)
         self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_LIVE: '1'", job)
         self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT: ${{ runner.temp }}/input-conversion", job)
         self.assertIn('DEVELOPER_DIR="$(xcode-select -p)"', job)
         self.assertIn('export DEVELOPER_DIR\n', job)
-        self.assertIn("swift test --jobs 2", job)
+        self.assertIn('swift test --jobs "$(sysctl -n hw.logicalcpu)"', job)
         self.assertIn("--filter 'AutomationMacInputProbeFixtureTests/testAuthoredInputProbeFixtureWhenRequested'", job)
         self.assertIn('--scratch-path "$RUNNER_TEMP/input-conversion-build"', job)
         self.assertIn("set -o pipefail", job)
@@ -358,7 +404,7 @@ class WorkflowTests(unittest.TestCase):
 
 
 class OrchestrationTests(unittest.TestCase):
-    def exercise(self, failure=None, reuse_build=False):
+    def exercise(self, failure=None, reuse_build=False, build_jobs=None, scenario_group="all"):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -374,9 +420,10 @@ class OrchestrationTests(unittest.TestCase):
         with patch.object(driver, "ROOT", root / "repo"):
             if failure:
                 with self.assertRaisesRegex(RuntimeError, "injected"):
-                    driver.run_contract(commands, output)
+                    driver.run_contract(commands, output, scenario_group=scenario_group)
             else:
-                results = driver.run_contract(commands, output, build_root=build_root)
+                results = driver.run_contract(commands, output, build_root=build_root, build_jobs=build_jobs,
+                                              scenario_group=scenario_group)
         if build_root:
             self.assertEqual((build_root / "keep-cache").read_text(), "reusable")
         return commands, results if not failure else None
@@ -388,7 +435,10 @@ class OrchestrationTests(unittest.TestCase):
         installs = [args for args in calls if args[:3] == ["xcrun", "simctl", "install"]]
         self.assertEqual(installs, [["xcrun", "simctl", "install", prepared()["host"]["target"]["id"],
                                     prepared()["host"]["subjectProductPath"]]])
-        self.assertLess(calls.index(installs[0]), next(i for i, args in enumerate(calls) if "run" in args))
+        launches = [args for args in calls if args[:3] == ["xcrun", "simctl", "launch"]]
+        self.assertEqual(launches, [["xcrun", "simctl", "launch", prepared()["host"]["target"]["id"], driver.FIXTURE_BUNDLE_ID]])
+        self.assertLess(calls.index(installs[0]), calls.index(launches[0]))
+        self.assertLess(calls.index(launches[0]), next(i for i, args in enumerate(calls) if "run" in args))
         self.assertEqual(commands.envelopes[0]["plan"]["id"], "phase3.registration")
         self.assertTrue(all(e["allowBootAndInstall"] is False for e in commands.envelopes))
         self.assertEqual([r["summary"] for r in results], ["executedUnassessed"] * 3 +
@@ -401,14 +451,395 @@ class OrchestrationTests(unittest.TestCase):
         self.assertTrue(all(args[-1] == owned for args in calls if args[:3] in
                             (["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"])))
 
+    def test_groups_cover_all_seven_cases_once_and_keep_recovery_together(self):
+        expected = {
+            "codec-1": ("codec-1",), "codec-2": ("codec-2",), "codec-file": ("codec-file",),
+            "mixed": ("mixed",), "wrong-assertion": ("wrong-assertion",),
+            "timeout-recovery": ("timeout", "after-timeout"),
+        }
+        self.assertEqual(driver.SCENARIO_GROUPS, expected)
+        all_cases = driver.scenario_cases("all")
+        self.assertEqual(all_cases, tuple(case for cases in expected.values() for case in cases))
+        self.assertEqual(len(all_cases), 7)
+        self.assertEqual(len(set(all_cases)), 7)
+
+    def test_each_group_prepares_registers_checks_reports_and_cleans_its_owned_device(self):
+        for group, selected in driver.SCENARIO_GROUPS.items():
+            with self.subTest(group=group):
+                commands, results = self.exercise(scenario_group=group)
+                calls = [args for args, _ in commands.calls]
+                self.assertEqual(sum("prepare" in args for args in calls), 1)
+                self.assertEqual(sum(args[:3] == ["xcrun", "simctl", "create"] for args in calls), 1)
+                self.assertEqual([envelope["plan"]["id"] for envelope in commands.envelopes],
+                                 ["phase3.registration", *("phase3." + case for case in selected)])
+                self.assertEqual([result["case"] for result in results], ["phase3." + case for case in selected])
+                self.assertTrue(all(envelope["allowBootAndInstall"] is False for envelope in commands.envelopes))
+                self.assertEqual(sum("show" in args for args in calls), len(selected))
+                owned = prepared()["host"]["target"]["id"]
+                cleanup = [args for args in calls if args[:3] in (
+                    ["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"],
+                )]
+                self.assertEqual(cleanup, [["xcrun", "simctl", verb, owned] for verb in ("shutdown", "delete")])
+                if group == "timeout-recovery":
+                    runs = [args for args in calls if "run" in args]
+                    self.assertEqual(len({args[args.index("--support-root") + 1] for args in runs}), 1)
+                    self.assertEqual([result["summary"] for result in results], ["timedOut", "executedUnassessed"])
+
+    def test_setup_launch_failure_aborts_before_registration_and_cleans_owned_simulator(self):
+        commands, _ = self.exercise(failure="launch")
+        self.assertEqual(commands.envelopes, [])
+        launches = [args for args, _ in commands.calls if args[:3] == ["xcrun", "simctl", "launch"]]
+        self.assertEqual(len(launches), 1)
+        cleanup = [args for args, _ in commands.calls if args[:3] in (
+            ["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"])]
+        owned = prepared()["host"]["target"]["id"]
+        self.assertEqual(cleanup, [["xcrun", "simctl", verb, owned] for verb in ("shutdown", "delete")])
+
+    def test_each_group_failure_still_cleans_only_its_owned_simulator(self):
+        for group in driver.SCENARIO_GROUPS:
+            with self.subTest(group=group):
+                commands, _ = self.exercise(failure="run", scenario_group=group)
+                cleanup = [args for args, _ in commands.calls if args[:3] in (
+                    ["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"],
+                )]
+                owned = prepared()["host"]["target"]["id"]
+                self.assertEqual(cleanup, [["xcrun", "simctl", verb, owned] for verb in ("shutdown", "delete")])
+
+    def test_partial_duplicate_extra_reordered_or_invalid_reports_cannot_pass(self):
+        _, reports = self.exercise()
+        variants = [reports[:-1], reports + reports[:1], list(reversed(reports)), None, [None]]
+        for field, value in (("summary", "passed"), ("exactOutputsCompared", False), ("case", "phase3.unknown")):
+            altered = copy.deepcopy(reports)
+            altered[0][field] = value
+            variants.append(altered)
+        for altered in variants:
+            with self.subTest(reports=altered), self.assertRaises(AssertionError):
+                driver.verify_scenario_selection(altered, "all")
+        with self.assertRaisesRegex(AssertionError, "coverage"):
+            driver.verify_scenario_selection(reports[:1], "codec-2")
+
+    def test_unknown_groups_and_standalone_after_timeout_are_rejected_before_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = FakeCommands(Path(directory))
+            for group in ("unknown", "after-timeout", "timeout"):
+                with self.subTest(group=group), self.assertRaisesRegex(AssertionError, "Unknown scenario group"):
+                    driver.run_contract(commands, Path(directory), scenario_group=group)
+            self.assertEqual(commands.calls, [])
+        with self.assertRaises(SystemExit):
+            driver.main(["--scenario-group", "after-timeout"])
+
+    def test_cli_group_summaries_only_claim_the_cases_and_codecs_actually_compared(self):
+        for group, expected_families in (
+            ("codec-1", set(driver.FAMILIES[:7]) | set(driver.ARRAYS[:3])),
+            ("codec-2", set(driver.ARRAYS) | {"duration", "calendarComponents", "url"}),
+            ("codec-file", {"intentFile"}), ("mixed", set()), ("wrong-assertion", set()),
+            ("timeout-recovery", {"text"}), ("all", set(driver.FAMILIES)),
+        ):
+            with self.subTest(group=group), tempfile.TemporaryDirectory() as directory:
+                _, reports = self.exercise(scenario_group=group)
+                with patch.object(driver, "run_contract", return_value=reports) as run:
+                    self.assertEqual(driver.main(["--output-root", directory, "--scenario-group", group]), 0)
+                self.assertEqual(run.call_args.kwargs["scenario_group"], group)
+                summary = json.loads((Path(directory) / "summary.json").read_text())
+                self.assertEqual(summary["scenarioGroup"], group)
+                self.assertEqual(summary["cases"], reports)
+                self.assertEqual(summary["status"], "passed")
+                self.assertEqual(set(summary["codecFamiliesCompared"]), expected_families)
+
+    def test_cli_keeps_failure_summary_when_selected_group_returns_no_cases(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(driver, "run_contract", return_value=[]):
+            self.assertEqual(driver.main(["--output-root", directory, "--scenario-group", "codec-file"]), 1)
+            summary = json.loads((Path(directory) / "summary.json").read_text())
+            self.assertEqual(summary["status"], "failed")
+            self.assertEqual(summary["scenarioGroup"], "codec-file")
+            self.assertIn("coverage", summary["error"])
+
     def test_swift_build_and_bin_path_use_the_same_external_reusable_cache(self):
         for reusable in (False, True):
             with self.subTest(reusable=reusable):
                 commands, _ = self.exercise(reuse_build=reusable)
-                builds = [args for args, _ in commands.calls if args[:2] == ["swift", "build"]]
+                builds = [args for args, _ in commands.calls if args[:3] == ["xcrun", "swift", "build"]]
                 scratch_paths = [args[args.index("--scratch-path") + 1] for args in builds]
                 expected = commands.output.parent / "reusable-swift-cache" if reusable else commands.output / "swift-build"
                 self.assertEqual(scratch_paths, [str(expected), str(expected)])
+
+    def test_install_precedes_registration_without_duplicate_identity_query(self):
+        commands, results = self.exercise()
+        calls = [args for args, _ in commands.calls]
+        install = next(index for index, args in enumerate(calls) if "install" in args)
+        registration = next(index for index, args in enumerate(calls) if "run" in args)
+        self.assertLess(install, registration)
+        # Each campaign performs the authoritative installed-byte verification itself.
+        self.assertFalse(any(args[:3] == ["xcrun", "simctl", "get_app_container"] for args in calls))
+        self.assertEqual(len(results), 7)
+
+    def test_cli_build_uses_runner_cpus_or_explicit_override(self):
+        for cpu_count, override, expected in ((6, None, "6"), (None, None, "1"), (6, 3, "3")):
+            with self.subTest(cpu_count=cpu_count, override=override), \
+                 patch.object(driver.os, "cpu_count", return_value=cpu_count):
+                commands, _ = self.exercise(build_jobs=override)
+                build = next(args for args, _ in commands.calls if "--jobs" in args)
+                self.assertEqual(build[build.index("--jobs") + 1], expected)
+
+    def test_cli_rejects_nonpositive_build_job_counts(self):
+        for jobs in ("0", "-1"):
+            with self.subTest(jobs=jobs), self.assertRaises(SystemExit) as failure:
+                driver.main(["--jobs", jobs])
+            self.assertEqual(failure.exception.code, 2)
+
+    def test_cli_forwards_build_job_override_and_external_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, reports = self.exercise()
+            with patch.object(driver, "run_contract", return_value=reports) as run:
+                self.assertEqual(driver.main(["--output-root", str(root / "evidence"),
+                                              "--build-root", str(root / "cache"), "--jobs", "4"]), 0)
+            self.assertEqual(run.call_args.kwargs, {"build_root": (root / "cache").resolve(),
+                                                   "build_jobs": 4, "record_build_cache": False,
+                                                   "scenario_group": "all"})
+
+    def test_build_and_prepare_finish_before_boot_install_and_execution(self):
+        commands, _ = self.exercise()
+        calls = [args for args, _ in commands.calls]
+        position = lambda token: next(index for index, args in enumerate(calls) if token in args)
+        self.assertLess(position("--jobs"), position("prepare"))
+        self.assertLess(position("prepare"), position("boot"))
+        self.assertLess(position("boot"), position("bootstatus"))
+        self.assertLess(position("bootstatus"), position("install"))
+        self.assertLess(position("install"), position("run"))
+
+    def test_prepare_explicitly_pins_same_xcode_as_simulator_sdk(self):
+        commands, _ = self.exercise()
+        prepare = next(args for args, _ in commands.calls if "prepare" in args)
+        self.assertEqual(prepare[prepare.index("--xcode") + 1], commands.env["DEVELOPER_DIR"])
+
+    def test_xcode_selection_falls_back_once_when_environment_is_missing(self):
+        original = FakeCommands.__init__
+        def without_environment(commands, *args, **options):
+            original(commands, *args, **options)
+            commands.env.clear()
+        with patch.object(FakeCommands, "__init__", without_environment):
+            commands, _ = self.exercise()
+        self.assertEqual(sum(args == ["xcode-select", "-p"] for args, _ in commands.calls), 1)
+        prepare = next(args for args, _ in commands.calls if "prepare" in args)
+        self.assertEqual(prepare[prepare.index("--xcode") + 1], commands.env["DEVELOPER_DIR"])
+
+    def test_mismatched_prepared_xcode_fails_before_install_and_releases_owned_simulator(self):
+        original = FakeCommands.json
+        for field in ("selectedDeveloperDirectoryPath", "sourceGraph"):
+            observed = []
+            def mismatch(commands, arguments, **options):
+                code, value = original(commands, arguments, **options)
+                if "prepare" in arguments:
+                    observed.append(commands)
+                    value[field] = "/Applications/Wrong.app/Contents/Developer" if field == "selectedDeveloperDirectoryPath" else {
+                        "platformContext": {"developerDirectory": "/Applications/Wrong.app/Contents/Developer"}}
+                return code, value
+            with self.subTest(field=field), patch.object(FakeCommands, "json", mismatch):
+                with self.assertRaisesRegex(AssertionError, "different Xcode"):
+                    self.exercise()
+                calls = [args for args, _ in observed[0].calls]
+                self.assertFalse(any(args[:3] == ["xcrun", "simctl", "install"] for args in calls))
+                self.assertFalse(any("run" in args for args in calls))
+                self.assertIn(["xcrun", "simctl", "delete", prepared()["host"]["target"]["id"]], calls)
+
+    def test_missing_run_toolchain_context_fails_before_install_and_execution(self):
+        original = FakeCommands.json
+        for graph in (None, {}, {"platformContext": {}}, {"platformContext": {"developerDirectory": ""}}):
+            observed = []
+            def missing_context(commands, arguments, **options):
+                code, value = original(commands, arguments, **options)
+                if "prepare" in arguments:
+                    observed.append(commands)
+                    value["sourceGraph"] = graph
+                return code, value
+            with self.subTest(graph=graph), patch.object(FakeCommands, "json", missing_context):
+                with self.assertRaisesRegex(AssertionError, "run context is missing"):
+                    self.exercise()
+                calls = [args for args, _ in observed[0].calls]
+                self.assertFalse(any(args[:3] == ["xcrun", "simctl", "install"] for args in calls))
+                self.assertFalse(any("run" in args for args in calls))
+                self.assertIn(["xcrun", "simctl", "delete", prepared()["host"]["target"]["id"]], calls)
+
+    def test_cache_checkpoint_requires_external_cache_and_github_output_before_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            commands = FakeCommands(root)
+            with patch.dict(driver.os.environ, {"GITHUB_OUTPUT": ""}):
+                for build_root, expected in ((None, "requires --build-root"), (root / "cache", "GITHUB_OUTPUT")):
+                    with self.subTest(build_root=build_root), self.assertRaisesRegex(AssertionError, expected):
+                        driver.run_contract(commands, root, build_root=build_root, record_build_cache=True)
+            self.assertEqual(commands.calls, [])
+
+    def test_cli_forwards_optional_cache_checkpoint_flag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / "github-output"
+            marker.touch()
+            _, reports = self.exercise()
+            with patch.dict(driver.os.environ, {"GITHUB_OUTPUT": str(marker)}), \
+                 patch.object(driver, "run_contract", return_value=reports) as run:
+                self.assertEqual(driver.main(["--output-root", str(root / "evidence"),
+                                              "--build-root", str(root / "cache"), "--record-build-cache"]), 0)
+            self.assertIs(run.call_args.kwargs["record_build_cache"], True)
+
+    def test_cache_checkpoint_survives_contract_failure_but_never_records_failed_build(self):
+        for failure in ("prepare", "--product"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "repo/examples/AutomationFixture").mkdir(parents=True)
+                (root / "repo/examples/AutomationFixture/project.yml").write_text("name: fixture")
+                output = root / "evidence"
+                output.mkdir()
+                marker = root / "github-output"
+                marker.write_text("existing=value\n")
+                commands = FakeCommands(output, failure)
+                cache_module = unittest.mock.Mock()
+                def capture(repository, scratch):
+                    self.assertEqual((repository, scratch), (root / "repo", root / "cache"))
+                    self.assertTrue(any("--product" in args for args, _ in commands.calls))
+                    self.assertFalse(any("prepare" in args for args, _ in commands.calls))
+                cache_module.capture.side_effect = capture
+                with patch.object(driver, "ROOT", root / "repo"), \
+                     patch.dict(driver.os.environ, {"GITHUB_OUTPUT": str(marker)}), \
+                     patch.dict(driver.sys.modules, {"ci_native_cache": cache_module}):
+                    with self.assertRaisesRegex(RuntimeError, "injected"):
+                        driver.run_contract(commands, output, build_root=root / "cache", record_build_cache=True)
+                if failure == "prepare":
+                    cache_module.capture.assert_called_once()
+                    self.assertEqual(marker.read_text(), "existing=value\ncli_built=true\n")
+                else:
+                    cache_module.capture.assert_not_called()
+                    self.assertEqual(marker.read_text(), "existing=value\n")
+
+    def test_verified_executable_skips_both_swiftpm_calls_but_runs_complete_contract(self):
+        commands, results, cache_module = self.exercise_executable_cache(damage=False)
+        self.assertFalse(any(args[:3] == ["xcrun", "swift", "build"] for args, _ in commands.calls))
+        cache_module.record_cli.assert_not_called()
+        self.assertEqual(len(results), 7)
+        self.assertEqual(results[-1]["case"], "phase3.after-timeout")
+        self.assertTrue(any("prepare" in args for args, _ in commands.calls))
+
+    def test_damaged_executable_forces_empty_scratch_build_before_new_checkpoint(self):
+        commands, results, cache_module = self.exercise_executable_cache(damage=True)
+        self.assertEqual(sum(args[:3] == ["xcrun", "swift", "build"] for args, _ in commands.calls), 2)
+        cache_module.record_cli.assert_called_once()
+        self.assertEqual(len(results), 7)
+
+    def test_initial_identity_is_before_simulator_commands_and_postcompile_recheck_is_retained(self):
+        _, results, cache_module = self.exercise_executable_cache(damage=True)
+        before, after = cache_module.probe_command_snapshots
+        self.assertFalse(any(args[:2] == ["xcrun", "simctl"] for args in before))
+        self.assertFalse(any(args[:3] == ["xcrun", "simctl", "boot"] for args in after))
+        self.assertTrue(any("--product" in args for args in after))
+        self.assertEqual(len(results), 7)
+
+    def test_inputs_changed_during_compile_do_not_receive_reusable_executable_receipt(self):
+        _, results, cache_module = self.exercise_executable_cache(damage=True, changed_during_build=True)
+        self.assertIsNone(cache_module.record_cli.call_args.args[1])
+        self.assertEqual(len(results), 7)
+
+    def test_optional_identity_failures_still_build_and_run_all_seven_scenarios(self):
+        for failure in ("timeout", "nonzero"):
+            with self.subTest(identity_failure=failure):
+                commands, results, cache_module = self.exercise_executable_cache(damage=False, identity_failure=failure)
+                self.assertEqual(sum(args[:3] == ["xcrun", "swift", "build"] for args, _ in commands.calls), 2)
+                self.assertEqual(len(results), 7)
+                self.assertEqual(results[-1]["case"], "phase3.after-timeout")
+                self.assertIsNone(cache_module.record_cli.call_args.args[1])
+                self.assertEqual(cache_module.build_fingerprint.call_count, 1)
+
+    def exercise_executable_cache(self, damage, changed_during_build=False, identity_failure=None):
+        from script import ci_automation_build as real_cache
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name).resolve()
+        repository, scratch = root / "repo", root / "cache"
+        (repository / "examples/AutomationFixture").mkdir(parents=True)
+        (repository / "examples/AutomationFixture/project.yml").write_text("name: fixture")
+        manifests = real_cache.MANIFESTS
+        if identity_failure:
+            for directory in real_cache.SOURCE_ROOTS:
+                (repository / directory).mkdir()
+            (repository / "Package.swift").write_text("supported fixture")
+            manifests = {"Package.swift": real_cache.sha256(repository / "Package.swift")}
+        output = root / "evidence"
+        output.mkdir()
+        marker = root / "github-output"
+        marker.touch()
+        cli = scratch / "debug/intents-automation"
+        host = cli.parent / "Package_IntentsAutomationCLIResources.bundle/AutomationHost/HostPlan.swift"
+        def compile_products():
+            cli.parent.mkdir(parents=True, exist_ok=True)
+            cli.write_bytes(b"correct executable")
+            cli.chmod(0o755)
+            host.parent.mkdir(parents=True, exist_ok=True)
+            host.write_text("correct template")
+        compile_products()
+        real_cache.record_cli(scratch, "fingerprint", cli)
+        if damage:
+            cli.write_bytes(b"corrupt executable")
+            (scratch / "corrupt-intermediate").write_text("must not survive")
+        commands = FakeCommands(output)
+        commands.env["RUNNER_TEMP"] = str(root)
+        if identity_failure:
+            developer = root / "Selected.app/Contents/Developer"
+            directory = developer / "Toolchains/XcodeDefault.xctoolchain/usr/bin"
+            directory.mkdir(parents=True)
+            for name in ("swift", "swift-frontend"):
+                binary = directory / name
+                binary.write_bytes(b"fake selected compiler")
+                binary.chmod(0o755)
+            commands.env["DEVELOPER_DIR"] = str(developer)
+            original_json = commands.json
+            def json_command(arguments, **options):
+                code, value = original_json(arguments, **options)
+                if "prepare" in arguments:
+                    value["selectedDeveloperDirectoryPath"] = str(developer)
+                    value["sourceGraph"]["platformContext"]["developerDirectory"] = str(developer)
+                return code, value
+            commands.json = json_command
+        original_run = commands.run
+        def run(arguments, **options):
+            if identity_failure and arguments == ["xcodebuild", "-version"]:
+                self.assertEqual(options["timeout"], 30)
+                if identity_failure == "timeout":
+                    raise subprocess.TimeoutExpired(arguments, options["timeout"])
+                raise AssertionError("identity command exited nonzero")
+            if "--product" in arguments:
+                if damage:
+                    self.assertFalse(scratch.exists(), "Damaged build must start with an empty owned scratch")
+                compile_products()
+            return original_run(arguments, **options)
+        commands.run = run
+        cache_module = unittest.mock.Mock()
+        cache_module.probe_command_snapshots = []
+        def fingerprint(*arguments):
+            cache_module.probe_command_snapshots.append([args for args, _ in commands.calls])
+            if identity_failure:
+                return real_cache.build_fingerprint(*arguments)
+            return "changed inputs" if changed_during_build and len(cache_module.probe_command_snapshots) > 1 else "fingerprint"
+        cache_module.build_fingerprint.side_effect = fingerprint
+        cache_module.cached_cli.side_effect = real_cache.cached_cli
+        cache_module.record_cli.side_effect = real_cache.record_cli
+        native_cache = unittest.mock.Mock()
+        with patch.object(driver, "ROOT", repository), patch.object(real_cache, "MANIFESTS", manifests), \
+             patch.dict(driver.os.environ, {"GITHUB_OUTPUT": str(marker)}), \
+             patch.dict(driver.sys.modules, {"ci_native_cache": native_cache, "ci_automation_build": cache_module}):
+            results = driver.run_contract(commands, output, build_root=scratch, record_build_cache=True)
+        self.assertEqual(real_cache.cached_cli(scratch, "fingerprint"),
+                         (None, False) if changed_during_build or identity_failure else (cli, False))
+        self.assertEqual(cli.read_bytes(), b"correct executable")
+        self.assertEqual(marker.read_text(), "cli_built=true\n")
+        native_cache.capture.assert_called_once_with(repository, scratch)
+        calls = [args for args, _ in commands.calls]
+        position = lambda token: next(index for index, args in enumerate(calls) if token in args)
+        self.assertLess(position("prepare"), position("actions"))
+        self.assertLess(position("actions"), position("boot"))
+        self.assertLess(position("boot"), position("bootstatus"))
+        self.assertLess(position("bootstatus"), position("install"))
+        self.assertLess(position("install"), position("run"))
+        return commands, results, cache_module
 
     def test_cli_rejects_reusable_build_cache_inside_the_checkout(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -422,6 +853,8 @@ class OrchestrationTests(unittest.TestCase):
                 calls = [args for args, _ in commands.calls]
                 self.assertIn(["xcrun", "simctl", "delete", prepared()["host"]["target"]["id"]], calls)
                 self.assertFalse(any("run" in args for args in calls))
+                if failure == "prepare":
+                    self.assertFalse(any(args[:3] == ["xcrun", "simctl", "boot"] for args in calls))
 
     def test_simulator_selection_requires_available_ios_and_supported_iphone(self):
         runtimes = {"runtimes": [{"identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0", "version": "27.0",
@@ -456,7 +889,8 @@ class OrchestrationTests(unittest.TestCase):
     def test_sigterm_enters_python_cleanup_and_restores_original_handler(self):
         with tempfile.TemporaryDirectory() as directory:
             original = driver.signal.getsignal(driver.signal.SIGTERM)
-            def terminate(commands, output, build_root=None):
+            def terminate(commands, output, build_root=None, build_jobs=None, record_build_cache=False,
+                          scenario_group="all"):
                 handler = driver.signal.getsignal(driver.signal.SIGTERM)
                 handler(driver.signal.SIGTERM, None)
             with patch.object(driver, "run_contract", side_effect=terminate):
@@ -478,6 +912,38 @@ class OrchestrationTests(unittest.TestCase):
             terminate.assert_called_once_with(12345, driver.signal.SIGTERM)
             self.assertTrue((Path(directory) / "01-owned.command.json").exists())
             self.assertTrue((Path(directory) / "01-owned.stdout.log").exists())
+
+    def test_command_duration_identifies_expensive_build_and_prepare_steps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            process = unittest.mock.Mock()
+            process.wait.return_value = 0
+            with patch.object(driver.subprocess, "Popen", return_value=process), \
+                 patch.object(driver.time, "monotonic", side_effect=[10.0, 12.5]), \
+                 patch("builtins.print") as report:
+                self.assertEqual(driver.Commands(Path(directory)).run(["xcrun", "swift", "build"]), (0, ""))
+            report.assert_called_once_with("Completed xcrun swift: 2.5s (exit 0)", flush=True)
+
+    def test_json_command_failures_surface_exit_status_stderr_and_log_paths(self):
+        for stdout, stderr, code in (("", '{"error":"timedOut"}', 1), ("invalid JSON", "", 0),
+                                      ("invalid JSON", "diagnostic" * 1000, 1)):
+            with self.subTest(code=code, stdout=stdout), tempfile.TemporaryDirectory() as directory:
+                command = [driver.sys.executable, "-c",
+                           "import sys; sys.stdout.write(sys.argv[1]); sys.stderr.write(sys.argv[2]); sys.exit(int(sys.argv[3]))",
+                           stdout, stderr, str(code)]
+                with self.assertRaises(AssertionError) as failure:
+                    driver.Commands(Path(directory)).json(command, allowed=(0, 1))
+                message = str(failure.exception)
+                self.assertIn(f"invalid JSON (exit {code})", message)
+                self.assertIn(stderr[:4096] or "(empty)", message)
+                self.assertIn(".stdout.log", message)
+                self.assertIn(".stderr.log", message)
+                self.assertLess(len(message), 4700)
+
+    def test_json_command_retains_valid_nonzero_assessment_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            command = [driver.sys.executable, "-c", 'import sys; print(\'{"summary":"assertionFailed"}\'); sys.exit(1)']
+            self.assertEqual(driver.Commands(Path(directory)).json(command, allowed=(0, 1)),
+                             (1, {"summary": "assertionFailed"}))
 
 
 if __name__ == "__main__":

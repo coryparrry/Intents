@@ -47,14 +47,33 @@ actor AutomationMacAssociatedHostReleaseVerifier: AutomationDeviceReleaseVerifie
         guard !busy, !inspectorUnproved else { throw AutomationContractError.terminationUnverified }
         busy = true; defer { busy = false }; prepared = nil
         try validateScope(target, controllerBundleIDs)
-        guard try await observe(target, stage: "prepare") else { throw AutomationContractError.targetBusy }
+        guard try await observeSettled(target, stage: "prepare", retryPresence: false) else { throw AutomationContractError.targetBusy }
         prepared = target
     }
     func verifyReleased(target: TargetIdentity, controllerBundleIDs: [String]) async -> Bool {
         guard !busy, !inspectorUnproved, prepared == target else { return false }
         busy = true; defer { busy = false }
-        do { try validateScope(target, controllerBundleIDs); return try await observe(target, stage: "release") }
+        do { try validateScope(target, controllerBundleIDs); return try await observeSettled(target, stage: "release", retryPresence: true) }
         catch { return false }
+    }
+    private func observeSettled(_ target: TargetIdentity, stage: String, retryPresence: Bool) async throws -> Bool {
+        // Replace a census that raced process exit; retained failures never prove absence.
+        // Preparation still refuses a positively observed host immediately.
+        for attempt in 0..<10 {
+            do {
+                let absent = try await observe(target, stage: stage)
+                if absent || !retryPresence { return absent }
+            } catch let failure as AutomationMacProcessInventory.KernelObservationFailure {
+                let exitedDuringRead = failure.errorNumber == ESRCH &&
+                    (failure.stage == .metadata || failure.stage == .executablePath || failure.stage == .codeIdentity)
+                let executableSetChanged = failure.stage == .executableSetChanged && failure.errorNumber == 0
+                guard !inspectorUnproved, attempt < 9,
+                      executableSetChanged || exitedDuringRead else { throw failure }
+            }
+            guard !inspectorUnproved, attempt < 9 else { return false }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        return false
     }
     private func validateScope(_ target: TargetIdentity, _ bundleIDs: [String]) throws {
         guard target == host.target, bundleIDs == [host.hostBundleID] else { throw AutomationContractError.invalidIdentity }

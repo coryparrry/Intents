@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Website privacy — Intents</title>
+  <meta name="description" content="How the Intents website measures anonymous visits and download clicks, and how to turn analytics off.">
+  <link rel="canonical" href="https://intents-workbench.coryparry.chatgpt.site/privacy.html">
+  <link rel="icon" href="/assets/favicon.png">
+  <style>body{margin:0;background:#fafafa;color:#24262b;font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:740px;margin:auto;padding:48px 24px}h1{font-size:36px;line-height:1.2;letter-spacing:-1px}h2{font-size:21px;margin-top:32px}a{color:#006acb}button{font:inherit;cursor:pointer;color:#006acb;background:white;border:1px solid #d8dbe0;border-radius:8px;padding:9px 15px}p{color:#555a63}</style>
+  <script type="module" src="/analytics.mjs"></script>
+</head>
+<body><main>
+  <a href="/">← Intents</a>
+  <h1>Website privacy</h1>
+  <p>Updated 5 October 2026.</p>
+  <h2>What we measure</h2>
+  <p>We use PostHog’s EU service to understand website visits, pages viewed, referral sources, campaign links, browser/device categories, time on site and download-button clicks. A click to GitHub is download intent; it does not confirm a completed download or installation.</p>
+  <h2>Anonymous, cookieless analytics</h2>
+  <p>Analytics do not set cookies or store a visitor ID in your browser. PostHog derives a daily anonymous identifier on its servers from connection information, including the IP address and browser user agent. This is used to estimate unique visitors within a day and is not a persistent identity across days. We do not identify you by name or email, record your screen, or capture what you type into the interactive demo. Page URLs omit fragments and query parameters except named UTM campaign fields.</p>
+  <p><a href="https://posthog.com/privacy">PostHog privacy information</a> · <a href="https://posthog.com/tutorials/cookieless-tracking">How cookieless measurement works</a></p>
+  <h2>Your choice</h2>
+  <p>We respect Do Not Track and Global Privacy Control browser settings. You can also turn website analytics off below. This saves only your analytics preference in this browser’s local storage; clearing site data clears that preference. Ad blockers may also prevent analytics.</p>
+  <button type="button" data-analytics-toggle hidden>Analytics: on</button>
+  <noscript><p>JavaScript is disabled, so website analytics are off.</p></noscript>
+  <h2>The Mac app</h2>
+  <p>This notice covers this website. The native app’s analytics controls and local model processing are separate.</p>
+</main></body></html>

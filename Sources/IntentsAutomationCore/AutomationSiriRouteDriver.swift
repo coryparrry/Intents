@@ -20,8 +20,6 @@ public actor AutomationSiriRouteDriver: AutomationRouteDriver {
     private let prepared: AutomationPreparedApplication
     private let approval: RunApproval
     private let capabilities: CapabilityProfile
-    private let siriAuthority: AutomationSiriRouteAuthority?
-    private var liveSubmission: AutomationImportedSiriSubmission?
     private let developer: URL
     private let root: URL
     private let leases: AutomationDeviceLeaseManager
@@ -40,15 +38,15 @@ public actor AutomationSiriRouteDriver: AutomationRouteDriver {
     public init(prepared: AutomationPreparedApplication, approval: RunApproval, capabilities: CapabilityProfile,
                 developerDirectory: URL, stateDirectory: URL, leases: AutomationDeviceLeaseManager,
                 artifacts: AutomationArtifactRegistry, subjectVerifier: any AutomationSubjectVerifier,
-                releaseVerifier: any AutomationDeviceReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil, siriAuthority: AutomationSiriRouteAuthority? = nil) throws {
+                releaseVerifier: any AutomationDeviceReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil) throws {
         try self.init(prepared: prepared, approval: approval, capabilities: capabilities, developerDirectory: developerDirectory,
             stateDirectory: stateDirectory, leases: leases, artifacts: artifacts, subjectVerifier: subjectVerifier,
-            releaseVerifier: releaseVerifier, campaignBudget: campaignBudget, siriAuthority: siriAuthority, commands: nil)
+            releaseVerifier: releaseVerifier, campaignBudget: campaignBudget, commands: nil)
     }
     init(prepared: AutomationPreparedApplication, approval: RunApproval, capabilities: CapabilityProfile,
          developerDirectory: URL, stateDirectory: URL, leases: AutomationDeviceLeaseManager,
          artifacts: AutomationArtifactRegistry, subjectVerifier: any AutomationSubjectVerifier,
-         releaseVerifier: any AutomationDeviceReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil, siriAuthority: AutomationSiriRouteAuthority? = nil, commands: Commands?) throws {
+         releaseVerifier: any AutomationDeviceReleaseVerifier, campaignBudget: AutomationCampaignBudget? = nil, commands: Commands?) throws {
         try AutomationPhysicalExecutable.validateTarget(prepared.host.target)
         guard prepared.host.app == approval.app, prepared.host.target == approval.target,
               prepared.generatedHost.includesSiri == true, prepared.host.app.platform == "ios",
@@ -56,7 +54,7 @@ public actor AutomationSiriRouteDriver: AutomationRouteDriver {
               prepared.host.testTarget.range(of: #"^[A-Za-z_][A-Za-z0-9_]{0,127}$"#, options: .regularExpression) != nil else {
             throw AutomationContractError.invalidIdentity
         }
-        self.prepared = prepared; self.approval = approval; self.capabilities = capabilities; self.siriAuthority = siriAuthority
+        self.prepared = prepared; self.approval = approval; self.capabilities = capabilities
         self.commands = commands
         developer = try AutomationPath.canonical(developerDirectory)
         try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -78,8 +76,8 @@ public actor AutomationSiriRouteDriver: AutomationRouteDriver {
             throw AutomationContractError.invalidPlan("Siri requires the exact approved physical subject and lease")
         }
         admission = (scope, lease)
-        try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, siriAuthority: siriAuthority)
-        try AutomationSiriTextProgram.validateAdmission(plan: plan, approval: approval, capabilities: capabilities, authority: siriAuthority)
+        try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
+        try AutomationSiriTextProgram.validateAdmission(plan: plan, approval: approval, capabilities: capabilities)
         try program.validate(segment: segment, target: plan.target)
         preparing = true; defer { preparing = false }
         try await subjectVerifier.verify(app: plan.app, target: plan.target)
@@ -94,7 +92,6 @@ public actor AutomationSiriRouteDriver: AutomationRouteDriver {
         var fields: [String: AutomationJSON] = ["schemaVersion": .number(1), "runID": .string(scope.runId),
             "attemptID": .string(scope.attemptId), "segmentID": .string(scope.segmentId), "leaseGeneration": .number(Double(scope.leaseGeneration)),
             "bundleID": .string(plan.app.bundleID), "productDigest": .string(try productDigest(plan.app)), "request": .string(program.request)]
-        if let build = siriAuthority?.expectedOSBuild { fields["expectedOSBuild"] = .string(build) }
         if let version = plan.app.productDigestVersion { fields["productDigestVersion"] = .number(Double(version)) }
         let original = try AutomationReadOnlyFile.read(URL(fileURLWithPath: prepared.host.xctestrunPath), maximumBytes: 4_194_304)
         let plist = try PropertyListSerialization.propertyList(from: original, format: nil)
@@ -152,8 +149,7 @@ public actor AutomationSiriRouteDriver: AutomationRouteDriver {
                 bundleName: URL(fileURLWithPath: prepared.host.hostBundlePath).lastPathComponent, executableName: executable) else {
             throw AutomationContractError.ambiguousDispatch
         }
-        guard siriAuthority?.expectedOSBuild == nil || receipt.osBuild == siriAuthority?.expectedOSBuild else { throw AutomationContractError.conflictingOperation }
-        liveSubmission = receipt
+        guard receipt.submittedRecognizedText == program.request else { throw AutomationContractError.missingEvidence("Current submitted recognised text is unknown") }
         // Remote PIDs are never inspected or signalled on this Mac. Device release uses CoreDevice inventory.
         let artifact = try await artifacts.storeNativeEvidence(data: data, scope: scope)
         try requireAdmission(scope, lease)
@@ -161,7 +157,6 @@ public actor AutomationSiriRouteDriver: AutomationRouteDriver {
             dispatched: true, completed: true, artifact: artifact.handle, environmentID: plan.environmentID)
     }
 
-    func qualificationSubmission() -> AutomationImportedSiriSubmission? { liveSubmission }
 
     public func release(scope: AutomationScope, lease: AutomationDeviceLeaseManager.Lease) async -> AutomationReleaseProof {
         guard admission?.0 == scope, admission?.1 == lease, !releasing else { return .init(commandsDrained: false, runnerTerminated: false) }

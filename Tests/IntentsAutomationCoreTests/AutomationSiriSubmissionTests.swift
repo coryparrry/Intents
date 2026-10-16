@@ -53,6 +53,16 @@ final class AutomationSiriSubmissionTests: XCTestCase {
             XCTAssertThrowsError(try program.validate(segment: changed, target: target))
         }
     }
+    func testVersionThreeRetainsExactSubmittedTextAndRejectsUnknownOrForeignText() throws {
+        var value = receipt(); value["schemaVersion"] = 3; value["osBuild"] = "24B5028f"
+        value["submittedRecognizedText"] = program.request
+        XCTAssertEqual(try read(value).submittedRecognizedText, program.request)
+        for text in ["", "Unknown request", program.request + " "] {
+            value["submittedRecognizedText"] = text; XCTAssertThrowsError(try read(value))
+        }
+        value.removeValue(forKey: "submittedRecognizedText"); XCTAssertThrowsError(try read(value))
+        XCTAssertNil(try read(receipt()).submittedRecognizedText, "Historical submitted text remains unknown")
+    }
     func testReturnedReceiptCorrelatesSubmissionWithoutBusinessOutputs() throws {
         let imported = try read(receipt())
         XCTAssertEqual(imported.requestDigest, program.requestDigest)

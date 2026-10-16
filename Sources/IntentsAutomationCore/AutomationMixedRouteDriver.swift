@@ -15,11 +15,12 @@ public actor AutomationMixedRouteDriver: AutomationResolvedRouteDriver {
         var revoked = false
     }
     private let apple: any AutomationRouteDriver
+    private let paired: (any AutomationRouteDriver)?
     private let siri: (any AutomationRouteDriver)?
     private var active: Active?
     private var lastReleased: (AutomationScope, AutomationDeviceLeaseManager.Lease)?
-    public init(apple: any AutomationRouteDriver, siri: (any AutomationRouteDriver)? = nil) {
-        self.apple = apple; self.siri = siri
+    public init(apple: any AutomationRouteDriver, siri: (any AutomationRouteDriver)? = nil, paired: (any AutomationRouteDriver)? = nil) {
+        self.apple = apple; self.siri = siri; self.paired = paired
     }
 
     public func acquire(plan: AutomationCase, segment: AutomationSegment, scope: AutomationScope,
@@ -37,8 +38,11 @@ public actor AutomationMixedRouteDriver: AutomationResolvedRouteDriver {
               scope.leaseGeneration == lease.generation, plan.target == lease.target else { throw AutomationContractError.targetBusy }
         let driver: any AutomationRouteDriver
         switch segment.kind {
-        case .ui: guard lease.control == .ui else { throw AutomationContractError.unknownLease }; throw AutomationContractError.missingEvidence("UI workflows execute as a single generated-host XCUITest plan")
+        case .ui, .observeOnly: throw AutomationContractError.missingEvidence("UI workflows execute as a single generated-host XCUITest plan")
         case .systemIntent, .systemQuery: guard lease.control == .system else { throw AutomationContractError.unknownLease }; driver = apple
+        case .pairedFeature:
+            guard lease.control == .system, let paired else { throw AutomationContractError.missingEvidence("The approved paired feature runtime is unavailable") }
+            driver = paired
         case .siriText:
             guard lease.control == .system, plan.target.kind == .physical, let siri else {
                 throw AutomationContractError.missingEvidence("Physical Siri submission driver is unavailable")

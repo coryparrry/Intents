@@ -1,6 +1,7 @@
 """Release-note policy for squash-merged pull requests."""
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -9,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "script"))
-from release_notes import ALLOWED_ENTRY_TYPES, validate_pull_request
+from release_notes import ALLOWED_ENTRY_TYPES, is_generated_release, validate_event, validate_pull_request
 
 
 def override(*entries):
@@ -56,22 +57,53 @@ class ReleaseNotesTests(unittest.TestCase):
                 override("fix(ui): align the sidebar"),
             )
 
-    def test_non_feature_or_fix_pull_request_can_omit_override(self):
+    def test_maintenance_and_documentation_pull_requests_also_require_notes(self):
         for title in (
             "docs: explain releases",
             "ci: route tests",
             "chore: update metadata",
         ):
-            with self.subTest(title=title):
-                self.assertEqual(validate_pull_request(title, ""), [])
+            with self.subTest(title=title), self.assertRaises(ValueError):
+                validate_pull_request(title, "")
+        self.assertEqual(validate_pull_request("ci: route tests", override("perf(ci): skip unrelated UI checks")),
+                         ["perf(ci): skip unrelated UI checks"])
 
     def test_commented_template_instruction_is_not_active(self):
         template = (ROOT / ".github/pull_request_template.md").read_text()
         self.assertNotIn("BEGIN_COMMIT_OVERRIDE", template)
         self.assertNotIn("END_COMMIT_OVERRIDE", template)
-        self.assertEqual(validate_pull_request("docs: update guidance", template), [])
-        with self.assertRaises(ValueError):
-            validate_pull_request("feat(ui): add navigation", template)
+        for title in ("docs: update guidance", "feat(ui): add navigation"):
+            with self.subTest(title=title), self.assertRaises(ValueError):
+                validate_pull_request(title, template)
+
+    def test_only_the_recognized_generated_release_pr_is_exempt(self):
+        generated = {
+            "title": "chore(main): release 1.5.0", "body": "## Generated changelog",
+            "user": {"login": "github-actions[bot]"},
+            "base": {"ref": "main", "repo": {"full_name": "owner/repo"}},
+            "head": {"ref": "release-please--branches--main", "repo": {"full_name": "owner/repo"}},
+            "labels": [{"name": "autorelease: pending"}],
+        }
+        self.assertTrue(is_generated_release(generated))
+        invalid = [
+            {"user": {"login": "human"}},
+            {"title": "chore: update metadata"},
+            {"labels": []},
+            {"base": {"ref": "other", "repo": {"full_name": "owner/repo"}}},
+            {"head": {"ref": "human-feature", "repo": {"full_name": "owner/repo"}}},
+            {"head": {"ref": "release-please--branches--main", "repo": {"full_name": "fork/repo"}}},
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            event = Path(temporary) / "event.json"
+            event.write_text(json.dumps({"pull_request": generated}))
+            validate_event(event)
+            for replacement in invalid:
+                with self.subTest(replacement=replacement):
+                    ordinary = {**generated, **replacement}
+                    self.assertFalse(is_generated_release(ordinary))
+                    event.write_text(json.dumps({"pull_request": ordinary}))
+                    with self.assertRaises(ValueError):
+                        validate_event(event)
 
     def test_override_markers_hidden_in_html_comments_fail(self):
         body = "<!--\n" + override("feat(ui): hidden example") + "\n-->"
@@ -146,7 +178,28 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def test_ci_revalidates_edited_pull_request_bodies(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-        self.assertIn("types: [opened, synchronize, reopened, edited]", workflow)
+        metadata = (ROOT / ".github/workflows/pr-metadata.yml").read_text()
+        self.assertIn("types: [opened, synchronize, reopened]", workflow)
+        self.assertNotIn("reopened, edited", workflow)
+        self.assertIn("types: [edited]", metadata)
+        self.assertIn("python3 script/release_notes.py validate-event", metadata)
+
+    def test_only_base_edits_invoke_code_ci_and_later_body_edits_cannot_cancel_it(self):
+        metadata = (ROOT / ".github/workflows/pr-metadata.yml").read_text()
+        jobs = dict(re.findall(r"(?ms)^  ([\w-]+):\n(.*?)(?=^  [\w-]+:|\Z)", metadata))
+        retarget = jobs["retarget"]
+        self.assertIn("if: ${{ github.event.changes.base != null }}", retarget)
+        self.assertIn("uses: ./.github/workflows/ci.yml", retarget)
+        for name, workflow in (("retarget-production", "production-evals"), ("retarget-plugin", "plugin")):
+            with self.subTest(workflow=workflow):
+                component = jobs[name]
+                self.assertIn("if: ${{ github.event.changes.base != null }}", component)
+                self.assertIn("uses: ./.github/workflows/" + workflow + ".yml", component)
+                self.assertIn("  workflow_call:", (ROOT / (".github/workflows/" + workflow + ".yml")).read_text())
+        self.assertNotIn("concurrency:", metadata)
+        self.assertNotIn("Compile app and tests", metadata)
+        self.assertNotIn("Workflow and script checks", metadata)
+        self.assertNotIn("Portable regression tests", metadata)
 
     def test_cli_reads_the_pull_request_event(self):
         with tempfile.TemporaryDirectory() as temporary:

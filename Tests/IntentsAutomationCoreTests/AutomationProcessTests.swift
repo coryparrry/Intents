@@ -51,6 +51,34 @@ final class AutomationProcessTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(String(decoding: retained.stdout, as: UTF8.self).contains("failure context"))
         XCTAssertTrue(String(decoding: retained.stderr, as: UTF8.self).contains("diagnostic"))
     }
+    func testAbsoluteDeadlineIncludesPreparationAndDoesNotRenewRelativeAllowance() async throws {
+        let command = AutomationOwnedCommand(), recorder = ProcessRecorder()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        // Stand in for asynchronous payload preparation/journaling before reaching
+        // the command actor. The callback fits the relative limit but not the case.
+        try await Task.sleep(for: .milliseconds(100))
+        do {
+            _ = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/usr/bin/true")),
+                arguments: [], directory: URL(fileURLWithPath: "/private/tmp"), environment: [:],
+                timeout: .seconds(30), absoluteDeadline: deadline,
+                willStart: { try await Task.sleep(for: .seconds(2)) }, didStart: { await recorder.record($0) })
+            XCTFail("Preparation renewed the case deadline")
+        } catch { XCTAssertEqual(error as? AutomationRPCError, .timedOut) }
+        let recorded = await recorder.wasRecorded; XCTAssertFalse(recorded)
+        let retained = await command.retainedLogs(); XCTAssertNil(retained.ownedIdentity)
+        let stopped = await command.stopOwned(); XCTAssertTrue(stopped)
+    }
+    func testRelativeCommandLimitStillWinsWhenAbsoluteDeadlineIsLater() async throws {
+        let command = AutomationOwnedCommand(), recorder = ProcessRecorder()
+        do {
+            _ = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/usr/bin/true")),
+                arguments: [], directory: URL(fileURLWithPath: "/private/tmp"), environment: [:],
+                timeout: .milliseconds(100), absoluteDeadline: ContinuousClock.now.advanced(by: .seconds(30)),
+                willStart: { try await Task.sleep(for: .seconds(2)) }, didStart: { await recorder.record($0) })
+            XCTFail("Absolute deadline enlarged the command limit")
+        } catch { XCTAssertEqual(error as? AutomationRPCError, .timedOut) }
+        let recorded = await recorder.wasRecorded; XCTAssertFalse(recorded)
+    }
     func testOwnedCommandDrainsLargeOutputAndBoundsRetainedLogs() async throws {
         let directory = URL(fileURLWithPath: "/private/tmp")
         let result = try await AutomationOwnedCommand().run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/usr/bin/python3")),
@@ -67,8 +95,18 @@ final class AutomationProcessTests: XCTestCase, @unchecked Sendable {
             XCTFail()
         } catch { XCTAssertEqual(error as? AutomationRPCError, .timedOut) }
         let identity = try await recorder.identity(); XCTAssertEqual(identity.presence(), .absent)
-        let result = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/bin/echo")), arguments: ["done"],
-            directory: URL(fileURLWithPath: "/private/tmp"), environment: [:], timeout: .seconds(5))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let release = directory.appendingPathComponent("identity-recorded")
+        // Keep this read alive until ownership is captured; short-command races have their own test.
+        let result = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/bin/sh")),
+            arguments: ["-c", "while [ -d \"$2\" ] && [ ! -f \"$1\" ]; do /bin/sleep 0.01; done; [ -f \"$1\" ] || exit 1; printf 'done\\n'",
+                        "read-after-timeout", release.path, directory.path],
+            directory: directory, environment: [:], timeout: .seconds(5), didStart: { _ in
+                try Data().write(to: release, options: .atomic)
+            })
+        XCTAssertNotNil(result.ownedIdentity)
         XCTAssertEqual(result.exitStatus, 0); XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self), "done\n")
     }
     func testExpiredCommandNeverStartsAProcess() async throws {

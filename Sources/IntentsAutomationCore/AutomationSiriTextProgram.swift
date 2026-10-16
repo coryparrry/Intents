@@ -3,14 +3,13 @@ import Foundation
 /// One frozen recognised-text submission. Device observations establish its business outcome.
 public struct AutomationSiriTextProgram: Codable, Equatable, Sendable {
     static func validateAdmission(plan: AutomationCase, approval: RunApproval, capabilities: CapabilityProfile,
-                                  authority: AutomationSiriRouteAuthority? = nil, purpose: AutomationPlanValidationPurpose = .execution) throws {
+                                  purpose: AutomationPlanValidationPurpose = .execution) throws {
         guard !(plan.requirements.isEmpty && plan.setup.isEmpty && plan.observations.isEmpty && plan.cleanup.isEmpty) else { return }
         guard capabilities.records["siri.actualRoute"]?.state != .unavailable, capabilities.records["siri.actualRoute"]?.state != .consentRequired else {
             throw AutomationContractError.missingEvidence("Siri route is vetoed or requires consent")
         }
-        if purpose == .review { try AutomationSiriQualificationProposal.validate(plan: plan, approval: approval); return }
-        guard let authority else { throw AutomationContractError.missingEvidence("Unqualified Siri API submission cannot assess routing or business outcomes") }
-        try authority.validate(plan: plan, approval: approval)
+
+        try AutomationSiriWorkflowContract.validate(plan: plan, approval: approval)
     }
     public let request: String
     public init(request: String) { self.request = request }

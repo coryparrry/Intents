@@ -9,11 +9,12 @@ public struct AutomationMutationCase: Codable, Equatable, Sendable {
     public var kinds: [AutomationMutationKind]
     public var requiredCapabilities: [String]
     public var semanticJustification: String
+    public var subjectPhraseSlot: AutomationSubjectPhraseSlot?
     public var goalPhraseVariation: Bool?
-    public init(frozen: AutomationFrozenCase, recipeIDs: [String], kinds: [AutomationMutationKind], requiredCapabilities: [String], semanticJustification: String, goalPhraseVariation: Bool? = nil) {
+    public init(frozen: AutomationFrozenCase, recipeIDs: [String], kinds: [AutomationMutationKind], requiredCapabilities: [String], semanticJustification: String, goalPhraseVariation: Bool? = nil, subjectPhraseSlot: AutomationSubjectPhraseSlot? = nil) {
         self.frozen = frozen; self.recipeIDs = recipeIDs; self.kinds = kinds
         self.requiredCapabilities = requiredCapabilities; self.semanticJustification = semanticJustification
-        self.goalPhraseVariation = goalPhraseVariation
+        self.goalPhraseVariation = goalPhraseVariation; self.subjectPhraseSlot = subjectPhraseSlot
     }
 }
 public struct AutomationReductionEdge: Codable, Equatable, Sendable {
@@ -30,11 +31,8 @@ public struct AutomationSearchApproval: Sendable {
     public var limits: AutomationCampaignLimits
     /// Qualified setup/reset and fresh bindings are required for repeated writes.
     public var freshFixtureCapability: String?
-    public var qualifiedFixtures: [String: AutomationQualifiedFreshFixture]
-    public init(run: RunApproval, approvedDigests: Set<String>, limits: AutomationCampaignLimits = .init(), freshFixtureCapability: String? = nil,
-                qualifiedFixtures: [String: AutomationQualifiedFreshFixture] = [:]) {
+    public init(run: RunApproval, approvedDigests: Set<String>, limits: AutomationCampaignLimits = .init(), freshFixtureCapability: String? = nil) {
         self.run = run; self.approvedDigests = approvedDigests; self.limits = limits; self.freshFixtureCapability = freshFixtureCapability
-        self.qualifiedFixtures = qualifiedFixtures
     }
 }
 public struct AutomationSearchAttempt: Codable, Equatable, Sendable {
@@ -55,16 +53,29 @@ public struct AutomationFailureConfirmation: Codable, Equatable, Sendable {
     public var confirmed: Bool { complete && matchingFailures > 0 }
 }
 public struct AutomationSearchInterruption: Codable, Equatable, Sendable {
+    public init(attemptID: String, caseDigest: String, stage: AutomationSearchAttempt.Stage, dispatchMayHaveOccurred: Bool, reason: String) {
+        self.attemptID = attemptID; self.caseDigest = caseDigest; self.stage = stage; self.dispatchMayHaveOccurred = dispatchMayHaveOccurred; self.reason = reason
+    }
     public var attemptID: String
     public var caseDigest: String
     public var stage: AutomationSearchAttempt.Stage
     public var dispatchMayHaveOccurred: Bool
     public var reason: String
 }
+public struct AutomationSearchQualification: Codable, Equatable, Sendable {
+    public var caseDigest: String
+    public var report: AutomationAttemptReport
+    public init(caseDigest: String, report: AutomationAttemptReport) { self.caseDigest = caseDigest; self.report = report }
+}
 public struct AutomationFailureSearchReport: Codable, Equatable, Sendable {
     public var schemaVersion = 1
     public var baselineDigest: String
+    public init(baselineDigest: String, attempts: [AutomationSearchAttempt] = [], interruptions: [AutomationSearchInterruption] = []) {
+        self.baselineDigest = baselineDigest; self.attempts = attempts; self.interruptions = interruptions
+    }
+    public var qualificationAttempts: [AutomationSearchQualification]? = nil
     public var attempts: [AutomationSearchAttempt] = []
+    public var discoveryDiversity: [AutomationSearchDiversityMeasurement]? = nil
     public var confirmations: [AutomationFailureConfirmation] = []
     public var interruptions: [AutomationSearchInterruption] = []
     public var counters = ScopeCounters()
@@ -78,6 +89,17 @@ public struct AutomationFailureSearchReport: Codable, Equatable, Sendable {
 public protocol AutomationCampaignAttemptExecutor: Sendable {
     func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
                  budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport
+    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
+                 budget: AutomationCampaignBudget, excludedEntityIDs: Set<String>) async throws -> AutomationAttemptReport
+}
+public extension AutomationCampaignAttemptExecutor {
+    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String,
+                 budget: AutomationCampaignBudget, excludedEntityIDs: Set<String>) async throws -> AutomationAttemptReport {
+        guard !AutomationFreshFixtureEvidence.requiresFreshIdentities(frozen.plan) else {
+            throw AutomationContractError.invalidPlan("Fresh-record campaigns require pre-dispatch identity checks")
+        }
+        return try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget)
+    }
 }
 
 /// Swift freezes each attempt and computes failure signatures. Executors return facts, never predicates.
@@ -90,41 +112,42 @@ public actor AutomationFailureSearch {
         var approval: AutomationSearchApproval
         var executor: any AutomationCampaignAttemptExecutor
         var budget: AutomationCampaignBudget
-        var fixtureTrackers: [String: AutomationFreshFixtureTracker]
+        var excludedEntityIDs: Set<String> = []
     }
     private var context: Context?
     public init(cases: AutomationCaseStore) { self.cases = cases }
     public func run(baseline: AutomationFrozenCase, mutations: [AutomationMutationCase], reductions: [AutomationReductionEdge] = [],
                     approval: AutomationSearchApproval, capabilities: CapabilityProfile,
-                    executor: any AutomationCampaignAttemptExecutor) async throws -> AutomationFailureSearchReport {
+                    executor: any AutomationCampaignAttemptExecutor, campaignBudget: AutomationCampaignBudget? = nil) async throws -> AutomationFailureSearchReport {
         guard !running else { throw AutomationContractError.targetBusy }
         try validate(baseline: baseline, mutations: mutations, reductions: reductions, approval: approval, capabilities: capabilities)
-        guard approval.qualifiedFixtures.isEmpty || executor is any AutomationFreshFixtureAttemptExecutor else {
-            throw AutomationContractError.missingEvidence("Mutating search requires a pre-dispatch fresh-fixture executor")
-        }
         running = true; defer { running = false; context = nil }
         // Freeze the entire approved population before any subject can execute.
         for frozen in [baseline] + mutations.map(\.frozen) { _ = try await cases.freeze(frozen.plan) }
-        let budget = try AutomationCampaignBudget(limits: approval.limits)
-        let ledger = AutomationFixtureIdentityLedger(fixtures: Array(approval.qualifiedFixtures.values))
-        let trackers = approval.qualifiedFixtures.mapValues { AutomationFreshFixtureTracker(fixture: $0, ledger: ledger) }
-        context = Context(approval: approval, executor: executor, budget: budget, fixtureTrackers: trackers)
-        result = AutomationFailureSearchReport(baselineDigest: baseline.digest); stopped = false
+        if let campaignBudget, campaignBudget.limits != approval.limits { throw AutomationContractError.conflictingOperation }
+        let budget = try campaignBudget ?? AutomationCampaignBudget(limits: approval.limits)
+        context = Context(approval: approval, executor: executor, budget: budget)
+        result = AutomationFailureSearchReport(baselineDigest: baseline.digest); result.discoveryDiversity = []; stopped = false
+        var queue = AutomationSearchDiversityQueue()
         for kind in [AutomationMutationKind.duplicateLabel, .unrelatedData, .alternatePhrasing, .missingEntity, .lookupOrdering, .beforeCommitFailure] {
             if !mutations.contains(where: { $0.kinds.contains(kind) }) { result.capabilityGaps.append("No qualified approved " + kind.rawValue + " recipe") }
+        }
+        if mutations.contains(where: { $0.goalPhraseVariation == true }) && !mutations.contains(where: { $0.subjectPhraseSlot != nil }) {
+            result.capabilityGaps.append("No approved actual AI/Siri subject wording variations; controller navigation wording is a separate trial")
         }
         var candidates: [(AutomationFrozenCase, [String])] = []
         for _ in 0..<min(3, approval.limits.attempts) {
             guard let report = await attempt(baseline, .baseline) else { break }
+            queue.observeBaseline(report)
             if Self.isFailure(report), !candidates.contains(where: { $0.0.digest == baseline.digest }) { candidates.append((baseline, Self.signature(report))) }
         }
-        let queue = mutations.sorted {
-            if $0.recipeIDs.count != $1.recipeIDs.count { return $0.recipeIDs.count < $1.recipeIDs.count }
-            return $0.frozen.digest < $1.frozen.digest
-        }
-        // Singles precede explicitly qualified compatible pairs. No Cartesian product is invented.
-        for candidate in queue.prefix(50) {
+        // Singles precede explicitly qualified compatible pairs. Re-rank after
+        // every retained report; no unexecuted case is claimed to be novel.
+        var pending = mutations, discoveryCount = 0
+        while discoveryCount < 50, let candidate = queue.next(in: pending) {
             guard let report = await attempt(candidate.frozen, .discovery) else { break }
+            result.discoveryDiversity?.append(queue.observe(report, mutation: candidate))
+            pending.removeAll { $0.frozen.digest == candidate.frozen.digest }; discoveryCount += 1
             if Self.isFailure(report) { candidates.append((candidate.frozen, Self.signature(report))) }
         }
         var best: (AutomationFrozenCase, [String])?
@@ -168,18 +191,20 @@ public actor AutomationFailureSearch {
                 _ = try await cases.freeze(frozen.plan)
                 var runApproval = approval.run; runApproval.approvedCaseDigest = frozen.digest
                 enteredExecutor = true
-                let report: AutomationAttemptReport
-                if let tracker = context.fixtureTrackers[frozen.digest], let fresh = executor as? any AutomationFreshFixtureAttemptExecutor {
-                    report = try await fresh.execute(frozen: frozen, approval: runApproval, attemptID: id, budget: budget, fixtureTracker: tracker)
-                    try await tracker.validate(report: report, plan: frozen.plan, approval: runApproval)
-                } else { report = try await executor.execute(frozen: frozen, approval: runApproval, attemptID: id, budget: budget) }
+                let report = try await executor.execute(frozen: frozen, approval: runApproval, attemptID: id, budget: budget, excludedEntityIDs: context.excludedEntityIDs)
                 guard report.attemptID == id else { throw AutomationContractError.conflictingOperation }
                 try AutomationRecordedEvidence.validate(report: report, plan: frozen.plan, expectedRunID: runApproval.runID)
                 // The executor may already have persisted this exact immutable attempt.
                 if let existing = try? await cases.loadAttempt(id: id, frozen: frozen) {
                     guard existing == report else { throw AutomationContractError.conflictingOperation }
                 } else { try await cases.saveAttempt(report, for: frozen) }
+                let identities = try AutomationFreshFixtureEvidence.dispatchedIdentities(report: report, plan: frozen.plan)
+                guard identities.isDisjoint(with: context.excludedEntityIDs) else { throw AutomationFixtureFreshnessError.invalidFixture }
+                self.context?.excludedEntityIDs.formUnion(identities)
                 result.attempts.append(.init(stage: stage, caseDigest: frozen.digest, report: report)); result.counters.record(report.result)
+                if report.result.summary == .invalidFixture {
+                    result.stopReason = "Fixture did not meet the frozen setup checks; search stopped"; stopped = true
+                }
                 if !report.resourcesReleased || report.result.subjectDispatchUncertain {
                     result.stopReason = "Unresolved dispatch or resource release; fresh attempts stopped"; stopped = true
                 }
@@ -227,13 +252,19 @@ public actor AutomationFailureSearch {
         let all = [baseline] + mutations.map(\.frozen)
         for frozen in all {
             try frozen.validate()
-            let phrase = mutations.first { $0.frozen.digest == frozen.digest && $0.goalPhraseVariation == true }
-            if let phrase { try AutomationGoalPhraseVariation.validate(phrase, baseline: baseline) }
+            let phrase = mutations.first { $0.frozen.digest == frozen.digest && $0.subjectPhraseSlot != nil }
+            if let phrase {
+                if phrase.subjectPhraseSlot != nil {
+                    try AutomationSubjectPhraseVariation.validate(phrase, baseline: baseline)
+
+                }
+            }
             let sameSubject: Bool
             if phrase != nil { sameSubject = true }
             else {
                 sameSubject = try frozen.plan.execution.operation == baseline.plan.execution.operation &&
-                    AutomationFrozenCase.subjectContractDigest(frozen.plan) == AutomationFrozenCase.subjectContractDigest(baseline.plan)
+                    AutomationFrozenCase.subjectContractDigest(frozen.plan) == AutomationFrozenCase.subjectContractDigest(baseline.plan) &&
+                    frozen.plan.execution.uiProgram?.bindings == baseline.plan.execution.uiProgram?.bindings
             }
             guard approval.approvedDigests.contains(frozen.digest), frozen.plan.app == baseline.plan.app, frozen.plan.target == baseline.plan.target,
                   frozen.plan.environmentID == baseline.plan.environmentID, frozen.oracleDigest == baseline.oracleDigest,
@@ -241,24 +272,24 @@ public actor AutomationFailureSearch {
                   frozen.plan.observations == baseline.plan.observations else { throw AutomationContractError.invalidPlan("Mutation changes an unapproved oracle, route or observer") }
             var runApproval = approval.run; runApproval.approvedCaseDigest = frozen.digest
             try PlanValidator.validate(frozen.plan, approval: runApproval, capabilities: capabilities)
-            for segment in frozen.plan.setup + [frozen.plan.execution] + frozen.plan.observations + frozen.plan.cleanup {
-                try segment.hostProgram?.validate(route: segment.kind, phase: segment.phase)
-                try segment.uiProgram?.validate(phase: segment.phase)
-            }
+            // PlanValidator checks programs with typed deferred bindings. Raw
+            // programs cannot validate fresh names or IDs before their producer runs.
             let effects = (frozen.plan.setup + [frozen.plan.execution] + frozen.plan.cleanup).reduce(into: Set<AutomationEffect>()) { $0.formUnion($1.effects) }
             guard !effects.contains(.externalWrite) else { throw AutomationContractError.invalidPlan("External writes are not qualified for repeated failure search") }
             if effects.contains(.fixtureWrite) || effects.contains(.reset) {
-                guard approval.run.disposable, let fixture = approval.qualifiedFixtures[frozen.digest] else { throw AutomationContractError.missingEvidence("Repeated writes require a live-qualified fresh fixture and bindings per attempt") }
-                if let capability = approval.freshFixtureCapability {
-                    guard capabilities.supports([capability]), frozen.plan.setup.contains(where: { $0.requiredCapabilities.contains(capability) }) else {
-                        throw AutomationContractError.missingEvidence("The additionally declared fixture capability is unavailable")
-                    }
+                if frozen.plan.execution.kind == .siriText {
+                    try AutomationSiriResetPlan.validateStructure(plan: frozen.plan, approval: runApproval)
+                    continue
                 }
-                try fixture.validate(plan: frozen.plan, approval: runApproval)
+                guard approval.run.disposable, frozen.plan.setupChecks?.isEmpty == false else {
+                    throw AutomationContractError.missingEvidence("Repeated writes require a disposable target and frozen setup checks")
+                }
+
             }
         }
         for mutation in mutations {
-            if mutation.goalPhraseVariation == true { try AutomationGoalPhraseVariation.validate(mutation, baseline: baseline); continue }
+            if mutation.subjectPhraseSlot != nil { try AutomationSubjectPhraseVariation.validate(mutation, baseline: baseline); continue }
+            guard mutation.goalPhraseVariation != true else { throw AutomationContractError.invalidPlan("Live navigation goal mutations are unsupported") }
             guard !mutation.recipeIDs.isEmpty, mutation.recipeIDs.count <= 2, Set(mutation.recipeIDs).count == mutation.recipeIDs.count,
                   !mutation.kinds.isEmpty, !mutation.requiredCapabilities.isEmpty, capabilities.supports(mutation.requiredCapabilities),
                   !mutation.semanticJustification.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AutomationContractError.missingEvidence("Mutation recipe or semantic qualification is unavailable") }
@@ -271,3 +302,22 @@ public actor AutomationFailureSearch {
         }
     }
 }
+#if os(macOS)
+/// Production adapter uses the same approved native application runner and dispatch budget.
+public struct AutomationPreparedCampaignExecutor: AutomationCampaignAttemptExecutor {
+    public let runner: AutomationApplicationRunner
+    public let prepared: AutomationPreparedApplication
+    public let capabilities: CapabilityProfile
+    public let allowBootAndInstall: Bool
+    public init(runner: AutomationApplicationRunner, prepared: AutomationPreparedApplication, capabilities: CapabilityProfile, allowBootAndInstall: Bool) {
+        self.runner = runner; self.prepared = prepared; self.capabilities = capabilities; self.allowBootAndInstall = allowBootAndInstall
+    }
+    public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
+        try await execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget, excludedEntityIDs: [])
+    }
+    public func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget, excludedEntityIDs: Set<String>) async throws -> AutomationAttemptReport {
+        try await runner.run(prepared: prepared, plan: frozen.plan, approval: approval, capabilities: capabilities,
+            attemptID: attemptID, allowBootAndInstall: allowBootAndInstall, campaignBudget: budget, excludedEntityIDs: excludedEntityIDs)
+    }
+}
+#endif

@@ -89,11 +89,11 @@ actor AutomationInputAdapterProbeRunner {
             try await authorize(lease)
             guard try AutomationReadOnlyFile.read(testFile, maximumBytes: 4_194_304) == testData else { throw AutomationContractError.conflictingOperation }
             let result = try await runCommand(["xcodebuild", "test-without-building", "-xctestrun", testFile.path, "-destination", "platform=macOS",
-                "-only-testing:" + host.testTarget + "/InputAdapterProbeTests/testParameterRoundTrip", "-jobs", "2", "-parallel-testing-enabled", "NO",
+                "-only-testing:" + host.testTarget + "/InputAdapterProbeTests/testParameterRoundTrip", "-jobs", "1", "-parallel-testing-enabled", "NO",
                 "-resultBundlePath", resultPath.path], lease: lease, scope: scope, timeout: .seconds(120))
             if plan.parameters.contains(where: { $0.family == "intentFile" }) { _ = try await artifacts.storeNativeEvidence(data: result.stdout + result.stderr, scope: scope) }
             else { _ = try await artifacts.store(data: result.stdout + result.stderr, name: "input-adapter-log.txt", scope: scope) }
-            guard result.exitStatus == 0 else { throw AutomationContractError.missingEvidence("Input adapter probe XCTest failed") }
+            guard result.exitStatus == 0 else { throw AutomationContractError.missingEvidence(Self.failureReason(stdout: result.stdout, stderr: result.stderr)) }
             let attachments = directory.appendingPathComponent("attachments")
             let exported = try await runCommand(["xcresulttool", "export", "attachments", "--path", resultPath.path, "--output-path", attachments.path],
                 lease: lease, scope: scope, timeout: .seconds(30))
@@ -157,6 +157,13 @@ actor AutomationInputAdapterProbeRunner {
         if (stopRequested || Task.isCancelled), failure == nil { failure = "Input adapter probe cancelled before publication" }
         return .init(scope: scope, observation: released && failure == nil ? observation : nil,
             artifact: released && failure == nil ? artifact : nil, resourcesReleased: released, failure: failure)
+    }
+    static func failureReason(stdout: Data, stderr: Data) -> String {
+        let text = String(decoding: stdout.prefix(1_048_576) + stderr.prefix(1_048_576), as: UTF8.self)
+        if ["Failed to load the test bundle", "Symbol not found", "AppIntentsTesting.framework", "AppIntentsServices.framework"].allSatisfy(text.contains) {
+            return "This Xcode’s App Intents testing framework cannot load on this Mac because a required system symbol is missing. Choose another installed Xcode in Prepare app, then prepare a fresh private copy. The input check did not run; no intent action was dispatched."
+        }
+        return "Input adapter probe XCTest failed"
     }
     private func authorize(_ lease: AutomationDeviceLeaseManager.Lease) async throws {
         let current = await leases.isCurrent(lease)

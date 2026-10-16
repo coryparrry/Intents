@@ -13,6 +13,7 @@ public struct AutomationSegmentReceipt: Codable, Equatable, Sendable {
     public var verifiedOutputs: [String: AutomationValue]?
     public var environmentID: String?
     public var terminalUIAssertionFailure: AutomationTerminalUIAssertionFailure? = nil
+    var durableStateRead: AutomationDurableStateReadReceipt? = nil
     var hostReceiptDigest: String? = nil
     public init(scope: AutomationScope, app: AppIdentity, target: TargetIdentity, segmentID: String,
                 route: AutomationSegment.Kind, dispatched: Bool, completed: Bool, observations: [AutomationObservation] = [], artifact: String? = nil, verifiedOutputs: [String: AutomationValue]? = nil, environmentID: String? = nil) {
@@ -42,6 +43,8 @@ public struct AutomationAttemptReport: Codable, Equatable, Sendable {
     public var result: AttemptResult
     public var receipts: [AutomationSegmentReceipt]
     public var resourcesReleased: Bool
+    /// Actual initial/split JS responses delivered to the attributed native app.
+    public var servedJavaScriptResponses: [String: String]? = nil
     var receipt: AutomationSegmentReceipt?
     public var executionSucceeded: Bool {
         resourcesReleased && result.subjectDispatched && result.subjectCompleted && !result.subjectDispatchUncertain
@@ -68,10 +71,10 @@ public actor AutomationCoordinator {
         self.releaseCampaignOnCompletion = releaseCampaignOnCompletion
     }
     public func run(plan: AutomationCase, approval: RunApproval, capabilities: CapabilityProfile,
-                    attemptID: String, driver: any AutomationRouteDriver, fixtureTracker: AutomationFreshFixtureTracker? = nil, qualificationFence: AutomationFreshFixtureQualificationFence? = nil, siriAuthority: AutomationSiriRouteAuthority? = nil) async throws -> AutomationAttemptReport {
+                    attemptID: String, driver: any AutomationRouteDriver, excludedEntityIDs: Set<String> = []) async throws -> AutomationAttemptReport {
         guard !running else { throw AutomationContractError.targetBusy }
         running = true; defer { running = false }
-        try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, siriAuthority: siriAuthority)
+        try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
         guard !attemptID.isEmpty else { throw AutomationContractError.invalidIdentity }
         let planDeadline = ContinuousClock.now.advanced(by: .seconds(plan.budget.wallClockSeconds))
         let deadline = min(planDeadline, campaignDeadline ?? planDeadline)
@@ -83,11 +86,12 @@ public actor AutomationCoordinator {
             do {
                 try Task.checkCancellation()
                 guard ContinuousClock.now < deadline else { termination = .timedOut; break }
-                if segment.phase == .subject, let qualificationFence {
-                    try await qualificationFence.reserveBeforeSubject(receipts: receipts, plan: plan, approval: approval, attemptID: attemptID)
-                }
-                if segment.phase == .subject, let fixtureTracker {
-                    try await fixtureTracker.reserveBeforeSubject(receipts: receipts, plan: plan, approval: approval, attemptID: attemptID)
+                if segment.phase == .subject, AutomationFreshFixtureEvidence.requiresFreshIdentities(plan) {
+                    let identities = try AutomationFreshFixtureEvidence.identitiesBeforeSubject(receipts: receipts, plan: plan,
+                        runID: approval.runID, attemptID: attemptID)
+                    guard identities.isDisjoint(with: excludedEntityIDs) else {
+                        termination = .invalidFixture; break
+                    }
                 }
                 let resolution = try AutomationInputResolver.resolveForExecution(segment: segment, receipts: receipts, plan: plan, runID: approval.runID, attemptID: attemptID)
                 let (receipt, controlReleased) = try await execute(plan: plan, segment: resolution.segment, resolution: resolution.authority, approval: approval, attemptID: attemptID, deadline: deadline, driver: driver)
@@ -140,6 +144,28 @@ public actor AutomationCoordinator {
         result.subjectDispatchUncertain = dispatchUncertain
         result.policyDenial = policyDenial
         return AutomationAttemptReport(attemptID: attemptID, result: result, receipts: receipts, resourcesReleased: released)
+    }
+    /// Continue an already drained host campaign with an independent durable read.
+    /// The original case and subject evidence remain authoritative; this never dispatches the subject.
+    func executeIndependentObservation(plan: AutomationCase, segment: AutomationSegment, approval: RunApproval,
+                                       attemptID: String, priorReceipts: [AutomationSegmentReceipt],
+                                       deadline: ContinuousClock.Instant, driver: any AutomationRouteDriver) async throws -> (AutomationSegmentReceipt, Bool) {
+        guard !running, segment.kind == .storageRead, segment.phase == .observe,
+              plan.observations.contains(segment), plan.app == approval.app, plan.target == approval.target,
+              plan.environmentID == approval.environmentID,
+              approval.approvedCaseDigest == (try AutomationFrozenCase.planDigest(plan)),
+              priorReceipts.contains(where: { receipt in
+                  receipt.segmentID == plan.execution.id && receipt.route == plan.execution.kind && receipt.app == plan.app
+                      && receipt.target == plan.target && receipt.scope.runId == approval.runID && receipt.scope.attemptId == attemptID
+                      && receipt.dispatched && receipt.completed && receipt.environmentID == plan.environmentID
+              }) else { throw AutomationContractError.invalidIdentity }
+        running = true; defer { running = false }
+        let boundedDeadline = min(deadline, campaignDeadline ?? deadline)
+        guard ContinuousClock.now < boundedDeadline else { throw AutomationRPCError.timedOut }
+        let resolution = try AutomationInputResolver.resolveForExecution(segment: segment, receipts: priorReceipts,
+            plan: plan, runID: approval.runID, attemptID: attemptID)
+        return try await execute(plan: plan, segment: resolution.segment, resolution: resolution.authority,
+            approval: approval, attemptID: attemptID, deadline: boundedDeadline, driver: driver)
     }
     private func execute(plan: AutomationCase, segment: AutomationSegment, resolution: AutomationSegmentResolutionAuthority, approval: RunApproval,
                          attemptID: String, deadline: ContinuousClock.Instant, driver: any AutomationRouteDriver) async throws -> (AutomationSegmentReceipt, Bool) {
@@ -197,7 +223,7 @@ public actor AutomationCoordinator {
             }
             let summary: AttemptResult.Summary = error is CancellationError ? .cancelled
                 : error as? AutomationRPCError == .timedOut ? .timedOut : segment.phase == .setup ? .invalidFixture : .unresolved
-            throw AutomationExecutionFailure(summary: summary, dispatchUncertain: knownReceipt == nil && (invoked || duplicate), resourcesReleased: controlReleased, receipt: knownReceipt, policyDenial: AutomationPolicyDenialReason.from(error))
+            throw AutomationExecutionFailure(summary: summary, dispatchUncertain: knownReceipt == nil && (invoked || duplicate), resourcesReleased: controlReleased, receipt: knownReceipt, policyDenial: nil)
         }
     }
     private func release(driver: any AutomationRouteDriver, scope: AutomationScope,
@@ -207,9 +233,8 @@ public actor AutomationCoordinator {
         return await Task.detached {
         let shutdown = AutomationBoundedTask<AutomationReleaseProof>()
         do {
-            // The private sidecar has bounded shutdown (45s), process exit
-            // (10s + 5s) and independent device readback (15s) plus inspector termination stages. Allow
-            // that cleanup envelope without extending or retrying execution.
+            // Cleanup has its own bounded envelope for command drain and independent
+            // release verification without extending or retrying execution.
             let proof = try await shutdown.run(until: ContinuousClock.now.advanced(by: cleanupTimeout)) {
                 await driver.release(scope: scope, lease: lease)
             }
@@ -221,7 +246,7 @@ public actor AutomationCoordinator {
     }
 }
 
-private struct AutomationExecutionFailure: Error {
+struct AutomationExecutionFailure: Error {
     var summary: AttemptResult.Summary
     var dispatchUncertain: Bool
     var resourcesReleased: Bool

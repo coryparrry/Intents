@@ -4,6 +4,7 @@ import IntentsAutomationDateCodec
 #endif
 
 struct HostPlan: Decodable {
+    var expectedOSBuild: String? = nil
     let schemaVersion: Int
     let runID: String
     let attemptID: String
@@ -23,6 +24,7 @@ struct HostOperation: Decodable {
     let parameters: [String: HostInput]
     let resultCodec: String?
     let queryText: String?
+    let querySuggested: Bool?
     let queryIDs: [String]?
     let properties: [String: String]?
     let parameterCodecs: [String: String]?

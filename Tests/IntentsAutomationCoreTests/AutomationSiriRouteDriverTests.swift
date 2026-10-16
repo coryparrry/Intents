@@ -50,12 +50,11 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
         let root: URL, prepared: AutomationPreparedApplication, plan: AutomationCase, approval: RunApproval
         let leases: AutomationDeviceLeaseManager, lease: AutomationDeviceLeaseManager.Lease, scope: AutomationScope
         let release: Release, commands: Commands, capabilities: CapabilityProfile
-        func driver(prepared: AutomationPreparedApplication? = nil, approval: RunApproval? = nil, capabilities: CapabilityProfile? = nil,
-                    siriAuthority: AutomationSiriRouteAuthority? = nil) throws -> AutomationSiriRouteDriver {
+        func driver(prepared: AutomationPreparedApplication? = nil, approval: RunApproval? = nil, capabilities: CapabilityProfile? = nil) throws -> AutomationSiriRouteDriver {
             try .init(prepared: prepared ?? self.prepared, approval: approval ?? self.approval, capabilities: capabilities ?? self.capabilities,
                 developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"), stateDirectory: root.appendingPathComponent("driver"),
                 leases: leases, artifacts: AutomationArtifactRegistry(root: root.appendingPathComponent("artifacts")),
-                subjectVerifier: Subject(app: plan.app, target: plan.target), releaseVerifier: release, siriAuthority: siriAuthority,
+                subjectVerifier: Subject(app: plan.app, target: plan.target), releaseVerifier: release,
                 commands: .init(run: { try await commands.run($0, $1, $2, $3) }, stop: { true }))
         }
     }
@@ -99,9 +98,9 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
         let leases = AutomationDeviceLeaseManager(); try await leases.reserveCampaign(runID: "run", target: target)
         let lease = try await leases.acquire(runID: "run", target: target, control: .system)
         let scope = AutomationScope(runID: "run", attemptID: "attempt", segmentID: "siri", leaseGeneration: lease.generation)
-        let receipt: [String: AutomationJSON] = ["schemaVersion": .number(1), "runID": .string("run"), "attemptID": .string("attempt"), "segmentID": .string("siri"),
+        let receipt: [String: AutomationJSON] = ["schemaVersion": .number(3), "osBuild": .string("24B5028f"), "runID": .string("run"), "attemptID": .string("attempt"), "segmentID": .string("siri"),
             "leaseGeneration": .number(Double(lease.generation)), "bundleID": .string(app.bundleID), "productDigest": .string(app.productDigest!),
-            "requestDigest": .string(segment.siriProgram!.requestDigest), "submissionStarted": .bool(true), "submissionReturned": .bool(true),
+            "requestDigest": .string(segment.siriProgram!.requestDigest), "submittedRecognizedText": .string(segment.siriProgram!.request), "submissionStarted": .bool(true), "submissionReturned": .bool(true),
             "runner": .object(["pid": .number(42), "startIdentity": .string("1:2"), "executablePath": .string("/private/var/containers/Bundle/Application/" + UUID().uuidString + "/OwnedHost-Runner.app/OwnedHost-Runner")])]
         return .init(root: root, prepared: prepared, plan: plan, approval: approval, leases: leases, lease: lease, scope: scope, release: Release(),
             commands: Commands(receipt: receipt), capabilities: .init(records: ["siri.recognizedText.api": .init(state: .available, reason: "synthetic command test", probeVersion: "test", evidence: [])]))
@@ -120,40 +119,6 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
         let clean = try await h.leases.currentRecord(h.lease); XCTAssertNil(clean.privatePayload)
         let file = h.root.appendingPathComponent("driver/siri-\(h.lease.generation)/host.xctestrun")
         XCTAssertFalse(try String(contentsOf: file, encoding: .utf8).contains("INTENTS_AUTOMATION_SIRI_PLAN_B64"))
-    }
-    func testActualAppleBaselineAcquisitionRequiresAndAcceptsOwnedSiriCalibrationAuthority() async throws {
-        let h = try await fixture()
-        let catalog = ApplicationSurfaceCatalog(app: h.plan.app, systemActions: [], systemDiscoveryComplete: false,
-            uiDiscoveryComplete: false, gaps: [], entities: [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "TaskQuery",
-                properties: ["title": "text", "completed": "bool"], propertyTitles: [:])])
-        var approval = h.approval; approval.effects = [.observe, .navigate, .fixtureWrite]; approval.maximumActions = 20
-        var capabilities = h.capabilities
-        capabilities.records["apple.entity.query"] = .init(state: .available, reason: "synthetic acquisition", probeVersion: "test", evidence: [])
-        let plan = try AutomationSiriEntityPlanner.compile(catalog: catalog, entityType: "TaskEntity", nameProperty: "title",
-            recordName: "Approved task", stateProperty: "completed", initialState: false, expectedState: true,
-            request: "Complete Approved task in Example", approval: approval, capabilities: capabilities)
-        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
-        let segment = plan.setup[0]
-        let scope = AutomationScope(runID: approval.runID, attemptID: h.scope.attemptId, segmentID: segment.id, leaseGeneration: h.lease.generation)
-        func apple(_ authority: AutomationSiriRouteAuthority?, _ suffix: String) throws -> AutomationAppleRouteDriver {
-            try .init(prepared: h.prepared.host, approval: approval, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"),
-                stateDirectory: h.root.appendingPathComponent(suffix), leases: h.leases,
-                artifacts: AutomationArtifactRegistry(root: h.root.appendingPathComponent("artifacts-" + suffix)),
-                subjectVerifier: Subject(app: plan.app, target: plan.target), releaseVerifier: h.release,
-                capabilities: capabilities, siriAuthority: authority,
-                commands: .init(run: { _, _, _ in throw AutomationContractError.invalidIdentity }, stop: { true }))
-        }
-        let denied = try apple(nil, "denied")
-        do { try await denied.acquire(plan: plan, segment: segment, scope: scope, lease: h.lease); XCTFail("No authority must stop before query preparation") }
-        catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Unqualified Siri API submission cannot assess routing or business outcomes")) }
-        _ = await denied.release(scope: scope, lease: h.lease)
-        let authority = try AutomationSiriRouteAuthority(plan: plan, approval: approval)
-        let admitted = try apple(authority, "admitted")
-        try await admitted.acquire(plan: plan, segment: segment, scope: scope, lease: h.lease)
-        let held = try await h.leases.currentRecord(h.lease); XCTAssertNotNil(held.privatePayload)
-        let proof = await admitted.release(scope: scope, lease: h.lease)
-        XCTAssertTrue(proof.commandsDrained); XCTAssertTrue(proof.runnerTerminated); XCTAssertTrue(proof.privatePayloadCleaned)
-        let released = try await h.leases.currentRecord(h.lease); XCTAssertNil(released.privatePayload)
     }
     func testUnreturnedOrForeignSubmissionCannotCompleteAndCannotRedispatch() async throws {
         for foreign in [false, true] {
@@ -177,20 +142,20 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
         do { try await h.leases.release(h.lease, commandsDrained: proof.commandsDrained, ownedRunnerTerminated: proof.runnerTerminated); XCTFail("retain lease") }
         catch { XCTAssertEqual(error as? AutomationContractError, .terminationUnverified) }
     }
-    func testUnqualifiedAPIGrantDoesNotPermitBusinessAssessment() async throws {
+    func testSubmissionAPIRequiresIndependentBeforeAndAfterBusinessChecks() async throws {
         let h = try await fixture()
         var plan = h.plan
         plan.observations = [.init(id: "business", kind: .observeOnly, phase: .observe, operation: "Independent outcome", effects: [.observe])]
         plan.requirements = [.init(observationID: "business", expected: .bool(true), proof: .appState, justification: "Requires independent Siri outcome")]
         var approval = h.approval; approval.effects.insert(.observe); approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
         XCTAssertThrowsError(try PlanValidator.validate(plan, approval: approval, capabilities: h.capabilities)) {
-            XCTAssertEqual($0 as? AutomationContractError, .missingEvidence("Unqualified Siri API submission cannot assess routing or business outcomes"))
+            XCTAssertEqual($0 as? AutomationContractError, .invalidPlan("Siri workflow needs an approved disposable record with different before and after states"))
         }
         let driver = try AutomationSiriRouteDriver(prepared: h.prepared, approval: approval, capabilities: h.capabilities,
             developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"), stateDirectory: h.root.appendingPathComponent("driver"), leases: h.leases,
             artifacts: AutomationArtifactRegistry(root: h.root.appendingPathComponent("artifacts")), subjectVerifier: Subject(app: plan.app, target: plan.target), releaseVerifier: h.release)
         do { try await driver.acquire(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease); XCTFail("must remain unassessed") }
-        catch { XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Unqualified Siri API submission cannot assess routing or business outcomes")) }
+        catch { XCTAssertEqual(error as? AutomationContractError, .invalidPlan("Siri workflow needs an approved disposable record with different before and after states")) }
         let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.privatePayloadCleaned)
     }
     func testRetainedCompilationGrantVerifiesFilesWithoutGrantingSiriRoutingOrOverridingVeto() async throws {
@@ -198,22 +163,22 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
         var claims = h.capabilities
         claims.records["siri.actualRoute"] = .init(state: .available, reason: "cached route", probeVersion: "test", evidence: ["saved.json"])
         let retained = try JSONDecoder().decode(AutomationPreparedApplication.self, from: JSONEncoder().encode(h.prepared))
-        let cached = try await AutomationSiriCapabilitySnapshot.resolve(prepared: retained, capabilities: claims)
+        let cached = try AutomationPreparedCapabilities.resolving(claims, prepared: retained)
         XCTAssertEqual(cached.records["siri.recognizedText.api"]?.state, .available)
         XCTAssertEqual(cached.records["siri.actualRoute"]?.state, .unknown)
         for state in [CapabilityProfile.State.unavailable, .consentRequired] {
             let veto = CapabilityProfile(records: ["siri.recognizedText.api": .init(state: state, reason: "veto", probeVersion: "test", evidence: [])])
-            let result = try await AutomationSiriCapabilitySnapshot.resolve(prepared: h.prepared, capabilities: veto)
+            let result = try AutomationPreparedCapabilities.resolving(veto, prepared: h.prepared)
             XCTAssertEqual(result.records["siri.recognizedText.api"]?.state, state)
         }
     }
-    func testUnqualifiedSiriRefusesWriteSetupBeforeAnyDriverOrInstallation() async throws {
+    func testMalformedSiriWriteSetupStopsBeforeAnyDriverOrInstallation() async throws {
         let h = try await fixture()
         var plan = h.plan
         plan.setup = [.init(id: "write", kind: .systemIntent, phase: .setup, operation: "Write fixture", effects: [.fixtureWrite])]
         var approval = h.approval; approval.effects.insert(.fixtureWrite); approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
         XCTAssertThrowsError(try PlanValidator.validate(plan, approval: approval, capabilities: h.capabilities)) {
-            XCTAssertEqual($0 as? AutomationContractError, .missingEvidence("Unqualified Siri API submission cannot assess routing or business outcomes"))
+            XCTAssertEqual($0 as? AutomationContractError, .invalidPlan("Siri workflow needs an approved disposable record with different before and after states"))
         }
         let calls = await h.commands.calls; XCTAssertTrue(calls.isEmpty)
     }
@@ -299,7 +264,6 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
             await assertRejects(.unknownLease) { try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
             let calls = await h.commands.calls
             XCTAssertEqual(calls, [["/usr/bin/codesign", "--verify", "--deep", "--strict", h.prepared.host.subjectProductPath]])
-            let submission = await driver.qualificationSubmission(); XCTAssertNil(submission)
             let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.privatePayloadCleaned)
         }
     }
@@ -310,7 +274,6 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
             try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
             await assertRejects(.ambiguousDispatch) { try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
             let dispatched = await xcodebuildCalls(h); XCTAssertEqual(dispatched, 1)
-            let submission = await driver.qualificationSubmission(); XCTAssertNil(submission)
             let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.privatePayloadCleaned)
         }
     }
@@ -322,39 +285,7 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
             try await driver.acquire(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease)
             await assertRejects(.ambiguousDispatch) { try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease) }
             let dispatched = await xcodebuildCalls(h); XCTAssertEqual(dispatched, 1, path)
-            let submission = await driver.qualificationSubmission(); XCTAssertNil(submission, path)
             _ = await driver.release(scope: h.scope, lease: h.lease)
-        }
-    }
-    func testReceiptFromAnotherOSBuildCannotQualify() async throws {
-        for build in ["23B200", "23A100"] {
-            let h = try await fixture()
-            let catalog = ApplicationSurfaceCatalog(app: h.plan.app, systemActions: [], systemDiscoveryComplete: false,
-                uiDiscoveryComplete: false, gaps: [], entities: [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "TaskQuery",
-                    properties: ["title": "text", "completed": "bool"], propertyTitles: [:])])
-            var approval = h.approval; approval.effects = [.observe, .navigate, .fixtureWrite]; approval.maximumActions = 20
-            var capabilities = h.capabilities
-            capabilities.records["apple.entity.query"] = .init(state: .available, reason: "synthetic acquisition", probeVersion: "test", evidence: [])
-            let plan = try AutomationSiriEntityPlanner.compile(catalog: catalog, entityType: "TaskEntity", nameProperty: "title",
-                recordName: "Approved task", stateProperty: "completed", initialState: false, expectedState: true,
-                request: "Complete Approved task in Example", approval: approval, capabilities: capabilities)
-            approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
-            let authority = try AutomationSiriRouteAuthority(plan: plan, approval: approval, osBuild: "23A100", evidenceDigest: String(repeating: "c", count: 64))
-            let driver = try h.driver(approval: approval, capabilities: capabilities, siriAuthority: authority)
-            await h.commands.setReceipt("schemaVersion", .number(2)); await h.commands.setReceipt("osBuild", .string(build))
-            let requestDigest = try XCTUnwrap(plan.execution.siriProgram).requestDigest
-            await h.commands.setReceipt("requestDigest", .string(requestDigest))
-            try await driver.acquire(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease)
-            if build == "23A100" {
-                let receipt = try await driver.execute(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease)
-                XCTAssertTrue(receipt.completed)
-                let submission = await driver.qualificationSubmission(); XCTAssertEqual(submission?.osBuild, "23A100")
-            } else {
-                await assertRejects(.conflictingOperation) { try await driver.execute(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease) }
-                let submission = await driver.qualificationSubmission(); XCTAssertNil(submission)
-            }
-            let dispatched = await xcodebuildCalls(h); XCTAssertEqual(dispatched, 1)
-            let proof = await driver.release(scope: h.scope, lease: h.lease); XCTAssertTrue(proof.privatePayloadCleaned)
         }
     }
     func testProductOrFrozenRunChangedAfterAcquireStopsBeforeAnyCommand() async throws {
@@ -373,7 +304,6 @@ final class AutomationSiriRouteDriverTests: XCTestCase, @unchecked Sendable {
             do { _ = try await driver.execute(plan: h.plan, segment: h.plan.execution, scope: h.scope, lease: h.lease); XCTFail(name) }
             catch { XCTAssertEqual(error as? AutomationContractError, expected, name) }
             let calls = await h.commands.calls; XCTAssertTrue(calls.isEmpty, name)
-            let submission = await driver.qualificationSubmission(); XCTAssertNil(submission, name)
             _ = await driver.release(scope: h.scope, lease: h.lease)
         }
     }

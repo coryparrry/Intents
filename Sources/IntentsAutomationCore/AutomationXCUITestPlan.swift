@@ -2,15 +2,36 @@ import Foundation
 @_exported import IntentsAutomationUIHostContracts
 
 public enum AutomationXCUITestPlan {
+    /// Independent storage reads run only after the one native host has drained.
+    /// Their omission from host steps never changes the approved full-case digest.
+    static func durableObservationSuffix(plan: AutomationCase) throws -> [AutomationSegment] {
+        let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
+        guard segments.allSatisfy({ ($0.kind == .storageRead) == ($0.durableStateReader != nil) }) else {
+            throw AutomationContractError.invalidPlan("A storage route requires its independent reader")
+        }
+        guard segments.contains(where: { $0.kind == .storageRead }) else { return [] }
+        guard plan.target.kind == .nativeMac, plan.cleanup.isEmpty,
+              !plan.setup.contains(where: { $0.kind == .storageRead }), plan.execution.kind != .storageRead,
+              let start = plan.observations.firstIndex(where: { $0.kind == .storageRead }),
+              plan.observations[start...].allSatisfy({ $0.kind == .storageRead && $0.phase == .observe }) else {
+            throw AutomationContractError.invalidPlan("Independent storage reads require a final Mac observation phase without cleanup")
+        }
+        let suffix = Array(plan.observations[start...])
+        for segment in suffix { try segment.durableStateReader!.validate(plan: plan, segment: segment) }
+        return suffix
+    }
+
     public static func assemble(plan: AutomationCase, approval: RunApproval, attemptID: String, leaseGeneration: Int, excludedEntityIDs: Set<String> = []) throws -> UIHostPlan {
         guard approval.app == plan.app, approval.target == plan.target, approval.environmentID == plan.environmentID,
               approval.approvedCaseDigest == (try AutomationFrozenCase.planDigest(plan)), let digest = plan.app.productDigest else {
             throw AutomationContractError.conflictingOperation
         }
+        _ = try durableObservationSuffix(plan: plan)
         try AutomationInputResolver.validate(plan: plan)
         var steps: [UIHostStep] = [], bindings: [String: String] = [:], launched = false, hasUI = false
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         for segment in plan.setup + [plan.execution] + plan.observations + plan.cleanup {
+            if segment.kind == .storageRead { continue }
             try segment.validateObservationOnly()
             let inputs = segment.inputBindings ?? []
             let sharedBindings = try inputs.map { input in
@@ -57,7 +78,6 @@ public enum AutomationXCUITestPlan {
                     case .readProperty, .observeProperty: kind = .readProperty
                     case .scroll: kind = .swipe
                     case .locate, .assertEndpoint: kind = .waitFor; property = "exists"
-                    case .navigateGoal: throw AutomationContractError.invalidPlan("XCUITest requires explicit UI steps")
                     }
                     steps.append(.init(id: operation.id, segmentID: segment.id, kind: kind, query: query,
                                        binding: operation.binding, property: property, direction: operation.direction,
@@ -116,7 +136,7 @@ public enum AutomationXCUITestPlan {
         try result.validate()
         let uiActions = steps.filter { [.launch, .tap, .typeText, .clearAndType, .swipe].contains($0.kind) }.count
         guard uiActions <= plan.budget.uiActions, steps.filter({ $0.segmentID == plan.execution.id }).count <= plan.budget.subjectOperations,
-              steps.count <= approval.maximumActions, plan.budget.controllerCalls >= 1 else {
+              steps.count <= approval.maximumActions else {
             throw AutomationContractError.invalidPlan("XCUITest program exceeds its approved action budget")
         }
         guard try encoder.encode(result).count <= 32768 else { throw AutomationContractError.invalidPlan("UI plan exceeds XCTest environment budget") }
@@ -127,7 +147,7 @@ public enum AutomationXCUITestPlan {
         for (name, prefix) in selection.attemptProperties ?? [:] {
             properties[name] = .init(kind: "text", value: try AutomationAttemptText.value(prefix: prefix, attemptID: attemptID))
         }
-        return .init(typeID: selection.typeID, properties: properties, identifier: nil, expiresAt: nil)
+        return .init(typeID: selection.typeID, properties: properties, identifier: selection.expectedIdentifier, expiresAt: selection.expiresAt)
     }
     private static func value(_ value: AutomationValue) throws -> UIHostValue {
         try JSONDecoder().decode(UIHostValue.self, from: JSONEncoder().encode(AutomationHostProgram.hostInput(value)))

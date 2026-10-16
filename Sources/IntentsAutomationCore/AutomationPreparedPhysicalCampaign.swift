@@ -42,7 +42,7 @@ enum AutomationPreparedPhysicalCampaign {
     static func run(prepared: AutomationPreparedApplication, plan: AutomationCase, approval: RunApproval,
                     capabilities: CapabilityProfile, attemptID: String, root: URL, developer: URL,
                     leases: AutomationDeviceLeaseManager,
-                    campaignBudget: AutomationCampaignBudget?, siriAuthority: AutomationSiriRouteAuthority? = nil,
+                    campaignBudget: AutomationCampaignBudget?,
                     components: Components = .owned) async throws -> AutomationAttemptReport {
         guard attemptID.range(of: #"^[A-Za-z0-9-]{1,128}$"#, options: .regularExpression) != nil,
               plan.app == prepared.host.app, plan.target == prepared.host.target, plan.target.kind == .physical,
@@ -50,12 +50,8 @@ enum AutomationPreparedPhysicalCampaign {
         guard ["ui.runtimeTeamID", "ui.runtimeManifestDigest"].allSatisfy({ plan.provenance[$0] == nil }) else {
             throw AutomationContractError.conflictingOperation
         }
-        var authority = siriAuthority
-        if authority == nil { authority = await AutomationSiriQualificationAuthority.shared.admission(prepared: prepared, plan: plan, approval: approval) }
-        let codecs = try await AutomationSimulatorCodecQualification.enrich(capabilities, prepared: prepared)
-        let capabilities = try await AutomationSiriCapabilitySnapshot.resolve(prepared: prepared, capabilities: codecs,
-            plan: plan, approval: approval, authority: authority)
-        try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, siriAuthority: authority)
+        let capabilities = try AutomationPreparedCapabilities.resolving(capabilities, prepared: prepared)
+        try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
         let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
         guard segments.allSatisfy({ [.systemIntent, .systemQuery, .siriText].contains($0.kind) }),
               segments.filter({ $0.kind == .siriText }).allSatisfy({ $0.id == plan.execution.id }) else { throw AutomationContractError.invalidPlan("Siri may run only as the frozen subject") }
@@ -93,27 +89,18 @@ enum AutomationPreparedPhysicalCampaign {
             let subject = AutomationPreparedPhysicalSubjectVerifier(selected: selected, installed: installed, verifier: positive)
             let apple = try AutomationAppleRouteDriver(prepared: prepared.host, approval: approval, developerDirectory: developer,
                 stateDirectory: state.appendingPathComponent("apple"), leases: leases, artifacts: artifacts,
-                subjectVerifier: subject, releaseVerifier: release, campaignBudget: campaignBudget, capabilities: capabilities, siriAuthority: authority)
+                subjectVerifier: subject, releaseVerifier: release, campaignBudget: campaignBudget, capabilities: capabilities)
             let siri = try AutomationSiriRouteDriver(prepared: prepared, approval: approval, capabilities: capabilities,
                 developerDirectory: developer, stateDirectory: state.appendingPathComponent("siri"), leases: leases,
-                artifacts: artifacts, subjectVerifier: subject, releaseVerifier: release, campaignBudget: campaignBudget, siriAuthority: authority)
+                artifacts: artifacts, subjectVerifier: subject, releaseVerifier: release, campaignBudget: campaignBudget)
             let driver = AutomationMixedRouteDriver(apple: apple, siri: siri)
             executionStarted = true
             let report = try await AutomationCoordinator(leases: leases, journal: journal).run(plan: plan, approval: approval,
-                capabilities: capabilities, attemptID: attemptID, driver: driver, siriAuthority: authority)
+                capabilities: capabilities, attemptID: attemptID, driver: driver)
             try persist(JSONEncoder().encode(report), state.appendingPathComponent("report.json"))
             try await cases.saveAttempt(report, for: frozen)
-            if report.result.summary != .passed {
-                await AutomationSiriQualificationAuthority.shared.revoke(prepared: prepared, plan: plan)
-            }
-            if authority?.isQualification == true, report.result.summary == .passed,
-               let submission = await siri.qualificationSubmission() {
-                try await AutomationSiriQualificationAuthority.shared.record(prepared: prepared, plan: plan,
-                    approval: approval, report: report, submission: submission)
-            }
             return report
         } catch {
-            await AutomationSiriQualificationAuthority.shared.revoke(prepared: prepared, plan: plan)
             if executionStarted { throw error }
             let drained = await installer.drain()
             let absent = await release.verifyReleased(target: plan.target, controllerBundleIDs: [])

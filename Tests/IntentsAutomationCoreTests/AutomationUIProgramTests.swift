@@ -6,8 +6,6 @@ final class AutomationUIProgramTests: XCTestCase, @unchecked Sendable {
         for role in ["textbox", "searchbox"] {
             let program = AutomationUIProgram(operations: [.init(id: "fill", kind: .fillBinding, locator: .init(.role, role), binding: "query")], bindings: ["query": "public"])
             try program.validate(phase: .subject)
-            let goal = AutomationNavigationGoal(id: "goal", instruction: "Find field", endpoint: .init(.role, role))
-            XCTAssertThrowsError(try goal.validate())
             XCTAssertEqual(try JSONDecoder().decode(AutomationUIProgram.self, from: JSONEncoder().encode(program)), program)
             for kind in [AutomationUIProgram.Operation.Kind.tap, .readProperty, .observeProperty, .locate, .assertEndpoint] {
                 var invalid = program; invalid.operations[0].kind = kind
@@ -29,8 +27,6 @@ final class AutomationUIProgramTests: XCTestCase, @unchecked Sendable {
         }
         var other = program; other.operations[0].locator?.kind = .testId
         XCTAssertThrowsError(try other.validate(phase: .setup))
-        let goal = AutomationNavigationGoal(id: "goal", instruction: "Open control", endpoint: role)
-        XCTAssertThrowsError(try goal.validate())
     }
     func testProgramsRejectUnboundMutationObserverMutationAndAmbiguousFieldsBeforeLaunch() throws {
         var program = AutomationUIProgram(operations: [.init(id: "fill", kind: .fillBinding, locator: .init(.testId, "field"), binding: "value")])

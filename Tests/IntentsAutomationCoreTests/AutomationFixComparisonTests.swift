@@ -39,12 +39,21 @@ final class AutomationFixComparisonTests: XCTestCase, @unchecked Sendable {
         let before = RunApproval(runID: "before", app: base.plan.app, target: base.plan.target, environmentID: "unit", effects: [.observe], maximumActions: 20, disposable: true, approvedCaseDigest: base.digest)
         let after = RunApproval(runID: "after", app: changed.plan.app, target: changed.plan.target, environmentID: "unit", effects: [.observe], maximumActions: 20, disposable: true, approvedCaseDigest: changed.digest)
         let cases = try AutomationCaseStore(root: URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString))
+        let updates = FixProgressRecorder(cases: cases, baseline: base, candidate: changed)
         let result = try await AutomationFixComparison(cases: cases).run(baseline: base, candidate: changed, attemptsPerBuild: 3,
-            beforeApproval: before, afterApproval: after, limits: .init(), beforeExecutor: FixFixtureExecutor(value: false), afterExecutor: FixFixtureExecutor(value: true))
+            beforeApproval: before, afterApproval: after, limits: .init(), beforeExecutor: FixFixtureExecutor(value: false), afterExecutor: FixFixtureExecutor(value: true),
+            onProgress: { await updates.record($0) })
         XCTAssertEqual(result.before.count, 3); XCTAssertEqual(result.after.count, 3)
         XCTAssertEqual(result.beforeCounters.failed, 3); XCTAssertEqual(result.afterCounters.failed, 0); XCTAssertEqual(result.afterCounters.assessed, 3)
         XCTAssertEqual(Set((result.before + result.after).map(\.attemptID)).count, 6)
         XCTAssertFalse(result.environmentQualificationComplete); XCTAssertNil(result.stopReason)
+        let progress = await updates.values
+        XCTAssertEqual(progress.map(\.totalSaved), [0, 1, 2, 3, 3, 4, 5, 6])
+        XCTAssertEqual(progress.map(\.beforeSaved), [0, 1, 2, 3, 3, 3, 3, 3])
+        XCTAssertEqual(progress.map(\.afterSaved), [0, 0, 0, 0, 0, 1, 2, 3])
+        XCTAssertEqual(progress.map(\.population), [.before, .before, .before, .before, .after, .after, .after, .after])
+        XCTAssertEqual(progress.filter { $0.event == .attemptSaved }.compactMap(\.savedAttemptID), (result.before + result.after).map(\.attemptID))
+        XCTAssertTrue(progress.allSatisfy { $0.requestedAttemptsPerBuild == 3 && $0.totalRequested == 6 })
     }
     func testMismatchedApprovalCannotEnterEitherExecutor() async throws {
         let base = try baseline(), changed = try candidate(base)
@@ -67,9 +76,13 @@ final class AutomationFixComparisonTests: XCTestCase, @unchecked Sendable {
         let after = RunApproval(runID: "cancel.after", app: changed.plan.app, target: changed.plan.target, environmentID: "unit", effects: [.observe], maximumActions: 20, disposable: true, approvedCaseDigest: changed.digest)
         let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let result = try await AutomationFixComparison(cases: .init(root: root)).run(baseline: base, candidate: changed, attemptsPerBuild: 3,
-            beforeApproval: before, afterApproval: after, limits: .init(), beforeExecutor: FixStoppedExecutor(), afterExecutor: NeverEnterFixExecutor())
+        let cases = try AutomationCaseStore(root: root), updates = FixProgressRecorder(cases: cases, baseline: base, candidate: changed)
+        let result = try await AutomationFixComparison(cases: cases).run(baseline: base, candidate: changed, attemptsPerBuild: 3,
+            beforeApproval: before, afterApproval: after, limits: .init(), beforeExecutor: FixStoppedExecutor(), afterExecutor: NeverEnterFixExecutor(),
+            onProgress: { await updates.record($0) })
         XCTAssertEqual(result.before.count, 1); XCTAssertTrue(result.after.isEmpty); XCTAssertFalse(result.complete)
+        let progress = await updates.values
+        XCTAssertEqual(progress.map(\.totalSaved), [0, 1]); XCTAssertTrue(progress.allSatisfy { $0.population == .before })
         try result.validate()
         let archive = try AutomationFixComparisonArchive(caseStoreRoot: root)
         try await archive.save(result)
@@ -100,6 +113,82 @@ final class AutomationFixComparisonTests: XCTestCase, @unchecked Sendable {
         }
     }
 
+    func testProgressDoesNotCountThrownCancellationOrConflictingCanonicalEvidence() async throws {
+        for failure in [FixProgressFailure.invalidEvidence, .cancellation, .canonicalConflict] {
+            let base = try baseline(), changed = try candidate(base)
+            let before = RunApproval(runID: "progress.before", app: base.plan.app, target: base.plan.target, environmentID: "unit", effects: [.observe], maximumActions: 20, disposable: true, approvedCaseDigest: base.digest)
+            let after = RunApproval(runID: "progress.after", app: changed.plan.app, target: changed.plan.target, environmentID: "unit", effects: [.observe], maximumActions: 20, disposable: true, approvedCaseDigest: changed.digest)
+            let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let cases = try AutomationCaseStore(root: root), updates = FixProgressRecorder(cases: cases, baseline: base, candidate: changed)
+            let result = try await AutomationFixComparison(cases: cases).run(baseline: base, candidate: changed, attemptsPerBuild: 1,
+                beforeApproval: before, afterApproval: after, limits: .init(), beforeExecutor: FixFixtureExecutor(value: false),
+                afterExecutor: FixProgressFailureExecutor(failure: failure, cases: cases), onProgress: { await updates.record($0) })
+            let progress = await updates.values
+            XCTAssertEqual(progress.map(\.totalSaved), [0, 1, 1]); XCTAssertEqual(progress.last?.event, .populationStarted)
+            XCTAssertEqual(progress.last?.population, .after); XCTAssertEqual(progress.last?.afterSaved, 0)
+            XCTAssertEqual(result.before.count, 1); XCTAssertTrue(result.after.isEmpty); XCTAssertFalse(result.complete)
+            XCTAssertNotNil(result.interruption); XCTAssertEqual(result.afterCounters.unresolved, 1)
+            XCTAssertEqual(result.stopReason == "Cancelled", failure == .cancellation)
+            try result.validate()
+        }
+    }
+
+    func testCancellingDuringProgressDeliveryStopsBeforeAnotherAttempt() async throws {
+        let base = try baseline(), changed = try candidate(base)
+        let before = RunApproval(runID: "progress.cancel.before", app: base.plan.app, target: base.plan.target, environmentID: "unit", effects: [.observe], maximumActions: 20, disposable: true, approvedCaseDigest: base.digest)
+        let after = RunApproval(runID: "progress.cancel.after", app: changed.plan.app, target: changed.plan.target, environmentID: "unit", effects: [.observe], maximumActions: 20, disposable: true, approvedCaseDigest: changed.digest)
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cases = try AutomationCaseStore(root: root), updates = FixProgressRecorder(cases: cases, baseline: base, candidate: changed)
+        let operation = Task {
+            try await AutomationFixComparison(cases: cases).run(baseline: base, candidate: changed, attemptsPerBuild: 3,
+                beforeApproval: before, afterApproval: after, limits: .init(), beforeExecutor: FixFixtureExecutor(value: true), afterExecutor: NeverEnterFixExecutor(),
+                onProgress: { update in
+                    await updates.record(update)
+                    if update.event == .attemptSaved { withUnsafeCurrentTask { $0?.cancel() } }
+                })
+        }
+        let result = try await operation.value, progress = await updates.values
+        XCTAssertEqual(progress.map(\.totalSaved), [0, 1]); XCTAssertEqual(result.before.count, 1)
+        XCTAssertTrue(result.after.isEmpty); XCTAssertEqual(result.stopReason, "Cancelled"); XCTAssertNil(result.interruption)
+        try result.validate()
+    }
+}
+
+private actor FixProgressRecorder {
+    let cases: AutomationCaseStore, baseline: AutomationFrozenCase, candidate: AutomationFrozenCase
+    var values: [AutomationFixComparisonProgress] = []
+    init(cases: AutomationCaseStore, baseline: AutomationFrozenCase, candidate: AutomationFrozenCase) {
+        self.cases = cases; self.baseline = baseline; self.candidate = candidate
+    }
+    func record(_ update: AutomationFixComparisonProgress) async {
+        if update.event == .attemptSaved {
+            guard let id = update.savedAttemptID else { XCTFail("Saved progress lacks canonical attempt identity"); return }
+            do {
+                let frozen = update.population == .before ? baseline : candidate
+                let report = try await cases.loadAttempt(id: id, frozen: frozen)
+                XCTAssertEqual(report.attemptID, id)
+                let reports = try await cases.attempts(for: frozen)
+                XCTAssertEqual(reports.count, update.population == .before ? update.beforeSaved : update.afterSaved)
+            } catch { XCTFail("Progress preceded readable canonical evidence: \(error)") }
+        } else { XCTAssertNil(update.savedAttemptID) }
+        values.append(update)
+    }
+}
+
+private enum FixProgressFailure: Equatable, Sendable { case invalidEvidence, cancellation, canonicalConflict }
+private struct FixProgressFailureExecutor: AutomationCampaignAttemptExecutor {
+    let failure: FixProgressFailure
+    let cases: AutomationCaseStore
+    func execute(frozen: AutomationFrozenCase, approval: RunApproval, attemptID: String, budget: AutomationCampaignBudget) async throws -> AutomationAttemptReport {
+        if failure == .cancellation { throw CancellationError() }
+        var report = try await FixFixtureExecutor(value: true).execute(frozen: frozen, approval: approval, attemptID: attemptID, budget: budget)
+        if failure == .invalidEvidence { report.attemptID = "foreign-attempt"; return report }
+        var conflict = report; conflict.resourcesReleased = false
+        try await cases.saveAttempt(conflict, for: frozen)
+        return report
+    }
 }
 private struct FixFixtureExecutor: AutomationCampaignAttemptExecutor {
     var value: Bool

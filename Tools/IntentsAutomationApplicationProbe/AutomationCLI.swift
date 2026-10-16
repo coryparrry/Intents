@@ -91,7 +91,8 @@ enum AutomationCLI {
                 candidateID: candidate.id, configuration: "Debug", target: target)
             let prepared = try await AutomationPreparation().prepare(candidate: candidate, approval: approval,
                 sessionRoot: support.appendingPathComponent("prepare-" + UUID().uuidString),
-                templates: AutomationCLIResources.hostTemplates(), developerDirectory: developer)
+                templates: AutomationCLIResources.hostTemplates(), developerDirectory: developer,
+                requireConfiguredDeveloperDirectory: command.options["--xcode"] != nil)
             try writeJSON(prepared)
         case .actions:
             try writeJSON(loadPrepared(support).catalog)

@@ -86,7 +86,7 @@ final class AutomationInstalledUIApplicationTests: XCTestCase, @unchecked Sendab
         addTeardownBlock { try? FileManager.default.removeItem(at: support) }
         let calls = PhysicalSelectionInventoryCalls()
         let runner = try AutomationApplicationRunner(supportRoot: support, developerDirectory: URL(fileURLWithPath: "/private/tmp"),
-            simulatorInventory: { _, _ in await calls.increment(); throw AutomationContractError.invalidIdentity })
+            simulatorInventory: { _, _, _, _ in await calls.increment(); throw AutomationContractError.invalidIdentity })
         do {
             _ = try await runner.run(subject: .installedUI(selected), plan: plan, approval: approval,
                 capabilities: .init(), attemptID: "attempt", allowBootAndInstall: true)

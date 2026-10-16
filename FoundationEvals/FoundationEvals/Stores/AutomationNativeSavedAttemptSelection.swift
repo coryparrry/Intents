@@ -60,7 +60,7 @@ extension AppAutomationStore {
         let root = support
         return try await Task.detached {
             let prepared = try AutomationPreparedApplicationRecord.load(app: app, supportRoot: root)
-            try AutomationPreparedCodecAuthority.verify(prepared)
+            try AutomationPreparedArtifactIntegrity.verify(prepared)
             return prepared
         }.value
     }

@@ -26,7 +26,7 @@ final class AutomationEntityQueryTests: XCTestCase, @unchecked Sendable {
     }
     func testRealPreparationFailureRecoveryRetainsUnresolvedReportWithoutChoicesAndCannotReuseAttempt() async throws {
         let root = try root(), (prepared, entity, approval) = try fixture(root: root)
-        let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: "/private/tmp"), simulatorInventory: { _, _ in throw AutomationContractError.terminationUnverified })
+        let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: "/private/tmp"), simulatorInventory: { _, _, _, _ in throw AutomationContractError.terminationUnverified })
         let result = try await AutomationEntityQuery.execute(runner: runner, prepared: prepared, entity: entity, text: "Invoice", approval: approval, attemptID: "query-attempt", allowBootAndInstall: true)
         XCTAssertEqual(result.report.attemptID, "query-attempt"); XCTAssertEqual(result.report.result.summary, .unresolved)
         XCTAssertFalse(result.report.resourcesReleased); XCTAssertTrue(result.choices.isEmpty)
@@ -51,6 +51,19 @@ final class AutomationEntityQueryTests: XCTestCase, @unchecked Sendable {
         XCTAssertNil(absent); XCTAssertNil(linked)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).sorted(), before)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: outside.path), ["report.json"])
+    }
+    func testSuggestedQueryFreezesItsExplicitModeAndRejectsStringMatching() throws {
+        var (prepared, entity, approval) = try fixture(root: root())
+        entity.properties = [:]; entity.queryMode = .suggested
+        prepared.catalog.entities = [entity]
+        let plan = try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "", approval: approval)
+        XCTAssertEqual(plan.execution.hostProgram?.operations.first?.querySuggested, true)
+        XCTAssertNil(plan.execution.hostProgram?.operations.first?.queryText)
+        XCTAssertThrowsError(try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "invented search", approval: approval))
+        var foreign = entity; foreign.queryMode = nil
+        XCTAssertThrowsError(try AutomationEntityQuery.plan(prepared: prepared, entity: foreign, text: "Search", approval: approval))
+        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+        XCTAssertEqual(try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "", approval: approval), plan)
     }
 }
 #endif

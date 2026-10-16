@@ -3,7 +3,7 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationXCUITestCampaignTests: XCTestCase {
-    func testWholeCaseReservesSubjectCleanupUIAndOneController() async throws {
+    func testWholeCaseReservesActualOperationsWithoutControllerCalls() async throws {
         let (plan, approval) = try fixture()
         let steps = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval,
             attemptID: "attempt", leaseGeneration: 1)
@@ -13,7 +13,20 @@ final class AutomationXCUITestCampaignTests: XCTestCase {
         XCTAssertEqual(usage.reservedSubjectOperations, 2)
         XCTAssertEqual(usage.reservedCleanupOperations, 2)
         XCTAssertEqual(usage.reservedUIActions, 3)
-        XCTAssertEqual(usage.controllerCalls, 1)
+        XCTAssertEqual(usage.controllerCalls, 0)
+    }
+
+    func testDeterministicHostAcceptsZeroControllerBudget() async throws {
+        var (plan, approval) = try fixture()
+        plan.budget.controllerCalls = 0
+        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+        let steps = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval, attemptID: "zero-model", leaseGeneration: 1)
+        var limits = AutomationCampaignLimits(); limits.controllerCalls = 0
+        let budget = try AutomationCampaignBudget(limits: limits)
+        try await AutomationXCUITestCampaign.reserveBudget(steps, plan: plan, attemptID: "zero-model", budget: budget)
+        let usage = await budget.snapshot()
+        XCTAssertEqual(usage.controllerCalls, 0)
+        XCTAssertEqual(usage.reservedUIActions, 3)
     }
 
     func testCleanupCannotBypassSharedActionLimit() async throws {
@@ -42,37 +55,41 @@ final class AutomationXCUITestCampaignTests: XCTestCase {
         XCTAssertFalse(AutomationXCUITestRouteDriver.terminationSucceeded(exitStatus: 3, output: "another domain: found nothing to terminate"))
     }
 
-    func testBudgetFailureRetainsRootCampaignUntilOwnerFinishesSimulatorCleanup() async throws {
-        for releaseOnCompletion in [false, true] {
-            let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
-            defer { try? FileManager.default.removeItem(at: root) }
-            let file = root.appendingPathComponent("leases.json")
-            let owner = try AutomationDeviceLeaseManager(storeURL: file), competitor = try AutomationDeviceLeaseManager(storeURL: file)
-            let (plan, approval) = try fixture()
-            try await owner.reserveCampaign(runID: approval.runID, target: plan.target)
-            var limits = AutomationCampaignLimits(); limits.uiActions = 0
-            let budget = try AutomationCampaignBudget(limits: limits)
-            let prepared = AutomationPreparedAppleHost(app: plan.app, target: plan.target,
-                xctestrunPath: root.appendingPathComponent("unused.xctestrun").path, xctestrunDigest: String(repeating: "b", count: 64),
-                subjectProductPath: root.appendingPathComponent("unused-subject.app").path, hostBundlePath: root.appendingPathComponent("unused-host.app").path,
-                hostProductDigest: String(repeating: "c", count: 64), hostBundleID: "example.host.xctrunner", testTarget: "Host")
-            let journal = try AutomationJournal(url: root.appendingPathComponent("journal.json"))
-            let artifacts = try AutomationArtifactRegistry(root: root.appendingPathComponent("artifacts"))
-            let report = try await AutomationXCUITestCampaign.run(prepared: prepared, plan: plan, approval: approval,
-                capabilities: .init(), attemptID: "attempt", root: root, developerDirectory: URL(fileURLWithPath: "/unused"),
-                leases: owner, journal: journal, artifacts: artifacts, releaseVerifier: nil, campaignBudget: budget,
-                releaseCampaignOnCompletion: releaseOnCompletion)
-            XCTAssertTrue(report.resourcesReleased)
-            XCTAssertFalse(report.result.subjectDispatched)
-            if !releaseOnCompletion {
-                do { try await competitor.reserveCampaign(runID: "competitor", target: plan.target); XCTFail("Cleanup root ownership was handed off") }
-                catch { XCTAssertEqual(error as? AutomationContractError, .targetBusy) }
-                let cleanup = try await owner.acquire(runID: approval.runID, target: plan.target, control: .system)
-                try await owner.release(cleanup, commandsDrained: true, ownedRunnerTerminated: true)
-                try await owner.releaseCampaign(runID: approval.runID, target: plan.target)
+    func testBudgetOrCaseDeadlineFailureRetainsRootCampaignUntilOwnerFinishesSimulatorCleanup() async throws {
+        for expiredCase in [false, true] {
+            for releaseOnCompletion in [false, true] {
+                let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+                defer { try? FileManager.default.removeItem(at: root) }
+                let file = root.appendingPathComponent("leases.json")
+                let owner = try AutomationDeviceLeaseManager(storeURL: file), competitor = try AutomationDeviceLeaseManager(storeURL: file)
+                let (plan, approval) = try fixture()
+                try await owner.reserveCampaign(runID: approval.runID, target: plan.target)
+                var limits = AutomationCampaignLimits(); limits.uiActions = expiredCase ? 1000 : 0
+                let budget = try AutomationCampaignBudget(limits: limits)
+                let prepared = AutomationPreparedAppleHost(app: plan.app, target: plan.target,
+                    xctestrunPath: root.appendingPathComponent("unused.xctestrun").path, xctestrunDigest: String(repeating: "b", count: 64),
+                    subjectProductPath: root.appendingPathComponent("unused-subject.app").path, hostBundlePath: root.appendingPathComponent("unused-host.app").path,
+                    hostProductDigest: String(repeating: "c", count: 64), hostBundleID: "example.host.xctrunner", testTarget: "Host")
+                let journal = try AutomationJournal(url: root.appendingPathComponent("journal.json"))
+                let artifacts = try AutomationArtifactRegistry(root: root.appendingPathComponent("artifacts"))
+                let report = try await AutomationXCUITestCampaign.run(prepared: prepared, plan: plan, approval: approval,
+                    capabilities: .init(), attemptID: "attempt", root: root, developerDirectory: URL(fileURLWithPath: "/unused"),
+                    leases: owner, journal: journal, artifacts: artifacts, releaseVerifier: nil, campaignBudget: budget,
+                    caseDeadline: expiredCase ? ContinuousClock.now.advanced(by: .seconds(-1)) : nil,
+                    releaseCampaignOnCompletion: releaseOnCompletion)
+                XCTAssertTrue(report.resourcesReleased)
+                XCTAssertFalse(report.result.subjectDispatched)
+                XCTAssertEqual(report.result.summary, expiredCase ? .timedOut : .infrastructureFailed)
+                if !releaseOnCompletion {
+                    do { try await competitor.reserveCampaign(runID: "competitor", target: plan.target); XCTFail("Cleanup root ownership was handed off") }
+                    catch { XCTAssertEqual(error as? AutomationContractError, .targetBusy) }
+                    let cleanup = try await owner.acquire(runID: approval.runID, target: plan.target, control: .system)
+                    try await owner.release(cleanup, commandsDrained: true, ownedRunnerTerminated: true)
+                    try await owner.releaseCampaign(runID: approval.runID, target: plan.target)
+                }
+                try await competitor.reserveCampaign(runID: "competitor", target: plan.target)
+                try await competitor.releaseCampaign(runID: "competitor", target: plan.target)
             }
-            try await competitor.reserveCampaign(runID: "competitor", target: plan.target)
-            try await competitor.releaseCampaign(runID: "competitor", target: plan.target)
         }
     }
 

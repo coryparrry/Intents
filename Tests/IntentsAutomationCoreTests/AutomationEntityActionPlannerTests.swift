@@ -87,5 +87,29 @@ final class AutomationEntityActionPlannerTests: XCTestCase {
         let changedOracle = try compile(selected: choice(), expected: false)
         XCTAssertNotEqual(first.id, changedOracle.id)
     }
+    func testIdentifierOnlyChoiceRequiresFreshScopedLookupAndCannotInventBusinessProperties() throws {
+        var declared = catalog
+        declared.entities = [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "Subject.TaskQuery", properties: [:], propertyTitles: [:], queryMode: .suggested)]
+        let digest = try AutomationRecipeContext.catalogDigest(declared)
+        func selected(id: String = "actual", expires: Date = Date().addingTimeInterval(60), environment: String = "owned", target: TargetIdentity? = nil, catalogDigest: String? = nil) -> AutomationQueryEntityChoice {
+            .init(id: id, typeID: "TaskEntity", properties: [:], sourceAttemptID: "query-attempt", app: app, target: target ?? self.target,
+                environmentID: environment, catalogDigest: catalogDigest ?? digest, expiresAt: expires)
+        }
+        func plan(_ choice: AutomationQueryEntityChoice, expectations: [String: [String: AutomationValue]] = [:]) throws -> AutomationCase {
+            try AutomationEntityActionPlanner.compile(catalog: declared, actionID: "CompleteTask", textInputs: [:], selections: ["task": choice], expectations: expectations,
+                declaredEffects: .init(app: app, actionID: "CompleteTask", effects: [.fixtureWrite], developerConfirmation: "Explicitly selected actual identity"),
+                approval: approval, capabilities: capabilities)
+        }
+        let compiled = try plan(selected())
+        XCTAssertEqual(compiled.setup.first?.hostProgram?.operations.first?.queryIDs, ["actual"])
+        XCTAssertEqual(compiled.execution.inputBindings?.first?.uniqueEntity?.expectedIdentifier, "actual")
+        XCTAssertTrue(compiled.requirements.isEmpty)
+        XCTAssertNotEqual(try plan(selected(id: "other")).id, compiled.id)
+        for stale in [selected(expires: Date().addingTimeInterval(-1)), selected(environment: "other-account"),
+                      selected(target: .init(id: "other", kind: .simulator)), selected(catalogDigest: String(repeating: "b", count: 64))] {
+            XCTAssertThrowsError(try plan(stale))
+        }
+        XCTAssertThrowsError(try plan(selected(), expectations: ["task": ["completed": .bool(true)]]))
+    }
 }
 #endif

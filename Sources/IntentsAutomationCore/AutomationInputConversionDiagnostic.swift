@@ -34,7 +34,7 @@ public actor AutomationInputConversionDiagnostic {
         guard Self.selection(prepared: prepared, actionID: selection.actionID) == selection else {
             throw AutomationContractError.conflictingOperation
         }
-        try AutomationPreparedCodecAuthority.verify(prepared)
+        try AutomationPreparedArtifactIntegrity.verify(prepared)
         let plan = try AutomationInputAdapterProbePlan(prepared: prepared, actionID: selection.actionID, parameterNames: selection.parameterNames)
         let diagnosticRunID = "input-conversion-" + UUID().uuidString
         runID = diagnosticRunID

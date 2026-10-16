@@ -109,6 +109,41 @@ final class AutomationCaseStoreTests: XCTestCase, @unchecked Sendable {
         do { _ = try await store.freeze(changed); XCTFail("Same revision overwrite accepted") } catch { }
         changed.revision += 1; _ = try await store.freeze(changed)
     }
+    func testReadOnlyPreparedCaseWithoutAttemptsIsEmptyAndDoesNotCreateHistory() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = try AutomationCaseStore(root: root)
+        let frozen = try await writer.freeze(plan())
+        let reader = try AutomationCaseStore(readOnlyRoot: root)
+        let attempts = try await reader.attempts(for: frozen)
+        XCTAssertTrue(attempts.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Attempts").path))
+        do { _ = try await reader.loadAttempt(id: "missing", frozen: frozen); XCTFail("Invented a missing attempt") } catch {}
+        let originalReport = report(frozen.plan)
+        try await writer.saveAttempt(originalReport, for: frozen)
+        var next = frozen.plan; next.revision += 1
+        let unused = try await writer.freeze(next)
+        let unusedAttempts = try await reader.attempts(for: unused)
+        XCTAssertTrue(unusedAttempts.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Attempts/" + unused.digest).path))
+        let originalAttempts = try await reader.attempts(for: frozen)
+        XCTAssertEqual(originalAttempts, [originalReport])
+    }
+    func testReadOnlyAttemptListingRejectsSymlinksAndFilesInsteadOfTreatingThemAsEmpty() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = try AutomationCaseStore(root: root)
+        let frozen = try await writer.freeze(plan())
+        let reader = try AutomationCaseStore(readOnlyRoot: root)
+        let attempts = root.appendingPathComponent("Attempts")
+        for destination in [root.appendingPathComponent("Definitions"), root.appendingPathComponent("absent")] {
+            try FileManager.default.createSymbolicLink(at: attempts, withDestinationURL: destination)
+            do { _ = try await reader.attempts(for: frozen); XCTFail("Accepted a history directory alias") } catch {}
+            try FileManager.default.removeItem(at: attempts)
+        }
+        try Data().write(to: attempts)
+        do { _ = try await reader.attempts(for: frozen); XCTFail("Accepted a file as history") } catch {}
+    }
     func testCaseApprovalBindsInputsRouteObserversAndOracleExactly() throws {
         let plan = plan()
         var approval = RunApproval(runID: "run", app: plan.app, target: plan.target, environmentID: plan.environmentID, effects: [.observe], maximumActions: 10, disposable: true)
@@ -211,6 +246,44 @@ final class AutomationCaseStoreTests: XCTestCase, @unchecked Sendable {
         XCTAssertThrowsError(try AutomationRecordedEvidence.validate(report: report(plan), plan: plan))
         plan.setup = []; plan.cleanup = [.init(id: "cleanup", kind: .ui, phase: .cleanup, operation: "Cleanup")]
         XCTAssertThrowsError(try AutomationRecordedEvidence.validate(report: report(plan), plan: plan))
+    }
+
+    func testRetiredControllerDefinitionDoesNotHideCurrentCasesAndExactLoadStaysStrict() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try AutomationCaseStore(root: root), current = try await store.freeze(plan())
+        let legacy = try retiredUIHistoryFixture(current, id: "retired")
+        let file = root.appendingPathComponent("Definitions/retired/v1-" + legacy.digest + ".json")
+        try writeRetiredHistory(legacy.data, to: file)
+        let listing = try await store.definitionListing()
+        XCTAssertEqual(listing.items, [current]); XCTAssertEqual(listing.skippedRetiredRecords, 1)
+        XCTAssertEqual(try Data(contentsOf: file), legacy.data)
+        do { _ = try await store.load(id: "retired", revision: 1, digest: legacy.digest); XCTFail("Retired route became loadable") } catch {}
+        var corrupted = try JSONSerialization.jsonObject(with: legacy.data) as! [String: Any]
+        corrupted["digest"] = String(repeating: "f", count: 64)
+        try writeRetiredHistory(historyJSON(corrupted), to: file)
+        do { _ = try await store.definitionListing(); XCTFail("Retired marker waived digest integrity") } catch {}
+    }
+
+    func testRetiredMarkerInArbitraryTextDoesNotHideMalformedDefinition() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try AutomationCaseStore(root: root), current = try await store.freeze(plan())
+        let file = root.appendingPathComponent("Definitions/" + current.plan.id + "/v1-" + current.digest + ".json")
+        try writeRetiredHistory(Data(#"{"message":"navigateGoal","schemaVersion":"bad"}"#.utf8), to: file)
+        do { _ = try await store.definitionListing(); XCTFail("Unrelated malformed JSON was hidden") } catch {}
+    }
+
+    func testRetiredDefinitionsStillChargeRawAggregateByteBudget() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try AutomationCaseStore(root: root), current = try await store.freeze(plan())
+        for index in 0..<9 {
+            let id = "retired-" + String(index), legacy = try retiredUIHistoryFixture(current, id: id)
+            var bytes = legacy.data; bytes.append(Data(repeating: 32, count: 2_097_152 - bytes.count))
+            try writeRetiredHistory(bytes, to: root.appendingPathComponent("Definitions/" + id + "/v1-" + legacy.digest + ".json"))
+        }
+        do { _ = try await store.definitionListing(); XCTFail("Skipped records bypassed aggregate cap") } catch {}
     }
 
     func testEnumerationChargesRawWhitespaceBeforeDecodingBeyondAggregateCap() async throws {

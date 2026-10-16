@@ -250,6 +250,44 @@ import Synchronization
         XCTAssertNotNil(try AutomationLeaseStore(url: url).read().campaigns[target.leaseKey])
     }
 
+    func testPairedCampaignSurvivesStartupAndExplicitResetForAbsentAndRetainedOwners() async throws {
+        for absentOwner in [true, false] {
+            let root = URL(fileURLWithPath: "/private/tmp/paired-reset-fence-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let url = root.appendingPathComponent("target-leases.json")
+            let target = TargetIdentity(id: UUID().uuidString, kind: .pairedRunner)
+            let owner = try AutomationDeviceLeaseManager(storeURL: url), runID = "paired-unresolved"
+            if absentOwner {
+                var departed = try AutomationProcessIdentity.current(); departed.pid = 999_999_999
+                try AutomationLeaseStore(url: url).transaction { state in
+                    state.campaigns[target.leaseKey] = .init(runID: runID, target: target, owner: departed, ownerToken: "departed-owner")
+                    state.generations[target.leaseKey] = 1
+                }
+            } else {
+                try await owner.reserveCampaign(runID: runID, target: target)
+            }
+            let model = AppAutomationStore(supportDirectory: root)
+            await model.ownershipRecoveryTask?.value
+            XCTAssertNotNil(try AutomationLeaseStore(url: url).read().campaigns[target.leaseKey])
+            XCTAssertEqual(model.recoveryItems.map(\.record.runID), [runID])
+            if !absentOwner {
+                model.pairedExecutionUnresolved = true
+                model.retainUnresolvedRequest(runID: runID, target: target)
+            }
+            await model.refreshRecovery()
+            await model.clearUnresolvedAttempt()
+            XCTAssertNotNil(model.recoveryError)
+            let absent = try await owner.campaignAbsent(target: target)
+            XCTAssertFalse(absent)
+            XCTAssertEqual(model.recoveryItems.map(\.record.runID), [runID])
+            if !absentOwner {
+                XCTAssertTrue(model.pairedExecutionUnresolved)
+                XCTAssertEqual(model.retainedUnresolvedRequestTargets[runID], target)
+                XCTAssertFalse(model.canSelectApplicationFromCommand)
+            }
+        }
+    }
+
 }
 private actor RecoveryStartupGate {
     private var entered = false

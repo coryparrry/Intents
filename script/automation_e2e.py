@@ -12,20 +12,53 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+FIXTURE_BUNDLE_ID = "com.coryparry.IntentsAutomation.AutomationFixture"
 ARRAYS = ("textArray", "boolArray", "integerArray", "decimalArray", "dateArray")
 FAMILIES = ("text", "bool", "integer", "decimal", "date", "enum", "entity", "duration",
             "calendarComponents", "url", "intentFile", *ARRAYS)
 INTENTS = {f: "Echo" + f[0].upper() + f[1:] + "Intent" for f in FAMILIES}
 INTENTS["url"] = "EchoURLIntent"
 FILE_SHA = hashlib.sha256(b"phase3 fixture").hexdigest()
+SCENARIO_GROUPS = {
+    "codec-1": ("codec-1",),
+    "codec-2": ("codec-2",),
+    "codec-file": ("codec-file",),
+    "mixed": ("mixed",),
+    "wrong-assertion": ("wrong-assertion",),
+    "timeout-recovery": ("timeout", "after-timeout"),
+}
+SCENARIO_SUMMARIES = {
+    "codec-1": "executedUnassessed", "codec-2": "executedUnassessed",
+    "codec-file": "executedUnassessed", "mixed": "passed",
+    "wrong-assertion": "assertionFailed", "timeout": "timedOut",
+    "after-timeout": "executedUnassessed",
+}
 
 
 def ensure(condition, message):
     if not condition:
         raise AssertionError(message)
+
+
+def scenario_cases(group):
+    ensure(group == "all" or group in SCENARIO_GROUPS, "Unknown scenario group: " + str(group))
+    return tuple(case for cases in SCENARIO_GROUPS.values() for case in cases) if group == "all" else SCENARIO_GROUPS[group]
+
+
+def verify_scenario_selection(reports, group):
+    selected = scenario_cases(group)
+    ensure(isinstance(reports, list) and all(isinstance(report, dict) for report in reports),
+           "Scenario reports must be an array of objects")
+    ensure([report.get("case") for report in reports] == ["phase3." + case for case in selected],
+           "Scenario coverage differs from selected group " + group)
+    for case, report in zip(selected, reports):
+        ensure(report.get("summary") == SCENARIO_SUMMARIES[case], "Scenario summary differs for " + case)
+        if case.startswith("codec-") or case == "after-timeout":
+            ensure(report.get("exactOutputsCompared") is True, "Missing exact output comparison for " + case)
 
 
 def tagged(kind, value, **extra):
@@ -230,6 +263,7 @@ class Commands:
         stem = self.output / f"{self.sequence:02d}-{Path(str(arguments[0])).name}"
         stem.with_suffix(".command.json").write_text(json.dumps([str(a) for a in arguments], indent=2))
         with stem.with_suffix(".stdout.log").open("wb") as out, stem.with_suffix(".stderr.log").open("wb") as err:
+            started = time.monotonic()
             process = subprocess.Popen([str(a) for a in arguments], cwd=cwd, env=self.env,
                                        stdout=out, stderr=err, start_new_session=True)
             try:
@@ -244,13 +278,25 @@ class Commands:
                 except ProcessLookupError:
                     pass
                 raise
+        elapsed = time.monotonic() - started
+        command = " ".join(str(a) for a in arguments[:2])
+        print(f"Completed {command}: {elapsed:.1f}s (exit {code})", flush=True)
         stdout = stem.with_suffix(".stdout.log").read_text()
         ensure(code in allowed, f"Command exited {code}: {arguments[0]}; see {stem}.stderr.log")
         return code, stdout
 
     def json(self, arguments, **options):
         code, raw = self.run(arguments, **options)
-        return code, json.loads(raw)
+        try:
+            return code, json.loads(raw)
+        except json.JSONDecodeError as error:
+            stem = self.output / f"{self.sequence:02d}-{Path(str(arguments[0])).name}"
+            stderr_path = stem.with_suffix(".stderr.log")
+            with stderr_path.open("rb") as diagnostics:
+                detail = diagnostics.read(4096).decode("utf-8", errors="replace").strip()
+            raise AssertionError(f"Command returned invalid JSON (exit {code}): {arguments[0]}; "
+                                 f"stderr: {detail or '(empty)'}; "
+                                 f"see {stem}.stdout.log and {stderr_path}") from error
 
 
 def run_plan(commands, cli, support, output, plan):
@@ -274,6 +320,22 @@ def registration_pending(report, support, attempt, bundle_id):
     return any(marker in path.read_text()
                for pattern in ("apple-command-failure-*.txt", "apple-log-*.txt")
                for path in (support / attempt / "artifacts").glob(pattern))
+
+
+def launch_fixture(commands, simulator, prepared, output):
+    # CI setup only: this authored fixture reads saved state at startup and performs no actions.
+    host = prepared["host"]
+    ensure(host["app"]["bundleID"] == FIXTURE_BUNDLE_ID
+           and host["target"] == {"id": simulator, "kind": "simulator"},
+           "Fixture launch requires the authored fixture on the owned simulator")
+    code, raw = commands.run(["xcrun", "simctl", "launch", simulator, FIXTURE_BUNDLE_ID], timeout=180)
+    match = re.fullmatch(re.escape(FIXTURE_BUNDLE_ID) + r": ([1-9][0-9]{0,9})\s*", raw)
+    ensure(code == 0 and match is not None and int(match[1]) <= 2_147_483_647,
+           "Fixture setup launch did not return its exact bundle ID and a valid PID")
+    # Diagnostic metadata only; this PID never authorizes process control or proves readiness.
+    (output / "fixture-launch.json").write_text(json.dumps({
+        "bundleID": FIXTURE_BUNDLE_ID, "simulatorID": simulator, "pid": int(match[1]),
+    }, indent=2))
 
 
 def wait_for_registration(commands, cli, support, output, prepared):
@@ -317,7 +379,45 @@ def simulator_configuration(runtimes, device_types, sdk_version=None):
     return runtime["identifier"], phone["identifier"]
 
 
-def run_contract(commands, output, build_root=None):
+def run_contract(commands, output, build_root=None, build_jobs=None, record_build_cache=False, scenario_group="all"):
+    selected = scenario_cases(scenario_group)
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if record_build_cache:
+        ensure(build_root is not None, "--record-build-cache requires --build-root")
+        ensure(github_output and Path(github_output).is_file(),
+               "--record-build-cache requires an existing GITHUB_OUTPUT file")
+    jobs = build_jobs if build_jobs is not None else (os.cpu_count() or 1)
+    ensure(jobs > 0, "Build jobs must be positive")
+    selected_developer = commands.env.get("DEVELOPER_DIR")
+    if not selected_developer:
+        _, selected_developer = commands.run(["xcode-select", "-p"])
+    ensure(selected_developer.strip(), "No Xcode developer directory is selected")
+    developer = Path(selected_developer.strip()).resolve()
+    if developer.suffix == ".app":
+        developer = developer / "Contents/Developer"
+    commands.env["DEVELOPER_DIR"] = str(developer)
+    scratch = build_root or output / "swift-build"
+    build_arguments = ["xcrun", "swift", "build", "--jobs", str(jobs), "--scratch-path", scratch, "--product", "intents-automation"]
+    cli, build_fingerprint = None, None
+    if record_build_cache:
+        # Collect optional identity before any simulator activity.
+        try:
+            from ci_native_cache import capture
+        except ModuleNotFoundError:
+            from script.ci_native_cache import capture
+        try:
+            from ci_automation_build import build_fingerprint as fingerprint_build, cached_cli, record_cli
+        except ModuleNotFoundError:
+            from script.ci_automation_build import build_fingerprint as fingerprint_build, cached_cli, record_cli
+        build_fingerprint = fingerprint_build(commands, ROOT, scratch, build_arguments)
+        cli, damaged_products = cached_cli(scratch, build_fingerprint)
+        if damaged_products:
+            runner_temp = Path(commands.env.get("RUNNER_TEMP", "")).resolve()
+            ensure(commands.env.get("RUNNER_TEMP") and scratch.resolve() == scratch.absolute()
+                   and runner_temp in scratch.resolve().parents and not scratch.is_symlink()
+                   and scratch.resolve() != ROOT.resolve() and ROOT.resolve() not in scratch.resolve().parents,
+                   "Refusing to clean a damaged CLI cache outside the owned runner scratch directory")
+            shutil.rmtree(scratch)
     _, runtimes = commands.json(["xcrun", "simctl", "list", "runtimes", "--json"])
     _, types = commands.json(["xcrun", "simctl", "list", "devicetypes", "--json"])
     _, sdk_version = commands.run(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-version"])
@@ -329,20 +429,37 @@ def run_contract(commands, output, build_root=None):
         ensure(re.fullmatch(r"[A-Fa-f0-9-]{36}", created), "Invalid owned simulator UUID")
         simulator = created
         (output / "owned-simulator.json").write_text(json.dumps({"id": simulator, "runtime": runtime}))
-        commands.run(["xcrun", "simctl", "boot", simulator])
-        commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
         fixture = output / "AutomationFixture"
         shutil.copytree(ROOT / "examples/AutomationFixture", fixture)
         commands.run(["xcodegen", "generate", "--spec", fixture / "project.yml"], cwd=fixture)
-        scratch = build_root or output / "swift-build"
-        commands.run(["swift", "build", "--jobs", "2", "--scratch-path", scratch, "--product", "intents-automation"], timeout=900)
-        _, bin_path = commands.run(["swift", "build", "--scratch-path", scratch, "--show-bin-path"])
-        cli = Path(bin_path.strip()) / "intents-automation"
+        if cli is None:
+            commands.run(build_arguments, timeout=900)
+            _, bin_path = commands.run(["xcrun", "swift", "build", "--scratch-path", scratch, "--show-bin-path"])
+            cli = Path(bin_path.strip()) / "intents-automation"
+            if record_build_cache:
+                if build_fingerprint is not None and build_fingerprint != fingerprint_build(commands, ROOT, scratch, build_arguments):
+                    build_fingerprint = None
+                record_cli(scratch, build_fingerprint, cli)
+        else:
+            print("Reusing verified automation CLI and resources; compiled inputs and toolchain are unchanged.", flush=True)
+        if record_build_cache:
+            capture(ROOT, scratch)
+            with Path(github_output).open("a") as state:
+                state.write("cli_built=true\n")
         support, reports = output / "support", []
         flags = ["--support-root", support]
         _, prepared = commands.json([cli, "prepare", "--project", fixture / "AutomationFixture.xcodeproj",
-                                     "--scheme", "AutomationFixture", "--destination", "sim:" + simulator, *flags], timeout=1200)
+                                     "--scheme", "AutomationFixture", "--destination", "sim:" + simulator,
+                                     "--xcode", developer, *flags], timeout=1200)
         (output / "prepared.json").write_text(json.dumps(prepared, indent=2))
+        prepared_developer = prepared.get("selectedDeveloperDirectoryPath")
+        ensure(isinstance(prepared_developer, str) and prepared_developer
+               and Path(prepared_developer).resolve() == developer,
+               "Prepared app used a different Xcode developer directory than the selected simulator SDK")
+        graph_developer = ((prepared.get("sourceGraph") or {}).get("platformContext") or {}).get("developerDirectory")
+        ensure(isinstance(graph_developer, str) and graph_developer
+               and Path(graph_developer).resolve() == developer,
+               "Prepared run context is missing or uses a different Xcode developer directory")
         _, catalog = commands.json([cli, "actions", *flags])
         ensure(catalog == prepared["catalog"], "actions differs from prepared catalog")
         def execute(plan, summary, expected=None, file=False):
@@ -358,20 +475,33 @@ def run_contract(commands, output, build_root=None):
             ensure(saved == report, "Saved report differs from run output")
             print(f"Verified {plan['id']}: {summary}", flush=True)
             reports.append({"case": plan["id"], "attemptID": attempt, "summary": summary,
-                            "exactOutputsCompared": expected is not None or file})
+                            "exactOutputsCompared": expected is not None or file,
+                            "codecFamiliesCompared": ["intentFile"] if file else sorted({
+                                family.removeprefix("empty.") for family in expected or {}
+                            })})
+        # Generic simulator builds and toolchain validation need no running device.
+        commands.run(["xcrun", "simctl", "boot", simulator])
+        commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
         # Install once: reinstalling before each case invalidates the metadata index again.
         commands.run(["xcrun", "simctl", "install", simulator, prepared["host"]["subjectProductPath"]], timeout=180)
+        launch_fixture(commands, simulator, prepared, output)
         wait_for_registration(commands, cli, support, output, prepared)
         for index, (operations, expected) in enumerate(echo_batches(catalog), 1):
-            execute(case(prepared, f"codec-{index}", host_segment("subject", "subject", operations)),
-                    "executedUnassessed", expected)
-        execute(file_case(prepared), "executedUnassessed", file=True)
-        execute(mixed_case(prepared, "mixed"), "passed")
-        execute(mixed_case(prepared, "wrong-assertion", expected=False), "assertionFailed")
-        execute(timeout_case(prepared), "timedOut")
-        operations, expected = echo_batches(catalog)[0]
-        execute(case(prepared, "after-timeout", host_segment("subject", "subject", operations[:1])),
-                "executedUnassessed", {operations[0]["id"]: expected[operations[0]["id"]]})
+            if f"codec-{index}" in selected:
+                execute(case(prepared, f"codec-{index}", host_segment("subject", "subject", operations)),
+                        "executedUnassessed", expected)
+        if "codec-file" in selected:
+            execute(file_case(prepared), "executedUnassessed", file=True)
+        if "mixed" in selected:
+            execute(mixed_case(prepared, "mixed"), "passed")
+        if "wrong-assertion" in selected:
+            execute(mixed_case(prepared, "wrong-assertion", expected=False), "assertionFailed")
+        if "timeout" in selected:
+            execute(timeout_case(prepared), "timedOut")
+            operations, expected = echo_batches(catalog)[0]
+            execute(case(prepared, "after-timeout", host_segment("subject", "subject", operations[:1])),
+                    "executedUnassessed", {operations[0]["id"]: expected[operations[0]["id"]]})
+        verify_scenario_selection(reports, scenario_group)
         return reports
     finally:
         if simulator:
@@ -396,7 +526,14 @@ def main(argv=None):
     parser.add_argument("--xcode", type=Path, help="Xcode.app or Contents/Developer")
     parser.add_argument("--output-root", type=Path, help="Fresh artifact directory outside the repository")
     parser.add_argument("--build-root", type=Path, help="Reusable Swift build cache outside the repository")
+    parser.add_argument("--jobs", type=int, help="Swift build jobs (defaults to the runner CPU count)")
+    parser.add_argument("--record-build-cache", action="store_true",
+                        help="Checkpoint a successful CLI build for GitHub Actions cache saving")
+    parser.add_argument("--scenario-group", choices=("all", *SCENARIO_GROUPS), default="all",
+                        help="Independent scenario group; timeout and recovery always run together")
     args = parser.parse_args(argv)
+    if args.jobs is not None and args.jobs < 1:
+        parser.error("--jobs must be positive")
     output = (args.output_root or Path(tempfile.mkdtemp(prefix="intents-automation-e2e-"))).resolve()
     ensure(output != ROOT and ROOT not in output.parents, "Artifacts must stay outside the repository")
     ensure(not output.exists() or not any(output.iterdir()), "Output root must be empty")
@@ -408,14 +545,20 @@ def main(argv=None):
     if developer and developer.suffix == ".app":
         developer = developer / "Contents/Developer"
     print(f"Automation evidence: {output}", flush=True)
-    summary = {"schemaVersion": 1, "status": "failed", "echoAssessment": "executedUnassessed"}
+    summary = {"schemaVersion": 1, "status": "failed", "scenarioGroup": args.scenario_group,
+               "echoAssessment": "executedUnassessed"}
     def interrupted(signum, frame):
         raise KeyboardInterrupt(f"Interrupted by signal {signum}")
     previous_term = signal.signal(signal.SIGTERM, interrupted)
     try:
-        summary["cases"] = run_contract(Commands(output, developer), output, build_root=build_root)
-        summary.update(status="passed", codecFamiliesCompared=list(FAMILIES))
-        print("Automation contract passed: 16 codec families, mixed assessment, failure and timeout recovery.")
+        summary["cases"] = run_contract(Commands(output, developer), output, build_root=build_root,
+                                        build_jobs=args.jobs, record_build_cache=args.record_build_cache,
+                                        scenario_group=args.scenario_group)
+        verify_scenario_selection(summary["cases"], args.scenario_group)
+        compared = {family for report in summary["cases"] for family in report.get("codecFamiliesCompared", [])}
+        summary.update(status="passed", codecFamiliesCompared=[family for family in FAMILIES if family in compared])
+        print(f"Automation contract passed: {args.scenario_group}, {len(summary['cases'])} scenarios, "
+              f"{len(summary['codecFamiliesCompared'])} codec families compared.")
         return 0
     except (Exception, KeyboardInterrupt) as error:
         summary["error"] = str(error)

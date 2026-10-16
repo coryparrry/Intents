@@ -20,7 +20,7 @@ final class SiriSubmissionTests: XCTestCase {
         let expectedOSBuild: String?
     }
     private struct Receipt: Encodable {
-        var schemaVersion = 2
+        var schemaVersion = 3
         let runner: Runner
         let runID: String
         let attemptID: String
@@ -31,6 +31,7 @@ final class SiriSubmissionTests: XCTestCase {
         let productDigestVersion: Int?
         let requestDigest: String
         let osBuild: String
+        let submittedRecognizedText: String
         var submissionStarted = true
         var submissionReturned = false
     }
@@ -59,7 +60,7 @@ final class SiriSubmissionTests: XCTestCase {
         let runner = Runner(pid: getpid(), startIdentity: "\(kernel.kp_proc.p_un.__p_starttime.tv_sec):\(kernel.kp_proc.p_un.__p_starttime.tv_usec)", executablePath: executablePath)
         var receipt = Receipt(runner: runner, runID: plan.runID, attemptID: plan.attemptID, segmentID: plan.segmentID,
             leaseGeneration: plan.leaseGeneration, bundleID: plan.bundleID, productDigest: plan.productDigest,
-            productDigestVersion: plan.productDigestVersion, requestDigest: SHA256.hash(data: Data(plan.request.utf8)).map { String(format: "%02x", $0) }.joined(), osBuild: osBuild)
+            productDigestVersion: plan.productDigestVersion, requestDigest: SHA256.hash(data: Data(plan.request.utf8)).map { String(format: "%02x", $0) }.joined(), osBuild: osBuild, submittedRecognizedText: plan.request)
         attach("intents-siri-dispatch", receipt)
         // XCTest owns the activation wait. Aborts retain the checkpoint and no returned receipt.
         // Permission prompts and disambiguation remain visible for the operator.

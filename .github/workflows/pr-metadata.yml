@@ -1,0 +1,36 @@
+name: Pull request metadata
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  contents: read
+
+# No wrapper cancellation: a later description edit must not cancel retarget CI.
+jobs:
+  release-notes:
+    name: Pull request release notes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate edited release notes
+        run: python3 script/release_notes.py validate-event
+
+  retarget:
+    name: Retargeted pull request CI
+    if: ${{ github.event.changes.base != null }}
+    uses: ./.github/workflows/ci.yml
+
+  retarget-production:
+    name: Retargeted production fixtures
+    if: ${{ github.event.changes.base != null }}
+    uses: ./.github/workflows/production-evals.yml
+
+  retarget-plugin:
+    name: Retargeted plugin checks
+    if: ${{ github.event.changes.base != null }}
+    uses: ./.github/workflows/plugin.yml

@@ -54,6 +54,7 @@ struct AutomationSiriControls: View {
                     Text("Prepare a physical-device host to check that the submission API compiles. Connect and unlock that exact device before running.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
+                AutomationSiriSearchControls(model: model)
                 Button(model.siriOracle.enabled ? "Review Siri state check…" : "Review Siri submission…", action: review)
                     .disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(10).disabled(model.busy)

@@ -57,10 +57,70 @@ final class AutomationAppleRouteDriverTests: XCTestCase, @unchecked Sendable {
                      scope: .init(runID: "run", attemptID: "attempt", segmentID: "subject", leaseGeneration: lease.generation), release: Release())
     }
     func driver(_ h: Harness, approval: RunApproval? = nil, host: AutomationPreparedAppleHost? = nil,
-                subject: (any AutomationSubjectVerifier)? = nil, capabilities: CapabilityProfile = .init(), commands: AutomationAppleRouteDriver.Commands? = nil) throws -> AutomationAppleRouteDriver {
+                subject: (any AutomationSubjectVerifier)? = nil, capabilities: CapabilityProfile = .init(), commands: AutomationAppleRouteDriver.Commands? = nil,
+                campaignBudget: AutomationCampaignBudget? = nil) throws -> AutomationAppleRouteDriver {
         try .init(prepared: host ?? h.host, approval: approval ?? h.approval, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"),
                   stateDirectory: h.root.appendingPathComponent("driver"), leases: h.leases, artifacts: AutomationArtifactRegistry(root: h.root.appendingPathComponent("artifacts")),
-                  subjectVerifier: subject ?? Subject(app: h.host.app, target: h.host.target), releaseVerifier: h.release, capabilities: capabilities, commands: commands)
+                  subjectVerifier: subject ?? Subject(app: h.host.app, target: h.host.target), releaseVerifier: h.release,
+                  campaignBudget: campaignBudget, capabilities: capabilities, commands: commands)
+    }
+    actor CommandTimeouts {
+        var values: [Duration] = []
+        func record(_ timeout: Duration) { values.append(timeout) }
+    }
+    func testHostStartupUsesApprovedCaseBudgetWithoutRetryingTimedOutOperations() async throws {
+        for seconds in [30, 600] {
+            try await assertHostCommandTimeout(caseSeconds: seconds, expected: .seconds(seconds))
+        }
+    }
+    func testHostStartupCannotExceedRemainingCampaignBudget() async throws {
+        let start = ContinuousClock.now
+        var limits = AutomationCampaignLimits(); limits.wallClockSeconds = 40
+        let budget = try AutomationCampaignBudget(limits: limits, now: { start })
+        try await assertHostCommandTimeout(caseSeconds: 600, expected: .seconds(40), campaignBudget: budget)
+    }
+    func testReceiptExportUsesApprovedCaseBudgetWithoutReplayingDispatch() async throws {
+        for seconds in [30, 600] {
+            try await assertHostCommandTimeout(caseSeconds: seconds, expected: .seconds(seconds), failDuringExport: true)
+        }
+    }
+    func testReceiptExportCannotExceedRemainingCampaignBudget() async throws {
+        let start = ContinuousClock.now
+        var limits = AutomationCampaignLimits(); limits.wallClockSeconds = 40
+        let budget = try AutomationCampaignBudget(limits: limits, now: { start })
+        try await assertHostCommandTimeout(caseSeconds: 600, expected: .seconds(40), campaignBudget: budget, failDuringExport: true)
+    }
+    private func assertHostCommandTimeout(caseSeconds: Int, expected: Duration,
+                                          campaignBudget: AutomationCampaignBudget? = nil, failDuringExport: Bool = false) async throws {
+        let h = try await fixture(), timeouts = CommandTimeouts()
+        var plan = h.plan, approval = h.approval
+        plan.budget.wallClockSeconds = caseSeconds
+        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+        let commands = AutomationAppleRouteDriver.Commands(run: { arguments, _, timeout in
+            await timeouts.record(timeout)
+            if arguments.first == "xcodebuild" {
+                XCTAssertEqual(arguments.drop(while: { $0 != "-collect-test-diagnostics" }).dropFirst().first, "never")
+            }
+            if failDuringExport && arguments.first == "xcodebuild" {
+                return .init(exitStatus: 0, stdout: Data(), stderr: Data(), logsTruncated: false)
+            }
+            throw AutomationRPCError.timedOut
+        }, stop: { true })
+        let driver = try driver(h, approval: approval, commands: commands, campaignBudget: campaignBudget)
+        try await driver.acquire(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease)
+        do {
+            _ = try await driver.execute(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease)
+            XCTFail("Timed-out host returned a receipt")
+        } catch { XCTAssertEqual(error as? AutomationRPCError, .timedOut) }
+        do {
+            _ = try await driver.execute(plan: plan, segment: plan.execution, scope: h.scope, lease: h.lease)
+            XCTFail("Timed-out operations were retried")
+        } catch { XCTAssertEqual(error as? AutomationContractError, .unknownLease) }
+        let observed = await timeouts.values
+        XCTAssertEqual(observed, failDuringExport ? [expected, expected] : [expected])
+        let proof = await driver.release(scope: h.scope, lease: h.lease)
+        XCTAssertTrue(proof.commandsDrained); XCTAssertTrue(proof.runnerTerminated)
+        XCTAssertTrue(proof.privatePayloadCleaned)
     }
     func testAcquireFreezesOnlyTheReviewedProgramAndReleasesWithoutLaunching() async throws {
         let h = try await fixture(), driver = try driver(h)

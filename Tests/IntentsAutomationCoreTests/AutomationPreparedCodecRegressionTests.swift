@@ -83,7 +83,7 @@ final class AutomationPreparedCodecRegressionTests: XCTestCase {
     func testDecodedPreparationGrantsEveryImplementedCodecWithoutRegistration() async throws {
         let h = try fixture()
         let decoded = try JSONDecoder().decode(AutomationPreparedApplication.self, from: JSONEncoder().encode(h.prepared))
-        let capabilities = try await AutomationSimulatorCodecQualification.enrich(.init(), prepared: decoded)
+        let capabilities = try AutomationPreparedCapabilities.resolving(.init(), prepared: decoded)
         XCTAssertEqual(Set(capabilities.records.keys), Set(AutomationCodecRegistry.parameterFamilies.map { "apple.codec." + $0 }))
         XCTAssertFalse(capabilities.supports(["apple.codec.unimplemented"]))
         try PlanValidator.validate(h.plan, approval: h.approval, capabilities: capabilities)
@@ -122,7 +122,7 @@ final class AutomationPreparedCodecRegressionTests: XCTestCase {
             case "addition": try Data("new source".utf8).write(to: sources.appendingPathComponent("Added.swift"))
             default: try FileManager.default.removeItem(at: sources.appendingPathComponent("HostPlan.swift"))
             }
-            XCTAssertThrowsError(try AutomationPreparedCodecAuthority.verify(prepared), change) {
+            XCTAssertThrowsError(try AutomationPreparedArtifactIntegrity.verify(prepared), change) {
                 XCTAssertEqual($0 as? AutomationContractError, .conflictingOperation, change)
             }
         }
@@ -155,7 +155,7 @@ final class AutomationPreparedCodecRegressionTests: XCTestCase {
                 for index in 0..<65 { try Data().write(to: sources.appendingPathComponent("Extra\(index).swift")) }
             default: try Data(repeating: 0, count: 1_048_577).write(to: file)
             }
-            XCTAssertThrowsError(try AutomationPreparedCodecAuthority.verify(prepared), change) {
+            XCTAssertThrowsError(try AutomationPreparedArtifactIntegrity.verify(prepared), change) {
                 XCTAssertEqual($0 as? AutomationContractError, .invalidIdentity, change)
             }
         }
@@ -165,18 +165,18 @@ final class AutomationPreparedCodecRegressionTests: XCTestCase {
         let h = try fixture()
         for state in [CapabilityProfile.State.unavailable, .consentRequired, .available] {
             let record = CapabilityProfile.Record(state: state, reason: "Caller decision", probeVersion: "caller", evidence: ["caller"])
-            let capabilities = try await AutomationSimulatorCodecQualification.enrich(.init(records: ["apple.codec.entity": record]), prepared: h.prepared)
+            let capabilities = try AutomationPreparedCapabilities.resolving(.init(records: ["apple.codec.entity": record]), prepared: h.prepared)
             XCTAssertEqual(capabilities.records["apple.codec.entity"], record)
         }
         let unknown = CapabilityProfile(records: ["apple.codec.entity": .init(state: .unknown, reason: "Unchecked", probeVersion: "test", evidence: [])])
-        let enriched = try await AutomationSimulatorCodecQualification.enrich(unknown, prepared: h.prepared)
+        let enriched = try AutomationPreparedCapabilities.resolving(unknown, prepared: h.prepared)
         XCTAssertTrue(enriched.supports(["apple.codec.entity"]))
     }
 
     func testChangedSubjectHostXctestrunAndGeneratedSourcesAreRejectedEvenWithCachedCapabilities() async throws {
         for artifact in ["subject", "host", "xctestrun", "source"] {
             let h = try fixture()
-            let cached = try await AutomationSimulatorCodecQualification.enrich(.init(), prepared: h.prepared)
+            let cached = try AutomationPreparedCapabilities.resolving(.init(), prepared: h.prepared)
             let path: URL
             switch artifact {
             case "subject": path = URL(fileURLWithPath: h.prepared.host.subjectProductPath).appendingPathComponent("App")
@@ -187,7 +187,7 @@ final class AutomationPreparedCodecRegressionTests: XCTestCase {
             }
             try Data("modified".utf8).write(to: path)
             do {
-                _ = try await AutomationSimulatorCodecQualification.enrich(cached, prepared: h.prepared)
+                _ = try AutomationPreparedCapabilities.resolving(cached, prepared: h.prepared)
                 XCTFail("Modified \(artifact) admitted cached codecs")
             } catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation, artifact) }
         }

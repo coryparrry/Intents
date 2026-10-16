@@ -3,12 +3,34 @@ import Foundation
 import Observation
 import IntentsAutomationCore
 
+struct AutomationNativeToolchainChoice: Equatable, Sendable, Identifiable {
+    let directory: URL
+    let version: String
+    let build: String
+    let metadataDigest: String
+    var id: String { directory.path }
+    var label: String { "Xcode \(version) (\(build))" }
+}
+
 enum AutomationNativeToolchain {
-    static func developerDirectory(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        let path = environment["DEVELOPER_DIR"].flatMap { $0.isEmpty ? nil : $0 }
-            ?? "/Applications/Xcode.app/Contents/Developer"
-        let url = URL(fileURLWithPath: path)
-        return url.pathExtension == "app" ? url.appendingPathComponent("Contents/Developer") : url
+    static func installedChoices(configured: URL, applications: [URL] = AutomationInstalledToolchain.applicationDirectories,
+                                 selected: URL? = AutomationInstalledToolchain.selectedDirectory) -> [AutomationNativeToolchainChoice] {
+        AutomationInstalledToolchain.candidates(configured: configured, selected: selected, applications: applications).prefix(32).compactMap { candidate in
+            guard AutomationInstalledToolchain.diskEligible(candidate.directory, sdk: "macosx"),
+                  let metadata = try? AutomationInstalledToolchain.metadata(directory: candidate.directory) else { return nil }
+            return .init(directory: candidate.directory, version: metadata.version, build: metadata.build, metadataDigest: metadata.digest)
+        }
+    }
+    static func developerDirectory(environment: [String: String] = ProcessInfo.processInfo.environment,
+                                   applications: [URL] = AutomationInstalledToolchain.applicationDirectories,
+                                   selected: URL? = AutomationInstalledToolchain.selectedDirectory,
+                                   probe: (URL, String) throws -> Bool = { AutomationInstalledToolchain.diskEligible($0, sdk: $1) }) -> URL {
+        let configured = environment["DEVELOPER_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+        let candidates = AutomationInstalledToolchain.candidates(configured: configured, selected: selected, applications: applications)
+        if let eligible = try? AutomationInstalledToolchain.select(candidates: candidates, requiredSDK: "macosx", probe: probe) { return eligible }
+        // Keep read-only inspection available. Preparation performs SDK-specific command probes and
+        // reports the exact install/licence action if no eligible installed Xcode exists.
+        return URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer")
     }
 }
 
@@ -58,6 +80,7 @@ enum AutomationNativePreparationDestination: String, CaseIterable, Identifiable 
 
 typealias AutomationNativePreparationExecutor = @Sendable (AutomationApplicationCandidate, AutomationBuildApproval, URL) async throws -> AutomationPreparedApplication
 typealias AutomationNativeSimulatorInventoryReader = @Sendable (URL, URL) async throws -> [AutomationSimulator]
+typealias AutomationNativePhysicalInventoryReader = @Sendable (URL, URL) async throws -> [AutomationPhysicalDevice]
 
 /// Retains only picker-selected folder scopes; a failed selection releases its temporary scope.
 @MainActor @Observable final class AutomationNativeSourceGrants {
@@ -96,7 +119,8 @@ extension AppAutomationStore {
             return .init(id: simulatorID, kind: .simulator)
         case .physical:
             var target = TargetIdentity(id: physicalDeviceID, kind: .physical)
-            target.physicalDeviceIdentifier = resolvedPhysicalDeviceIdentifiers[physicalDeviceID.lowercased()]
+            target.physicalDeviceIdentifier = physicalDevices.first(where: { $0.id == physicalDeviceID })?.coreDeviceIdentifier
+                ?? resolvedPhysicalDeviceIdentifiers[physicalDeviceID.lowercased()]
             guard (try? AutomationPhysicalExecutable.validateTarget(target)) != nil else { return nil }
             return target
         case .macOS:
@@ -109,6 +133,7 @@ extension AppAutomationStore {
     var needsSimulatorInventory: Bool {
         isInstalledUI || (candidate?.kind == .sourceTarget && preparationDestination == .simulator)
     }
+    var needsPhysicalInventory: Bool { candidate?.kind == .sourceTarget && preparationDestination == .physical }
     var simulatorInventorySelection: String { candidateID + "|" + preparationDestination.rawValue }
     func validatePreparedSelection(_ value: AutomationPreparedApplication, candidate: AutomationApplicationCandidate,
                                    approval: AutomationBuildApproval) throws {

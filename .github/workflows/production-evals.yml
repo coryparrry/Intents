@@ -16,6 +16,7 @@ on:
       - 'script/test_production_evals.py'
       - 'Package.swift'
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:

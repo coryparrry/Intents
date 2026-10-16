@@ -85,32 +85,6 @@ final class AutomationPlanPreflightTests: XCTestCase {
         var withoutController = valid; withoutController.budget.controllerCalls = 0
         XCTAssertNoThrow(try PlanValidator.validate(withoutController, approval: approval, capabilities: .init()))
     }
-    func testSaveControlRequiresApprovedWritesOutsideObservers() throws {
-        var (plan, approval) = fixture()
-        approval.effects = [.observe, .navigate, .fixtureWrite, .externalWrite]
-        var goal = AutomationNavigationGoal(id: "save", instruction: "Save the edited task", endpoint: .init(.testId, "saved"))
-        goal.saveControl = .init(.label, "Save")
-        var subject = AutomationSegment(id: "subject", kind: .ui, phase: .subject, operation: "save", effects: [.observe, .navigate], lifecycle: .persistedStateAcrossSegments)
-        subject.uiProgram = .init(operations: [.init(id: "save", kind: .navigateGoal, goal: goal)])
-        plan.execution = subject
-        XCTAssertThrowsError(try PlanValidator.validate(plan, approval: approval, capabilities: .init())) {
-            XCTAssertEqual($0 as? AutomationContractError, .invalidPlan("Save control requires approved write effects"))
-        }
-        for write in [AutomationEffect.fixtureWrite, .externalWrite] {
-            plan.execution.effects = [.observe, .navigate, write]
-            XCTAssertNoThrow(try PlanValidator.validate(plan, approval: approval, capabilities: .init()))
-        }
-        var observer = subject; observer.id = "read"; observer.phase = .observe
-        var readGoal = goal; readGoal.saveControl = nil
-        observer.uiProgram = .init(operations: [.init(id: "save", kind: .navigateGoal, goal: readGoal)])
-        plan.observations = [observer]
-        XCTAssertNoThrow(try PlanValidator.validate(plan, approval: approval, capabilities: .init()))
-        observer.uiProgram = subject.uiProgram
-        plan.observations = [observer]
-        XCTAssertThrowsError(try PlanValidator.validate(plan, approval: approval, capabilities: .init())) {
-            guard case .invalidPlan? = $0 as? AutomationContractError else { return XCTFail("Unexpected error \($0)") }
-        }
-    }
     func testAssertionsNeedJustificationAndAnIndependentObservation() throws {
         var (plan, approval) = fixture()
         plan.setup = [.init(id: "seed", kind: .systemIntent, phase: .setup, operation: "seed")]

@@ -21,11 +21,15 @@ enum AutomationPackageResolution {
     }
     struct Record: Decodable { let version: Int; let originHash: String?; let pins: [Pin] }
     struct Index { let record: Record; let pinsByIdentity: [String: Pin] }
+    static func validateUniqueJSONKeys(_ data: Data) throws {
+        guard data.count <= 1_048_576 else { throw AutomationContractError.invalidIdentity }
+        var keys = UniqueKeys(bytes: Array(data)); try keys.value(depth: 0)
+        keys.whitespace(); guard keys.index == data.count else { throw AutomationContractError.invalidIdentity }
+    }
     static func read(_ data: Data) throws -> Index? {
         guard data.count <= 1_048_576 else { return nil }
         do {
-            var keys = UniqueKeys(bytes: Array(data)); try keys.value(depth: 0)
-            keys.whitespace(); guard keys.index == data.count else { return nil }
+            try validateUniqueJSONKeys(data)
             let record = try JSONDecoder().decode(Record.self, from: data)
             guard [2, 3].contains(record.version), record.pins.count <= 1000,
                   record.version != 3 || record.originHash.map({ hex($0, sizes: [64]) }) == true,

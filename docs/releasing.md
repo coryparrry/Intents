@@ -36,7 +36,7 @@ Tags use `vMAJOR.MINOR.PATCH`. `fix:` changes produce a patch and `feat:` change
 
 GitHub squash-merges each pull request into one commit, so Release Please cannot
 infer several user-facing capabilities from the file diff or the commit body.
-Every `feat:` and `fix:` pull request must therefore include one active Release
+Every ordinary pull request must therefore include one active Release
 Please override block in its body:
 
 ```text
@@ -51,13 +51,16 @@ by its actual type. Feature and fix notes should describe user-visible behavior.
 Documentation, tests, refactoring, build, CI, maintenance, style, and reverts can
 have their own typed entries.
 
-Non-feature/fix PRs can omit the override and contribute their conventional
-squash-commit subject, or add an override to describe several changes. The pull
-request template contains instructions, and CI fails feature and fix
-pull requests whose active block is missing, malformed, duplicated, or does not
+Include typed entries for documentation, CI, tests, refactoring, and maintenance
+PRs too. Release Please's own generated release PR is exempt: CI recognizes its
+bot author, same-repository release branch, main base, release title, and pending
+release label. It already contains the generated changelog. The pull request
+template contains instructions, and CI fails ordinary pull requests whose active
+block is missing, malformed, duplicated, or does not
 retain the pull request's `feat`/`fix` release type. Editing the pull request body
-reruns that validation. Breaking-change markers must agree between the pull
-request title and the override entries. Release Please reads the block after the
+reruns only that validation, without restarting code tests. Changing the target
+branch also runs CI against the new base. Breaking-change markers must agree
+between the pull request title and the override entries. Release Please reads the block after the
 squash merge and uses those entries for `CHANGELOG.md` and the GitHub release
 notes.
 

@@ -10,9 +10,13 @@ struct AutomationNativeRecoveryItem: Identifiable {
         case .nativeMac: "Mac session"
         case .simulator: "Simulator"
         case .physical: "Connected device"
+        case .pairedRunner: "Paired app feature"
         }
     }
     var detail: String {
+        if record.target.kind == .pairedRunner {
+            return "The paired app may still be running this request. Local process absence cannot release its reservation; verified runner completion is required."
+        }
         switch record.owner.presence() {
         case .matching: return "The owning Intents process is still running. Finish or cancel the run there, then check again."
         case .unknown: return "Intents cannot verify whether the previous owner has stopped. This target stays reserved."
@@ -26,6 +30,43 @@ struct AutomationNativeRecoveryItem: Identifiable {
 }
 
 extension AppAutomationStore {
+    func loadRecentApplications() {
+        guard FileManager.default.fileExists(atPath: support.appendingPathComponent("recent-applications.json").path) else { return }
+        do { recentApplications = try AutomationRecentApplicationStore(supportRoot: support).read(); recentApplicationsError = nil }
+        catch { recentApplicationsError = "Recent apps could not be read. You can still choose an app." }
+    }
+    func rememberApplication(_ url: URL) {
+        let bookmark = try? url.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess], includingResourceValuesForKeys: nil, relativeTo: nil)
+        do {
+            recentApplications = try AutomationRecentApplicationStore(supportRoot: support).remember(.init(path: AutomationPath.canonical(url).path,
+                name: candidate?.name ?? url.deletingPathExtension().lastPathComponent, bookmark: bookmark))
+            recentApplicationsError = nil
+        } catch { recentApplicationsError = "The app is selected, but its recent entry could not be saved." }
+    }
+    func reopenApplication(_ entry: AutomationRecentApplication) {
+        guard !busy else { return }
+        do {
+            let url: URL
+            if let bookmark = entry.bookmark {
+                var stale = false
+                url = try URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope, .withoutUI], relativeTo: nil, bookmarkDataIsStale: &stale)
+                // A successful reinspection below creates a fresh bookmark, including after a move.
+            } else { url = URL(fileURLWithPath: entry.path) }
+            select(url)
+            let selection = task, epoch = selectionEpoch
+            Task { [weak self] in
+                await selection?.value
+                guard let self, !self.busy, self.selectionEpoch == epoch, self.intake != nil,
+                      (try? AutomationPath.canonical(url).path) != entry.path else { return }
+                self.forgetApplication(entry)
+            }
+        } catch { message = "This saved app can no longer be opened. Choose it again to restore access." }
+    }
+    func forgetApplication(_ entry: AutomationRecentApplication) {
+        guard !busy else { return }
+        do { recentApplications = try AutomationRecentApplicationStore(supportRoot: support).forget(path: entry.path) }
+        catch { recentApplicationsError = "The recent entry could not be removed." }
+    }
     func refreshRecovery() async {
         await ownershipRecoveryTask?.value
         guard !busy, !recoveryLoading else { return }
@@ -56,7 +97,7 @@ extension AppAutomationStore {
 
     private func reconcileAbandonedOwnership(using leases: AutomationDeviceLeaseManager) async throws {
         var failure: (any Error)?
-        for record in try await leases.recoveryRecords() where !record.runID.hasPrefix("intent-lab-") && [.absent, .replaced].contains(record.owner.presence()) {
+        for record in try await leases.recoveryRecords() where !record.runID.hasPrefix("intent-lab-") && record.target.kind != .pairedRunner && [.absent, .replaced].contains(record.owner.presence()) {
             // A still-running child keeps its reservation. Reconcile checks the durable
             // snapshot and any pending payload before removing a stopped campaign.
             do { try await leases.reconcile(record, commandsDrained: true, ownedRunnerTerminated: true) }
@@ -76,8 +117,9 @@ extension AppAutomationStore {
             let records = try await leases.recoveryRecords().filter { !$0.runID.hasPrefix("intent-lab-") }
             let current = try AutomationProcessIdentity.current()
             let eligible = records.filter {
-                [.absent, .replaced].contains($0.owner.presence()) ||
-                    ($0.owner == current && retainedUnresolvedRequestTargets[$0.runID]?.leaseKey == $0.target.leaseKey)
+                $0.target.kind != .pairedRunner &&
+                    ([.absent, .replaced].contains($0.owner.presence()) ||
+                     ($0.owner == current && retainedUnresolvedRequestTargets[$0.runID]?.leaseKey == $0.target.leaseKey))
             }
             guard !eligible.isEmpty || hasUnresolvedActiveAttempt || records.isEmpty else { throw AutomationContractError.targetBusy }
             guard eligible.allSatisfy({ $0.runners.allSatisfy { [.absent, .replaced].contains($0.process.presence()) } }) else {
@@ -99,8 +141,9 @@ extension AppAutomationStore {
                     try await leases.resetCurrentProcessCampaign(record)
                 }
             }
+            let remaining = try await leases.recoveryRecords()
             finishOwnershipReset()
-            recoveryItems = try await leases.recoveryRecords().map { .init(record: $0) }
+            recoveryItems = remaining.map { .init(record: $0) }
             message = "Device ownership reset. Review the workflow before running again."
         } catch { recoveryError = errorText(error) }
     }

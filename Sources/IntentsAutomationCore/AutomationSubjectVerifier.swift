@@ -9,8 +9,15 @@ public protocol AutomationSubjectVerifier: Sendable {
 public struct AutomationInstalledSubjectVerifier: AutomationSubjectVerifier {
     public var developerDirectory: URL
     public var workspace: URL
-    public init(developerDirectory: URL, workspace: URL) {
+    public var maximumQueryDuration: Duration
+    public var campaignBudget: AutomationCampaignBudget?
+    var runQuery: @Sendable (URL, [String], URL, [String: String], Duration) async throws -> AutomationOwnedCommand.Result = {
+        try await AutomationOwnedCommand().run(executable: $0, arguments: $1, directory: $2, environment: $3, timeout: $4)
+    }
+    public init(developerDirectory: URL, workspace: URL, maximumQueryDuration: Duration = .seconds(15),
+                campaignBudget: AutomationCampaignBudget? = nil) {
         self.developerDirectory = developerDirectory; self.workspace = workspace
+        self.maximumQueryDuration = maximumQueryDuration; self.campaignBudget = campaignBudget
     }
     public func verify(app: AppIdentity, target: TargetIdentity) async throws {
         guard !app.bundleID.isEmpty, app.platform == (target.kind == .nativeMac ? "macos" : "ios") else { throw AutomationContractError.invalidIdentity }
@@ -29,9 +36,14 @@ public struct AutomationInstalledSubjectVerifier: AutomationSubjectVerifier {
                 throw AutomationContractError.missingEvidence("Installed product bytes unavailable for this target")
             }
             let developer = try AutomationPath.canonical(developerDirectory)
-            let result = try await AutomationOwnedCommand().run(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
-                arguments: ["simctl", "get_app_container", target.id, app.bundleID, "app"], directory: workspace,
-                environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DEVELOPER_DIR": developer.path, "HOME": workspace.path, "TMPDIR": workspace.path], timeout: .seconds(15))
+            try Task.checkCancellation()
+            // The coordinator still owns the original absolute case deadline.
+            let timeout = min(maximumQueryDuration, try await campaignBudget?.remainingDuration() ?? maximumQueryDuration)
+            guard timeout > .zero else { throw AutomationRPCError.timedOut }
+            let result = try await runQuery(URL(fileURLWithPath: "/usr/bin/xcrun"),
+                ["simctl", "get_app_container", target.id, app.bundleID, "app"], workspace,
+                ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DEVELOPER_DIR": developer.path, "HOME": workspace.path, "TMPDIR": workspace.path], timeout)
+            try Task.checkCancellation()
             guard result.exitStatus == 0, !result.logsTruncated, result.stdout.count <= 4096,
                   let path = String(data: result.stdout, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   path.hasPrefix("/"), !path.contains("\n") else { throw AutomationContractError.missingEvidence("Installed product identity unavailable") }

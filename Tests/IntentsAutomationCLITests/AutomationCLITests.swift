@@ -122,7 +122,7 @@ final class AutomationCLITests: XCTestCase, @unchecked Sendable {
         let host = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval, attemptID: "mac", leaseGeneration: 1)
         XCTAssertEqual(host.steps.count, 3)
         XCTAssertEqual(approval.maximumActions, host.steps.count)
-        XCTAssertGreaterThanOrEqual(approval.maximumActions, try plan.execution.uiProgram!.approvedActions().count)
+        XCTAssertEqual(host.steps.map(\.kind), [.launch, .tap, .screenshot])
     }
     func testNativeDirectWaitDerivesBudgetFromImplicitLaunchAndScreenshot() throws {
         var plan = fixturePlan()
@@ -203,7 +203,18 @@ final class AutomationCLITests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(names.contains("IntentDefinitionsHost.swift"))
         XCTAssertTrue(names.contains("UIStepTests.swift"))
         XCTAssertTrue(names.contains("SiriSubmissionTests.swift"))
-        XCTAssertTrue(names.allSatisfy { $0.hasSuffix(".swift") })
+        XCTAssertTrue(names.contains("HostFixtureRegistration.swift"))
+        XCTAssertEqual(Set(names.filter { !$0.hasSuffix(".swift") }), ["NativeMac"])
+        let native = root.appendingPathComponent("NativeMac")
+        let nativeNames = try FileManager.default.contentsOfDirectory(atPath: native.path)
+        XCTAssertEqual(Set(nativeNames), AutomationHostGenerator.nativeTemplateOverrides)
+        let files = names.filter({ $0.hasSuffix(".swift") }).map({ root.appendingPathComponent($0) })
+            + nativeNames.map({ native.appendingPathComponent($0) })
+        for file in files {
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            XCTAssertEqual(values.isRegularFile, true)
+            XCTAssertEqual(values.isSymbolicLink, false)
+        }
     }
 
     private func writeScheme(root: URL, helperRuns: Bool) throws -> URL {

@@ -121,6 +121,10 @@ On-device evaluations run locally. Custom HTTP providers and tools receive the c
 
 Usage statistics are **on by default** and can be disabled in **Settings → Privacy → Share usage statistics**. They send app sessions, first observed use, fixed screen names, completed features, app/build and macOS versions, and random installation/session identifiers. Development builds, tests, previews and demos are excluded; a host-local policy can also exclude every updated build on a development Mac. **Diagnostic sharing is separate and off by default**; it sends fixed operation names, outcomes, timings, safe error categories, build/platform details and automatic native crash reports with content-free stack addresses and binary IDs. Crash reports are sent on the next launch; readable function names require matching release symbols. Prompts, responses, scores, names, files, provider addresses, credentials and raw error messages are excluded. Privacy settings also show recent issues and let you copy a safe local diagnostic report without enabling sharing. Consent changes cancel uploads and revoke queued events; they do not delete data already received by PostHog. See [telemetry details](docs/telemetry.md).
 
+## Standalone Codex plugin
+
+The [Apple Foundation Evals plugin](plugins/apple-foundation-evals/README.md) runs local Apple Foundation Models evaluations and displays their saved traces inside Codex. It bundles its own native engine and does not require the Intents app. Its README covers local installation, testing, and packaging.
+
 ## Build from source
 
 Use Xcode 27 with its command-line tools selected. From the repository root:
@@ -164,7 +168,7 @@ GitHub CI classifies the complete pull request or `main` push diff, including de
 
 Manual runs, malformed events, and unavailable Git history select full coverage. Release PR version changes still require the complete source checks used by installer publication. The **Route changed files** summary lists the selected suites and the reasons for each decision. Empty selections run no unit tests; a selected Swift suite that cannot be discovered fails instead of silently passing with zero tests.
 
-The explicit portable-source dependency map lives in `script/ci_routes.py`. Update it when adding a suite or a shared dependency; catalog tests check it against `Package.swift` and the test suite names. The portable package shares production source and existing tests with Xcode without lowering the app’s deployment target. CI uses the hosted `xcode-27` macOS 27 runner, runs the core test scheme, and builds (but does not run) the UI-test bundle when UI code changes. Run the interactive UI tests above before releasing. See the [release guide](docs/releasing.md) for signed releases through **Release Me** and local packaging.
+The explicit portable-source dependency map lives in `script/ci_routes.py`. Update it when adding a suite or a shared dependency; catalog tests check it against `Package.swift` and the test suite names. The portable package shares production source and existing tests with Xcode without lowering the app’s deployment target. CI uses the hosted `xcode-27` macOS 27 runner and reuses one native build for core tests and up to three UI jobs. Selected script tests run in one Linux job. When simulator acceptance is selected, one job runs all seven scenarios with one fixture and simulator setup. These checks remain automatic and blocking; the ten-repeat picker stability check is opt-in. Run the interactive UI tests above before releasing. See the [release guide](docs/releasing.md) for signed releases through **Release Me** and local packaging.
 
 ## License
 

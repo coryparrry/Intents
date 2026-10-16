@@ -1,0 +1,8 @@
+{
+  "package": "shadcn",
+  "version": "4.21.1",
+  "source": "dist/tailwind.css",
+  "sha256": "4c371f7a1ff5d219ae2f7ff28bd256b4346fd546fe46fbae22092e57db2f0fae",
+  "license": "SHADCN-LICENSE.md",
+  "reason": "The UI needs only these static Tailwind variants, not the component-generation CLI or its dependency graph."
+}

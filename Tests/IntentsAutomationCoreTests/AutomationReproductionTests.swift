@@ -8,12 +8,12 @@ final class AutomationReproductionTests: XCTestCase, @unchecked Sendable {
         let app = AppIdentity(logicalID: "selected", bundleID: "example.UI", platform: "ios")
         let target = TargetIdentity(id: UUID().uuidString, kind: .simulator)
         var approval = RunApproval(runID: "reproduction", app: app, target: target, environmentID: "owned", effects: [.observe, .navigate], maximumActions: 30, disposable: true)
-        var plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, instruction: "Open controls", endpoint: "Controls", expectedVisibleText: "50%", observationLabel: "Volume", observationProperty: "value", approval: approval, localeIdentifier: "en_GB")
+        var plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, program: .init(operations: [.init(id: "open", kind: .tap, locator: .init(.label, "Controls"))]), expectedVisibleText: "50%", observationLabel: "Volume", observationProperty: "value", approval: approval, localeIdentifier: "en_GB")
         if legacy { plan.requirements[0].checkID = nil }
         var muted = AutomationSegment(id: "muted", kind: .ui, phase: .observe, operation: "Read mute state", effects: [.observe, .navigate], lifecycle: .persistedStateAcrossSegments)
         muted.uiProgram = .init(operations: [.init(id: "read-mute", kind: .observeProperty, locator: .init(.label, "Mute"), property: "checked")])
         plan.observations.append(muted)
-        plan.requirements.append(.init(observationID: "muted", expected: .bool(false), proof: .visibleState, justification: "Independent mute check", checkID: "business.muted"))
+        plan.requirements.append(.init(observationID: "muted", expected: .object(["read-mute": .bool(false)]), proof: .visibleState, justification: "Independent mute check", checkID: "business.muted"))
         let frozen = try AutomationFrozenCase(plan: plan), cases = try AutomationCaseStore(root: root)
         approval.approvedCaseDigest = frozen.digest
         _ = try await cases.freeze(plan)
@@ -66,6 +66,9 @@ final class AutomationReproductionTests: XCTestCase, @unchecked Sendable {
             do { _ = try await AutomationReproduction(cases: cases).run(frozen: frozen, originalAttemptID: id, approval: scope, limits: .firstCampaign, executor: executor); XCTFail("Accepted missing or unapproved reproduction") } catch {}
         }
         let passed = ReproductionFactExecutor.report(frozen: frozen, runID: "old", attemptID: "passed", outcome: .passed)
+        XCTAssertEqual(passed.result.summary, .passed)
+        XCTAssertTrue(passed.result.assessed); XCTAssertTrue(passed.result.evidenceComplete)
+        XCTAssertTrue(passed.result.failedObservations.isEmpty)
         try await cases.saveAttempt(passed, for: frozen)
         do { _ = try await AutomationReproduction(cases: cases).run(frozen: frozen, originalAttemptID: "passed", approval: approval, limits: .firstCampaign, executor: executor); XCTFail("A saved pass became a failure") } catch {}
         let calls = await executor.calls; XCTAssertEqual(calls, 0)
@@ -100,9 +103,35 @@ final class AutomationReproductionTests: XCTestCase, @unchecked Sendable {
         XCTAssertFalse(report.complete); XCTAssertFalse(report.reproduced)
         let calls = await executor.calls; XCTAssertEqual(calls, 1)
     }
+    func testProgressCountsOnlyCanonicalSavedAndReleasedAttempts() async throws {
+        let (frozen, approval, cases) = try await fixture(), progress = ReproductionProgressFacts()
+        let report = try await AutomationReproduction(cases: cases).run(frozen: frozen, originalAttemptID: "original",
+            approval: approval, limits: .firstCampaign, executor: ReproductionFactExecutor([.matching]), onProgress: { update in
+                let saved = update.event == .attemptSaved ? (try? await cases.loadAttempt(id: update.attemptID, frozen: frozen)) : nil
+                await progress.record(update, saved: saved)
+            })
+        XCTAssertTrue(report.complete)
+        let updates = await progress.updates, verified = await progress.savedWereVerifiedAndReleased
+        XCTAssertEqual(updates.filter { $0.event == .attemptStarted }.map(\.attemptNumber), [1, 2, 3, 4, 5])
+        XCTAssertEqual(updates.filter { $0.event == .attemptStarted }.map(\.recordedAttempts), [0, 1, 2, 3, 4])
+        XCTAssertEqual(updates.filter { $0.event == .attemptSaved }.map(\.recordedAttempts), [1, 2, 3, 4, 5])
+        XCTAssertTrue(verified)
+        XCTAssertEqual(updates.filter { $0.event == .attemptSaved }.map(\.attemptID), report.attempts.map(\.attemptID))
+    }
+    func testUnreleasedAttemptCannotEmitReleasedProgress() async throws {
+        let (frozen, approval, cases) = try await fixture(), progress = ReproductionProgressFacts()
+        let report = try await AutomationReproduction(cases: cases).run(frozen: frozen, originalAttemptID: "original",
+            approval: approval, limits: .firstCampaign, executor: ReproductionFactExecutor([.unreleased]), onProgress: { update in
+                await progress.record(update, saved: nil)
+            })
+        XCTAssertEqual(report.attempts.count, 1); XCTAssertFalse(report.complete)
+        let updates = await progress.updates
+        XCTAssertEqual(updates.count, 1); XCTAssertEqual(updates.first?.event, .attemptStarted)
+    }
+
 }
 private actor ReproductionFactExecutor: AutomationCampaignAttemptExecutor {
-    enum Outcome: Sendable { case matching, passed, other, unassessed, cancelled, interrupted }
+    enum Outcome: Sendable { case matching, passed, other, unassessed, cancelled, interrupted, unreleased }
     let outcomes: [Outcome]
     var calls = 0
     init(_ outcomes: [Outcome]) { self.outcomes = outcomes }
@@ -118,12 +147,35 @@ private actor ReproductionFactExecutor: AutomationCampaignAttemptExecutor {
             return .init(attemptID: attemptID, result: AutomationAssessment.assess(plan: plan, attemptID: attemptID, subjectDispatched: false, subjectCompleted: false, observations: [], termination: .cancelled), receipts: [], resourcesReleased: true)
         }
         let observations: [AutomationObservation] = outcome == .unassessed ? [] : plan.observations.enumerated().map { index, segment in
-            let value: AutomationValue = index == 0 ? .text(outcome == .matching ? "40%" : "50%") : .bool(outcome == .other)
+            let scalar: AutomationValue = index == 0 ? .text(outcome == .matching ? "40%" : "50%") : .bool(outcome == .other)
+            let operation = segment.uiProgram!.operations.first!
+            let value = AutomationValue.object([operation.id: scalar])
             return .init(id: segment.id, app: plan.app, target: plan.target, environmentID: plan.environmentID, attemptID: attemptID, stepID: segment.id, route: .ui, proof: .visibleState, value: value)
         }
         let receipts = ([plan.execution] + plan.observations).enumerated().map { index, segment in
-            AutomationSegmentReceipt(scope: .init(runID: runID, attemptID: attemptID, segmentID: segment.id, leaseGeneration: index + 1), app: plan.app, target: plan.target, segmentID: segment.id, route: .ui, dispatched: true, completed: true, observations: observations.filter { $0.id == segment.id })
+            AutomationSegmentReceipt(scope: .init(runID: runID, attemptID: attemptID, segmentID: segment.id, leaseGeneration: index + 1), app: plan.app, target: plan.target, segmentID: segment.id, route: .ui, dispatched: true, completed: true, observations: observations.filter { $0.id == segment.id },
+                verifiedOutputs: observations.first(where: { $0.id == segment.id }).flatMap { observation in
+                    if case .object(let outputs) = observation.value { return outputs }; return nil
+                })
         }
-        return .init(attemptID: attemptID, result: AutomationAssessment.assess(plan: plan, attemptID: attemptID, subjectDispatched: true, subjectCompleted: true, observations: observations), receipts: receipts, resourcesReleased: true)
+        var result = AutomationAssessment.assess(plan: plan, attemptID: attemptID,
+            subjectDispatched: true, subjectCompleted: true, observations: observations)
+        if outcome == .unreleased {
+            // Match the coordinator's completed-but-unreleased canonical report.
+            result.summary = .unresolved; result.assessed = false; result.evidenceComplete = false
+        }
+        return .init(attemptID: attemptID, result: result, receipts: receipts, resourcesReleased: outcome != .unreleased)
+    }
+}
+
+private actor ReproductionProgressFacts {
+    var updates: [AutomationReproductionProgress] = []
+    var savedWereVerifiedAndReleased = true
+    func record(_ update: AutomationReproductionProgress, saved: AutomationAttemptReport?) {
+        updates.append(update)
+        if update.event == .attemptSaved {
+            savedWereVerifiedAndReleased = savedWereVerifiedAndReleased && saved?.attemptID == update.attemptID &&
+                saved?.resourcesReleased == true && saved?.result.subjectDispatchUncertain == false
+        }
     }
 }

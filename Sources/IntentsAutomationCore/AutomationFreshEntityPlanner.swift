@@ -100,7 +100,7 @@ public enum AutomationFreshEntityPlanner {
             operationID: query.id, name: "queryIDs", uniqueEntity: selection)]
         let predicate = AutomationEntityPropertyPredicate(operationID: query.id, selection: selection, property: stateProperty)
         var budget = AutomationBudget(); budget.subjectOperations = 1; budget.attempts = 100
-        budget.uiActions = 30; budget.controllerCalls = 12; budget.wallClockSeconds = 600
+        budget.uiActions = 30; budget.controllerCalls = 0; budget.wallClockSeconds = 600
         var plan = AutomationCase(id: "fresh-record", app: catalog.app, target: approval.target, environmentID: approval.environmentID,
             execution: subject, setup: creationSteps + [lookup], observations: [observer],
             requirements: [.init(observationID: observer.id, expected: .bool(expectedState), proof: .appState,

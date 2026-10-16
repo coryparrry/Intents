@@ -8,10 +8,41 @@ final class AutomationUIFailureSearchArchiveTests: XCTestCase, @unchecked Sendab
         let app = AppIdentity(logicalID: "selected", bundleID: "example.UI", platform: "ios")
         let target = TargetIdentity(id: UUID().uuidString, kind: .simulator)
         let approval = RunApproval(runID: "archive-run", app: app, target: target, environmentID: "owned", effects: [.observe, .navigate], maximumActions: 30, disposable: true)
-        let plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, instruction: "Open tasks", endpoint: "Tasks", expectedVisibleText: "Complete", approval: approval, localeIdentifier: "en_GB")
+        let plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, program: .init(operations: [.init(id: "request", kind: .fillBinding, locator: .init(.testId, "request"), binding: "approvedText"), .init(id: "send", kind: .tap, locator: .init(.testId, "send"))], bindings: ["approvedText": "Show my completed tasks"]), expectedVisibleText: "Complete", approval: approval, localeIdentifier: "en_GB")
         let base = try AutomationFrozenCase(plan: plan)
-        let phrase = try AutomationGoalPhraseVariation.propose(baseline: base, instruction: "Show tasks", semanticJustification: "Same approved destination")
+        let phrase = try AutomationSubjectPhraseVariation.propose(baseline: base, slot: .uiRequestBinding("approvedText"), request: "List my completed tasks", semanticJustification: "Same reviewed request")
         return (root, base, approval, phrase)
+    }
+    func testDiversityMeasurementsRoundTripAndRejectTampering() async throws {
+        let (root, base, approval, phrase) = try fixture()
+        let report = try await AutomationFailureSearch(cases: .init(root: root)).run(baseline: base, mutations: [phrase],
+            approval: .init(run: approval, approvedDigests: [base.digest, phrase.frozen.digest]), capabilities: .init(), executor: ArchiveFactExecutor())
+        let archive = try AutomationUIFailureSearchArchive(caseStoreRoot: root)
+        try await archive.save(.init(id: "subject-phrase", runID: approval.runID, baseline: base, mutations: [phrase], report: report))
+        let loaded = try await archive.load(id: "subject-phrase")
+        XCTAssertEqual(loaded.mutations, [phrase]); XCTAssertEqual(loaded.report.discoveryDiversity?.count, 1)
+        for field in 0..<3 {
+            var tampered = report
+            switch field {
+            case 0: tampered.discoveryDiversity![0].newCategories = ["invented-behaviour"]
+            case 1: tampered.discoveryDiversity![0].priorityNumerator += 1
+            default: tampered.discoveryDiversity![0].categories = ["invented-behaviour"]
+            }
+            do {
+                try await archive.save(.init(id: "novelty-tamper-\(field)", runID: approval.runID, baseline: base, mutations: [phrase], report: tampered))
+                XCTFail("Invented diversity or priority accepted")
+            } catch {}
+        }
+    }
+    func testLegacyArchiveWithoutDiversityMeasurementsRemainsReadable() async throws {
+        let (root, base, approval, phrase) = try fixture()
+        var report = try await AutomationFailureSearch(cases: .init(root: root)).run(baseline: base, mutations: [phrase],
+            approval: .init(run: approval, approvedDigests: [base.digest, phrase.frozen.digest]), capabilities: .init(), executor: ArchiveFactExecutor())
+        report.discoveryDiversity = nil
+        let archive = try AutomationUIFailureSearchArchive(caseStoreRoot: root)
+        try await archive.save(.init(id: "legacy", runID: approval.runID, baseline: base, mutations: [phrase], report: report))
+        let loaded = try await archive.load(id: "legacy")
+        XCTAssertNil(loaded.report.discoveryDiversity); XCTAssertEqual(loaded.report.attempts, report.attempts)
     }
     func testSavedSearchRevalidatesCanonicalFactsAndRefusesOverwrite() async throws {
         let (root, base, approval, phrase) = try fixture(), cases = try AutomationCaseStore(root: root)
@@ -29,6 +60,34 @@ final class AutomationUIFailureSearchArchiveTests: XCTestCase, @unchecked Sendab
         do { try await archive.save(record); XCTFail("Overwrote immutable search") } catch {}
         do { _ = try await archive.load(id: "../search"); XCTFail("Traversed search path") } catch {}
     }
+    func testRetiredSearchDoesNotHideCurrentArchiveAndExactLoadStaysStrict() async throws {
+        let (root, base, approval, phrase) = try fixture(), cases = try AutomationCaseStore(root: root)
+        let report = try await AutomationFailureSearch(cases: cases).run(baseline: base, mutations: [phrase],
+            approval: .init(run: approval, approvedDigests: [base.digest, phrase.frozen.digest]), capabilities: .init(), executor: ArchiveFactExecutor())
+        let record = AutomationUIFailureSearchRecord(id: "current", runID: approval.runID, baseline: base, mutations: [phrase], report: report)
+        let archive = try AutomationUIFailureSearchArchive(caseStoreRoot: root)
+        try await archive.save(record)
+        let legacy = try retiredUIHistoryFixture(base, id: "retired")
+        for version in [1, 2, 3, 5] {
+            var object = try JSONSerialization.jsonObject(with: AutomationFrozenCase.canonicalData(record)) as! [String: Any]
+            let id = "retired-" + String(version)
+            object["schemaVersion"] = version; object["id"] = id
+            object["baseline"] = try JSONSerialization.jsonObject(with: legacy.data)
+            object["mutations"] = [[String: Any]]()
+            let bytes = try historyJSON(object), file = root.appendingPathComponent("Searches/" + id + ".json")
+            try writeRetiredHistory(bytes, to: file)
+            do { _ = try await archive.load(id: id); XCTFail("Retired archive became loadable") } catch {}
+            XCTAssertEqual(try Data(contentsOf: file), bytes)
+        }
+        let listing = try await archive.recordListing()
+        XCTAssertEqual(listing.items, [record]); XCTAssertEqual(listing.skippedRetiredRecords, 4)
+        let file = root.appendingPathComponent("Searches/retired.json")
+        var malformed = try JSONSerialization.jsonObject(with: AutomationFrozenCase.canonicalData(record)) as! [String: Any]
+        malformed["id"] = "retired"; malformed["report"] = "malformed navigateGoal"
+        try writeRetiredHistory(historyJSON(malformed), to: file)
+        do { _ = try await archive.recordListing(); XCTFail("Unrelated malformed archive was hidden") } catch {}
+    }
+
     func testExistingSearchPathMustBeAnUnaliasedDirectory() throws {
         for alias in [false, true] {
             let (root, _, _, _) = try fixture()
@@ -84,7 +143,8 @@ final class AutomationUIFailureSearchArchiveTests: XCTestCase, @unchecked Sendab
         plan.requirements.append(.init(observationID: plan.observations[0].id, expected: .text("Other"), proof: .visibleState,
             justification: "Separate source-contract assertion", checkID: "business.alternative"))
         let base = try AutomationFrozenCase(plan: plan)
-        let phrase = try AutomationGoalPhraseVariation.propose(baseline: base, instruction: "Show tasks", semanticJustification: "Same approved destination")
+        let phrase = try AutomationSubjectPhraseVariation.propose(baseline: base, slot: .uiRequestBinding("approvedText"),
+            request: "List my completed tasks", semanticJustification: "Same reviewed request")
         let report = try await AutomationFailureSearch(cases: .init(root: root)).run(baseline: base, mutations: [phrase],
             approval: .init(run: approval, approvedDigests: [base.digest, phrase.frozen.digest]), capabilities: .init(),
             executor: ArchiveFactExecutor(failing: true, switchFinalSignature: true))

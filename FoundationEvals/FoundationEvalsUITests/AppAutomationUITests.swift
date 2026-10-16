@@ -123,6 +123,13 @@ final class AppAutomationUITests: XCTestCase {
         selectAutomationMenu(destination, item: "macOS")
         selectAutomationMenu(route, item: "system")
         selectAutomationMenu(destination, item: "simulator")
+        let preparation = app.scrollViews.containing(.popUpButton, identifier: "automation.workflow.route").firstMatch
+        for _ in 0..<6 {
+            if preparation.frame.contains(route.frame) { break }
+            preparation.scroll(byDeltaX: 0, deltaY: -300)
+        }
+        XCTAssertTrue(preparation.frame.contains(route.frame), app.debugDescription)
+        XCTAssertTrue(route.isHittable)
         selectAutomationMenu(route, item: "ui")
         let simulator = app.popUpButtons["automation.preparation.simulator"]
         XCTAssertTrue(simulator.waitForExistence(timeout: 10))
@@ -138,6 +145,7 @@ final class AppAutomationUITests: XCTestCase {
         // A second lookup uses the UDID even when the displayed state changes between runs.
         selectAutomationMenu(simulator, item: simulatorID)
         XCTAssertFalse(app.buttons["Run action…"].exists)
+        XCTAssertFalse(app.buttons["Build private copy"].exists)
         XCTAssertFalse(app.buttons["Run approved workflow"].exists)
         captureEmptyFlow(app.windows.firstMatch, name: "Stable automation pickers")
     }
@@ -155,8 +163,7 @@ final class AppAutomationUITests: XCTestCase {
         app.launch(); defer { app.terminate() }; app.activate(); app.typeKey("3", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "physical")
-        let device = app.textFields["Exact physical device ID"]
-        XCTAssertTrue(device.waitForExistence(timeout: 5)); device.click(); device.typeText("00008140-0000000000000001")
+        XCTAssertTrue(app.popUpButtons["iPhone or iPad"].waitForExistence(timeout: 5))
         selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "siri")
         let request = app.textFields["Exact request to submit to Siri"]; XCTAssertTrue(request.waitForExistence(timeout: 5))
         request.click(); request.typeText("Open the approved test app")
@@ -304,18 +311,29 @@ final class AppAutomationUITests: XCTestCase {
         try Data([0xcf,0xfa,0xed,0xfe,0x0c,0,0,1,0,0,0,0]).write(to: bundle.appendingPathComponent("Selected"))
         let app = XCUIApplication()
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
-                                "--evaluation-window-width", "1300", "--evaluation-window-height", "1100"]
+                                "--evaluation-window-width", "1300", "--evaluation-window-height", "900"]
         app.launchArguments += ["--automation-select-path", bundle.path]
         app.launch(); defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         let goal = app.textFields["What should the app do?"]
         XCTAssertTrue(goal.waitForExistence(timeout: 10)); goal.click(); goal.typeText("Open tasks")
-        let endpoint = app.textFields["Visible label at the destination"]
+        let endpoint = app.textFields["Destination control"]
         endpoint.click(); endpoint.typeText("Tasks")
         XCTAssertFalse(app.buttons["Run workflow…"].isEnabled)
-        XCTAssertFalse(app.buttons["Find failures…"].isEnabled)
-        let property = app.popUpButtons["Property to check"]
+        XCTAssertFalse(app.buttons["Find failures…"].exists)
+        let propertyID = "automation.workflow.observationProperty"
+        let property = app.popUpButtons[propertyID]
+        XCTAssertTrue(property.waitForExistence(timeout: 10))
+        XCTAssertEqual(property.label, "Property to check")
+        let content = app.scrollViews.containing(.popUpButton, identifier: propertyID).firstMatch
+        XCTAssertTrue(content.exists)
+        for _ in 0..<6 {
+            if content.frame.contains(property.frame) { break }
+            content.scroll(byDeltaX: 0, deltaY: -300)
+        }
+        XCTAssertTrue(content.frame.contains(property.frame), "The property picker must be visible")
+        XCTAssertTrue(property.isHittable)
         selectAutomationMenu(property, item: "Control value")
         let label = app.textFields["Element label for the check"]
         XCTAssertTrue(label.waitForExistence(timeout: 5)); label.click(); label.typeText("Volume")

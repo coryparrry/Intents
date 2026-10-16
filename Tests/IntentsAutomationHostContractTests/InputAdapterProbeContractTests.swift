@@ -37,6 +37,8 @@ final class InputAdapterProbeContractTests: XCTestCase, @unchecked Sendable {
         for family in families {
             let plan = try plan(family: family), host = try HostInputAdapterProbePlan.decode(plan.payload(scope: scope))
             XCTAssertEqual(host.purpose, "inputAdapterRoundTrip"); XCTAssertEqual(host.parameters[0].family, family)
+            XCTAssertEqual(host.targetID, plan.prepared.host.target.id)
+            XCTAssertEqual(host.loginSession, plan.prepared.host.target.loginSession)
             XCTAssertEqual(host.parameters[0].samples, try HostInputAdapterProbePlan.samples(family: family))
             let observation = try AutomationInputAdapterProbeObservation.read(data(receipt(plan)), plan: plan, scope: scope)
             XCTAssertEqual(observation.echoedSamples["sample"], plan.parameters[0].samples); XCTAssertNil(observation.runtimeObservation)
@@ -44,6 +46,41 @@ final class InputAdapterProbeContractTests: XCTestCase, @unchecked Sendable {
             if family.hasSuffix("Array") { XCTAssertEqual(plan.parameters[0].samples.count, 2) }
         }
     }
+    func testProbeReviewDigestIsBoundToSelectedNativeLoginSession() throws {
+        let original = prepared()
+        var other = original; other.host.target.loginSession = "other-session"
+        let first = try AutomationInputAdapterProbePlan(prepared: original, actionID: "Subject.Probe", parameterNames: ["sample"])
+        let second = try AutomationInputAdapterProbePlan(prepared: other, actionID: "Subject.Probe", parameterNames: ["sample"])
+        XCTAssertNotEqual(try first.digest, try second.digest)
+        var fields = try receipt(first); fields["loginSession"] = "other-session"
+        XCTAssertThrowsError(try AutomationInputAdapterProbeObservation.read(data(fields), plan: first, scope: scope))
+    }
+
+    func testEntityCanaryIsBoundToOneCatalogTypeAndFixedReadback() throws {
+        var prepared = prepared(family: "entity")
+        prepared.catalog.systemActions[0].parameters[0].typeID = "TaskEntity"
+        prepared.catalog.entities = [.init(typeID: "TaskEntity", title: "Task", queryIdentifier: "TaskQuery", properties: [:], propertyTitles: [:])]
+        let probe = try AutomationInputAdapterProbePlan(prepared: prepared, actionID: "Subject.Probe", parameterNames: ["sample"])
+        let host = try HostInputAdapterProbePlan.decode(probe.payload(scope: scope))
+        XCTAssertEqual(host.parameters[0].entityType, "TaskEntity")
+        XCTAssertEqual(host.parameters[0].samples, try HostInputAdapterProbePlan.samples(family: "entity", entityType: "TaskEntity"))
+        let observation = try AutomationInputAdapterProbeObservation.read(data(receipt(probe)), plan: probe, scope: scope)
+        XCTAssertEqual(observation.echoedSamples["sample"], [.entity(typeID: "TaskEntity", value: "intents-adapter-probe")])
+        for change in ["type", "id", "missingType", "properties"] {
+            var fields = try receipt(probe), parameters = fields["parameters"] as! [[String: Any]]
+            var samples = parameters[0]["samples"] as! [[String: Any]]
+            if change == "type" { samples[0]["typeId"] = "ForeignEntity" }
+            if change == "id" { samples[0]["value"] = "other-record" }
+            if change == "missingType" { parameters[0].removeValue(forKey: "entityType") }
+            if change == "properties" { samples[0]["properties"] = ["completed": ["kind": "bool", "boolValue": true]] }
+            parameters[0]["samples"] = samples; fields["parameters"] = parameters
+            XCTAssertThrowsError(try HostInputAdapterProbePlan.decode(data(fields.filter { $0.key != "runner" && $0.key != "complete" })))
+            XCTAssertThrowsError(try AutomationInputAdapterProbeObservation.read(data(fields), plan: probe, scope: scope))
+        }
+        prepared.catalog.entities = []
+        XCTAssertThrowsError(try AutomationInputAdapterProbePlan(prepared: prepared, actionID: "Subject.Probe", parameterNames: ["sample"]))
+    }
+
     func testCanaryCannotBeImportedAsBusinessReceiptOrBecomeAnOrdinaryOperation() throws {
         let probe = try plan()
         let business = AutomationHostProgram(operations: [.init(id: "sample", kind: .invoke, typeID: "Subject.Probe", parameters: ["sample": .text("Intents adapter probe")], resultCodec: "noValue")])

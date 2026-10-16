@@ -11,6 +11,18 @@ public struct AutomationCampaignLimits: Codable, Equatable, Sendable {
     public var wallClockSeconds = 3600
     public init() {}
     public static var firstCampaign: Self { var limits = Self(); limits.attempts = 20; limits.subjectOperations = 20; return limits }
+    public static var firstUIFailureSearch: Self {
+        var limits = Self.firstCampaign
+        // Ordered UI requests reserve 24 navigation readbacks, one fresh input
+        // verification before submission and at most 30 actual UI actions.
+        limits.subjectOperations = 20 * 55
+        return limits
+    }
+    public static var uiFailureSearch: Self {
+        var limits = Self()
+        limits.subjectOperations = 100 * 55
+        return limits
+    }
     func validate() throws {
         let values = [attempts, subjectOperations, setupOperations, observerOperations, cleanupOperations, uiActions, controllerCalls, wallClockSeconds]
         guard values.allSatisfy({ $0 >= 0 && $0 <= 100_000 }), attempts > 0, subjectOperations > 0,
@@ -69,10 +81,6 @@ public actor AutomationCampaignBudget {
         case .cleanup: usage.reservedCleanupOperations += count
         }
         usage.reservedUIActions += uiActions
-    }
-    public func reserveControllerCall(id: String) throws {
-        try available(); guard usage.controllerCalls < limits.controllerCalls else { throw AutomationCampaignBudgetError.exhausted("controller calls") }
-        try unique("controller:" + id); usage.controllerCalls += 1
     }
     /// Owned resource release remains permitted after a campaign cap/deadline so expiry cannot strand a booted simulator.
     public func reserveResourceRelease(id: String) throws {

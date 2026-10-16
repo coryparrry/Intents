@@ -84,12 +84,10 @@ def validate_pull_request(title, body):
         raise ValueError("The pull request title must be nonempty text")
     pull_request_type, pull_request_breaking = subject_details(title)
     entries = extract_override(body)
-    if pull_request_type in REQUIRED_PR_TYPES and entries is None:
-        raise ValueError(
-            f"{pull_request_type}: pull requests require an active release note override"
-        )
     if entries is None:
-        return []
+        raise ValueError(
+            "Pull requests require an active release note override"
+        )
     if pull_request_type in REQUIRED_PR_TYPES and not any(
         entry_type == pull_request_type for entry_type, _, _ in entries
     ):
@@ -115,6 +113,22 @@ def validate_pull_request(title, body):
     return [entry for _, _, entry in entries]
 
 
+def is_generated_release(pull_request):
+    """Recognize the repository's Release Please PR using trusted event fields."""
+    base = pull_request.get("base") or {}
+    head = pull_request.get("head") or {}
+    repository = (base.get("repo") or {}).get("full_name")
+    return bool(
+        (pull_request.get("user") or {}).get("login") == "github-actions[bot]"
+        and base.get("ref") == "main"
+        and head.get("ref") == "release-please--branches--main"
+        and repository
+        and (head.get("repo") or {}).get("full_name") == repository
+        and any(label.get("name") == "autorelease: pending" for label in pull_request.get("labels", []))
+        and re.fullmatch(r"chore\(main\): release [0-9]+\.[0-9]+\.[0-9]+", pull_request.get("title", ""))
+    )
+
+
 def validate_event(path):
     try:
         event = json.loads(path.read_text())
@@ -125,6 +139,9 @@ def validate_event(path):
         raise ValueError(
             "GITHUB_EVENT_PATH must contain a pull_request payload"
         ) from error
+    if is_generated_release(pull_request):
+        print("Validated generated Release Please PR; its changelog is generated from merged release notes.")
+        return
     entries = validate_pull_request(title, body)
     print(
         f"Validated {len(entries)} curated release note entr{'y' if len(entries) == 1 else 'ies'}."

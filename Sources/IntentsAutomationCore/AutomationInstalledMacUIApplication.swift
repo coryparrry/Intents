@@ -45,15 +45,13 @@ public struct AutomationInstalledMacUIApplication: Sendable {
 
 enum AutomationMacUIProgramPreflight {
     static func validate(_ segment: AutomationSegment) throws {
-        guard segment.kind == .ui, segment.hostProgram == nil, let program = segment.uiProgram,
+        guard segment.usesUIControl, segment.hostProgram == nil, let program = segment.uiProgram,
               segment.lifecycle == .persistedStateAcrossSegments else {
             throw AutomationContractError.invalidPlan("Mac UI requires a frozen persisted-state program")
         }
         try program.validate(phase: segment.phase)
         guard program.operations.allSatisfy({ operation in
-            operation.kind != .fillBinding && operation.kind != .scroll &&
-                operation.goal?.allowedFillBindings?.isEmpty != false &&
-                operation.goal?.minimumBindingUses?.values.contains(where: { $0 > 0 }) != true
+            operation.kind != .fillBinding && operation.kind != .scroll
         }) else { throw AutomationContractError.missingEvidence("Installed Mac review supports tap only") }
     }
 }

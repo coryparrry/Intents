@@ -6,10 +6,25 @@ public struct AutomationEntitySelection: Codable, Equatable, Sendable {
     public var typeID: String
     public var matchingProperties: [String: AutomationValue]
     public var attemptProperties: [String: String]?
-    public init(typeID: String, matchingProperties: [String: AutomationValue], attemptProperties: [String: String]? = nil) {
+    public var expectedIdentifier: String?
+    public var expiresAt: Date?
+    public init(typeID: String, matchingProperties: [String: AutomationValue], attemptProperties: [String: String]? = nil, expectedIdentifier: String? = nil, expiresAt: Date? = nil) {
         self.typeID = typeID; self.matchingProperties = matchingProperties; self.attemptProperties = attemptProperties
+        self.expectedIdentifier = expectedIdentifier; self.expiresAt = expiresAt
     }
     func validate(query: AutomationHostProgram.Operation) throws {
+        if let identifier = expectedIdentifier {
+            guard query.kind == .query, query.typeID == typeID, AutomationHostProgram.identifier(typeID),
+                  query.queryIDs == [identifier], query.queryText == nil, query.querySuggested == nil,
+                  query.attemptQueryPrefix == nil, (query.properties ?? [:]).isEmpty,
+                  matchingProperties.isEmpty, (attemptProperties ?? [:]).isEmpty,
+                  let expiresAt, expiresAt > Date() else {
+                throw AutomationContractError.invalidPlan("Identity selection requires its fresh exact identifier lookup")
+            }
+            try AutomationValue.entity(typeID: typeID, value: identifier).validate()
+            return
+        }
+        guard expiresAt == nil else { throw AutomationContractError.invalidPlan("Expiration requires an identity selection") }
         guard query.kind == .query, query.typeID == typeID, AutomationHostProgram.identifier(typeID),
               (1...10).contains(matchingProperties.count + (attemptProperties?.count ?? 0)),
               Set(matchingProperties.keys).isDisjoint(with: Set((attemptProperties ?? [:]).keys)) else {
@@ -30,6 +45,11 @@ public struct AutomationEntitySelection: Codable, Equatable, Sendable {
         try validate(query: query)
         try Self.validateQueryOutput(output, query: query)
         guard case .array(let records) = output else { throw AutomationInputBindingError.inputUnavailable }
+        if let identifier = expectedIdentifier {
+            guard records.count == 1, case .object(let fields) = records[0],
+                  fields["entity"] == .entity(typeID: typeID, value: identifier) else { throw AutomationInputBindingError.inputUnavailable }
+            return .entity(typeID: typeID, value: identifier)
+        }
         var expected = matchingProperties
         for (name, prefix) in attemptProperties ?? [:] {
             guard let attemptID else { throw AutomationInputBindingError.inputUnavailable }

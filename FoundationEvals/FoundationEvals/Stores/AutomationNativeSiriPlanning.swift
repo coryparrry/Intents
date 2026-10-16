@@ -19,10 +19,6 @@ extension AppAutomationStore {
             siriOracle.initialState != siriOracle.expectedState
     }
     func runNativePreparedRequest(_ request: AutomationNativeRunRequest, runner: AutomationApplicationRunner, attemptID: String) async throws -> AutomationAttemptReport {
-        if request.siriQualification, case .prepared(let prepared) = request.subject {
-            return try await runner.qualifySiriWorkflow(prepared: prepared, plan: request.plan, approval: request.approval,
-                capabilities: request.capabilities, attemptID: attemptID, allowInstall: request.installApproved)
-        }
         return try await runner.run(subject: request.subject, plan: request.plan, approval: request.approval,
             capabilities: request.capabilities, attemptID: attemptID, allowBootAndInstall: request.installApproved)
     }
@@ -69,7 +65,7 @@ extension AppAutomationStore {
             "install": String(installApproved), "disposable": String(disposable)]
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return .init(subject: .prepared(prepared), plan: plan, approval: approval, capabilities: siriCapabilities,
-            installApproved: installApproved, digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: digest, siriQualification: siriOracle.enabled)
+            installApproved: installApproved, digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: digest)
     }
 }
 #endif
