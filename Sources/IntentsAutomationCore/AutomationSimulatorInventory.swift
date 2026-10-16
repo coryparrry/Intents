@@ -9,11 +9,19 @@ public struct AutomationSimulator: Codable, Equatable, Sendable, Identifiable {
 }
 public enum AutomationSimulatorInventory {
     public static func read(developerDirectory: URL, workspace: URL) async throws -> [AutomationSimulator] {
-        // Fresh hosted simulators can stall this read-only inspection while services settle.
-        let result = try await AutomationOwnedCommand().run(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
-            arguments: ["simctl", "list", "devices", "available", "--json"], directory: workspace,
-            environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DEVELOPER_DIR": try AutomationPath.canonical(developerDirectory).path,
-                          "HOME": FileManager.default.homeDirectoryForCurrentUser.path, "TMPDIR": NSTemporaryDirectory()], timeout: .seconds(60))
+        try await read(developerDirectory: developerDirectory, workspace: workspace, maximumDuration: .seconds(60))
+    }
+    static func read(developerDirectory: URL, workspace: URL, maximumDuration: Duration, absoluteDeadline: ContinuousClock.Instant? = nil,
+                     command: @Sendable (URL, [String], URL, [String: String], Duration, ContinuousClock.Instant?) async throws -> AutomationOwnedCommand.Result = {
+                         try await AutomationOwnedCommand().run(executable: $0, arguments: $1, directory: $2, environment: $3, timeout: $4, absoluteDeadline: $5)
+                     }) async throws -> [AutomationSimulator] {
+        try Task.checkCancellation()
+        guard maximumDuration > .zero else { throw AutomationRPCError.timedOut }
+        let result = try await command(URL(fileURLWithPath: "/usr/bin/xcrun"),
+            ["simctl", "list", "devices", "available", "--json"], workspace,
+            ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DEVELOPER_DIR": try AutomationPath.canonical(developerDirectory).path,
+             "HOME": FileManager.default.homeDirectoryForCurrentUser.path, "TMPDIR": NSTemporaryDirectory()], maximumDuration, absoluteDeadline)
+        try Task.checkCancellation()
         guard result.exitStatus == 0, !result.logsTruncated,
               let root = try JSONSerialization.jsonObject(with: result.stdout) as? [String: Any],
               let devices = root["devices"] as? [String: [[String: Any]]] else { throw AutomationContractError.missingEvidence("Simulator inventory is unavailable") }

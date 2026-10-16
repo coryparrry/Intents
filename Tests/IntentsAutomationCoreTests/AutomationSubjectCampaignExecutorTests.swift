@@ -77,7 +77,7 @@ final class AutomationSubjectCampaignExecutorTests: XCTestCase, @unchecked Senda
     func testGenericMacAdapterPreservesDefaultRunnerQualificationFence() async throws {
         let root = try root(), selected = try selected(root), plan = plan(selected)
         let runner = try AutomationApplicationRunner(supportRoot: root.appendingPathComponent("Support"), developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"),
-            simulatorInventory: { _, _ in XCTFail("Mac campaign reached simulator infrastructure"); throw AutomationContractError.invalidIdentity })
+            simulatorInventory: { _, _, _, _ in XCTFail("Mac campaign reached simulator infrastructure"); throw AutomationContractError.invalidIdentity })
         let executor = AutomationSubjectCampaignExecutor(runner: runner, subject: .installedMacUI(selected), capabilities: .init())
         let frozen = try await AutomationCaseStore(root: root.appendingPathComponent("Cases")).freeze(plan)
         do { _ = try await executor.execute(frozen: frozen, approval: approval(plan), attemptID: "attempt", budget: AutomationCampaignBudget(limits: .firstCampaign)); XCTFail("Unqualified Mac route admitted") }

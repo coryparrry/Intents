@@ -60,24 +60,28 @@ public actor AutomationApplicationRunner {
     private var running = false
     private var servingJavaScript = false
     private var failedPreparation: (attemptID: String, planDigest: String, runID: String, report: AutomationAttemptReport)?
-    private let simulatorInventory: @Sendable (URL, URL) async throws -> [AutomationSimulator]
+    private let simulatorInventory: @Sendable (URL, URL, Duration, ContinuousClock.Instant) async throws -> [AutomationSimulator]
+    private let now: @Sendable () -> ContinuousClock.Instant
     private let physicalAliasReader: (@Sendable (URL, URL) async throws -> [String: String])?
     public init(supportRoot: URL, developerDirectory: URL) throws {
         self.supportRoot = supportRoot; self.developerDirectory = try AutomationPath.canonical(developerDirectory)
         try FileManager.default.createDirectory(at: supportRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         leases = try AutomationDeviceLeaseManager(storeURL: supportRoot.appendingPathComponent("target-leases.json"))
-        simulatorInventory = { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1) }
+        simulatorInventory = { try await AutomationSimulatorInventory.read(developerDirectory: $0, workspace: $1, maximumDuration: $2, absoluteDeadline: $3) }
+        now = { .now }
         physicalAliasReader = nil
     }
     init(supportRoot: URL, developerDirectory: URL,
-         simulatorInventory: @escaping @Sendable (URL, URL) async throws -> [AutomationSimulator],
-         physicalAliasReader: (@Sendable (URL, URL) async throws -> [String: String])? = nil) throws {
+         simulatorInventory: @escaping @Sendable (URL, URL, Duration, ContinuousClock.Instant) async throws -> [AutomationSimulator],
+         physicalAliasReader: (@Sendable (URL, URL) async throws -> [String: String])? = nil,
+         now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }) throws {
         let developer = try AutomationPath.canonical(developerDirectory)
         self.supportRoot = supportRoot; self.developerDirectory = developer
         try FileManager.default.createDirectory(at: supportRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let manager = try AutomationDeviceLeaseManager(storeURL: supportRoot.appendingPathComponent("target-leases.json"))
         leases = manager
         self.simulatorInventory = simulatorInventory
+        self.now = now
         self.physicalAliasReader = physicalAliasReader
 
     }
@@ -174,6 +178,15 @@ public actor AutomationApplicationRunner {
             capabilities = try AutomationPreparedCapabilities.resolving(capabilities, prepared: prepared)
         }
         try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
+        // Preflight and execution share the approved case clock; preparation cannot reset it.
+        let planDeadline = now().advanced(by: .seconds(plan.budget.wallClockSeconds))
+        let caseDeadline = min(planDeadline, campaignBudget?.deadline ?? planDeadline)
+        func remainingCaseDuration() throws -> Duration {
+            try Task.checkCancellation()
+            let remaining = now().duration(to: caseDeadline)
+            guard remaining > .zero else { throw AutomationRPCError.timedOut }
+            return remaining
+        }
         let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
         guard segments.allSatisfy({ [.ui, .observeOnly, .systemIntent, .systemQuery, .storageRead].contains($0.kind) }) else {
             throw AutomationContractError.missingEvidence("Prepared host does not support this route")
@@ -201,28 +214,33 @@ public actor AutomationApplicationRunner {
         try await leases.reserveCampaign(runID: approval.runID, target: approval.target)
         reservedCampaign = true
         if plan.target.kind == .simulator {
-        let inventory = try await simulatorInventory(developerDirectory, root)
+        let inventory = try await simulatorInventory(developerDirectory, root, remainingCaseDuration(), caseDeadline)
+        _ = try remainingCaseDuration()
         guard let simulator = inventory.first(where: { $0.id == plan.target.id }) else { throw AutomationContractError.missingEvidence("Selected iOS 27 simulator is unavailable") }
         if allowBootAndInstall {
             if simulator.state != "Booted" {
                 guard simulator.state == "Shutdown" else { throw AutomationContractError.targetBusy }
-                try await mutate(arguments: ["simctl", "boot", plan.target.id], operation: "boot", approval: approval, attemptID: attemptID, root: root, journal: journal, release: release, campaignBudget: campaignBudget)
+                try await mutate(arguments: ["simctl", "boot", plan.target.id], operation: "boot", approval: approval, attemptID: attemptID, root: root, journal: journal, release: release,
+                    maximumDuration: min(.seconds(60), remainingCaseDuration()), absoluteDeadline: caseDeadline, campaignBudget: campaignBudget)
                 ownsBoot = true
             }
             // `simctl boot` returns before installation services are ready.
             // Monitor this already-started device; do not implicitly boot another one.
             try await mutate(arguments: ["simctl", "bootstatus", plan.target.id], operation: "bootReady", approval: approval,
                 attemptID: attemptID, root: root, journal: journal, release: release,
-                maximumDuration: .seconds(120), campaignBudget: campaignBudget)
+                maximumDuration: min(.seconds(120), remainingCaseDuration()), absoluteDeadline: caseDeadline, campaignBudget: campaignBudget)
+            _ = try remainingCaseDuration()
             try await release.prepare(target: plan.target, controllerBundleIDs: [prepared.host.hostBundleID])
             // Never install bytes that differ from the frozen prepared subject.
             guard let productPath = subject.productPath,
                   try AutomationProductDigest.compute(bundle: URL(fileURLWithPath: productPath), version: plan.app.productDigestVersion) == plan.app.productDigest else { throw AutomationContractError.conflictingOperation }
-            try await mutate(arguments: ["simctl", "install", plan.target.id, productPath], operation: "install", approval: approval, attemptID: attemptID, root: root, journal: journal, release: release, maximumDuration: .seconds(120), campaignBudget: campaignBudget)
+            try await mutate(arguments: ["simctl", "install", plan.target.id, productPath], operation: "install", approval: approval, attemptID: attemptID, root: root, journal: journal, release: release,
+                maximumDuration: min(.seconds(120), remainingCaseDuration()), absoluteDeadline: caseDeadline, campaignBudget: campaignBudget)
         } else {
             guard simulator.state == "Booted" else { throw AutomationContractError.missingEvidence("Starting the selected simulator requires approval") }
         }
         }
+        _ = try remainingCaseDuration()
         executionStarted = true
         var report: AutomationAttemptReport
         if needsUI || plan.target.kind != .simulator {
@@ -230,14 +248,15 @@ public actor AutomationApplicationRunner {
                 approval: approval, capabilities: capabilities, attemptID: attemptID, root: root,
                 developerDirectory: developerDirectory, leases: leases, journal: journal,
                 artifacts: artifacts, releaseVerifier: plan.target.kind == .simulator ? release : nil,
-                campaignBudget: campaignBudget, releaseCampaignOnCompletion: !ownsBoot, excludedEntityIDs: excludedEntityIDs)
+                campaignBudget: campaignBudget, caseDeadline: caseDeadline,
+                releaseCampaignOnCompletion: !ownsBoot, excludedEntityIDs: excludedEntityIDs)
         } else {
             let apple = try AutomationAppleRouteDriver(prepared: prepared.host, approval: approval,
                 developerDirectory: developerDirectory, stateDirectory: root.appendingPathComponent("apple"),
                 leases: leases, artifacts: artifacts, subjectVerifier: verifier, releaseVerifier: release,
                 campaignBudget: campaignBudget, capabilities: capabilities)
             report = try await AutomationCoordinator(leases: leases, journal: journal, cleanupTimeout: .seconds(90),
-                releaseCampaignOnCompletion: !ownsBoot).run(plan: plan, approval: approval,
+                campaignDeadline: caseDeadline, releaseCampaignOnCompletion: !ownsBoot).run(plan: plan, approval: approval,
                 capabilities: capabilities, attemptID: attemptID, driver: apple, excludedEntityIDs: excludedEntityIDs)
         }
         if ownsBoot && report.resourcesReleased {
@@ -272,7 +291,7 @@ public actor AutomationApplicationRunner {
                 // repeat a mutation, or erase an unresolved preparation lease.
                 let absent = (try? await leases.campaignAbsent(target: approval.target)) == true
                 let released = bootReleased && absent && !uncertain
-                let termination: AttemptResult.Summary = !released ? .unresolved : error is CancellationError ? .cancelled : .infrastructureFailed
+                let termination: AttemptResult.Summary = !released ? .unresolved : error is CancellationError ? .cancelled : error as? AutomationRPCError == .timedOut ? .timedOut : .infrastructureFailed
                 let failure = AutomationAttemptReport(attemptID: attemptID,
                     result: AutomationAssessment.assess(plan: plan, attemptID: attemptID, subjectDispatched: false,
                         subjectCompleted: false, observations: [], termination: termination), receipts: [], resourcesReleased: released)
@@ -329,7 +348,8 @@ public actor AutomationApplicationRunner {
 
     private func mutate(arguments: [String], operation: String, approval: RunApproval, attemptID: String, root: URL,
                         journal: AutomationJournal, release: AutomationSimulatorReleaseVerifier, targetWillBeShutdown: Bool = false,
-                        maximumDuration: Duration = .seconds(60), campaignBudget: AutomationCampaignBudget? = nil) async throws {
+                        maximumDuration: Duration = .seconds(60), absoluteDeadline: ContinuousClock.Instant? = nil,
+                        campaignBudget: AutomationCampaignBudget? = nil) async throws {
         let lease = try await leases.acquire(runID: approval.runID, target: approval.target, control: .system)
         let scope = AutomationScope(runID: approval.runID, attemptID: attemptID, segmentID: "prepare." + operation, leaseGeneration: lease.generation)
         let digest = AutomationArtifactRegistry.digest(try JSONEncoder().encode(arguments)), key = attemptID + ".prepare." + operation
@@ -344,6 +364,7 @@ public actor AutomationApplicationRunner {
             let result = try await command.run(executable: URL(fileURLWithPath: "/usr/bin/xcrun"), arguments: arguments, directory: root,
                 environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "DEVELOPER_DIR": developerDirectory.path,
                               "HOME": FileManager.default.homeDirectoryForCurrentUser.path, "TMPDIR": NSTemporaryDirectory()], timeout: timeout,
+                absoluteDeadline: targetWillBeShutdown ? nil : absoluteDeadline,
                 willStart: { [leases] in
                     await invocation.enter()
                     try await leases.validate(lease)

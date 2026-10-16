@@ -51,6 +51,34 @@ final class AutomationProcessTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(String(decoding: retained.stdout, as: UTF8.self).contains("failure context"))
         XCTAssertTrue(String(decoding: retained.stderr, as: UTF8.self).contains("diagnostic"))
     }
+    func testAbsoluteDeadlineIncludesPreparationAndDoesNotRenewRelativeAllowance() async throws {
+        let command = AutomationOwnedCommand(), recorder = ProcessRecorder()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        // Stand in for asynchronous payload preparation/journaling before reaching
+        // the command actor. The callback fits the relative limit but not the case.
+        try await Task.sleep(for: .milliseconds(100))
+        do {
+            _ = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/usr/bin/true")),
+                arguments: [], directory: URL(fileURLWithPath: "/private/tmp"), environment: [:],
+                timeout: .seconds(30), absoluteDeadline: deadline,
+                willStart: { try await Task.sleep(for: .seconds(2)) }, didStart: { await recorder.record($0) })
+            XCTFail("Preparation renewed the case deadline")
+        } catch { XCTAssertEqual(error as? AutomationRPCError, .timedOut) }
+        let recorded = await recorder.wasRecorded; XCTAssertFalse(recorded)
+        let retained = await command.retainedLogs(); XCTAssertNil(retained.ownedIdentity)
+        let stopped = await command.stopOwned(); XCTAssertTrue(stopped)
+    }
+    func testRelativeCommandLimitStillWinsWhenAbsoluteDeadlineIsLater() async throws {
+        let command = AutomationOwnedCommand(), recorder = ProcessRecorder()
+        do {
+            _ = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/usr/bin/true")),
+                arguments: [], directory: URL(fileURLWithPath: "/private/tmp"), environment: [:],
+                timeout: .milliseconds(100), absoluteDeadline: ContinuousClock.now.advanced(by: .seconds(30)),
+                willStart: { try await Task.sleep(for: .seconds(2)) }, didStart: { await recorder.record($0) })
+            XCTFail("Absolute deadline enlarged the command limit")
+        } catch { XCTAssertEqual(error as? AutomationRPCError, .timedOut) }
+        let recorded = await recorder.wasRecorded; XCTAssertFalse(recorded)
+    }
     func testOwnedCommandDrainsLargeOutputAndBoundsRetainedLogs() async throws {
         let directory = URL(fileURLWithPath: "/private/tmp")
         let result = try await AutomationOwnedCommand().run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/usr/bin/python3")),

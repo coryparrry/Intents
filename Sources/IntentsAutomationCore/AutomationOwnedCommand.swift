@@ -42,6 +42,12 @@ public actor AutomationOwnedCommand {
     public func run(executable: URL, arguments: [String], directory: URL, environment: [String: String],
                     timeout: Duration,
                     willStart: @escaping @Sendable () async throws -> Void = {}, didStart: @escaping @Sendable (AutomationProcessIdentity) async throws -> Void = { _ in }) async throws -> Result {
+        try await run(executable: executable, arguments: arguments, directory: directory, environment: environment,
+            timeout: timeout, absoluteDeadline: nil, willStart: willStart, didStart: didStart)
+    }
+    func run(executable: URL, arguments: [String], directory: URL, environment: [String: String],
+             timeout: Duration, absoluteDeadline: ContinuousClock.Instant?,
+             willStart: @escaping @Sendable () async throws -> Void = {}, didStart: @escaping @Sendable (AutomationProcessIdentity) async throws -> Void = { _ in }) async throws -> Result {
         try Task.checkCancellation()
         guard process == nil, !runInProgress, stopOperations == 0, callback == nil,
               executable.isFileURL, executable.path == (try AutomationPath.canonical(executable)).path,
@@ -49,7 +55,8 @@ public actor AutomationOwnedCommand {
               environment.count <= 32, environment.allSatisfy({ !$0.key.contains("=") && !$0.key.contains("\0") && !$0.value.contains("\0") && $0.value.utf8.count <= 65_536 }) else {
             throw AutomationContractError.invalidIdentity
         }
-        let deadline = ContinuousClock.now.advanced(by: timeout)
+        let relativeDeadline = ContinuousClock.now.advanced(by: timeout)
+        let deadline = min(relativeDeadline, absoluteDeadline ?? relativeDeadline)
         guard deadline > ContinuousClock.now else { throw AutomationRPCError.timedOut }
         output = Data(); diagnostics = Data(); truncated = false; lastCapturedIdentity = nil
         let child = Process(), stdout = Pipe(), stderr = Pipe()
@@ -68,6 +75,7 @@ public actor AutomationOwnedCommand {
             callback = nil
             try Task.checkCancellation()
             guard !launchRevoked else { throw CancellationError() }
+            guard ContinuousClock.now < deadline else { throw AutomationRPCError.timedOut }
             try child.run()
             launched = true
         } catch {

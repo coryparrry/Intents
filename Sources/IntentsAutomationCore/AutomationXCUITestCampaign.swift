@@ -11,13 +11,17 @@ enum AutomationXCUITestCampaign {
                     journal: AutomationJournal, artifacts: AutomationArtifactRegistry,
                     releaseVerifier: AutomationSimulatorReleaseVerifier?,
                     campaignBudget: AutomationCampaignBudget?,
+                    caseDeadline: ContinuousClock.Instant? = nil,
                     releaseCampaignOnCompletion: Bool = true, excludedEntityIDs: Set<String> = []) async throws -> AutomationAttemptReport {
         let planDeadline = ContinuousClock.now.advanced(by: .seconds(plan.budget.wallClockSeconds))
-        let deadline = min(planDeadline, campaignBudget?.deadline ?? planDeadline)
+        let deadline = min(planDeadline, caseDeadline ?? planDeadline, campaignBudget?.deadline ?? planDeadline)
         try PlanValidator.validate(plan, approval: approval, capabilities: capabilities)
         let preflight = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval,
             attemptID: attemptID, leaseGeneration: 1)
-        do { try await reserveBudget(preflight, plan: plan, attemptID: attemptID, budget: campaignBudget) }
+        do {
+            guard ContinuousClock.now < deadline else { throw AutomationRPCError.timedOut }
+            try await reserveBudget(preflight, plan: plan, attemptID: attemptID, budget: campaignBudget)
+        }
         catch {
             let released: Bool
             if releaseCampaignOnCompletion {
@@ -25,7 +29,7 @@ enum AutomationXCUITestCampaign {
             } else { released = true }
             return .init(attemptID: attemptID, result: AutomationAssessment.assess(plan: plan,
                 attemptID: attemptID, subjectDispatched: false, subjectCompleted: false, observations: [],
-                termination: error as? AutomationCampaignBudgetError == .exhausted("wall clock") ? .timedOut : .infrastructureFailed),
+                termination: error as? AutomationCampaignBudgetError == .exhausted("wall clock") || error as? AutomationRPCError == .timedOut ? .timedOut : .infrastructureFailed),
                 receipts: [], resourcesReleased: released)
         }
         let lease = try await leases.acquire(runID: approval.runID, target: plan.target, control: .ui)
@@ -39,6 +43,7 @@ enum AutomationXCUITestCampaign {
             willStart: {
                 try await leases.validate(lease)
                 try await campaignBudget?.available()
+                guard ContinuousClock.now < deadline else { throw AutomationRPCError.timedOut }
             }, didStart: { identity in
                 var buffer = [CChar](repeating: 0, count: 4096)
                 guard proc_pidpath(identity.pid, &buffer, UInt32(buffer.count)) > 0 else {
@@ -55,22 +60,24 @@ enum AutomationXCUITestCampaign {
         var termination: AttemptResult.Summary?
         var began = false, uncertainDispatch = false
         do {
+            guard ContinuousClock.now < deadline else { throw AutomationRPCError.timedOut }
             guard try await journal.begin(operationID: operationID, digest: digest) == nil else {
                 throw AutomationContractError.ambiguousDispatch
             }
             try await leases.recordDispatch(.init(scope: scope, operationID: operationID,
                                                   payloadDigest: digest), lease: lease)
             began = true
-            let remaining = try await campaignBudget?.remainingDuration()
+            let remaining = ContinuousClock.now.duration(to: deadline)
+            guard remaining > .zero else { throw AutomationRPCError.timedOut }
             receipts = try await driver.execute(plan: plan, approval: approval,
                 attemptID: attemptID, leaseGeneration: lease.generation,
-                timeout: remaining, excludedEntityIDs: excludedEntityIDs)
+                timeout: remaining, absoluteDeadline: deadline, excludedEntityIDs: excludedEntityIDs)
         } catch let failure as AutomationXCUITestFailure {
             receipts = failure.receipts
             termination = failure.reason
             uncertainDispatch = failure.subjectDispatchUncertain
         } catch {
-            termination = error is CancellationError ? .cancelled : .infrastructureFailed
+            termination = error is CancellationError ? .cancelled : error as? AutomationRPCError == .timedOut ? .timedOut : .infrastructureFailed
         }
         let subject = receipts.first { $0.segmentID == plan.execution.id && $0.route == plan.execution.kind }
         try await campaignBudget?.reserveResourceRelease(id: operationID)

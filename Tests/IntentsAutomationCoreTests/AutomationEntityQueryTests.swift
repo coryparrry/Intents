@@ -26,7 +26,7 @@ final class AutomationEntityQueryTests: XCTestCase, @unchecked Sendable {
     }
     func testRealPreparationFailureRecoveryRetainsUnresolvedReportWithoutChoicesAndCannotReuseAttempt() async throws {
         let root = try root(), (prepared, entity, approval) = try fixture(root: root)
-        let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: "/private/tmp"), simulatorInventory: { _, _ in throw AutomationContractError.terminationUnverified })
+        let runner = try AutomationApplicationRunner(supportRoot: root, developerDirectory: URL(fileURLWithPath: "/private/tmp"), simulatorInventory: { _, _, _, _ in throw AutomationContractError.terminationUnverified })
         let result = try await AutomationEntityQuery.execute(runner: runner, prepared: prepared, entity: entity, text: "Invoice", approval: approval, attemptID: "query-attempt", allowBootAndInstall: true)
         XCTAssertEqual(result.report.attemptID, "query-attempt"); XCTAssertEqual(result.report.result.summary, .unresolved)
         XCTAssertFalse(result.report.resourcesReleased); XCTAssertTrue(result.choices.isEmpty)
