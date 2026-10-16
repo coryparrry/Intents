@@ -82,10 +82,23 @@ class GateTests(unittest.TestCase):
         self.assertIn("SCENARIO_GROUP: ${{ matrix.group }}", workflow)
         self.assertIn("name: automation-e2e-${{ matrix.group }}", workflow)
         condition = re.search(r"Save successfully compiled automation CLI\n        if: (.+)", workflow)[1]
-        self.assertIn("always()", condition)
+        self.assertIn("!cancelled()", condition)
         self.assertIn("matrix.group == 'codec-1'", condition)
         self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
         self.assertNotIn("success()", condition)
+
+    def test_evidence_is_retained_after_failure_without_blocking_cancellation(self):
+        # A status function overrides implicit success(), preserving failed-run evidence.
+        # Unlike always(), !cancelled() lets superseding PR runs release their runners.
+        for name in ("Upload core results", "Export UI test attachments", "Upload UI results",
+                     "Upload stability results", "Upload automation evidence",
+                     "Upload input conversion diagnostic evidence"):
+            with self.subTest(step=name):
+                condition = re.search(re.escape(name) + r"\n        if: (.+)", WORKFLOW)[1]
+                self.assertEqual(condition, "${{ !cancelled() }}")
+        # Required gates still reject cancellation rather than treating it as success.
+        for name in ("quality", "regression", "build", "automation-e2e"):
+            self.assertIn("always()", job(name).split("    steps:", 1)[0])
 
     def test_stable_simulator_gate_requires_all_selected_groups(self):
         workflow = job("automation-e2e")
