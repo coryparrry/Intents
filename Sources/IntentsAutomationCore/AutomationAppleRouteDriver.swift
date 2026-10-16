@@ -170,7 +170,7 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         else { _ = try await artifacts.store(data: result.stdout + result.stderr, name: "apple-log-\(lease.generation).txt", scope: scope) }
         guard result.exitStatus == 0 else { throw AutomationContractError.ambiguousDispatch }
         let attachmentRoot = active.directory.appendingPathComponent("attachments")
-        let exported = try await run(["xcresulttool", "export", "attachments", "--path", resultPath.path, "--output-path", attachmentRoot.path], scope: scope, lease: lease, timeout: .seconds(30))
+        let exported = try await run(["xcresulttool", "export", "attachments", "--path", resultPath.path, "--output-path", attachmentRoot.path], scope: scope, lease: lease, timeout: .seconds(plan.budget.wallClockSeconds))
         guard exported.exitStatus == 0 else { throw AutomationContractError.missingEvidence("Apple attachments unavailable") }
         let data: Data, receipt: AutomationImportedHostReceipt
         if program.usesFiles {

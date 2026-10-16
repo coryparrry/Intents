@@ -79,14 +79,28 @@ final class AutomationAppleRouteDriverTests: XCTestCase, @unchecked Sendable {
         let budget = try AutomationCampaignBudget(limits: limits, now: { start })
         try await assertHostCommandTimeout(caseSeconds: 600, expected: .seconds(40), campaignBudget: budget)
     }
+    func testReceiptExportUsesApprovedCaseBudgetWithoutReplayingDispatch() async throws {
+        for seconds in [30, 600] {
+            try await assertHostCommandTimeout(caseSeconds: seconds, expected: .seconds(seconds), failDuringExport: true)
+        }
+    }
+    func testReceiptExportCannotExceedRemainingCampaignBudget() async throws {
+        let start = ContinuousClock.now
+        var limits = AutomationCampaignLimits(); limits.wallClockSeconds = 40
+        let budget = try AutomationCampaignBudget(limits: limits, now: { start })
+        try await assertHostCommandTimeout(caseSeconds: 600, expected: .seconds(40), campaignBudget: budget, failDuringExport: true)
+    }
     private func assertHostCommandTimeout(caseSeconds: Int, expected: Duration,
-                                          campaignBudget: AutomationCampaignBudget? = nil) async throws {
+                                          campaignBudget: AutomationCampaignBudget? = nil, failDuringExport: Bool = false) async throws {
         let h = try await fixture(), timeouts = CommandTimeouts()
         var plan = h.plan, approval = h.approval
         plan.budget.wallClockSeconds = caseSeconds
         approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
-        let commands = AutomationAppleRouteDriver.Commands(run: { _, _, timeout in
+        let commands = AutomationAppleRouteDriver.Commands(run: { arguments, _, timeout in
             await timeouts.record(timeout)
+            if failDuringExport && arguments.first == "xcodebuild" {
+                return .init(exitStatus: 0, stdout: Data(), stderr: Data(), logsTruncated: false)
+            }
             throw AutomationRPCError.timedOut
         }, stop: { true })
         let driver = try driver(h, approval: approval, commands: commands, campaignBudget: campaignBudget)
@@ -100,7 +114,7 @@ final class AutomationAppleRouteDriverTests: XCTestCase, @unchecked Sendable {
             XCTFail("Timed-out operations were retried")
         } catch { XCTAssertEqual(error as? AutomationContractError, .unknownLease) }
         let observed = await timeouts.values
-        XCTAssertEqual(observed, [expected])
+        XCTAssertEqual(observed, failDuringExport ? [expected, expected] : [expected])
         let proof = await driver.release(scope: h.scope, lease: h.lease)
         XCTAssertTrue(proof.commandsDrained); XCTAssertTrue(proof.runnerTerminated)
         XCTAssertTrue(proof.privatePayloadCleaned)
