@@ -191,7 +191,8 @@ public actor AutomationApplicationRunner {
         let journal = try AutomationJournal(url: root.appendingPathComponent("journal.json"))
         let artifacts = try AutomationArtifactRegistry(root: root.appendingPathComponent("artifacts"), secretEvidenceRoot: supportRoot.appendingPathComponent("secret-evidence"))
         let release = AutomationSimulatorReleaseVerifier(developerDirectory: developerDirectory, workspace: root)
-        let verifier = AutomationInstalledSubjectVerifier(developerDirectory: developerDirectory, workspace: root)
+        let verifier = AutomationInstalledSubjectVerifier(developerDirectory: developerDirectory, workspace: root,
+            maximumQueryDuration: .seconds(plan.budget.wallClockSeconds), campaignBudget: campaignBudget)
         var ownsBoot = false
         var ownedBootCleanupAttempted = false
         var executionStarted = false

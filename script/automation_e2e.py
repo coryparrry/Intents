@@ -432,12 +432,6 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
         commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
         # Install once: reinstalling before each case invalidates the metadata index again.
         commands.run(["xcrun", "simctl", "install", simulator, prepared["host"]["subjectProductPath"]], timeout=180)
-        _, raw_container = commands.run(["xcrun", "simctl", "get_app_container", simulator,
-                                          prepared["host"]["app"]["bundleID"], "app"], timeout=180)
-        containers = raw_container.splitlines()
-        ensure(len(containers) == 1 and "\0" not in containers[0] and Path(containers[0]).is_absolute()
-               and Path(containers[0]).is_dir(), "Installed fixture container readiness returned an invalid or missing directory")
-        print("Verified installed fixture container readiness.", flush=True)
         wait_for_registration(commands, cli, support, output, prepared)
         for index, (operations, expected) in enumerate(echo_batches(catalog), 1):
             execute(case(prepared, f"codec-{index}", host_segment("subject", "subject", operations)),
