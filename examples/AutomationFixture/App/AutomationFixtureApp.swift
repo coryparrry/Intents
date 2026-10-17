@@ -1,7 +1,12 @@
+import AppIntents
 import SwiftUI
 
 @main
 struct AutomationFixtureApp: App {
+    init() {
+        AutomationFixtureShortcuts.updateAppShortcutParameters()
+    }
+
     var body: some Scene { WindowGroup { TaskListView() } }
 }
 struct TaskListView: View {

@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -15,6 +16,9 @@ except ModuleNotFoundError:
     driver = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(driver)
     from test_automation_e2e import FakeCommands, prepared as simulator_prepared, report
+
+
+SIGNING = {"teamID": "ABCDE12345", "identitySHA1": "A" * 40}
 
 
 def prepared():
@@ -49,6 +53,102 @@ class MacCommands(FakeCommands):
             super().json(arguments, **options)
             return 0, prepared()
         return super().json(arguments, **options)
+
+
+class SigningTests(unittest.TestCase):
+    def test_only_explicit_team_and_certificate_fingerprint_are_accepted(self):
+        self.assertEqual(driver.signing_inputs(SIGNING["teamID"], "a" * 40), SIGNING)
+        for team, identity in ((None, None), (SIGNING["teamID"], None), (None, "A" * 40),
+                               ("TEAM", "A" * 40), ("ABCDE12345\n", "A" * 40),
+                               (SIGNING["teamID"], "-"), (SIGNING["teamID"], "Apple Development: Name")):
+            with self.subTest(team=team, identity=identity), self.assertRaises(AssertionError):
+                driver.signing_inputs(team, identity)
+
+    def test_signing_is_applied_only_to_staged_mac_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory)
+            original = (driver.ROOT / "examples/AutomationFixture/project.yml").read_text()
+            spec = fixture / "project.yml"
+            spec.write_text(original)
+            driver.configure_fixture_signing(fixture, SIGNING)
+            before, mac = spec.read_text().split("  AutomationFixtureMac:\n", 1)
+            self.assertNotIn("DEVELOPMENT_TEAM", before)
+            self.assertIn('DEVELOPMENT_TEAM: "ABCDE12345"', mac)
+            self.assertIn('CODE_SIGN_IDENTITY: "' + "A" * 40 + '"', mac)
+            self.assertIn('CODE_SIGN_STYLE: "Manual"', mac)
+            self.assertEqual((driver.ROOT / "examples/AutomationFixture/project.yml").read_text(), original)
+            with self.assertRaises(AssertionError):
+                driver.configure_fixture_signing(driver.ROOT / "examples/AutomationFixture", SIGNING)
+
+    def signature_case(self, mutation=None):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        output = Path(temporary.name) / "signing.json"
+        value = prepared()
+        value["host"].update(hostBundlePath="/prepared/Host.app", testTarget="HostTests")
+        commands = Mock()
+        role = 0
+
+        def command(arguments, **options):
+            nonlocal role
+            if arguments[0] == "/bin/sh":
+                role += 1
+                raw = "Authority=Apple Development: Fixture (ABCDE12345)\nAuthority=Apple Root CA\nTeamIdentifier=ABCDE12345\n"
+                if mutation == "adhoc" and role == 1:
+                    raw = "Signature=adhoc\nTeamIdentifier=not set\n"
+                if mutation == "team" and role == 2:
+                    raw = raw.replace("TeamIdentifier=ABCDE12345", "TeamIdentifier=OTHER12345")
+                if mutation == "release" and role == 1:
+                    raw = raw.replace("Apple Development:", "Developer ID Application:")
+                return 0, raw
+            if arguments[0] == "/usr/bin/openssl":
+                return 0, "SHA1 Fingerprint=" + ":".join(["BB" if mutation == "certificate" and role == 3 else "AA"] * 20) + "\n"
+            if mutation == "verify" and role == 3:
+                raise AssertionError("Signature verification failed")
+            return 0, ""
+
+        commands.run.side_effect = command
+        return output, value, commands
+
+    def test_actual_subject_runner_and_tests_must_share_requested_development_signature(self):
+        output, value, commands = self.signature_case()
+        evidence = driver.verify_prepared_signing(commands, value, output, SIGNING)
+        self.assertTrue(evidence["verified"])
+        self.assertEqual([product["role"] for product in evidence["products"]], ["subject", "runner", "tests"])
+        self.assertTrue(all(product["identitySHA1"] == SIGNING["identitySHA1"] for product in evidence["products"]))
+        self.assertEqual(json.loads(output.read_text()), evidence)
+        verifies = [call.args[0] for call in commands.run.call_args_list if call.args[0][0] == "/usr/bin/codesign"]
+        self.assertEqual(len(verifies), 3)
+        self.assertTrue(all("anchor apple generic" in call[call.index("-R") + 1] for call in verifies))
+        self.assertEqual(verifies[-1][-1], Path("/prepared/Host.app/Contents/PlugIns/HostTests.xctest"))
+
+    @unittest.skipUnless(Path("/usr/bin/csreq").is_file(), "Apple code requirement compiler")
+    def test_signature_verification_requirements_compile_as_inline_source(self):
+        output, value, commands = self.signature_case()
+        driver.verify_prepared_signing(commands, value, output, SIGNING)
+        verifies = [call.args[0] for call in commands.run.call_args_list if call.args[0][0] == "/usr/bin/codesign"]
+        for index, arguments in enumerate(verifies):
+            with self.subTest(product=arguments[-1]):
+                compiled = output.parent / f"requirement-{index}.bin"
+                result = subprocess.run(["/usr/bin/csreq", "-r", arguments[arguments.index("-R") + 1],
+                                         "-b", str(compiled)], capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(compiled.read_bytes())
+
+    def test_adhoc_wrong_team_release_certificate_mismatch_and_invalid_signature_fail(self):
+        for mutation in ("adhoc", "team", "release", "certificate", "verify"):
+            with self.subTest(mutation=mutation):
+                output, value, commands = self.signature_case(mutation)
+                with self.assertRaises(AssertionError):
+                    driver.verify_prepared_signing(commands, value, output, SIGNING)
+                self.assertNotIn("verified", json.loads(output.read_text()))
+
+    def test_unconfigured_intent_acceptance_stops_before_commands_or_case_dispatch(self):
+        commands = Mock()
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(AssertionError, "signing-team"):
+            driver.run_contract(commands, Path(directory), cli=Path("/external/cli"))
+        commands.run.assert_not_called()
+        commands.json.assert_not_called()
 
 
 class MacPlanTests(unittest.TestCase):
@@ -105,8 +205,9 @@ class MacExecutionTests(unittest.TestCase):
         output = Path(directory.name)
         commands = MacCommands(output)
         reports = []
-        with patch.object(driver.shutil, "copytree"):
-            driver.run_contract(commands, output, reports=reports, include_comparison=include_comparison, **kwargs)
+        with patch.object(driver.shutil, "copytree"), patch.object(driver, "configure_fixture_signing"), \
+                patch.object(driver, "verify_prepared_signing"):
+            driver.run_contract(commands, output, reports=reports, include_comparison=include_comparison, signing=SIGNING, **kwargs)
         return output, commands, reports
 
     def test_full_native_contract_reuses_cli_and_proves_cleanup_after_failed_assertion(self):
@@ -160,6 +261,17 @@ class MacExecutionTests(unittest.TestCase):
             for segment in plan["setup"] + [plan["execution"]] + plan["observations"] + plan["cleanup"]:
                 self.assertNotIn("apple.codec.intentFile", segment["requiredCapabilities"])
 
+    def test_unsigned_prepared_product_cannot_reach_intent_dispatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            commands = MacCommands(output)
+            with patch.object(driver.shutil, "copytree"), patch.object(driver, "configure_fixture_signing"), \
+                    patch.object(driver, "verify_prepared_signing", side_effect=AssertionError("ad hoc signing")), \
+                    self.assertRaisesRegex(AssertionError, "ad hoc signing"):
+                driver.run_contract(commands, output, cli=Path("/external/cli"), signing=SIGNING)
+            self.assertEqual(commands.envelopes, [])
+            self.assertFalse(any("actions" in args or "run" in args for args, _ in commands.calls))
+
     def test_build_defaults_to_two_jobs_and_selected_xcode(self):
         _, commands, _ = self.exercise()
         build = next(args for args, _ in commands.calls if "--product" in args)
@@ -186,8 +298,9 @@ class MacExecutionTests(unittest.TestCase):
 
                 commands.json = corrupted
                 reports = []
-                with patch.object(driver.shutil, "copytree"), self.assertRaises(AssertionError):
-                    driver.run_contract(commands, output, cli=Path("/external/cli"), reports=reports, include_comparison=False)
+                with patch.object(driver.shutil, "copytree"), patch.object(driver, "configure_fixture_signing"), \
+                        patch.object(driver, "verify_prepared_signing"), self.assertRaises(AssertionError):
+                    driver.run_contract(commands, output, cli=Path("/external/cli"), reports=reports, include_comparison=False, signing=SIGNING)
                 self.assertEqual(reports, [])
 
     def test_selection_requires_every_supported_case(self):
@@ -318,8 +431,9 @@ class SourceComparisonTests(unittest.TestCase):
 
             commands.json.side_effect = reply
             with patch.object(driver.shared, "run_plan", return_value=("seed", 1, report("assertionFailed"))), \
-                    patch.object(driver.shared, "verify_campaigns") as leases:
-                summary = driver.run_source_comparison(commands, Path("/external/cli"), output, output / "support", candidate, Path("/Xcode"))
+                    patch.object(driver.shared, "verify_campaigns") as leases, \
+                    patch.object(driver, "verify_prepared_signing") as signatures:
+                summary = driver.run_source_comparison(commands, Path("/external/cli"), output, output / "support", candidate, Path("/Xcode"), SIGNING)
             self.assertEqual(source.read_text(), original)
             self.assertIn("document.records[affected].completed = false", prepared_sources[0])
             self.assertEqual(prepared_sources[1], original)
@@ -328,6 +442,8 @@ class SourceComparisonTests(unittest.TestCase):
             self.assertEqual(calls[2][calls[2].index("--attempts") + 1], "3")
             self.assertEqual(summary["outcome"], "fixed")
             self.assertEqual(leases.call_count, 3)
+            self.assertEqual(signatures.call_count, 2)
+            self.assertTrue(all(call.args[-1] == SIGNING for call in signatures.call_args_list))
 
     def test_prepare_failure_restores_only_the_disposable_source(self):
         with tempfile.TemporaryDirectory() as directory:

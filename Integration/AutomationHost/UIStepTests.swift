@@ -26,12 +26,12 @@ final class UIStepTests: XCTestCase {
         // never signals processes merely because their executable paths match.
         defer { app.terminate() }
         bindings = plan.bindings
-        #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+        #if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))
         let fixtureRegistrationDeadline = ContinuousClock.now.advanced(by: .seconds(120))
         var fixtureRegistrationNeeded = true
         #endif
         for (index, step) in plan.steps.enumerated() {
-            #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+            #if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))
             if fixtureRegistrationNeeded && (step.kind == .invokeIntent || step.kind == .query) {
                 let previousFailures = (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0)
                 app.activate()
@@ -53,7 +53,7 @@ final class UIStepTests: XCTestCase {
                 let previousFailures = (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0)
                 value = try await execute(step, app: app, plan: plan)
                 guard (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0) == previousFailures else { throw UIHostError.assertionFailed }
-                #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+                #if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))
                 if step.kind == .launch { fixtureRegistrationNeeded = true }
                 #endif
                 if let value { outputs[step.segmentID, default: [:]][step.id] = value }

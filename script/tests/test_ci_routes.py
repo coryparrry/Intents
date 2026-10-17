@@ -33,6 +33,7 @@ class CoverageTests(unittest.TestCase):
             "examples/AutomationFixture/App/EchoIntents.swift",
             "script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py",
             "script/automation_mac_e2e.py", "script/tests/test_automation_mac_e2e.py",
+            "script/ci_macos_signing.py", "script/tests/test_ci_macos_signing.py",
             "Package.swift", ".github/workflows/ci.yml",
         ):
             with self.subTest(path=path):
@@ -43,6 +44,13 @@ class CoverageTests(unittest.TestCase):
         self.assertTrue(routes.coverage(["unknown-new-tool.swift"])["automation_e2e"])
         self.assertFalse(routes.coverage(["docs/wiki/App-automation.md"])["automation_e2e"])
         self.assertFalse(routes.coverage([routes.APP + "Services/MetricScorer.swift"])["automation_e2e"])
+
+    def test_mac_signing_changes_select_focused_regressions_and_live_acceptance(self):
+        for path in ("script/ci_macos_signing.py", "script/tests/test_ci_macos_signing.py"):
+            with self.subTest(path=path):
+                self.assert_selection([path], python=("script.tests.test_ci_macos_signing",))
+                self.assertTrue(routes.coverage([path])["automation_e2e"])
+                self.assertFalse(routes.coverage([path])["input_conversion"])
 
     def test_homebrew_updater_and_workflow_select_their_regressions(self):
         for path in ("script/update_homebrew.py", ".github/workflows/update-homebrew.yml"):
