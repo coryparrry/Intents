@@ -86,11 +86,21 @@ final class UIStepTests: XCTestCase {
         case .checkFreshness: try plan.validateFreshSubject(outputs: outputs)
         case .launch:
             app.launchArguments = step.arguments ?? []; app.launchEnvironment = step.environment ?? [:]; app.launch()
-        case .tap: try element(step.query, app: app).tap()
+        case .tap:
+            let target = try element(step.query, app: app)
+            #if os(macOS)
+            target.click()
+            #else
+            target.tap()
+            #endif
         case .typeText, .clearAndType:
             let element = try element(step.query, app: app)
             guard let text = step.text ?? step.binding.flatMap({ bindings[step.segmentID + "/" + $0] }) else { throw UIHostError.bindingUnavailable }
+            #if os(macOS)
+            element.click()
+            #else
             element.tap()
+            #endif
             if step.kind == .clearAndType {
                 guard let current = element.value as? String else { throw UIHostError.missingElement }
                 // UITextInput cursor is placed explicitly; the placeholder is not entered text.
@@ -196,8 +206,24 @@ final class UIStepTests: XCTestCase {
         }
         var result = app.descendants(matching: type)
         if let id = locator.identifier { result = result.matching(identifier: id) }
-        if let label = locator.label { result = result.matching(NSPredicate(format: "label == %@", label)) }
-        if let contains = locator.labelContains { result = result.matching(NSPredicate(format: "label CONTAINS %@", contains)) }
+        #if os(macOS)
+        // AppKit static text can expose its displayed text as value with an empty label.
+        let usesStaticTextValue = type == .staticText
+        #else
+        let usesStaticTextValue = false
+        #endif
+        if let label = locator.label {
+            let predicate = usesStaticTextValue
+                ? NSPredicate(format: "label == %@ OR (label == '' AND value == %@)", label, label)
+                : NSPredicate(format: "label == %@", label)
+            result = result.matching(predicate)
+        }
+        if let contains = locator.labelContains {
+            let predicate = usesStaticTextValue
+                ? NSPredicate(format: "label CONTAINS %@ OR (label == '' AND value CONTAINS %@)", contains, contains)
+                : NSPredicate(format: "label CONTAINS %@", contains)
+            result = result.matching(predicate)
+        }
         return result
     }
     private func element(_ locator: UIHostQuery?, app: XCUIApplication) throws -> XCUIElement {
