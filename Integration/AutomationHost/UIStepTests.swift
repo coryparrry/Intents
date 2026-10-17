@@ -15,7 +15,12 @@ final class UIStepTests: XCTestCase {
               let bytes = Data(base64Encoded: encoded), bytes.count <= 32768 else { throw UIHostError.invalidPlan }
         let plan = try JSONDecoder().decode(UIHostPlan.self, from: bytes)
         try plan.validate()
+        #if os(macOS)
+        // The frozen test configuration identifies the prepared private app by path.
+        let app = XCUIApplication()
+        #else
         let app = XCUIApplication(bundleIdentifier: plan.bundleID)
+        #endif
         // This invocation owns the XCUIApplication controller across every step and
         // terminates it on success and thrown failures. The Mac release observer
         // never signals processes merely because their executable paths match.
@@ -59,11 +64,13 @@ final class UIStepTests: XCTestCase {
                 attach("intents-ui-step-\(index)", try JSONEncoder().encode(
                     UIHostStepReceipt(plan: plan, index: index, dispatched: true, completed: true, value: value)))
             } catch {
-                let screenshot = XCTAttachment(screenshot: app.screenshot())
-                screenshot.name = "intents-ui-failure-\(index)"; screenshot.lifetime = .keepAlways; add(screenshot)
                 attach("intents-ui-step-\(index)", try JSONEncoder().encode(
                     UIHostStepReceipt(plan: plan, index: index, dispatched: true, completed: false, value: value,
                                       error: String(String(describing: error).prefix(4096)))))
+                // A failed launch has no application to capture. Retain the actual error first.
+                let screenshot = XCTAttachment(screenshot: app.state == .notRunning
+                    ? XCUIScreen.main.screenshot() : app.screenshot())
+                screenshot.name = "intents-ui-failure-\(index)"; screenshot.lifetime = .keepAlways; add(screenshot)
                 throw error
             }
         }
