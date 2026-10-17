@@ -39,6 +39,46 @@ final class AutomationProcessTests: XCTestCase, @unchecked Sendable {
             XCTAssertEqual(result.exitStatus, 0); XCTAssertFalse(result.logsTruncated)
         }
     }
+    func testMissingInitialIdentityWaitsForNaturalExitWithoutRecapturingOrCallingDidStart() async throws {
+        let reader = MissingIdentityReader(), recorder = ProcessRecorder()
+        let command = AutomationOwnedCommand(presenceReader: { $0.presence() }, identityReader: { reader.read($0) })
+        for status in [0, 7] {
+            let result = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/bin/sh")),
+                arguments: ["-c", "printf before; sleep 0.2; printf after; exit \(status)"],
+                directory: URL(fileURLWithPath: "/private/tmp"), environment: [:], timeout: .seconds(3),
+                didStart: { await recorder.record($0) })
+            XCTAssertEqual(result.exitStatus, Int32(status))
+            XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self), "beforeafter")
+            XCTAssertNil(result.ownedIdentity)
+            XCTAssertTrue(result.directChildReaped && result.pipesDrained && result.callbacksDrained)
+        }
+        XCTAssertEqual(reader.calls, 2, "Inspect once per launch; never recapture a potentially recycled PID")
+        let recorded = await recorder.wasRecorded
+        XCTAssertFalse(recorded, "Missing identity never grants callback or signal ownership")
+        let released = await command.stopOwned()
+        XCTAssertTrue(released)
+    }
+
+    func testMissingIdentityDeadlineCannotAuthorizeStoppingALiveChild() async throws {
+        let reader = MissingIdentityReader(), recorder = ProcessRecorder()
+        let command = AutomationOwnedCommand(presenceReader: { $0.presence() }, identityReader: { reader.read($0) })
+        do {
+            _ = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/bin/sleep")),
+                arguments: ["5"], directory: URL(fileURLWithPath: "/private/tmp"), environment: [:], timeout: .milliseconds(100),
+                didStart: { await recorder.record($0) })
+            XCTFail("An uncaptured live child cannot complete or receive termination authority")
+        } catch { XCTAssertEqual(error as? AutomationContractError, .terminationUnverified) }
+        let releasedEarly = await command.stopOwned()
+        XCTAssertFalse(releasedEarly)
+        let recorded = await recorder.wasRecorded
+        XCTAssertFalse(recorded)
+        XCTAssertEqual(reader.calls, 1)
+        // The fixture exits on its own; cleanup must never signal its uncaptured PID.
+        try await Task.sleep(for: .seconds(5))
+        let released = await command.stopOwned()
+        XCTAssertTrue(released)
+    }
+
     func testTimeoutRetainsBoundedFailureOutputAfterStoppingOwnedChild() async throws {
         let command = AutomationOwnedCommand()
         do {
@@ -234,4 +274,14 @@ private final class ControlledPresence: @unchecked Sendable {
     init(_ value: AutomationProcessIdentity.Presence) { forced = value }
     func read(_ identity: AutomationProcessIdentity) -> AutomationProcessIdentity.Presence { lock.withLock { forced ?? identity.presence() } }
     func allowActual() { lock.withLock { forced = nil } }
+}
+
+private final class MissingIdentityReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var calls: Int { lock.withLock { count } }
+    func read(_ pid: Int32) -> AutomationProcessIdentity? {
+        lock.withLock { count += 1 }
+        return nil
+    }
 }

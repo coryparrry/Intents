@@ -28,12 +28,19 @@ public actor AutomationOwnedCommand {
     private var launchRevoked = false
     private var lastLogOverflow: LogOverflow?
     private let presenceReader: @Sendable (AutomationProcessIdentity) -> AutomationProcessIdentity.Presence
+    private let identityReader: @Sendable (Int32) -> AutomationProcessIdentity?
     private var launched = false
     private var callback: AutomationBoundedTask<Bool>?
     private var runInProgress = false
     private var stopOperations = 0
-    public init() { presenceReader = { $0.presence() } }
-    init(presenceReader: @escaping @Sendable (AutomationProcessIdentity) -> AutomationProcessIdentity.Presence) { self.presenceReader = presenceReader }
+    public init() {
+        presenceReader = { $0.presence() }
+        identityReader = { AutomationProcessIdentity.inspect(pid: $0) }
+    }
+    init(presenceReader: @escaping @Sendable (AutomationProcessIdentity) -> AutomationProcessIdentity.Presence,
+         identityReader: @escaping @Sendable (Int32) -> AutomationProcessIdentity? = { AutomationProcessIdentity.inspect(pid: $0) }) {
+        self.presenceReader = presenceReader; self.identityReader = identityReader
+    }
     /// Available after failure/cancellation as well as success; bounded by the same pipe limits.
     public func retainedLogs() -> Result {
         .init(exitStatus: launched && process?.isRunning == false ? process!.terminationStatus : -1, stdout: output, stderr: diagnostics,
@@ -91,15 +98,19 @@ public actor AutomationOwnedCommand {
         let errReader = Task { for await data in err { append(data, diagnostic: true) } }
         let waiter = AutomationBoundedTask<Bool>()
         do {
-            if let started = AutomationProcessIdentity.inspect(pid: child.processIdentifier) {
+            if let started = identityReader(child.processIdentifier) {
                 identity = started
                 lastCapturedIdentity = started
                 let pending = AutomationBoundedTask<Bool>(); callback = pending
                 _ = try await pending.run(until: deadline) { try await didStart(started); return true }
                 callback = nil
             } else {
-                guard Self.permitsUncapturedExit(pid: child.processIdentifier, isRunning: child.isRunning) else {
-                    throw AutomationContractError.invalidIdentity
+                // Exit can precede Foundation's notification and kernel PID removal.
+                // Wait read-only; recapturing this PID could adopt a recycled process.
+                while !Self.permitsUncapturedExit(pid: child.processIdentifier, isRunning: child.isRunning) {
+                    try Task.checkCancellation()
+                    guard ContinuousClock.now < deadline else { throw AutomationRPCError.timedOut }
+                    try await Task.sleep(for: .milliseconds(10))
                 }
             }
             let exited = try await waiter.run(until: deadline) { await self.waitForExit(child) }
