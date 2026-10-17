@@ -158,7 +158,8 @@ enum AutomationSourceSyntaxDiscovery {
     private static func requireComplete(_ result: AutomationOwnedCommand.Result, stage: StaticString) throws {
         let gaps = completionGaps(result)
         guard gaps.isEmpty else {
-            print("error: Source syntax \(stage) command completion unverified: \(gaps.joined(separator: "; ")) (exit \(result.exitStatus))")
+            let diagnostic = "error: Source syntax \(stage) command completion unverified: \(gaps.joined(separator: "; ")) (exit \(result.exitStatus))\n"
+            FileHandle.standardError.write(Data(diagnostic.utf8))
             throw AutomationContractError.terminationUnverified
         }
         guard result.exitStatus == 0, !result.logsTruncated else { throw AutomationContractError.missingEvidence("Owned source syntax scanner output is unavailable") }
