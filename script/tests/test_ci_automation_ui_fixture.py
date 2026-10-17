@@ -55,7 +55,7 @@ class AutomationUIFixtureTests(unittest.TestCase):
         self.assertIn("command -v xcodegen || brew install xcodegen", generator)
         setup = ui_job.split("      - name: Prepare and test selected live Mac UI fixture\n", 1)[1].split("      - name:", 1)[0]
         self.assertIn("if: ${{ matrix.mac_fixture == true }}", setup)
-        self.assertIn("python3 script/ci_macos_signing.py -- /bin/bash -e -c '", setup)
+        self.assertIn("python3 script/ci_macos_signing.py -- /bin/bash -e <<'SIGNED_MAC_CHECK'", setup)
         self.assertIn('script/ci_automation_ui_fixture.py --products "$RUNNER_TEMP/Products" --developer-directory "$(xcode-select -p)" --signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"', setup)
         self.assertLess(setup.index("script/ci_automation_ui_fixture.py"), setup.index("script/ci_native_tests.py"))
         self.assertIn("--timeout-seconds 900", setup)

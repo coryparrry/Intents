@@ -307,10 +307,10 @@ jobs:
           CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}
           CI_TEST_SELECTION: ${{ toJSON(matrix.tests) }}
         run: |
-          python3 script/ci_macos_signing.py -- /bin/bash -e -c '
+          python3 script/ci_macos_signing.py -- /bin/bash -e <<'SIGNED_MAC_CHECK'
             python3 script/ci_automation_ui_fixture.py --products "$RUNNER_TEMP/Products" --developer-directory "$(xcode-select -p)" --signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"
             python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products" --result "$RUNNER_TEMP/ui-tests.xcresult" --timeout-seconds 900
-          '
+          SIGNED_MAC_CHECK
       - name: Run affected UI tests once
         if: ${{ !matrix.mac_fixture }}
         env:
@@ -441,9 +441,9 @@ jobs:
           CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}
           CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}
         run: |
-          python3 script/ci_macos_signing.py -- /bin/bash -e -c '
+          python3 script/ci_macos_signing.py -- /bin/bash -e <<'SIGNED_MAC_CHECK'
             python3 script/automation_mac_e2e.py --output-root "$RUNNER_TEMP/automation-mac-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --jobs 2 --signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"
-          '
+          SIGNED_MAC_CHECK
       - name: Save successfully compiled automation CLI
         if: ${{ !cancelled() && steps.contract.outputs.cli_built == 'true' && steps.cli-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4

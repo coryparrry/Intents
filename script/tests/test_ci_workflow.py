@@ -102,7 +102,7 @@ class GateTests(unittest.TestCase):
             self.assertIn("CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}", step)
             self.assertIn("CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}", step)
             self.assertIn("CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}", step)
-            self.assertIn("python3 script/ci_macos_signing.py -- /bin/bash -e -c", step)
+            self.assertIn("python3 script/ci_macos_signing.py -- /bin/bash -e <<", step)
             self.assertIn('--signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"', step)
             self.assertNotIn("continue-on-error", step)
             self.assertNotIn("environment:", step)
