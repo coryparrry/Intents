@@ -296,10 +296,15 @@ jobs:
           defaults write com.coryparry.FoundationEvals SUEnableAutomaticChecks -bool false
           defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
           python3 script/ci_ui_display.py
+      - name: Prepare selected live Mac UI fixture
+        if: ${{ matrix.mac_fixture == true }}
+        run: |
+          command -v xcodegen || brew install xcodegen
+          python3 script/ci_automation_ui_fixture.py --products "$RUNNER_TEMP/Products" --developer-directory "$(xcode-select -p)"
       - name: Run affected UI tests once
         env:
           CI_TEST_SELECTION: ${{ toJSON(matrix.tests) }}
-        run: python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products" --result "$RUNNER_TEMP/ui-tests.xcresult"
+        run: python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products" --result "$RUNNER_TEMP/ui-tests.xcresult" --timeout-seconds 900
       - name: Export UI test attachments
         if: ${{ !cancelled() }}
         continue-on-error: true

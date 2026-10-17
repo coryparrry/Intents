@@ -401,6 +401,7 @@ class MatrixTests(unittest.TestCase):
             "FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration",
             "FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence",
             "FoundationEvalsUITests/AutomationDependencyControlsUITests",
+            "FoundationEvalsUITests/MacPreparationUITests",
         } | {"FoundationEvalsUITests/AppAutomationUITests/" + method for method in (
             "testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled",
             "testXcodeDefaultsFollowDestinationAndRestoreWithoutRunOverride",
@@ -417,7 +418,21 @@ class MatrixTests(unittest.TestCase):
         selections = [test for group in matrix for test in group["tests"]]
         self.assertEqual(set(selections), expected)
         self.assertEqual(len(selections), len(expected))
-        self.assertEqual(len(matrix), 3)
+        self.assertEqual(len(matrix), 4)
+
+    def test_live_mac_fixture_keeps_a_dedicated_opted_in_shard_for_feature_and_test_changes(self):
+        selector = routes.UI_TARGET + "MacPreparationUITests"
+        for paths in (None, [routes.UI_TESTS + "MacPreparationUITests.swift"],
+                      [routes.APP + "Stores/AutomationNativeRunPlanning.swift"],
+                      ["Sources/IntentsAutomationCore/AutomationApplicationRunner.swift"],
+                      ["script/ci_automation_ui_fixture.py"]):
+            with self.subTest(paths=paths):
+                matrix = routes.coverage(paths)["ui_matrix"]
+                live = [job for job in matrix if job.get("mac_fixture")]
+                self.assertEqual(live, [{"name": "automation-mac", "tests": [selector], "mac_fixture": True}])
+                self.assertFalse(any(selector in job["tests"] for job in matrix if not job.get("mac_fixture")))
+        changed = routes.coverage([routes.UI_TESTS + "MacPreparationUITests.swift"])
+        self.assertEqual(changed["ui_matrix"], [{"name": "automation-mac", "tests": [selector], "mac_fixture": True}])
 
     def test_feature_view_runs_its_full_regression_class_without_other_features(self):
         for view, expected, unrelated in (
@@ -500,7 +515,12 @@ class MatrixTests(unittest.TestCase):
             selected = groups[:count]
             matrix = routes.ui_matrix(selected)
             self.assertEqual(matrix, routes.ui_matrix(reversed(selected)))
-            self.assertLessEqual(len(matrix), 3)
+            ordinary = [job for job in matrix if not job.get("mac_fixture")]
+            self.assertLessEqual(len(ordinary), 3)
+            self.assertLessEqual(len(matrix), 4)
+            for job in matrix:
+                if job.get("mac_fixture"):
+                    self.assertEqual(job, {"name": "automation-mac", "tests": [routes.UI_TARGET + "MacPreparationUITests"], "mac_fixture": True})
             tests = [test for job in matrix for test in job["tests"]]
             expected = {test for group in selected for job in routes.ui_matrix([group]) for test in job["tests"]}
             self.assertEqual(set(tests), expected)
@@ -543,8 +563,8 @@ class FeatureOwnershipTests(unittest.TestCase):
             "Services/TelemetryController.swift": {"settings"},
             "Views/SuiteReviewView.swift": {"review"},
             "Stores/EvaluationReviewDraftStore.swift": {"review"},
-            "Stores/AppAutomationStore.swift": {"automation"},
-            "Stores/AutomationNativePreparation.swift": {"automation"},
+            "Stores/AppAutomationStore.swift": {"automation", "automation-mac"},
+            "Stores/AutomationNativePreparation.swift": {"automation", "automation-mac"},
             "Views/ProductionReviewPane.swift": {"traces"},
             "Views/CaseImportView.swift": {"imports"},
         }
@@ -609,7 +629,7 @@ class FeatureOwnershipTests(unittest.TestCase):
                 plan = routes.coverage([routes.APP + "Stores/" + source])
                 self.assertEqual(plan["swift_suites"], ["*"])
                 self.assertTrue(plan["native"])
-                self.assertEqual({group["name"] for group in plan["ui_matrix"]}, {"automation"})
+                self.assertEqual({group["name"] for group in plan["ui_matrix"]}, {"automation", "automation-mac"})
                 self.assertFalse(plan["automation_e2e"])
                 self.assertFalse(plan["input_conversion"])
 
@@ -630,9 +650,9 @@ class FeatureOwnershipTests(unittest.TestCase):
 
     def test_automation_and_intent_lab_package_sources_own_their_ui(self):
         for path, expected, simulator, mac in (
-            ("Sources/IntentsAutomationCore/AutomationApplicationRunner.swift", {"automation"}, True, True),
-            ("Integration/AutomationHost/NativeMac/HostInputAdapterProbePlan.swift", {"automation"}, False, True),
-            ("Sources/IntentLabContracts/Contract.swift", {"automation", "intent-lab"}, True, True),
+            ("Sources/IntentsAutomationCore/AutomationApplicationRunner.swift", {"automation", "automation-mac"}, True, True),
+            ("Integration/AutomationHost/NativeMac/HostInputAdapterProbePlan.swift", {"automation", "automation-mac"}, False, True),
+            ("Sources/IntentLabContracts/Contract.swift", {"automation", "automation-mac", "intent-lab"}, True, True),
             ("Sources/IntentLabTesting/Transport.swift", {"intent-lab"}, False, False),
         ):
             with self.subTest(path=path):

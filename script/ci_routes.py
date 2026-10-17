@@ -29,6 +29,7 @@ UI_BASELINE = {
     "intent-lab": [UI_TARGET + "IntentLabGuidanceUITests", UI_TARGET + "SimplificationUITests"],
     "runs": [UI_TARGET + "FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration"],
     "traces": [UI_TARGET + "WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence"],
+    "automation-mac": [UI_TARGET + "MacPreparationUITests"],
     "automation": [
         UI_TARGET + "AppAutomationUITests/" + method for method in (
             "testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled",
@@ -175,6 +176,7 @@ NATIVE_UI_HELPERS = {
     "script/ci_native_tests.py": "script.tests.test_ci_native_tests",
     "script/ci_ui_display.py": "script.tests.test_ci_ui_display",
     "script/ci_ui_xctestrun.py": "script.tests.test_ci_ui_xctestrun",
+    "script/ci_automation_ui_fixture.py": "script.tests.test_ci_automation_ui_fixture",
 }
 
 
@@ -385,17 +387,23 @@ def ui_matrix(groups, extra_classes=(), targeted=False):
         selections.setdefault(owner, set()).add(selector)
         for tests in selections.values():
             tests.difference_update(test for test in list(tests) if test.startswith(selector + "/"))
-    # Three desktops bound runner demand while retaining every selected test.
+    # The live Mac fixture builds and launches owned apps, so it gets its own
+    # desktop and execution budget instead of extending an ordinary UI shard.
+    mac_fixture = selections.pop("automation-mac", set())
+    # Three ordinary desktops retain the established baseline budget.
     jobs = [{"groups": [], "tests": set()} for _ in range(min(3, len(selections)))]
     for name, tests in sorted(selections.items(), key=lambda item: (-len(item[1]), item[0])):
         if tests:
             target = min(jobs, key=lambda job: (len(job["tests"]), len(job["groups"])))
             target["groups"].append(name)
             target["tests"].update(tests)
-    return sorted([
+    matrix = [
         {"name": "+".join(sorted(job["groups"])), "tests": sorted(job["tests"])}
         for job in jobs if job["tests"]
-    ], key=lambda job: job["name"])
+    ]
+    if mac_fixture:
+        matrix.append({"name": "automation-mac", "tests": sorted(mac_fixture), "mac_fixture": True})
+    return sorted(matrix, key=lambda job: job["name"])
 
 
 def changed_ui_classes(paths, root):
@@ -407,6 +415,9 @@ def changed_ui_classes(paths, root):
 
 
 def with_matrices(plan, groups=(), extra_classes=(), targeted=False):
+    groups = set(groups)
+    if "automation" in groups:
+        groups.add("automation-mac")
     plan["ui_matrix"] = ui_matrix(groups, extra_classes, targeted) if plan["ui"] else []
     return plan
 

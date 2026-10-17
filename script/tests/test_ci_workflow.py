@@ -61,6 +61,14 @@ class GateTests(unittest.TestCase):
         self.assertNotIn("max-parallel:", job("ui-tests"))
         self.assertNotIn("--iterations", job("ui-tests"))
 
+    def test_ui_execution_deadline_leaves_time_for_failure_artifacts(self):
+        workflow = job("ui-tests")
+        invocation = re.search(r"(?m)^        run: python3 script/ci_native_tests\.py .+$", workflow)[0]
+        seconds = int(re.search(r"--timeout-seconds (\d+)", invocation)[1])
+        minutes = int(re.search(r"(?m)^    timeout-minutes: (\d+)", workflow)[1])
+        self.assertEqual(seconds, 900)
+        self.assertLess(seconds + 180, minutes * 60, "Desktop preparation and evidence need job time")
+
     def test_simulator_cache_is_saved_only_after_successful_compilation(self):
         workflow = job("automation-e2e-scenarios")
         self.assertIn("uses: actions/cache/restore@", workflow)
