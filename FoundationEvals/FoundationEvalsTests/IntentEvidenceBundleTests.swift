@@ -958,6 +958,7 @@ struct IntentEvidenceBundleTests {
         var definition = ScenarioDefinition.starter(projectID: projectID)
         definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
         definition.name = "Local Feature summary"
+        definition.directControl.outputFields = []
         definition.coverage = .init(
             appFeature: .required, intentIntegration: .notApplicable,
             siri: .notApplicable, siriAttemptCount: 1

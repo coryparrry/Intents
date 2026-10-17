@@ -37,11 +37,11 @@ final class AppAutomationStore {
     var preparedHistory: [AutomationPreparedApplication] = []
     var savedPreparedBaseline: AutomationPreparedApplication?
     var catalog: ApplicationSurfaceCatalog?
-    var pairedClient: DeveloperRunnerClient?
-    var pairedCanStart: (@MainActor () -> Bool)?
+    @ObservationIgnored var pairedClient: DeveloperRunnerClient?
+    @ObservationIgnored var pairedCanStart: (@MainActor () -> Bool)?
     let executionAdmissionOwnerID = UUID()
-    var executionCanStart: (@MainActor () -> Bool)?
-    var executionOwnershipChanged: (@MainActor (Bool) -> Void)? {
+    @ObservationIgnored var executionCanStart: (@MainActor () -> Bool)?
+    @ObservationIgnored var executionOwnershipChanged: (@MainActor (Bool) -> Void)? {
         didSet { publishedExecutionBlock = nil; publishExecutionOwnership() }
     }
     @ObservationIgnored private var executionAdmissionHeld = false

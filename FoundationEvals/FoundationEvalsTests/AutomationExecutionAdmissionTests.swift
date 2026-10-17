@@ -1,10 +1,47 @@
 import Foundation
 import IntentsAutomationCore
+import Observation
 import Testing
 @testable import FoundationEvals
 
 @MainActor
 struct AutomationExecutionAdmissionTests {
+    @Test func repeatedCompositionDoesNotInvalidateViewsButOwnershipChangesDo() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let control = EvaluationAppControl(store: store)
+        let automation = AppAutomationStore(supportDirectory: directory.appending(path: "Automation"))
+        let admission = ScenarioExecutionAdmission()
+        defer { control.runners.client.shutdown() }
+        control.bindAutomationExecution(automation, admission: admission)
+        await automation.ownershipRecoveryTask?.value
+        #expect(automation.permitsExecutionAdmission)
+
+        let changes = AdmissionObservationChanges()
+        withObservationTracking {
+            _ = automation.permitsExecutionAdmission
+            _ = automation.pairedCanStart?()
+            _ = automation.pairedClient
+            _ = admission.allows(nil)
+        } onChange: { changes.record() }
+        for _ in 0..<3 {
+            _ = ContentView(store: store, control: control, automationStore: automation)
+            control.bindAutomationExecution(automation, admission: admission)
+        }
+        #expect(changes.count == 0)
+
+        try automation.beginExecutionAdmission()
+        #expect(changes.count == 1)
+        #expect(!admission.allows(nil))
+        withObservationTracking {
+            _ = admission.allows(nil)
+        } onChange: { changes.record() }
+        automation.finishExecutionAdmission()
+        #expect(changes.count == 2)
+        #expect(admission.allows(nil))
+    }
+
     @Test func contendedOwnershipResetPreservesRecoveryStateWithoutCreatingABlocker() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -84,4 +121,11 @@ struct AutomationExecutionAdmissionTests {
         #expect(!admission.allows(nil))
         #expect(throws: (any Error).self) { try automation.beginExecutionAdmission(allowingRecovery: true) }
     }
+}
+
+private final class AdmissionObservationChanges: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    var count: Int { lock.withLock { value } }
+    func record() { lock.withLock { value += 1 } }
 }

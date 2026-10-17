@@ -8,6 +8,8 @@ import Observation
   let production: ProductionWorkspaceStore
   let scenarios: ScenarioCoordinator
   let runners: DeveloperRunnerStore
+  @ObservationIgnored private weak var boundAutomationStore: AppAutomationStore?
+  @ObservationIgnored private weak var boundAutomationAdmission: ScenarioExecutionAdmission?
 
   init(store: EvaluationStore) {
     self.store = store
@@ -18,10 +20,13 @@ import Observation
     scenarios.bindRunnerStore(runners)
   }
 
-  /// Bind before exposing either the native UI or MCP commands. The stable
-  /// store owner makes repeated window binding idempotent.
+  /// Bind before exposing either the native UI or MCP commands. Repeating
+  /// composition with the same store and admission must not mutate observed state.
   func bindAutomationExecution(_ automation: AppAutomationStore,
                                admission: ScenarioExecutionAdmission = .shared) {
+    guard boundAutomationStore !== automation || boundAutomationAdmission !== admission else { return }
+    boundAutomationStore = automation
+    boundAutomationAdmission = admission
     let ownerID = automation.executionAdmissionOwnerID
     let canStart: @MainActor () -> Bool = { [weak store = self.store, weak runners = self.runners] in
       guard let store, let runners else { return false }

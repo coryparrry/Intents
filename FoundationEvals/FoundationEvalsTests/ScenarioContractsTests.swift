@@ -2203,6 +2203,7 @@ struct ScenarioContractsTests {
     @Test func connectedFeatureProducerRecordsOnlyVerifiedLegacyReturnClaims() throws {
         var definition = try stableScenario()
         definition.coverage.intentIntegration = .notApplicable
+        definition.directControl.outputFields = []
         definition.assertions[0].observationKey = "feature.response"
         definition.purpose = .releaseRequirement
         definition.checkMode = .basic

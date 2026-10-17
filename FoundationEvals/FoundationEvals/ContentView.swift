@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var productionWorkspace: ProductionWorkspaceStore
     @State private var appliedAutomationLaunchSelection = false
     @State private var automationStore: AppAutomationStore
+    @State private var appControl: EvaluationAppControl
     @State private var scenarioCoordinator: ScenarioCoordinator
     @Environment(DeveloperRunnerStore.self) private var runners
     @Environment(\.controlActiveState) private var windowActivity
@@ -14,10 +15,10 @@ struct ContentView: View {
     init(store: EvaluationStore, control: EvaluationAppControl? = nil, automationStore: AppAutomationStore? = nil) {
         self.store = store
         let control = control ?? EvaluationAppControl(store: store)
+        _appControl = State(initialValue: control)
         _productionWorkspace = State(initialValue: control.production)
         _scenarioCoordinator = State(initialValue: control.scenarios)
         let automationStore = automationStore ?? AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"), telemetry: store.telemetry)
-        control.bindAutomationExecution(automationStore)
         _automationStore = State(initialValue: automationStore)
     }
 
@@ -31,6 +32,9 @@ struct ContentView: View {
         .toolbar(removing: .title)
         .background { SuiteAutosaveObserver(store: store) }
         .task {
+            // App and MCP composition bind before exposure. Standalone views
+            // bind their retained dependencies here, outside view construction.
+            appControl.bindAutomationExecution(automationStore)
             await automationStore.migrateEvidenceHistory()
             #if DEBUG
             if !appliedAutomationLaunchSelection {

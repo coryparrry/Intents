@@ -40,7 +40,7 @@ Start with a **read-only** action. If an action changes data, your app must prep
 5. Read the setup and preflight messages. A physical iPhone is necessary for Siri.
 6. If the app already has test support, select **Build and check support** under **Check installed support**.
 
-**Build and check support** builds the app, runs harmless connection/readiness methods, and reads their receipts. It does not run the business action or prove that Siri routed a request correctly. Direct and local Feature readiness require the selected app, UI-test runner, and test bundle to be signed by the same development team. The destination list can also include a Mac for supported direct checks. A Core Siri-only target may remain usable when AppIntentsTesting cannot load in another target.
+**Build and check support** builds the app, runs harmless connection/readiness methods, and reads their receipts. It does not run the business action or prove that Siri routed a request correctly. For the explicit iOS Simulator signing mode, Direct and local Feature readiness require valid ad hoc signatures on the selected app, UI-test runner, and test bundle, with the observed runtime matching that simulator destination. Other destinations require valid signatures from the same development team. The destination list can also include a Mac for supported direct checks. A Core Siri-only target may remain usable when AppIntentsTesting cannot load in another target.
 
 ### Add missing test support
 
