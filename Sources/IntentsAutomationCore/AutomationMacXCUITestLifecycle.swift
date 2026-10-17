@@ -1,8 +1,6 @@
 #if os(macOS)
 import Foundation
 import Darwin
-import AppKit
-import CoreServices
 
 /// Independently observes the exact prepared subject and XCTest runner.
 /// XCTest owns application termination; matching paths never authorize signalling.
@@ -17,12 +15,10 @@ actor AutomationMacXCUITestLifecycle {
     func retainedObservations() -> [Observation] { observations }
     typealias Inspector = @Sendable () async throws -> AutomationMacProcessInventory
     typealias Validator = @Sendable () throws -> Void
-    typealias Registration = @Sendable (AutomationMacPreparedRegistration.Authorization) async throws -> Void
     private let paths: Set<String>
     private let userID: UInt32
     private let inspect: Inspector
     private let validate: Validator
-    private let register: Registration
     private var admitted = false
     private var preparing = false
     private var releasing = false
@@ -32,31 +28,19 @@ actor AutomationMacXCUITestLifecycle {
         let paths = try Self.executables(host)
         self.paths = paths; userID = getuid()
         inspect = { try AutomationMacProcessInventory.currentUser(watchedExecutablePaths: paths) }
-        let validation: Validator = {
+        validate = {
             try AutomationMacGUIIdentity.validate(host.target)
             guard try Self.executables(host) == paths else { throw AutomationContractError.conflictingOperation }
         }
-        validate = validation
-        register = { authorization in
-            try await AutomationMacPreparedRegistration.perform(subject: URL(fileURLWithPath: host.subjectProductPath),
-                bundleID: host.app.bundleID, authorization: authorization, validate: validation)
-        }
     }
     init(paths: Set<String>, userID: UInt32, inspect: @escaping Inspector,
-         validate: @escaping Validator, registration: @escaping Registration = { _ in }) {
+         validate: @escaping Validator) {
         self.paths = paths; self.userID = userID; self.inspect = inspect; self.validate = validate
-        self.register = registration
     }
-    func prepare(registerSubject: Bool = false,
-                 authorization: AutomationMacPreparedRegistration.Authorization? = nil) async throws {
+    func prepare() async throws {
         guard !admitted, !preparing, !releasing, outcome == nil else { throw AutomationContractError.targetBusy }
         preparing = true; defer { preparing = false }
         guard try await records().isEmpty else { throw AutomationContractError.targetBusy }
-        if registerSubject {
-            guard let authorization else { throw AutomationContractError.unknownLease }
-            try await register(authorization)
-            guard try await records().isEmpty else { throw AutomationContractError.targetBusy }
-        }
         admitted = true
     }
     func release() async -> Bool {
@@ -118,62 +102,4 @@ actor AutomationMacXCUITestLifecycle {
         return [executable.path, runner.path]
     }
 }
-/// Public Launch Services registration for one already-validated private product.
-/// This never launches an installed original or changes document/URL defaults.
-enum AutomationMacPreparedRegistration {
-    struct Authorization: Sendable {
-        let deadline: ContinuousClock.Instant
-        let revalidate: @Sendable () async throws -> Void
-        func check() async throws {
-            try Task.checkCancellation()
-            try await revalidate()
-            try checkDeadlineAndCancellation()
-        }
-        func checkDeadlineAndCancellation() throws {
-            try Task.checkCancellation()
-            guard ContinuousClock.now < deadline else { throw AutomationRPCError.timedOut }
-        }
-    }
-    static func required(plan: AutomationCase, approval: RunApproval, steps: [UIHostStep]) throws -> Bool {
-        guard plan.target.kind == .nativeMac else { return false }
-        let launches = steps.filter { $0.kind == .launch }
-        guard !launches.isEmpty else { return false }
-        let segments = plan.setup + [plan.execution] + plan.observations + plan.cleanup
-        for launch in launches {
-            guard let segment = segments.first(where: { $0.id == launch.segmentID }),
-                  segment.lifecycle == .persistedStateAcrossSegments, segment.effects.contains(.navigate),
-                  approval.effects.contains(.navigate) else {
-                throw AutomationContractError.invalidPlan("Mac registration requires approved activation")
-            }
-        }
-        return true
-    }
-
-    static func perform(subject: URL, bundleID: String, authorization: Authorization,
-                        validate: @Sendable () throws -> Void,
-                        registerURL: @Sendable (URL) throws -> Void = { url in
-                            let status = LSRegisterURL(url as CFURL, true)
-                            guard status == noErr else {
-                                throw AutomationContractError.missingEvidence("Private Mac app registration failed: \(status)")
-                            }
-                        },
-                        resolveURL: @Sendable (String) async -> URL? = { bundleID in
-                            await MainActor.run { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
-                        }) async throws {
-        try await authorization.check()
-        try validate()
-        guard try AutomationPath.canonical(subject).path == subject.path else {
-            throw AutomationContractError.conflictingOperation
-        }
-        try authorization.checkDeadlineAndCancellation()
-        try registerURL(subject)
-        try validate()
-        guard let resolved = await resolveURL(bundleID),
-              try AutomationPath.canonical(resolved).path == subject.path else {
-            throw AutomationContractError.missingEvidence("Mac app registration resolves to a different or missing private copy")
-        }
-        try validate()
-    }
-}
-
 #endif

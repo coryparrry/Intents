@@ -41,7 +41,7 @@ public enum AutomationFirstRunPlanner {
                       includeUI || (plan.setup + [plan.execution] + plan.observations + plan.cleanup).allSatisfy({ $0.uiProgram == nil }) else {
                     throw AutomationContractError.missingEvidence("Its required routes are not included in this campaign")
                 }
-                let cost = operationCount(plan)
+                let cost = operationCount(plan, approval: approval)
                 guard cost <= operationLimit - plannedOperations else {
                     throw AutomationContractError.missingEvidence("Its setup, subject and readback need " + String(cost) + " operations. " + limitGap(operationLimit))
                 }
@@ -90,15 +90,16 @@ public enum AutomationFirstRunPlanner {
                         var plan = try compileAction(catalog: catalog, action: action, inputs: variant,
                             evidence: trustedEvidence, declaredEffects: declaration, approval: approval,
                             capabilities: capabilities, localeIdentifier: localeIdentifier)
-                        let cost = operationCount(plan)
+                        let cost = operationCount(plan, approval: approval)
                         guard cost <= operationLimit - plannedOperations else {
                             gaps.append(action.title + ": setup, invocation and independent readback need " + String(cost) + " operations. " + limitGap(operationLimit))
                             break
                         }
                         plan.budget.attempts = 1
-                        plan.budget.subjectOperations = plan.execution.hostProgram?.operations.count ?? 1
+                        let activationID = AutomationXCUITestPlan.implicitMacHostActivationSegmentID(plan: plan, approval: approval)
+                        plan.budget.subjectOperations = (plan.execution.hostProgram?.operations.count ?? 1) + (activationID == plan.execution.id ? 1 : 0)
                         plan.budget.controllerCalls = 0
-                        plan.budget.uiActions = max(1, uiOperationCount(plan))
+                        plan.budget.uiActions = max(1, uiOperationCount(plan) + (activationID == nil ? 0 : 1))
                         plan.provenance["firstRun"] = "bounded declaration and trusted-input coverage; no inferred business expectation"
                         plan.provenance["catalog"] = try AutomationRecipeContext.catalogDigest(catalog)
                         if let context = trustedEvidence?.runtimeContext {
@@ -170,10 +171,14 @@ public enum AutomationFirstRunPlanner {
             declaredEffects: declaredEffects, approval: approval, capabilities: capabilities, purpose: .review)
     }
 
-    private static func operationCount(_ plan: AutomationCase) -> Int {
-        (plan.setup + [plan.execution] + plan.observations + plan.cleanup).reduce(0) { total, segment in
+    private static func operationCount(_ plan: AutomationCase, approval: RunApproval) -> Int {
+        let declared = (plan.setup + [plan.execution] + plan.observations + plan.cleanup).reduce(0) { total, segment in
             total + (segment.hostProgram?.operations.count ?? uiOperationCount(segment))
         }
+        guard plan.target.kind == .nativeMac else { return declared }
+        let activation = AutomationXCUITestPlan.implicitMacHostActivationSegmentID(plan: plan, approval: approval) == nil ? 0 : 1
+        let freshness = AutomationXCUITestPlan.entityFreshnessSegmentID(plan: plan) == nil ? 0 : 1
+        return declared + activation + freshness
     }
     private static func validateContext(_ context: AutomationRecipeContext, catalog: ApplicationSurfaceCatalog,
                                         approval: RunApproval, localeIdentifier: String) throws {

@@ -77,6 +77,9 @@ enum AutomationXCUITestCampaign {
             termination = failure.reason
             uncertainDispatch = failure.subjectDispatchUncertain
         } catch {
+            // Retain failures before inner XCTest can produce its own log or receipt.
+            // Diagnostic storage must never change dispatch, release or result semantics.
+            _ = try? await retainPreflightFailure(error, artifacts: artifacts, scope: scope)
             termination = error is CancellationError ? .cancelled : error as? AutomationRPCError == .timedOut ? .timedOut : .infrastructureFailed
         }
         let subject = receipts.first { $0.segmentID == plan.execution.id && $0.route == plan.execution.kind }
@@ -130,6 +133,26 @@ enum AutomationXCUITestCampaign {
         result.subjectDispatchUncertain = uncertainDispatch || (subject?.dispatched == true && subject?.completed != true
             && termination != .assertionFailed && termination != .invalidFixture)
         return .init(attemptID: attemptID, result: result, receipts: receipts, resourcesReleased: released)
+    }
+
+    static func retainPreflightFailure(_ error: any Error, artifacts: AutomationArtifactRegistry,
+                                       scope: AutomationScope) async throws -> AutomationArtifactRegistry.Artifact {
+        func redacted(_ value: String) -> String {
+            let patterns = [
+                #"(?i)authorization|bearer|token|secret|password|passwd|api[ _-]?key|private[ _-]?key|credential|cookie|signature"#,
+                #"sk-[A-Za-z0-9_-]+|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|AKIA[A-Z0-9]{16}"#,
+                #"(?i)^\s*(export\s|environment variables|environmentvariables|setenv\s|[A-Z_][A-Z0-9_]*=)"#
+            ]
+            return value.components(separatedBy: .newlines).map { line in
+                patterns.contains { line.range(of: $0, options: .regularExpression) != nil }
+                    ? "[redacted credential or environment line]" : line
+            }.joined(separator: "\n")
+        }
+        let fields = ["stage": "xcuitest-execution",
+                      "errorType": redacted(String(String(reflecting: type(of: error)).prefix(256))),
+                      "message": redacted(String(String(describing: error).prefix(8192)))]
+        return try await artifacts.store(data: JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]),
+            name: "xcuitest-preflight-failure-" + UUID().uuidString + ".json", scope: scope)
     }
 
     static func reserveBudget(_ uiPlan: UIHostPlan, plan: AutomationCase, attemptID: String,

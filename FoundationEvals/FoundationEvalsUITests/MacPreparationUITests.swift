@@ -207,14 +207,89 @@ final class MacPreparationUITests: XCTestCase {
         }.max { $0.created < $1.created }?.url
     }
 
-    /// Only this committed fixture's failed inner XCTest output is retained; reports, journals,
-    /// signing material, environment dumps, source and secret-evidence directories are excluded.
+    func testNativeFailureDiagnosticsRetainPreflightFailureWithoutInnerArtifacts() throws {
+        let attempt = try UITestStorage.makeDirectory(prefix: "native-preflight-diagnostic")
+        defer { try? FileManager.default.removeItem(at: attempt) }
+        let xcuitest = attempt.appendingPathComponent("xcuitest")
+        try FileManager.default.createDirectory(at: xcuitest, withIntermediateDirectories: true)
+        let artifacts = attempt.appendingPathComponent("artifacts")
+        try FileManager.default.createDirectory(at: artifacts, withIntermediateDirectories: true)
+        let report: [String: Any] = ["resourcesReleased": true, "result": [
+            "summary": "infrastructureFailed", "subjectDispatched": false,
+            "subjectCompleted": false, "evidenceComplete": false], "servedJavaScriptResponses": ["private": "withheld-response"]]
+        try JSONSerialization.data(withJSONObject: report).write(to: attempt.appendingPathComponent("report.json"))
+        let failure = ["stage": "xcuitest-execution", "errorType": "AutomationContractError",
+            "message": "Private Mac app registration failed\nAuthorization: Bearer fixture-authorization"]
+        try JSONSerialization.data(withJSONObject: failure)
+            .write(to: artifacts.appendingPathComponent("xcuitest-preflight-failure-fixture.json"))
+        let observations: [[String: Any]] = [["stage": "prepare", "error": "Kernel observation failed",
+            "inventory": ["private": "withheld-inventory"]]]
+        try JSONSerialization.data(withJSONObject: observations).write(to: xcuitest.appendingPathComponent("native-mac-release.json"))
+        let summary = nativeAttemptFailureSummary(in: attempt)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: artifacts.path), ["xcuitest-preflight-failure-fixture.json"])
+        XCTAssertTrue(summary.contains("infrastructureFailed"))
+        XCTAssertTrue(summary.contains("Private Mac app registration failed"))
+        XCTAssertTrue(summary.contains("AutomationContractError"))
+        XCTAssertTrue(summary.contains("prepare"))
+        for withheld in ["fixture-authorization", "withheld-response", "withheld-inventory"] {
+            XCTAssertFalse(summary.contains(withheld))
+        }
+    }
+
+    private func nativeDiagnosticJSON(_ url: URL) -> Any? {
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+              values.isRegularFile == true, values.isSymbolicLink != true,
+              let size = values.fileSize, size <= 1024 * 1024,
+              let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 1024 * 1024) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    private func nativeAttemptFailureSummary(in attempt: URL) -> String {
+        var lines: [String] = []
+        if let report = nativeDiagnosticJSON(attempt.appendingPathComponent("report.json")) as? [String: Any] {
+            if let released = report["resourcesReleased"] as? Bool { lines.append("resourcesReleased: \(released)") }
+            if let result = report["result"] as? [String: Any] {
+                if let summary = result["summary"] as? String { lines.append("summary: " + String(summary.prefix(128))) }
+                for key in ["subjectDispatched", "subjectCompleted", "subjectDispatchUncertain", "assessed", "evidenceComplete"] {
+                    if let value = result[key] as? Bool { lines.append("\(key): \(value)") }
+                }
+            }
+        }
+        let artifacts = attempt.appendingPathComponent("artifacts")
+        let failures = (try? FileManager.default.contentsOfDirectory(at: artifacts, includingPropertiesForKeys: nil)) ?? []
+        for file in failures.filter({ $0.lastPathComponent.hasPrefix("xcuitest-preflight-failure-") && $0.pathExtension == "json" }).prefix(4) {
+            guard let failure = nativeDiagnosticJSON(file) as? [String: Any] else { continue }
+            for key in ["stage", "errorType", "message"] {
+                if let value = failure[key] as? String { lines.append("preflight.\(key): " + String(value.prefix(8192))) }
+            }
+        }
+        if let observations = nativeDiagnosticJSON(attempt.appendingPathComponent("xcuitest/native-mac-release.json")) as? [[String: Any]] {
+            for observation in observations.suffix(20) {
+                if let stage = observation["stage"] as? String { lines.append("lifecycle.stage: " + String(stage.prefix(128))) }
+                if let error = observation["error"] as? String { lines.append("lifecycle.error: " + String(error.prefix(2048))) }
+            }
+        }
+        return String(redactedNativeDiagnostic(lines.joined(separator: "\n")).prefix(16_384))
+    }
+
+    /// Retain a filtered status/error summary and this fixture's failed inner XCTest output.
+    /// Raw reports, journals, process inventories, environment and signing material are excluded.
     private func attachNativeExecutionFailureLogs(storage: URL) {
         let manager = FileManager.default
         let automation = storage.appendingPathComponent("Automation")
         guard let attempt = latestNativeAttempt(in: automation) else { return }
         var remainingBytes = 1024 * 1024
         var remainingFiles = 16
+        let summary = nativeAttemptFailureSummary(in: attempt)
+        if !summary.isEmpty {
+            let data = Data(summary.utf8)
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
+            attachment.name = "fixture-native-failure-" + attempt.lastPathComponent + "-summary.txt"
+            attachment.lifetime = .keepAlways; add(attachment)
+            remainingBytes -= data.count; remainingFiles -= 1
+        }
         let artifacts = attempt.appendingPathComponent("artifacts")
         guard let files = try? manager.contentsOfDirectory(at: artifacts, includingPropertiesForKeys: [.creationDateKey]) else { return }
         // Failed receipts precede logs; newest execution logs precede earlier successful preflights.

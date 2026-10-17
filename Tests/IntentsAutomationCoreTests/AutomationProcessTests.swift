@@ -62,21 +62,50 @@ final class AutomationProcessTests: XCTestCase, @unchecked Sendable {
     func testMissingIdentityDeadlineCannotAuthorizeStoppingALiveChild() async throws {
         let reader = MissingIdentityReader(), recorder = ProcessRecorder()
         let command = AutomationOwnedCommand(presenceReader: { $0.presence() }, identityReader: { reader.read($0) })
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("uncaptured-child-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let ready = root.appendingPathComponent("ready"), release = root.appendingPathComponent("release")
+        var fixtureReleased = false
+        defer {
+            try? Data().write(to: release)
+            if fixtureReleased { try? FileManager.default.removeItem(at: root) }
+        }
+        let script = """
+            import os, pathlib, sys, time
+            ready, release = map(pathlib.Path, sys.argv[1:])
+            ready.write_text(str(os.getpid()))
+            deadline = time.monotonic() + 10
+            while not release.exists():
+                if time.monotonic() >= deadline: raise SystemExit(2)
+                time.sleep(0.01)
+            """
         do {
-            _ = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/bin/sleep")),
-                arguments: ["5"], directory: URL(fileURLWithPath: "/private/tmp"), environment: [:], timeout: .milliseconds(100),
+            _ = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/usr/bin/python3")),
+                arguments: ["-c", script, ready.path, release.path], directory: root, environment: [:], timeout: .milliseconds(100),
                 didStart: { await recorder.record($0) })
             XCTFail("An uncaptured live child cannot complete or receive termination authority")
         } catch { XCTAssertEqual(error as? AutomationContractError, .terminationUnverified) }
+        let readinessDeadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !FileManager.default.fileExists(atPath: ready.path), ContinuousClock.now < readinessDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let pid = try XCTUnwrap(Int32(try String(contentsOf: ready, encoding: .utf8)))
+        let fixtureIdentity = try XCTUnwrap(AutomationProcessIdentity.inspect(pid: pid))
+        XCTAssertTrue(fixtureIdentity.presence() == .matching, "The gated fixture is still independently alive")
         let releasedEarly = await command.stopOwned()
         XCTAssertFalse(releasedEarly)
         let recorded = await recorder.wasRecorded
         XCTAssertFalse(recorded)
         XCTAssertEqual(reader.calls, 1)
-        // The fixture exits on its own; cleanup must never signal its uncaptured PID.
-        try await Task.sleep(for: .seconds(5))
-        let released = await command.stopOwned()
-        XCTAssertTrue(released)
+        // Explicitly permit a voluntary exit, then wait for the existing release proof.
+        try Data().write(to: release)
+        let exitDeadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !fixtureReleased, ContinuousClock.now < exitDeadline {
+            fixtureReleased = await command.stopOwned()
+            if !fixtureReleased { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        XCTAssertTrue(fixtureReleased)
+        XCTAssertTrue([.absent, .replaced].contains(fixtureIdentity.presence()))
     }
 
     func testTimeoutRetainsBoundedFailureOutputAfterStoppingOwnedChild() async throws {

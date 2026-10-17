@@ -21,6 +21,25 @@ public enum AutomationXCUITestPlan {
         return suffix
     }
 
+    static func implicitMacHostActivationSegmentID(plan: AutomationCase, approval: RunApproval) -> String? {
+        guard plan.target.kind == .nativeMac, approval.effects.contains(.navigate) else { return nil }
+        for segment in plan.setup + [plan.execution] + plan.observations + plan.cleanup where segment.kind != .storageRead {
+            if let program = segment.uiProgram {
+                if segment.lifecycle != .noActivation || program.steps?.contains(where: { $0.kind == .launch }) == true { return nil }
+            } else if segment.hostProgram != nil, segment.lifecycle != .noActivation {
+                return segment.lifecycle == .persistedStateAcrossSegments ? segment.id : nil
+            }
+        }
+        return nil
+    }
+
+    static func entityFreshnessSegmentID(plan: AutomationCase) -> String? {
+        guard let setup = plan.setup.last,
+              (plan.setupChecks ?? []).contains(where: { $0.entityProperty != nil }) ||
+              plan.execution.inputBindings?.contains(where: { $0.uniqueEntity != nil }) == true else { return nil }
+        return setup.id
+    }
+
     public static func assemble(plan: AutomationCase, approval: RunApproval, attemptID: String, leaseGeneration: Int, excludedEntityIDs: Set<String> = []) throws -> UIHostPlan {
         guard approval.app == plan.app, approval.target == plan.target, approval.environmentID == plan.environmentID,
               approval.approvedCaseDigest == (try AutomationFrozenCase.planDigest(plan)), let digest = plan.app.productDigest else {
@@ -28,6 +47,7 @@ public enum AutomationXCUITestPlan {
         }
         _ = try durableObservationSuffix(plan: plan)
         try AutomationInputResolver.validate(plan: plan)
+        let activationSegmentID = implicitMacHostActivationSegmentID(plan: plan, approval: approval)
         var steps: [UIHostStep] = [], bindings: [String: String] = [:], launched = false, hasUI = false
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         for segment in plan.setup + [plan.execution] + plan.observations + plan.cleanup {
@@ -88,14 +108,17 @@ public enum AutomationXCUITestPlan {
             } else if var program = segment.hostProgram {
                 guard !program.usesFiles else { throw AutomationContractError.missingEvidence("Mixed XCUITest file transfer is not supported") }
                 if plan.target.kind == .nativeMac, !launched, segment.lifecycle != .noActivation {
-                    guard segment.lifecycle == .persistedStateAcrossSegments,
-                          segment.effects.contains(.navigate), approval.effects.contains(.navigate) else {
+                    guard !segment.effects.contains(.navigate) || approval.effects.contains(.navigate) else {
                         throw AutomationContractError.invalidPlan("Mac host activation needs approved navigation and persisted-state lifecycle")
                     }
-                    // The frozen XCTest target binds launch to the exact prepared private app.
-                    // Starting it registers its App Intents before the first host operation.
-                    steps.append(.init(id: "__xcuitest_launch", segmentID: segment.id, kind: .launch))
-                    launched = true
+                    if approval.effects.contains(.navigate) {
+                        guard segment.lifecycle == .persistedStateAcrossSegments, activationSegmentID == segment.id else {
+                            throw AutomationContractError.invalidPlan("Mac host activation needs approved navigation and persisted-state lifecycle")
+                        }
+                        // Activation is an approved plan prerequisite; query domain effects stay read-only.
+                        steps.append(.init(id: "__xcuitest_launch", segmentID: segment.id, kind: .launch))
+                        launched = true
+                    }
                 }
                 for index in program.operations.indices {
                     if inputs.contains(where: { $0.destination == .hostQueryIDs && $0.operationID == program.operations[index].id }) {
@@ -132,9 +155,9 @@ public enum AutomationXCUITestPlan {
             return .init(producerSegmentID: check.observationID, outputID: predicate.operationID, destination: "freshness",
                          name: check.checkID ?? check.observationID, selection: try selection(predicate.selection, attemptID: attemptID))
         }
-        if (!freshnessBindings.isEmpty || plan.execution.inputBindings?.contains(where: { $0.uniqueEntity != nil }) == true),
-           let setup = plan.setup.last, let subjectIndex = steps.firstIndex(where: { $0.segmentID == plan.execution.id }) {
-            steps.insert(.init(id: "__xcuitest_freshness", segmentID: setup.id, kind: .checkFreshness), at: subjectIndex)
+        if let setupID = entityFreshnessSegmentID(plan: plan),
+           let subjectIndex = steps.firstIndex(where: { $0.segmentID == plan.execution.id }) {
+            steps.insert(.init(id: "__xcuitest_freshness", segmentID: setupID, kind: .checkFreshness), at: subjectIndex)
         }
         if hasUI, let last = steps.last {
             steps.append(.init(id: "__xcuitest_final_screenshot", segmentID: last.segmentID, kind: .screenshot))

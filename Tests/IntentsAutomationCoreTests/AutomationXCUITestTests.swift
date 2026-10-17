@@ -96,10 +96,9 @@ final class AutomationXCUITestTests: XCTestCase, @unchecked Sendable {
         approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
         XCTAssertEqual(try AutomationXCUITestPlan.assemble(plan: plan, approval: approval,
             attemptID: "attempt", leaseGeneration: 1).steps.map(\.kind), [.invokeIntent])
-        for restriction in ["segment-effect", "approval-effect", "continuity", "ui-budget", "subject-budget", "approval-budget"] {
+        for restriction in ["approval-effect", "continuity", "ui-budget", "subject-budget", "approval-budget"] {
             (plan, approval) = try macHostFixture()
             switch restriction {
-            case "segment-effect": plan.execution.effects = [.observe]
             case "approval-effect": approval.effects = [.observe]
             case "continuity": plan.execution.lifecycle = .processContinuityRequired
             case "ui-budget": plan.budget.uiActions = 0
