@@ -2,6 +2,44 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationHostTests: XCTestCase {
+    func testTerminalFailureRetainsCompletedPrefixAndRejectsIncompleteOrConflictingReceipts() throws {
+        let program = AutomationHostProgram(operations: ["first", "failed", "neverStarted"].map {
+            .init(id: $0, kind: .invoke, typeID: "ExampleIntent", resultCodec: "noValue")
+        })
+        let prefix: [String: Any] = ["operationID": "first", "dispatched": true, "value": ["kind": "noValue"]]
+        let failure: [String: Any] = ["operationID": "failed", "dispatched": true, "error": "Record was deleted"]
+        let original: [String: Any] = ["schemaVersion": 2,
+            "runner": ["pid": 123, "startIdentity": "123456:100", "executablePath": "/owned/Host.app/Host"],
+            "runID": "run", "attemptID": "attempt", "segmentID": "subject", "leaseGeneration": 2,
+            "bundleID": app.bundleID, "productDigest": app.productDigest!, "complete": false,
+            "operations": [prefix, failure]]
+        func read(_ fields: [String: Any], allowFailure: Bool = true) throws -> AutomationImportedHostReceipt {
+            try AutomationHostReceiptImporter.importReceipt(JSONSerialization.data(withJSONObject: fields),
+                scope: scope, app: app, program: program, allowTerminalFailure: allowFailure)
+        }
+        let imported = try read(original)
+        XCTAssertEqual(imported.values, ["first": .omission])
+        XCTAssertEqual(imported.terminalFailure?.operationID, "failed")
+        XCTAssertEqual(imported.terminalFailure?.message, "Record was deleted")
+        XCTAssertThrowsError(try read(original, allowFailure: false))
+        var invalid = original; invalid["complete"] = true
+        XCTAssertThrowsError(try read(invalid))
+        invalid = original; invalid["attemptID"] = "another-attempt"
+        XCTAssertThrowsError(try read(invalid))
+        invalid = original; invalid["operations"] = [prefix]
+        XCTAssertThrowsError(try read(invalid), "A progress receipt must not settle dispatch")
+        invalid = original; invalid["operations"] = [prefix, failure, prefix]
+        XCTAssertThrowsError(try read(invalid), "Operations cannot continue after terminal failure")
+        invalid = original; invalid["operations"] = [failure]
+        XCTAssertThrowsError(try read(invalid), "A terminal receipt cannot omit earlier operations")
+        var oversized = failure; oversized["error"] = String(repeating: "x", count: 4097)
+        invalid = original; invalid["operations"] = [prefix, oversized]
+        XCTAssertThrowsError(try read(invalid))
+        var contradictory = failure; contradictory["value"] = ["kind": "noValue"]
+        invalid = original; invalid["operations"] = [prefix, contradictory]
+        XCTAssertThrowsError(try read(invalid))
+    }
+
     func testDigestVersionIsCorrelatedInPayloadAndReceiptWithoutChangingOldWireShape() throws {
         let program = AutomationHostProgram(operations: [.init(id: "find", kind: .invoke, typeID: "FindIntent", resultCodec: "noValue")])
         let old = try JSONDecoder().decode(AutomationJSON.self, from: program.payload(scope: scope, app: app, route: .systemIntent, phase: .subject))

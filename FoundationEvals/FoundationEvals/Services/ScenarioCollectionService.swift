@@ -123,6 +123,11 @@ enum ScenarioCollectionService {
             throw ScenarioCollectionError.invalidSelection
         }
         let selectedMembers = collection.members.filter { selected.contains($0.caseID) }
+        if selectedMembers.contains(where: {
+            definitionsByID[$0.caseID].map(ScenarioExpectationAuthoring.isUnpreparedBasicDirectCheck) == true
+        }) {
+            throw ScenarioCollectionError.unpreparedBasicCollection
+        }
         let cases = try selectedMembers.map { member -> ScenarioBatchCase in
             let definition = definitionsByID[member.caseID]!
             let expectedSubjectInputDigest: String?
@@ -263,6 +268,8 @@ enum ScenarioCollectionService {
                           let lane = row.laneResult,
                           let snapshot = caseByID[coordinate.caseID],
                           run.acceptanceStatus == .accepted,
+                          run.executionStatus == .completed,
+                          run.xctestExitCode == 0,
                           run.id == run.invocation.id,
                           run.scenarioID == coordinate.caseID,
                           run.scenarioVersion == snapshot.member.version,
@@ -292,11 +299,9 @@ enum ScenarioCollectionService {
                         return .init(coordinate: coordinate, terminalState: .blocked, outcome: nil,
                                      reason: "Local Feature evidence lacks its accepted native run, journal or checked build.")
                     }
-                    let passed = run.executionStatus == .completed
-                        && run.xctestExitCode == 0
-                        && lane.executionStatus == .completed && lane.outcome == .passed
+                    let passed = lane.executionStatus == .completed && lane.outcome == .passed
                     return .init(coordinate: coordinate, terminalState: .completed,
-                                 outcome: passed ? .passed : lane.outcome,
+                                 outcome: lane.executionStatus == .completed ? lane.outcome : nil,
                                  reason: passed ? nil : (lane.diagnostic ?? "The feature requirement did not pass."))
                 }
                 guard let child = row.featureChild,
@@ -327,34 +332,60 @@ enum ScenarioCollectionService {
                 let passed = lane.executionStatus == .completed && lane.outcome == .passed
                     && child.errorCategory == nil && child.errorMessage == nil
                 return .init(coordinate: coordinate, terminalState: .completed,
-                             outcome: passed ? .passed : lane.outcome,
+                             outcome: lane.executionStatus == .completed
+                                && child.errorCategory == nil && child.errorMessage == nil ? lane.outcome : nil,
                              reason: passed ? nil : (lane.diagnostic ?? "The feature requirement did not pass."))
             }
             guard let runID = row.evidenceRunID, let run = runByID[runID],
+                  runs.count(where: { $0.id == runID }) == 1,
                   let laneID = row.evidenceLaneResultID,
                   let lane = run.laneResults.first(where: { $0.id == laneID }),
                   let caseSnapshot = caseByID[coordinate.caseID],
+                  run.id == run.invocation.id,
+                  run.scenarioSchemaVersion == ScenarioDefinition.stableSchemaVersion,
+                  run.acceptanceStatus == .accepted,
+                  run.executionStatus == .completed,
+                  run.xctestExitCode == 0,
+                  run.executedTestCount == 1,
                   run.scenarioID == coordinate.caseID,
                   run.scenarioVersion == caseSnapshot.member.version,
+                  run.scenarioDigest == caseSnapshot.member.definitionDigest,
                   run.testContractDigest == caseSnapshot.member.testContractDigest,
                   run.startedAt >= manifest.createdAt,
+                  run.invocation.scenarioDigest == caseSnapshot.member.definitionDigest,
                   run.invocation.appProduct?.sha256 == manifest.appProductDigest,
+                  run.invocation.appProduct?.bundleIdentifier == caseSnapshot.targetBundleIdentifier,
+                  run.invocation.featureBackend == nil,
+                  run.fixture?.digest == caseSnapshot.fixtureContractDigest,
+                  run.laneResults == [lane],
+                  row.laneResult == nil || row.laneResult == lane,
                   lane.caseID == coordinate.caseID, lane.lane == coordinate.lane,
                   lane.attempt == coordinate.repetition,
+                  journals.count(where: { $0.id == runID }) == 1,
+                  let journal = journals.first(where: { $0.id == runID }),
+                  journal.invocation == run.invocation,
+                  journal.scope == ScenarioNativeExecutionScope(lane: coordinate.lane, attempt: coordinate.repetition),
+                  ScenarioReleaseCheckEvaluator.acceptedJournal(for: run, in: [journal]),
                   usedLaneResults.insert(laneID).inserted else {
                 return .init(coordinate: coordinate, terminalState: .blocked, outcome: nil,
-                             reason: "Evidence is missing, stale, duplicated or belongs to another case/attempt.")
+                             reason: "Evidence is missing, stale, duplicated, lacks an accepted zero-exit native journal, or belongs to another case/attempt.")
             }
-            let passed = run.executionStatus == .completed && lane.executionStatus == .completed
-                && lane.outcome == .passed
+            let passed = lane.executionStatus == .completed && lane.outcome == .passed
             return .init(coordinate: coordinate, terminalState: .completed,
-                         outcome: passed ? .passed : lane.outcome,
+                         outcome: lane.executionStatus == .completed ? lane.outcome : nil,
                          reason: passed ? nil : (lane.diagnostic ?? "The requirement did not pass."))
         }
         let plannedIDs = Set(manifest.coordinates.map(\.id))
         let hasUnexpectedRows = rows.contains { !plannedIDs.contains($0.id) }
         let passedCount = assessments.count { $0.outcome == .passed }
-        let incomplete = assessments.contains { $0.terminalState != .completed || $0.outcome == nil }
+        let required = assessments.filter { $0.coordinate.required }
+        let unresolvedOrInvalidExecution = assessments.contains { assessment in
+            assessment.terminalState == .recoveryRequired
+                || (rowByID[assessment.coordinate.id]?.state == .completed
+                    && (assessment.terminalState != .completed || assessment.outcome == nil))
+        }
+        let incomplete = unresolvedOrInvalidExecution || required.isEmpty
+            || required.contains { $0.terminalState != .completed || $0.outcome == nil }
         let qualification: ScenarioBatchQualification
         if hasUnexpectedRows || unexpectedExecution || !duplicateRows.isEmpty || !duplicatePlans.isEmpty {
             qualification = .incompatible
@@ -362,7 +393,7 @@ enum ScenarioCollectionService {
             qualification = .partial
         } else if incomplete {
             qualification = .incomplete
-        } else if passedCount == assessments.count {
+        } else if required.allSatisfy({ $0.outcome == .passed }) {
             qualification = .passedFull
         } else {
             qualification = .failedFull
@@ -372,7 +403,7 @@ enum ScenarioCollectionService {
         if hasUnexpectedRows || unexpectedExecution || !duplicateRows.isEmpty || !duplicatePlans.isEmpty {
             reasons.append("The batch contains an invalid case execution or duplicate coordinates.")
         }
-        if incomplete { reasons.append("One or more planned attempts have no complete evidence.") }
+        if incomplete { reasons.append("A required attempt is incomplete, or executed evidence still needs recovery or validation.") }
         return .init(qualification: qualification, coordinates: assessments,
                      passedCount: passedCount, plannedCount: assessments.count, reasons: reasons)
     }
@@ -386,7 +417,9 @@ enum ScenarioCollectionService {
     }
 
     static func failedCaseIDs(in assessment: ScenarioCollectionBatchAssessment) -> Set<UUID> {
-        Set(assessment.coordinates.filter { $0.outcome != .passed }.map { $0.coordinate.caseID })
+        Set(assessment.coordinates.filter {
+            $0.coordinate.required && ($0.outcome != .passed || $0.terminalState != .completed)
+        }.map { $0.coordinate.caseID })
     }
 
     static func membershipDifference(

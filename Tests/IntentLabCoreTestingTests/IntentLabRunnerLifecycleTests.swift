@@ -6,6 +6,43 @@ import XCTest
 @available(macOS 27.0, iOS 27.0, *)
 @MainActor
 final class IntentLabRunnerLifecycleTests: XCTestCase {
+    func testBasicDirectReturnedValueDoesNotInventActionOrStateProof() throws {
+        let requirement = IntentLabActionRequirement(
+            lane: .intentIntegration, kind: .productionIntent,
+            operationID: "ReadSummaryIntent", resolvedParameters: [:]
+        )
+        var scenario = try localFeatureScenario(requirement: requirement)
+        scenario.coverage.appFeature = .notApplicable
+        scenario.coverage.intentIntegration = .required
+        scenario.coverage.siri = .notApplicable
+        scenario.executionScope = .init(lane: .intentIntegration, attempt: 1)
+        scenario.actionRequirements = nil
+        scenario.directControl.outputFields = [.init(
+            name: "returnedValue", type: .primitive(.string), path: [.init(kind: .property, name: "value")]
+        )]
+        scenario.assertions = [.init(
+            id: UUID(), kind: .returnedField, observationKey: "returnedValue",
+            expectedValue: .string("A concise summary"), required: true,
+            applicableLanes: [.intentIntegration]
+        )]
+        func result(_ value: String) -> IntentLabLaneResult {
+            IntentLabScenarioEngine.result(
+                for: .intentIntegration, scenario: scenario,
+                observations: ["returnedValue": .string(value)], baseline: [:],
+                integration: InertIntegration(), declaration: nil,
+                context: "intent-current", startedAt: Date(timeIntervalSince1970: 10)
+            )
+        }
+        let passed = result("A concise summary")
+        XCTAssertEqual(passed.outcome, .passed)
+        XCTAssertEqual(passed.claims, [.executionCompleted, .returnedValueChecked])
+        XCTAssertNil(passed.actionReceipts)
+        XCTAssertEqual(passed.observationSources?["returnedValue"], "appIntentsTesting")
+        XCTAssertEqual(result("The wrong summary").outcome, .failed)
+        scenario.actionRequirements = [requirement]
+        XCTAssertEqual(result("A concise summary").outcome, .notObserved)
+    }
+
     func testDirectDriverErrorCapturesRawStateBeforeReturning() throws {
         var observationRead = false
         let receiptValue = try serializedReceipt(status: .failed)

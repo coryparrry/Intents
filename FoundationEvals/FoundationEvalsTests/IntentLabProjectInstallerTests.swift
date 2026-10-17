@@ -3,6 +3,64 @@ import Testing
 @testable import FoundationEvals
 
 struct IntentLabProjectInstallerTests {
+    @Test func freshBasicMetadataIsTypedBoundedAndPreservesExplicitEmptyInputs() throws {
+        let parameters = """
+        [{"name":"text","type":{"primitive":{"_0":"string"}},"required":true}]
+        """
+        let projections = """
+        [{"id":"returnedValue","type":{"primitive":{"_0":"string"}},"path":[{"kind":"property","name":"value"}]}]
+        """
+        let input = try IntentLabConsumerTemplates.declarationEntries(parameters, fallback: [], field: "parameters")
+        let output = try IntentLabConsumerTemplates.declarationEntries(projections, fallback: [], field: "resultProjections")
+        #expect(input.first?["name"] as? String == "text")
+        #expect(output.first?["id"] as? String == "returnedValue")
+        #expect(try IntentLabConsumerTemplates.declarationEntries("", fallback: input, field: "parameters").count == 1)
+        #expect(try IntentLabConsumerTemplates.declarationEntries("[]", fallback: input, field: "parameters").isEmpty)
+        #expect(throws: (any Error).self) {
+            _ = try IntentLabConsumerTemplates.declarationEntries(
+                "[{\"name\":\"text\",\"type\":\"String\",\"required\":true}]", fallback: [], field: "parameters"
+            )
+        }
+        #expect(throws: IntentLabProjectInstallerError.self) {
+            _ = try IntentLabConsumerTemplates.declarationEntries(
+                "[" + Array(repeating: "{}", count: 17).joined(separator: ",") + "]",
+                fallback: [], field: "resultProjections"
+            )
+        }
+        var declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        declaration["actions"] = [["id": "EchoIntent", "parameters": input]]
+        declaration["resultProjections"] = output
+        declaration["capabilities"] = ["environment-payload", "direct-intent-execution", "direct-intent-output"]
+        let data = try IntentLabConsumerTemplates.basicDeclarationData(declaration)
+        _ = try IntentLabProjectInstaller.validateDeclaration(
+            data, targetBundleIdentifier: "com.example.Consumer", testTargetName: "UITests"
+        )
+    }
+
+    @Test func generatedBasicConsumerInstallsItsRequiredReadinessPath() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        let data = try IntentLabConsumerTemplates.basicDeclarationData(declaration)
+        let request = fixture.request(declarationData: data, consumerSource: IntentLabConsumerTemplates.basic)
+        let installer = IntentLabProjectInstaller()
+        let plan = try installer.preview(request)
+        #expect(plan.supported, "\(plan.manualSteps)")
+        #expect(plan.changes.contains { $0.url.lastPathComponent == "IntentLabReadinessTestSupport.swift" })
+        let installedDeclaration = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let readiness = try #require(installedDeclaration["readinessControl"] as? [String: Any])
+        #expect(readiness["testIntentIdentifier"] as? String == "IntentLabReadinessIntent")
+        #expect((installedDeclaration["capabilities"] as? [String])?.contains("test-only-intent") == true)
+        for source in [IntentLabConsumerTemplates.basic, IntentLabConsumerTemplates.siri] {
+            #expect(source.contains("func testIntentLabScenario()"))
+            #expect(source.contains("func testIntentLabConnection()"))
+            #expect(source.contains("func testIntentLabReadiness()"))
+        }
+        _ = try installer.apply(plan)
+        #expect(try installer.verify(request).installed)
+        #expect(try installer.preview(request).changes.isEmpty)
+    }
+
     @Test func generatedBasicDeclarationCannotClaimStableFixtureProof() throws {
         let basic = try IntentLabProjectInstaller.validateDeclaration(
             Fixture.declarationData,
@@ -714,29 +772,14 @@ struct IntentLabProjectInstallerTests {
             "isolation": ["kind": "readOnly"],
             "capabilities": ["direct-intent-execution", "environment-payload"],
         ]
-        let consumerSource = """
-        import XCTest
-        import IntentLabTesting
-
-        @available(macOS 27.0, iOS 27.0, *)
-        @MainActor
-        final class IntentLabScenarioTests: XCTestCase {
-            func testIntentLabScenario() throws {
-                try IntentLabScenarioRunner.run(testCase: self, integration: IntentLabBasicIntegration())
-            }
-
-            func testIntentLabConnection() throws {
-                try IntentLabScenarioRunner.checkConnection(testCase: self, integration: IntentLabBasicIntegration())
-            }
-        }
-        """
+        let consumerSource = IntentLabConsumerTemplates.basic
         let packageURL = URL(filePath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let request = IntentLabInstallationRequest(
             projectURL: project, scheme: "IntentLabMacInstallerFixture",
             applicationTargetID: appTarget.id, packageURL: packageURL,
             packageProduct: "IntentLabTesting", consumerSource: consumerSource,
-            declarationData: try JSONSerialization.data(withJSONObject: declaration, options: [.sortedKeys]))
+            declarationData: try IntentLabConsumerTemplates.basicDeclarationData(declaration))
         let installer = IntentLabProjectInstaller()
         let plan = try installer.preview(request)
         #expect(plan.supported, "\(plan.manualSteps)")

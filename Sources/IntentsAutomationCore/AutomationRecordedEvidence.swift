@@ -27,6 +27,7 @@ public enum AutomationRecordedEvidence {
             }
             for value in receipt.verifiedOutputs?.values ?? Dictionary<String, AutomationValue>().values { try value.validate() }
             if let failure = receipt.terminalUIAssertionFailure { try failure.validate(receipt: receipt, segment: segment, plan: plan) }
+            try receipt.terminalHostFailure?.validate(receipt: receipt, segment: segment)
         }
         let subject = report.receipts.first { $0.segmentID == plan.execution.id }
         guard report.result.subjectDispatched == (subject?.dispatched ?? false), report.result.subjectCompleted == (subject?.completed ?? false),

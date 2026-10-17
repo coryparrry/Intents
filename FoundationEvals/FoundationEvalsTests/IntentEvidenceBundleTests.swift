@@ -4,6 +4,102 @@ import Testing
 @testable import FoundationEvals
 
 struct IntentEvidenceBundleTests {
+    @Test func unpreparedBasicDirectQualifiesOnlyItsCapturedReturnWithoutInventedFixture() throws {
+        let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
+                                       executedTestCount: 1, xctestExitCode: 0, unpreparedBasic: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let item = fixture.snapshot.cases[0]
+        #expect(ScenarioExpectationAuthoring.isUnpreparedBasicDirectCheck(item.definition))
+        #expect(item.plan.fixtureContractDigest.isEmpty)
+        #expect(item.runs[0].laneResults[0].actionReceipts == nil)
+        #expect(item.runs[0].laneResults[0].observations["intentlab.fixtureDigest"] == nil)
+        #expect(ScenarioHarnessCapabilities.required(for: item.definition).contains("basic-direct-read-only"))
+        let finalized = ScenarioResultEvaluator.applyingNativeFixtureEvidence(to: item.runs[0], definition: item.definition)
+        #expect(finalized == item.runs[0])
+        let decision = IntentEvidenceQualification.qualify(
+            item, requirement: fixture.trusted.cases[0], referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(decision.incompleteEvidence.isEmpty)
+        #expect(decision.requiredFailures.isEmpty)
+        #expect(decision.report?.outcome == .passed)
+        let offline = try IntentEvidenceChecker.check(
+            bundle: fixture.bundle, requirements: fixture.requirements,
+            expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64),
+            policy: IntentEvidenceChecker.policyID, referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(offline.exitCode == 0)
+    }
+
+    @Test(arguments: ["capability", "declaredFixture", "strictAction", "state", "siri", "feature", "planFixture", "runFixture", "exit", "journal"])
+    func unpreparedBasicExceptionCannotSupplyRicherProofOrLoseExecutionBinding(defect: String) throws {
+        let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
+                                       executedTestCount: 1, xctestExitCode: 0, unpreparedBasic: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var item = fixture.snapshot.cases[0]
+        var definition = item.definition
+        switch defect {
+        case "declaredFixture":
+            definition.fixture.id = "declared-data"
+            definition.fixture.version = "1"
+            definition.fixture.digest = String(repeating: "c", count: 64)
+        case "strictAction":
+            definition.actionPolicyVersion = 1
+            definition.actionRequirements = [.init(lane: .intentIntegration, kind: .productionIntent,
+                operationID: definition.directControl.intentIdentifier, resolvedParameters: [
+                    "note": .entity(.init(typeIdentifier: "NoteEntity", identifier: "packing-001"))
+                ])]
+        case "state":
+            definition.checkMode = .behaviour
+            definition.requiredClaims?.append(.applicationStateChecked)
+        case "siri": definition.coverage.siri = .required
+        case "feature": definition.coverage.appFeature = .required
+        default: break
+        }
+        definition = try definition.frozen()
+        item.definition = definition
+        item.plan.definitionDigest = definition.definitionDigest
+        item.plan.testContractDigest = try #require(definition.testContractDigest)
+        item.plan.fixtureContractDigest = definition.fixture.digest
+        item.runs[0].scenarioDigest = definition.definitionDigest
+        item.runs[0].testContractDigest = definition.testContractDigest
+        item.runs[0].invocation.scenarioDigest = definition.definitionDigest
+        item.runs[0].fixture = definition.fixture
+        item.journals[0].invocation = item.runs[0].invocation
+        if defect == "capability" { item.runs[0].negotiatedCapabilities?.removeAll { $0 == "basic-direct-read-only" } }
+        if defect == "planFixture" { item.plan.fixtureContractDigest = String(repeating: "c", count: 64) }
+        if defect == "runFixture" { item.runs[0].fixture?.preparationOperation = "resetProductionData" }
+        if defect == "exit" { item.runs[0].xctestExitCode = 65 }
+        if defect == "journal" { item.journals = [] }
+        let finalized = ScenarioResultEvaluator.applyingNativeFixtureEvidence(to: item.runs[0], definition: definition)
+        if ["declaredFixture", "strictAction", "state", "siri", "feature", "capability"].contains(defect) {
+            #expect(finalized.laneResults[0].executionStatus == .invalidEvidence)
+            item.runs = [finalized]
+        }
+        var row = item.record.records[0]
+        row.laneResult = item.runs[0].laneResults[0]
+        item.record = try ScenarioExecutionRecord.make(plan: item.plan, records: [row], completedAt: item.record.completedAt)
+        let decision = IntentEvidenceQualification.qualify(
+            item, requirement: .init(required: true, definition: definition), referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(decision.report?.outcome != .passed, "\(defect) must not qualify")
+    }
+
+    @Test func unpreparedBasicDirectRetainsAnActualWrongReturnedValueAsFailure() throws {
+        let fixture = try nativeBundle(observed: "wrong-note", claimedOutcome: .failed,
+                                       executedTestCount: 1, xctestExitCode: 0, unpreparedBasic: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let item = fixture.snapshot.cases[0]
+        let finalized = ScenarioResultEvaluator.applyingNativeFixtureEvidence(to: item.runs[0], definition: item.definition)
+        #expect(finalized.laneResults[0].outcome == .failed)
+        #expect(finalized.executionStatus == .completed)
+        let decision = IntentEvidenceQualification.qualify(
+            item, requirement: fixture.trusted.cases[0], referenceTime: Date(timeIntervalSince1970: 100)
+        )
+        #expect(decision.incompleteEvidence.isEmpty)
+        #expect(!decision.requiredFailures.isEmpty)
+        #expect(decision.report?.outcome == .failed)
+    }
+
     @Test func siriOnlyTypedOpenQualifiesWithBoundNativeEvidence() throws {
         let fixture = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
                                        executedTestCount: 1, xctestExitCode: 0, siriOnly: true)
@@ -1792,7 +1888,8 @@ struct IntentEvidenceBundleTests {
         executedTestCount: Int, xctestExitCode: Int32, projectID: UUID? = nil,
         actionFailureReason: ScenarioActionFailureReason? = nil,
         purpose: ScenarioPurpose = .releaseRequirement,
-        siriOnly: Bool = false
+        siriOnly: Bool = false,
+        unpreparedBasic: Bool = false
     ) throws -> Fixture {
         let now = Date(timeIntervalSince1970: 100)
         let root = FileManager.default.temporaryDirectory.appending(path: "native-evidence-test-\(UUID().uuidString)")
@@ -1806,6 +1903,10 @@ struct IntentEvidenceBundleTests {
         definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
         definition.integration = .init(id: "notes", version: "1", digest: String(repeating: "e", count: 64))
         definition.fixture.digest = String(repeating: "c", count: 64)
+        if unpreparedBasic {
+            definition.fixture = .init(id: "", version: "", digest: "", isSynthetic: false,
+                                       preparationOperation: "none", cleanupOperation: "none")
+        }
         definition.directControl.outputFields[0].path = [.init(kind: .property, name: "selectedNoteID")]
         definition.observationPlan = [.init(id: "selectedNoteID", source: .intentResult,
                                             operationID: nil, selector: nil)]
@@ -1876,7 +1977,8 @@ struct IntentEvidenceBundleTests {
                               executableName: "Fixture", sha256: appHash),
             testProduct: .init(bundleIdentifier: "com.example.FixtureUITests",
                                executableName: "FixtureUITests", sha256: testHash),
-            integration: definition.integration, requiredCapabilities: []
+            integration: definition.integration,
+            requiredCapabilities: unpreparedBasic ? ScenarioHarnessCapabilities.required(for: definition).sorted() : []
         )
         if siriOnly {
             let action = try #require(definition.actionRequirements?.first)
@@ -1915,6 +2017,7 @@ struct IntentEvidenceBundleTests {
         run.integration = definition.integration
         run.runnerPackageVersion = "fixture-package-1"
         run.negotiatedCapabilities = ScenarioHarnessCapabilities.required(for: definition).sorted()
+        if unpreparedBasic { run.acceptanceStatus = .accepted }
         run.xctestExitCode = xctestExitCode
         run.executedTestCount = executedTestCount
         var terminal = ScenarioExecutionCoordinateRecord(
@@ -1929,7 +2032,8 @@ struct IntentEvidenceBundleTests {
             derivedDataPath: "DerivedData", buildLogPath: "build.log",
             intendedExecutable: "xcodebuild", intendedArguments: [],
             processIdentifier: nil, processStartedAt: now, updatedAt: now,
-            recoveryReason: nil, evidenceAccepted: xctestExitCode == 0
+            recoveryReason: nil, evidenceAccepted: xctestExitCode == 0,
+            scope: unpreparedBasic ? .init(lane: route, attempt: 1) : nil
         )
         let trusted = IntentEvidenceRequirements(
             collectionID: "native-regressions",

@@ -14,8 +14,9 @@ struct ScenarioSavedExecutionReportTests {
     }
 
     private func savedFixture(root: URL, semanticOnlyFeature: Bool = false, siriOnlySummary: Bool = false,
-                              response: String = "A summary", directState: String = "packing-001") async throws -> Fixture {
-        var definition = ScenarioDefinition.starter()
+                              response: String = "A summary", directState: String = "packing-001",
+                              projectID: UUID? = nil) async throws -> Fixture {
+        var definition = ScenarioDefinition.starter(projectID: projectID)
         definition.target.destinationIdentifier = "simulator"
         definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
         definition.coverage = .init(appFeature: .required, intentIntegration: .required,
@@ -268,7 +269,8 @@ struct ScenarioSavedExecutionReportTests {
         defer { try? FileManager.default.removeItem(at: support) }
         let store = EvaluationStore(supportDirectory: support)
         let root = store.overviewStorageDirectory.appending(path: "IntentLab")
-        let fixture = try await savedFixture(root: root, semanticOnlyFeature: semanticOnlyFeature)
+        let fixture = try await savedFixture(root: root, semanticOnlyFeature: semanticOnlyFeature,
+                                            projectID: store.selectedProjectID)
         if semanticOnlyFeature {
             #expect(fixture.run.laneResults[0].outcome == .notObserved)
             #expect(fixture.run.laneResults[0].claims == [.executionCompleted])
@@ -288,6 +290,19 @@ struct ScenarioSavedExecutionReportTests {
         let mcpDecision = try #require(response.structuredContent.objectValue?["qualification"])
         #expect(mcpDecision.objectValue?["incompleteEvidence"] == .array([]))
         #expect(mcpDecision.objectValue?["requiredFailures"] == .array([]))
+        let projectResponse = await MCPStoreAuthority.make(store: store).call(
+            .projectReleaseReport(.init(projectID: store.selectedProjectID))
+        )
+        #expect(!projectResponse.isError)
+        let projectReport = try #require(projectResponse.structuredContent.objectValue?["report"])
+        guard case .array(let scenarios) = try #require(projectReport.objectValue?["scenarios"]) else {
+            Issue.record("The project report must include its coordinated scenario reports.")
+            return
+        }
+        let scenario = try #require(scenarios.first?.objectValue)
+        #expect(scenario["outcome"] == .string("passed"))
+        #expect(scenario["executionID"] == .string(fixture.record.id.uuidString))
+        #expect(scenario["runID"] == nil || scenario["runID"] == .null)
         let gui = try #require(await coordinator.qualificationForSelectedExecution())
         #expect(gui.report?.outcome == qualification.report?.outcome)
         var artifacts: [UUID: Data] = [:]
@@ -308,6 +323,38 @@ struct ScenarioSavedExecutionReportTests {
             policy: IntentEvidenceChecker.policyID, referenceTime: Date())
         #expect(cli.exitCode == 0)
         #expect(try fileSnapshot(root) == before)
+    }
+
+    @MainActor
+    @Test func projectReleaseDoesNotBorrowAnOlderPassForANewerUnfinishedPlan() async throws {
+        let support = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: support) }
+        let store = EvaluationStore(supportDirectory: support)
+        let root = store.overviewStorageDirectory.appending(path: "IntentLab")
+        let fixture = try await savedFixture(root: root, projectID: store.selectedProjectID)
+        let pending = try ScenarioExecutionPlan.make(
+            definition: fixture.definition, profile: fixture.plan.profile,
+            appProductDigest: fixture.plan.appProductDigest, testProductDigest: fixture.plan.testProductDigest,
+            sourceInputsDigest: try #require(fixture.plan.sourceInputsDigest),
+            runnerBuildID: nil, runnerID: nil,
+            createdAt: fixture.plan.createdAt.addingTimeInterval(2)
+        )
+        try await ScenarioPersistence(rootDirectory: root).savePlan(pending)
+        let response = await MCPStoreAuthority.make(store: store).call(
+            .projectReleaseReport(.init(projectID: store.selectedProjectID))
+        )
+        #expect(!response.isError)
+        let report = try #require(response.structuredContent.objectValue?["report"])
+        guard case .array(let scenarios) = try #require(report.objectValue?["scenarios"]) else {
+            Issue.record("The project report omitted a required scenario.")
+            return
+        }
+        #expect(scenarios.first?.objectValue?["outcome"] == .string("incompleteOrIncompatibleEvidence"))
+        if case .string(let summary) = scenarios.first?.objectValue?["summary"] {
+            #expect(summary.contains("no terminal coordinated execution"))
+        } else {
+            Issue.record("Expected an incomplete execution summary")
+        }
     }
 
     @Test(arguments: ["semantic", "direct"])

@@ -265,7 +265,7 @@ enum EvaluationCaseImporter {
                     quoted = false
                 } else {
                     field.append(character)
-                    if character == "\n" { line += 1 }
+                    if isRecordNewline(character) { line += 1 }
                 }
             } else {
                 switch character {
@@ -274,7 +274,7 @@ enum EvaluationCaseImporter {
                 case ",":
                     fields.append(field)
                     field = ""
-                case "\n":
+                case "\n", "\r\n", "\r":
                     fields.append(field.trimmingCharacters(in: CharacterSet(charactersIn: "\r")))
                     let row = CSVRow(line: rowStart, fields: fields)
                     if try appendCSVRow(
@@ -327,7 +327,7 @@ enum EvaluationCaseImporter {
         var lineNumber = 1
         var start = text.startIndex
         while start < text.endIndex {
-            let newline = text[start...].firstIndex(of: "\n")
+            let newline = text[start...].firstIndex(where: isRecordNewline)
             let end = newline ?? text.endIndex
             let line = String(text[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
             if !line.isEmpty {
@@ -345,6 +345,12 @@ enum EvaluationCaseImporter {
             lineNumber += 1
         }
         return records
+    }
+
+    // Swift treats CRLF as one extended grapheme cluster, so testing only
+    // Character("\n") misses Windows record separators.
+    private static func isRecordNewline(_ character: Character) -> Bool {
+        character == "\n" || character == "\r\n" || character == "\r"
     }
 
     private static func utf8Text(_ data: Data) throws -> String {

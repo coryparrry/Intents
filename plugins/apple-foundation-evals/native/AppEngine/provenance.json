@@ -59,8 +59,8 @@
       "source": "Services/EvaluationCaseImporter.swift",
       "sha256": "cd8688e0c2858df427ec6dbf6a7a1f0fd7c9dd104be360375374a38d4159b39f",
       "bundled": "EvaluationCaseImporter.swift",
-      "bundledSHA256": "5ce6634314429b3a7eb093996304edb483ac99845c6186e70e8b283a5db135f3",
-      "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
+      "bundledSHA256": "2409b419a8504af22af86b6d6ad026a9caf2dedd4f38ff5bb3aa9a05094b9623",
+      "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present; CRLF and CR record separators handled without altering quoted fields"
     },
     {
       "source": "Models/EvaluationConversation.swift",

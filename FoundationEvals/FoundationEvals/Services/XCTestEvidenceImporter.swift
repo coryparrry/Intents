@@ -442,7 +442,7 @@ struct XCTestEvidenceImporter: Sendable {
                     }
                 }
                 if result.lane == .intentIntegration {
-                    for claim in definition.requiredClaims ?? [] {
+                    for claim in ScenarioResultEvaluator.requiredClaims(for: definition, lane: result.lane) {
                         guard ScenarioResultEvaluator.verifiedClaim(claim, definition: definition, result: result) else {
                             throw ScenarioEvidenceImportError.invalidResult("a claimed pass lacks verified \(claim.rawValue) evidence")
                         }

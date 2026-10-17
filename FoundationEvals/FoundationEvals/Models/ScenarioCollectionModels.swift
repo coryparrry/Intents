@@ -170,6 +170,10 @@ struct ScenarioCollectionBatchAssessment: Equatable, Sendable {
     var passedCount: Int
     var plannedCount: Int
     var reasons: [String]
+    var requiredPlannedCount: Int { coordinates.count { $0.coordinate.required } }
+    var requiredPassedCount: Int {
+        coordinates.count { $0.coordinate.required && $0.terminalState == .completed && $0.outcome == .passed }
+    }
 }
 
 enum ScenarioCollectionMembershipChange: String, Codable, Sendable {
@@ -187,7 +191,7 @@ struct ScenarioCollectionMembershipDifference: Equatable, Identifiable, Sendable
     var change: ScenarioCollectionMembershipChange
 }
 
-enum ScenarioCollectionError: Error, Equatable {
+enum ScenarioCollectionError: LocalizedError, Equatable {
     case invalidDefinition(UUID)
     case invalidCollection
     case invalidVariation(UUID)
@@ -197,6 +201,15 @@ enum ScenarioCollectionError: Error, Equatable {
     case invalidManifest
     case conflictingSavedObject
     case invalidSavedObject
+    case unpreparedBasicCollection
+
+    var errorDescription: String? {
+        switch self {
+        case .unpreparedBasicCollection:
+            "The current collection format requires an observed fixture. Run these Basic Direct checks individually, or configure an app-owned observed fixture before running them as a collection."
+        default: nil
+        }
+    }
 }
 
 enum ScenarioCollectionDigest {

@@ -47,6 +47,7 @@ struct ProductionImportSheet: View {
 struct ProductionJobSheet: View {
     let model: ProductionWorkspaceStore
     let store: EvaluationStore
+    var initialDatasetRevision: String? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var dataset = ""
@@ -101,6 +102,10 @@ struct ProductionJobSheet: View {
                     dismiss()
                 } catch { self.error = error.localizedDescription }
             }.buttonStyle(.borderedProminent).disabled(name.isEmpty || dataset.isEmpty || !(0...100).contains(passRate) || !(0...100).contains(cohortPassRate)) }
-        }.padding(24).frame(width: 600, height: 680).onAppear { dataset = model.datasets.first?.revision ?? ""; name = store.draftSuite.name + " · batch" }
+        }.padding(24).frame(width: 600, height: 680).onAppear {
+            dataset = model.datasets.first(where: { $0.revision == initialDatasetRevision })?.revision
+                ?? model.datasets.first?.revision ?? ""
+            name = store.draftSuite.name + " · batch"
+        }
     }
 }

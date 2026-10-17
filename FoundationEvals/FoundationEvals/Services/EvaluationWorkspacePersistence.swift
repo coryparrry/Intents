@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import IntentsAutomationCore
 
 struct EvaluationWorkspaceBootstrap {
     var catalog: EvaluationWorkspaceCatalog
@@ -369,49 +370,49 @@ enum EvaluationWorkspaceError: LocalizedError, Sendable {
 }
 
 enum EvaluationRepositoryInspector {
-    static func snapshot(rootPath: String) async -> EvaluationRepositorySnapshot {
-        await Task.detached(priority: .utility) {
-            let capturedAt = Date()
-            do {
-                let commit = try runGit(["rev-parse", "HEAD"], rootPath: rootPath)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let status = try runGit(["status", "--porcelain=v1", "--untracked-files=normal"], rootPath: rootPath)
-                return EvaluationRepositorySnapshot(
-                    rootPath: rootPath,
-                    commit: commit.isEmpty ? nil : commit,
-                    isDirty: !status.isEmpty,
-                    capturedAt: capturedAt,
-                    error: nil
-                )
-            } catch {
-                return EvaluationRepositorySnapshot(
-                    rootPath: rootPath,
-                    commit: nil,
-                    isDirty: nil,
-                    capturedAt: capturedAt,
-                    error: error.localizedDescription
-                )
-            }
-        }.value
+    static func snapshot(
+        rootPath: String,
+        gitExecutable: URL = URL(filePath: "/usr/bin/git"),
+        timeout: Duration = .seconds(10)
+    ) async -> EvaluationRepositorySnapshot {
+        let capturedAt = Date()
+        do {
+            let commit = try await runGit(["rev-parse", "HEAD"], rootPath: rootPath,
+                                          executable: gitExecutable, timeout: timeout)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let status = try await runGit(["status", "--porcelain=v1", "--untracked-files=normal"],
+                                          rootPath: rootPath, executable: gitExecutable, timeout: timeout)
+            return EvaluationRepositorySnapshot(rootPath: rootPath, commit: commit.isEmpty ? nil : commit,
+                                                isDirty: !status.isEmpty, capturedAt: capturedAt, error: nil)
+        } catch {
+            return EvaluationRepositorySnapshot(rootPath: rootPath, commit: nil, isDirty: nil,
+                                                capturedAt: capturedAt, error: error.localizedDescription)
+        }
     }
 
-    private static func runGit(_ arguments: [String], rootPath: String) throws -> String {
-        let process = Process()
-        process.executableURL = URL(filePath: "/usr/bin/git")
-        process.arguments = ["-C", rootPath] + arguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = output
-        try process.run()
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let message = String(decoding: data, as: UTF8.self)
+    private static func runGit(
+        _ arguments: [String], rootPath: String, executable: URL, timeout: Duration
+    ) async throws -> String {
+        // Repository provenance must not hold a run or app shutdown indefinitely.
+        // Avoid a repository's optional fsmonitor process and retain bounded logs.
+        let result = try await AutomationOwnedCommand().run(
+            executable: try AutomationPath.canonical(executable),
+            arguments: ["--no-pager", "-c", "core.fsmonitor=false", "-C", rootPath] + arguments,
+            directory: URL(filePath: rootPath),
+            environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": NSHomeDirectory(),
+                          "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"],
+            timeout: timeout
+        )
+        guard result.directChildReaped, result.pipesDrained, result.callbacksDrained,
+              !result.logsTruncated else {
+            throw EvaluationRepositoryInspectionError.git("Git inspection did not return complete bounded output.")
+        }
+        guard result.exitStatus == 0 else {
+            let message = String(decoding: result.stderr.prefix(8_192), as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             throw EvaluationRepositoryInspectionError.git(message.isEmpty ? "Git inspection failed." : message)
         }
-        return String(decoding: data, as: UTF8.self)
-            .trimmingCharacters(in: .newlines)
+        return String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .newlines)
     }
 }
 

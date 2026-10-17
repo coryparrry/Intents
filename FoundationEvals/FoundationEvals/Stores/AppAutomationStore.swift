@@ -1115,15 +1115,21 @@ final class AppAutomationStore {
     func verifiedRequestCommand(id: UUID, digest: String) async throws -> AutomationNativeCommandStatus {
         try Task.checkCancellation()
         guard !closing else { throw AutomationContractError.targetBusy }
+        guard !commandHistory.isNative(id) else { throw AutomationContractError.conflictingOperation }
         if let existing = commandRequests[id] {
             guard existing.digest == digest, existing.kind == nil else { throw AutomationContractError.conflictingOperation }
             return existing
         }
-        guard pendingCommand == nil, !busy, commandRequests.count < 50 else { throw AutomationContractError.targetBusy }
+        guard pendingCommand == nil, !busy,
+              commandHistory.canAdmit(id, nativeConfirmation: false, requests: commandRequests) else {
+            throw AutomationContractError.targetBusy
+        }
         let preview = try await verifiedPreviewCommand()
         try Task.checkCancellation()
         guard preview.digest == digest else { throw AutomationContractError.conflictingOperation }
-        return try installVerifiedConfirmation(id: id, digest: digest, kind: nil)
+        // Verification checks the frozen selection; the remote ID still uses
+        // remote admission. Only the native dialog mints native request IDs.
+        return try requestCommand(id: id, digest: digest)
     }
 
     func previewCommand() throws -> AutomationNativeCommandPreview {

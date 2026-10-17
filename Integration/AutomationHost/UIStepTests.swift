@@ -208,7 +208,9 @@ final class UIStepTests: XCTestCase {
         case "label", "text": return .init(kind: "text", value: element.label)
         case "value": guard let value = element.value as? String else { throw UIHostError.missingElement }; return .init(kind: "text", value: value)
         case "selected": return .init(kind: "bool", boolValue: element.isSelected)
-        case "checked": return .init(kind: "bool", boolValue: (element.value as? String) == "1")
+        case "checked":
+            guard [.switch, .checkBox, .toggle].contains(element.elementType) else { throw UIHostError.unavailableProperty }
+            return .init(kind: "bool", boolValue: try UIHostBooleanProperty.checked(from: element.value as? String))
         default: throw UIHostError.invalidPlan
         }
     }

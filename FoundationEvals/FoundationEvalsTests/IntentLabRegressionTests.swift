@@ -1283,6 +1283,55 @@ struct IntentLabRegressionTests {
 }
 
 extension IntentLabRegressionTests {
+    @MainActor @Test func openingLogicalStableCheckPreservesTheSelectedConnectionProfile() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: store)
+        let projectID = try #require(store.selectedProjectID)
+        var definition = try collectionDefinition(projectID: projectID, name: "Logical contract")
+        definition.target.projectPath = ""
+        definition.target.scheme = ""
+        definition.target.testTarget = ""
+        definition.target.destinationIdentifier = ""
+        coordinator.draft = definition
+        var configuration = coordinator.configuration
+        configuration.containerPath = "/tmp/Connected.xcodeproj"
+        configuration.scheme = "Connected"
+        configuration.testTarget = "ConnectedUITests"
+        configuration.testBundleIdentifier = "example.ConnectedUITests"
+        configuration.destinationIdentifier = "selected-mac"
+        configuration.destinationPlatform = .macOS
+        configuration.selectedApplicationProductID = "/tmp/Connected.xcodeproj#APP"
+        configuration.selectedTestProductID = "/tmp/Connected.xcodeproj#TESTS"
+        coordinator.configuration = configuration
+        let saved = try await coordinator.freezeAndSave()
+
+        coordinator.startStableCheck()
+        await coordinator.selectSavedDefinition(id: saved.id, version: saved.version)
+
+        #expect(coordinator.draft == saved)
+        #expect(coordinator.configuration == configuration)
+        #expect(coordinator.draft.target.projectPath.isEmpty)
+        let persistence = ScenarioPersistence(rootDirectory: root.appending(path: "IntentLab"))
+        #expect(try await persistence.loadExecutionConfiguration() == configuration)
+        #expect(try await persistence.loadSelectedDefinition()?.id == saved.id)
+    }
+
+    @MainActor @Test func closedCoordinatorRejectsNewDeviceAndConnectionWork() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: store)
+        await coordinator.load()
+        await coordinator.closeAndWait()
+        await coordinator.verifyInstalledIntegration()
+        #expect(!coordinator.isVerifyingIntegration)
+        await coordinator.run()
+        #expect(!coordinator.isRunning)
+        #expect(coordinator.notice?.contains("closing") == true)
+    }
+
     @MainActor @Test func installedSchemeChangesRevokeApproval() throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

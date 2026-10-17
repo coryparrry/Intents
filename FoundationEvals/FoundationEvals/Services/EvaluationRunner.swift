@@ -246,7 +246,7 @@ actor EvaluationRunner {
 
         let allocation = suite.modelConfiguration.contextAllocation(
             contextSize: contextSize,
-            includesModelJudge: suite.needsModelJudge,
+            includesModelJudge: suite.usesSubjectModelForJudging,
             sharedToolOutputReserve: suite.sharedToolOutputReserve
         )
         var run = EvaluationRun(

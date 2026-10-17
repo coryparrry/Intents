@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+#if SWIFT_PACKAGE
+import IntentLabContracts
+#endif
 @testable import FoundationEvals
 
 struct ScenarioV3HarnessBridgeTests {
@@ -457,6 +460,138 @@ struct ScenarioV3HarnessBridgeTests {
             )
         }
         #expect(ledger == ScenarioImportLedger())
+    }
+
+    @Test func mixedRoutesRequireOnlyTheirOwnDeclaredProof() throws {
+        let definition = try mixedRouteScenario()
+        var results = try ScenarioLane.allCases.map { lane in
+            try mixedRouteResult(for: definition, lane: lane, invocation: boundInvocation(for: definition))
+        }
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: results) == .passed)
+        let featureIndex = try #require(results.firstIndex { $0.lane == .appFeature })
+        results[featureIndex].observationSources?["feature.response"] = .manuallySupplied
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: results) == .notObserved)
+        results[featureIndex].observationSources?["feature.response"] = .testOnlyIntent
+        let siriIndex = try #require(results.firstIndex { $0.lane == .siri })
+        results[siriIndex].claims = [.executionCompleted]
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: results) == .notObserved)
+    }
+
+    @Test func scopedPayloadAndImporterPreserveMixedRouteProofRequirements() throws {
+        let definition = try mixedRouteScenario()
+        for lane in ScenarioLane.allCases {
+            let data = try XCTestRunInvocationTransport.scenarioPayload(
+                for: definition, scope: .init(lane: lane, attempt: 1),
+                featureBackend: .projectLocalTestControl
+            )
+            let wire = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let claims = Set(try #require(wire["requiredClaims"] as? [String]))
+            let expected: Set<String> = lane == .siri
+                ? ["executionCompleted", "applicationStateChecked"]
+                : ["executionCompleted", "returnedValueChecked"]
+            #expect(claims == expected)
+            #expect(wire["checkMode"] as? String == (lane == .siri ? "behaviour" : "basic"))
+            #expect(wire["definitionDigest"] as? String == definition.definitionDigest)
+            #if SWIFT_PACKAGE
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let payload = try decoder.decode(IntentLabScenario.self, from: data)
+            try payload.validateContract(harnessVersion: "intent-lab-v2")
+            #endif
+        }
+
+        let scope = ScenarioNativeExecutionScope(lane: .intentIntegration, attempt: 1)
+        var invocation = boundInvocation(for: definition)
+        invocation.requiredCapabilities = ScenarioHarnessCapabilities.required(for: definition, scope: scope).sorted()
+        var journal = executionJournal(for: definition, invocation: invocation)
+        journal.scope = scope
+        var envelope = evidence(for: definition, invocation: invocation)
+        envelope.results = [try mixedRouteResult(for: definition, lane: .intentIntegration, invocation: invocation)]
+        var ledger = ScenarioImportLedger()
+        let imported = try XCTestEvidenceImporter().importEvidence(
+            data: try encode(envelope), definition: definition, journal: journal,
+            artifactRoot: FileManager.default.temporaryDirectory, ledger: &ledger, scope: scope
+        )
+        #expect(imported.laneResults.first?.outcome == .passed)
+        #expect(imported.outcome == .notObserved, "A correct child still cannot certify the full multi-route contract")
+
+        envelope.results[0].observations["selectedNoteID"] = .string("wrong-note")
+        var freshLedger = ScenarioImportLedger()
+        let failed = try XCTestEvidenceImporter().importEvidence(
+            data: try encode(envelope), definition: definition, journal: journal,
+            artifactRoot: FileManager.default.temporaryDirectory, ledger: &freshLedger, scope: scope
+        )
+        #expect(failed.laneResults.first?.outcome == .failed)
+        #expect(failed.laneResults.first?.actionFailureReason == .wrongOutcome)
+    }
+
+    private func mixedRouteScenario() throws -> ScenarioDefinition {
+        var definition = try stableScenario()
+        definition.coverage = .init(appFeature: .required, intentIntegration: .required, siri: .required, siriAttemptCount: 1)
+        definition.featureBinding = .init(
+            featureID: "summarize-note", interfaceDigest: String(repeating: "a", count: 64),
+            inputMapping: [], outputProjections: []
+        )
+        definition.checkMode = .behaviour
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked, .applicationStateChecked]
+        definition.observationPlan?.append(contentsOf: [
+            .init(id: "feature.response", source: .testOnlyIntent, operationID: "SummarizeNoteService"),
+            .init(id: "selectedNoteState", source: .uiElement, selector: "selectedNoteState"),
+        ])
+        definition.assertions.append(contentsOf: [
+            .init(kind: .returnedField, observationKey: "feature.response", expectedValue: .string("Packing summary"),
+                  explanation: "The Feature returned the requested response.", applicableLanes: [.appFeature]),
+            .init(kind: .entityIdentifier, observationKey: "selectedNoteState", expectedValue: .string("packing-001"),
+                  explanation: "Siri selected the requested note.", applicableLanes: [.siri]),
+        ])
+        let parameters = Dictionary(uniqueKeysWithValues: definition.directControl.parameters.compactMap {
+            parameter -> (String, ScenarioValue)? in
+            guard case .value(let value) = parameter.presence else { return nil }
+            return (parameter.name, value)
+        })
+        definition.actionPolicyVersion = 1
+        definition.actionRequirements = [
+            .init(lane: .appFeature, kind: .productionService, operationID: "SummarizeNoteService", resolvedParameters: [:]),
+            .init(lane: .intentIntegration, kind: .productionIntent,
+                  operationID: definition.directControl.intentIdentifier, resolvedParameters: parameters),
+            .init(lane: .siri, kind: .productionIntent,
+                  operationID: definition.directControl.intentIdentifier, resolvedParameters: parameters),
+        ]
+        definition = try definition.frozen()
+        try ScenarioValidator.validate(definition)
+        return definition
+    }
+
+    private func mixedRouteResult(
+        for definition: ScenarioDefinition, lane: ScenarioLane, invocation: ScenarioInvocationIdentity
+    ) throws -> ScenarioLaneResult {
+        let requirement = try #require(definition.actionRequirements?.first { $0.lane == lane })
+        let assertion = try #require(definition.assertions.first { $0.applies(to: lane) })
+        let expected = try #require(assertion.expectedValue)
+        let now = Date(timeIntervalSince1970: 1_000)
+        let source: ScenarioObservationSource = lane == .appFeature ? .testOnlyIntent : .accessibleUI
+        let context = lane == .siri ? "siri-\(invocation.id.uuidString)-1"
+            : "\(lane == .appFeature ? "feature" : "intent")-\(invocation.id.uuidString)"
+        let receipt = ScenarioActionReceipt(
+            executionID: UUID(), appSessionID: UUID(), attemptContext: context,
+            lane: lane, attempt: 1, kind: requirement.kind, operationID: requirement.operationID,
+            resolvedParameters: requirement.resolvedParameters, terminalStatus: .succeeded,
+            operationError: nil, sequence: 1, startedAt: now, completedAt: now,
+            observationTransport: source
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let raw = String(decoding: try encoder.encode([receipt]), as: UTF8.self)
+        return .init(
+            caseID: definition.id, attempt: 1, lane: lane, executionStatus: .completed, outcome: .passed,
+            startedAt: now, completedAt: now,
+            observations: [assertion.observationKey: expected, "intentlab.actionReceipts": .string(raw)],
+            assertionResults: [.init(assertionID: assertion.id, passed: true, observedValue: expected, message: "Matched")],
+            observationSources: [assertion.observationKey: lane == .intentIntegration ? .appIntentsTesting : source,
+                                 "intentlab.actionReceipts": source],
+            claims: lane == .siri ? [.executionCompleted, .applicationStateChecked] : [.executionCompleted, .returnedValueChecked],
+            actionReceipts: [receipt], cleanupVerified: true
+        )
     }
 
     private func stableScenario() throws -> ScenarioDefinition {

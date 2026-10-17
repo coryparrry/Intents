@@ -9,6 +9,34 @@ function evidenceRows(ctx, object) {
 }
 function evidenceText(ctx,title,text) { const block=ctx.node('section',null,'evidence-block');block.append(ctx.node('h3',title),ctx.node('pre',text || 'No recorded content.','content-well'));return block; }
 function usageTotals(run) { return (run.results || []).reduce((total,result)=>{const usage=(result.appSample || result.trace?.appSample)?.usage || {};for(const key of ['inputTokens','cachedInputTokens','outputTokens','reasoningTokens']) total[key]=(total[key] || 0)+(usage[key] || 0);return total;},{}); }
+function scoringEvidence(run, result, original) {
+  const appRun = run.appRun;
+  const selectedID = result.assessmentId || appRun?.selectedAssessmentID;
+  const assessment = result.trace?.assessment || (selectedID
+    ? appRun?.assessments?.find(item => item.id?.toLowerCase() === selectedID.toLowerCase())
+    : appRun?.assessments?.at(-1));
+  if (!selectedID && !assessment) return {
+    mode: APP_SCORING[run.suite?.scoringMode] || 'Case scoring',
+    rationale: original.rationale ?? result.rationale, judge: original.judgeIdentity,
+    duration: original.judgeDurationMilliseconds, usage: original.judgeUsage,
+    trace: original.judgeTrace,
+  };
+  const assessed = result.assessmentSample ?? assessment?.samples?.find(item =>
+    item.sampleID?.toLowerCase() === original.id?.toLowerCase());
+  const identities = assessment?.observedJudgeIdentities || [];
+  return {
+    mode: APP_SCORING[assessment?.scoringContract?.scoringMode] || 'Selected assessment',
+    rationale: assessed?.rationale ?? (assessment
+      ? 'This sample has no recorded rationale in the selected assessment.'
+      : 'The selected assessment is unavailable.'),
+    judge: identities.length > 1
+      ? 'Multiple judge identities were recorded; their per-sample association is unavailable.'
+      : identities[0] || assessment?.judge || 'Judge identity unavailable for the selected assessment.',
+    identities: identities.length > 1 ? identities : undefined,
+    duration: assessed?.durationMilliseconds, usage: assessed?.usage, trace: assessed?.trace,
+    unavailableTrace: assessed?.trace ? undefined : 'No judge trace was recorded for this sample in the selected assessment.',
+  };
+}
 export function nativeResultTable(ctx,run,results,onSelect,selected) {
   const wrap=ctx.node('div',null,'data-table-wrap'),table=ctx.node('table',null,'data-table');table.setAttribute('aria-label','Evaluation results');const head=ctx.node('tr');
   for(const name of ['Case','Outcome','Score','Latency','Tokens','Repetition'])head.append(ctx.node('th',name));const thead=ctx.node('thead');thead.append(head);table.append(thead);const body=ctx.node('tbody');
@@ -38,16 +66,18 @@ export function renderNativeInspector(ctx,inspector,run,result,span) {
     for(const entry of entries){const section=ctx.node('section',null,'transcript-entry');section.append(ctx.node('h3',entry.role),ctx.node('pre',entry.text,'content-well'));body.append(section);}
     const raw=transcriptJSONText(result);if(raw)body.append(evidenceText(ctx,'Apple transcript JSON',raw));
   } else if(key==='tools'){
-    const calls=sample.toolCalls || [];body.append(ctx.node('h2','Tool calls'));if(!calls.length)body.append(ctx.node('p','No tools were called in this sample.','hint'));
+    const calls=[...(sample.toolCalls || []), ...(sample.featureTrace?.customToolCalls || []), ...(sample.featureTrace?.builtinToolCalls || [])];body.append(ctx.node('h2','Tool calls'));if(!calls.length)body.append(ctx.node('p','No tool calls were recorded for this sample.','hint'));
     for(const call of calls)body.append(evidenceText(ctx,call.toolName || call.name || 'Tool call',JSON.stringify(call,null,2)));
+    if(sample.featureTrace?.spotlightSearch)body.append(evidenceText(ctx,'Spotlight search evidence',JSON.stringify(sample.featureTrace.spotlightSearch,null,2)));
   } else {
     if(run.appRun?.assessments?.length){const assessments=ctx.node('select');assessments.setAttribute('aria-label','Selected assessment');assessments.disabled=ctx.state.imported;for(const assessment of run.appRun.assessments)assessments.append(new Option(assessment.name || `${assessment.judge?.connectionName || 'On-device rubric'} · ${assessment.origin || 'assessment'} · ${ctx.date(assessment.createdAt)}`,assessment.id));assessments.value=run.appRun.assessments.find(assessment=>assessment.id.toLowerCase()===run.appRun.selectedAssessmentID?.toLowerCase())?.id || ''; assessments.onchange=async()=>{try{const request=ctx.scope.capture('run-assessment');const response=await ctx.call('eval_select_assessment',{runId:run.id,assessmentId:assessments.value});if(!ctx.scope.current(request) || ctx.state.run?.id!==run.id)return;ctx.state.run=response.run;await ctx.refresh();if(ctx.scope.current(request))ctx.renderMain();}catch(error){ctx.notice(error.message,true);}};body.append(assessments);}
-    body.append(ctx.node('h2','Scoring'),evidenceRows(ctx,{Mode:APP_SCORING[run.suite?.scoringMode] || 'Case scoring',Score:nativeScore(result),Outcome:outcome(result),Rationale:result.assessmentSample?.rationale || sample.rationale || result.rationale,Judge:sample.judgeIdentity,Duration:ctx.duration(sample.judgeDurationMilliseconds),...sample.judgeUsage}));body.append(ctx.button('Human correction',()=>ctx.correctJudgment(run,result),'secondary',!sample.id || ctx.state.imported));if(sample.judgeTrace)body.append(evidenceText(ctx,'Judge trace',JSON.stringify(sample.judgeTrace,null,2)));if(sample.fieldAssertionResults?.length)body.append(evidenceText(ctx,'Field checks',JSON.stringify(sample.fieldAssertionResults,null,2)));
+    const scoring=scoringEvidence(run,result,sample);
+    body.append(ctx.node('h2','Scoring'),evidenceRows(ctx,{Mode:scoring.mode,Score:nativeScore(result),Outcome:outcome(result),Rationale:scoring.rationale,Judge:scoring.judge,'Assessment judge identities':scoring.identities,Duration:ctx.duration(scoring.duration),...scoring.usage}));body.append(ctx.button('Human correction',()=>ctx.correctJudgment(run,result),'secondary',!sample.id || ctx.state.imported));if(scoring.trace)body.append(evidenceText(ctx,'Judge trace',JSON.stringify(scoring.trace,null,2)));else if(scoring.unavailableTrace)body.append(ctx.node('p',scoring.unavailableTrace,'hint'));if(sample.fieldAssertionResults?.length)body.append(evidenceText(ctx,'Field checks',JSON.stringify(sample.fieldAssertionResults,null,2)));
   }
 }
 export function renderNativeWorkflow(ctx,main,run) {
   const page=ctx.node('div',null,'workflow-page');page.append(ctx.runHeading(run));const selected=selectedResult(run,ctx.state.resultId),sample=selected?.appSample || selected?.trace?.appSample,metrics=ctx.node('div',null,'workflow-metrics');
-  if(selected){metrics.append(ctx.metric('Outcome',outcome(selected)),ctx.metric('Total',ctx.duration(sample?.workflowTrace?.spans?.length ? Math.max(...sample.workflowTrace.spans.map(span=>span.startOffsetMilliseconds+span.durationMilliseconds)) : selected.durationMs)),ctx.metric('Generation',ctx.duration(sample?.timing?.generationMilliseconds ?? selected.durationMs)),ctx.metric('Scoring',ctx.duration(sample?.judgeDurationMilliseconds)),ctx.metric('Tokens',sample?.usage ? `${sample.usage.inputTokens || 0} → ${sample.usage.outputTokens || 0}` : '—'));}page.append(metrics);
+  if(selected){metrics.append(ctx.metric('Outcome',outcome(selected)),ctx.metric('Total',ctx.duration(sample?.workflowTrace?.spans?.length ? Math.max(...sample.workflowTrace.spans.map(span=>span.startOffsetMilliseconds+span.durationMilliseconds)) : selected.durationMs)),ctx.metric('Generation',ctx.duration(sample?.timing?.generationMilliseconds ?? selected.durationMs)),ctx.metric('Scoring',ctx.duration(scoringEvidence(run,selected,sample || {}).duration)),ctx.metric('Tokens',sample?.usage ? `${sample.usage.inputTokens || 0} → ${sample.usage.outputTokens || 0}` : '—'));}page.append(metrics);
   const controls=ctx.node('div',null,'workflow-controls'),select=ctx.node('select');select.setAttribute('aria-label','Trace sample');for(const result of run.results || [])select.append(new Option(`${resultTitle(run,result)} · repetition ${result.repetition}`,resultKey(result)));select.value=selected ? resultKey(selected) : '';select.onchange=()=>{ctx.state.resultId=select.value;ctx.state.spanId=null;ctx.renderMain();};controls.append(ctx.node('strong','Workflow trace'),select,ctx.node('span',sample?.workflowTrace?.timingSource || 'Recorded execution','hint'));page.append(controls);if(run.status==='running' && run.liveResponse){const live=ctx.node('section',null,'live-response');live.setAttribute('aria-label','Live model response');live.append(ctx.node('strong','Generating on this Mac…'),ctx.node('pre',run.liveResponse.text || run.liveResponse.response || JSON.stringify(run.liveResponse,null,2)));page.append(live);}if(ctx.state.imported)page.append(ctx.node('p','File preview. Import this trace from Overview to save it in the local workspace and use its evaluation workflows.','hint'));
   if(!selected){page.append(ctx.empty(run.status==='running' ? 'Evaluation in progress' : 'No recorded samples',run.error || 'Responses and execution evidence appear when recorded.'));main.append(page);return;}
   const split=ctx.node('div',null,'workflow-split'),timeline=ctx.node('section',null,'workflow-timeline'),inspector=ctx.node('section',null,'inspector'),spans=sample?.workflowTrace?.spans || [],selectedSpan=spans.find(item=>item.id===ctx.state.spanId),total=Math.max(1,...spans.map(item=>item.startOffsetMilliseconds+item.durationMilliseconds));

@@ -143,7 +143,6 @@ struct FoundationEvalsApp: App {
                 .task { await Self.sizeVerificationWindow() }
                 .task(id: mcpSettings.installationState) {
                     appDelegate.runtime = mcpRuntime
-                    appDelegate.automationStore = automationStore
                     guard !ProductionNativeWorkerCommand.isRequested, !ProcessInfo.processInfo.arguments.contains("--disable-mcp-autostart") else { return }
                     if Self.useExistingMCPCredential {
                         await mcpSettings.startServer()
@@ -227,7 +226,6 @@ struct FoundationEvalsApp: App {
 @MainActor
 private final class FoundationEvalsAppDelegate: NSObject, NSApplicationDelegate {
     weak var runtime: FoundationEvalsMCPRuntime?
-    weak var automationStore: AppAutomationStore?
     private var isTerminating = false
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -235,7 +233,6 @@ private final class FoundationEvalsAppDelegate: NSObject, NSApplicationDelegate 
         guard !isTerminating else { return .terminateLater }
         isTerminating = true
         Task {
-            await automationStore?.closeAndWait()
             await runtime.prepareForTermination()
             sender.reply(toApplicationShouldTerminate: true)
         }

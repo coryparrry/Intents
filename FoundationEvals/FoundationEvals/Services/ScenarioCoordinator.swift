@@ -71,12 +71,16 @@ final class ScenarioCoordinator {
     private(set) var connectionDiscovery: XcodeConnectionDiscovery?
     private(set) var discoveredDevices: [IntentLabDeviceDestination] = []
     private(set) var isDiscoveringConnection = false
-    private(set) var isVerifyingIntegration = false
+    private(set) var isVerifyingIntegration = false {
+        didSet { resumeCloseWaitersIfIdle() }
+    }
     private(set) var verifiedIntegrationSummary: String?
     var statedChangedDimensions: Set<String> = []
     private(set) var preflight: ScenarioPreflightReport?
     private(set) var routeReadiness: [ScenarioLane: ScenarioRouteReadiness] = [:]
-    private(set) var isRunning = false
+    private(set) var isRunning = false {
+        didSet { resumeCloseWaitersIfIdle() }
+    }
     private(set) var executionStage: String?
     private(set) var isGeneratingSuggestions = false
     private(set) var suggestions: [ScenarioRequestSuggestion] = []
@@ -101,6 +105,8 @@ final class ScenarioCoordinator {
     private var executionTask: Task<ScenarioExecutorResult, Error>?
     private var activeFeatureRunID: UUID?
     @ObservationIgnored private var scopedProjectURL: URL?
+    @ObservationIgnored private var isClosing = false
+    @ObservationIgnored private var closeWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(supportDirectory: URL, evaluationStore: EvaluationStore,
          initialConnectionDiscovery: XcodeConnectionDiscovery? = nil,
@@ -180,6 +186,9 @@ final class ScenarioCoordinator {
     /// ordinary run cannot start between them, and its own start checks this
     /// lease before dispatching an app action.
     private func acquireExecutionOwner(_ id: UUID) throws {
+        guard !isClosing else {
+            throw EvaluationStoreError.resourceConflict("Intent Lab is closing. No new device run can start.")
+        }
         guard !evaluationStore.hasActiveExecution,
               developerRunnerStore?.executingRunID == nil,
               developerRunnerStore?.automationExecutionBlocked != true else {
@@ -191,7 +200,14 @@ final class ScenarioCoordinator {
     }
 
     var currentValidationIssues: [ScenarioValidationIssue] {
-        ScenarioValidator.issues(in: draft, requireFrozenDigest: false) + parameterDraftIssues
+        var issues = ScenarioValidator.issues(in: draft, requireFrozenDigest: false) + parameterDraftIssues
+        if draft.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+           declarationCatalog?.supportsBasicDirectReadOnlyChecks == true,
+           !ScenarioExpectationAuthoring.supportsBasicDirectContract(draft) {
+            issues.append(.init(severity: .error, path: "integration",
+                                message: ScenarioAuthoringError.basicDirectOnly.localizedDescription))
+        }
+        return issues
     }
 
     private var parameterDraftIssues: [ScenarioValidationIssue] {
@@ -298,6 +314,30 @@ final class ScenarioCoordinator {
         }
         guard let definition = definitions.first(where: { $0.id == id && $0.version == version }) else {
             notice = "The saved test could not be found."
+            return
+        }
+
+        if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+            // Stable checks describe a logical contract; their Xcode target
+            // fields are deliberately empty. Keep the operator's connection
+            // profile and let preflight verify its compatibility with this app.
+            let previousIntegration = selectedIntegration
+            draft = definition
+            selectedIntegration = definition.integration
+            parameterArrayDraftTexts = [:]
+            invalidParameterDraftIndices = []
+            selectedRunID = nil
+            if declarationCatalog?.targetBundleIdentifier != definition.target.bundleIdentifier
+                || previousIntegration != definition.integration {
+                declarationCatalog = nil
+            }
+            invalidatePreflight()
+            do {
+                try await persistence.saveSelectedDefinition(id: id, version: version)
+            } catch {
+                notice = "The saved test is open, but its selection could not be saved: \(error.localizedDescription)"
+            }
+            if projectTrusted { await refreshPreflight() }
             return
         }
 
@@ -591,7 +631,7 @@ final class ScenarioCoordinator {
     }
 
     func verifyInstalledIntegration() async {
-        guard !isVerifyingIntegration else { return }
+        guard !isClosing, !isVerifyingIntegration else { return }
         isVerifyingIntegration = true
         defer { isVerifyingIntegration = false }
         applyConfigurationToDraft()
@@ -611,7 +651,7 @@ final class ScenarioCoordinator {
                 invalidatePreflight()
                 return
             }
-            let data = try Data(contentsOf: verified.testBundleURL.appending(path: "IntentLabIntegration.json"))
+            let data = try Data(contentsOf: XcodeTestExecutor.integrationDeclarationURL(in: verified.testBundleURL))
             let catalog = try ScenarioIntegrationCatalog.decodeVerified(data, identity: verified.receipt.integration)
             guard catalog.targetBundleIdentifier == verified.receipt.targetBundleIdentifier else {
                 throw ScenarioAuthoringError.staleDeclaration
@@ -680,6 +720,11 @@ final class ScenarioCoordinator {
     func freezeAndSave() async throws -> ScenarioDefinition {
         if !invalidParameterDraftIndices.isEmpty {
             throw ScenarioValidationError.invalid(parameterDraftIssues)
+        }
+        if draft.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+           declarationCatalog?.supportsBasicDirectReadOnlyChecks == true,
+           !ScenarioExpectationAuthoring.supportsBasicDirectContract(draft) {
+            throw ScenarioAuthoringError.basicDirectOnly
         }
         applyConfigurationToDraft()
         draft.version = max(1, draft.version)
@@ -829,7 +874,7 @@ final class ScenarioCoordinator {
         } catch { notice = error.localizedDescription }
     }
 
-    /// Call after a typed parameter edit. This is an authoring operation; saved
+    /// Call after a typed parameter or coverage edit. This is an authoring operation; saved
     /// plans and reruns continue to use their previously frozen requirements.
     func synchronizeDeclaredActionRequirements() {
         guard draft.schemaVersion == ScenarioDefinition.stableSchemaVersion,
@@ -986,6 +1031,7 @@ final class ScenarioCoordinator {
     }
 
     func refreshPreflight() async {
+        guard !isClosing else { return }
         guard invalidParameterDraftIndices.isEmpty else {
             invalidatePreflight()
             return
@@ -2071,6 +2117,11 @@ final class ScenarioCoordinator {
             } else {
                 selectedIDs = selectedCaseIDs ?? Set(collection.members.map(\.caseID))
             }
+            if definitionsForCollection.contains(where: {
+                selectedIDs.contains($0.id) && ScenarioExpectationAuthoring.isUnpreparedBasicDirectCheck($0)
+            }) {
+                throw ScenarioCollectionError.unpreparedBasicCollection
+            }
             guard let first = definitionsForCollection.first(where: { selectedIDs.contains($0.id) }) else {
                 throw ScenarioCollectionError.invalidSelection
             }
@@ -2193,9 +2244,7 @@ final class ScenarioCoordinator {
             notice = "Select a saved batch to rerun its failed cases."
             return nil
         }
-        let selected = Set(assessment.coordinates.filter {
-            $0.outcome != .passed || $0.terminalState != .completed
-        }.map { $0.coordinate.caseID })
+        let selected = ScenarioCollectionService.failedCaseIDs(in: assessment)
         guard !selected.isEmpty else {
             notice = "This batch has no failed or missing cases to rerun."
             return nil
@@ -2422,7 +2471,7 @@ final class ScenarioCoordinator {
               backend == .projectLocalTestControl else { return }
         guard connection.receipt.capabilities.contains("local-feature-controls"),
               connection.receipt.capabilities.contains("test-only-intent"),
-              let declaration = try? Data(contentsOf: connection.testBundleURL.appending(path: "IntentLabIntegration.json")),
+              let declaration = try? Data(contentsOf: XcodeTestExecutor.integrationDeclarationURL(in: connection.testBundleURL)),
               let catalog = try? ScenarioIntegrationCatalog.decodeVerified(
                   declaration, identity: connection.receipt.integration
               ),
@@ -2784,22 +2833,7 @@ final class ScenarioCoordinator {
                     ?? "The route driver failed after its readiness probe. Check the environment before another attempt."
             )
         }
-        let receipt = ScenarioFixtureReceipt(
-            observations: run.laneResults[0].observations,
-            expected: plan.fixtureContractDigest
-        )
-        if receipt == .missing {
-            run.executionStatus = .invalidEvidence
-            run.outcome = .needsReview
-            run.laneResults[0].executionStatus = .invalidEvidence
-            run.laneResults[0].outcome = .notObserved
-            run.laneResults[0].diagnostic = "The app did not expose an observed fixture content digest for this route."
-        } else if receipt == .wrongSource {
-            // A wrong source is a failed business observation, not a corrupt
-            // envelope. Preserve the actual summary and route evidence.
-            run.laneResults[0].outcome = .failed
-            run.laneResults[0].diagnostic = "The app used different source content than the planned fixture."
-        }
+        run = ScenarioResultEvaluator.applyingNativeFixtureEvidence(to: run, definition: definition)
         let evidenceValidationPassed = !cancellationRequested
             && ScenarioExecutionRecoveryPolicy.acceptsFinalEvidence(
                 attachments: [attachment], runs: [run], xctestExitCode: result.processExitCode
@@ -2887,6 +2921,28 @@ final class ScenarioCoordinator {
                 : "Cancellation requested before the device test started."
         }
         await refreshPreflight()
+    }
+
+    /// Wait for the orchestration owner, not just its child process. The owner
+    /// retains isRunning through evidence saves and quarantine finalization.
+    /// Evidence that has entered its final commit is allowed to finish.
+    func closeAndWait() async {
+        isClosing = true
+        await cancel()
+        await withCheckedContinuation { continuation in
+            if !isRunning && !isVerifyingIntegration {
+                continuation.resume()
+            } else {
+                closeWaiters.append(continuation)
+            }
+        }
+    }
+
+    private func resumeCloseWaitersIfIdle() {
+        guard isClosing, !isRunning, !isVerifyingIntegration else { return }
+        let waiters = closeWaiters
+        closeWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 
     static func canReleaseDevice(

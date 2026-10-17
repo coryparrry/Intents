@@ -3,6 +3,130 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioCollectionTests {
+    @Test func noFixtureBasicCollectionExplainsItsCurrentFormatBoundary() throws {
+        var definition = try caseDefinition(projectID: UUID(), name: "Basic Direct")
+        definition.fixture = .init(id: "", version: "", digest: "", isSynthetic: false,
+                                   preparationOperation: "none", cleanupOperation: "none")
+        definition.checkMode = .basic
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        definition.assertions = [.init(kind: .returnedField, observationKey: "selectedNoteID",
+            expectedValue: .string("packing-001"), explanation: "Return the selected ID", applicableLanes: [.intentIntegration])]
+        definition.observationPlan = [.init(id: "selectedNoteID", source: .intentResult)]
+        definition = try definition.frozen()
+        #expect(ScenarioExpectationAuthoring.isUnpreparedBasicDirectCheck(definition))
+        let collection = try ScenarioCollection(
+            projectID: definition.projectID!, name: "Basic checks", members: [ScenarioCollectionService.member(definition)]
+        )
+        do {
+            _ = try ScenarioCollectionService.freezeManifest(
+                collection: collection, definitions: [definition], scope: .full, appProductDigest: "app-build"
+            )
+            Issue.record("The current collection format cannot represent absent independent fixture evidence")
+        } catch {
+            #expect(error as? ScenarioCollectionError == .unpreparedBasicCollection)
+            #expect(error.localizedDescription.contains("individually"))
+        }
+    }
+
+    @Test(arguments: ["blocked", "failed", "recoveryRequired", "invalidEvidence"])
+    func optionalRoutesStayVisibleWithoutFailingRequiredCollection(terminal: String) throws {
+        var definition = try caseDefinition(projectID: UUID(), name: "Optional Siri")
+        definition.coverage.siri = .optional
+        definition = try definition.frozen()
+        let collection = try ScenarioCollection(
+            projectID: definition.projectID!, name: "Read-only checks",
+            members: [ScenarioCollectionService.member(definition)]
+        )
+        let instant = Date(timeIntervalSince1970: 1_800_000_000)
+        let manifest = try ScenarioCollectionService.freezeManifest(
+            collection: collection, definitions: [definition], scope: .full,
+            appProductDigest: "app-build", createdAt: instant
+        )
+        let direct = try #require(manifest.coordinates.first { $0.lane == .intentIntegration })
+        let optional = try #require(manifest.coordinates.first { $0.lane == .siri })
+        let passing = run(for: definition, coordinate: direct, startedAt: instant.addingTimeInterval(1), outcome: .passed)
+        var runs = [passing]
+        var rows: [ScenarioExecutionCoordinateRecord] = [.init(
+            coordinate: direct, state: .completed, evidenceRunID: passing.id,
+            evidenceLaneResultID: passing.laneResults[0].id, detail: nil, laneResult: passing.laneResults[0]
+        )]
+        if terminal == "failed" || terminal == "invalidEvidence" {
+            let diagnostic = run(for: definition, coordinate: optional, startedAt: instant.addingTimeInterval(1),
+                                 outcome: terminal == "failed" ? .failed : .passed)
+            runs.append(diagnostic)
+            rows.append(.init(coordinate: optional, state: .completed, evidenceRunID: diagnostic.id,
+                              evidenceLaneResultID: diagnostic.laneResults[0].id, detail: nil,
+                              laneResult: diagnostic.laneResults[0]))
+        } else {
+            rows.append(.init(coordinate: optional, state: terminal == "recoveryRequired" ? .recoveryRequired : .blocked, evidenceRunID: nil,
+                              evidenceLaneResultID: nil, detail: "Siri is unavailable"))
+        }
+        let result = ScenarioCollectionBatchResult(
+            id: manifest.id, manifestID: manifest.id,
+            executions: [try execution(manifest: manifest, caseID: definition.id, records: rows)],
+            recordedAt: instant.addingTimeInterval(2)
+        )
+        let assessment = ScenarioCollectionService.assess(
+            manifest: manifest, collection: collection, result: result,
+            runs: runs, journals: runs.map(acceptedJournal(for:)).filter {
+                terminal != "invalidEvidence" || $0.scope?.lane != .siri
+            }
+        )
+        #expect(assessment.qualification == (["blocked", "failed"].contains(terminal) ? .passedFull : .incomplete))
+        #expect(assessment.coordinates.count == 2)
+        #expect(assessment.requiredPlannedCount == 1)
+        #expect(assessment.requiredPassedCount == 1)
+        #expect(ScenarioCollectionService.failedCaseIDs(in: assessment).isEmpty)
+    }
+
+    @Test(arguments: ["acceptance", "missingJournal", "journalAcceptance", "nonce", "scope", "exit", "unknownExit", "incompleteExecution", "duplicateRun"])
+    func nativeBatchNeverPromotesDiagnosticEvidenceToFullPass(mutation: String) throws {
+        let definition = try caseDefinition(projectID: UUID(), name: "Bound Direct")
+        let collection = try ScenarioCollection(
+            projectID: definition.projectID!, name: "Native checks",
+            members: [ScenarioCollectionService.member(definition)]
+        )
+        let instant = Date(timeIntervalSince1970: 1_800_000_000)
+        let manifest = try ScenarioCollectionService.freezeManifest(
+            collection: collection, definitions: [definition], scope: .full,
+            appProductDigest: "app-build", createdAt: instant
+        )
+        let coordinate = manifest.coordinates[0]
+        var observed = run(for: definition, coordinate: coordinate,
+                           startedAt: instant.addingTimeInterval(1), outcome: .passed)
+        let row = ScenarioExecutionCoordinateRecord(
+            coordinate: coordinate, state: .completed, evidenceRunID: observed.id,
+            evidenceLaneResultID: observed.laneResults[0].id, detail: nil, laneResult: observed.laneResults[0]
+        )
+        let result = ScenarioCollectionBatchResult(
+            id: manifest.id, manifestID: manifest.id,
+            executions: [try execution(manifest: manifest, caseID: definition.id, records: [row])],
+            recordedAt: instant.addingTimeInterval(2)
+        )
+        var journal = acceptedJournal(for: observed)
+        #expect(ScenarioCollectionService.assess(
+            manifest: manifest, collection: collection, result: result, runs: [observed], journals: [journal]
+        ).qualification == .passedFull)
+        switch mutation {
+        case "acceptance": observed.acceptanceStatus = nil
+        case "journalAcceptance": journal.evidenceAccepted = false
+        case "nonce": journal.invocation.nonce = "another-attempt"
+        case "scope": journal.scope = .init(lane: .siri, attempt: 1)
+        case "exit": observed.xctestExitCode = 65
+        case "unknownExit": observed.xctestExitCode = nil
+        case "incompleteExecution": observed.executionStatus = .invalidEvidence
+        default: break
+        }
+        let assessment = ScenarioCollectionService.assess(
+            manifest: manifest, collection: collection, result: result,
+            runs: mutation == "duplicateRun" ? [observed, observed] : [observed],
+            journals: mutation == "missingJournal" ? [] : [journal]
+        )
+        #expect(assessment.qualification == .incomplete)
+        #expect(assessment.passedCount == 0)
+        #expect(assessment.coordinates[0].terminalState == .blocked)
+    }
+
     @Test func sameMemberIDsWithNewRevisionsEnableCollectionUpdate() throws {
         let original = try caseDefinition(projectID: UUID(), name: "Original")
         let collection = try ScenarioCollection(projectID: original.projectID!, name: "Collection", members: [ScenarioCollectionService.member(original)])
@@ -120,7 +244,8 @@ struct ScenarioCollectionTests {
         let savedManifest = try #require(await reloaded.loadManifest(id: manifest.id))
         let savedResult = try #require(await reloaded.loadResult(id: result.id))
         let assessment = ScenarioCollectionService.assess(
-            manifest: savedManifest, collection: savedCollection, result: savedResult, runs: [passing]
+            manifest: savedManifest, collection: savedCollection, result: savedResult,
+            runs: [passing], journals: [acceptedJournal(for: passing)]
         )
         #expect(assessment.qualification == .incomplete)
         #expect(assessment.plannedCount == 3)
@@ -186,7 +311,8 @@ struct ScenarioCollectionTests {
             recordedAt: candidateTime.addingTimeInterval(2)
         )
         let freshAssessment = ScenarioCollectionService.assess(
-            manifest: candidate, collection: collection, result: fresh, runs: [freshRun, oldRun]
+            manifest: candidate, collection: collection, result: fresh, runs: [freshRun, oldRun],
+            journals: [acceptedJournal(for: freshRun)]
         )
         #expect(freshAssessment.passedCount == 1)
         #expect(freshAssessment.qualification == .partial)
@@ -194,7 +320,7 @@ struct ScenarioCollectionTests {
         siblingRouteFailed.outcome = .failed
         #expect(ScenarioCollectionService.assess(
             manifest: candidate, collection: collection, result: fresh,
-            runs: [siblingRouteFailed]
+            runs: [siblingRouteFailed], journals: [acceptedJournal(for: siblingRouteFailed)]
         ).passedCount == 1)
         #expect(throws: ScenarioCollectionError.self) {
             _ = try ScenarioCollectionService.freezeManifest(
@@ -468,6 +594,12 @@ struct ScenarioCollectionTests {
             manifest: manifest, collection: collection, result: result,
             runs: [run], journals: [journal]
         ).qualification == .passedFull)
+        var nonzero = run
+        nonzero.xctestExitCode = 65
+        #expect(ScenarioCollectionService.assess(
+            manifest: manifest, collection: collection, result: result,
+            runs: [nonzero], journals: [journal]
+        ).passedCount == 0)
         #expect(ScenarioCollectionService.assess(
             manifest: manifest, collection: collection, result: result,
             runs: [run]
@@ -529,13 +661,26 @@ struct ScenarioCollectionTests {
             diagnostic: outcome == .passed ? nil : "Observed failure"
         )
         return ScenarioRun(
-            id: UUID(), scenarioID: definition.id, scenarioVersion: definition.version,
+            id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
             scenarioDigest: definition.definitionDigest, invocation: invocation,
             startedAt: startedAt, completedAt: startedAt, environment: environment,
             executionStatus: .completed, outcome: outcome, laneResults: [lane],
             linkedFeatureRunID: nil, importedAt: startedAt,
+            xctestExitCode: 0, fixture: definition.fixture, acceptanceStatus: .accepted,
             scenarioSchemaVersion: ScenarioDefinition.stableSchemaVersion,
-            testContractDigest: definition.testContractDigest
+            testContractDigest: definition.testContractDigest, executedTestCount: 1
+        )
+    }
+
+    private func acceptedJournal(for run: ScenarioRun) -> ScenarioExecutionJournal {
+        .init(
+            phase: .stopped, invocation: run.invocation,
+            scenarioID: run.scenarioID, scenarioVersion: run.scenarioVersion,
+            resultBundlePath: "result", derivedDataPath: "derived", buildLogPath: "build",
+            intendedExecutable: "xcodebuild", intendedArguments: [],
+            processIdentifier: nil, processStartedAt: nil, updatedAt: run.completedAt,
+            recoveryReason: nil, evidenceAccepted: true,
+            scope: .init(lane: run.laneResults[0].lane, attempt: run.laneResults[0].attempt)
         )
     }
 

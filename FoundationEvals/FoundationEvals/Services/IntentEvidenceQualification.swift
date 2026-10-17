@@ -202,6 +202,7 @@ enum IntentEvidenceQualification {
         var failed: [String] = []
         let plan = item.plan
         let record = item.record
+        let unpreparedBasicDirect = ScenarioExpectationAuthoring.isUnpreparedBasicDirectCheck(definition)
         if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion,
            definition.purpose != .releaseRequirement {
             incomplete.append("Exploratory checks do not qualify as release requirements.")
@@ -239,7 +240,7 @@ enum IntentEvidenceQualification {
             incomplete.append("The terminal record has invalid sealed coordinates or assessments.")
         }
         if !validSHA256(plan.testContractDigest)
-            || !validSHA256(plan.fixtureContractDigest)
+            || (unpreparedBasicDirect ? !plan.fixtureContractDigest.isEmpty : !validSHA256(plan.fixtureContractDigest))
             || !validSHA256(plan.sourceInputsDigest)
             || !validSHA256(plan.appProductDigest)
             || !validSHA256(plan.testProductDigest) {
@@ -392,7 +393,7 @@ enum IntentEvidenceQualification {
                       run.executionStatus == .completed,
                       run.xctestExitCode != nil,
                       run.startedAt <= run.completedAt,
-                      run.fixture?.digest == plan.fixtureContractDigest,
+                      (unpreparedBasicDirect ? run.fixture == definition.fixture : run.fixture?.digest == plan.fixtureContractDigest),
                       run.integration == item.definition.integration,
                       run.invocation.integration == item.definition.integration,
                       run.runnerPackageVersion?.isEmpty == false,
@@ -571,7 +572,8 @@ enum IntentEvidenceQualification {
                 ? "Every required coordinate passed with current bound evidence."
                 : "The coordinated execution cannot satisfy the release requirement.",
             failures: incomplete + failed, generatedAt: referenceTime,
-            policyVersion: IntentEvidenceBundle.policyID
+            policyVersion: IntentEvidenceBundle.policyID,
+            executionID: item.record.id
         )
         return .init(caseID: definition.id, required: requirement.required,
                      report: report, incompleteEvidence: incomplete, requiredFailures: failed)

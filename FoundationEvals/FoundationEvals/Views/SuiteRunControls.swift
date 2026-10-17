@@ -214,9 +214,9 @@ extension DeveloperRunnerStore {
         guard let runnerID = selectedRunnerID else { store.startRun(); return nil }
         if let issue = runIssue(for: store) { throw EvaluationStoreError.invalidSuite(issue) }
         guard let featureID = selectedFeatureID else { return nil }
-        guard store.saveSuite() else {
+        guard store.saveSuite(forDeveloperFeature: true) else {
             throw EvaluationStoreError.invalidSuite(
-                store.validationIssue(for: store.draftSuite, includeModelReadiness: false)
+                store.developerFeatureValidationIssue(for: store.draftSuite)
                     ?? "Save the current suite before running it on a device."
             )
         }
@@ -227,7 +227,7 @@ extension DeveloperRunnerStore {
         guard selectedRunnerID != nil else { return store.runBlocker }
         guard let runner = selectedRunner, runner.state == .connected else { return "Reconnect the selected device to run this suite." }
         guard runner.features.contains(where: { $0.id == selectedFeatureID }) else { return "Choose an app feature from Run destination." }
-        return store.validationIssue(for: store.draftSuite, includeModelReadiness: false)
+        return store.developerFeatureValidationIssue(for: store.draftSuite)
     }
 }
 

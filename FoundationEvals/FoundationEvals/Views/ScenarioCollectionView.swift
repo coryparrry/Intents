@@ -241,7 +241,7 @@ struct ScenarioCollectionView: View {
             if let manifest = coordinator.selectedBatchManifest,
                manifest.collectionID == collection.id,
                let assessment = coordinator.selectedBatchAssessment {
-                Text("\(assessment.passedCount)/\(assessment.plannedCount) planned attempts passed · \(assessment.qualification.rawValue)")
+                Text("\(assessment.requiredPassedCount)/\(assessment.requiredPlannedCount) required attempts passed · \(assessment.qualification.rawValue)")
                     .font(.callout.weight(.medium))
                     .accessibilityIdentifier("Collection batch result")
                 if manifest.scope != .full {
@@ -250,7 +250,7 @@ struct ScenarioCollectionView: View {
                 }
                 ForEach(assessment.coordinates) { row in
                     HStack {
-                        Text("\(name(for: row.coordinate.caseID)) · \(row.coordinate.lane.title) · attempt \(row.coordinate.repetition)")
+                        Text("\(name(for: row.coordinate.caseID)) · \(row.coordinate.lane.title) · attempt \(row.coordinate.repetition)\(row.coordinate.required ? "" : " (optional)")")
                         Spacer()
                         Text(row.outcome?.rawValue ?? row.terminalState.rawValue)
                     }
@@ -262,7 +262,7 @@ struct ScenarioCollectionView: View {
                 Button("Rerun failed or missing cases", systemImage: "arrow.clockwise") {
                     Task { await coordinator.rerunFailedSelectedBatch() }
                 }
-                .disabled(coordinator.isRunning || assessment.passedCount == assessment.plannedCount)
+                .disabled(coordinator.isRunning || ScenarioCollectionService.failedCaseIDs(in: assessment).isEmpty)
                 Button("Export selected batch…", systemImage: "square.and.arrow.up") {
                     exportBatch(manifestID: manifest.id)
                 }
