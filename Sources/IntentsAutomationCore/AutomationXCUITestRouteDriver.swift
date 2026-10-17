@@ -188,11 +188,7 @@ public actor AutomationXCUITestRouteDriver {
 
     public func release() async -> AutomationReleaseProof {
         revoked = true
-        return await release(commandsDrained: command.stopOwned())
-    }
-
-    func release(commandsDrained drained: Bool) async -> AutomationReleaseProof {
-        revoked = true
+        let drained = await command.stopOwned()
         if subjectStarted, drained, prepared.target.kind == .simulator {
             let terminated = await Task.detached { [self] in await terminateSimulator() }.value
             stopVerified = stopVerified && terminated
@@ -222,9 +218,7 @@ public actor AutomationXCUITestRouteDriver {
                 self.privatePayload = nil; payloadFile = nil; payloadDigest = nil; cleaned = true
             } catch { cleaned = false }
         }
-        // A failed drain has not attempted the independent Mac stop observation.
-        // Preserve that pending work for a later release; observed failures stay sticky.
-        if drained || prepared.target.kind != .nativeMac { subjectStarted = false }
+        subjectStarted = false
         // Remote devices require their separate runtime release verifier; Mac release
         // additionally observes the exact prepared subject and host executables.
         return .init(commandsDrained: drained, runnerTerminated: runnerStopped && drained,
@@ -260,10 +254,6 @@ public actor AutomationXCUITestRouteDriver {
             var fields = target["EnvironmentVariables"] as? [String: String] ?? [:]
             fields.removeValue(forKey: "INTENTS_AUTOMATION_HOST_PLAN_B64")
             fields["INTENTS_AUTOMATION_UI_PLAN_B64"] = payload.base64EncodedString()
-            fields.removeValue(forKey: "INTENTS_AUTOMATION_EXPECTED_APP_PATH")
-            if prepared.target.kind == .nativeMac {
-                fields["INTENTS_AUTOMATION_EXPECTED_APP_PATH"] = prepared.subjectProductPath
-            }
             target["EnvironmentVariables"] = fields
             return target
         }
@@ -315,12 +305,6 @@ public actor AutomationXCUITestRouteDriver {
             timeout: timeout, absoluteDeadline: absoluteDeadline, willStart: beforeStart, didStart: afterStart)
     }
     func markTestStarted() { testStarted = true; subjectStarted = true }
-    #if os(macOS)
-    func markTestStarted(macLifecycle: AutomationMacXCUITestLifecycle) {
-        self.macLifecycle = macLifecycle
-        markTestStarted()
-    }
-    #endif
     private func verifyPayload() throws {
         guard !revoked, let payloadFile, let payloadDigest,
               AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(payloadFile, maximumBytes: 4 * 1024 * 1024)) == payloadDigest else {

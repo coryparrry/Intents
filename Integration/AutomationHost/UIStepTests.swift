@@ -1,8 +1,5 @@
 import Foundation
 import XCTest
-#if os(macOS)
-import AppKit
-#endif
 
 /// One test retains application continuity across UI, App Intents and entity queries.
 @MainActor
@@ -18,11 +15,7 @@ final class UIStepTests: XCTestCase {
               let bytes = Data(base64Encoded: encoded), bytes.count <= 32768 else { throw UIHostError.invalidPlan }
         let plan = try JSONDecoder().decode(UIHostPlan.self, from: bytes)
         try plan.validate()
-        #if os(macOS)
-        let app = XCUIApplication()
-        #else
         let app = XCUIApplication(bundleIdentifier: plan.bundleID)
-        #endif
         // This invocation owns the XCUIApplication controller across every step and
         // terminates it on success and thrown failures. The Mac release observer
         // never signals processes merely because their executable paths match.
@@ -66,15 +59,11 @@ final class UIStepTests: XCTestCase {
                 attach("intents-ui-step-\(index)", try JSONEncoder().encode(
                     UIHostStepReceipt(plan: plan, index: index, dispatched: true, completed: true, value: value)))
             } catch {
-                // Preserve the original failure before optional UI diagnostics. A system
-                // operation can fail before its application has ever been launched.
+                let screenshot = XCTAttachment(screenshot: app.screenshot())
+                screenshot.name = "intents-ui-failure-\(index)"; screenshot.lifetime = .keepAlways; add(screenshot)
                 attach("intents-ui-step-\(index)", try JSONEncoder().encode(
                     UIHostStepReceipt(plan: plan, index: index, dispatched: true, completed: false, value: value,
                                       error: String(String(describing: error).prefix(4096)))))
-                if app.state == .runningForeground || app.state == .runningBackground {
-                    let screenshot = XCTAttachment(screenshot: app.screenshot())
-                    screenshot.name = "intents-ui-failure-\(index)"; screenshot.lifetime = .keepAlways; add(screenshot)
-                }
                 throw error
             }
         }
@@ -90,14 +79,11 @@ final class UIStepTests: XCTestCase {
         case .checkFreshness: try plan.validateFreshSubject(outputs: outputs)
         case .launch:
             app.launchArguments = step.arguments ?? []; app.launchEnvironment = step.environment ?? [:]; app.launch()
-            #if os(macOS)
-            try verifyLaunchedMacApplication(bundleID: plan.bundleID)
-            #endif
-        case .tap: clickOrTap(try element(step.query, app: app))
+        case .tap: try element(step.query, app: app).tap()
         case .typeText, .clearAndType:
             let element = try element(step.query, app: app)
             guard let text = step.text ?? step.binding.flatMap({ bindings[step.segmentID + "/" + $0] }) else { throw UIHostError.bindingUnavailable }
-            clickOrTap(element)
+            element.tap()
             if step.kind == .clearAndType {
                 guard let current = element.value as? String else { throw UIHostError.missingElement }
                 // UITextInput cursor is placed explicitly; the placeholder is not entered text.
@@ -180,38 +166,10 @@ final class UIStepTests: XCTestCase {
         return nil
     }
 
-    private func clickOrTap(_ element: XCUIElement) {
-        #if os(macOS)
-        // macOS text fields need mouse interaction to acquire keyboard focus.
-        element.click()
-        #else
-        element.tap()
-        #endif
-    }
-
     private func boundValue(_ binding: UIHostBinding) throws -> UIHostValue {
         guard let output = outputs[binding.producerSegmentID]?[binding.outputID] else { throw UIHostError.bindingUnavailable }
         return try binding.selection?.resolve(output) ?? output
     }
-    #if os(macOS)
-    private func verifyLaunchedMacApplication(bundleID: String) throws {
-        guard let expected = ProcessInfo.processInfo.environment["INTENTS_AUTOMATION_EXPECTED_APP_PATH"],
-              expected.hasPrefix("/"), expected.utf8.count <= 4096 else { throw UIHostError.invalidPlan }
-        let applications = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-        let observed: [[String: Any]] = applications.prefix(8).map { application in
-            ["pid": application.processIdentifier,
-             "bundleURL": String((application.bundleURL?.path ?? "").prefix(4096)),
-             "executableURL": String((application.executableURL?.path ?? "").prefix(4096))]
-        }
-        let diagnostic: [String: Any] = ["expectedPath": expected, "matchingCount": applications.count, "observed": observed]
-        let bytes = try JSONSerialization.data(withJSONObject: diagnostic, options: [.sortedKeys])
-        print("Mac launch identity: " + String(decoding: bytes, as: UTF8.self))
-        let expectedURL = URL(fileURLWithPath: expected).standardizedFileURL.resolvingSymlinksInPath()
-        guard applications.count == 1, let observedURL = applications.first?.bundleURL,
-              observedURL.standardizedFileURL.resolvingSymlinksInPath() == expectedURL else { throw UIHostError.invalidPlan }
-    }
-    #endif
-
     private func query(_ locator: UIHostQuery?, app: XCUIApplication) throws -> XCUIElementQuery {
         guard let locator else { throw UIHostError.invalidPlan }
         let type: XCUIElement.ElementType
@@ -232,13 +190,7 @@ final class UIStepTests: XCTestCase {
         var result = app.descendants(matching: type)
         if let id = locator.identifier { result = result.matching(identifier: id) }
         if let label = locator.label { result = result.matching(NSPredicate(format: "label == %@", label)) }
-        if let contains = locator.labelContains {
-            #if os(macOS)
-            result = result.matching(locator.labelContainsPredicate(contains, nativeMac: true))
-            #else
-            result = result.matching(locator.labelContainsPredicate(contains, nativeMac: false))
-            #endif
-        }
+        if let contains = locator.labelContains { result = result.matching(NSPredicate(format: "label CONTAINS %@", contains)) }
         return result
     }
     private func element(_ locator: UIHostQuery?, app: XCUIApplication) throws -> XCUIElement {

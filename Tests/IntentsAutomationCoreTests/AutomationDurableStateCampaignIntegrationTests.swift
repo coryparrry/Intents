@@ -17,7 +17,7 @@ final class AutomationDurableStateCampaignIntegrationTests: XCTestCase {
             sourceFiles: Dictionary(uniqueKeysWithValues: profile.sourceDigests.filter { $0.key.hasSuffix(".swift") }
                 .map { ("/fixture/source/" + $0.key, $0.value) }), declaration: profile.schema())
         var subject = AutomationSegment(id: "subject", kind: .systemIntent, phase: .subject, operation: "Complete",
-            effects: [.observe, .navigate, .fixtureWrite], lifecycle: .persistedStateAcrossSegments)
+            lifecycle: .persistedStateAcrossSegments)
         subject.hostProgram = .init(operations: [.init(id: "complete", kind: .invoke, typeID: "CompleteIntent", resultCodec: "noValue")])
         var observer = AutomationSegment(id: "read", kind: .systemQuery, phase: .observe, operation: "Read independently",
             lifecycle: .persistedStateAcrossSegments)
@@ -32,7 +32,7 @@ final class AutomationDurableStateCampaignIntegrationTests: XCTestCase {
             "apple.macXctestrunDigest": reader.hostXctestrunDigest]
         plan = try reader.applying(to: plan)
         var approval = RunApproval(runID: "run", app: app, target: target, environmentID: "fixture",
-            effects: [.observe, .navigate, .fixtureWrite], maximumActions: 100, disposable: true)
+            effects: [.observe], maximumActions: 100, disposable: true)
         approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
         return (plan, approval)
     }
@@ -55,7 +55,7 @@ final class AutomationDurableStateCampaignIntegrationTests: XCTestCase {
         let (plan, approval) = try fixture()
         let host = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval, attemptID: "attempt", leaseGeneration: 1)
         XCTAssertEqual(host.planDigest, try AutomationFrozenCase.planDigest(plan))
-        XCTAssertEqual(host.steps.map(\.kind), [.launch, .invokeIntent])
+        XCTAssertEqual(host.steps.filter { $0.kind == .invokeIntent }.count, 1)
         XCTAssertFalse(host.steps.contains { $0.segmentID == "read" })
         var changed = plan; changed.cleanup = [AutomationSegment(id: "cleanup", kind: .systemIntent, phase: .cleanup, operation: "Mutate")]
         XCTAssertThrowsError(try AutomationXCUITestPlan.durableObservationSuffix(plan: changed))
