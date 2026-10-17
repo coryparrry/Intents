@@ -13,13 +13,11 @@ struct AutomationNativeFirstRunReview: Sendable, Identifiable {
 extension AppAutomationStore {
     var canReviewFirstChecks: Bool {
         canSelectApplicationFromCommand && candidate != nil && (candidate?.kind == .installedProduct ||
-            (candidate?.kind == .sourceTarget && preparationDestination == .macOS) ||
             (prepared?.host.app.logicalID == candidateID && prepared?.host.app.configuration == configuration && prepared?.host.target == sourcePreparationTarget))
     }
     func reviewFirstChecks() throws -> AutomationNativeFirstRunReview {
         guard canReviewFirstChecks, let candidate else { throw AutomationContractError.missingEvidence("Prepare the selected app first") }
-        if candidate.platform == "macos" || candidate.app?.platform == "macos" ||
-            (candidate.kind == .sourceTarget && (preparationDestination == .macOS || prepared?.host.target.kind == .nativeMac)) {
+        if isInstalledMacUI {
             let gaps = ["Native Mac first checks require an associated UI host. No checks will run on this Mac."]
             let fields = [candidate.id, configuration, String(firstRunIncludesActions)] + gaps
             return .init(id: AutomationArtifactRegistry.digest(try JSONEncoder().encode(fields)), requests: [], gaps: gaps,
@@ -44,7 +42,7 @@ extension AppAutomationStore {
             if effectChoice == "fixture" { effects.insert(.fixtureWrite) }
             if effectChoice == "external" { effects.insert(.externalWrite) }
         }
-        let environment = "selected-simulator:" + subject.target.id
+        let environment = selectedPrepared.map(Self.preparedEnvironmentID) ?? ("selected-simulator:" + subject.target.id)
         let approval = RunApproval(runID: "automatic-checks", app: subject.app, target: subject.target, environmentID: environment,
             effects: effects, maximumActions: 30, disposable: disposable)
         let capabilities = selectedPrepared.map(AutomationPreparedCapabilities.base) ?? .init()
@@ -74,7 +72,7 @@ extension AppAutomationStore {
             if let prepared = selectedPrepared { try AutomationNativePreparedEvidence.attachPreparedEvidence(to: &plan, prepared: prepared) }
             let needsUI = (plan.setup + [plan.execution] + plan.observations + plan.cleanup).contains(where: \.usesUIControl)
             if needsUI {
-                if subject.target.kind == .simulator, selectedPrepared != nil {
+                if selectedPrepared != nil {
                     plan.provenance["ui.backend"] = "xcuitest"
                     try AutomationNativeWorkflowSteps.applyBudget(to: &plan, approval: approval)
                 }
@@ -82,17 +80,16 @@ extension AppAutomationStore {
             plan.id = "first." + String(try AutomationFrozenCase.planDigest(plan).prefix(32))
             let digest = try AutomationFrozenCase.planDigest(plan)
             var scoped = approval; scoped.approvedCaseDigest = digest
-            return AutomationNativeRunRequest(subject: subject, plan: plan, approval: scoped, capabilities: capabilities, installApproved: installApproved, digest: digest, caseDigest: digest)
+            return AutomationNativeRunRequest(subject: subject, plan: plan, approval: scoped, capabilities: capabilities, installApproved: subject.target.kind == .simulator && installApproved, digest: digest, caseDigest: digest)
         }
         let fields = requests.map { $0.digest + ":" + String($0.installApproved) + ":" + String($0.approval.disposable) } + gaps + [candidateID, String(firstRunIncludesActions)]
         let digest = AutomationArtifactRegistry.digest(try JSONEncoder().encode(fields))
         return .init(id: digest, requests: requests, gaps: gaps, appName: candidate.name,
-            targetName: simulators.first { $0.id == subject.target.id }?.name ?? subject.target.id)
+            targetName: subject.target.kind == .nativeMac ? "This Mac" : simulators.first { $0.id == subject.target.id }?.name ?? subject.target.id)
     }
     func runFirstChecks(_ reviewed: AutomationNativeFirstRunReview) {
         do {
-            guard try reviewFirstChecks().id == reviewed.id,
-                  reviewed.requests.allSatisfy({ $0.subject.target.kind != .nativeMac }) else { throw AutomationContractError.conflictingOperation }
+            guard try reviewFirstChecks().id == reviewed.id else { throw AutomationContractError.conflictingOperation }
         } catch { message = errorText(error); return }
         firstRunGaps = reviewed.gaps; firstRunReports = []
         guard !reviewed.requests.isEmpty else { message = reviewed.gaps.joined(separator: "\n"); return }

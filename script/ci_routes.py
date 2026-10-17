@@ -8,8 +8,10 @@ from pathlib import Path
 
 try:
     from ci_native_routes import declared_suites, select_native_tests
+    from ci_native_tests import CI_EXCLUDED_UI_TESTS
 except ModuleNotFoundError:
     from script.ci_native_routes import declared_suites, select_native_tests
+    from script.ci_native_tests import CI_EXCLUDED_UI_TESTS
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = "FoundationEvals/FoundationEvals/"
@@ -265,6 +267,7 @@ PYTHON_DEPENDENCIES = {
     "script/verify_installer.sh": RELEASE_VALIDATION,
     "script/ci_core_scheme.py": {"script.tests.test_ci_core_scheme"},
     "script/automation_e2e.py": {"script.tests.test_automation_e2e", "script.tests.test_ci_automation_build"},
+    "script/automation_mac_e2e.py": {"script.tests.test_automation_mac_e2e"},
     "script/ci_automation_build.py": {"script.tests.test_ci_automation_build", "script.tests.test_automation_e2e"},
     **{path: {module} for path, module in NATIVE_UI_HELPERS.items()},
     "release-please-config.json": {
@@ -367,13 +370,16 @@ def package_ui_groups(path):
 def ui_matrix(groups, extra_classes=(), targeted=False):
     catalog = {**UI_BASELINE, **UI_FEATURE_TESTS}
     selections = {
-        name: set(catalog[name] if targeted or name not in UI_BASELINE else UI_BASELINE[name])
+        name: {test for test in (catalog[name] if targeted or name not in UI_BASELINE else UI_BASELINE[name])
+               if not any(test == excluded or test.startswith(excluded + "/") for excluded in CI_EXCLUDED_UI_TESTS)}
         for name in sorted(groups)
     }
     # New or edited test classes run in full, including methods outside the baseline.
     # A whole-class selector supersedes partial selectors everywhere, avoiding repeats.
     for suite in sorted(extra_classes):
         selector = UI_TARGET + suite
+        if selector in CI_EXCLUDED_UI_TESTS:
+            continue
         owner = next((
             name for name, tests in UI_BASELINE.items()
             if any(test == selector or test.startswith(selector + "/") for test in tests)
@@ -407,6 +413,7 @@ def changed_ui_classes(paths, root):
 
 def with_matrices(plan, groups=(), extra_classes=(), targeted=False):
     plan["ui_matrix"] = ui_matrix(groups, extra_classes, targeted) if plan["ui"] else []
+    plan["ui"] = bool(plan["ui_matrix"])
     return plan
 
 
@@ -446,7 +453,8 @@ def coverage_plan(paths, root=ROOT):
             "Sources/IntentsAutomationCore/", "Sources/IntentsAutomationTool/",
             "Integration/AutomationHost/", "examples/AutomationFixture/",
             "Tools/IntentsAutomationApplicationProbe/",
-        )) or path in {"script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py"}
+        )) or path in {"script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py",
+                      "script/automation_mac_e2e.py", "script/tests/test_automation_mac_e2e.py"}
         input_conversion |= path.startswith((
             "Sources/IntentsAutomationCore/", "Integration/AutomationHost/",
         )) or path in {
@@ -672,6 +680,9 @@ def main():
         summary.write(
             f"Native build: **{plan['native']}**. UI test bundle: **{plan['ui']}**.\n\n"
         )
+        summary.write("### UI suites excluded from CI\n\n")
+        summary.writelines(f"- `{test}`: {reason}\n" for test, reason in CI_EXCLUDED_UI_TESTS.items())
+        summary.write("\n")
         summary.write(
             "UI groups: " + (", ".join(group["name"] for group in plan["ui_matrix"]) or "none")
             + f". Script test jobs: {int(bool(plan['python_tests']))}.\n\n"

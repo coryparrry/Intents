@@ -15,6 +15,18 @@ spec.loader.exec_module(runner)
 
 
 class NativeShardTests(unittest.TestCase):
+    def test_excluded_mac_suite_cannot_run_directly_or_through_a_broad_ui_target(self):
+        excluded = "FoundationEvalsUITests/MacPreparationUITests"
+        for selector in (excluded, excluded + "/testSelectedToolchainPreparesMacCopyAndRunsApprovedWorkflows"):
+            with self.subTest(selector=selector), patch.object(runner, "prepare_ui_xctestrun") as prepare:
+                with self.assertRaisesRegex(ValueError, "excluded from CI"):
+                    runner.test_command(Path("Products"), [selector], Path("ui.xcresult"))
+                prepare.assert_not_called()
+        with patch.object(runner, "prepare_ui_xctestrun", return_value=Path("full.xctestrun")):
+            command = runner.test_command(Path("Products"), ["FoundationEvalsUITests"], Path("ui.xcresult"))
+        self.assertIn("-skip-testing:" + excluded, command)
+        self.assertIn("-only-testing:FoundationEvalsUITests", command)
+
     def test_ui_shard_reuses_build_and_disables_shared_desktop_workers(self):
         test = "FoundationEvalsUITests/AppAutomationUITests/testPreparationPickersUseStableIdentifiers"
         with patch.object(runner, "prepare_ui_xctestrun", return_value=Path("full.xctestrun")) as prepare:

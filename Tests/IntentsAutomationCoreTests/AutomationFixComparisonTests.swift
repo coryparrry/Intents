@@ -47,6 +47,7 @@ final class AutomationFixComparisonTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(result.beforeCounters.failed, 3); XCTAssertEqual(result.afterCounters.failed, 0); XCTAssertEqual(result.afterCounters.assessed, 3)
         XCTAssertEqual(Set((result.before + result.after).map(\.attemptID)).count, 6)
         XCTAssertFalse(result.environmentQualificationComplete); XCTAssertNil(result.stopReason)
+        XCTAssertEqual(result.outcome, .fixed)
         let progress = await updates.values
         XCTAssertEqual(progress.map(\.totalSaved), [0, 1, 2, 3, 3, 4, 5, 6])
         XCTAssertEqual(progress.map(\.beforeSaved), [0, 1, 2, 3, 3, 3, 3, 3])
@@ -81,6 +82,7 @@ final class AutomationFixComparisonTests: XCTestCase, @unchecked Sendable {
             beforeApproval: before, afterApproval: after, limits: .init(), beforeExecutor: FixStoppedExecutor(), afterExecutor: NeverEnterFixExecutor(),
             onProgress: { await updates.record($0) })
         XCTAssertEqual(result.before.count, 1); XCTAssertTrue(result.after.isEmpty); XCTAssertFalse(result.complete)
+        XCTAssertEqual(result.outcome, .inconclusive)
         let progress = await updates.values
         XCTAssertEqual(progress.map(\.totalSaved), [0, 1]); XCTAssertTrue(progress.allSatisfy { $0.population == .before })
         try result.validate()
@@ -93,6 +95,32 @@ final class AutomationFixComparisonTests: XCTestCase, @unchecked Sendable {
         let foreign = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: foreign) }
         do { try await AutomationFixComparisonArchive(caseStoreRoot: foreign).save(result); XCTFail("Unstored facts accepted") } catch { }
+    }
+    func testOutcomeRequiresReproducedAssessedFailureAndEveryCandidatePass() async throws {
+        let base = try baseline(), changed = try candidate(base)
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cases = try AutomationCaseStore(root: root)
+        for (beforePasses, afterPasses, outcome) in [(true, true, AutomationFixComparisonOutcome.inconclusive),
+                                                   (false, false, .notFixed), (false, true, .fixed)] {
+            let id = UUID().uuidString
+            let before = RunApproval(runID: id + "-before", app: base.plan.app, target: base.plan.target,
+                environmentID: "unit", effects: [.observe], maximumActions: 20, disposable: true, approvedCaseDigest: base.digest)
+            let after = RunApproval(runID: id + "-after", app: changed.plan.app, target: changed.plan.target,
+                environmentID: "unit", effects: [.observe], maximumActions: 20, disposable: true, approvedCaseDigest: changed.digest)
+            let report = try await AutomationFixComparison(cases: cases).run(baseline: base, candidate: changed,
+                beforeApproval: before, afterApproval: after, limits: .init(),
+                beforeExecutor: FixFixtureExecutor(value: beforePasses), afterExecutor: FixFixtureExecutor(value: afterPasses))
+            XCTAssertTrue(report.complete); XCTAssertEqual(report.requestedAttemptsPerBuild, 3)
+            XCTAssertEqual(report.outcome, outcome)
+            var malformed = report
+            malformed.after[0].result.assessed = false
+            XCTAssertEqual(malformed.outcome, .inconclusive)
+            malformed = report; malformed.after[0].resourcesReleased = false
+            XCTAssertEqual(malformed.outcome, .inconclusive)
+            malformed = report; malformed.afterCounters.failed += 1
+            XCTAssertEqual(malformed.outcome, .inconclusive)
+        }
     }
     func testComparisonReportRejectsRecountingForeignRunAndDuplicateAttempts() async throws {
         let base = try baseline(), changed = try candidate(base)
