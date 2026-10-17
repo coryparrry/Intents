@@ -108,6 +108,40 @@ def _drain_output(selector, retained, output, seconds, *, wait_when_closed=False
         _stream_available(selector, retained, output, min(0.1, remaining))
 
 
+def _exit_observer():
+    """Observe exit without reaping, including Apple's older system Python."""
+    options = os.WEXITED | os.WNOHANG | os.WNOWAIT
+    if hasattr(os, "waitid"):
+        def exited(pid):
+            result = os.waitid(os.P_PID, pid, options)
+            return result is not None and result.si_pid == pid
+        return exited
+    if sys.platform != "darwin":
+        raise RuntimeError("Native test cleanup requires non-reaping waitid support")
+
+    # The Darwin SDK's siginfo_t layout; older Apple Python exposes the wait
+    # constants but omits os.waitid. Use libc rather than a reaping poll/wait.
+    import ctypes
+    class Sigval(ctypes.Union):
+        _fields_ = [("integer", ctypes.c_int), ("pointer", ctypes.c_void_p)]
+    class Siginfo(ctypes.Structure):
+        _fields_ = [("signo", ctypes.c_int), ("errno", ctypes.c_int),
+                    ("code", ctypes.c_int), ("pid", ctypes.c_int),
+                    ("uid", ctypes.c_uint), ("status", ctypes.c_int),
+                    ("address", ctypes.c_void_p), ("value", Sigval),
+                    ("band", ctypes.c_long), ("padding", ctypes.c_ulong * 7)]
+    waitid = ctypes.CDLL(None, use_errno=True).waitid
+    waitid.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.POINTER(Siginfo), ctypes.c_int]
+    waitid.restype = ctypes.c_int
+    def exited(pid):
+        result = Siginfo()
+        if waitid(os.P_PID, pid, ctypes.byref(result), options) == -1:
+            number = ctypes.get_errno()
+            raise OSError(number, os.strerror(number))
+        return result.pid == pid
+    return exited
+
+
 def _stop_owned_group(process, grace_seconds, selector, retained, output):
     # Keep the direct child unreaped until the final signal. Its reserved PID
     # prevents an unrelated process group from reusing this group's identifier.
@@ -152,6 +186,7 @@ def run_logged(command, log, timeout=None, *, output=None, cleanup_grace=5, exit
     """Stream merged output and retain it, with bounded owned-group cleanup."""
     if timeout is not None and (not math.isfinite(timeout) or timeout <= 0):
         raise ValueError("Execution timeout must be positive and finite")
+    exited = _exit_observer()
     output = sys.stdout.buffer if output is None else output
     deadline = None if timeout is None else time.monotonic() + timeout
     with log.open("wb", buffering=0) as retained:
@@ -161,29 +196,31 @@ def run_logged(command, log, timeout=None, *, output=None, cleanup_grace=5, exit
             try:
                 selector.register(process.stdout, selectors.EVENT_READ)
                 exit_deadline = None
-                while selector.get_map():
+                while True:
                     now = time.monotonic()
                     if deadline is not None and now >= deadline:
                         raise subprocess.TimeoutExpired(command, timeout)
                     # WNOWAIT observes exit without surrendering the PID reservation
                     # needed for safe cleanup of descendants holding the output pipe.
-                    exited = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-                    if exited is not None and exited.si_pid == process.pid and exit_deadline is None:
+                    leader_exited = exited(process.pid)
+                    if leader_exited and not selector.get_map():
+                        break
+                    if leader_exited and exit_deadline is None:
                         exit_deadline = now + exit_drain_timeout
                     if exit_deadline is not None and now >= exit_deadline:
                         raise RuntimeError("Native test process exited but descendants kept its output pipe open")
                     waits = [0.1]
                     waits.extend(limit - now for limit in (deadline, exit_deadline) if limit is not None)
                     _stream_available(selector, retained, output, min(waits))
-                remaining = None if deadline is None else max(0, deadline - time.monotonic())
-                code = process.wait(timeout=remaining)
-                if code:
-                    raise subprocess.CalledProcessError(code, command)
-            except BaseException:
-                _stop_owned_group(process, cleanup_grace, selector, retained, output)
-                raise
             finally:
-                process.stdout.close()
+                try:
+                    # Success, failure and closed output all retain the leader's
+                    # PID until every owned-group signal has been sent.
+                    _stop_owned_group(process, cleanup_grace, selector, retained, output)
+                finally:
+                    process.stdout.close()
+            if process.returncode:
+                raise subprocess.CalledProcessError(process.returncode, command)
 
 
 def main():

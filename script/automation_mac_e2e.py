@@ -19,9 +19,11 @@ except ModuleNotFoundError:
 
 ROOT = shared.ROOT
 FIXTURE_BUNDLE_ID = shared.FIXTURE_BUNDLE_ID + "Mac"
+# Native Mac XCUITest plans cannot transfer IntentFile artifacts between segments.
+CODEC_FAMILIES = tuple(family for family in shared.FAMILIES if family != "intentFile")
 EXPECTED_CASES = {
     "codec-1": "executedUnassessed", "codec-2": "executedUnassessed",
-    "codec-file": "executedUnassessed", "mixed": "passed",
+    "mixed": "passed",
     "wrong-assertion": "assertionFailed", "after-wrong-assertion": "executedUnassessed",
 }
 
@@ -107,11 +109,14 @@ def outside_repository(path, label):
 
 def verify_selection(reports):
     shared.ensure([item["case"] for item in reports] == ["phase5." + name for name in EXPECTED_CASES],
-                  "Mac scenario coverage differs from the complete contract")
+                  "Mac scenario coverage differs from the supported contract")
     for item, (name, summary) in zip(reports, EXPECTED_CASES.items()):
         shared.ensure(item["summary"] == summary, "Unexpected summary for " + name)
         if name.startswith("codec-") or name == "after-wrong-assertion":
             shared.ensure(item["exactOutputsCompared"] is True, "Missing exact output comparison for " + name)
+
+    compared = {family for item in reports for family in item["codecFamiliesCompared"]}
+    shared.ensure(compared == set(CODEC_FAMILIES), "Mac codec coverage differs from the supported contract")
 
 
 def selected_developer(commands):
@@ -271,7 +276,7 @@ def run_contract(commands, output, *, cli=None, build_root=None, jobs=2, reports
     _, catalog = commands.json([cli, "actions", *flags])
     shared.ensure(catalog == prepared["catalog"], "actions differs from prepared catalog")
 
-    def execute(plan, summary, expected=None, file=False):
+    def execute(plan, summary, expected=None):
         plan = mac_plan(prepared, plan)
         attempt, code, report = shared.run_plan(commands, cli, support, output, plan)
         (output / (plan["id"] + ".report.json")).write_text(json.dumps(report, indent=2))
@@ -280,14 +285,12 @@ def run_contract(commands, output, *, cli=None, build_root=None, jobs=2, reports
                       "CLI exit status differs from reported assessment")
         if expected is not None:
             shared.verify_echo(report, expected)
-        if file:
-            shared.verify_file(report)
         shared.verify_campaigns(support)
         _, saved = commands.json([cli, "show", attempt, *flags])
         shared.ensure(saved == report, "Saved report differs from run output")
-        compared = ["intentFile"] if file else sorted({family.removeprefix("empty.") for family in expected or {}})
+        compared = sorted({family.removeprefix("empty.") for family in expected or {}})
         reports.append({"case": plan["id"], "attemptID": attempt, "summary": summary,
-                        "exactOutputsCompared": expected is not None or file,
+                        "exactOutputsCompared": expected is not None,
                         "codecFamiliesCompared": compared})
         (output / "verified-cases.json").write_text(json.dumps(reports, indent=2))
         print(f"Verified {plan['id']}: {summary}", flush=True)
@@ -296,7 +299,6 @@ def run_contract(commands, output, *, cli=None, build_root=None, jobs=2, reports
     for index, (operations, expected) in enumerate(batches, 1):
         execute(shared.case(prepared, f"codec-{index}", shared.host_segment("subject", "subject", operations)),
                 "executedUnassessed", expected)
-    execute(shared.file_case(prepared), "executedUnassessed", file=True)
     execute(shared.mixed_case(prepared, "mixed"), "passed")
     execute(shared.mixed_case(prepared, "wrong-assertion", expected=False), "assertionFailed")
     operations, expected = batches[0]
@@ -345,7 +347,7 @@ def main(argv=None):
         summary["sourceComparison"] = run_contract(shared.Commands(output, args.xcode), output, cli=cli, build_root=build_root,
                                                    jobs=args.jobs, reports=summary["cases"], signing=signing)
         compared = {family for item in summary["cases"] for family in item["codecFamiliesCompared"]}
-        summary.update(status="passed", codecFamiliesCompared=[family for family in shared.FAMILIES if family in compared])
+        summary.update(status="passed", codecFamiliesCompared=[family for family in CODEC_FAMILIES if family in compared])
         print(f"Mac automation contract passed: {len(summary['cases'])} scenarios, "
               f"{len(summary['codecFamiliesCompared'])} codec families compared.", flush=True)
         return 0

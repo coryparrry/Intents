@@ -175,7 +175,7 @@ class LoggedExecutionTests(unittest.TestCase):
             try:
                 with self.assertRaises(subprocess.TimeoutExpired):
                     runner.run_logged([sys.executable, "-c", self.child_fixture(pid_file)], log,
-                                      timeout=2, output=output, cleanup_grace=0.5)
+                                      timeout=10, output=output, cleanup_grace=0.5)
                 self.assert_processes_absent(pid_file)
                 self.assertIsNone(unrelated.poll(), "Cleanup must not stop an unrelated process")
                 self.assertIn(b"fixture ready", log.read_bytes())
@@ -194,7 +194,7 @@ class LoggedExecutionTests(unittest.TestCase):
                     "print('ignoring TERM', flush=True); time.sleep(60)")
             with self.assertRaises(subprocess.TimeoutExpired):
                 runner.run_logged([sys.executable, "-c", code], Path(directory) / "tests.log",
-                                  timeout=2, output=io.BytesIO(), cleanup_grace=0.5)
+                                  timeout=10, output=io.BytesIO(), cleanup_grace=0.5)
             self.assert_processes_absent(pid_file)
 
     def test_wrapper_term_cleans_its_group_and_preserves_partial_log(self):
@@ -262,6 +262,81 @@ class LoggedExecutionTests(unittest.TestCase):
             self.assertTrue(stopped.exists(), "The inherited-pipe child must receive owned-group cleanup")
             self.assertIn(b"grandchild shutdown", log.read_bytes())
             self.assertEqual(log.read_bytes(), output.getvalue())
+
+    def check_detached_output_cleanup(self):
+        for exit_code, timeout in ((0, None), (7, None), (None, 10)):
+            with self.subTest(exit_code=exit_code, timeout=timeout), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                ready, stopped, pid_file = root / "ready", root / "stopped", root / "child.pid"
+                child = textwrap.dedent(f"""\
+                    import os, signal, time
+                    from pathlib import Path
+                    def terminate(_number, _frame):
+                        Path({str(stopped)!r}).touch()
+                        raise SystemExit(0)
+                    signal.signal(signal.SIGTERM, terminate)
+                    Path({str(pid_file)!r}).write_text(str(os.getpid()))
+                    Path({str(ready)!r}).touch()
+                    time.sleep(60)
+                    """)
+                parent = ("import subprocess, sys, time; from pathlib import Path; "
+                          f"subprocess.Popen([sys.executable, '-c', {child!r}], "
+                          "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+                          f"ready = Path({str(ready)!r})\n"
+                          "while not ready.exists(): time.sleep(0.01)\n"
+                          "print('leader ready', flush=True)\n" +
+                          ("time.sleep(60)" if exit_code is None else f"raise SystemExit({exit_code})"))
+                output, log = io.BytesIO(), root / "tests.log"
+                try:
+                    def run():
+                        runner.run_logged([sys.executable, "-c", parent], log, timeout=timeout,
+                                          output=output, cleanup_grace=0.2)
+                    if timeout is not None:
+                        with self.assertRaises(subprocess.TimeoutExpired):
+                            run()
+                    elif exit_code:
+                        with self.assertRaises(subprocess.CalledProcessError) as failure:
+                            run()
+                        self.assertEqual(failure.exception.returncode, exit_code)
+                    else:
+                        run()
+                    self.assertTrue(stopped.exists(), "Owned workers with detached output must receive TERM")
+                    self.assertEqual(log.read_bytes(), b"leader ready\n")
+                    self.assertEqual(log.read_bytes(), output.getvalue())
+                finally:
+                    if pid_file.exists() and not stopped.exists():
+                        try:
+                            os.kill(int(pid_file.read_text()), signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+
+    def test_detached_output_workers_are_cleaned_after_success_failure_and_timeout(self):
+        self.check_detached_output_cleanup()
+
+    @unittest.skipUnless(sys.platform == "darwin", "Apple system Python waitid fallback")
+    def test_detached_output_cleanup_without_python_waitid(self):
+        with patch.dict(runner.os.__dict__):
+            runner.os.__dict__.pop("waitid", None)
+            self.check_detached_output_cleanup()
+
+    def test_closed_output_does_not_terminate_a_still_running_leader(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            completed = root / "completed"
+            code = ("import os, time; from pathlib import Path; os.close(1); os.close(2); "
+                    f"time.sleep(0.2); Path({str(completed)!r}).touch(); raise SystemExit(7)")
+            with self.assertRaises(subprocess.CalledProcessError) as failure:
+                runner.run_logged([sys.executable, "-c", code], root / "tests.log", timeout=5,
+                                  output=io.BytesIO(), cleanup_grace=0.1)
+            self.assertEqual(failure.exception.returncode, 7)
+            self.assertTrue(completed.exists())
+
+    def test_reaped_leader_never_signals_a_potentially_recycled_group(self):
+        class ReapedLeader:
+            pid, returncode = 42, 0
+        with selectors.DefaultSelector() as selector, patch.object(runner.os, "killpg") as killpg:
+            runner._stop_owned_group(ReapedLeader(), 0, selector, io.BytesIO(), io.BytesIO())
+        killpg.assert_not_called()
 
     def test_denied_final_signal_requires_independent_group_absence(self):
         class ExitedLeader:

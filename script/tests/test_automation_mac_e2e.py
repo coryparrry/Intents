@@ -161,7 +161,7 @@ class MacPlanTests(unittest.TestCase):
 
 
 class MacExecutionTests(unittest.TestCase):
-    def exercise(self, **kwargs):
+    def exercise(self, include_comparison=False, **kwargs):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         output = Path(directory.name)
@@ -169,14 +169,14 @@ class MacExecutionTests(unittest.TestCase):
         reports = []
         with patch.object(driver.shutil, "copytree"), patch.object(driver, "configure_fixture_signing"), \
                 patch.object(driver, "verify_prepared_signing"):
-            driver.run_contract(commands, output, reports=reports, include_comparison=False, signing=SIGNING, **kwargs)
+            driver.run_contract(commands, output, reports=reports, include_comparison=include_comparison, signing=SIGNING, **kwargs)
         return output, commands, reports
 
     def test_full_native_contract_reuses_cli_and_proves_cleanup_after_failed_assertion(self):
         output, commands, reports = self.exercise(cli=Path("/external/intents-automation"))
         driver.verify_selection(reports)
         self.assertEqual([report["summary"] for report in reports], list(driver.EXPECTED_CASES.values()))
-        self.assertEqual(len(commands.envelopes), 6)
+        self.assertEqual(len(commands.envelopes), 5)
         self.assertTrue(all(not envelope["allowBootAndInstall"] for envelope in commands.envelopes))
         self.assertTrue(all(envelope["disposable"] for envelope in commands.envelopes))
         self.assertTrue(all(envelope["plan"]["target"]["kind"] == "nativeMac" for envelope in commands.envelopes))
@@ -187,9 +187,30 @@ class MacExecutionTests(unittest.TestCase):
         self.assertEqual(prepare[prepare.index("--scheme") + 1], "AutomationFixtureMac")
         self.assertEqual(commands.envelopes[-2]["plan"]["requirements"][0]["expected"]["value"], False)
         self.assertTrue(reports[-1]["exactOutputsCompared"])
-        self.assertEqual({family for report in reports for family in report["codecFamiliesCompared"]}, set(driver.shared.FAMILIES))
+        self.assertEqual({family for report in reports for family in report["codecFamiliesCompared"]}, set(driver.shared.FAMILIES) - {"intentFile"})
         self.assertEqual(json.loads((output / "verified-cases.json").read_text()), reports)
-        self.assertEqual(len(list(output.glob("*.report.json"))), 6)
+        self.assertEqual(len(list(output.glob("*.report.json"))), 5)
+
+    def test_supported_contract_never_dispatches_files_and_reaches_source_comparison(self):
+        with patch.object(driver.shared, "file_case", side_effect=AssertionError("unsupported Mac file transfer")) as file_case, \
+                patch.object(driver, "run_source_comparison", return_value={"outcome": "fixed"}) as comparison:
+            _, commands, reports = self.exercise(cli=Path("/external/cli"), include_comparison=True)
+        file_case.assert_not_called()
+        comparison.assert_called_once()
+        for envelope in commands.envelopes:
+            plan = envelope["plan"]
+            segments = plan["setup"] + [plan["execution"]] + plan["observations"] + plan["cleanup"]
+            for segment in segments:
+                self.assertNotIn("apple.codec.intentFile", segment["requiredCapabilities"])
+                for operation in segment.get("hostProgram", {}).get("operations", []):
+                    self.assertNotEqual(operation.get("resultCodec"), "intentFile")
+                    self.assertNotIn("intentFile", operation.get("parameterCodecs", {}).values())
+                for binding in segment.get("inputBindings", []):
+                    self.assertNotEqual(binding.get("parameterCodec"), "intentFile")
+        self.assertEqual([item["case"] for item in reports], [
+            "phase5.codec-1", "phase5.codec-2", "phase5.mixed",
+            "phase5.wrong-assertion", "phase5.after-wrong-assertion"])
+        self.assertTrue(all("intentFile" not in item["codecFamiliesCompared"] for item in reports))
 
     def test_unsigned_prepared_product_cannot_reach_intent_dispatch(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -233,11 +254,25 @@ class MacExecutionTests(unittest.TestCase):
                     driver.run_contract(commands, output, cli=Path("/external/cli"), reports=reports, include_comparison=False, signing=SIGNING)
                 self.assertEqual(reports, [])
 
-    def test_selection_rejects_missing_negative_or_followup_case(self):
+    def test_selection_requires_every_supported_case(self):
         _, _, reports = self.exercise(cli=Path("/external/cli"))
-        for index in (4, 5):
+        for index in range(len(reports)):
             with self.subTest(index=index), self.assertRaises(AssertionError):
                 driver.verify_selection(reports[:index] + reports[index + 1:])
+
+    def test_selection_requires_exact_comparisons_and_supported_codec_coverage(self):
+        _, _, reports = self.exercise(cli=Path("/external/cli"))
+        for mutation in ("uncompared", "missing-codec", "unsupported-file"):
+            changed = copy.deepcopy(reports)
+            if mutation == "uncompared":
+                changed[-1]["exactOutputsCompared"] = False
+            elif mutation == "missing-codec":
+                for item in changed:
+                    item["codecFamiliesCompared"] = [family for family in item["codecFamiliesCompared"] if family != "integer"]
+            else:
+                changed[0]["codecFamiliesCompared"].append("intentFile")
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                driver.verify_selection(changed)
 
 
 class SourceComparisonTests(unittest.TestCase):
