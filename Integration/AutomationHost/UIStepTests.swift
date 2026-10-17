@@ -59,11 +59,15 @@ final class UIStepTests: XCTestCase {
                 attach("intents-ui-step-\(index)", try JSONEncoder().encode(
                     UIHostStepReceipt(plan: plan, index: index, dispatched: true, completed: true, value: value)))
             } catch {
-                let screenshot = XCTAttachment(screenshot: app.screenshot())
-                screenshot.name = "intents-ui-failure-\(index)"; screenshot.lifetime = .keepAlways; add(screenshot)
+                // Preserve the original failure before optional UI diagnostics. A system
+                // operation can fail before its application has ever been launched.
                 attach("intents-ui-step-\(index)", try JSONEncoder().encode(
                     UIHostStepReceipt(plan: plan, index: index, dispatched: true, completed: false, value: value,
                                       error: String(String(describing: error).prefix(4096)))))
+                if app.state == .runningForeground || app.state == .runningBackground {
+                    let screenshot = XCTAttachment(screenshot: app.screenshot())
+                    screenshot.name = "intents-ui-failure-\(index)"; screenshot.lifetime = .keepAlways; add(screenshot)
+                }
                 throw error
             }
         }
