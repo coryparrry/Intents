@@ -76,7 +76,11 @@ public actor AutomationXCUITestRouteDriver {
         if prepared.target.kind == .nativeMac {
             let lifecycle = try AutomationMacXCUITestLifecycle(host: prepared)
             macLifecycle = lifecycle
-            try await lifecycle.prepare()
+            let register = try AutomationMacPreparedRegistration.required(plan: plan, approval: approval, steps: uiPlan.steps)
+            let authorization = AutomationMacPreparedRegistration.Authorization(deadline: deadline, revalidate: { [self] in
+                try await authorizeMacRegistration(deadline: deadline)
+            })
+            try await lifecycle.prepare(registerSubject: register, authorization: authorization)
         }
         #endif
         let directory = root.appendingPathComponent("xcuitest-" + UUID().uuidString)
@@ -267,6 +271,15 @@ public actor AutomationXCUITestRouteDriver {
             configs[0]["TestTargets"] = targets.map(environment); frozen["TestConfigurations"] = configs
         } else if let target = frozen[prepared.testTarget] as? [String: Any] { frozen[prepared.testTarget] = environment(target) }
         return frozen
+    }
+
+    private func authorizeMacRegistration(deadline: ContinuousClock.Instant) async throws {
+        try Task.checkCancellation()
+        // This callback validates the existing lease/budget; it does not reserve or charge either.
+        try await willStart()
+        try Task.checkCancellation()
+        guard !revoked, executing else { throw AutomationContractError.unknownLease }
+        guard ContinuousClock.now < deadline else { throw AutomationRPCError.timedOut }
     }
 
     private func verifyPrepared() throws {
