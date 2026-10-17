@@ -24,7 +24,7 @@ Traces contain only real `session.transcript` entries. The runner uses Apple's C
 
 ## Standalone app engine
 
-The checked-in `AppEngine` sources reuse the app's evaluation actor and Codable models. Installation does not load the app, its repository, or an app process. `AppEngine/provenance.json` records the original source hashes, bundled hashes, and bounded adaptations. Execution supports the on-device Apple model and same-model rubric judging. Imported cloud, custom model-provider, Core AI, or external-judge settings are rejected. Local HTTP **tools** remain supported.
+The checked-in `AppEngine` sources reuse the app's evaluation actor and Codable models. Installation does not load the app, its repository, or an app process. `AppEngine/provenance.json` records the original source hashes, bundled hashes, and bounded adaptations. This manifest is informational; packaging and execution do not consume or automatically verify its hashes. Execution supports the on-device Apple model and same-model rubric judging. Imported cloud, custom model-provider, Core AI, or external-judge settings are rejected. Local HTTP **tools** remain supported.
 
 Build with the Xcode 27 SDK. The binary deployment target remains macOS 26 for the legacy request above. Full app-engine requests require macOS 27 and return `unsupportedOS` on older systems. Model status reports actual Apple model readiness and per-capability availability; runtime gates never substitute a reduced generation path.
 
