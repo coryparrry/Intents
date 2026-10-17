@@ -1,5 +1,8 @@
 import Foundation
 import XCTest
+#if os(macOS)
+import AppKit
+#endif
 
 /// One test retains application continuity across UI, App Intents and entity queries.
 @MainActor
@@ -15,7 +18,11 @@ final class UIStepTests: XCTestCase {
               let bytes = Data(base64Encoded: encoded), bytes.count <= 32768 else { throw UIHostError.invalidPlan }
         let plan = try JSONDecoder().decode(UIHostPlan.self, from: bytes)
         try plan.validate()
+        #if os(macOS)
+        let app = XCUIApplication()
+        #else
         let app = XCUIApplication(bundleIdentifier: plan.bundleID)
+        #endif
         // This invocation owns the XCUIApplication controller across every step and
         // terminates it on success and thrown failures. The Mac release observer
         // never signals processes merely because their executable paths match.
@@ -83,6 +90,9 @@ final class UIStepTests: XCTestCase {
         case .checkFreshness: try plan.validateFreshSubject(outputs: outputs)
         case .launch:
             app.launchArguments = step.arguments ?? []; app.launchEnvironment = step.environment ?? [:]; app.launch()
+            #if os(macOS)
+            try verifyLaunchedMacApplication(bundleID: plan.bundleID)
+            #endif
         case .tap: clickOrTap(try element(step.query, app: app))
         case .typeText, .clearAndType:
             let element = try element(step.query, app: app)
@@ -183,6 +193,25 @@ final class UIStepTests: XCTestCase {
         guard let output = outputs[binding.producerSegmentID]?[binding.outputID] else { throw UIHostError.bindingUnavailable }
         return try binding.selection?.resolve(output) ?? output
     }
+    #if os(macOS)
+    private func verifyLaunchedMacApplication(bundleID: String) throws {
+        guard let expected = ProcessInfo.processInfo.environment["INTENTS_AUTOMATION_EXPECTED_APP_PATH"],
+              expected.hasPrefix("/"), expected.utf8.count <= 4096 else { throw UIHostError.invalidPlan }
+        let applications = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        let observed: [[String: Any]] = applications.prefix(8).map { application in
+            ["pid": application.processIdentifier,
+             "bundleURL": String((application.bundleURL?.path ?? "").prefix(4096)),
+             "executableURL": String((application.executableURL?.path ?? "").prefix(4096))]
+        }
+        let diagnostic: [String: Any] = ["expectedPath": expected, "matchingCount": applications.count, "observed": observed]
+        let bytes = try JSONSerialization.data(withJSONObject: diagnostic, options: [.sortedKeys])
+        print("Mac launch identity: " + String(decoding: bytes, as: UTF8.self))
+        let expectedURL = URL(fileURLWithPath: expected).standardizedFileURL.resolvingSymlinksInPath()
+        guard applications.count == 1, let observedURL = applications.first?.bundleURL,
+              observedURL.standardizedFileURL.resolvingSymlinksInPath() == expectedURL else { throw UIHostError.invalidPlan }
+    }
+    #endif
+
     private func query(_ locator: UIHostQuery?, app: XCUIApplication) throws -> XCUIElementQuery {
         guard let locator else { throw UIHostError.invalidPlan }
         let type: XCUIElement.ElementType

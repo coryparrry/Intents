@@ -260,6 +260,10 @@ public actor AutomationXCUITestRouteDriver {
             var fields = target["EnvironmentVariables"] as? [String: String] ?? [:]
             fields.removeValue(forKey: "INTENTS_AUTOMATION_HOST_PLAN_B64")
             fields["INTENTS_AUTOMATION_UI_PLAN_B64"] = payload.base64EncodedString()
+            fields.removeValue(forKey: "INTENTS_AUTOMATION_EXPECTED_APP_PATH")
+            if prepared.target.kind == .nativeMac {
+                fields["INTENTS_AUTOMATION_EXPECTED_APP_PATH"] = prepared.subjectProductPath
+            }
             target["EnvironmentVariables"] = fields
             return target
         }
