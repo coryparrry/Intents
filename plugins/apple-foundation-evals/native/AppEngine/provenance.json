@@ -85,7 +85,7 @@
     },
     {
       "source": "Services/EvaluationHTTPLanguageModel.swift",
-      "sha256": "d7c6a0c8ab92079ed8e936fa892c0b7663de9882c2f2cc7a0dca1309610c6965",
+      "sha256": "ad3c8214ca608839d3cb2874cf48caeb197fd74b11d93067852c109aeebb7ff2",
       "bundled": "EvaluationCustomProviderConfiguration.swift",
       "excerpt": "configuration only; model executor excluded",
       "bundledSHA256": "404579cfc079c248af2e10c3ab0c4a2ecfce9bf8ec4ec6082de86a1decb4558a",

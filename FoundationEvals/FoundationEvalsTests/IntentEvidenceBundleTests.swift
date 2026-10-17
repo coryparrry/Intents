@@ -951,7 +951,9 @@ struct IntentEvidenceBundleTests {
             executedTestCount: 1, xctestExitCode: 0, projectID: projectID
         )
         defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let native = fixture.snapshot.cases[0]
+        var native = fixture.snapshot.cases[0]
+        native.runs[0].acceptanceStatus = .accepted
+        native.journals[0].scope = .init(lane: .intentIntegration, attempt: 1)
 
         var definition = ScenarioDefinition.starter(projectID: projectID)
         definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
@@ -980,12 +982,13 @@ struct IntentEvidenceBundleTests {
         )]
         definition.observationPlan = [.init(
             id: "feature.response", source: .testOnlyIntent,
-            operationID: nil, selector: nil
+            operationID: "SummarizeService", selector: nil
         )]
         definition.purpose = .releaseRequirement
         definition.checkMode = .basic
         definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
         definition = try definition.frozen()
+        #expect(ScenarioValidator.issues(in: definition).filter { $0.severity == .error }.isEmpty)
 
         let now = Date(timeIntervalSince1970: 90)
         let appHash = native.plan.appProductDigest
@@ -1085,6 +1088,7 @@ struct IntentEvidenceBundleTests {
             observations: observations, assertionResults: evaluated.1,
             observationSources: ["feature.response": .testOnlyIntent,
                                  "intentlab.actionReceipts": .testOnlyIntent],
+            claims: [.executionCompleted, .returnedValueChecked],
             actionReceipts: [receipt], cleanupVerified: true
         )
         var run = ScenarioRun(
@@ -1136,7 +1140,7 @@ struct IntentEvidenceBundleTests {
         let trusted = IntentEvidenceRequirements(
             collectionID: collection.id.uuidString,
             cases: [.init(required: true, definition: native.definition),
-                    .init(required: false, definition: definition)]
+                    .init(required: true, definition: definition)]
         )
         var snapshot = IntentEvidenceBundleSnapshot(
             requirements: trusted,
@@ -1159,7 +1163,7 @@ struct IntentEvidenceBundleTests {
             policy: IntentEvidenceChecker.policyID,
             referenceTime: Date(timeIntervalSince1970: 120)
         )
-        #expect(checked.exitCode == 0)
+        #expect(checked.exitCode == 0, "\(String(decoding: checked.json, as: UTF8.self))")
     }
 
     @Test func partialBaselineCannotQualifyFullCollectionComparison() throws {

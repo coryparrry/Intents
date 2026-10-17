@@ -126,7 +126,12 @@ extension AppAutomationStore {
                     ([.absent, .replaced].contains($0.owner.presence()) ||
                      ($0.owner == current && retainedUnresolvedRequestTargets[$0.runID]?.leaseKey == $0.target.leaseKey))
             }
-            guard !eligible.isEmpty || hasUnresolvedActiveAttempt || records.isEmpty else { throw AutomationContractError.targetBusy }
+            // A restored paired reservation is not proof of a resettable device
+            // attempt. Its runner must supply verified completion first.
+            guard !eligible.isEmpty || records.isEmpty ||
+                (hasUnresolvedActiveAttempt && !pairedExecutionUnresolved) else {
+                throw AutomationContractError.targetBusy
+            }
             guard eligible.allSatisfy({ $0.runners.allSatisfy { [.absent, .replaced].contains($0.process.presence()) } }) else {
                 throw AutomationContractError.terminationUnverified
             }

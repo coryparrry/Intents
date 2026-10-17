@@ -306,24 +306,25 @@ import Synchronization
             } else {
                 try await owner.reserveCampaign(runID: runID, target: target)
             }
-            let model = AppAutomationStore(supportDirectory: root)
+            let model = AppAutomationStore(supportDirectory: root,
+                simulatorInventoryReader: { _, _ in [] }, physicalInventoryReader: { _, _ in [] })
             await model.ownershipRecoveryTask?.value
             XCTAssertNotNil(try AutomationLeaseStore(url: url).read().campaigns[target.leaseKey])
             XCTAssertEqual(model.recoveryItems.map(\.record.runID), [runID])
+            XCTAssertTrue(model.pairedExecutionUnresolved)
             if !absentOwner {
-                model.pairedExecutionUnresolved = true
                 model.retainUnresolvedRequest(runID: runID, target: target)
             }
             await model.refreshRecovery()
             await model.clearUnresolvedAttempt()
-            XCTAssertNotNil(model.recoveryError)
+            XCTAssertNotNil(model.recoveryError, "A paired reservation cannot be cleared by a local device reset; absentOwner=\(absentOwner)")
             let absent = try await owner.campaignAbsent(target: target)
             XCTAssertFalse(absent)
             XCTAssertEqual(model.recoveryItems.map(\.record.runID), [runID])
+            XCTAssertTrue(model.pairedExecutionUnresolved)
+            XCTAssertFalse(model.canSelectApplicationFromCommand)
             if !absentOwner {
-                XCTAssertTrue(model.pairedExecutionUnresolved)
                 XCTAssertEqual(model.retainedUnresolvedRequestTargets[runID], target)
-                XCTAssertFalse(model.canSelectApplicationFromCommand)
             }
         }
     }

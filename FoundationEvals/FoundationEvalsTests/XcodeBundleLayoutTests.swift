@@ -10,7 +10,9 @@ struct XcodeBundleLayoutTests {
         defer { fixture.remove() }
         let expected = fixture.layout.declarationURL(bundle: fixture.paths.testBundleURL)
         let actual = XcodeTestExecutor.integrationDeclarationURL(in: fixture.paths.testBundleURL)
-        #expect(actual == expected)
+        // Bundle may return a URL relative to its bundle root. Compare the
+        // resolved resource identity rather than its Foundation representation.
+        #expect(actual.absoluteURL == expected.absoluteURL)
         #expect(try Data(contentsOf: actual) == Data(contentsOf: expected))
 
         if layout == .nativeMac {

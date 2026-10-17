@@ -221,12 +221,14 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
             throw EvaluationHTTPProviderError.requestTooLarge(maximum: Self.maximumRequestBytes)
         }
         if let tokenizerEndpoint = configuration.validatedTokenizerEndpoint {
+            let requestRole = request.metadata["role"].flatMap {
+                try? JSONDecoder().decode(String.self, from: Data($0.jsonString.utf8))
+            }
             try await Self.validateTokenBudget(
                 body: body,
                 endpoint: tokenizerEndpoint,
                 request: request,
-                maximumInputTokens: request.metadata.stringValue(forKey: "role") == "judge"
-                    ? nil : maximumInputTokens,
+                maximumInputTokens: requestRole == "judge" ? nil : maximumInputTokens,
                 contextSize: configuration.contextSize,
                 timeout: configuration.requestTimeoutSeconds
             )

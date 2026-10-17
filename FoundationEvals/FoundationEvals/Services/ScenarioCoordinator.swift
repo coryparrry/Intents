@@ -2697,7 +2697,7 @@ final class ScenarioCoordinator {
             definition: definition, lane: .appFeature,
             observations: observations, executionStatus: status
         )
-        let lane = ScenarioLaneResult(
+        let lane = ScenarioObservedFeatureOutput.recordingVerifiedClaims(in: ScenarioLaneResult(
             caseID: coordinate.caseID, attempt: coordinate.repetition,
             lane: .appFeature, executionStatus: status,
             outcome: status == .completed
@@ -2711,7 +2711,7 @@ final class ScenarioCoordinator {
                 : (fixtureReceipt == .wrongSource ? "The app used different source content than the planned fixture."
                 : (sample.errorMessage ?? run.terminationReason))),
             artifacts: [], observationSources: Dictionary(uniqueKeysWithValues: observations.keys.map { ($0, .applicationInstrumentation) })
-        )
+        ), definition: definition)
         let child = try ScenarioFeatureChildEvidence(
             runID: run.id, sampleID: sample.id, startedAt: run.startedAt,
             completedAt: run.completedAt, caseID: sample.caseID,
