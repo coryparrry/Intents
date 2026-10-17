@@ -116,7 +116,9 @@ final class MacPreparationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Executed · unassessed"].waitForExistence(timeout: 180), app.debugDescription)
         try capture(app, storage: storage, name: "typed-action-result")
 
-        selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "ui")
+        let route = app.popUpButtons["automation.workflow.route"]
+        revealAutomationControl(route, in: app)
+        selectAutomationMenu(route, item: "ui")
         let instruction = app.textFields["What should the app do?"]
         revealAutomationControl(instruction, in: app); instruction.click(); instruction.typeText("Observe the fixture controls")
         let endpoint = app.textFields["Destination control"]
