@@ -140,7 +140,7 @@ def fresh_comparison_case(prepared):
     create["attemptTextBindings"] = {"approvedText": prefix}
     create["uiProgram"] = {"operations": [
         {"id": "name", "kind": "fillBinding", "locator": {"kind": "testId", "value": "task.title"}, "binding": "approvedText"},
-        {"id": "save", "kind": "tap", "locator": {"kind": "testId", "value": "task.add", "role": "button"}},
+        {"id": "save", "kind": "tap", "locator": {"kind": "testId", "value": "task.add"}},
         {"id": "saved", "kind": "assertEndpoint", "locator": {"kind": "testId", "value": "task.title"}},
     ], "bindings": {}, "timeoutMilliseconds": 120000}
     selection = {"typeID": plan["requirements"][0]["entityProperty"]["selection"]["typeID"],

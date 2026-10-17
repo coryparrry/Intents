@@ -149,6 +149,18 @@ class MacPlanTests(unittest.TestCase):
         self.assertEqual(plan["execution"]["inputBindings"][0]["uniqueEntity"], selection)
         self.assertEqual(plan["observations"][0]["inputBindings"][0]["destination"], "hostQueryIDs")
 
+    def test_comparison_test_id_taps_do_not_claim_a_label_button_role(self):
+        plan = driver.fresh_comparison_case(prepared())
+        operations = plan["setup"][0]["uiProgram"]["operations"]
+        save = next(operation for operation in operations if operation["id"] == "save")
+        self.assertEqual(save["locator"]["kind"], "testId")
+        self.assertEqual(save["locator"]["value"], "task.add")
+        for operation in operations:
+            locator = operation["locator"]
+            if locator.get("role") is not None:
+                # AutomationUIProgram permits a role only for exact-label taps.
+                self.assertEqual((operation["kind"], locator["kind"]), ("tap", "label"))
+
     def test_mac_plan_uses_captured_gui_session_and_keeps_same_mixed_checks(self):
         source = driver.shared.mixed_case(prepared(), "mixed")
         original = copy.deepcopy(source)
