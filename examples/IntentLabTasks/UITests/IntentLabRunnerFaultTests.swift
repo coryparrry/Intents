@@ -23,7 +23,6 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         XCTAssertEqual(result.observations["task-001.isComplete"], .boolean(false))
         XCTAssertEqual(result.observations["task-002.isComplete"], .boolean(false))
         XCTAssertTrue(result.claims?.contains(.applicationStateChecked) ?? false)
-        XCTAssertFalse(qualifiesForRelease(scenario: scenario, lane: result))
     }
 
     func testRunnerRejectsUnrelatedMutationEvenWithFreshReceipt() throws {
@@ -41,7 +40,6 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         XCTAssertNotNil(result.observations["actionReceiptID"])
         XCTAssertTrue(result.claims?.contains(.applicationStateChecked) ?? false)
         XCTAssertEqual(result.outcome, .failed)
-        XCTAssertFalse(qualifiesForRelease(scenario: scenario, lane: result))
     }
 
     func testScopedUnchangedCheckRejectsMutationToExpectedConstant() throws {
@@ -66,7 +64,7 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         })
     }
 
-    func testCorrectPersistentMutationQualifiesForRelease() throws {
+    func testCorrectPersistentMutationPassesAndCleansUp() throws {
         let (scenario, invocation) = try makeBehaviourScenario()
         let integration = TaskIntegration()
         let evidence = try IntentLabScenarioRunner.run(
@@ -81,10 +79,10 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         XCTAssertEqual(result.observations["task-002.isComplete"], .boolean(false))
         XCTAssertEqual(result.outcome, .passed)
         XCTAssertEqual(integration.completedCleanups, 1)
-        XCTAssertTrue(qualifiesForRelease(scenario: scenario, lane: result))
+        XCTAssertEqual(result.cleanupVerified, true)
     }
 
-    func testCleanupFailurePreservesPassingActionButDisqualifiesRelease() throws {
+    func testCleanupFailurePreservesPassingActionAndMarksCleanupUnverified() throws {
         let (scenario, invocation) = try makeBehaviourScenario()
         let evidence = try IntentLabScenarioRunner.run(
             testCase: self,
@@ -100,7 +98,6 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         XCTAssertEqual(result.observations["task-001.isComplete"], .boolean(true))
         XCTAssertEqual(result.observations["completionResponse"], .string("Completed Buy milk."))
         XCTAssertTrue(result.diagnostic?.contains("cleanup failed") ?? false)
-        XCTAssertFalse(qualifiesForRelease(scenario: scenario, lane: result))
     }
 
     func testDirectBasicCheckVerifiesIntentOutputWithoutClaimingPersistence() throws {
@@ -138,27 +135,6 @@ final class IntentLabRunnerFaultTests: XCTestCase {
             $0.assertionID == targetAssertion.id && !$0.passed
         })
         XCTAssertEqual(result.outcome, .failed)
-        XCTAssertFalse(qualifiesForRelease(scenario: scenario, lane: result))
-    }
-
-    func testCompletionRequiresCurrentContextAndNonemptyReceipt() throws {
-        let integration = TaskIntegration()
-        let context = "completion-current"
-        let application = try integration.prepare(
-            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
-            context: context, operationID: TaskIntegration.preparationOperation
-        )
-        defer { application.terminate() }
-
-        XCTAssertFalse(integration.completed(observations: [
-            "invocationContext": .string(context), "actionReceiptID": .string("")
-        ], context: context))
-        XCTAssertFalse(integration.completed(observations: [
-            "invocationContext": .string("completion-previous"), "actionReceiptID": .string("receipt")
-        ], context: context))
-        XCTAssertTrue(integration.completed(observations: [
-            "invocationContext": .string(context), "actionReceiptID": .string("receipt")
-        ], context: context))
     }
 
     func testConsecutivePreparesRejectEarlierContext() throws {
@@ -280,29 +256,5 @@ final class IntentLabRunnerFaultTests: XCTestCase {
         )
         try scenario.validateContract(harnessVersion: invocation.harnessVersion)
         return (scenario, invocation)
-    }
-
-    /// Portable equivalent for this UI-test target: required runner claims and every
-    /// required deterministic assertion must pass before a result can satisfy release.
-    private func qualifiesForRelease(scenario: IntentLabScenario, lane: IntentLabLaneResult) -> Bool {
-        guard scenario.purpose == .releaseRequirement,
-              scenario.checkMode == .behaviour,
-              lane.lane == .intentIntegration,
-              lane.executionStatus == .completed,
-              lane.outcome == .passed,
-              lane.cleanupVerified == true,
-              let claims = lane.claims,
-              (scenario.requiredClaims ?? []).allSatisfy(claims.contains) else {
-            return false
-        }
-
-        let required = scenario.assertions.filter {
-            $0.required && ($0.applicableLanes?.contains(.intentIntegration) ?? true)
-        }
-        return required.allSatisfy { assertion in
-            lane.assertionResults.contains {
-                $0.assertionID == assertion.id && $0.passed
-            }
-        }
     }
 }

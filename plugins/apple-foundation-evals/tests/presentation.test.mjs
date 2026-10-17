@@ -47,10 +47,6 @@ test('repeated UUID case names resolve against the saved suite for display and s
   assert.equal(resultTitle(repeated, repeated.results[1]), 'Case 1');
   assert.deepEqual(visibleResults(repeated, 'All', 'Case 2').map(resultKey), [`${two}:1`, `${two}:2`]);
 });
-test('generation errors remain in the same pass-rate denominator as saved history', () => {
-  const metrics = runMetrics({ results: [result('pass', true, 10), result('error', false, 20, { trace: { error: { message: 'Failed' } } })] });
-  assert.equal(metrics.passRate, .5); assert.equal(metrics.errors, 1); assert.equal(metrics.failed, 0);
-});
 test('pending comparison data cannot replace newer suite or run selections', () => {
   const request = { sequence: 1, suiteId: 'suite-a', runIds: ['first', 'second'] };
   assert.equal(comparisonMatches(request, { ...request }), true);

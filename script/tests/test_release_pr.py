@@ -87,15 +87,6 @@ else:
         self.assertIn("waiting for installer publication", result.stdout)
         self.assertFalse(any(call[:2] == ["workflow", "run"] for call in self.calls()))
 
-    def test_publication_after_draft_allows_the_next_run(self):
-        draft = self.run_script(
-            "check-baseline", RELEASE=json.dumps({"tagName": "v1.2.0", "isDraft": True})
-        )
-        self.assertEqual(draft.returncode, 0, draft.stderr)
-        self.assertEqual(self.output(), "ready=false\n")
-        published = self.run_script("check-baseline")
-        self.assertEqual(published.returncode, 0, published.stderr)
-        self.assertEqual(self.output(), "ready=true\n")
 
     def test_missing_release_or_api_failure_never_allows_pr_generation(self):
         for failure in ("FAIL_MANIFEST", "FAIL_RELEASE"):

@@ -10,7 +10,7 @@ sh native/tests.sh --infer
 
 The executable targets Apple silicon and macOS 26 or later. It imports only Foundation and Apple's public FoundationModels SDK. Apple Intelligence must be enabled and the on-device model must be ready. Tests use Swift and Python 3; `--infer` requires successful access to the real model service. A restricted execution sandbox can report availability while denying inference; run the MCP host in an environment that can access the model service.
 
-The legacy request adapter stays within the SDK 26 API surface; the bundled app engine uses SDK 27 APIs behind macOS 27 runtime gates. Legacy generation errors receive specific classifications; errors from newer SDK types retain their actual localized message under `generationError`. The source guard catches known SDK 27-only dependencies, but does not replace compilation with Xcode 26 of the legacy adapter alone.
+The legacy request adapter stays within the SDK 26 API surface; the bundled app engine uses SDK 27 APIs behind macOS 27 runtime gates. Legacy generation errors receive specific classifications; errors from newer SDK types retain their actual localized message under `generationError`. SDK 26 compatibility requires compiling the legacy adapter alone with Xcode 26.
 
 Send one JSON object on stdin and close stdin. The executable writes one JSON object on stdout; diagnostics go to stderr. Structured request and inference failures use exit code zero so callers can consume `status` and `error`. Transport failures and termination remain process failures. Terminating the process cancels its work; the host owns timeout and cancellation policy.
 

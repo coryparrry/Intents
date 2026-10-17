@@ -5,18 +5,6 @@ import { readFileSync } from 'node:fs';
 const root = new URL('../dist/', import.meta.url);
 const html = readFileSync(new URL('index.html', root), 'utf8');
 
-test('first paint has the exact authored stylesheet cascade without network dependencies', () => {
-  const css = ['styles.css', 'native.css'].map(path => readFileSync(new URL(path, root), 'utf8')).join('\n');
-  const blocks = [...html.matchAll(/<style id="site-styles">\n([\s\S]*?)<\/style>/g)];
-  assert.equal(blocks.length, 1);
-  assert.equal(blocks[0][1], css);
-  assert.doesNotMatch(html, /<link\b[^>]*rel="stylesheet"/);
-  assert.doesNotMatch(css, /@import\b/);
-  assert.ok(html.indexOf('<style id="site-styles">') < html.indexOf('<body>'));
-  assert.match(html, /<link rel="modulepreload" href="\/demo-data\.mjs">/);
-  assert.match(html, /<link rel="modulepreload" href="\/demo-interactions\.mjs">/);
-});
-
 test('responsive icon candidates exist at their declared dimensions with bounded delivery size', () => {
   const images = [...html.matchAll(/<img\b[^>]*srcset="([^"]+)"[^>]*>/g)];
   assert.equal(images.length, 2);

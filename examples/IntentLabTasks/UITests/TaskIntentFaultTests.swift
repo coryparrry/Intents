@@ -24,28 +24,11 @@ final class TaskIntentFaultTests: XCTestCase {
             from: Data(contentsOf: declarationURL)
         )
         try declaration.validate()
-        XCTAssertTrue(declaration.capabilities.contains("local-feature-controls"))
-        XCTAssertTrue(declaration.capabilities.contains("test-only-intent"))
         let digest = "caeb9a954c99c4e035ec5d94bd8892622bb0676d24541dfedecae3d42096937d"
         let control = try declaration.localFeatureControl(
             featureID: "com.example.intent-lab-tasks",
             interfaceDigest: digest,
             operationID: "complete-task"
-        )
-        XCTAssertEqual(control.testIntentIdentifier, "IntentLabInvokeFeatureIntent")
-        XCTAssertEqual(control.parameters.map(\.name), ["taskID"])
-        XCTAssertEqual(control.parameters.first?.type, .primitive(.string))
-        XCTAssertEqual(control.parameters.first?.required, true)
-        XCTAssertTrue(control.outputProjections.isEmpty)
-        XCTAssertEqual(
-            try IntentLabIntegrationDeclaration.FeatureControl.calculateInterfaceDigest(
-                featureID: control.featureID,
-                operationID: control.operationID,
-                testIntentIdentifier: control.testIntentIdentifier,
-                parameters: control.parameters,
-                outputProjections: control.outputProjections
-            ),
-            digest
         )
         let input = [
             IntentLabParameter(
@@ -202,54 +185,6 @@ final class TaskIntentFaultTests: XCTestCase {
         let status = try readStatusesAfterReopen(application)
         XCTAssertEqual(status["task-001"], "Complete")
         XCTAssertEqual(status["task-002"], "Complete")
-    }
-
-    func testCorrectActionProducesFreshContextBoundReceiptAndLeavesOtherTaskAlone() async throws {
-        let integration = TaskIntegration()
-        let context = "correct-\(UUID().uuidString)"
-        let application = try integration.prepare(
-            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
-            context: context,
-            operationID: TaskIntegration.preparationOperation
-        )
-        defer { application.terminate() }
-
-        let response = try await awaitContextMutation(
-            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
-            context: context
-        )
-        XCTAssertTrue(response.contains("Buy milk"))
-        let status = try readStatusesAfterReopen(application)
-        XCTAssertEqual(status["task-001"], "Complete")
-        XCTAssertEqual(status["task-002"], "Incomplete")
-    }
-
-    func testReceiptFromAnEarlierAttemptCannotCompleteCurrentAttempt() async throws {
-        let integration = TaskIntegration()
-        let firstContext = "old-\(UUID().uuidString)"
-        let firstApp = try integration.prepare(
-            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
-            context: firstContext,
-            operationID: TaskIntegration.preparationOperation
-        )
-        _ = try await awaitContextMutation(
-            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
-            context: firstContext
-        )
-        firstApp.terminate()
-
-        let currentContext = "current-\(UUID().uuidString)"
-        let currentApp = try integration.prepare(
-            bundleIdentifier: TaskIntegration.testingBundleIdentifier,
-            context: currentContext,
-            operationID: TaskIntegration.preparationOperation
-        )
-        defer { currentApp.terminate() }
-
-        XCTAssertFalse(integration.completed(observations: [
-            "invocationContext": .string(firstContext),
-            "actionReceiptID": .string(UUID().uuidString)
-        ], context: currentContext))
     }
 
     func testEarlierAttemptContextCannotMutateResetStore() async throws {

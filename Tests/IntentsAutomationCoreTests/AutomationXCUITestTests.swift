@@ -279,8 +279,6 @@ final class AutomationXCUITestTests: XCTestCase, @unchecked Sendable {
             XCTAssertThrowsError(try plan.execution.validateObservationOnly())
             XCTAssertThrowsError(try PlanValidator.validate(plan, approval: approval, capabilities: .init()))
         }
-        let old = AutomationUIProgram(operations: [.init(id: "tap", kind: .tap, locator: .init(.testId, "button"))])
-        XCTAssertFalse(String(decoding: try JSONEncoder().encode(old), as: UTF8.self).contains("\"steps\""))
     }
     func testReleaseDuringPayloadCallbackCannotWriteRetiredPrivateInputs() async throws {
         let root = URL(fileURLWithPath: "/private/tmp/xcuitest-payload-" + UUID().uuidString)

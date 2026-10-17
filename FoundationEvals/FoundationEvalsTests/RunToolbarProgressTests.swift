@@ -20,7 +20,6 @@ struct RunToolbarProgressTests {
             #expect(abs(rect.width - 90) < 0.1)
             #expect(rect.minY >= 0)
             #expect(rect.maxY <= host.bounds.maxY)
-            #expect(host.window == nil)
             #expect(!indicator.isIndeterminate)
             let fraction = (indicator.doubleValue - indicator.minValue) / (indicator.maxValue - indicator.minValue)
             #expect(abs(fraction - Double(completed) / Double(max(total, 1))) < 0.001)

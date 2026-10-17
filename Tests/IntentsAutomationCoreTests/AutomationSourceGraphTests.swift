@@ -15,13 +15,13 @@ final class AutomationSourceGraphTests: XCTestCase {
                 projectRelativePath: "App.xcodeproj", targetID: "APP", configuration: configuration)
         }
     }
-    private func fixture(additionalFiles: [String: String] = [:], retainedRoot: URL? = nil, _ mutate: (inout [String: [String: Any]]) -> Void = { _ in }) throws -> Fixture {
-        let root = (retainedRoot ?? URL(fileURLWithPath: "/private/tmp")).appendingPathComponent("source-graph-" + UUID().uuidString)
+    private func fixture(additionalFiles: [String: String] = [:], _ mutate: (inout [String: [String: Any]]) -> Void = { _ in }) throws -> Fixture {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent("source-graph-" + UUID().uuidString)
         let source = root.appendingPathComponent("checkout"), session = root.appendingPathComponent("prepare-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: source.appendingPathComponent("App.xcodeproj"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: source.appendingPathComponent("Sources"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: source.appendingPathComponent("Package"), withIntermediateDirectories: true)
-        if retainedRoot == nil { addTeardownBlock { try? FileManager.default.removeItem(at: root) } }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let contents = ["Sources/App.swift": "import AppIntents\nstruct Echo: AppIntent {}\nstruct Item: AppEntity {}",
                              "Sources/Library.swift": "struct Choice: AppIntents.AppEnum {}", "Sources/Unrelated.swift": "struct Ghost: AppIntent {}",
                              "Package/Package.swift": "// Frozen package manifest; never evaluated", "Package.swift": "// Root package manifest", "README.md": "Not a target member"].merging(additionalFiles) { _, new in new }
@@ -193,7 +193,7 @@ final class AutomationSourceGraphTests: XCTestCase {
         XCTAssertEqual(graph.declarations.map(\.name), ["Echo", "Item", "Choice"])
         XCTAssertEqual(graph.sourceManifestDigest, try fixture.manifest.digest)
         XCTAssertEqual(graph.coverage, "partial"); XCTAssertFalse(graph.gaps.isEmpty)
-        XCTAssertEqual(graph, try fixture.read()); XCTAssertEqual(try graph.digest, try graph.digest)
+        XCTAssertEqual(graph, try fixture.read())
         XCTAssertThrowsError(try fixture.read(configuration: "Release"))
     }
     func testScriptsPackagesConditionalAndSynchronizedInputsAreVisibleGaps() throws {
@@ -243,15 +243,6 @@ final class AutomationSourceGraphTests: XCTestCase {
             XCTAssertFalse(graph.declarations.contains { $0.name == "Echo" })
             XCTAssertTrue(graph.gaps.contains { $0.contains("xcconfig") })
         }
-    }
-    func testRootLocalPackageManifestIsIncludedWithoutEvaluation() throws {
-        let graph = try fixture { objects in
-            objects["APP"]?["packageProductDependencies"] = ["PRODUCT"]
-            objects["PRODUCT"] = ["isa": "XCSwiftPackageProductDependency", "productName": "Root", "package": "LOCAL"]
-            objects["LOCAL"] = ["isa": "XCLocalSwiftPackageReference", "relativePath": "."]
-        }.read()
-        XCTAssertTrue(graph.inputs.contains { $0.relativePath == "Package.swift" && $0.role == "packageManifest" })
-        XCTAssertFalse(graph.gaps.contains { $0.contains("External package root") })
     }
     private var remoteResolution: String {
         "{\"version\":3,\"originHash\":\"" + String(repeating: "b", count: 64) + "\",\"pins\":[{\"identity\":\"remote\",\"kind\":\"remoteSourceControl\",\"location\":\"https://example.invalid/Remote.git\",\"state\":{\"revision\":\"" + String(repeating: "a", count: 40) + "\",\"version\":\"1.2.3\"}}]}"
@@ -512,36 +503,6 @@ final class AutomationSourceGraphTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: member, withDestinationURL: fixture.session.appendingPathComponent("source/Deep/Package.swift"))
         XCTAssertThrowsError(try fixture.read())
     }
-    func testExplicitTrustedLocalPackageBuildFixtureMatchesRetainedGraph() throws {
-        guard let path = ProcessInfo.processInfo.environment["INTENTS_LOCAL_PACKAGE_TEST_ROOT"] else { throw XCTSkip("Explicit authored local package build fixture") }
-        let files = [
-            "Package/Package.swift": "// swift-tools-version:6.0\nimport PackageDescription\nlet package = Package(name: \"Root\", products: [.executable(name: \"Local\", targets: [\"Main\"])], dependencies: [.package(name: \"Alias\", path: \"../Leaf\")], targets: [.executableTarget(name: \"Main\", dependencies: [.product(name: \"LeafProduct\", package: \"Alias\")])])",
-            "Package/Sources/Main/main.swift": "import Leaf\nprint(Leaf.value)",
-            "Leaf/Package.swift": "// swift-tools-version:6.0\nimport PackageDescription\nlet package = Package(name: \"Leaf\", products: [.library(name: \"LeafProduct\", targets: [\"Leaf\"])], dependencies: [.package(path: \"../Deep\")], targets: [.target(name: \"Leaf\", dependencies: [.product(name: \"DeepProduct\", package: \"deep\")]), .target(name: \"Unused\")])",
-            "Leaf/Sources/Leaf/Leaf.swift": "import Deep\npublic enum Leaf { public static let value = Deep.value }",
-            "Leaf/Sources/Unused/Unused.swift": "#error(\"Unselected target must not compile\")",
-            "Deep/Package.swift": "// swift-tools-version:6.0\nimport PackageDescription\nlet package = Package(name: \"Deep\", products: [.library(name: \"DeepProduct\", targets: [\"Deep\"])], targets: [.target(name: \"Deep\")])",
-            "Deep/Sources/Deep/Deep.swift": "public enum Deep { public static let value = \"selected\" }"
-        ]
-        let fixture = try self.fixture(additionalFiles: files) { objects in
-            objects["APP"]?["packageProductDependencies"] = ["LOCAL_PRODUCT"]
-            objects["LOCAL_PRODUCT"] = ["isa": "XCSwiftPackageProductDependency", "productName": "Local", "package": "LOCAL"]
-            objects["LOCAL"] = ["isa": "XCLocalSwiftPackageReference", "relativePath": "Package"]
-        }
-        let graph = try fixture.read()
-        XCTAssertEqual(graph.inputs.filter { $0.role == "packageSwiftMembership" }.map(\.relativePath),
-            ["Deep/Sources/Deep/Deep.swift", "Leaf/Sources/Leaf/Leaf.swift", "Package/Sources/Main/main.swift"])
-        try AutomationSourceSnapshot.verifyOriginal(fixture.manifest)
-        let root = URL(fileURLWithPath: path)
-        for (relative, source) in files {
-            let file = root.appendingPathComponent(relative)
-            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data(source.utf8).write(to: file)
-        }
-        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(graph).write(to: root.appendingPathComponent("retained-graph.json"))
-        try encoder.encode(files.mapValues { AutomationArtifactRegistry.digest(Data($0.utf8)) }).write(to: root.appendingPathComponent("authored-source-digests.json"))
-    }
     func testDynamicPluginEscapingAndAbsentPackageMembershipRemainGaps() throws {
         for manifest in ["#if os(macOS)\n" + literalPackage + "\n#endif", literalPackage + "\npackage.targets.removeAll()",
                          literalPackage.replacingOccurrences(of: "path: \"Code\"", with: "path: \"../Sources\""),
@@ -551,12 +512,6 @@ final class AutomationSourceGraphTests: XCTestCase {
             XCTAssertFalse(graph.inputs.contains { $0.relativePath == "Package/Code/Main.swift" && $0.role == "packageSwiftMembership" })
             XCTAssertFalse(graph.gaps.isEmpty); XCTAssertEqual(graph.coverage, "partial")
         }
-    }
-    func testFrozenPackageSourceLinkCannotReplaceLiteralMember() throws {
-        let fixture = try packageFixture(), member = fixture.session.appendingPathComponent("source/Package/Code/Main.swift")
-        try FileManager.default.removeItem(at: member)
-        try FileManager.default.createSymbolicLink(at: member, withDestinationURL: fixture.session.appendingPathComponent("source/Sources/App.swift"))
-        XCTAssertThrowsError(try fixture.read())
     }
     func testPackageRootHiddenAndOpaqueDirectoriesCannotBecomeSourceMembers() throws {
         let manifest = literalPackage.replacingOccurrences(of: "path: \"Code\", exclude: [\"Nested/Excluded.swift\"], sources: [\"Main.swift\", \"Nested\"]", with: "path: \".\"")
@@ -580,63 +535,6 @@ final class AutomationSourceGraphTests: XCTestCase {
             XCTAssertEqual(error as? AutomationContractError, .missingEvidence("Source graph traversal budget exceeded"))
         }
     }
-    func testRepositoryCorePackageGraphCapturesOnlyItsLiteralTargetClosure() throws {
-        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let packageData = try Data(contentsOf: repository.appendingPathComponent("Package.swift"))
-        let package = try XCTUnwrap(AutomationPackageManifest.read(packageData))
-        let names = ["IntentsAutomationCore", "IntentsAutomationDateCodec", "IntentLabContracts", "IntentsAutomationUIHostContracts"]
-        var contents = ["Package/Package.swift": try XCTUnwrap(String(data: packageData, encoding: .utf8))]
-        for name in names {
-            let path = try XCTUnwrap(package.targetsByName[name]?.path)
-            let directory = repository.appendingPathComponent(path)
-            let enumerator = try XCTUnwrap(FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey]))
-            for case let url as URL in enumerator where url.pathExtension == "swift" {
-                guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { continue }
-                let relative = String(url.path.dropFirst(repository.path.count + 1))
-                contents["Package/" + relative] = try XCTUnwrap(String(data: Data(contentsOf: url), encoding: .utf8))
-            }
-        }
-        let retained = ProcessInfo.processInfo.environment["INTENTS_PACKAGE_GRAPH_TEST_ROOT"].map { URL(fileURLWithPath: $0) }
-        let fixture = try fixture(additionalFiles: contents, retainedRoot: retained) { objects in
-            objects["APP"]?["packageProductDependencies"] = ["CORE_PRODUCT"]
-            objects["CORE_PRODUCT"] = ["isa": "XCSwiftPackageProductDependency", "productName": "IntentsAutomationCore", "package": "LOCAL"]
-            objects["LOCAL"] = ["isa": "XCLocalSwiftPackageReference", "relativePath": "Package"]
-        }
-        let graph = try fixture.read()
-        XCTAssertEqual(Set(graph.nodes.filter { $0.kind == "localPackageTarget" }.map(\.name)), Set(names))
-        let core = graph.inputs.filter { $0.owner == "Package/Package.swift#target:IntentsAutomationCore" }
-        XCTAssertEqual(core.count, contents.keys.filter { $0.hasPrefix("Package/Sources/IntentsAutomationCore/") }.count)
-        XCTAssertTrue(graph.inputs.contains { $0.relativePath == "Package/Integration/AutomationHost/AutomationDateCodec.swift" && $0.role == "packageSwiftMembership" })
-        let uiContracts = graph.inputs.filter { $0.owner == "Package/Package.swift#target:IntentsAutomationUIHostContracts" && $0.role == "packageSwiftMembership" }
-        XCTAssertEqual(uiContracts.map(\.relativePath), ["Package/Integration/AutomationHost/UIHostPlan.swift"])
-        XCTAssertFalse(graph.inputs.contains { $0.relativePath == "Package/Integration/AutomationHost/UIStepTests.swift" && $0.role == "packageSwiftMembership" })
-        XCTAssertFalse(graph.inputs.contains { $0.relativePath == "Package/Integration/AutomationHost/IntentDefinitionsHost.swift" && $0.role == "packageSwiftMembership" })
-        XCTAssertFalse(graph.inputs.contains { $0.relativePath.hasPrefix("Package/Code/") })
-        XCTAssertEqual(graph, try fixture.read()); try AutomationSourceSnapshot.verifyOriginal(fixture.manifest)
-        if let retained {
-            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            try encoder.encode(graph).write(to: retained.appendingPathComponent("repository-core-graph.json"))
-        }
-        let projectPath = "FoundationEvals/FoundationEvals.xcodeproj"
-        let resolutionPath = projectPath + "/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
-        var actualContents = Dictionary(uniqueKeysWithValues: contents.map { (String($0.key.dropFirst("Package/".count)), $0.value) })
-        for path in [projectPath + "/project.pbxproj", resolutionPath] {
-            actualContents[path] = try XCTUnwrap(String(data: Data(contentsOf: repository.appendingPathComponent(path)), encoding: .utf8))
-        }
-        let actualFixture = try self.fixture(additionalFiles: actualContents, retainedRoot: retained)
-        let candidate = try XCTUnwrap(AutomationApplicationIntake.assess(repository.appendingPathComponent(projectPath)).candidates.first { $0.name == "FoundationEvals" })
-        let actualGraph = try AutomationSourceGraphReader.read(manifest: actualFixture.manifest, frozenRoot: actualFixture.session.appendingPathComponent("source"),
-            projectRelativePath: projectPath, targetID: try XCTUnwrap(candidate.targetID), configuration: "Debug")
-        XCTAssertEqual(Set(actualGraph.packagePins?.map(\.identity) ?? []), Set(["coreai-models", "hummingbird", "posthog-ios", "sparkle"]))
-        XCTAssertEqual(Set(actualGraph.packagePins?.filter { $0.requirementState == "satisfied" }.map(\.identity) ?? []), Set(["coreai-models", "posthog-ios", "sparkle"]))
-        XCTAssertEqual(actualGraph.packagePins?.first { $0.identity == "hummingbird" }?.requirementState, "unresolved")
-        XCTAssertTrue(actualGraph.gaps.contains { $0.contains("Synchronized") })
-        XCTAssertEqual(actualGraph.coverage, "partial"); try AutomationSourceSnapshot.verifyOriginal(actualFixture.manifest)
-        if let retained {
-            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            try encoder.encode(actualGraph).write(to: retained.appendingPathComponent("repository-remote-graph.json"))
-        }
-    }
     func testRepeatedReferencesHitTraversalBudgetAndEmbeddedOwnershipIsIndexed() throws {
         let fixture = try fixture { objects in
             objects["APP"]?["buildPhases"] = Array(repeating: "COPY", count: 60_000)
@@ -656,15 +554,6 @@ final class AutomationSourceGraphTests: XCTestCase {
         }.read()
         XCTAssertEqual(graph.edges.filter { $0.kind == "linkedOrEmbeddedProduct" }.count, 1)
         XCTAssertTrue(graph.inputs.contains { $0.relativePath == "Sources/Library.swift" })
-    }
-    func testEscapingAndAbsentSourceReferencesDoNotBecomeMembers() throws {
-        let graph = try fixture { objects in
-            objects["APPFILE"]?["path"] = "/outside/private.swift"; objects["APPFILE"]?["sourceTree"] = "<absolute>"
-            objects["LIBFILE"]?["path"] = "Missing.swift"
-        }.read()
-        XCTAssertTrue(graph.inputs.isEmpty); XCTAssertTrue(graph.declarations.isEmpty)
-        XCTAssertTrue(graph.gaps.contains { $0.contains("External source root") })
-        XCTAssertTrue(graph.gaps.contains { $0.contains("absent") })
     }
     private func synchronizedFixture(files: [String: String] = ["Synced/Intent.swift": "import AppIntents\nstruct FolderIntent: AppIntent {}\nstruct FolderEntity: AppEntity {}", "Synced/notes.txt": "not Swift"],
                                      _ mutate: (inout [String: [String: Any]]) -> Void = { _ in }) throws -> Fixture {

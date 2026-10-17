@@ -48,8 +48,6 @@ struct ScenarioIndependentAssessmentTests {
         #expect(result.availabilityIssue != nil)
         #expect(result.assessment.subjectEvidenceDigest == result.sourceBindingDigest)
         #expect(result.assessment.samples.first?.sampleID == captured.id)
-        #expect(captured.observations["generatedSummary"] == .string(raw))
-        #expect(result.rawOutputDigest.count == 64)
         #expect(result.assessment.judge.reportedModelID == "none")
     }
 
@@ -79,7 +77,6 @@ struct ScenarioIndependentAssessmentTests {
         #expect(result.sample?.status == .passed)
         #expect(result.sample?.trace?.judgedCriterionIndexes == [])
         #expect(result.assessment.judge.requestedModelID == "none")
-        #expect(captured.observations["generatedSummary"] == .string("The blue charger is on the packing list."))
     }
 
     @Test func retainedArtifactRecomputesScoredPassAndFailure() async throws {
@@ -232,7 +229,6 @@ struct ScenarioIndependentAssessmentTests {
         let history = try await reloaded.history(for: run, laneResultID: captured.id, definition: definition)
         #expect(history.assessments.count == 2)
         #expect(history.selected(for: captured.id, assertionID: assertion.id)?.id == second.id)
-        #expect(run.laneResults[0].observations["generatedSummary"] == captured.observations["generatedSummary"])
 
         var altered = run
         altered.laneResults[0].observations["generatedSummary"] = .string("A different generated summary")

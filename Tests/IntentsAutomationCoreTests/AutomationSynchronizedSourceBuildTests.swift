@@ -42,7 +42,7 @@ final class AutomationSynchronizedSourceBuildTests: XCTestCase {
         let prepared = try await AutomationPreparation().prepare(candidate: candidate,
             approval: .init(sourceRoot: source.path, candidateID: candidate.id, configuration: "Debug", target: target),
             sessionRoot: root.appendingPathComponent("prepare-" + UUID().uuidString), templates: templates,
-            developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+            developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         let graph = try XCTUnwrap(prepared.sourceGraph), syntax = try XCTUnwrap(prepared.sourceSyntax)
         XCTAssertEqual(graph.synchronizedMembershipVersion, 1)
         XCTAssertTrue(graph.inputs.contains { $0.relativePath == "Synced/Subject.swift" && $0.role == "synchronizedSwiftMembership" })

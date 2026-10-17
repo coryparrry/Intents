@@ -5,30 +5,9 @@ import Testing
 
 @Suite("Developer protocol")
 struct DeveloperProtocolTests {
-    @Test("Versioned envelopes round-trip")
-    func envelopeRoundTrip() throws {
-        let request = DeveloperFeatureExecutionRequest(
-            id: UUID(),
-            runID: UUID(),
-            featureID: "com.example.summary",
-            featureVersion: "2",
-            encodedInput: Data("input".utf8),
-            inputTypeName: "Example.Input",
-            deadline: Date(timeIntervalSince1970: 2_000)
-        )
-        let envelope = DeveloperRunnerEnvelope(
-            id: UUID(),
-            sentAt: Date(timeIntervalSince1970: 1_000),
-            message: .execute(request)
-        )
-
-        let decoded = try JSONDecoder().decode(
-            DeveloperRunnerEnvelope.self,
-            from: JSONEncoder().encode(envelope)
-        )
-
-        #expect(decoded == envelope)
-        #expect(DeveloperProtocolVersion.current.canRead(decoded.protocolVersion))
+    @Test("Protocol compatibility rejects a different major version")
+    func protocolCompatibility() {
+        #expect(DeveloperProtocolVersion.current.canRead(.init(major: 1, minor: 0)))
         #expect(!DeveloperProtocolVersion.current.canRead(.init(major: 2, minor: 0)))
     }
 

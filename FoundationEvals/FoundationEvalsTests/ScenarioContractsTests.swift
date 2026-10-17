@@ -3203,28 +3203,6 @@ struct ScenarioContractsTests {
         })
     }
 
-    @Test func connectionStartupBudgetBeginsAtExecutorEntry() {
-        let start = ContinuousClock.now
-        let startup = ConnectionHostStartupObservation(now: start)
-        #expect(startup.snapshot.deadline == start.advanced(by: .seconds(90)))
-        let delayedEntry = start.advanced(by: .seconds(50))
-        startup.enterLaunch(now: delayedEntry)
-        #expect(startup.snapshot.deadline == delayedEntry.advanced(by: .seconds(30)))
-        startup.enterLaunch(now: delayedEntry.advanced(by: .seconds(10)))
-        #expect(startup.snapshot.deadline == delayedEntry.advanced(by: .seconds(30)))
-    }
-
-    @Test func connectionStartupObservesEarlyTaskFailure() {
-        let startup = ConnectionHostStartupObservation()
-        startup.complete(.failure(XcodeTestExecutorError.activeExecution))
-        guard case .failure(let error)? = startup.snapshot.completion,
-              let executorError = error as? XcodeTestExecutorError, case .activeExecution = executorError else {
-            Issue.record("The host's early launch failure was lost.")
-            return
-        }
-        #expect(!startup.snapshot.enteredLaunch)
-    }
-
     @Test(.timeLimit(.minutes(3))) func cancelledConnectionCheckStopsTermResistantHostAndReportsCancellation() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

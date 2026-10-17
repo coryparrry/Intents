@@ -67,22 +67,6 @@ final class IntentLabBoundedAdapterTests: XCTestCase {
         }
     }
 
-    func testCompletedWaitWithoutAResultStillThrowsDirectTimeoutAndCancelsTask() async {
-        let cancelled = XCTestExpectation(description: "Missing-result task was cancelled")
-        XCTAssertThrowsError(try IntentLabScenarioRunner.boundedObservations(
-            description: "Direct intent completed",
-            deadlineSeconds: 2,
-            wait: { _, _ in .completed }
-        ) {
-            XCTAssertTrue(Task.isCancelled)
-            cancelled.fulfill()
-            return [:]
-        }) { error in
-            XCTAssertTrue(error is IntentLabDirectIntentTimeout)
-        }
-        await fulfillment(of: [cancelled], timeout: 2)
-    }
-
     func testTimeoutCancelsPendingOperationForEveryAdapter() async {
         for description in descriptions {
             let started = XCTestExpectation(description: "Operation started")

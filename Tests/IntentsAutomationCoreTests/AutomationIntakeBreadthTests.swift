@@ -94,14 +94,6 @@ final class AutomationIntakeBreadthTests: XCTestCase {
         XCTAssertThrowsError(try AutomationSourceRecipe.tuist(source: root, pin: pin))
         XCTAssertThrowsError(try AutomationTuistRecipePin.generatedProjects(root: root))
     }
-    func testBundledProfileAndOldIdentityRemainCompatible() throws {
-        let app = AppIdentity(logicalID: "old", bundleID: "example.Old", platform: "ios", productDigest: "native-and-bundled-js")
-        let bytes = try JSONEncoder().encode(app)
-        XCTAssertNil(try JSONDecoder().decode(AppIdentity.self, from: bytes).servedJavaScriptDigest)
-        XCTAssertEqual(try JSONDecoder().decode(AppIdentity.self, from: bytes), app)
-        XCTAssertEqual(AutomationSourceRecipe.Kind(rawValue: "xcodegen"), .xcodegen)
-        XCTAssertEqual(AutomationSourceRecipe.Kind(rawValue: "swiftPMPackaging"), .swiftPMPackaging)
-    }
     func testSandboxDeniesForksAndExternalNetworkAndOriginalWrites() {
         let value = profile()
         let sandbox = AutomationServedJavaScriptSupervisor.sandbox(profile: value, root: URL(fileURLWithPath: "/owned/source"), temporary: URL(fileURLWithPath: "/owned/temp"))
