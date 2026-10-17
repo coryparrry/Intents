@@ -20,6 +20,16 @@ extension XCTestCase {
     }
 
     @MainActor
+    func automationConfirmation(in app: XCUIApplication, title: String, timeout: TimeInterval = 5) -> XCUIElement {
+        // macOS also exposes alert actions in the Touch Bar. Scope approval to its presented sheet.
+        let matches = app.sheets.containing(.staticText, identifier: title)
+        let sheet = matches.element
+        XCTAssertTrue(sheet.waitForExistence(timeout: timeout), app.debugDescription)
+        XCTAssertEqual(matches.count, 1, "Expected one confirmation titled \(title).\n\(app.debugDescription)")
+        return sheet
+    }
+
+    @MainActor
     func selectAutomationMenu(_ picker: XCUIElement, item identifier: String, timeout: TimeInterval = 10) {
         XCTAssertTrue(picker.waitForExistence(timeout: timeout))
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(

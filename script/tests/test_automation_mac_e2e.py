@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -102,6 +103,19 @@ class SigningTests(unittest.TestCase):
         self.assertEqual(len(verifies), 3)
         self.assertTrue(all("anchor apple generic" in call[call.index("-R") + 1] for call in verifies))
         self.assertEqual(verifies[-1][-1], Path("/prepared/Host.app/Contents/PlugIns/HostTests.xctest"))
+
+    @unittest.skipUnless(Path("/usr/bin/csreq").is_file(), "Apple code requirement compiler")
+    def test_signature_verification_requirements_compile_as_inline_source(self):
+        output, value, commands = self.signature_case()
+        driver.verify_prepared_signing(commands, value, output, SIGNING)
+        verifies = [call.args[0] for call in commands.run.call_args_list if call.args[0][0] == "/usr/bin/codesign"]
+        for index, arguments in enumerate(verifies):
+            with self.subTest(product=arguments[-1]):
+                compiled = output.parent / f"requirement-{index}.bin"
+                result = subprocess.run(["/usr/bin/csreq", "-r", arguments[arguments.index("-R") + 1],
+                                         "-b", str(compiled)], capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(compiled.read_bytes())
 
     def test_adhoc_wrong_team_release_certificate_mismatch_and_invalid_signature_fail(self):
         for mutation in ("adhoc", "team", "release", "certificate", "verify"):

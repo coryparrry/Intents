@@ -27,8 +27,18 @@ final class MacPreparationUITests: XCTestCase {
         app.activate(); app.typeKey("3", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         selectAutomationMenu(automationAppPicker(in: app, selectedApp: "AutomationFixture"), item: "AutomationFixtureMac")
-        let selectedMac = automationAppPicker(in: app, selectedApp: "AutomationFixtureMac")
-        selectAutomationMenu(selectedMac, item: "AutomationFixture")
+        _ = automationAppPicker(in: app, selectedApp: "AutomationFixtureMac")
+        selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "macOS")
+        let prepare = app.buttons["Prepare app…"]
+        XCTAssertTrue(prepare.isEnabled); prepare.click()
+        let review = automationConfirmation(in: app, title: "Build the selected app?")
+        // Resolve the real sheet action even when macOS also publishes its Touch Bar mirror.
+        XCTAssertEqual(review.buttons.matching(identifier: "Build private copy").count, 1)
+        XCTAssertTrue(review.buttons["Build private copy"].isEnabled)
+        review.buttons["Cancel"].click()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: review)], timeout: 5), .completed)
+        selectAutomationMenu(automationAppPicker(in: app, selectedApp: "AutomationFixtureMac"), item: "AutomationFixture")
         _ = automationAppPicker(in: app, selectedApp: "AutomationFixture")
         XCTAssertFalse(app.buttons["Build private copy"].exists)
         XCTAssertFalse(app.buttons["Run approved workflow"].exists)
@@ -54,7 +64,7 @@ final class MacPreparationUITests: XCTestCase {
         selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "ui")
         let prepare = app.buttons["Prepare app…"]
         XCTAssertTrue(prepare.isEnabled); prepare.click()
-        let build = app.buttons["Build private copy"]
+        let build = automationConfirmation(in: app, title: "Build the selected app?").buttons["Build private copy"]
         XCTAssertTrue(build.waitForExistence(timeout: 5))
         try capture(app, storage: storage, name: "build-review")
         build.click()
@@ -89,7 +99,7 @@ final class MacPreparationUITests: XCTestCase {
         XCTAssertFalse(app.checkBoxes["Allow starting this simulator and installing the prepared app"].exists)
         let runAction = app.buttons["Run action…"]
         XCTAssertTrue(runAction.isEnabled); runAction.click()
-        let approveAction = app.buttons["Run approved workflow"]
+        let approveAction = automationConfirmation(in: app, title: "Run the selected workflow?").buttons["Run approved workflow"]
         XCTAssertTrue(approveAction.waitForExistence(timeout: 5))
         try capture(app, storage: storage, name: "typed-action-review")
         approveAction.click()
@@ -109,7 +119,7 @@ final class MacPreparationUITests: XCTestCase {
         }
         let runWorkflow = app.buttons["Run workflow…"]
         XCTAssertTrue(runWorkflow.isEnabled); runWorkflow.click()
-        let approveUI = app.buttons["Run approved workflow"]
+        let approveUI = automationConfirmation(in: app, title: "Run the selected workflow?").buttons["Run approved workflow"]
         XCTAssertTrue(approveUI.waitForExistence(timeout: 5))
         try capture(app, storage: storage, name: "ui-workflow-review")
         approveUI.click()

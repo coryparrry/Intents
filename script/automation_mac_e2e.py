@@ -82,7 +82,8 @@ def verify_prepared_signing(commands, prepared, output, signing):
         record["identitySHA1"] = actual_identity
         output.write_text(json.dumps(evidence, indent=2))
         shared.ensure(actual_identity == signing["identitySHA1"], role + " was signed with a different certificate")
-        requirement = 'anchor apple generic and certificate leaf[subject.OU] = "' + signing["teamID"] + '"'
+        # codesign treats requirements as filenames unless inline source starts with '='.
+        requirement = '=anchor apple generic and certificate leaf[subject.OU] = "' + signing["teamID"] + '"'
         commands.run(["/usr/bin/codesign", "--verify", "--strict", "--verbose=2", "-R", requirement, product])
     evidence["verified"] = True
     output.write_text(json.dumps(evidence, indent=2))
