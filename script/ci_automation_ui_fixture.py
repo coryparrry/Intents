@@ -8,14 +8,29 @@ import subprocess
 
 try:
     from ci_ui_xctestrun import prepare_ui_xctestrun, ui_targets
+    from automation_mac_e2e import configure_fixture_signing, signing_inputs
 except ModuleNotFoundError:
     from script.ci_ui_xctestrun import prepare_ui_xctestrun, ui_targets
+    from script.automation_mac_e2e import configure_fixture_signing, signing_inputs
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = Path("/private/tmp/foundation-evals-ui-tests/AutomationFixture")
 
 
-def prepare_mac_fixture(products, developer_directory, fixture_root=FIXTURE_ROOT, repository=ROOT):
+def fixture_signing(team, identity):
+    if team is None and identity is None:
+        return None
+    if team is None or identity is None:
+        raise ValueError("--signing-team and --signing-identity must be supplied together")
+    try:
+        return signing_inputs(team, identity)
+    except AssertionError as error:
+        raise ValueError(str(error)) from error
+
+
+def prepare_mac_fixture(products, developer_directory, fixture_root=FIXTURE_ROOT, repository=ROOT,
+                        *, signing_team=None, signing_identity=None):
+    signing = fixture_signing(signing_team, signing_identity)
     developer_directory = Path(developer_directory).resolve(strict=True)
     if not developer_directory.is_dir():
         raise ValueError("Selected developer directory must be a directory")
@@ -39,6 +54,8 @@ def prepare_mac_fixture(products, developer_directory, fixture_root=FIXTURE_ROOT
         shutil.rmtree(fixture_root)
     shutil.copytree(Path(repository) / "examples/AutomationFixture", fixture_root,
                     ignore=shutil.ignore_patterns(".build", "*.xcodeproj"))
+    if signing is not None:
+        configure_fixture_signing(fixture_root, signing)
     subprocess.run(["xcodegen", "generate", "--spec", str(fixture_root / "project.yml")],
                    cwd=fixture_root, check=True, timeout=60)
     project = fixture_root / "AutomationFixture.xcodeproj/project.pbxproj"
@@ -48,12 +65,18 @@ def prepare_mac_fixture(products, developer_directory, fixture_root=FIXTURE_ROOT
     return descriptor
 
 
-def main():
+def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--products", required=True, type=Path)
     parser.add_argument("--developer-directory", required=True, type=Path)
-    arguments = parser.parse_args()
-    print(prepare_mac_fixture(arguments.products, arguments.developer_directory))
+    parser.add_argument("--signing-team", help="Apple development team ID; requires --signing-identity")
+    parser.add_argument("--signing-identity", help="Installed Apple Development certificate SHA-1; requires --signing-team")
+    arguments = parser.parse_args(arguments)
+    try:
+        print(prepare_mac_fixture(arguments.products, arguments.developer_directory,
+                                 signing_team=arguments.signing_team, signing_identity=arguments.signing_identity))
+    except ValueError as error:
+        parser.error(str(error))
 
 
 if __name__ == "__main__":

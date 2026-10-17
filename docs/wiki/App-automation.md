@@ -23,8 +23,11 @@ The hosted **Automation e2e (simulator)** job runs the same command on relevant 
 Run from an active local Mac GUI login session with Xcode and XcodeGen installed:
 
 ```sh
-python3 script/automation_mac_e2e.py --xcode /Applications/Xcode.app --build-root /private/tmp/intents-mac-build
+python3 script/automation_mac_e2e.py --xcode /Applications/Xcode.app --build-root /private/tmp/intents-mac-build \
+  --signing-team <APPLE_TEAM_ID> --signing-identity <APPLE_DEVELOPMENT_CERTIFICATE_SHA1>
 ```
+
+Native Mac intent execution requires an installed Apple Development signing identity and matching ten-character team ID. The harness accepts both explicitly and changes signing settings only in its disposable fixture copy. It verifies the prepared app, test runner, and test bundle against the requested certificate fingerprint, Apple trust anchor, and team before running any intent. `signing.json` and the comparison signing files retain actual signature metadata and public certificates. The harness never installs credentials or exports private keys. Ad hoc signing remains available for general Mac UI-only checks; it cannot qualify this intent acceptance contract.
 
 Use `--cli <executable>` to reuse an existing CLI with its resource bundle instead of building it, or `--jobs <count>` to change the default of two Swift build jobs. `--output-root <empty-directory>` retains evidence at a chosen external path. The harness stages disposable fixture copies outside the checkout and prepares `AutomationFixtureMac` with `--destination mac`. It uses the captured GUI login session, ordinary CLI capability resolution, and no simulator.
 
@@ -72,3 +75,7 @@ The required Phase 3 checks run the CLI on an iOS simulator. They do not qualify
 ## Opt-in app UI checks
 
 Stage a disposable copy of `examples/AutomationFixture` at `/private/tmp/foundation-evals-ui-tests/AutomationFixture` and run XcodeGen there. Set `INTENTS_AUTOMATION_LIVE_UI=1`, `INTENTS_AUTOMATION_SIMULATOR_UUID` to the simulator owned by the test run, and optionally `INTENTS_AUTOMATION_DEVELOPER_DIR`. The tests select the staged project with `--automation-select-path`; the Mac preparation test needs no simulator ID. Shut down any simulator you booted after the run. These app UI checks remain opt-in and separate from the required CLI simulator job.
+
+## CI Mac development signing
+
+The live Mac UI fixture and Mac acceptance job require a separate **Apple Development** signing identity so the fixture and generated XCTest runner share a team. Configure the dedicated repository secrets `CI_MAC_CERTIFICATE_P12_BASE64` and `CI_MAC_CERTIFICATE_PASSWORD`, plus the public repository variable `CI_MAC_SIGNING_TEAM` (the ten-character team ID). Do not use the release or Developer ID identity. The wrapper imports the credential into an ephemeral keychain, removes the P12 before running tests, then restores the runner search list and deletes its keychain. Missing or invalid signing configuration fails the required gate; it never skips these checks.

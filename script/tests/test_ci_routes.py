@@ -509,6 +509,16 @@ class MatrixTests(unittest.TestCase):
             routes.full_coverage("fixture")["ui_matrix"],
         )
 
+    def test_mac_signing_wrapper_changes_select_live_ui_and_cli_acceptance(self):
+        for path in ("script/ci_macos_signing.py", "script/tests/test_ci_macos_signing.py"):
+            with self.subTest(path=path):
+                plan = routes.coverage([path])
+                self.assertTrue(plan["native"])
+                self.assertTrue(plan["ui"])
+                self.assertTrue(plan["automation_e2e"])
+                self.assertIn("script.tests.test_ci_macos_signing", plan["python_tests"])
+                self.assertTrue(any(row.get("mac_fixture") for row in plan["ui_matrix"]))
+
     def test_ui_jobs_are_bounded_and_deterministic(self):
         groups = sorted(routes.ALL_UI_GROUPS)
         for count in range(len(groups) + 1):

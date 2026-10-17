@@ -89,6 +89,29 @@ class GateTests(unittest.TestCase):
         self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
         self.assertNotIn("success()", condition)
 
+    def test_signing_configuration_is_scoped_to_the_two_live_mac_commands(self):
+        ui = job("ui-tests")
+        mac = ui.split("      - name: Prepare and test selected live Mac UI fixture\n", 1)[1].split("      - name:", 1)[0]
+        ordinary = ui.split("      - name: Run affected UI tests once\n", 1)[1].split("      - name:", 1)[0]
+        cli = job("automation-e2e-scenarios").split("      - name: Reproduce Mac automation and saved fix comparison\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("if: ${{ matrix.mac_fixture == true }}", mac)
+        self.assertIn("if: ${{ !matrix.mac_fixture }}", ordinary)
+        self.assertNotIn("CI_MAC_CERTIFICATE", ordinary)
+        self.assertNotIn("ci_macos_signing.py", ordinary)
+        for step in (mac, cli):
+            self.assertIn("CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}", step)
+            self.assertIn("CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}", step)
+            self.assertIn("CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}", step)
+            self.assertIn("python3 script/ci_macos_signing.py -- /bin/bash -e -c", step)
+            self.assertIn('--signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"', step)
+            self.assertNotIn("continue-on-error", step)
+            self.assertNotIn("environment:", step)
+        self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_P12_BASE64"), 2)
+        self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_PASSWORD"), 2)
+        self.assertLess(mac.index("ci_automation_ui_fixture.py"), mac.index("ci_native_tests.py"))
+        self.assertIn("CI_TEST_SELECTION: ${{ toJSON(matrix.tests) }}", mac)
+        self.assertIn("--timeout-seconds 900", mac)
+
     def test_scripts_run_all_selected_modules_in_one_job(self):
         workflow = job("script-tests")
         self.assertNotIn("matrix", workflow)

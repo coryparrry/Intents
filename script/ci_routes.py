@@ -177,6 +177,7 @@ NATIVE_UI_HELPERS = {
     "script/ci_ui_display.py": "script.tests.test_ci_ui_display",
     "script/ci_ui_xctestrun.py": "script.tests.test_ci_ui_xctestrun",
     "script/ci_automation_ui_fixture.py": "script.tests.test_ci_automation_ui_fixture",
+    "script/ci_macos_signing.py": "script.tests.test_ci_macos_signing",
 }
 
 
@@ -459,7 +460,8 @@ def coverage_plan(paths, root=ROOT):
             "Integration/AutomationHost/", "examples/AutomationFixture/",
             "Tools/IntentsAutomationApplicationProbe/",
         )) or path in {"script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py",
-                      "script/automation_mac_e2e.py", "script/tests/test_automation_mac_e2e.py"}
+                      "script/automation_mac_e2e.py", "script/tests/test_automation_mac_e2e.py",
+                      "script/ci_macos_signing.py", "script/tests/test_ci_macos_signing.py"}
         input_conversion |= path.startswith((
             "Sources/IntentsAutomationCore/", "Integration/AutomationHost/",
         )) or path in {

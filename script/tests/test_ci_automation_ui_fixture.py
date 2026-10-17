@@ -2,6 +2,8 @@
 
 from pathlib import Path
 import plistlib
+import contextlib
+import io
 import subprocess
 import tempfile
 import unittest
@@ -42,19 +44,24 @@ class AutomationUIFixtureTests(unittest.TestCase):
         project.mkdir()
         (project / "project.pbxproj").write_text("// generated project")
 
-    def prepare(self):
-        return helper.prepare_mac_fixture(self.products, self.developer, self.fixture, self.repository)
+    def prepare(self, **signing):
+        return helper.prepare_mac_fixture(self.products, self.developer, self.fixture, self.repository, **signing)
 
     def test_workflow_prepares_only_the_dedicated_mac_shard_before_strict_execution(self):
         workflow = (helper.ROOT / ".github/workflows/ci.yml").read_text()
         ui_job = workflow.split("  ui-tests:\n", 1)[1].split("\n  picker-stability:", 1)[0]
-        setup = ui_job.split("      - name: Prepare selected live Mac UI fixture\n", 1)[1].split("      - name:", 1)[0]
+        generator = ui_job.split("      - name: Install selected Mac fixture project generator\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("if: ${{ matrix.mac_fixture == true }}", generator)
+        self.assertIn("command -v xcodegen || brew install xcodegen", generator)
+        setup = ui_job.split("      - name: Prepare and test selected live Mac UI fixture\n", 1)[1].split("      - name:", 1)[0]
         self.assertIn("if: ${{ matrix.mac_fixture == true }}", setup)
-        self.assertIn("command -v xcodegen || brew install xcodegen", setup)
-        self.assertIn('script/ci_automation_ui_fixture.py --products "$RUNNER_TEMP/Products" --developer-directory "$(xcode-select -p)"', setup)
-        self.assertLess(ui_job.index("Prepare selected live Mac UI fixture"), ui_job.index("Run affected UI tests once"))
-        self.assertIn("--timeout-seconds 900", ui_job)
+        self.assertIn("python3 script/ci_macos_signing.py -- /bin/bash -e -c '", setup)
+        self.assertIn('script/ci_automation_ui_fixture.py --products "$RUNNER_TEMP/Products" --developer-directory "$(xcode-select -p)" --signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"', setup)
+        self.assertLess(setup.index("script/ci_automation_ui_fixture.py"), setup.index("script/ci_native_tests.py"))
+        self.assertIn("--timeout-seconds 900", setup)
         self.assertNotIn("continue-on-error", setup)
+        ordinary = ui_job.split("      - name: Run affected UI tests once\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("if: ${{ !matrix.mac_fixture }}", ordinary)
 
     def test_stages_committed_source_and_opts_in_only_the_ui_runner(self):
         with mock.patch.object(helper.subprocess, "run", side_effect=self.generate):
@@ -66,6 +73,62 @@ class AutomationUIFixtureTests(unittest.TestCase):
         self.assertEqual(document["FoundationEvalsTests"], self.document["FoundationEvalsTests"])
         self.assertNotIn("INTENTS_AUTOMATION_SIMULATOR_UUID", document["FoundationEvalsUITests"]["EnvironmentVariables"])
         self.assertFalse((self.source / "AutomationFixture.xcodeproj").exists())
+
+    def test_explicit_signing_changes_only_the_staged_mac_target_before_generation(self):
+        original = (helper.ROOT / "examples/AutomationFixture/project.yml").read_text()
+        spec = self.source / "project.yml"
+        spec.write_text(original)
+        team = "A1B2C3D4E5"
+        fingerprint = "abcde12345" * 4
+        inspected = []
+
+        def generate(command, **options):
+            staged = (self.fixture / "project.yml").read_text()
+            marker = "        PRODUCT_BUNDLE_IDENTIFIER: com.coryparry.IntentsAutomation.AutomationFixtureMac\n"
+            assignments = (f'        DEVELOPMENT_TEAM: "{team}"\n'
+                           f'        CODE_SIGN_IDENTITY: "{fingerprint.upper()}"\n'
+                           '        CODE_SIGN_STYLE: "Manual"\n'
+                           '        CODE_SIGNING_ALLOWED: "YES"\n')
+            self.assertEqual(staged, original.replace(marker, marker + assignments))
+            self.assertEqual(staged.split("  AutomationFixtureMac:", 1)[0], original.split("  AutomationFixtureMac:", 1)[0])
+            self.assertEqual(spec.read_text(), original)
+            inspected.append(True)
+            self.generate(command, **options)
+
+        with mock.patch.object(helper.subprocess, "run", side_effect=generate):
+            self.prepare(signing_team=team, signing_identity=fingerprint)
+        self.assertEqual(inspected, [True])
+        self.assertEqual(spec.read_text(), original)
+
+    def test_signing_arguments_are_paired_and_validated_before_staging_or_generator_dispatch(self):
+        original = self.descriptor.read_bytes()
+        for team, identity in (("A1B2C3D4E5", None), (None, "a" * 40), ("short", "a" * 40),
+                               ("a1b2c3d4e5", "a" * 40), ("A1B2C3D4E5", "a" * 39),
+                               ("A1B2C3D4E5", "g" * 40), ("A1B2C3D4E5\n", "a" * 40)):
+            with self.subTest(team=team, identity=identity), mock.patch.object(helper.subprocess, "run") as run:
+                with self.assertRaises(ValueError):
+                    self.prepare(signing_team=team, signing_identity=identity)
+                run.assert_not_called()
+                self.assertFalse(self.fixture.exists())
+                self.assertEqual(self.descriptor.read_bytes(), original)
+
+    def test_cli_forwards_paired_signing_and_reports_missing_partner(self):
+        flags = ["--products", str(self.products), "--developer-directory", str(self.developer)]
+        with mock.patch.object(helper, "prepare_mac_fixture", return_value=self.descriptor) as prepare, contextlib.redirect_stdout(io.StringIO()):
+            helper.main([*flags, "--signing-team", "A1B2C3D4E5", "--signing-identity", "a" * 40])
+        prepare.assert_called_once_with(self.products, self.developer, signing_team="A1B2C3D4E5", signing_identity="a" * 40)
+        with mock.patch.object(helper.subprocess, "run") as run, contextlib.redirect_stderr(io.StringIO()) as errors:
+            with self.assertRaises(SystemExit) as failure:
+                helper.main([*flags, "--signing-team", "A1B2C3D4E5"])
+        self.assertEqual(failure.exception.code, 2)
+        self.assertIn("must be supplied together", errors.getvalue())
+        run.assert_not_called()
+
+    def test_unsigned_default_preserves_the_staged_project_spec(self):
+        original = (self.source / "project.yml").read_bytes()
+        with mock.patch.object(helper.subprocess, "run", side_effect=self.generate):
+            self.prepare()
+        self.assertEqual((self.fixture / "project.yml").read_bytes(), original)
 
     def test_generation_failure_cannot_leave_an_opted_in_descriptor(self):
         original = self.descriptor.read_bytes()
