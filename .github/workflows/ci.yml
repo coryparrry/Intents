@@ -236,6 +236,25 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  summary:
+    name: CI failure summary
+    needs: [changes, quality, regression, build, automation-e2e, input-conversion]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Explain failed checks and link their evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python3 script/ci_failure_summary.py
+
   native-tests:
     name: Native core tests
     needs: [changes, native-build]

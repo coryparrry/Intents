@@ -15,6 +15,19 @@ def job(name):
     return re.search(r"(?ms)^  " + re.escape(name) + r":\n(.*?)(?=^  [\w-]+:|\Z)", WORKFLOW)[1]
 
 
+class FailureSummaryTests(unittest.TestCase):
+    def test_summary_runs_after_terminal_checks_with_read_only_log_access(self):
+        summary = job("summary")
+        self.assertIn("if: ${{ always() }}", summary)
+        self.assertIn("needs: [changes, quality, regression, build, automation-e2e, input-conversion]", summary)
+        self.assertIn("actions: read", summary)
+        self.assertIn("contents: read", summary)
+        self.assertNotIn("write", summary)
+        self.assertIn("CI_NEEDS_JSON: ${{ toJSON(needs) }}", summary)
+        self.assertIn("GITHUB_TOKEN: ${{ github.token }}", summary)
+        self.assertIn("run: python3 script/ci_failure_summary.py", summary)
+
+
 def gate(name, **environment):
     script = job(name).split("        run: |\n", 1)[1]
     return subprocess.run(
