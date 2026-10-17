@@ -113,7 +113,9 @@ final class MacPreparationUITests: XCTestCase {
         XCTAssertTrue(approveAction.waitForExistence(timeout: 5))
         try capture(app, storage: storage, name: "typed-action-review")
         approveAction.click()
-        XCTAssertTrue(app.staticTexts["Executed · unassessed"].waitForExistence(timeout: 180), app.debugDescription)
+        let actionCompleted = app.staticTexts["Executed · unassessed"].waitForExistence(timeout: 180)
+        if !actionCompleted { attachNativeExecutionFailureLogs(storage: storage) }
+        XCTAssertTrue(actionCompleted, app.debugDescription)
         try capture(app, storage: storage, name: "typed-action-result")
 
         let route = app.popUpButtons["automation.workflow.route"]
@@ -136,7 +138,9 @@ final class MacPreparationUITests: XCTestCase {
         XCTAssertTrue(approveUI.waitForExistence(timeout: 5))
         try capture(app, storage: storage, name: "ui-workflow-review")
         approveUI.click()
-        XCTAssertTrue(app.staticTexts["Passed the approved requirements"].waitForExistence(timeout: 180), app.debugDescription)
+        let workflowPassed = app.staticTexts["Passed the approved requirements"].waitForExistence(timeout: 180)
+        if !workflowPassed { attachNativeExecutionFailureLogs(storage: storage) }
+        XCTAssertTrue(workflowPassed, app.debugDescription)
         try capture(app, storage: storage, name: "ui-workflow-result")
         let reports = try FileManager.default.contentsOfDirectory(at: automation, includingPropertiesForKeys: nil)
             .map { $0.appendingPathComponent("report.json") }
@@ -147,6 +151,115 @@ final class MacPreparationUITests: XCTestCase {
         }
         try fixture.assertSourceUnchanged()
     }
+    func testNativeFailureDiagnosticsRedactCredentialsAndEnvironment() {
+        let text = [
+            "error: Testing failed because the test runner exited",
+            "Authorization: Bearer fixture-authorization",
+            "SIGNING_PASSWORD=fixture-password",
+            "opaque value sk-proj-fixture123",
+            "opaque value ghp_fixture123",
+            "    export DEVELOPER_DIR=/Applications/Xcode.app",
+            "EnvironmentVariables: withheld",
+            "Test session failed to start"
+        ].joined(separator: "\n")
+        let redacted = redactedNativeDiagnostic(text)
+        XCTAssertTrue(redacted.contains("error: Testing failed because the test runner exited"))
+        XCTAssertTrue(redacted.contains("Test session failed to start"))
+        for withheld in ["fixture-authorization", "fixture-password", "sk-proj-fixture123",
+                         "ghp_fixture123", "/Applications/Xcode.app", "EnvironmentVariables"] {
+            XCTAssertFalse(redacted.contains(withheld))
+        }
+    }
+
+    private func redactedNativeDiagnostic(_ text: String) -> String {
+        let credential = #"(?i)authorization|bearer|token|secret|password|passwd|api[ _-]?key|private[ _-]?key|credential|cookie|signature"#
+        let value = #"sk-[A-Za-z0-9_-]+|gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|AKIA[A-Z0-9]{16}"#
+        let environment = #"(?i)^\s*(export\s|environment variables|environmentvariables|setenv\s|[A-Z_][A-Z0-9_]*=)"#
+        return text.components(separatedBy: .newlines).map { line in
+            [credential, value, environment].contains { line.range(of: $0, options: .regularExpression) != nil }
+                ? "[redacted credential or environment line]" : line
+        }.joined(separator: "\n")
+    }
+
+    func testNativeFailureDiagnosticsSelectLatestCreatedAttempt() throws {
+        let storage = try UITestStorage.makeDirectory(prefix: "native-attempt-diagnostic-selection")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let earlier = storage.appendingPathComponent("FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")
+        let later = storage.appendingPathComponent("00000000-0000-0000-0000-000000000000")
+        let preparation = storage.appendingPathComponent("prepare-most-recent")
+        for (index, directory) in [earlier, later, preparation].enumerated() {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FileManager.default.setAttributes([.creationDate: Date(timeIntervalSince1970: 1_700_000_000 + Double(index))],
+                                                  ofItemAtPath: directory.path)
+        }
+        XCTAssertEqual(latestNativeAttempt(in: storage), later)
+    }
+
+    private func latestNativeAttempt(in automation: URL) -> URL? {
+        let candidates = try? FileManager.default.contentsOfDirectory(at: automation,
+            includingPropertiesForKeys: [.creationDateKey, .isDirectoryKey, .isSymbolicLinkKey])
+        return candidates?.compactMap { url -> (url: URL, created: Date)? in
+            guard UUID(uuidString: url.lastPathComponent) != nil,
+                  let values = try? url.resourceValues(forKeys: [.creationDateKey, .isDirectoryKey, .isSymbolicLinkKey]),
+                  values.isDirectory == true, values.isSymbolicLink != true,
+                  let created = values.creationDate else { return nil }
+            return (url, created)
+        }.max { $0.created < $1.created }?.url
+    }
+
+    /// Only this committed fixture's failed inner XCTest output is retained; reports, journals,
+    /// signing material, environment dumps, source and secret-evidence directories are excluded.
+    private func attachNativeExecutionFailureLogs(storage: URL) {
+        let manager = FileManager.default
+        let automation = storage.appendingPathComponent("Automation")
+        guard let attempt = latestNativeAttempt(in: automation) else { return }
+        var remainingBytes = 1024 * 1024
+        var remainingFiles = 16
+        let artifacts = attempt.appendingPathComponent("artifacts")
+        guard let files = try? manager.contentsOfDirectory(at: artifacts, includingPropertiesForKeys: [.creationDateKey]) else { return }
+        // Failed receipts precede logs; newest execution logs precede earlier successful preflights.
+        let ordered = files.filter {
+            ($0.lastPathComponent.hasPrefix("xcuitest-log-") && $0.pathExtension == "txt") ||
+            ($0.lastPathComponent.hasPrefix("xcuitest-attachment-") && $0.pathExtension == "json")
+        }.sorted {
+            if $0.pathExtension != $1.pathExtension { return $0.pathExtension == "json" }
+            let left = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+            let right = (try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+            return left > right
+        }
+        for file in ordered where remainingBytes > 0 && remainingFiles > 0 {
+            let name = file.lastPathComponent
+            let isLog = name.hasPrefix("xcuitest-log-") && file.pathExtension == "txt"
+            let isReceipt = name.hasPrefix("xcuitest-attachment-") && file.pathExtension == "json"
+            guard isLog || isReceipt,
+                  let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+                  values.isRegularFile == true, values.isSymbolicLink != true,
+                  let handle = try? FileHandle(forReadingFrom: file) else { continue }
+            defer { try? handle.close() }
+            guard let data = try? handle.read(upToCount: min(remainingBytes, 1024 * 1024)) else { continue }
+            let text: String
+            if isReceipt {
+                guard let fields = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      fields["completed"] as? Bool == false, fields["stepIndex"] != nil, fields["planDigest"] != nil,
+                      let error = fields["error"] as? String, !error.isEmpty,
+                      let filtered = try? JSONSerialization.data(withJSONObject: fields.filter {
+                          ["stepID", "segmentID", "kind", "completed", "error", "planDigest"].contains($0.key)
+                      }, options: [.sortedKeys]) else { continue }
+                text = String(decoding: filtered, as: UTF8.self)
+            } else {
+                // The inner command receives only PATH and DEVELOPER_DIR, and artifact
+                // storage refuses secret-tainted scopes. Redact credential lines anyway.
+                text = String(decoding: data, as: UTF8.self)
+            }
+            let redacted = redactedNativeDiagnostic(text)
+            let retained = Data(redacted.utf8).prefix(remainingBytes)
+            let attachment = XCTAttachment(data: Data(retained), uniformTypeIdentifier: "public.plain-text")
+            attachment.name = "fixture-native-failure-" + attempt.lastPathComponent + "-" + name
+            attachment.lifetime = .keepAlways; add(attachment)
+            remainingBytes -= retained.count; remainingFiles -= 1
+        }
+    }
+
     private func object(_ url: URL) throws -> [String: Any] {
         try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
     }
