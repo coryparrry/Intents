@@ -87,6 +87,16 @@ public enum AutomationXCUITestPlan {
                 }
             } else if var program = segment.hostProgram {
                 guard !program.usesFiles else { throw AutomationContractError.missingEvidence("Mixed XCUITest file transfer is not supported") }
+                if plan.target.kind == .nativeMac, !launched, segment.lifecycle != .noActivation {
+                    guard segment.lifecycle == .persistedStateAcrossSegments,
+                          segment.effects.contains(.navigate), approval.effects.contains(.navigate) else {
+                        throw AutomationContractError.invalidPlan("Mac host activation needs approved navigation and persisted-state lifecycle")
+                    }
+                    // The frozen XCTest target binds launch to the exact prepared private app.
+                    // Starting it registers its App Intents before the first host operation.
+                    steps.append(.init(id: "__xcuitest_launch", segmentID: segment.id, kind: .launch))
+                    launched = true
+                }
                 for index in program.operations.indices {
                     if inputs.contains(where: { $0.destination == .hostQueryIDs && $0.operationID == program.operations[index].id }) {
                         // This selector is replaced in the test by the preceding exact query result.

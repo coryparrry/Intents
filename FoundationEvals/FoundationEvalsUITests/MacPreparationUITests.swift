@@ -192,7 +192,7 @@ final class MacPreparationUITests: XCTestCase {
             try FileManager.default.setAttributes([.creationDate: Date(timeIntervalSince1970: 1_700_000_000 + Double(index))],
                                                   ofItemAtPath: directory.path)
         }
-        XCTAssertEqual(latestNativeAttempt(in: storage), later)
+        XCTAssertEqual(latestNativeAttempt(in: storage)?.standardizedFileURL.path, later.standardizedFileURL.path)
     }
 
     private func latestNativeAttempt(in automation: URL) -> URL? {
