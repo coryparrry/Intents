@@ -94,6 +94,18 @@ class GateTests(unittest.TestCase):
         self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
         self.assertNotIn("success()", condition)
 
+    def test_mac_acceptance_uses_temporary_development_signing(self):
+        workflow = job("automation-e2e-scenarios")
+        mac = workflow.split("      - name: Reproduce Mac automation and saved fix comparison\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}", mac)
+        self.assertIn("CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}", mac)
+        self.assertIn("CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}", mac)
+        self.assertIn("python3 script/ci_macos_signing.py -- /bin/bash -e <<'SIGNED_MAC_CHECK'", mac)
+        self.assertIn('--signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"', mac)
+        self.assertNotIn("continue-on-error", mac)
+        self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_P12_BASE64"), 1)
+        self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_PASSWORD"), 1)
+
     def test_scripts_run_all_selected_modules_in_one_job(self):
         workflow = job("script-tests")
         self.assertNotIn("matrix", workflow)
