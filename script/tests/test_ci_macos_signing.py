@@ -6,6 +6,7 @@ import io
 import os
 from pathlib import Path
 import signal
+import shlex
 import stat
 import subprocess
 import tempfile
@@ -359,6 +360,59 @@ time.sleep(60)
                     except (ProcessLookupError, PermissionError):
                         pass
                     child.wait(timeout=5)
+
+
+class HeredocIntegrationTests(unittest.TestCase):
+    def test_quoted_heredoc_reaches_child_bash_and_defers_public_variable_expansion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shim, evidence = root / "signing-shim.py", root / "child-values.txt"
+            repository = Path(__file__).resolve().parents[2]
+            shim.write_text(f"""import os, sys
+from unittest import mock
+sys.path.insert(0, {str(repository)!r})
+from script import ci_macos_signing as signing
+assert 'INTENTS_CI_SIGNING_TEAM' not in os.environ
+assert 'INTENTS_CI_SIGNING_IDENTITY' not in os.environ
+
+def security(arguments, environment):
+    assert signing.CREDENTIAL_KEYS.isdisjoint(environment)
+    if arguments[0] == 'find-identity':
+        return {VALID!r}
+    return ''
+
+stop_owned_child = signing.stop_child
+with mock.patch.object(signing, 'configuration', return_value=({TEAM!r}, b'fake-P12', 'fake-password')), \
+     mock.patch.object(signing, 'security', side_effect=security), \
+     mock.patch.object(signing, 'verify_certificate_team'), \
+     mock.patch.object(signing, 'stop_child', side_effect=lambda child: stop_owned_child(child, grace_seconds=0.01)):
+    raise SystemExit(signing.main())
+""")
+            parent_environment = {key: value for key, value in os.environ.items()
+                                  if key not in signing.CREDENTIAL_KEYS
+                                  and key not in {"INTENTS_CI_SIGNING_TEAM", "INTENTS_CI_SIGNING_IDENTITY"}}
+            parent_environment.update({"RUNNER_TEMP": str(root),
+                                       "CI_MAC_CERTIFICATE_P12_BASE64": base64.b64encode(b"fake-P12").decode(),
+                                       "CI_MAC_CERTIFICATE_PASSWORD": "fake-private-password",
+                                       "CI_MAC_SIGNING_TEAM": TEAM})
+            # These variables are absent in the outer shell; an unquoted heredoc
+            # would fail under nounset before the signing wrapper could create them.
+            outer = f"""set -euo pipefail
+[[ -z ${{INTENTS_CI_SIGNING_TEAM+x}} ]]
+[[ -z ${{INTENTS_CI_SIGNING_IDENTITY+x}} ]]
+{shlex.quote(sys.executable)} {shlex.quote(str(shim))} -- /bin/bash -e <<'SIGNED_MAC_CHECK'
+[[ -z ${{CI_MAC_CERTIFICATE_P12_BASE64+x}} ]]
+[[ -z ${{CI_MAC_CERTIFICATE_PASSWORD+x}} ]]
+[[ -z ${{CI_MAC_SIGNING_TEAM+x}} ]]
+printf '%s\\n' "$INTENTS_CI_SIGNING_TEAM" "$INTENTS_CI_SIGNING_IDENTITY" > {shlex.quote(str(evidence))}
+printf '%s\\n' stdin-transported >> {shlex.quote(str(evidence))}
+SIGNED_MAC_CHECK
+"""
+            result = subprocess.run(["/bin/bash", "-e", "-c", outer], env=parent_environment,
+                                    capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(evidence.read_text().splitlines(), [TEAM, FINGERPRINT, "stdin-transported"])
+            self.assertFalse(any(root.glob("intents-ci-signing-*")), "Temporary signing state must be cleaned")
 
 
 if __name__ == "__main__":
