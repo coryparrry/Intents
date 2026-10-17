@@ -10,6 +10,7 @@ import shutil
 import signal
 import sys
 import tempfile
+import uuid
 
 try:
     import automation_e2e as shared
@@ -18,9 +19,12 @@ except ModuleNotFoundError:
 
 ROOT = shared.ROOT
 FIXTURE_BUNDLE_ID = shared.FIXTURE_BUNDLE_ID + "Mac"
+# Native Mac XCUITest plans cannot transfer IntentFile artifacts between segments.
+CODEC_FAMILIES = tuple(family for family in shared.FAMILIES if family != "intentFile")
+FILE_REJECTION = 'missingEvidence("Mixed XCUITest file transfer is not supported")'
 EXPECTED_CASES = {
     "codec-1": "executedUnassessed", "codec-2": "executedUnassessed",
-    "codec-file": "executedUnassessed", "mixed": "passed",
+    "mixed": "passed",
     "wrong-assertion": "assertionFailed", "after-wrong-assertion": "executedUnassessed",
 }
 
@@ -43,13 +47,43 @@ def outside_repository(path, label):
     return resolved
 
 
+def codec_case(prepared, identity, operations):
+    # Host operations require an explicit, approved launch before the first invocation.
+    launch = shared.ui_segment("launch", "setup", [shared.ui_step("launch", "launch")])
+    launch["effects"] = ["observe", "navigate"]
+    return shared.case(prepared, identity, shared.host_segment("subject", "subject", operations), setup=[launch])
+
+
 def verify_selection(reports):
     shared.ensure([item["case"] for item in reports] == ["phase5." + name for name in EXPECTED_CASES],
-                  "Mac scenario coverage differs from the complete contract")
+                  "Mac scenario coverage differs from the supported contract")
     for item, (name, summary) in zip(reports, EXPECTED_CASES.items()):
         shared.ensure(item["summary"] == summary, "Unexpected summary for " + name)
         if name.startswith("codec-") or name == "after-wrong-assertion":
             shared.ensure(item["exactOutputsCompared"] is True, "Missing exact output comparison for " + name)
+    compared = {family for item in reports for family in item["codecFamiliesCompared"]}
+    shared.ensure(compared == set(CODEC_FAMILIES), "Mac codec coverage differs from the supported contract")
+
+
+def verify_file_rejection(commands, cli, support, output, prepared):
+    plan = mac_plan(prepared, shared.file_case(prepared))
+    attempt = "phase5-" + uuid.uuid4().hex
+    envelope = {"schemaVersion": 1, "attemptID": attempt, "allowBootAndInstall": False,
+                "disposable": True, "plan": plan}
+    plan_path = output / (plan["id"] + ".json")
+    plan_path.write_text(json.dumps(envelope, indent=2))
+    code, stdout = commands.run([cli, "run", "--plan", plan_path, "--support-root", support],
+                                timeout=900, allowed=(1,))
+    stderr_path = commands.output / f"{commands.sequence:02d}-{Path(str(cli)).name}.stderr.log"
+    error = json.loads(stderr_path.read_text())
+    shared.ensure(code == 1 and not stdout.strip() and error == {"error": FILE_REJECTION},
+                  "Mac file transfer did not fail with the exact unsupported-transfer error")
+    shared.verify_campaigns(support)
+    root = support / attempt
+    # Runner preflight rejects this plan before creating any attempt or dispatch state.
+    shared.ensure(not root.exists(), "Rejected file transfer created attempt or dispatch evidence")
+    return {"case": plan["id"], "attemptID": attempt, "outcome": "rejectedUnsupported",
+            "error": error["error"], "resourcesReleased": True, "subjectDispatched": False}
 
 
 def selected_developer(commands):
@@ -72,7 +106,7 @@ def fresh_comparison_case(prepared):
     create["attemptTextBindings"] = {"approvedText": prefix}
     create["uiProgram"] = {"operations": [
         {"id": "name", "kind": "fillBinding", "locator": {"kind": "testId", "value": "task.title"}, "binding": "approvedText"},
-        {"id": "save", "kind": "tap", "locator": {"kind": "testId", "value": "task.add", "role": "button"}},
+        {"id": "save", "kind": "tap", "locator": {"kind": "testId", "value": "task.add"}},
         {"id": "saved", "kind": "assertEndpoint", "locator": {"kind": "testId", "value": "task.title"}},
     ], "bindings": {}, "timeoutMilliseconds": 120000}
     selection = {"typeID": plan["requirements"][0]["entityProperty"]["selection"]["typeID"],
@@ -175,7 +209,8 @@ def run_source_comparison(commands, cli, output, support, prepared, developer):
             "seedAttemptID": seed, "evidence": "source-comparison/comparison.json"}
 
 
-def run_contract(commands, output, *, cli=None, build_root=None, jobs=2, reports=None, include_comparison=True):
+def run_contract(commands, output, *, cli=None, build_root=None, jobs=2, reports=None, include_comparison=True,
+                 unsupported_checks=None):
     shared.ensure(jobs > 0, "Build jobs must be positive")
     reports = reports if reports is not None else []
     developer = selected_developer(commands)
@@ -204,7 +239,7 @@ def run_contract(commands, output, *, cli=None, build_root=None, jobs=2, reports
     _, catalog = commands.json([cli, "actions", *flags])
     shared.ensure(catalog == prepared["catalog"], "actions differs from prepared catalog")
 
-    def execute(plan, summary, expected=None, file=False):
+    def execute(plan, summary, expected=None):
         plan = mac_plan(prepared, plan)
         attempt, code, report = shared.run_plan(commands, cli, support, output, plan)
         (output / (plan["id"] + ".report.json")).write_text(json.dumps(report, indent=2))
@@ -213,27 +248,28 @@ def run_contract(commands, output, *, cli=None, build_root=None, jobs=2, reports
                       "CLI exit status differs from reported assessment")
         if expected is not None:
             shared.verify_echo(report, expected)
-        if file:
-            shared.verify_file(report)
         shared.verify_campaigns(support)
         _, saved = commands.json([cli, "show", attempt, *flags])
         shared.ensure(saved == report, "Saved report differs from run output")
-        compared = ["intentFile"] if file else sorted({family.removeprefix("empty.") for family in expected or {}})
+        compared = sorted({family.removeprefix("empty.") for family in expected or {}})
         reports.append({"case": plan["id"], "attemptID": attempt, "summary": summary,
-                        "exactOutputsCompared": expected is not None or file,
+                        "exactOutputsCompared": expected is not None,
                         "codecFamiliesCompared": compared})
         (output / "verified-cases.json").write_text(json.dumps(reports, indent=2))
         print(f"Verified {plan['id']}: {summary}", flush=True)
 
     batches = shared.echo_batches(catalog)
     for index, (operations, expected) in enumerate(batches, 1):
-        execute(shared.case(prepared, f"codec-{index}", shared.host_segment("subject", "subject", operations)),
+        execute(codec_case(prepared, f"codec-{index}", operations),
                 "executedUnassessed", expected)
-    execute(shared.file_case(prepared), "executedUnassessed", file=True)
+    rejection = verify_file_rejection(commands, cli, support, output, prepared)
+    (output / "unsupported-codec-check.json").write_text(json.dumps(rejection, indent=2))
+    if unsupported_checks is not None:
+        unsupported_checks.append(rejection)
     execute(shared.mixed_case(prepared, "mixed"), "passed")
     execute(shared.mixed_case(prepared, "wrong-assertion", expected=False), "assertionFailed")
     operations, expected = batches[0]
-    execute(shared.case(prepared, "after-wrong-assertion", shared.host_segment("subject", "subject", operations[:1])),
+    execute(codec_case(prepared, "after-wrong-assertion", operations[:1]),
             "executedUnassessed", {operations[0]["id"]: expected[operations[0]["id"]]})
     verify_selection(reports)
     if include_comparison:
@@ -261,7 +297,8 @@ def main(argv=None):
         shared.ensure(cli.is_file() and os.access(cli, os.X_OK), "--cli must be an executable file")
     output.mkdir(parents=True, exist_ok=True)
     summary = {"schemaVersion": 1, "status": "failed", "destination": "mac",
-               "echoAssessment": "executedUnassessed", "cases": []}
+               "echoAssessment": "executedUnassessed", "cases": [], "unsupportedCodecChecks": [],
+               "codecCoverageNote": "Mac compares 15 supported families; IntentFile transfer is rejected. Simulator file coverage remains separate."}
     print(f"Mac automation evidence: {output}", flush=True)
 
     def interrupted(signum, frame):
@@ -270,9 +307,10 @@ def main(argv=None):
     previous_term = signal.signal(signal.SIGTERM, interrupted)
     try:
         summary["sourceComparison"] = run_contract(shared.Commands(output, args.xcode), output, cli=cli, build_root=build_root,
-                                                   jobs=args.jobs, reports=summary["cases"])
+                                                   jobs=args.jobs, reports=summary["cases"],
+                                                   unsupported_checks=summary["unsupportedCodecChecks"])
         compared = {family for item in summary["cases"] for family in item["codecFamiliesCompared"]}
-        summary.update(status="passed", codecFamiliesCompared=[family for family in shared.FAMILIES if family in compared])
+        summary.update(status="passed", codecFamiliesCompared=[family for family in CODEC_FAMILIES if family in compared])
         print(f"Mac automation contract passed: {len(summary['cases'])} scenarios, "
               f"{len(summary['codecFamiliesCompared'])} codec families compared.", flush=True)
         return 0
