@@ -2,10 +2,10 @@ import Foundation
 import CryptoKit
 import Darwin
 
-/// Published package commit verified by a clean external SwiftPM consumer.
+/// Immutable SDK revision checked by the clean external-consumer CI gate before merge.
 enum IntentLabPackageRevisionManifest {
     static let packageURL = URL(string: "https://github.com/coryparrry/Intents.git")!
-    static let verifiedRevision: String? = "32ee15ecb982a850c89168e4053e513936e554fe"
+    static let verifiedRevision: String? = "4047c97c36757df3719d57dde78a3e69e2769178"
     static let product = "IntentLabTesting"
 }
 

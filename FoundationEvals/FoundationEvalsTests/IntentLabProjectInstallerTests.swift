@@ -776,6 +776,7 @@ struct IntentLabProjectInstallerTests {
         let remoteRevision = ProcessInfo.processInfo.environment["INTENT_LAB_CONSUMER_REVISION"]
         let packageURL: URL
         if let remoteRevision {
+            try #require(remoteRevision.utf8.count == 40)
             try #require(remoteRevision.range(of: "^[a-f0-9]{40}$", options: .regularExpression) != nil)
             let remoteURL = ProcessInfo.processInfo.environment["INTENT_LAB_CONSUMER_PACKAGE_URL"]
                 ?? IntentLabPackageRevisionManifest.packageURL.absoluteString
