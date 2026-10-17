@@ -107,18 +107,15 @@ public enum AutomationXCUITestPlan {
                 }
             } else if var program = segment.hostProgram {
                 guard !program.usesFiles else { throw AutomationContractError.missingEvidence("Mixed XCUITest file transfer is not supported") }
-                if plan.target.kind == .nativeMac, !launched, segment.lifecycle != .noActivation {
-                    guard !segment.effects.contains(.navigate) || approval.effects.contains(.navigate) else {
+                if plan.target.kind == .nativeMac, !launched {
+                    guard approval.effects.contains(.navigate), segment.lifecycle == .persistedStateAcrossSegments,
+                          activationSegmentID == segment.id else {
                         throw AutomationContractError.invalidPlan("Mac host activation needs approved navigation and persisted-state lifecycle")
                     }
-                    if approval.effects.contains(.navigate) {
-                        guard segment.lifecycle == .persistedStateAcrossSegments, activationSegmentID == segment.id else {
-                            throw AutomationContractError.invalidPlan("Mac host activation needs approved navigation and persisted-state lifecycle")
-                        }
-                        // Activation is an approved plan prerequisite; query domain effects stay read-only.
-                        steps.append(.init(id: "__xcuitest_launch", segmentID: segment.id, kind: .launch))
-                        launched = true
-                    }
+                    // The bundle-ID-only host API cannot bind an unactivated call to this private copy.
+                    // Activation is an approved prerequisite; query domain effects stay read-only.
+                    steps.append(.init(id: "__xcuitest_launch", segmentID: segment.id, kind: .launch))
+                    launched = true
                 }
                 for index in program.operations.indices {
                     if inputs.contains(where: { $0.destination == .hostQueryIDs && $0.operationID == program.operations[index].id }) {

@@ -59,7 +59,7 @@ final class AutomationMacHostCallerIntegrationTests: XCTestCase, @unchecked Send
         return await budget.snapshot()
     }
 
-    func testObserveOnlyEntityQueryProducerKeepsNoActivationAndReadOnlyReceipt() async throws {
+    func testObserveOnlyEntityQueryCannotDispatchWithoutExactProductActivation() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mac-query-caller-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var prepared = try AutomationPreparedCodecRegressionTests.makeFixture(root: root).prepared
@@ -67,13 +67,11 @@ final class AutomationMacHostCallerIntegrationTests: XCTestCase, @unchecked Send
         let entity = try XCTUnwrap(prepared.catalog.entities?.first)
         let approved = approval(maximum: 1, effects: [.observe])
         let plan = try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: "Selected", approval: approved)
-        let wire = try wire(plan, approval: approved)
         XCTAssertEqual(plan.execution.effects, [.observe])
-        XCTAssertEqual(wire.steps.map(\.kind), [.query])
-        let receipts = try importCompleted(wire, plan: plan)
-        XCTAssertEqual(receipts.count, 1); XCTAssertTrue(receipts[0].completed)
-        let usage = try await reserve(wire, plan: plan, subject: 1, uiActions: 0)
-        XCTAssertEqual(usage.reservedSubjectOperations, 1); XCTAssertEqual(usage.reservedUIActions, 0)
+        XCTAssertThrowsError(try wire(plan, approval: approved)) {
+            XCTAssertEqual($0 as? AutomationContractError,
+                .invalidPlan("Mac host activation needs approved navigation and persisted-state lifecycle"))
+        }
     }
 
     func testEntityActionProducerKeepsLookupReadOnlyWhileChargingApprovedActivation() async throws {

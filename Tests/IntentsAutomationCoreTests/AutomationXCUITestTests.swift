@@ -94,8 +94,8 @@ final class AutomationXCUITestTests: XCTestCase, @unchecked Sendable {
         var (plan, approval) = try macHostFixture()
         plan.execution.lifecycle = .noActivation
         approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
-        XCTAssertEqual(try AutomationXCUITestPlan.assemble(plan: plan, approval: approval,
-            attemptID: "attempt", leaseGeneration: 1).steps.map(\.kind), [.invokeIntent])
+        XCTAssertThrowsError(try AutomationXCUITestPlan.assemble(plan: plan, approval: approval,
+            attemptID: "attempt", leaseGeneration: 1))
         for restriction in ["approval-effect", "continuity", "ui-budget", "subject-budget", "approval-budget"] {
             (plan, approval) = try macHostFixture()
             switch restriction {
