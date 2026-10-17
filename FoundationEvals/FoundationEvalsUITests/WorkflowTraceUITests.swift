@@ -22,13 +22,19 @@ final class WorkflowTraceUITests: XCTestCase {
             XCTAssertEqual(prompt.value as? String, "")
             prompt.typeKey("z", modifierFlags: .command)
             XCTAssertEqual(prompt.value as? String, text)
-            let firstCase = try XCTUnwrap(app.textFields["Case name"].value as? String)
+            let firstCaseName = try XCTUnwrap(app.textFields["Case name"].value as? String)
+            let initialCaseButtons = app.buttons.matching(
+                NSPredicate(format: "identifier BEGINSWITH %@", "Select case ")
+            )
+            XCTAssertEqual(initialCaseButtons.count, 1, "The fixture starts with one editable case")
+            let firstCaseID = initialCaseButtons.firstMatch.identifier
             app.buttons["Add Case"].click()
             XCTAssertEqual(prompt.value as? String, "")
             prompt.click()
             prompt.typeText("A different case prompt")
             XCTAssertTrue(app.staticTexts["Saved automatically on this Mac"].waitForExistence(timeout: 5))
-            app.buttons[firstCase].click()
+            app.buttons[firstCaseID].click()
+            XCTAssertEqual(app.textFields["Case name"].value as? String, firstCaseName)
             XCTAssertEqual(prompt.value as? String, text)
             prompt.click()
             prompt.typeKey("z", modifierFlags: .command)
@@ -116,10 +122,15 @@ final class WorkflowTraceUITests: XCTestCase {
             span(WorkflowTraceFixture.generationID, in: app)
                 .coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).click()
             assertSelectedTitle("Generate response", in: app)
-            assertDetailContains("Framework-reported usage. Cached input is part of input; reasoning is part of output.", in: app)
+            assertDetailContains("The model reports these token counts. Input includes cached tokens. Output includes reasoning tokens.", in: app)
             assertDetailContains("Input", in: app)
             assertDetailContains("Output", in: app)
             assertDetailContains("First visible content", in: app)
+            assertDetailMetric("Input", value: "64", in: app)
+            assertDetailMetric("Cached input", value: "8", in: app)
+            assertDetailMetric("Output", value: "12", in: app)
+            assertDetailMetric("Reasoning", value: "0", in: app)
+            assertDetailMetric("First visible content", value: "22 ms", in: app)
             try capture(app, name: "recorded-workflow")
 
             span(WorkflowTraceFixture.preparationID, in: app).click()
@@ -224,7 +235,7 @@ final class WorkflowTraceUITests: XCTestCase {
         try withFixtureApplication { app in
             selectCase("Overflowing native workflow", in: app)
             app.buttons["Expand all spans"].click()
-            let waterfall = app.descendants(matching: .any)["Workflow spans"]
+            let waterfall = workflowViewport(in: app)
             let lastSpan = span(WorkflowTraceFixture.overflowLastSpanID, in: app)
             let window = app.windows.firstMatch
             XCTAssertTrue(window.descendants(matching: .any)["Workspace status"].waitForExistence(timeout: 2))
@@ -266,7 +277,7 @@ final class WorkflowTraceUITests: XCTestCase {
     @MainActor
     func testFittedTimelineKeepsDetailsAndResizesWithSidebar() throws {
         try withFixtureApplication { app in
-            let list = app.descendants(matching: .any)["Workflow spans"]
+            let list = workflowViewport(in: app)
             XCTAssertTrue(list.waitForExistence(timeout: 5))
             XCTAssertFalse(app.popUpButtons["Timeline zoom"].exists)
             let details = app.descendants(matching: .any)["Span details"]
@@ -276,6 +287,7 @@ final class WorkflowTraceUITests: XCTestCase {
             let originalWidth = list.frame.width
             XCTAssertLessThanOrEqual(list.frame.maxX, details.frame.minX + 2)
             XCTAssertGreaterThanOrEqual(list.frame.minX, window.frame.minX)
+            assertTraceRowsInsideViewport(list, in: app)
             span(WorkflowTraceFixture.generationID, in: app).click()
             assertSelectedTitle("Generate response", in: app)
             let sidebar = app.buttons["Hide Sidebar"].exists ? app.buttons["Hide Sidebar"] : app.buttons["Show Sidebar"]
@@ -283,6 +295,7 @@ final class WorkflowTraceUITests: XCTestCase {
             XCTAssertNotEqual(list.frame.width, originalWidth)
             XCTAssertLessThanOrEqual(list.frame.maxX, details.frame.minX + 2)
             XCTAssertGreaterThanOrEqual(list.frame.minX, window.frame.minX)
+            assertTraceRowsInsideViewport(list, in: app)
             XCTAssertTrue(details.exists)
             try capture(app, name: "fitted-timeline-sidebar-resize")
         }
@@ -296,7 +309,7 @@ final class WorkflowTraceUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(window.frame.width, 990, "The app must keep its 1000-point minimum width.")
             XCTAssertLessThanOrEqual(window.frame.width, 1_010, "The test must exercise the app's 1000-point minimum width.")
             try capture(app, name: "minimum-width-trace")
-            let list = app.descendants(matching: .any)["Workflow spans"]
+            let list = workflowViewport(in: app)
             let details = app.descendants(matching: .any)["Span details"]
             XCTAssertTrue(list.waitForExistence(timeout: 3))
             XCTAssertTrue(details.exists)
@@ -305,11 +318,12 @@ final class WorkflowTraceUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(list.frame.width, 300)
             XCTAssertGreaterThanOrEqual(details.frame.width, 240)
             XCTAssertLessThanOrEqual(list.frame.maxX, details.frame.minX + 2, "The split panes must not overlap.")
+            assertTraceRowsInsideViewport(list, in: app)
 
             let firstMetric = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label CONTAINS %@", "Outcome")).firstMatch
+                .matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Outcome", "Outcome")).firstMatch
             let lastMetric = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label CONTAINS %@", "First content")).firstMatch
+                .matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "First content", "First content")).firstMatch
             XCTAssertTrue(firstMetric.exists)
             XCTAssertTrue(lastMetric.exists)
             assertWithinWindow(firstMetric, window: window)
@@ -535,6 +549,30 @@ final class WorkflowTraceUITests: XCTestCase {
     }
 
     @MainActor
+    private func workflowViewport(in app: XCUIApplication) -> XCUIElement {
+        // NSOutlineView's accessibility frame includes its border outside the
+        // enclosing scroll view. Measure the actual viewport and row content.
+        app.scrollViews.containing(.outline, identifier: "Workflow spans").firstMatch
+    }
+
+    @MainActor
+    private func assertTraceRowsInsideViewport(
+        _ viewport: XCUIElement,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for id in [WorkflowTraceFixture.rootID, WorkflowTraceFixture.generationID] {
+            let row = span(id, in: app)
+            XCTAssertTrue(row.exists, file: file, line: line)
+            XCTAssertGreaterThanOrEqual(row.frame.minX, viewport.frame.minX,
+                "Trace content must stay inside the viewport's left edge", file: file, line: line)
+            XCTAssertLessThanOrEqual(row.frame.maxX, viewport.frame.maxX,
+                "Trace content must stay inside the viewport's right edge", file: file, line: line)
+        }
+    }
+
+    @MainActor
     private func selectCase(_ name: String, in app: XCUIApplication) {
         app.popUpButtons["Trace case"].click()
         let item = app.menuItems["\(name) · repetition 1"]
@@ -573,6 +611,23 @@ final class WorkflowTraceUITests: XCTestCase {
             evidence.waitForExistence(timeout: 2),
             app.debugDescription, file: file, line: line
         )
+    }
+
+    @MainActor
+    private func assertDetailMetric(
+        _ label: String,
+        value: String,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let details = app.descendants(matching: .any)["Span details"]
+        let metric = details.descendants(matching: .any)["Trace detail \(label)"]
+        XCTAssertTrue(metric.waitForExistence(timeout: 2), app.debugDescription, file: file, line: line)
+        let evidence = metric.staticTexts.matching(
+            NSPredicate(format: "label == %@ OR value == %@", value, value)
+        ).firstMatch
+        XCTAssertTrue(evidence.exists, metric.debugDescription, file: file, line: line)
     }
 
     @MainActor

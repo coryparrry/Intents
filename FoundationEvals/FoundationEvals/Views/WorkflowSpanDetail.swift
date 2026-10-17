@@ -320,6 +320,7 @@ private struct TraceDetailMetric: View {
         }
         .font(.caption).monospacedDigit()
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("Trace detail \(label)")
     }
 }
 

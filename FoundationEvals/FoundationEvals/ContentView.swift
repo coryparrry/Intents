@@ -85,20 +85,24 @@ struct ContentView: View {
             WorkspaceSidebar(store: store)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
-            GeometryReader { geometry in
-                ZStack(alignment: .topLeading) { detail }
-                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
-                    .workspacePageTransition(value: WorkspacePageLocation(
-                        selection: store.selection, suiteID: store.selectedSuiteID
-                    ))
-            }
-                // Pages are dense with text, so bars get a solid edge that keeps their controls legible.
-                .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
-                .safeAreaBar(edge: .bottom, spacing: 0) {
-                    WorkbenchStatusBar(store: store)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("Workspace status")
+            VStack(spacing: 0) {
+                GeometryReader { geometry in
+                    ZStack(alignment: .topLeading) { detail }
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                        .workspacePageTransition(value: WorkspacePageLocation(
+                            selection: store.selection, suiteID: store.selectedSuiteID
+                        ))
                 }
+                .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
+
+                // Reserve layout space for the footer. Native split/list panes
+                // must end above it, including their final scrollable row.
+                WorkbenchStatusBar(store: store)
+                    .background(WorkspaceStyle.surface)
+                    .overlay(alignment: .top) { Divider() }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("Workspace status")
+            }
         }
     }
 
