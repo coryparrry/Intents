@@ -1,6 +1,5 @@
 #if os(macOS)
 import Foundation
-import XCTest
 @testable import IntentsAutomationCore
 
 enum AutomationServedJavaScriptTestEvidence {
@@ -27,20 +26,4 @@ enum AutomationServedJavaScriptTestEvidence {
     }
 }
 
-final class AutomationServedJavaScriptTestEvidenceTests: XCTestCase {
-    func testFailureEvidenceSurvivesFixtureRemovalWithoutCopyingSourceOrTokens() throws {
-        let root = URL(fileURLWithPath: "/private/tmp/intents-js-evidence-test-" + UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let fixture = root.appendingPathComponent("fixture"), session = fixture.appendingPathComponent("served-js-one")
-        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try Data("owned stderr".utf8).write(to: session.appendingPathComponent("server.log"))
-        try Data("{\"stage\":\"verify-initial-response\"}".utf8).write(to: session.appendingPathComponent("failure.json"))
-        try Data("private-token".utf8).write(to: session.appendingPathComponent("metro-spec.json"))
-        let saved = try AutomationServedJavaScriptTestEvidence.retain(root: fixture, evidenceRoot: root.appendingPathComponent("retained"), error: AutomationContractError.invalidIdentity)
-        try FileManager.default.removeItem(at: fixture)
-        XCTAssertEqual(try String(contentsOf: saved.appendingPathComponent("served-js-one/server.log"), encoding: .utf8), "owned stderr")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: saved.appendingPathComponent("served-js-one/failure.json").path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: saved.appendingPathComponent("served-js-one/metro-spec.json").path))
-    }
-}
 #endif

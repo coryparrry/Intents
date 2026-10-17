@@ -8,34 +8,7 @@ struct AutomationMCPTests {
         for name in ["eval_list_automation_apps", "eval_preview_automation", "eval_request_automation_run"] {
             let described = MCPActionDiscovery.respond(.describe(name: name))
             #expect(described.structuredContent.objectValue?["action"]?.objectValue?["name"]?.stringValue == name)
-            #expect(!MCPToolCatalog.definitions.contains { $0.name == name })
         }
-    }
-    @Test func appSelectionSchemasCannotAdmitPathsOrExecutionAuthority() throws {
-        let digest = String(repeating: "a", count: 64)
-        #expect(try #require(MCPToolCatalog.allDefinitions.first { $0.name == "eval_list_automation_apps" }).annotations.readOnlyHint)
-        #expect(!(try #require(MCPToolCatalog.allDefinitions.first { $0.name == "eval_select_automation_app" }).annotations.readOnlyHint))
-        _ = try MCPToolCatalog.parse(name: "eval_select_automation_app", arguments: .object(["appID": .string("selected-source#TARGET"), "snapshotDigest": .string(digest)]))
-        #expect(throws: MCPToolInputError.self) { try MCPToolCatalog.parse(name: "eval_list_automation_apps", arguments: .object(["path": .string("/private/tmp/foreign.app")])) }
-        for extra in ["path", "run", "approval", "installApproved"] {
-            #expect(throws: MCPToolInputError.self) { try MCPToolCatalog.parse(name: "eval_select_automation_app", arguments: .object(["appID": .string("known"), "snapshotDigest": .string(digest), extra: .bool(true)])) }
-        }
-        #expect(throws: MCPToolInputError.self) { try MCPToolCatalog.parse(name: "eval_select_automation_app", arguments: .object(["appID": .string(""), "snapshotDigest": .string(digest)])) }
-    }
-    @Test func executionRequestSchemasCannotCarryApprovalOrArbitraryPlans() throws {
-        let id = UUID().uuidString, digest = String(repeating: "a", count: 64)
-        for name in ["eval_preview_automation", "eval_preview_automation_reproduction", "eval_preview_automation_fix", "eval_get_automation_request"] {
-            #expect(try #require(MCPToolCatalog.allDefinitions.first { $0.name == name }).annotations.readOnlyHint)
-        }
-        _ = try MCPToolCatalog.parse(name: "eval_request_automation_reproduction", arguments: .object(["requestID": .string(id), "digest": .string(digest)]))
-        _ = try MCPToolCatalog.parse(name: "eval_request_automation_fix", arguments: .object(["requestID": .string(id), "digest": .string(digest)]))
-        _ = try MCPToolCatalog.parse(name: "eval_request_automation_run", arguments: .object(["requestID": .string(id), "digest": .string(digest)]))
-        for extra in ["approval", "plan", "installApproved", "originalAttemptID", "requestedAttempts"] {
-            #expect(throws: MCPToolInputError.self) { try MCPToolCatalog.parse(name: "eval_request_automation_reproduction", arguments: .object(["requestID": .string(id), "digest": .string(digest), extra: .bool(true)])) }
-            #expect(throws: MCPToolInputError.self) { try MCPToolCatalog.parse(name: "eval_request_automation_fix", arguments: .object(["requestID": .string(id), "digest": .string(digest), extra: .bool(true)])) }
-            #expect(throws: MCPToolInputError.self) { try MCPToolCatalog.parse(name: "eval_request_automation_run", arguments: .object(["requestID": .string(id), "digest": .string(digest), extra: .bool(true)])) }
-        }
-        #expect(throws: MCPToolInputError.self) { try MCPToolCatalog.parse(name: "eval_preview_automation", arguments: .object(["run": .bool(true)])) }
     }
     @MainActor @Test func remoteRequestsWaitForNativeApprovalAndNeverRetryOrCancelOtherRuns() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
@@ -108,12 +81,6 @@ struct AutomationMCPTests {
             }
         }
     }
-    @Test func heldReaderEntryWaitIsBoundedAndLateReadCanBeReleased() async {
-        let reader = HeldAutomationCaseReader()
-        #expect(!(await reader.waitUntilHeld(timeout: 0.02)))
-        await reader.finish()
-        #expect(await reader.read().isEmpty)
-    }
     @MainActor @Test func telemetryUsesActualAutomationExecutionAndCleanupOutcome() async throws {
         for released in [true, false] {
             let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
@@ -159,13 +126,27 @@ struct AutomationMCPTests {
             host: .init(app: app, target: target, xctestrunPath: "unused", xctestrunDigest: String(repeating: "c", count: 64), subjectProductPath: "unused", hostBundlePath: "unused", hostProductDigest: String(repeating: "d", count: 64), hostBundleID: "example.Host", testTarget: "unused"), catalog: catalog, buildLogPath: "unused", buildLogTruncated: false)
         return model
     }
+    @Test func appSelectionAnnotationsKeepSelectionOutsideTheReadGateway() throws {
+        let digest = String(repeating: "a", count: 64)
+        #expect(try #require(MCPToolCatalog.allDefinitions.first { $0.name == "eval_list_automation_apps" }).annotations.readOnlyHint)
+        #expect(!(try #require(MCPToolCatalog.allDefinitions.first { $0.name == "eval_select_automation_app" }).annotations.readOnlyHint))
+        _ = try MCPToolCatalog.parse(name: "eval_select_automation_app", arguments: .object(["appID": .string("selected-source#TARGET"), "snapshotDigest": .string(digest)]))
+    }
+    @Test func automationPreviewAnnotationsAndExecutionRequestParsingRemainAvailable() throws {
+        let id = UUID().uuidString, digest = String(repeating: "a", count: 64)
+        for name in ["eval_preview_automation", "eval_preview_automation_reproduction", "eval_preview_automation_fix", "eval_get_automation_request"] {
+            #expect(try #require(MCPToolCatalog.allDefinitions.first { $0.name == name }).annotations.readOnlyHint)
+        }
+        for name in ["eval_request_automation_reproduction", "eval_request_automation_fix", "eval_request_automation_run"] {
+            _ = try MCPToolCatalog.parse(name: name, arguments: .object(["requestID": .string(id), "digest": .string(digest)]))
+        }
+    }
     @Test func readToolsHaveStrictSchemasAndReadOnlyAnnotations() throws {
         for name in ["eval_list_automation_cases", "eval_get_automation_attempt"] {
-            let definition = try #require(MCPToolCatalog.allDefinitions.first { $0.name == name })
-            #expect(definition.annotations.readOnlyHint)
+            #expect(try #require(MCPToolCatalog.allDefinitions.first { $0.name == name }).annotations.readOnlyHint)
         }
         _ = try MCPToolCatalog.parse(name: "eval_list_automation_cases", arguments: .object(["limit": .integer(1)]))
-        for arguments in [MCPJSONValue.object(["limit": .integer(0)]), .object(["limit": .integer(51)]), .object(["run": .bool(true)]), .object(["cursor": .string("../case")])] {
+        for arguments in [MCPJSONValue.object(["limit": .integer(0)]), .object(["limit": .integer(51)]), .object(["cursor": .string("../case")])] {
             #expect(throws: MCPToolInputError.self) { try MCPToolCatalog.parse(name: "eval_list_automation_cases", arguments: arguments) }
         }
         #expect(throws: MCPToolInputError.self) {

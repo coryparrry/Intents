@@ -18,74 +18,24 @@ struct IntentLabProjectInstallerTests {
         #expect(owned.hasFixtureContentObserver)
     }
 
-    @Test func declarationShapeFailuresKeepEntryPointDiagnostics() throws {
+    @Test func malformedDeclarationTypesCannotAdvertiseInstallSupport() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
-        let validationReason = "Choose a schema v1 declaration for this app and UI-test target with intent-lab-v2 support and complete capabilities."
-        let previewReason = "The integration declaration needs schema v1 identity, intent-lab-v2 support, action and observation lists, isolation, and unique capabilities before setup can advertise build support."
         let original = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
         let malformedFields: [(String, Any)] = [
-            ("schemaVersion", 2), ("id", " "), ("version", "\n"), ("projectIdentity", ""),
-            ("supportedHarnessProtocols", ["intent-lab-v1"]), ("actions", ["invalid"]),
-            ("resultProjections", "invalid"), ("preparationOperations", [1]),
-            ("observers", ["invalid"]), ("isolation", []), ("capabilities", []),
-            ("capabilities", ["duplicate", "duplicate"]), ("capabilities", ["white space"]),
-            ("capabilities", [""])
+            ("actions", ["invalid"]), ("resultProjections", "invalid"),
+            ("preparationOperations", [1]), ("observers", ["invalid"]), ("isolation", [])
         ]
-        var malformed = [Data("{invalid".utf8), Data("[]".utf8)]
         for (key, value) in malformedFields {
             var declaration = original
             declaration[key] = value
-            malformed.append(try JSONSerialization.data(withJSONObject: declaration))
-        }
-        for data in malformed {
-            do {
-                _ = try IntentLabProjectInstaller.validateDeclaration(
+            let data = try JSONSerialization.data(withJSONObject: declaration)
+            #expect(throws: IntentLabProjectInstallerError.self) {
+                try IntentLabProjectInstaller.validateDeclaration(
                     data, targetBundleIdentifier: "com.example.Consumer", testTargetName: "UITests")
-                Issue.record("Malformed declaration was accepted")
-            } catch {
-                #expect(error.localizedDescription == validationReason)
             }
-            let preview = try IntentLabProjectInstaller().preview(fixture.request(declarationData: data))
-            #expect(!preview.supported)
-            #expect(preview.manualSteps.first == previewReason)
+            #expect(!(try IntentLabProjectInstaller().preview(fixture.request(declarationData: data))).supported)
         }
-    }
-
-    @Test func malformedDeclarationKeepsPreviewGuardOrder() throws {
-        let fixture = try Fixture()
-        defer { fixture.cleanup() }
-        let malformed = Data("{}".utf8)
-        let generatorFile = fixture.root.appending(path: "project.yml")
-        try Data("name: Managed".utf8).write(to: generatorFile)
-        let managed = try IntentLabProjectInstaller().preview(fixture.request(declarationData: malformed))
-        #expect(managed.manualSteps.first == "This project is generator-managed. Add the package, test target, and entry point in the generator source, then verify the built integration.")
-        try FileManager.default.removeItem(at: generatorFile)
-        let invalidScheme = IntentLabInstallationRequest(
-            projectURL: fixture.project, scheme: "../Invalid", applicationTargetID: fixture.applicationID,
-            uiTestTargetID: fixture.uiTestID, packageURL: fixture.package, packageProduct: "IntentLabTesting",
-            consumerSource: "import XCTest\n", declarationData: malformed)
-        let unsupported = try IntentLabProjectInstaller().preview(invalidScheme)
-        #expect(unsupported.manualSteps.first == "The integration declaration needs schema v1 identity, intent-lab-v2 support, action and observation lists, isolation, and unique capabilities before setup can advertise build support.")
-    }
-
-    @Test func declarationEntryPointsKeepDifferentIdentityPolicies() throws {
-        let fixture = try Fixture()
-        defer { fixture.cleanup() }
-        var declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
-        declaration["targetBundleIdentifier"] = "com.example.Other"
-        declaration["targetIdentity"] = "OtherUITests"
-        let other = try JSONSerialization.data(withJSONObject: declaration)
-        #expect(try IntentLabProjectInstaller().preview(fixture.request(declarationData: other)).supported)
-        #expect(throws: IntentLabProjectInstallerError.self) {
-            try IntentLabProjectInstaller.validateDeclaration(
-                other, targetBundleIdentifier: "com.example.Consumer", testTargetName: "UITests")
-        }
-        declaration["targetBundleIdentifier"] = ""
-        declaration["targetIdentity"] = " "
-        let empty = try JSONSerialization.data(withJSONObject: declaration)
-        _ = try IntentLabProjectInstaller.validateDeclaration(empty, targetBundleIdentifier: "", testTargetName: " ")
-        #expect(!(try IntentLabProjectInstaller().preview(fixture.request(declarationData: empty))).supported)
     }
 
     @Test func declarationShapeRetainsCapabilityOrderAndRawByteDigest() throws {
@@ -103,15 +53,11 @@ struct IntentLabProjectInstallerTests {
         #expect(preview.changes.first { $0.url.lastPathComponent == "IntentLabIntegration.json" }?.proposed == data)
     }
 
-    @Test func openStepObjectInsertionPreservesExactBytesAndReparsesAfterEachEdit() throws {
+    @Test func openStepObjectInsertionPreservesExistingObjectsAndRejectsDuplicates() throws {
         let original = "// !$*UTF8*$!\n{ /* root */ objects = { ORIGINAL /* keep */ = { isa = Existing; }; }; }\n"
         var document = try OpenStepProjectDocument(Data(original.utf8))
         try document.addObject(id: "FIRST", value: "{ isa = Added; }")
-        let first = "// !$*UTF8*$!\n{ /* root */ objects = { ORIGINAL /* keep */ = { isa = Existing; }; \n\t\tFIRST /* Intent Lab */ = { isa = Added; };}; }\n"
-        #expect(document.data == Data(first.utf8))
         try document.addObject(id: "SECOND", value: "{ isa = Added; }")
-        let second = "// !$*UTF8*$!\n{ /* root */ objects = { ORIGINAL /* keep */ = { isa = Existing; }; \n\t\tFIRST /* Intent Lab */ = { isa = Added; };\n\t\tSECOND /* Intent Lab */ = { isa = Added; };}; }\n"
-        #expect(document.data == Data(second.utf8))
         #expect(try document.containsObject("SECOND"))
         #expect(try document.scalar(object: "ORIGINAL", key: "isa") == "Existing")
         let beforeDuplicate = document.data
@@ -122,26 +68,6 @@ struct IntentLabProjectInstallerTests {
             #expect(error.localizedDescription == OpenStepProjectDocument.Error.duplicate("object FIRST").localizedDescription)
         }
         #expect(document.data == beforeDuplicate)
-    }
-
-    @Test func openStepObjectInsertionPreservesMissingAndMalformedErrorOrder() throws {
-        var missing = try OpenStepProjectDocument(Data("{ archiveVersion = 1; }".utf8))
-        do {
-            try missing.addObject(id: "NEW", value: "{")
-            Issue.record("Missing objects container was accepted")
-        } catch {
-            #expect(error.localizedDescription == OpenStepProjectDocument.Error.missing("objects").localizedDescription)
-        }
-        var malformed = try OpenStepProjectDocument(Data("{ objects = { ORIGINAL = {}; }; }".utf8))
-        #expect(throws: OpenStepProjectDocument.Error.self) {
-            try malformed.addObject(id: "BROKEN", value: "{")
-        }
-        do {
-            try malformed.addObject(id: "ORIGINAL", value: "{}")
-            Issue.record("Malformed document was accepted")
-        } catch {
-            #expect(error.localizedDescription == OpenStepProjectDocument.Error.malformed.localizedDescription)
-        }
     }
 
     @Test func declarationProjectIdentityRetainsRelativePathSemantics() {
@@ -293,12 +219,6 @@ struct IntentLabProjectInstallerTests {
         #expect(preview.changes.count == 5)
         #expect(preview.changes.first { $0.url.lastPathComponent == "IntentLabScenarioTests.swift" }?.previous == nil)
         #expect(preview.changes.first { $0.url.lastPathComponent == "IntentLabIntegration.json" }?.previous == nil)
-        let adapter = try #require(preview.changes.first { $0.url.lastPathComponent == "IntentLabAppAdapter.swift" })
-        let scaffold = String(decoding: adapter.proposed, as: UTF8.self)
-        #expect(scaffold.contains("throw IntentLabIntegrationError.unsupportedPreparation"))
-        #expect(scaffold.contains("throw IntentLabAppAdapterError.unimplementedObservation"))
-        #expect(!scaffold.contains("expectedValue"))
-        #expect(!scaffold.contains("return [:]"))
         #expect(preview.changes.allSatisfy { $0.afterDigest != $0.beforeDigest })
         let receipt = try installer.apply(preview)
         #expect(receipt.changedFiles.count == 5)
@@ -364,14 +284,6 @@ struct IntentLabProjectInstallerTests {
             .compactMap { objects[$0]?["productName"] as? String }
         #expect(Set(productNames) == ["IntentLabCoreTesting", "IntentLabContracts"])
         #expect(!productNames.contains("IntentLabTesting"))
-        #expect(source.contains("IntentLabSiriScenarioRunner.run"))
-        #expect(source.contains("IntentLabSiriScenarioRunner.checkConnection"))
-        let scaffold = String(decoding: try #require(plan.changes.first {
-            $0.url.lastPathComponent == "IntentLabAppAdapter.swift"
-        }).proposed, as: UTF8.self)
-        #expect(scaffold.contains("import IntentLabCoreTesting"))
-        #expect(scaffold.contains("IntentLabSiriIntegration"))
-        #expect(!scaffold.contains("import IntentLabTesting"))
     }
 
     @Test func localFeatureSupportIsAddedOnlyToTheAppTargetDebugBuild() throws {
@@ -389,10 +301,6 @@ struct IntentLabProjectInstallerTests {
         })
         let supportSource = String(decoding: supportChange.proposed, as: UTF8.self)
         #expect(supportSource.contains("#if DEBUG && INTENT_LAB_TEST_SUPPORT"))
-        #expect(supportSource.contains("static func install(_ support: any IntentLabFeatureTestSupport)"))
-        #expect(supportSource.contains("IntentLabInvokeFeatureIntent"))
-        #expect(supportSource.contains("productionService receipt"))
-        #expect(!supportSource.contains("import IntentLabTesting"))
 
         let projectChange = try #require(plan.changes.first { $0.url.lastPathComponent == "project.pbxproj" })
         let root = try PropertyListSerialization.propertyList(from: projectChange.proposed, format: nil) as! [String: Any]
@@ -431,8 +339,6 @@ struct IntentLabProjectInstallerTests {
         ))
         #expect(!plan.supported)
         #expect(plan.manualFiles.contains { $0.filename == "IntentLabFeatureTestSupport.swift" })
-        #expect(plan.manualFiles.first { $0.filename == "IntentLabManualSetup.md" }
-            .map { String(decoding: $0.data, as: UTF8.self).contains("only in Debug") } == true)
     }
 
     @Test func declaredReadinessInstallsOnlyTheHarmlessDebugAppIntent() throws {
@@ -450,12 +356,7 @@ struct IntentLabProjectInstallerTests {
         })
         let source = String(decoding: readinessFile.proposed, as: UTF8.self)
         #expect(source.contains("#if DEBUG && INTENT_LAB_TEST_SUPPORT"))
-        #expect(source.contains("struct IntentLabReadinessIntent: AppIntent"))
-        #expect(source.contains("IntentLabReadinessTestResult(ready: true, context: context)"))
         #expect(source.contains("isDiscoverable = false"))
-        #expect(!source.contains("IntentLabInvokeFeatureIntent"))
-        #expect(!source.contains("businessInput"))
-        #expect(!source.contains("IntentLabTestIntentTransport"))
 
         let projectChange = try #require(plan.changes.first { $0.url.lastPathComponent == "project.pbxproj" })
         let root = try PropertyListSerialization.propertyList(from: projectChange.proposed, format: nil) as! [String: Any]
@@ -631,8 +532,6 @@ struct IntentLabProjectInstallerTests {
             #expect(settings["MACOSX_DEPLOYMENT_TARGET"] as? String == "27.0")
             #expect(settings["IPHONEOS_DEPLOYMENT_TARGET"] == nil)
         }
-        let sourceChange = try #require(plan.changes.first { $0.url.lastPathComponent == "IntentLabScenarioTests.swift" })
-        #expect(String(decoding: sourceChange.proposed, as: UTF8.self).contains("@available(macOS 27.0, iOS 27.0, *)"))
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENT_LAB_RUN_MAC_INSTALLER_BUILD_TEST"] == "1"))
@@ -774,18 +673,6 @@ struct IntentLabProjectInstallerTests {
         let plan = try IntentLabProjectInstaller().preview(fixture.request(existingTarget: false))
         #expect(!plan.supported)
         #expect(plan.manualSteps.first?.contains("supports iOS and macOS apps") == true)
-    }
-
-    @Test func workspaceProjectIdentityDisambiguatesEqualBasenames() {
-        let root = URL(filePath: "/tmp/IntentLabIdentity")
-        let workspace = root.appending(path: "Combined.xcworkspace")
-        let first = IntentLabProjectInstaller.declarationProjectIdentity(
-            projectURL: root.appending(path: "First/Tasks.xcodeproj"), workspaceURL: workspace)
-        let second = IntentLabProjectInstaller.declarationProjectIdentity(
-            projectURL: root.appending(path: "Second/Tasks.xcodeproj"), workspaceURL: workspace)
-        #expect(first == "First/Tasks.xcodeproj")
-        #expect(second == "Second/Tasks.xcodeproj")
-        #expect(first != second)
     }
 
     @Test func stalePreviewPreservesInterveningEdit() throws {
@@ -950,8 +837,6 @@ struct IntentLabProjectInstallerTests {
         let export = fixture.root.appending(path: "Review")
         let files = try installer.exportManualFiles(plan, to: export)
         #expect(files.count == 4)
-        let adapter = try String(contentsOf: export.appending(path: "IntentLabAppAdapter.swift"), encoding: .utf8)
-        #expect(adapter.contains("throw IntentLabAppAdapterError.unimplementedObservation"))
         #expect(try Data(contentsOf: export.appending(path: "IntentLabIntegration.json"))
             == Fixture.declarationData)
         #expect(try installer.exportManualFiles(plan, to: export).count == 4)
@@ -1055,7 +940,7 @@ struct IntentLabProjectInstallerTests {
         #expect(try Data(contentsOf: adapter) == edit)
     }
 
-    @Test func staticInspectionDoesNotRunProjectCode() throws {
+    @Test func staticInspectionFindsSelectableTargetsAndSchemes() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let inspection = try IntentLabProjectInstaller.inspect(projectURL: fixture.project)

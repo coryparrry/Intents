@@ -72,7 +72,7 @@ final class AutomationAppleFileDeclarationBuildTests: XCTestCase {
         let templates = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Integration/AutomationHost")
         let prepared = try await AutomationPreparation().prepare(candidate: candidate,
             approval: .init(sourceRoot: original.path, candidateID: candidate.id, configuration: "Debug", target: AutomationMacGUIIdentity.currentTarget()),
-            sessionRoot: root.appendingPathComponent("prepare"), templates: templates, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+            sessionRoot: root.appendingPathComponent("prepare"), templates: templates, developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         try AutomationSourceSnapshot.verifyOriginal(prepared.source)
         XCTAssertEqual(Set(prepared.catalog.systemActions.map(\.id)), ["FileInputIntent", "FileOutputIntent"])
         XCTAssertTrue(prepared.catalog.systemActions.allSatisfy { $0.compiled && !$0.executed && !$0.registered })

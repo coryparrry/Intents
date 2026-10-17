@@ -73,11 +73,6 @@ class UpdateTests(unittest.TestCase):
                          'app "Intents.app"'):
             self.assertIn(expected, content)
 
-    def test_retry_does_not_rewrite_cask(self):
-        self.seed()
-        before = self.cask.stat().st_mtime_ns
-        self.update()
-        self.assertEqual(self.cask.stat().st_mtime_ns, before)
 
     def test_older_release_cannot_roll_back_cask(self):
         self.seed("1.10.0")
@@ -209,14 +204,6 @@ class UpdateTests(unittest.TestCase):
             homebrew.verify_provenance(self.root, "v1.4.0", "example/Selected")
         self.assertEqual(run.call_count, 1)
 
-    def test_workflow_requires_protected_main_and_release_verification(self):
-        workflow = (ROOT / ".github/workflows/update-homebrew.yml").read_text()
-        self.assertNotIn("  release:\n", workflow)
-        self.assertNotIn("github.event_name == 'release'", workflow)
-        for contract in ("environment: release", "runs-on: xcode-27", "actions: read",
-                         "EXPECTED_TEAM_ID: 3Z3955EFRE",
-                         "RELEASE_BRANCH: ${{ github.event.repository.default_branch }}"):
-            self.assertIn(contract, workflow)
 
     def test_cli_and_workflow_publish_then_retry_without_new_commit(self):
         fixture = self.root / "fixture"

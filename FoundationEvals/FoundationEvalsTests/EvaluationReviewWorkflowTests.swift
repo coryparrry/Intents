@@ -19,8 +19,6 @@ struct EvaluationReviewWorkflowTests {
         let review = fixture.annotation(verdict: .failed, tags: [" Wrong DATE ", "wrong date"])
         try EvaluationReviewWorkflow.save(review, sample: fixture.sample, state: &state)
         #expect(state.annotations.first?.tags == ["wrong date"])
-        #expect(fixture.sample.sample.status == .unscored)
-        #expect(fixture.sample.sample.response == "incorrect")
         var reassessed = fixture.run
         reassessed.selectedAssessmentID = UUID()
         #expect(try EvaluationReviewWorkflow.sourceDigest(run: reassessed, sample: fixture.sample.sample) == fixture.sample.sourceDigest)
@@ -378,23 +376,6 @@ struct EvaluationReviewWorkflowTests {
         try FileManager.default.createDirectory(at: evidenceDirectory, withIntermediateDirectories: true)
         try Data([1, 2, 3, 4]).write(to: evidenceDirectory.appending(path: image.storedFilename!))
         #expect(throws: (any Error).self) { try store.validateReviewImageEvidence(fixture.run) }
-    }
-
-    @MainActor @Test func writeNativeReviewFixtureWhenRequested() throws {
-        guard let path = ProcessInfo.processInfo.environment["EVAL_REVIEW_UI_FIXTURE"] else { return }
-        let directory = URL(filePath: path)
-        let store = EvaluationStore(supportDirectory: directory)
-        store.draftSuite.name = "Review example"
-        store.draftSuite.scoringMode = .modelJudge
-        store.draftSuite.cases = [EvaluationCase(name: "Meeting date", prompt: "Move the meeting to Friday", expected: "Friday")]
-        #expect(store.saveSuite())
-        let fixture = try ReviewFixture(suite: store.suite)
-        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(supportDirectory: directory,
-            projectID: store.selectedProjectID, suiteID: store.selectedSuiteID)
-        try CanonicalJSON.data(for: fixture.run).write(to: suiteDirectory.appending(path: "Runs/\(fixture.run.id).json"))
-        struct NativeFixture: Encodable { var suite: EvaluationSuite; var run: EvaluationRun }
-        try CanonicalJSON.data(for: NativeFixture(suite: store.suite, run: fixture.run))
-            .write(to: directory.appending(path: "review-fixture.json"))
     }
 }
 

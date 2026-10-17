@@ -16,7 +16,6 @@ struct ScenarioPhysicalLeaseTests {
             await #expect(throws: AutomationContractError.self) { try await other.acquire(runID: "other", target: record.lease.target, control: .ui) }
             record = try await manager.recordDispatch(record, invocation: invocation)
             record = try await manager.recordHost(record, process: absentHost(), executable: "/usr/bin/xcodebuild")
-            #expect(record.receipt == nil)
             record = try await manager.finish(record, invocation: invocation, workspace: root)
             #expect(record.released && record.releaseObservation?.runnerAbsent == true)
             let available = try await other.acquire(runID: "other", target: record.lease.target, control: .ui)

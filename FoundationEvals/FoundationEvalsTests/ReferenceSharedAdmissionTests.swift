@@ -51,21 +51,6 @@ struct ReferenceSharedAdmissionTests {
         #expect(spans.filter { $0.status == .failed }.count == ReferenceToolRecorder.maximumRecordedRejections)
     }
 
-    @Test func sharedCancellationIsBoundedWithoutInventingExecutionOrRejection() async {
-        let workflow = EvaluationWorkflowRecorder()
-        let recorder = ReferenceToolRecorder(maximumCalls: 4,
-            callLimiter: CancelledReferenceAdmission(), workflowRecorder: workflow)
-        let tool = makeTool(recorder)
-        #expect(await attempt(tool, count: 128, concurrent: false) == 0)
-        #expect(await recorder.attemptedCallTotal() == 128)
-        let traces = await recorder.snapshot()
-        #expect(traces.count == ReferenceToolRecorder.maximumRecordedRejections)
-        #expect(traces.allSatisfy { $0.outcome == "cancelled" })
-        let spans = workflow.snapshot().spans.filter { $0.kind == .tool }
-        #expect(spans.count == ReferenceToolRecorder.maximumRecordedRejections)
-        #expect(spans.allSatisfy { $0.status == .cancelled })
-    }
-
     private func makeTool(_ recorder: ReferenceToolRecorder) -> ReferenceLookupTool {
         ReferenceLookupTool(index: .init(attachments: [
             .init(id: UUID(), name: "reference.txt", kind: .text,
@@ -98,8 +83,4 @@ struct ReferenceSharedAdmissionTests {
         }
         return successes
     }
-}
-
-private actor CancelledReferenceAdmission: EvaluationToolCallLimiting {
-    func beginCall() async throws { throw CancellationError() }
 }

@@ -110,7 +110,7 @@ final class AutomationSourceRecipeTests: XCTestCase {
         try Data(spec.utf8).write(to: source.appendingPathComponent("project.yml"))
         try Data("import AppKit\nlet app = NSApplication.shared\n".utf8).write(to: source.appendingPathComponent("App/main.swift"))
         let recipe = try AutomationSourceRecipe.xcodegen(source: source)
-        let result = try await recipe.run(supportRoot: root.appendingPathComponent("support"), developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+        let result = try await recipe.run(supportRoot: root.appendingPathComponent("support"), developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         XCTAssertEqual(try AutomationApplicationIntake.assess(result.selection).candidates.count, 1)
         XCTAssertEqual(try Data(contentsOf: source.appendingPathComponent("project.yml")), Data(spec.utf8))
         XCTAssertFalse(FileManager.default.fileExists(atPath: source.appendingPathComponent("RecipeFixture.xcodeproj").path))
@@ -130,13 +130,13 @@ final class AutomationSourceRecipeTests: XCTestCase {
         let original = "#!/bin/sh\nset -eu\nswift build --disable-sandbox --jobs 2\nmkdir -p dist/RecipeFixture.app/Contents/MacOS\ncp .build/debug/RecipeFixture dist/RecipeFixture.app/Contents/MacOS/RecipeFixture\ncp AppInfo.plist dist/RecipeFixture.app/Contents/Info.plist\n"
         try Data(original.utf8).write(to: script)
         let recipe = try AutomationSourceRecipe.swiftPMPackaging(source: source, script: script)
-        let result = try await recipe.run(supportRoot: root.appendingPathComponent("support"), developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+        let result = try await recipe.run(supportRoot: root.appendingPathComponent("support"), developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         XCTAssertEqual(try AutomationApplicationIntake.assess(result.selection).candidates.first?.app?.platform, "macos")
         XCTAssertFalse(FileManager.default.fileExists(atPath: source.appendingPathComponent(".build").path))
         let sentinel = source.appendingPathComponent("sentinel.txt"); try Data("original".utf8).write(to: sentinel)
         try Data(("#!/bin/sh\nset -eu\nprintf changed > '" + sentinel.path + "'\n").utf8).write(to: script)
         let forbidden = try AutomationSourceRecipe.swiftPMPackaging(source: source, script: script)
-        do { _ = try await forbidden.run(supportRoot: root.appendingPathComponent("blocked"), developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer")); XCTFail("Original write was allowed") }
+        do { _ = try await forbidden.run(supportRoot: root.appendingPathComponent("blocked"), developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer")); XCTFail("Original write was allowed") }
         catch { XCTAssertEqual(try Data(contentsOf: sentinel), Data("original".utf8)) }
     }
 }

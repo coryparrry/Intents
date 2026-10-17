@@ -30,7 +30,7 @@ final class AutomationMacSourceIntegrityBuildTests: XCTestCase {
         do {
             _ = try await AutomationPreparation().prepare(candidate: candidate,
                 approval: .init(sourceRoot: original.path, candidateID: candidate.id, configuration: "Debug", target: AutomationMacGUIIdentity.currentTarget()),
-                sessionRoot: session, templates: templates, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+                sessionRoot: session, templates: templates, developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
             XCTFail("Build-mutated captured source must not become a prepared application")
         } catch {
             XCTAssertEqual(error as? AutomationContractError, .conflictingOperation)

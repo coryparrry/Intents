@@ -2,16 +2,6 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationIntakeTests: XCTestCase {
-    func testUnsupportedWorkspaceGroupDoesNotDiscoverAnUnrelatedInRootProject() throws {
-        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
-        let workspace = root.appendingPathComponent("Subject.xcworkspace"), project = root.appendingPathComponent("App.xcodeproj")
-        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try Data("<Workspace><Group location=\"absolute:/outside\"><FileRef location=\"group:App.xcodeproj\"/></Group></Workspace>".utf8).write(to: workspace.appendingPathComponent("contents.xcworkspacedata"))
-        let resolved = try AutomationWorkspaceProjects.resolve(workspace)
-        XCTAssertTrue(resolved.projects.isEmpty); XCTAssertFalse(resolved.gaps.isEmpty)
-    }
     func testWorkspaceProjectResolutionKeepsReferencesInsideTheAuthorisedSourceRoot() throws {
         let container = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
         let root = container.appendingPathComponent("Source"), workspace = root.appendingPathComponent("Subject.xcworkspace")

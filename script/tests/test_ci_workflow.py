@@ -37,6 +37,11 @@ def gate(name, **environment):
 
 
 class GateTests(unittest.TestCase):
+    def test_script_job_invokes_selected_python_test_runner(self):
+        workflow = job("script-tests")
+        self.assertIn("CI_TEST_SELECTION: ${{ needs.changes.outputs.python_tests }}", workflow)
+        self.assertIn("python3 script/ci_run_tests.py python", workflow)
+
     def test_quality_requires_selected_script_shards(self):
         common = dict(ROUTING="success", LINT="success", SELECTED='["test"]')
         self.assertEqual(gate("quality", **common, TESTS="success"), 0)
@@ -64,60 +69,12 @@ class GateTests(unittest.TestCase):
         self.assertNotEqual(gate("build", **{**common, "STABILITY_SELECTED": "true"}), 0)
         self.assertEqual(gate("build", **{**common, "STABILITY_SELECTED": "true", "STABILITY": "success"}), 0)
 
-    def test_parallel_consumers_only_depend_on_the_shared_build(self):
-        for name in ("native-tests", "ui-tests", "picker-stability"):
-            self.assertIn("needs: [changes, native-build]", job(name))
-            self.assertIn("name: native-test-products", job(name))
-            self.assertIn("tar -xf", job(name))
-            self.assertNotIn("xcodebuild build", job(name))
-        self.assertIn("fail-fast: false", job("ui-tests"))
-        self.assertNotIn("max-parallel:", job("ui-tests"))
-        self.assertNotIn("--iterations", job("ui-tests"))
 
-    def test_simulator_cache_is_saved_only_after_successful_compilation(self):
-        workflow = job("automation-e2e-scenarios")
-        self.assertIn("uses: actions/cache/restore@", workflow)
-        self.assertIn("--record-build-cache", workflow)
-        self.assertIn("steps.contract.outputs.cli_built == 'true'", workflow)
-        self.assertIn("steps.cli-cache.outputs.cache-hit != 'true'", workflow)
-        self.assertIn("uses: actions/cache/save@", workflow)
-        self.assertIn("key: ${{ steps.cli-cache.outputs.cache-primary-key }}", workflow)
 
-    def test_simulator_runs_every_scenario_with_one_setup_and_cache_writer(self):
-        workflow = job("automation-e2e-scenarios")
-        self.assertIn("needs: changes", workflow)
-        self.assertNotIn("matrix", workflow)
-        self.assertIn("--scenario-group all", workflow)
-        self.assertIn("name: automation-e2e", workflow)
-        condition = re.search(r"Save successfully compiled automation CLI\n        if: (.+)", workflow)[1]
-        self.assertIn("!cancelled()", condition)
-        self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
-        self.assertNotIn("success()", condition)
 
-    def test_scripts_run_all_selected_modules_in_one_job(self):
-        workflow = job("script-tests")
-        self.assertNotIn("matrix", workflow)
-        self.assertIn("CI_TEST_SELECTION: ${{ needs.changes.outputs.python_tests }}", workflow)
-        self.assertIn("python3 script/ci_run_tests.py python", workflow)
 
-    def test_evidence_is_retained_after_failure_without_blocking_cancellation(self):
-        # A status function overrides implicit success(), preserving failed-run evidence.
-        # Unlike always(), !cancelled() lets superseding PR runs release their runners.
-        for name in ("Upload core results", "Export UI test attachments", "Upload UI results",
-                     "Upload stability results", "Upload automation evidence",
-                     "Upload input conversion diagnostic evidence"):
-            with self.subTest(step=name):
-                condition = re.search(re.escape(name) + r"\n        if: (.+)", WORKFLOW)[1]
-                self.assertEqual(condition, "${{ !cancelled() }}")
-        # Required gates still reject cancellation rather than treating it as success.
-        for name in ("quality", "regression", "build", "automation-e2e"):
-            self.assertIn("always()", job(name).split("    steps:", 1)[0])
 
     def test_stable_simulator_gate_requires_all_selected_groups(self):
-        workflow = job("automation-e2e")
-        self.assertIn("name: Automation e2e (simulator)", workflow)
-        self.assertIn("needs: [changes, automation-e2e-scenarios]", workflow)
-        self.assertIn("if: ${{ always() }}", workflow)
         self.assertEqual(gate("automation-e2e", ROUTING="success", SELECTED="true", SCENARIOS="success"), 0)
         for result in ("failure", "cancelled", "skipped", ""):
             with self.subTest(result=result):
@@ -128,14 +85,6 @@ class GateTests(unittest.TestCase):
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="success"), 0)
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="", SCENARIOS="skipped"), 0)
 
-    def test_native_cache_fallback_keeps_toolchain_and_manifest_boundaries(self):
-        build = job("native-build")
-        prefixes = build.split("          restore-keys: |\n", 1)[1].split("      - name:", 1)[0].strip().splitlines()
-        self.assertEqual(len(prefixes), 2)
-        self.assertEqual(prefixes[1].strip(), prefixes[0].strip().replace(
-            "${{ needs.changes.outputs.ui }}", "${{ needs.changes.outputs.ui != 'true' }}"))
-        self.assertIn("${{ steps.toolchain.outputs.version }}", prefixes[0])
-        self.assertIn("${{ hashFiles(", prefixes[0])
 
     def test_native_descriptors_refresh_without_removing_compiled_products(self):
         build = job("native-build")

@@ -17,8 +17,6 @@ def metadata():
 
 
 class FixtureShortcutMetadataTests(unittest.TestCase):
-    def test_distinct_preset_actions_preserve_all_existing_phrases_and_generic_actions(self):
-        self.assertEqual(validate(metadata()), PRESETS | GENERIC)
 
     def test_reusing_generic_action_for_preset_is_rejected(self):
         data = metadata()

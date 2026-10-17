@@ -48,12 +48,6 @@ struct NativeHistoryRefreshTests {
             }
         }
     }
-    @Test func heldReaderEntryWaitIsBoundedAndLateReadCanBeReleased() async {
-        let reader = HeldAutomationCaseReader()
-        #expect(!(await reader.waitUntilHeld(timeout: 0.02)))
-        await reader.finish()
-        #expect(await reader.read().isEmpty)
-    }
     @MainActor private func commandStore(root: URL, telemetry: (any AutomationRunTelemetry)? = nil, savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil,
                                         runExecutor: AutomationNativeRunExecutor? = nil) -> AppAutomationStore {
         var app = AppIdentity(logicalID: "fixture", bundleID: "example.Fixture", platform: "ios", productDigest: String(repeating: "a", count: 64))

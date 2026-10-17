@@ -123,7 +123,7 @@ final class AutomationSourceSyntaxTests: XCTestCase {
                      .init(relativePath: "PackageAction.swift", sha256: AutomationArtifactRegistry.digest(packageSource), owner: "Package.swift#target:Package", role: "packageSwiftMembership")], declarations: [], gaps: ["Synthetic graph fixture"])
         let command = AutomationOwnedCommand()
         let conditions = AutomationSourceCompilationConditions(owner: "App.xcodeproj#APP", configuration: "Debug", settingsSHA256: String(repeating: "a", count: 64), activeConditions: ["CUSTOM_CONDITION"])
-        let developer = try AutomationPath.canonical(URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+        let developer = try AutomationPath.canonical(URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         let index = try await AutomationSourceSyntaxDiscovery.analyze(graph: graph, frozenRoot: source, session: root,
             developer: developer, command: command, compilationConditions: conditions)
         XCTAssertEqual(index.sourceGraphDigest, try graph.digest)
