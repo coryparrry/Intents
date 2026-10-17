@@ -30,6 +30,30 @@ extension XCTestCase {
     }
 
     @MainActor
+    func revealAutomationControl(_ control: XCUIElement, in app: XCUIApplication) {
+        XCTAssertTrue(control.waitForExistence(timeout: 5), app.debugDescription)
+        let page = app.scrollViews.containing(.popUpButton, identifier: "automation.workflow.route").element
+        XCTAssertTrue(page.exists, app.debugDescription)
+        for _ in 0..<16 {
+            let viewport = page.frame.intersection(app.windows.firstMatch.frame).insetBy(dx: 0, dy: 12)
+            if control.isHittable && viewport.contains(control.frame) { return }
+            let delta: CGFloat = control.frame.minY < viewport.minY ? 180 : -180
+            page.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+                .scroll(byDeltaX: 0, deltaY: delta)
+        }
+        XCTAssertTrue(control.isHittable && page.frame.intersection(app.windows.firstMatch.frame).contains(control.frame),
+                      "Automation control must be visible before interaction: \(control).\n\(app.debugDescription)")
+    }
+
+    @MainActor
+    func confirmAutomationEffects(_ checkbox: XCUIElement, in app: XCUIApplication) {
+        revealAutomationControl(checkbox, in: app)
+        XCTAssertTrue(checkbox.isEnabled, app.debugDescription)
+        if checkbox.value as? Int != 1 { checkbox.click() }
+        XCTAssertEqual(checkbox.value as? Int, 1, "Effect consent must be recorded before review.\n\(app.debugDescription)")
+    }
+
+    @MainActor
     func selectAutomationMenu(_ picker: XCUIElement, item identifier: String, timeout: TimeInterval = 10) {
         XCTAssertTrue(picker.waitForExistence(timeout: timeout))
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(

@@ -38,7 +38,11 @@ final class MacPreparationUITests: XCTestCase {
         review.buttons["Cancel"].click()
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: review)], timeout: 5), .completed)
-        selectAutomationMenu(automationAppPicker(in: app, selectedApp: "AutomationFixtureMac"), item: "AutomationFixture")
+        let route = app.popUpButtons["automation.workflow.route"]
+        revealAutomationControl(route, in: app)
+        let selectedMac = automationAppPicker(in: app, selectedApp: "AutomationFixtureMac")
+        revealAutomationControl(selectedMac, in: app)
+        selectAutomationMenu(selectedMac, item: "AutomationFixture")
         _ = automationAppPicker(in: app, selectedApp: "AutomationFixture")
         XCTAssertFalse(app.buttons["Build private copy"].exists)
         XCTAssertFalse(app.buttons["Run approved workflow"].exists)
@@ -93,12 +97,18 @@ final class MacPreparationUITests: XCTestCase {
         selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "system")
         selectAutomationMenu(app.popUpButtons["automation.action"], item: "Echo integer array")
         let input = app.textFields["value (JSON list of whole numbers)"]
-        XCTAssertTrue(input.waitForExistence(timeout: 5)); input.click(); input.typeText("[1,2]")
-        selectAutomationMenu(app.popUpButtons["Effects of this action"], item: "Observation and navigation")
-        app.checkBoxes["I confirm this action stays within these effects"].click()
-        XCTAssertFalse(app.checkBoxes["Allow starting this simulator and installing the prepared app"].exists)
+        revealAutomationControl(input, in: app); input.click(); input.typeText("[1,2]")
+        XCTAssertEqual(input.value as? String, "[1,2]")
+        let actionEffects = app.popUpButtons["Effects of this action"]
+        revealAutomationControl(actionEffects, in: app)
+        selectAutomationMenu(actionEffects, item: "Observation and navigation")
+        XCTAssertEqual(actionEffects.value as? String, "Observation and navigation")
         let runAction = app.buttons["Run action…"]
-        XCTAssertTrue(runAction.isEnabled); runAction.click()
+        XCTAssertFalse(runAction.isEnabled, "The action must require explicit effect consent")
+        confirmAutomationEffects(app.checkBoxes["I confirm this action stays within these effects"], in: app)
+        XCTAssertFalse(app.checkBoxes["Allow starting this simulator and installing the prepared app"].exists)
+        revealAutomationControl(runAction, in: app)
+        XCTAssertTrue(runAction.isEnabled, app.debugDescription); runAction.click()
         let approveAction = automationConfirmation(in: app, title: "Run the selected workflow?").buttons["Run approved workflow"]
         XCTAssertTrue(approveAction.waitForExistence(timeout: 5))
         try capture(app, storage: storage, name: "typed-action-review")
@@ -108,17 +118,18 @@ final class MacPreparationUITests: XCTestCase {
 
         selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "ui")
         let instruction = app.textFields["What should the app do?"]
-        XCTAssertTrue(instruction.waitForExistence(timeout: 5)); instruction.click(); instruction.typeText("Observe the fixture controls")
+        revealAutomationControl(instruction, in: app); instruction.click(); instruction.typeText("Observe the fixture controls")
         let endpoint = app.textFields["Destination control"]
-        endpoint.click(); endpoint.typeText("id:fixture.control")
+        revealAutomationControl(endpoint, in: app); endpoint.click(); endpoint.typeText("id:fixture.control")
         let expected = app.textFields["Expected property value (optional)"]
-        expected.click(); expected.typeText("Control")
-        selectAutomationMenu(app.popUpButtons["Effects of this workflow"], item: "Observation and navigation")
-        if app.checkBoxes["I confirm this workflow stays within these effects"].value as? Int != 1 {
-            app.checkBoxes["I confirm this workflow stays within these effects"].click()
-        }
+        revealAutomationControl(expected, in: app); expected.click(); expected.typeText("Control")
+        let workflowEffects = app.popUpButtons["Effects of this workflow"]
+        revealAutomationControl(workflowEffects, in: app)
+        selectAutomationMenu(workflowEffects, item: "Observation and navigation")
+        confirmAutomationEffects(app.checkBoxes["I confirm this workflow stays within these effects"], in: app)
         let runWorkflow = app.buttons["Run workflow…"]
-        XCTAssertTrue(runWorkflow.isEnabled); runWorkflow.click()
+        revealAutomationControl(runWorkflow, in: app)
+        XCTAssertTrue(runWorkflow.isEnabled, app.debugDescription); runWorkflow.click()
         let approveUI = automationConfirmation(in: app, title: "Run the selected workflow?").buttons["Run approved workflow"]
         XCTAssertTrue(approveUI.waitForExistence(timeout: 5))
         try capture(app, storage: storage, name: "ui-workflow-review")
