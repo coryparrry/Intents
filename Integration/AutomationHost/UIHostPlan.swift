@@ -25,6 +25,15 @@ public struct UIHostQuery: Codable, Equatable, Sendable {
         self.identifier = identifier; self.label = label; self.labelContains = labelContains
         self.elementType = elementType; self.index = index
     }
+    #if canImport(ObjectiveC)
+    public func labelContainsPredicate(_ text: String, nativeMac: Bool) -> NSPredicate {
+        // Native Mac static text can publish its displayed content as value.
+        if nativeMac, elementType == "staticText" {
+            return NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text)
+        }
+        return NSPredicate(format: "label CONTAINS %@", text)
+    }
+    #endif
 }
 public struct UIHostSelection: Codable, Equatable, Sendable {
     public var typeID: String

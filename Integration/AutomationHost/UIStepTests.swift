@@ -203,7 +203,13 @@ final class UIStepTests: XCTestCase {
         var result = app.descendants(matching: type)
         if let id = locator.identifier { result = result.matching(identifier: id) }
         if let label = locator.label { result = result.matching(NSPredicate(format: "label == %@", label)) }
-        if let contains = locator.labelContains { result = result.matching(NSPredicate(format: "label CONTAINS %@", contains)) }
+        if let contains = locator.labelContains {
+            #if os(macOS)
+            result = result.matching(locator.labelContainsPredicate(contains, nativeMac: true))
+            #else
+            result = result.matching(locator.labelContainsPredicate(contains, nativeMac: false))
+            #endif
+        }
         return result
     }
     private func element(_ locator: UIHostQuery?, app: XCUIApplication) throws -> XCUIElement {
