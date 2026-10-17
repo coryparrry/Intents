@@ -27,9 +27,11 @@ These successful checks qualified the reviewed cleanup before PR integration. No
 
 ## PR integration
 
-The cleanup was rebased onto the newer prerequisite branch for PR #141 to resolve three conflicts before updating PR #142. The prerequisite's deterministic command fixtures, navigation effect and new regression tests were preserved, together with the reviewed cleanup. No additional test trimming was performed.
+The cleanup was initially rebased onto the CI-fix attempts in PR #141. At the user's request, all 21 subsequent CI-fix attempts from both chats were then rolled back to the original feature revision, `df4b97ce7`. PR #141 now adds only the requested Mac UI suite exclusion and CI failure reporting on top of that source.
 
-After resolving conflicts, `python3 -m unittest script.tests.test_ci_workflow script.tests.test_ci_routes` passed all 76 tests. Both affected Swift files (`AutomationMCPTests.swift` and `NativeHistoryRefreshTests.swift`) passed `xcrun swiftc -frontend -parse`. The diff against the prerequisite branch passed `git diff --check`.
+This cleanup was restacked onto that rollback and CI policy. Conflict resolution preserves the reviewed test removals and the new failure-summary coverage; it does not restore the reverted runtime fixtures or signing/deadline tests. No additional test trimming was performed.
+
+After this restack, `python3 -m unittest script.tests.test_ci_routes script.tests.test_ci_native_tests script.tests.test_ci_workflow script.tests.test_ci_failure_summary` passed all 101 tests. The three Swift files affected by rebase merging passed `xcrun swiftc -frontend -parse`: `AutomationMCPTests.swift`, `NativeHistoryRefreshTests.swift` and `AutomationXCUITestTests.swift`. The diff against the prerequisite branch passed `git diff --check`.
 
 Native builds and runtime checks were not repeated after this rebase. Their results above describe the pre-rebase source; final integration runtime qualification is left to CI.
 
