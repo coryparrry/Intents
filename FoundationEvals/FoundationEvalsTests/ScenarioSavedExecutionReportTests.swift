@@ -15,7 +15,7 @@ struct ScenarioSavedExecutionReportTests {
 
     private func savedFixture(root: URL, semanticOnlyFeature: Bool = false, siriOnlySummary: Bool = false,
                               response: String = "A summary", directState: String = "packing-001",
-                              projectID: UUID? = nil) async throws -> Fixture {
+                              projectID: UUID? = nil, includeFeatureReturnClaim: Bool = true) async throws -> Fixture {
         var definition = ScenarioDefinition.starter(projectID: projectID)
         definition.target.destinationIdentifier = "simulator"
         definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
@@ -142,11 +142,22 @@ struct ScenarioSavedExecutionReportTests {
             actionReceipts: [receipt], invocation: invocation, attempt: 1)
         var sources = Dictionary(uniqueKeysWithValues: observations.keys.map { ($0, transport) })
         sources["intentlab.actionReceipts"] = transport
+        var claims: [ScenarioProofClaim] = [.executionCompleted]
+        if siriOnlySummary {
+            claims.append(.applicationStateChecked)
+        } else if includeFeatureReturnClaim, definition.assertions.contains(where: { assertion in
+            assertion.required && assertion.kind == .returnedField && assertion.applies(to: .appFeature)
+                && evaluated.1.contains { $0.assertionID == assertion.id && $0.passed }
+        }) {
+            // The native Feature capture records its checked deterministic
+            // return independently from the later semantic assessment.
+            claims.append(.returnedValueChecked)
+        }
         let lane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: route,
             executionStatus: .completed, outcome: semanticOnlyFeature ? .notObserved : evaluated.0, startedAt: now, completedAt: now,
             observations: observations, assertionResults: evaluated.1,
             observationSources: sources,
-            claims: siriOnlySummary ? [.executionCompleted, .applicationStateChecked] : [.executionCompleted],
+            claims: claims,
             beforeObservations: before, actionReceipts: [receipt], cleanupVerified: true)
         var run = ScenarioRun(id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
             scenarioDigest: definition.definitionDigest, invocation: invocation, startedAt: now, completedAt: now,
@@ -274,6 +285,8 @@ struct ScenarioSavedExecutionReportTests {
         if semanticOnlyFeature {
             #expect(fixture.run.laneResults[0].outcome == .notObserved)
             #expect(fixture.run.laneResults[0].claims == [.executionCompleted])
+        } else {
+            #expect(fixture.run.laneResults[0].claims == [.executionCompleted, .returnedValueChecked])
         }
         let service = ScenarioSavedExecutionReportService(rootDirectory: root)
         let coordinator = ScenarioCoordinator(supportDirectory: store.overviewStorageDirectory, evaluationStore: store,
@@ -322,6 +335,25 @@ struct ScenarioSavedExecutionReportTests {
             expectedSource: "fixture-revision", expectedAppDigest: fixture.plan.appProductDigest,
             policy: IntentEvidenceChecker.policyID, referenceTime: Date())
         #expect(cli.exitCode == 0)
+        #expect(try fileSnapshot(root) == before)
+    }
+
+    @Test func semanticAssessmentCannotReplaceMissingFeatureReturnClaim() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try await savedFixture(root: root, includeFeatureReturnClaim: false)
+        #expect(fixture.run.laneResults[0].outcome == .needsReview)
+        #expect(fixture.run.laneResults[0].claims == [.executionCompleted])
+        #expect(ScenarioResultEvaluator.requiredClaims(for: fixture.definition, lane: .appFeature)
+            .contains(.returnedValueChecked))
+        let before = try fileSnapshot(root)
+        let decision = try await ScenarioSavedExecutionReportService(rootDirectory: root)
+            .qualification(executionID: fixture.record.id)
+        #expect(decision.requiredFailures.isEmpty)
+        #expect(decision.incompleteEvidence == [
+            "Required proof claims are incomplete across the coordinated route population."
+        ])
+        #expect(decision.report?.outcome == .incompleteOrIncompatibleEvidence)
         #expect(try fileSnapshot(root) == before)
     }
 

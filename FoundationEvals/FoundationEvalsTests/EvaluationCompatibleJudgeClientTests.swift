@@ -616,6 +616,7 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
         case completionOnly
         case costOnly
         case complete
+        case completeWithReportedCost
         case negative
         case overflow
         case array
@@ -813,6 +814,7 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
             case .completionOnly: #"{"completion_tokens":5}"#
             case .costOnly: #"{"cost":0.25}"#
             case .complete: #"{"prompt_tokens":10,"completion_tokens":5}"#
+            case .completeWithReportedCost: #"{"prompt_tokens":10,"completion_tokens":5,"cost":0.25}"#
             case .negative: #"{"prompt_tokens":-1,"completion_tokens":5}"#
             case .overflow: #"{"prompt_tokens":9223372036854775808,"completion_tokens":5}"#
             case .array: "[]"
