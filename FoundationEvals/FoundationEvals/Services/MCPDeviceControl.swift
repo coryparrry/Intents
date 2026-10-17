@@ -452,10 +452,15 @@ import Foundation
         on: call.id("runnerID"), featureID: call.text("featureID"),
         timeout: .seconds(call.number("timeoutSeconds", default: 120)))
       let operation = try call.id("operationID")
-      control.mcp.track(operation) {
+      try control.mcp.track(operation) {
         while let status = runners.status(for: id),
           [.preparing, .dispatching, .running].contains(status.phase)
-        { try? await Task.sleep(for: .milliseconds(100)) }
+        {
+          if Task.isCancelled {
+            return .failure(code: "cancelled", message: "App control stopped waiting during shutdown. Inspect saved runner evidence.")
+          }
+          try? await Task.sleep(for: .milliseconds(100))
+        }
         guard let status = runners.status(for: id) else {
           return .failure(
             code: "needs_evidence",

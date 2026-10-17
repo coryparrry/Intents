@@ -72,7 +72,8 @@
     { "id": "task-002.isComplete", "source": "entityQuery", "type": { "primitive": { "_0": "boolean" } }, "operationID": "tasks-by-stable-id", "selector": "task-002.isComplete" },
     { "id": "invocationContext", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.invocationContext" },
     { "id": "actionReceiptID", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.actionReceiptID" },
-    { "id": "intentlab.actionReceipts", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.actionReceipts" }
+    { "id": "intentlab.actionReceipts", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.actionReceipts" },
+    { "id": "intentlab.fixtureDigest", "source": "entityQuery", "type": { "primitive": { "_0": "string" } }, "operationID": "tasks-by-stable-id", "selector": "task-001.fixtureDigest" }
   ],
   "isolation": { "kind": "synthetic", "readinessOperationID": "prepare-task-fixture" },
   "capabilities": [
@@ -85,6 +86,7 @@
     "siri-completion",
     "invocation-correlation",
     "local-feature-controls",
-    "test-only-intent"
+    "test-only-intent",
+    "action-receipt-v1"
   ]
 }

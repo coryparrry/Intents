@@ -38,6 +38,9 @@ private struct SuiteRunDestinationButton: View {
     @State private var showsDestination = false
 
     private var runner: DeveloperRunnerSnapshot? { runners.selectedRunner }
+    private var textFeatures: [DeveloperFeatureDescriptor] {
+        runner?.features.filter { EvaluationDeveloperFeatureAdapter.validationIssue(for: $0) == nil } ?? []
+    }
     private var destinationName: String {
         runner?.identity.displayName ?? (runners.selectedRunnerID == nil ? "This Mac" : "Unavailable device")
     }
@@ -82,11 +85,17 @@ private struct SuiteRunDestinationButton: View {
             if let runner {
                 Picker("Feature", selection: $runners.selectedFeatureID) {
                     Text("Choose a feature").tag(nil as String?)
-                    ForEach(runner.features) { feature in
+                    if let selected = runner.features.first(where: { $0.id == runners.selectedFeatureID }),
+                       EvaluationDeveloperFeatureAdapter.validationIssue(for: selected) != nil {
+                        Text(selected.displayName + " · incompatible input").tag(Optional(selected.id)).disabled(true)
+                    }
+                    ForEach(textFeatures) { feature in
                         Text(feature.displayName).tag(Optional(feature.id))
                     }
                 }
-                Text("Calls your app’s feature with each case. Model sessions and tools come from your app.")
+                Text(!textFeatures.isEmpty
+                     ? "Calls your app’s text feature with each case. Model sessions and tools come from your app."
+                     : "This app exposes no text features for suites. Register a text feature in the app, or use an Intents scenario for a feature with business inputs.")
                     .font(.caption).foregroundStyle(.secondary)
             } else if runners.selectedRunnerID != nil {
                 Text("This device is no longer available. Reconnect it or choose This Mac.")
@@ -110,7 +119,9 @@ private struct SuiteRunDestinationButton: View {
         }
         .padding(20).frame(width: 380)
         .onChange(of: runners.selectedRunnerID) { _, _ in
-            runners.selectedFeatureID = runners.selectedRunner?.features.first?.id
+            runners.selectedFeatureID = runners.selectedRunner?.features.first(where: {
+                EvaluationDeveloperFeatureAdapter.validationIssue(for: $0) == nil
+            })?.id
         }
     }
 }
@@ -226,7 +237,8 @@ extension DeveloperRunnerStore {
     func runIssue(for store: EvaluationStore) -> String? {
         guard selectedRunnerID != nil else { return store.runBlocker }
         guard let runner = selectedRunner, runner.state == .connected else { return "Reconnect the selected device to run this suite." }
-        guard runner.features.contains(where: { $0.id == selectedFeatureID }) else { return "Choose an app feature from Run destination." }
+        guard let feature = runner.features.first(where: { $0.id == selectedFeatureID }) else { return "Choose an app feature from Run destination." }
+        if let issue = EvaluationDeveloperFeatureAdapter.validationIssue(for: feature) { return issue }
         return store.developerFeatureValidationIssue(for: store.draftSuite)
     }
 }

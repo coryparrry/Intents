@@ -22,6 +22,22 @@ The invoke/readiness intents and feature adapter compile only under `DEBUG && IN
 
 The app registers task-parameter App Shortcuts in the ordinary Debug product and isolated test product. They resolve the selected task through `TaskEntityQuery` at invocation time; no shortcut embeds a tokenless task entity. In the integration build, `CompleteTaskIntent` rejects missing or stale entity context, while a fresh query binds the selected task to the active invocation. A Siri check requires a signed install on a configured physical iPhone. Intent Lab's recognized-text Siri lane tests Siri activation with supplied text; it does not test microphone recognition. The persisted receipt and entity query provide a fresh completion check after activation.
 
+An ordinary Debug installation needs no test preparation: a freshly queried entity with an empty context can complete a task. Once a Debug store has been prepared, its active context must match the entity exactly. The isolated `IntentLabTesting` product always requires preparation. Ordinary executions emit no test action receipt. Prepared canonical `intent-UUID`, `feature-UUID`, and `siri-UUID-N` contexts bind receipts to the actual requested route and Siri attempt (1–3).
+
+## Stable v3 fixture and action evidence
+
+For a stable mutation check, use fixture ID `task-fixture`, version `1`, preparation `prepare-task-fixture`, cleanup `cleanup-task-fixture`, and digest `3447bff21b3851a36f3e0c0cf6af4a1a4982ada69f2cf69c92db396611f64a75`. Select a synthetic fixture and the synthetic mutation policy. The app independently reopens SwiftData and hashes all persisted task IDs and titles, sorted by ID and encoded as compact JSON with sorted keys:
+
+```json
+[{"id":"task-001","title":"Buy milk"},{"id":"task-002","title":"Book appointment"}]
+```
+
+`intentlab.fixtureDigest` exposes that observed SHA-256 through the declared entity query. Completion flags, timestamps, and receipts are excluded from source identity because they are the action's measured effects; assert `task-001.isComplete == true` and that `task-002.isComplete` stays at its observed `false` baseline. Preparation and cleanup both check the independently read fixture identity. Neither path copies an expected digest into app evidence.
+
+Both the compiled declaration and adapter advertise `action-receipt-v1`. Direct and Siri requirements name production intent `CompleteTaskIntent` with parameter `task = TaskEntity("task-001")`. The local Feature requirement names production service `complete-task` with string parameter `taskID = "task-001"`; its wrapper remains a nested test-support receipt.
+
+The native regression `testScopedStrictTaskContractUsesRealActionAndIndependentFixtureReadback` exercises preparation, the production intent, independent before/after queries, strict action qualification, and cleanup. The fault regressions use the same scoped action contract. `testProductionIntentReceiptsBindEveryPreparedSiriAttempt` checks all three receipt contexts through the real production intent; it does not activate Siri. To check ordinary Debug behavior, run a clean Debug install, invoke the “Complete a task” shortcut, and verify the selected task remains complete after relaunch. Run the isolated suite on a signed iOS 27 device for native confirmation.
+
 ## Outside-repository consumer check
 
 For a consumer-only install check, copy this example to a clean checkout, pin the `FoundationEvalsDeveloper` Swift package dependency to the reviewed repository revision, and retain only the consumer-owned integration and test files. The repository's local path package reference is for in-repository development; it is not a release dependency.

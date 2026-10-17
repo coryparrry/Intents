@@ -85,8 +85,11 @@ import Foundation
           externalDisclosureApproved: call.flag("externalDisclosureApproved"))
         control.production.select(job.id)
         let operation = try call.id("operationID")
-        control.mcp.track(operation) {
+        try control.mcp.track(operation) {
           while control.production.runningJobID == job.id {
+            if Task.isCancelled {
+              return .failure(code: "cancelled", message: "App control stopped waiting during shutdown. Inspect saved batch evidence.")
+            }
             try? await Task.sleep(for: .milliseconds(100))
           }
           if let error = control.production.executionErrors[job.id] {

@@ -278,6 +278,32 @@ indirect enum ScenarioValue: Codable, Equatable, Sendable {
     }
 }
 
+/// Business-value matching is separate from immutable evidence identity. A Date
+/// returned by App Intents contains an instant, not the author's source text or
+/// time zone. Keep those fields in Codable/Equatable and frozen digests.
+enum ScenarioValueComparison {
+    static func matches(_ actual: ScenarioValue?, _ expected: ScenarioValue?) -> Bool {
+        guard let actual, let expected else { return false }
+        switch (actual, expected) {
+        case (.date(let actual), .date(let expected)):
+            return actual.resolvedInstant == expected.resolvedInstant
+        case (.array(let actual), .array(let expected)):
+            return actual.count == expected.count
+                && zip(actual, expected).allSatisfy { matches($0.0, $0.1) }
+        default:
+            return actual == expected
+        }
+    }
+
+    static func parametersMatch(
+        _ actual: [String: ScenarioValue], _ expected: [String: ScenarioValue]
+    ) -> Bool {
+        actual.count == expected.count && expected.allSatisfy { key, value in
+            matches(actual[key], value)
+        }
+    }
+}
+
 enum ScenarioParameterPresence: Codable, Equatable, Sendable {
     case missing
     case value(ScenarioValue)

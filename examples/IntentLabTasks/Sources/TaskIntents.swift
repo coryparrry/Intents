@@ -10,6 +10,7 @@ struct TaskEntity: AppEntity, Identifiable {
     @Property(title: "Action receipt") var actionReceiptID: String
 #if DEBUG
     @Property(title: "Action receipts") var actionReceipts: String
+    @Property(title: "Fixture content digest") var fixtureDigest: String
 #endif
     @Property(title: "Integration context") var integrationContext: String
 
@@ -23,7 +24,7 @@ struct TaskEntity: AppEntity, Identifiable {
         )
     }
 
-    init(snapshot: TaskSnapshot, integrationContext: String = "", actionReceipts: String = "[]") {
+    init(snapshot: TaskSnapshot, integrationContext: String = "", actionReceipts: String = "[]", fixtureDigest: String = "") {
         id = snapshot.id
         title = snapshot.title
         isComplete = snapshot.isComplete
@@ -32,8 +33,9 @@ struct TaskEntity: AppEntity, Identifiable {
         actionReceiptID = snapshot.actionReceiptID
 #if DEBUG
         self.actionReceipts = actionReceipts
+        self.fixtureDigest = fixtureDigest
 #else
-        _ = actionReceipts
+        _ = (actionReceipts, fixtureDigest)
 #endif
         self.integrationContext = integrationContext
     }
@@ -47,6 +49,7 @@ struct TaskEntity: AppEntity, Identifiable {
         actionReceiptID = ""
 #if DEBUG
         actionReceipts = "[]"
+        fixtureDigest = ""
 #endif
         integrationContext = ""
     }
@@ -57,11 +60,13 @@ struct TaskEntityQuery: EntityStringQuery {
         let integrationContext = await TaskRepository.shared.integrationContextForEntity
 #if DEBUG
         let actionReceipts = await TaskActionReceipts.json
+        let fixtureDigest = try await TaskRepository.shared.integrationFixtureDigest
 #else
         let actionReceipts = "[]"
+        let fixtureDigest = ""
 #endif
         return try await TaskRepository.shared.persistedTasks(identifiers: identifiers).map {
-            TaskEntity(snapshot: $0, integrationContext: integrationContext, actionReceipts: actionReceipts)
+            TaskEntity(snapshot: $0, integrationContext: integrationContext, actionReceipts: actionReceipts, fixtureDigest: fixtureDigest)
         }
     }
 
@@ -70,11 +75,13 @@ struct TaskEntityQuery: EntityStringQuery {
         let integrationContext = await TaskRepository.shared.integrationContextForEntity
 #if DEBUG
         let actionReceipts = await TaskActionReceipts.json
+        let fixtureDigest = try await TaskRepository.shared.integrationFixtureDigest
 #else
         let actionReceipts = "[]"
+        let fixtureDigest = ""
 #endif
         return try await TaskRepository.shared.persistedTasks(identifiers: matchingIDs).map {
-            TaskEntity(snapshot: $0, integrationContext: integrationContext, actionReceipts: actionReceipts)
+            TaskEntity(snapshot: $0, integrationContext: integrationContext, actionReceipts: actionReceipts, fixtureDigest: fixtureDigest)
         }
     }
 
@@ -83,11 +90,13 @@ struct TaskEntityQuery: EntityStringQuery {
         let integrationContext = await TaskRepository.shared.integrationContextForEntity
 #if DEBUG
         let actionReceipts = await TaskActionReceipts.json
+        let fixtureDigest = try await TaskRepository.shared.integrationFixtureDigest
 #else
         let actionReceipts = "[]"
+        let fixtureDigest = ""
 #endif
         return try await TaskRepository.shared.persistedTasks(identifiers: allIDs).map {
-            TaskEntity(snapshot: $0, integrationContext: integrationContext, actionReceipts: actionReceipts)
+            TaskEntity(snapshot: $0, integrationContext: integrationContext, actionReceipts: actionReceipts, fixtureDigest: fixtureDigest)
         }
     }
 }

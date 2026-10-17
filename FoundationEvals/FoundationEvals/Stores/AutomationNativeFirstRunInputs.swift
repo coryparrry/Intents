@@ -90,12 +90,13 @@ extension AppAutomationStore {
         let queryPlan: AutomationCase
         do { queryPlan = try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: text, approval: approval) }
         catch { message = errorText(error); return }
+        do { try beginExecutionAdmission() } catch { message = errorText(error); return }
         invalidatePendingCommand()
         progress = "Reading real records from this app…"; message = nil
         firstRunEntityChoices[actionID]?[parameter.name] = nil
         firstRunSelectedEntityIDs[actionID]?[parameter.name] = nil
         task = Task {
-            defer { progress = nil; task = nil; releaseScopeIfClosing() }
+            defer { progress = nil; task = nil; releaseScopeIfClosing(); finishExecutionAdmission() }
             var queryStarted = false
             do {
                 try Task.checkCancellation()

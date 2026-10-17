@@ -24,6 +24,39 @@ import XCTest
         model.entityQueryTexts["task"] = "Send invoice"; model.effectChoice = "fixture"; model.effectsConfirmed = true; model.disposable = true
         return (model, prepared, parameter)
     }
+    func testQueryAdmissionRejectsOtherRoutesAndKeepsUnreleasedOwnershipAfterSelectionChanges() async throws {
+        let counter = QueryInvocationCounter(), gate = EntityQueryGate()
+        let (model, _, parameter) = try fixture { prepared, entity, _, approval, attemptID, _, _ in
+            await counter.record(attemptID)
+            await gate.hold()
+            return try Self.result(prepared: prepared, entity: entity, approval: approval, attemptID: attemptID, released: false)
+        }
+        await model.ownershipRecoveryTask?.value
+        var otherRouteActive = true
+        var blocked = false
+        model.executionCanStart = { !otherRouteActive }
+        model.executionOwnershipChanged = { blocked = $0 }
+        XCTAssertFalse(model.canFindEntities(parameter))
+        await model.findEntities(parameter)
+        let rejectedCalls = await counter.calls
+        XCTAssertEqual(rejectedCalls, 0)
+        XCTAssertFalse(blocked)
+
+        otherRouteActive = false
+        let query = Task { await model.findEntities(parameter) }
+        await gate.waitUntilEntered()
+        XCTAssertTrue(blocked)
+        model.entityQueryTexts["task"] = "Changed"
+        model.entityQueryChanged("task")
+        await gate.release(); await query.value
+        XCTAssertFalse(model.busy)
+        XCTAssertEqual(model.entityQueryReport?.resourcesReleased, false)
+        XCTAssertTrue(blocked)
+        XCTAssertFalse(model.canFindEntities(parameter))
+        model.workflowSelectionChanged()
+        XCTAssertTrue(blocked)
+        XCTAssertFalse(model.canRun)
+    }
     func testSuccessfulAndStaleUnresolvedQueryReportsBothReachNativeEvidenceImporter() async throws {
         let imported = QueryEvidenceImports()
         let (model, _, parameter) = try fixture(evidenceImporter: { plan, report, _, _ in try await imported.record(plan, report) }) {

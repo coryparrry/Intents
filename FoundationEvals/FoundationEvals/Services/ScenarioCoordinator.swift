@@ -6,7 +6,7 @@ import IntentsAutomationCore
 /// Admission shared by scenario orchestration and ordinary evaluation starts.
 /// A child feature run carries its parent's owner ID, so it can use the same
 /// destination without opening a competing top-level execution.
-@MainActor
+@MainActor @Observable
 final class ScenarioExecutionAdmission {
     static let shared = ScenarioExecutionAdmission()
     private(set) var ownerID: UUID?
@@ -26,6 +26,10 @@ final class ScenarioExecutionAdmission {
 
     func allows(_ requestedID: UUID?) -> Bool {
         automationOwners.isEmpty && (ownerID == nil || (requestedID != nil && ownerID == requestedID))
+    }
+
+    func allowsAutomation(_ requestedID: UUID) -> Bool {
+        ownerID == nil && automationOwners.isSubset(of: [requestedID])
     }
 
     func release(_ requestedID: UUID) {

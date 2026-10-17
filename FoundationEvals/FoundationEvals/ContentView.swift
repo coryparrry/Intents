@@ -16,7 +16,9 @@ struct ContentView: View {
         let control = control ?? EvaluationAppControl(store: store)
         _productionWorkspace = State(initialValue: control.production)
         _scenarioCoordinator = State(initialValue: control.scenarios)
-        _automationStore = State(initialValue: automationStore ?? AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"), telemetry: store.telemetry))
+        let automationStore = automationStore ?? AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"), telemetry: store.telemetry)
+        control.bindAutomationExecution(automationStore)
+        _automationStore = State(initialValue: automationStore)
     }
 
     var body: some View {
@@ -29,10 +31,6 @@ struct ContentView: View {
         .toolbar(removing: .title)
         .background { SuiteAutosaveObserver(store: store) }
         .task {
-            automationStore.pairedClient = runners.client
-            automationStore.pairedCanStart = { ScenarioExecutionAdmission.shared.allows(nil) && runners.executingRunID == nil && !store.hasActiveExecution && !runners.automationExecutionBlocked }
-            automationStore.pairedOwnershipChanged = { runners.automationExecutionBlocked = $0 }
-            await automationStore.restorePairedOwnership()
             await automationStore.migrateEvidenceHistory()
             #if DEBUG
             if !appliedAutomationLaunchSelection {

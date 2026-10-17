@@ -110,8 +110,10 @@ extension AppAutomationStore {
         guard !busy, !closingForOwnershipRecovery else { return }
         await ownershipRecoveryTask?.value
         guard !busy, !closingForOwnershipRecovery else { return }
+        do { try beginExecutionAdmission(allowingRecovery: true) }
+        catch { recoveryError = errorText(error); return }
         progress = "Resetting device ownership…"; recoveryError = nil
-        defer { progress = nil }
+        defer { progress = nil; finishExecutionAdmission() }
         do {
             let leases = try AutomationDeviceLeaseManager(storeURL: support.appendingPathComponent("target-leases.json"))
             let records = try await leases.recoveryRecords().filter { !$0.runID.hasPrefix("intent-lab-") }

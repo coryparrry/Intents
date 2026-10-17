@@ -502,7 +502,9 @@ struct ScenarioV3HarnessBridgeTests {
 
         let scope = ScenarioNativeExecutionScope(lane: .intentIntegration, attempt: 1)
         var invocation = boundInvocation(for: definition)
-        invocation.requiredCapabilities = ScenarioHarnessCapabilities.required(for: definition, scope: scope).sorted()
+        invocation.requiredCapabilities = ScenarioHarnessCapabilities.required(
+            for: definition, scope: scope, featureBackend: .projectLocalTestControl
+        ).sorted()
         var journal = executionJournal(for: definition, invocation: invocation)
         journal.scope = scope
         var envelope = evidence(for: definition, invocation: invocation)

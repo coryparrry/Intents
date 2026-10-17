@@ -1793,6 +1793,7 @@ final class EvaluationStore {
     ) async throws -> EvaluationRun {
         // The legacy feature protocol carries one prompt and instructions. Do
         // not record unsent references or conversation history as tested inputs.
+        try EvaluationDeveloperFeatureAdapter.validate(feature)
         if let issue = developerFeatureValidationIssue(for: suite) {
             throw EvaluationStoreError.invalidSuite(issue)
         }

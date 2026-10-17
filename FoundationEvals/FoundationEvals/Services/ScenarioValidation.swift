@@ -602,7 +602,9 @@ enum ScenarioResultEvaluator {
         guard topLevel.allSatisfy({
             $0.kind == requirement.kind && $0.operationID == requirement.operationID
         }) else { return (.failed, .wrongAction) }
-        guard topLevel.allSatisfy({ $0.resolvedParameters == requirement.resolvedParameters }) else {
+        guard topLevel.allSatisfy({ ScenarioValueComparison.parametersMatch(
+            $0.resolvedParameters, requirement.resolvedParameters
+        ) }) else {
             return (.failed, .wrongParameter)
         }
         guard topLevel.allSatisfy({ $0.terminalStatus == .succeeded }) else {
@@ -655,10 +657,10 @@ enum ScenarioResultEvaluator {
             let hasBaseline = definition.schemaVersion != ScenarioDefinition.stableSchemaVersion
                 || assertion.kind != .noMutation
                 || beforeObservations?[assertion.observationKey] != nil
-            let passed = observed == assertion.expectedValue
+            let passed = ScenarioValueComparison.matches(observed, assertion.expectedValue)
                 && (definition.schemaVersion != ScenarioDefinition.stableSchemaVersion
                     || assertion.kind != .noMutation
-                    || beforeObservations?[assertion.observationKey] == observed)
+                    || ScenarioValueComparison.matches(beforeObservations?[assertion.observationKey], observed))
             return .init(
                 assertionID: assertion.id,
                 passed: passed,
@@ -821,7 +823,7 @@ enum ScenarioResultEvaluator {
                 && receipts.allSatisfy({ $0.lane == result.lane && $0.attempt == result.attempt })
                 && topLevel.allSatisfy({
                     $0.kind == requirement.kind && $0.operationID == requirement.operationID
-                        && $0.resolvedParameters == requirement.resolvedParameters
+                        && ScenarioValueComparison.parametersMatch($0.resolvedParameters, requirement.resolvedParameters)
                         && $0.terminalStatus == .succeeded && $0.operationError == nil
                 })
         }
@@ -841,10 +843,10 @@ enum ScenarioResultEvaluator {
             case .uiElement: sourceMatches = source == .accessibleUI
             case .testOnlyIntent: sourceMatches = source == .testOnlyIntent || source == .applicationInstrumentation
             }
-            guard sourceMatches, observed == assertion.expectedValue else { return false }
+            guard sourceMatches, ScenarioValueComparison.matches(observed, assertion.expectedValue) else { return false }
             if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
                assertion.kind == .noMutation,
-               result.beforeObservations?[assertion.observationKey] != observed {
+               !ScenarioValueComparison.matches(result.beforeObservations?[assertion.observationKey], observed) {
                 return false
             }
             switch claim {

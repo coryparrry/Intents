@@ -915,9 +915,9 @@ struct IntentEvidenceBundleTests {
         )
         let batchAssessment = ScenarioCollectionService.assess(
             manifest: manifest, collection: collection, result: result,
-            runs: first.runs + second.runs
+            runs: first.runs + second.runs, journals: first.journals + second.journals
         )
-        #expect(batchAssessment.qualification == .failedFull)
+        #expect(batchAssessment.qualification == .incomplete)
         let trusted = IntentEvidenceRequirements(
             collectionID: collection.id.uuidString,
             cases: [

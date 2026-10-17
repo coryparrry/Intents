@@ -17,6 +17,31 @@ public indirect enum IntentLabValue: Codable, Equatable {
     case array([IntentLabValue])
 }
 
+/// Compare business values without discarding the metadata retained in the
+/// encoded evidence. Returned Dates carry the instant, not the author's zone.
+public enum IntentLabValueComparison {
+    public static func matches(_ actual: IntentLabValue?, _ expected: IntentLabValue?) -> Bool {
+        guard let actual, let expected else { return false }
+        switch (actual, expected) {
+        case (.date(let actual), .date(let expected)):
+            return actual.resolvedInstant == expected.resolvedInstant
+        case (.array(let actual), .array(let expected)):
+            return actual.count == expected.count
+                && zip(actual, expected).allSatisfy { matches($0.0, $0.1) }
+        default:
+            return actual == expected
+        }
+    }
+
+    public static func parametersMatch(
+        _ actual: [String: IntentLabValue], _ expected: [String: IntentLabValue]
+    ) -> Bool {
+        actual.count == expected.count && expected.allSatisfy { key, value in
+            matches(actual[key], value)
+        }
+    }
+}
+
 public struct IntentLabDateValue: Codable, Equatable {
     public var source: String
     public var timeZoneIdentifier: String
@@ -659,7 +684,7 @@ public enum IntentLabReturnedValueProof {
             assertion.required && assertion.kind == .returnedField
                 && resultKeys.contains(assertion.observationKey)
                 && observations[assertion.observationKey] != nil
-                && observations[assertion.observationKey] == assertion.expectedValue
+                && IntentLabValueComparison.matches(observations[assertion.observationKey], assertion.expectedValue)
                 && checks.contains { $0.assertionID == assertion.id && $0.passed }
         }
     }

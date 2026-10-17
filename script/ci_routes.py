@@ -250,6 +250,7 @@ RELEASE_VALIDATION = {
     "script.tests.test_release_dispatch",
 }
 PYTHON_DEPENDENCIES = {
+    "script/upload_posthog_symbols.sh": {"script.tests.test_upload_posthog_symbols"},
     "script/update_homebrew.py": {"script.tests.test_update_homebrew"},
     ".github/workflows/update-homebrew.yml": {"script.tests.test_update_homebrew"},
     "script/check_fixture_shortcut_metadata.py": {"script.tests.test_fixture_shortcut_metadata"},

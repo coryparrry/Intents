@@ -46,6 +46,7 @@ final class FoundationEvalsMCPRuntime {
         self.control = control ?? EvaluationAppControl(store: store)
         self.automationStore = automationStore
         self.serverFactory = serverFactory
+        if let automationStore { self.control.bindAutomationExecution(automationStore) }
     }
 
     func start(_ configuration: CodexMCPConfiguration) async throws {
@@ -92,12 +93,14 @@ final class FoundationEvalsMCPRuntime {
     func prepareForTermination() async {
         isClosing = true
         store.beginClosing()
+        control.mcp.beginClosing()
         await stop()
         await automationStore?.closeAndWait()
         await control.runners.closeAndWait()
         await control.scenarios.closeAndWait()
         await control.production.closeAndWait()
         await store.closeAndWait()
+        await control.mcp.closeAndWait()
     }
 
     private func serverDidStop(generation: UUID, error: MCPServerError) {

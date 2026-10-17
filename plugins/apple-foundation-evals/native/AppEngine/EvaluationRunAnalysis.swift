@@ -357,21 +357,45 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
     private static func incompatibilities(current: EvaluationRun, baseline: EvaluationRun) -> [String] {
         var reasons: [String] = []
         if current.suiteID != baseline.suiteID { reasons.append("The runs belong to different suites.") }
-        if current.scoringMode != baseline.scoringMode { reasons.append("The scoring mode changed.") }
-        if current.scoringMode == .modelJudge, baseline.scoringMode == .modelJudge {
-            if normalizedRubric(current.criteria) != normalizedRubric(baseline.criteria) {
+        guard let currentScoring = comparisonScoringContract(for: current),
+              let baselineScoring = comparisonScoringContract(for: baseline) else {
+            reasons.append("The selected assessment's scoring conditions are unavailable or inconsistent with this run.")
+            return reasons
+        }
+        if currentScoring.scoringMode != baselineScoring.scoringMode { reasons.append("The scoring mode changed.") }
+        if currentScoring.scoringMode == .modelJudge, baselineScoring.scoringMode == .modelJudge {
+            if currentScoring.rubricCriteria != baselineScoring.rubricCriteria {
                 reasons.append("The scoring rubric changed.")
             }
-            if current.judgePromptVersion != baseline.judgePromptVersion {
+            if currentScoring.judgePromptVersion != baselineScoring.judgePromptVersion {
                 reasons.append("The judge prompt policy changed.")
             }
-            let currentPassingScore = current.judgePassingScore ?? EvaluationSuite.judgePassingScore
-            let baselinePassingScore = baseline.judgePassingScore ?? EvaluationSuite.judgePassingScore
-            if currentPassingScore != baselinePassingScore {
+            if currentScoring.judgePassingScore != baselineScoring.judgePassingScore {
                 reasons.append("The judge passing score changed.")
             }
         }
         return reasons
+    }
+
+    private static func comparisonScoringContract(for run: EvaluationRun) -> EvaluationScoringContract? {
+        guard let assessment = run.selectedAssessment else {
+            // An explicit missing selection must not fall back to the original score set.
+            guard run.selectedAssessmentID == nil else { return nil }
+            return try? EvaluationScoringContract(run: run)
+        }
+        guard assessment.runID == run.id else { return nil }
+        let semantic = run.scoringMode == .modelJudge
+        let derived = try? EvaluationScoringContract(
+            scoringMode: run.scoringMode,
+            rubricCriteria: semantic ? normalizedRubric(assessment.rubric) : [],
+            judgePromptVersion: semantic ? assessment.promptVersion : nil,
+            judgePassingScore: semantic ? assessment.passingScore : nil,
+            cases: run.plannedCases ?? run.suiteDefinition?.cases ?? []
+        )
+        // Older assessments predate captured contracts but still retain their
+        // rubric and judge policy. Newer contracts must agree with that evidence.
+        guard let captured = assessment.scoringContract else { return derived }
+        return captured == derived ? captured : nil
     }
 
     private static func normalizedRubric(_ rubric: String) -> [String] {

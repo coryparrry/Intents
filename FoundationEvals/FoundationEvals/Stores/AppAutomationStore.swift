@@ -39,13 +39,20 @@ final class AppAutomationStore {
     var catalog: ApplicationSurfaceCatalog?
     var pairedClient: DeveloperRunnerClient?
     var pairedCanStart: (@MainActor () -> Bool)?
-    var pairedOwnershipChanged: (@MainActor (Bool) -> Void)?
+    let executionAdmissionOwnerID = UUID()
+    var executionCanStart: (@MainActor () -> Bool)?
+    var executionOwnershipChanged: (@MainActor (Bool) -> Void)? {
+        didSet { publishedExecutionBlock = nil; publishExecutionOwnership() }
+    }
+    @ObservationIgnored private var executionAdmissionHeld = false
+    @ObservationIgnored private var initialOwnershipCheckPending = true
+    @ObservationIgnored private var publishedExecutionBlock: Bool?
     var pairedFeatureID = ""
     var pairedPrompt = ""
     var pairedInstructions = ""
     var pairedExpectedResponse = ""
     var pairedEffectsConfirmed = false
-    var pairedExecutionUnresolved = false
+    var pairedExecutionUnresolved = false { didSet { publishExecutionOwnership() } }
     var firstRunIncludesActions = false
     var firstRunEffectsConfirmed = false
     var firstRunReports: [AutomationAttemptReport] = []
@@ -63,8 +70,8 @@ final class AppAutomationStore {
     var selectedEntityIDs: [String: String] = [:]
     var entityExpectedBooleans: [String: String] = [:]
     var protectedEntityIDs: [String: Set<String>] = [:]
-    var entityQueryReport: AutomationAttemptReport?
-    var unresolvedEntityQueryAttemptID: String?
+    var entityQueryReport: AutomationAttemptReport? { didSet { publishExecutionOwnership() } }
+    var unresolvedEntityQueryAttemptID: String? { didSet { publishExecutionOwnership() } }
     let entityQueryExecutor: AutomationNativeEntityQueryExecutor?
     var effectChoice = ""
     var effectsConfirmed = false
@@ -112,13 +119,13 @@ final class AppAutomationStore {
     var uiExpectedText = ""
     var uiObservationLabel = ""
     var uiObservationProperty = "text"
-    var searchReport: AutomationFailureSearchReport?
+    var searchReport: AutomationFailureSearchReport? { didSet { publishExecutionOwnership() } }
     var savedSearches: [AutomationUIFailureSearchRecord] = []
     var viewedSearch: AutomationUIFailureSearchRecord?
-    var reproductionReport: AutomationReproductionReport?
+    var reproductionReport: AutomationReproductionReport? { didSet { publishExecutionOwnership() } }
     var savedReproductions: [AutomationReproductionReport] = []
     var viewedReproduction: AutomationReproductionReport?
-    var comparisonReport: AutomationFixComparisonReport?
+    var comparisonReport: AutomationFixComparisonReport? { didSet { publishExecutionOwnership() } }
     var savedComparisons: [AutomationFixComparisonReport] = []
     var viewedComparison: AutomationFixComparisonReport?
     private var fixedBundleURL: URL?
@@ -145,11 +152,11 @@ final class AppAutomationStore {
     private(set) var retainedUnresolvedNormalReport: AutomationAttemptReport?
     private(set) var retainedUnresolvedNormalTarget: TargetIdentity?
     /// Actual destinations of finished requests whose reports or reservations remain unresolved.
-    private(set) var retainedUnresolvedRequestTargets: [String: TargetIdentity] = [:]
+    private(set) var retainedUnresolvedRequestTargets: [String: TargetIdentity] = [:] { didSet { publishExecutionOwnership() } }
     @ObservationIgnored var ownershipRecoveryTask: Task<Void, Never>?
     let recoverySimulatorShutdown: @Sendable (TargetIdentity, URL, URL) async throws -> Void
-    var recoveryItems: [AutomationNativeRecoveryItem] = []
-    var recoveryError: String?
+    var recoveryItems: [AutomationNativeRecoveryItem] = [] { didSet { publishExecutionOwnership() } }
+    var recoveryError: String? { didSet { publishExecutionOwnership() } }
     var recoveryLoading = false
     var closingForOwnershipRecovery: Bool { closing }
     var report: AutomationAttemptReport? {
@@ -159,6 +166,7 @@ final class AppAutomationStore {
                 retainedUnresolvedNormalTarget = prepared?.host.target ?? sourcePreparationTarget
                     ?? (isInstalledUI && UUID(uuidString: simulatorID) != nil ? .init(id: simulatorID, kind: .simulator) : selectedMacTarget)
             }
+            publishExecutionOwnership()
         }
     }
     private let evidenceImporter: (@Sendable (AutomationCase, AutomationAttemptReport, URL, AutomationEvidenceExposure) async throws -> AutomationNativeEvidenceDocument)?
@@ -283,11 +291,43 @@ final class AppAutomationStore {
         support = supportDirectory; self.entityQueryExecutor = entityQueryExecutor; self.comparisonExecutor = comparisonExecutor; self.savedAttemptsReader = savedAttemptsReader
         self.savedCasesReader = savedCasesReader; self.runExecutor = runExecutor; self.siriSearchExecutor = siriSearchExecutor
         self.reproductionExecutor = reproductionExecutor; self.reproductionPreflightReader = reproductionPreflightReader
-        ownershipRecoveryTask = Task { [weak self] in await self?.reconcileAbandonedOwnership() }
+        ownershipRecoveryTask = Task { [weak self] in
+            guard let self else { return }
+            await reconcileAbandonedOwnership()
+            await restorePairedOwnership()
+            initialOwnershipCheckPending = false
+            publishExecutionOwnership()
+        }
         loadRecentApplications()
         restoreLatestPreparation()
     }
     var busy: Bool { progress != nil }
+    /// This process shares admission with Intent Lab and ordinary evaluations.
+    /// Durable target ownership remains in each engine's own lease store.
+    var permitsExecutionAdmission: Bool {
+        if executionAdmissionHeld { return true }
+        guard executionCanStart?() != false else { return false }
+        return executionOwnershipChanged == nil || (!initialOwnershipCheckPending && recoveryError == nil && !hasUnresolvedOwnership)
+    }
+    func beginExecutionAdmission(allowingRecovery: Bool = false) throws {
+        guard !executionAdmissionHeld, !closing, executionCanStart?() != false,
+              allowingRecovery || permitsExecutionAdmission else {
+            throw AutomationContractError.targetBusy
+        }
+        executionAdmissionHeld = true
+        publishExecutionOwnership()
+    }
+    func finishExecutionAdmission() {
+        executionAdmissionHeld = false
+        publishExecutionOwnership()
+    }
+    private func publishExecutionOwnership() {
+        guard let executionOwnershipChanged else { return }
+        let blocked = executionAdmissionHeld || initialOwnershipCheckPending || hasUnresolvedOwnership || recoveryError != nil
+        guard publishedExecutionBlock != blocked else { return }
+        publishedExecutionBlock = blocked
+        executionOwnershipChanged(blocked)
+    }
     var candidate: AutomationApplicationCandidate? { intake?.candidates.first { $0.id == candidateID } }
     var action: ApplicationSurfaceCatalog.SystemAction? { catalog?.systemActions.first { $0.id == actionID } }
     var canPrepare: Bool { !busy && !closing && candidate?.kind == .sourceTarget && !configuration.isEmpty && sourcePreparationTarget != nil && ((servedJavaScriptProfile == nil && automaticMetroRecipe == nil) || preparationDestination == .simulator) }
@@ -299,7 +339,7 @@ final class AppAutomationStore {
     }
     var isUIWorkflow: Bool { isInstalledUI || isInstalledMacUI || (candidate?.kind == .sourceTarget && workflowRoute == "ui") }
     var canRun: Bool {
-        guard !closing, !pairedExecutionUnresolved, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery else { return false }
+        guard permitsExecutionAdmission, !closing, !pairedExecutionUnresolved, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery else { return false }
         if isSiriWorkflow { return canRunSiriSubmission }
         guard prepared?.host.target.kind != .nativeMac, candidate?.kind != .sourceTarget || preparationDestination == .simulator else { return false }
         if isUIWorkflow {
@@ -359,7 +399,7 @@ final class AppAutomationStore {
     }
     var canReproduceSavedFailure: Bool { canUseSavedFailure(commandKind: .reproduction) }
     private func canUseSavedFailure(commandKind: AutomationNativeCommandKind) -> Bool {
-        guard !busy, !closing, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery, permitsSavedWorkflow,
+        guard permitsExecutionAdmission, !busy, !closing, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery, permitsSavedWorkflow,
               pendingCommandStatus == nil || pendingCommandStatus?.kind == commandKind,
               effectsConfirmed, let frozen = savedViewedCase,
               let original = savedViewedReport else { return false }
@@ -373,12 +413,13 @@ final class AppAutomationStore {
         guard canReproduceSavedFailure else { return }
         let commandID = pendingCommand
         guard commandID == nil || commandRequests[commandID!]?.kind == .reproduction else { return }
+        do { try beginExecutionAdmission() } catch { message = errorText(error); return }
         let runID = commandID?.uuidString ?? UUID().uuidString
         pendingCommand = nil; activeCommand = commandID
         if let commandID { commandRequests[commandID]?.state = "running" }
         progress = "Verifying the saved failure…"; message = nil
         task = Task {
-            defer { progress = nil; task = nil; activeCommand = nil; releaseScopeIfClosing() }
+            defer { progress = nil; task = nil; activeCommand = nil; releaseScopeIfClosing(); finishExecutionAdmission() }
             var executedRequest: (String, TargetIdentity)?
             do {
                 let request = try await makeReproductionRequest(runID: runID)
@@ -490,7 +531,7 @@ final class AppAutomationStore {
         entityExpectedBooleans = entityExpectedBooleans.filter { !$0.key.hasPrefix(parameter + ".") }
     }
     func canFindEntities(_ parameter: ApplicationSurfaceCatalog.SystemAction.Parameter) -> Bool {
-        !busy && !closing && !pairedExecutionUnresolved && !unresolvedNormalAttempt && !unresolvedEntityQuery && !unresolvedSearch && !unresolvedReproduction && !unresolvedComparison &&
+        permitsExecutionAdmission && !busy && !closing && !pairedExecutionUnresolved && !unresolvedNormalAttempt && !unresolvedEntityQuery && !unresolvedSearch && !unresolvedReproduction && !unresolvedComparison &&
             pendingCommand == nil && !isUIWorkflow && preparedUISelectionMatches && parameter.family == "entity" && entityDefinition(parameter) != nil &&
             entityDefinition(parameter).map { AutomationEntityQuery.acceptsQuery(entity: $0, text: $0.usesSuggestedQuery ? "" : entityQueryTexts[parameter.name] ?? "") } == true
     }
@@ -507,10 +548,11 @@ final class AppAutomationStore {
         let queryPlan: AutomationCase
         do { queryPlan = try AutomationEntityQuery.plan(prepared: prepared, entity: entity, text: text, approval: approval) }
         catch { message = errorText(error); return }
+        do { try beginExecutionAdmission() } catch { message = errorText(error); return }
         progress = "Reading real records from this app…"; message = nil
         entityChoices[parameter.name] = nil; selectedEntityIDs[parameter.name] = nil; protectedEntityIDs[parameter.name] = nil
         task = Task {
-            defer { progress = nil; task = nil; releaseScopeIfClosing() }
+            defer { progress = nil; task = nil; releaseScopeIfClosing(); finishExecutionAdmission() }
             do {
                 let result: AutomationEntityQueryResult
                 if let entityQueryExecutor { result = try await entityQueryExecutor(prepared, entity, text, approval, attemptID, install, support) }
@@ -620,12 +662,13 @@ final class AppAutomationStore {
         guard canCheckFix else { return }
         let commandID = pendingCommand
         guard commandID == nil || commandRequests[commandID!]?.kind == .fixComparison else { return }
+        do { try beginExecutionAdmission() } catch { message = errorText(error); return }
         let runID = commandID?.uuidString ?? UUID().uuidString
         pendingCommand = nil; activeCommand = commandID
         if let commandID { commandRequests[commandID]?.state = "running" }
         progress = "Verifying both retained builds…"; message = nil
         task = Task {
-            defer { progress = nil; task = nil; activeCommand = nil; clearFixedSelection(); releaseScopeIfClosing() }
+            defer { progress = nil; task = nil; activeCommand = nil; clearFixedSelection(); releaseScopeIfClosing(); finishExecutionAdmission() }
             var executedRequests: [(String, TargetIdentity)] = []
             do {
                 let request = try await makeComparisonRequest(runID: runID)
@@ -921,6 +964,7 @@ final class AppAutomationStore {
                     throw AutomationContractError.conflictingOperation
                 }
             }
+            try beginExecutionAdmission()
         } catch { message = errorText(error); return }
         pendingCommand = nil; activeCommand = commandID
         if let commandID { commandRequests[commandID]?.state = "running" }
@@ -935,7 +979,7 @@ final class AppAutomationStore {
         }
         let finishTelemetry = telemetry?.beginAutomationRun()
         task = Task {
-            defer { progress = nil; task = nil; activeCommand = nil; releaseScopeIfClosing() }
+            defer { progress = nil; task = nil; activeCommand = nil; releaseScopeIfClosing(); finishExecutionAdmission() }
             do {
                 reportDirectory = support.appendingPathComponent(attemptID)
                 let result: AutomationAttemptReport
@@ -1082,6 +1126,7 @@ final class AppAutomationStore {
         if unresolvedSearch { searchReport = nil }
         if unresolvedReproduction { reproductionReport = nil }
         if unresolvedComparison { comparisonReport = nil }
+        publishExecutionOwnership()
     }
     /// Cancels a view-owned preview only; another pending or running operation keeps its ownership.
     func cancelRequestVerification() { requestVerificationCancellationID = UUID() }

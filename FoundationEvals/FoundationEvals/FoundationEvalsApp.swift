@@ -34,6 +34,7 @@ struct FoundationEvalsApp: App {
             evidenceImporter: { plan, report, source, exposure in
                 try await nativeEvidence.importAutomationEvidence(plan: plan, report: report, sourceRoot: source, exposure: exposure)
             })
+        control.bindAutomationExecution(automationStore)
         let runtime = FoundationEvalsMCPRuntime(store: store, control: control, automationStore: automationStore)
         let settings = MCPSettingsController(
             serverControl: MCPServerControl(

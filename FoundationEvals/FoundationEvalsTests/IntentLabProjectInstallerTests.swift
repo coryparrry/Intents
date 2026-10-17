@@ -773,11 +773,22 @@ struct IntentLabProjectInstallerTests {
             "capabilities": ["direct-intent-execution", "environment-payload"],
         ]
         let consumerSource = IntentLabConsumerTemplates.basic
-        let packageURL = URL(filePath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let remoteRevision = ProcessInfo.processInfo.environment["INTENT_LAB_CONSUMER_REVISION"]
+        let packageURL: URL
+        if let remoteRevision {
+            try #require(remoteRevision.range(of: "^[a-f0-9]{40}$", options: .regularExpression) != nil)
+            let remoteURL = ProcessInfo.processInfo.environment["INTENT_LAB_CONSUMER_PACKAGE_URL"]
+                ?? IntentLabPackageRevisionManifest.packageURL.absoluteString
+            packageURL = try #require(URL(string: remoteURL))
+            try #require(packageURL.scheme == "https" && packageURL.host == "github.com")
+        } else {
+            packageURL = URL(filePath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        }
         let request = IntentLabInstallationRequest(
             projectURL: project, scheme: "IntentLabMacInstallerFixture",
             applicationTargetID: appTarget.id, packageURL: packageURL,
+            packageRevision: remoteRevision,
             packageProduct: "IntentLabTesting", consumerSource: consumerSource,
             declarationData: try IntentLabConsumerTemplates.basicDeclarationData(declaration))
         let installer = IntentLabProjectInstaller()
@@ -793,6 +804,70 @@ struct IntentLabProjectInstallerTests {
             "-derivedDataPath", root.appending(path: "DerivedData").path,
             "CODE_SIGNING_ALLOWED=NO", "-quiet",
         ], in: root)
+        if let remoteRevision {
+            func requirePinnedRevision(at resolvedURL: URL) throws {
+                let resolved = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: resolvedURL)) as? [String: Any])
+                let pins = try #require(resolved["pins"] as? [[String: Any]])
+                let packagePins = pins.filter { $0["location"] as? String == packageURL.absoluteString }
+                try #require(packagePins.count == 1)
+                let state = try #require(packagePins.first?["state"] as? [String: Any])
+                try #require(state["revision"] as? String == remoteRevision)
+            }
+            try requirePinnedRevision(at: project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"))
+
+            // Use a second, independent package graph to exercise the paired SDK
+            // and its public capture export, including every transitive target.
+            let swift = try #require(Self.executable(named: "swift"))
+            let developerRoot = root.appending(path: "DeveloperConsumer")
+            let developerSources = developerRoot.appending(path: "Sources/DeveloperConsumerFixture")
+            try fileManager.createDirectory(at: developerSources, withIntermediateDirectories: true)
+            let packageName = packageURL.lastPathComponent
+            let packageIdentity = (packageName.hasSuffix(".git") ? String(packageName.dropLast(4)) : packageName).lowercased()
+            let developerManifest = """
+            // swift-tools-version: 6.2
+            import PackageDescription
+            let package = Package(
+                name: "DeveloperConsumerFixture",
+                platforms: [.macOS(.v26)],
+                dependencies: [
+                    .package(url: \(String(reflecting: packageURL.absoluteString)), revision: \(String(reflecting: remoteRevision)))
+                ],
+                targets: [
+                    .target(name: "DeveloperConsumerFixture", dependencies: [
+                        .product(name: "FoundationEvalsDeveloper", package: \(String(reflecting: packageIdentity)))
+                    ])
+                ]
+            )
+            """
+            try Data(developerManifest.utf8).write(to: developerRoot.appending(path: "Package.swift"))
+            try Data("""
+            import FoundationEvalsDeveloper
+
+            public let pairedSDKProtocolVersion = DeveloperProtocolVersion.current
+            public typealias ProductionCaptureFromPairedSDK = DeveloperProductionCapture
+            """.utf8).write(to: developerSources.appending(path: "PublicConsumer.swift"))
+            _ = try Self.run(swift, arguments: [
+                "build", "--package-path", developerRoot.path,
+                "--scratch-path", developerRoot.appending(path: ".build").path,
+                "-j", "2", "--target", "DeveloperConsumerFixture",
+            ], in: developerRoot)
+            try requirePinnedRevision(at: developerRoot.appending(path: "Package.resolved"))
+
+            if let receiptPath = ProcessInfo.processInfo.environment["INTENT_LAB_CONSUMER_BUILD_RECEIPT"] {
+                let receipt: [String: Any] = [
+                    "schemaVersion": 1,
+                    "packageURL": packageURL.absoluteString,
+                    "revision": remoteRevision,
+                    "check": "generatedMacUITestTargetBuildsWithXcode",
+                    "consumer": "external-macos-ui-test-target",
+                    "signing": "disabled",
+                    "runtime": "not-executed",
+                    "products": ["IntentLabTesting", "FoundationEvalsDeveloper"],
+                ]
+                try JSONSerialization.data(withJSONObject: receipt, options: [.sortedKeys, .prettyPrinted])
+                    .write(to: URL(filePath: receiptPath), options: .atomic)
+            }
+        }
     }
 
     @Test func unsupportedAppPlatformGetsManualGuidance() throws {

@@ -139,6 +139,7 @@ final class DeveloperRunnerStore {
                 message: "The selected feature is not available on this runner."
             )
         }
+        try EvaluationDeveloperFeatureAdapter.validate(feature)
 
         let revision = try evaluationStore.currentSuiteRevision()
         let runID = UUID()
