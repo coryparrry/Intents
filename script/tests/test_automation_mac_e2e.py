@@ -244,6 +244,35 @@ class MacExecutionTests(unittest.TestCase):
         prepare = next(args for args, _ in commands.calls if "prepare" in args)
         self.assertEqual(prepare[prepare.index("--xcode") + 1], commands.env["DEVELOPER_DIR"])
 
+    def test_incomplete_title_entry_stops_before_business_or_source_qualification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            commands = MacCommands(output)
+            original = commands.json
+            def interrupted(arguments, **options):
+                code, result = original(arguments, **options)
+                if "run" in arguments and commands.envelopes[-1]["plan"]["id"] == "phase5.mixed":
+                    result = copy.deepcopy(result)
+                    result["result"].update(summary="invalidFixture", assessed=False,
+                        subjectDispatched=False, subjectCompleted=False,
+                        subjectDispatchUncertain=True, evidenceComplete=False)
+                    result["receipts"] = [{"segmentID": "create", "dispatched": True,
+                        "completed": False, "verifiedOutputs": {"title.ready": {"kind": "bool", "value": True}}}]
+                    return 1, result
+                return code, result
+            commands.json = interrupted
+            reports = []
+            with patch.object(driver.shutil, "copytree"), patch.object(driver, "configure_fixture_signing"), \
+                    patch.object(driver, "verify_prepared_signing"), \
+                    patch.object(driver, "run_source_comparison") as comparison, \
+                    self.assertRaisesRegex(AssertionError, "Expected passed, got invalidFixture"):
+                driver.run_contract(commands, output, cli=Path("/external/cli"), reports=reports, signing=SIGNING)
+            comparison.assert_not_called()
+            self.assertEqual([item["case"] for item in reports], ["phase5.codec-1", "phase5.codec-2"])
+            failed = json.loads((output / "phase5.mixed.report.json").read_text())
+            self.assertTrue(failed["resourcesReleased"])
+            self.assertFalse(failed["result"]["subjectDispatched"])
+
     def test_no_pass_when_saved_report_is_changed_or_resource_release_is_missing(self):
         for mutation in ("saved", "release", "outputs"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:

@@ -83,11 +83,11 @@ final class UIStepTests: XCTestCase {
         case .checkFreshness: try plan.validateFreshSubject(outputs: outputs)
         case .launch:
             app.launchArguments = step.arguments ?? []; app.launchEnvironment = step.environment ?? [:]; app.launch()
-        case .tap: try element(step.query, app: app).tap()
+        case .tap: clickOrTap(try element(step.query, app: app))
         case .typeText, .clearAndType:
             let element = try element(step.query, app: app)
             guard let text = step.text ?? step.binding.flatMap({ bindings[step.segmentID + "/" + $0] }) else { throw UIHostError.bindingUnavailable }
-            element.tap()
+            clickOrTap(element)
             if step.kind == .clearAndType {
                 guard let current = element.value as? String else { throw UIHostError.missingElement }
                 // UITextInput cursor is placed explicitly; the placeholder is not entered text.
@@ -168,6 +168,15 @@ final class UIStepTests: XCTestCase {
             return try JSONDecoder().decode(UIHostValue.self, from: JSONEncoder().encode(value))
         }
         return nil
+    }
+
+    private func clickOrTap(_ element: XCUIElement) {
+        #if os(macOS)
+        // macOS text fields need mouse interaction to acquire keyboard focus.
+        element.click()
+        #else
+        element.tap()
+        #endif
     }
 
     private func boundValue(_ binding: UIHostBinding) throws -> UIHostValue {
