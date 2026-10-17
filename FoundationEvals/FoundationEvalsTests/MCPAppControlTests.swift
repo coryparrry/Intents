@@ -40,7 +40,8 @@ import Testing
       catch { observedCancellation = true }
       return .failure(code: "cancelled", message: "Cancelled during shutdown.")
     }
-    _ = await entered.stream.first(where: { _ in true })
+    var enteredIterator = entered.stream.makeAsyncIterator()
+    _ = await enteredIterator.next()
     await control.mcp.closeAndWait()
     #expect(observedCancellation)
     #expect(throws: EvaluationStoreError.self) {

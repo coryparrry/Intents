@@ -71,6 +71,7 @@ final class EvaluationStore {
     @ObservationIgnored private let onDeviceContextSizes = ModelContextSizeCache()
     private(set) var isDraftSavePending = false
     private var runTask: Task<Void, Never>?
+    private var directFeatureTask: Task<EvaluationRun, Error>?
     private var isClosing = false
     private var activeRunSuite: EvaluationSuite?
     private var activeRunEvidence: EvaluationSubjectEvidenceSnapshot?
@@ -1708,78 +1709,96 @@ final class EvaluationStore {
         isRunning = true
         completedSamples = 0
         totalSamples = suiteSnapshot.cases.count * suiteSnapshot.repetitions
-        defer {
-            isRunning = false
-            completedSamples = 0
-            totalSamples = 0
-        }
-        let repositorySnapshot: EvaluationRepositorySnapshot? = if let root = selectedProject.repository?.rootPath {
-            await EvaluationRepositoryInspector.snapshot(rootPath: root)
-        } else {
-            nil
-        }
-        var run = await featureAdapterRunner.run(
-            id: id,
-            projectID: ownerProjectID,
-            repository: repositorySnapshot,
-            suiteRevision: expectedRevision,
-            suite: suiteSnapshot,
-            adapter: adapter
-        ) { [weak self] result, completed, total in
-            await self?.checkpointSnapshotProgress(result: result, completed: completed, checkpointURL: checkpointURL)
-            await self?.updateFeatureAdapterProgress(completed: completed, total: total)
-            await progress(completed, total)
-        }
-        do {
+        let repositoryRoot = selectedProject.repository?.rootPath
+        // Direct integrations have no separate coordinator to drain their
+        // caller task. Retain ownership through the terminal history write.
+        let task = Task<EvaluationRun, Error> { @MainActor [self] in
+            defer {
+                directFeatureTask = nil
+                isRunning = false
+                completedSamples = 0
+                totalSamples = 0
+            }
+            let repositorySnapshot: EvaluationRepositorySnapshot? = if let repositoryRoot {
+                await EvaluationRepositoryInspector.snapshot(rootPath: repositoryRoot)
+            } else {
+                nil
+            }
+            var run = await featureAdapterRunner.run(
+                id: id,
+                projectID: ownerProjectID,
+                repository: repositorySnapshot,
+                suiteRevision: expectedRevision,
+                suite: suiteSnapshot,
+                adapter: adapter
+            ) { [weak self] result, completed, total in
+                await self?.checkpointSnapshotProgress(result: result, completed: completed, checkpointURL: checkpointURL)
+                await self?.updateFeatureAdapterProgress(completed: completed, total: total)
+                await progress(completed, total)
+            }
             run.subjectEvidence = evidence
             if suiteSnapshot.scoringMode == .modelJudge,
                !run.cancelled,
                run.terminationReason == nil {
-                let images = try imageInputs(
-                    for: evidence,
-                    projectID: ownerProjectID,
-                    suiteID: ownerSuiteID,
-                    runID: id
-                )
-                let assessment = try await reassessmentService.reassess(
-                    run: run,
-                    suite: suiteSnapshot,
-                    images: images,
-                    resolved: featureJudge,
-                    scoringContract: try? EvaluationScoringContract(suite: suiteSnapshot),
-                    subjectEvidenceDigest: evidence.digest,
-                    origin: .initialRun
-                )
-                run.assessments = [assessment]
-                run.selectedAssessmentID = assessment.id
-                if assessment.samples.contains(where: { $0.errorCategory == "cancelled" }) {
-                    run.cancelled = true
-                    run.terminationReason = "cancelled"
+                do {
+                    let images = try imageInputs(
+                        for: evidence,
+                        projectID: ownerProjectID,
+                        suiteID: ownerSuiteID,
+                        runID: id
+                    )
+                    let assessment = try await reassessmentService.reassess(
+                        run: run,
+                        suite: suiteSnapshot,
+                        images: images,
+                        resolved: featureJudge,
+                        scoringContract: try? EvaluationScoringContract(suite: suiteSnapshot),
+                        subjectEvidenceDigest: evidence.digest,
+                        origin: .initialRun
+                    )
+                    run.assessments = [assessment]
+                    run.selectedAssessmentID = assessment.id
+                    if assessment.samples.contains(where: { $0.errorCategory == "cancelled" }) {
+                        run.cancelled = true
+                        run.terminationReason = "cancelled"
+                    }
+                } catch {
+                    // Image/evidence preparation can fail outside the judge's
+                    // per-sample handling. Preserve the completed app response.
+                    run.terminationReason = "assessmentUnavailable"
                 }
             }
             run = runPreparedForHistory(run)
             do {
-                try persistSnapshotCheckpoint(
-                    ActiveRunRecord(summary: checkpointSummary, suite: suiteSnapshot, results: run.results,
-                                    completedRun: run, subjectEvidence: evidence), at: checkpointURL
-                )
+                do {
+                    try persistSnapshotCheckpoint(
+                        ActiveRunRecord(summary: checkpointSummary, suite: suiteSnapshot, results: run.results,
+                                        completedRun: run, subjectEvidence: evidence), at: checkpointURL
+                    )
+                } catch {
+                    snapshotUnsavedRuns[id] = run
+                    throw error
+                }
+                try saveCompletedRuns([run])
+                try? FileManager.default.removeItem(at: checkpointURL)
             } catch {
-                snapshotUnsavedRuns[id] = run
+                if pendingCompletedRuns == nil && !FileManager.default.fileExists(atPath: checkpointURL.path) {
+                    try? FileManager.default.removeItem(at: runEvidenceDirectory(
+                        projectID: ownerProjectID,
+                        suiteID: ownerSuiteID,
+                        runID: id
+                    ))
+                }
                 throw error
             }
-            try saveCompletedRuns([run])
-            try? FileManager.default.removeItem(at: checkpointURL)
-        } catch {
-            if pendingCompletedRuns == nil && !FileManager.default.fileExists(atPath: checkpointURL.path) {
-                try? FileManager.default.removeItem(at: runEvidenceDirectory(
-                    projectID: ownerProjectID,
-                    suiteID: ownerSuiteID,
-                    runID: id
-                ))
-            }
-            throw error
+            return run
         }
-        return run
+        directFeatureTask = task
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     func runDeveloperFeature(
@@ -2909,6 +2928,7 @@ final class EvaluationStore {
     }
 
     func cancelRun() {
+        directFeatureTask?.cancel()
         guard let id = activeRun?.id else {
             runTask?.cancel()
             return
@@ -2921,11 +2941,13 @@ final class EvaluationStore {
     }
 
     /// Called after paired and coordinated feature owners have joined their work.
-    /// Await the ordinary run's terminal save before allowing the app to exit.
+    /// Await ordinary and direct feature terminal saves before the app exits.
     func closeAndWait() async {
         let task = runTask
+        let featureTask = directFeatureTask
         beginClosing()
         await task?.value
+        _ = await featureTask?.result
         _ = saveSuite()
     }
 

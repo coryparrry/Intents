@@ -28,10 +28,11 @@ struct ScenarioCollectionTests {
         }
     }
 
-    @Test(arguments: ["blocked", "failed", "recoveryRequired", "invalidEvidence"])
-    func optionalRoutesStayVisibleWithoutFailingRequiredCollection(terminal: String) throws {
+    @Test(arguments: ["blocked", "notRun", "cancelled", "failedToExecute", "failed", "recoveryRequired", "invalidEvidence", "incompleteLane"])
+    func optionalRoutesDistinguishBusinessDiagnosticsFromEvidenceRemediation(terminal: String) async throws {
         var definition = try caseDefinition(projectID: UUID(), name: "Optional Siri")
         definition.coverage.siri = .optional
+        definition.integration = .init(id: "fixture-integration", version: "1", digest: String(repeating: "a", count: 64))
         definition = try definition.frozen()
         let collection = try ScenarioCollection(
             projectID: definition.projectID!, name: "Read-only checks",
@@ -50,15 +51,17 @@ struct ScenarioCollectionTests {
             coordinate: direct, state: .completed, evidenceRunID: passing.id,
             evidenceLaneResultID: passing.laneResults[0].id, detail: nil, laneResult: passing.laneResults[0]
         )]
-        if terminal == "failed" || terminal == "invalidEvidence" {
-            let diagnostic = run(for: definition, coordinate: optional, startedAt: instant.addingTimeInterval(1),
+        if ["failed", "invalidEvidence", "incompleteLane"].contains(terminal) {
+            var diagnostic = run(for: definition, coordinate: optional, startedAt: instant.addingTimeInterval(1),
                                  outcome: terminal == "failed" ? .failed : .passed)
+            if terminal == "incompleteLane" { diagnostic.laneResults[0].executionStatus = .invalidEvidence }
             runs.append(diagnostic)
             rows.append(.init(coordinate: optional, state: .completed, evidenceRunID: diagnostic.id,
                               evidenceLaneResultID: diagnostic.laneResults[0].id, detail: nil,
                               laneResult: diagnostic.laneResults[0]))
         } else {
-            rows.append(.init(coordinate: optional, state: terminal == "recoveryRequired" ? .recoveryRequired : .blocked, evidenceRunID: nil,
+            let state = try #require(ScenarioCoordinateTerminalState(rawValue: terminal))
+            rows.append(.init(coordinate: optional, state: state, evidenceRunID: nil,
                               evidenceLaneResultID: nil, detail: "Siri is unavailable"))
         }
         let result = ScenarioCollectionBatchResult(
@@ -66,17 +69,85 @@ struct ScenarioCollectionTests {
             executions: [try execution(manifest: manifest, caseID: definition.id, records: rows)],
             recordedAt: instant.addingTimeInterval(2)
         )
+        let journals = runs.map(acceptedJournal(for:)).filter {
+            terminal != "invalidEvidence" || $0.scope?.lane != .siri
+        }
         let assessment = ScenarioCollectionService.assess(
             manifest: manifest, collection: collection, result: result,
-            runs: runs, journals: runs.map(acceptedJournal(for:)).filter {
-                terminal != "invalidEvidence" || $0.scope?.lane != .siri
-            }
+            runs: runs, journals: journals
         )
-        #expect(assessment.qualification == (["blocked", "failed"].contains(terminal) ? .passedFull : .incomplete))
+        let requiresRemediation = ["recoveryRequired", "invalidEvidence", "incompleteLane"].contains(terminal)
+        #expect(assessment.qualification == (requiresRemediation ? .incomplete : .passedFull))
         #expect(assessment.coordinates.count == 2)
         #expect(assessment.requiredPlannedCount == 1)
         #expect(assessment.requiredPassedCount == 1)
-        #expect(ScenarioCollectionService.failedCaseIDs(in: assessment).isEmpty)
+        let optionalAssessment = try #require(assessment.coordinates.first { $0.id == optional.id })
+        #expect(optionalAssessment.requiresEvidenceValidation == ["invalidEvidence", "incompleteLane"].contains(terminal))
+        let expectedCases: Set<UUID> = requiresRemediation ? [definition.id] : []
+        #expect(ScenarioCollectionService.failedCaseIDs(in: assessment) == expectedCases)
+        if requiresRemediation {
+            let rerun = try ScenarioCollectionService.freezeFailedRerun(
+                collection: collection, definitions: [definition],
+                priorManifest: manifest, priorResult: result, priorRuns: runs,
+                priorJournals: journals, appProductDigest: "app-build",
+                createdAt: instant.addingTimeInterval(3)
+            )
+            #expect(rerun.scope == .rerunFailed)
+            #expect(rerun.priorBatchID == manifest.id)
+            #expect(rerun.cases.map(\.id) == [definition.id])
+            #expect(Set(rerun.coordinates.map(\.id)).isDisjoint(with: manifest.coordinates.map(\.id)))
+            if terminal == "recoveryRequired" {
+                // Selection is a plan, not authority to replay an unresolved action.
+                // The same connection admission used by runSelectedCollection
+                // must still reject its restored destination quarantine.
+                let root = FileManager.default.temporaryDirectory.appending(path: "CollectionRecovery-\(UUID().uuidString)")
+                defer { try? FileManager.default.removeItem(at: root) }
+                let persistence = ScenarioPersistence(rootDirectory: root)
+                var interrupted = acceptedJournal(for: run(
+                    for: definition, coordinate: optional, startedAt: instant.addingTimeInterval(1), outcome: .passed
+                ))
+                interrupted.phase = .recoveryRequired
+                interrupted.evidenceAccepted = nil
+                interrupted.recoveryReason = "The prior Siri invocation has not been proven stopped."
+                interrupted.derivedDataPath = root.appending(path: "DerivedData").path
+                try await persistence.saveJournal(interrupted)
+                let executor = XcodeTestExecutor(
+                    workDirectory: root.appending(path: "Executor"), persistence: persistence,
+                    destinationStatusReader: { _, _ in
+                        Issue.record("A quarantined rerun reached a device probe.")
+                        return (false, "Unexpected probe", nil)
+                    }
+                )
+                #expect(try await executor.reconcileInterruptedJournals().map(\.id) == [interrupted.id])
+                let configuration = XcodeTestConfiguration(
+                    containerPath: root.path, isWorkspace: false, scheme: "Fixture",
+                    testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+                    destinationIdentifier: interrupted.invocation.destinationIdentifier,
+                    generatedResourceDirectory: root.path
+                )
+                do {
+                    _ = try await executor.verifyConnection(
+                        definition: definition, configuration: configuration, projectTrusted: true
+                    )
+                    Issue.record("A recovery-case selection bypassed connection admission.")
+                } catch XcodeTestExecutorError.deviceUnavailable(let detail) {
+                    #expect(detail.contains("recovery"))
+                }
+                #expect(await executor.reservation(for: configuration.destinationIdentifier) != nil)
+                #expect(await executor.hasActiveExecution() == false)
+                let retained = try await persistence.loadJournals()
+                #expect(retained.count == 1)
+                #expect(retained.first?.phase == .recoveryRequired)
+            }
+        } else {
+            #expect(throws: ScenarioCollectionError.self) {
+                _ = try ScenarioCollectionService.freezeFailedRerun(
+                    collection: collection, definitions: [definition],
+                    priorManifest: manifest, priorResult: result, priorRuns: runs,
+                    priorJournals: journals, appProductDigest: "app-build"
+                )
+            }
+        }
     }
 
     @Test(arguments: ["acceptance", "missingJournal", "journalAcceptance", "nonce", "scope", "exit", "unknownExit", "incompleteExecution", "duplicateRun"])

@@ -2505,6 +2505,71 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(assessment.durationMilliseconds == 0)
     }
 
+    @Test(arguments: [false, true])
+    func reassessmentDoesNotPresentPartialCostAsAnEstimate(missingCostFirst: Bool) async throws {
+        let shapes: [CompatibleJudgeFixture.UsageShape] = missingCostFirst
+            ? [.missing, .complete] : [.complete, .missing]
+        let fixture = try CompatibleJudgeFixture(mode: .usageSequence(shapes))
+        defer { fixture.stop() }
+        var suite = EvaluationSuite()
+        suite.criteria = "The answer is supported by the evidence."
+        suite.cases.append(EvaluationCase(name: "Second", prompt: "Second prompt", expected: "Answer"))
+        var run = makeRun(cases: suite.cases, statuses: [[.passed], [.passed]])
+        for index in run.results.indices { run.results[index].response = "A complete response." }
+        let connection = EvaluationJudgeConnection(
+            id: UUID(), name: "Partial cost fixture", kind: .localCompatible,
+            baseURL: fixture.baseURL, modelID: "judge-fixture",
+            inputUSDPerMillionTokens: 1, outputUSDPerMillionTokens: 2
+        )
+        suite.judgeConfiguration = .init(
+            mode: .connection, connectionID: connection.id,
+            externalEvidenceApprovedAt: Date(), includeReferenceAttachments: false,
+            approvedConnectionID: connection.id, approvedIncludeReferenceAttachments: false,
+            approvedConnectionDigest: connection.disclosureDigest
+        )
+
+        let assessment = try await EvaluationReassessmentService().reassess(
+            run: run, suite: suite, images: [], resolved: .init(connection: connection, apiKey: nil)
+        )
+
+        #expect(fixture.completionRequestCount == 2)
+        #expect(assessment.samples.count == 2)
+        #expect(assessment.samples.allSatisfy { $0.status == .passed })
+        #expect(assessment.cost.availability == .unavailable)
+        #expect(assessment.cost.usd == nil)
+    }
+
+    @Test func completeReassessmentCostCombinesReportedAndEstimatedRequests() async throws {
+        let fixture = try CompatibleJudgeFixture(mode: .usageSequence([.costOnly, .complete]))
+        defer { fixture.stop() }
+        var suite = EvaluationSuite()
+        suite.criteria = "The answer is supported by the evidence."
+        suite.cases.append(EvaluationCase(name: "Second", prompt: "Second prompt", expected: "Answer"))
+        var run = makeRun(cases: suite.cases, statuses: [[.passed], [.passed]])
+        for index in run.results.indices { run.results[index].response = "A complete response." }
+        let connection = EvaluationJudgeConnection(
+            id: UUID(), name: "Complete cost fixture", kind: .localCompatible,
+            baseURL: fixture.baseURL, modelID: "judge-fixture",
+            inputUSDPerMillionTokens: 1, outputUSDPerMillionTokens: 2
+        )
+        suite.judgeConfiguration = .init(
+            mode: .connection, connectionID: connection.id,
+            externalEvidenceApprovedAt: Date(), includeReferenceAttachments: false,
+            approvedConnectionID: connection.id, approvedIncludeReferenceAttachments: false,
+            approvedConnectionDigest: connection.disclosureDigest
+        )
+
+        let assessment = try await EvaluationReassessmentService().reassess(
+            run: run, suite: suite, images: [], resolved: .init(connection: connection, apiKey: nil)
+        )
+
+        #expect(fixture.completionRequestCount == 2)
+        #expect(assessment.samples.allSatisfy { $0.status == .passed })
+        #expect(assessment.cost.availability == .estimated)
+        let cost = try #require(assessment.cost.usd)
+        #expect(abs(cost - 0.25002) < 0.0000001)
+    }
+
     @Test func failedReassessmentRecordsJudgeAttemptDuration() async throws {
         var suite = EvaluationSuite()
         suite.criteria = "The answer is supported by the evidence."

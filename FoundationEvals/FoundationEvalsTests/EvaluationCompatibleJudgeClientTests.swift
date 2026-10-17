@@ -607,6 +607,7 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
         case stalled
         case oversized
         case usage(UsageShape)
+        case usageSequence([UsageShape])
     }
 
     enum UsageShape {
@@ -772,7 +773,7 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
             case .sse:
                 sendSSEVerdict(to: connection)
                 return
-            case .usage:
+            case .usage, .usageSequence:
                 break
             case .valid, .redirect, .malformed, .fenced, .contentParts:
                 let verdict = #"{"requirements":[{"criterionIndex":1,"score":4,"rationale":"Supported by the saved evidence."}]}"#
@@ -794,7 +795,13 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
                 ], options: [.sortedKeys])
             }
         }
-        if case .usage(let shape) = mode {
+        let usageShape: UsageShape? = switch mode {
+        case .usage(let shape): shape
+        case .usageSequence(let shapes):
+            shapes.isEmpty ? .missing : shapes[min(max(0, completionRequestCount - 1), shapes.count - 1)]
+        default: nil
+        }
+        if let shape = usageShape {
             let content = #"{"requirements":[{"criterionIndex":1,"score":4,"rationale":"Supported by the saved evidence."}]}"#
             let escapedContent = String(
                 data: try! JSONSerialization.data(withJSONObject: content, options: [.fragmentsAllowed]),

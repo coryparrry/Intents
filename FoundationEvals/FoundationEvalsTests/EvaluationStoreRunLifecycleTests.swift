@@ -2,12 +2,154 @@ import Darwin
 import Foundation
 import Network
 import Testing
-#if canImport(FoundationEvalsDeveloper)
-import FoundationEvalsDeveloper
-#endif
 @testable import FoundationEvals
 
 struct EvaluationStoreRunLifecycleTests {
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
+    func standaloneFeatureCloseJoinsAdapterCleanupAndTerminalSave() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [
+            EvaluationCase(name: "Completed", prompt: "first", expected: "FIRST"),
+            EvaluationCase(name: "Held", prompt: "second", expected: "LATE"),
+            EvaluationCase(name: "Must not run", prompt: "third", expected: "NEVER")
+        ]
+        try #require(store.saveSuite())
+        let revision = try store.currentSuiteRevision()
+        let entered = FeatureLifecycleSignal(), cancelled = FeatureLifecycleSignal()
+        let cleanupAllowed = FeatureLifecycleSignal()
+        let cancellationWait = AsyncStream<Void>.makeStream()
+        defer { cancellationWait.continuation.finish() }
+        let invocations = SnapshotInvocationCount()
+        let id = UUID()
+        let caller = Task { @MainActor in
+            try await store.runFeatureAdapter(
+                id: id, expectedRevision: revision,
+                adapter: ClosureFeatureAdapter(displayName: "Held direct integration") { input in
+                    await invocations.increment()
+                    if input.prompt == "first" { return "FIRST" }
+                    #expect(input.prompt == "second")
+                    await entered.open()
+                    var iterator = cancellationWait.stream.makeAsyncIterator()
+                    _ = await iterator.next()
+                    #expect(Task.isCancelled)
+                    await cancelled.open()
+                    // The real adapter still owns cleanup after cancellation.
+                    // Its late output must survive the terminal history save.
+                    await cleanupAllowed.wait()
+                    return "LATE"
+                }
+            )
+        }
+        await entered.wait()
+        var closed = false
+        let closing = Task { @MainActor in
+            await store.closeAndWait()
+            closed = true
+        }
+        await cancelled.wait()
+        #expect(!closed)
+        #expect(store.isRunning)
+        #expect(await invocations.count == 2)
+        await #expect(throws: EvaluationStoreError.self) {
+            try await store.runFeatureAdapter(
+                expectedRevision: revision,
+                adapter: ClosureFeatureAdapter(displayName: "Must remain closed") { _ in
+                    Issue.record("A new action ran after store closing began.")
+                    return "NEVER"
+                }
+            )
+        }
+        await cleanupAllowed.open()
+        await closing.value
+
+        // Read durable history before joining the API caller. closeAndWait
+        // itself must guarantee that the child saved its terminal outcome.
+        let retained = try #require(EvaluationStore(supportDirectory: directory).run(with: id))
+        #expect(closed)
+        #expect(!store.isRunning)
+        #expect(retained.cancelled)
+        #expect(retained.terminationReason == "cancelled")
+        #expect(retained.results.map(\.response) == ["FIRST", "LATE"])
+        #expect(retained.results.last?.errorCategory == "lateAfterCancellation")
+        #expect(await invocations.count == 2)
+        let completed = try await caller.value
+        #expect(completed.id == retained.id)
+        await store.closeAndWait()
+    }
+
+    @MainActor
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func featureAssessmentImagePreflightFailureRetainsCompletedOutput(removeImage: Bool) async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixture = try CompatibleJudgeFixture(mode: .valid)
+        defer { fixture.stop() }
+        let store = EvaluationStore(supportDirectory: directory)
+        let connection = EvaluationJudgeConnection(
+            id: UUID(), name: "Preflight judge", kind: .localCompatible,
+            baseURL: fixture.baseURL, modelID: "judge-fixture"
+        )
+        try store.saveJudgeConnection(connection, apiKey: nil)
+        store.draftSuite.scoringMode = .modelJudge
+        store.draftSuite.criteria = "The response is accurate and complete."
+        store.draftSuite.cases = [EvaluationCase(name: "Completed", prompt: "request", expected: "RESULT")]
+        store.draftSuite.modelConfiguration.provider = .customHTTP
+        store.draftSuite.modelConfiguration.customProviderSettings.supportsVision = true
+        store.draftSuite.judgeConfiguration = .init(
+            mode: .connection, connectionID: connection.id, includeReferenceAttachments: false
+        )
+        store.approveExternalJudgeDisclosure()
+        try #require(store.saveSuite())
+        let imageData = try #require(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        ))
+        let imported = try await store.importAttachment(
+            id: UUID(), name: "reference.png", mediaType: "image/png", data: imageData,
+            expectedRevision: store.suiteRevision
+        )
+        let runID = UUID()
+        let revision = try store.currentSuiteRevision()
+        let evidenceDirectory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID
+        ).appending(path: "RunEvidence/\(runID.uuidString)")
+        let invocations = SnapshotInvocationCount()
+        let adapter = ClosureFeatureAdapter(displayName: "Completed before image failure") { _ in
+            await invocations.increment()
+            let images = try FileManager.default.contentsOfDirectory(
+                at: evidenceDirectory, includingPropertiesForKeys: nil
+            )
+            try #require(images.count == 1)
+            let image = try #require(images.first)
+            if removeImage {
+                try FileManager.default.removeItem(at: image)
+            } else {
+                try Data("changed historical bytes".utf8).write(to: image, options: .atomic)
+            }
+            return "RESULT"
+        }
+
+        let run = try await store.runFeatureAdapter(id: runID, expectedRevision: revision, adapter: adapter)
+
+        #expect(run.results.first?.response == "RESULT")
+        #expect(run.results.first?.status == .unscored)
+        #expect(run.terminationReason == "assessmentUnavailable")
+        #expect(!run.cancelled)
+        #expect(run.selectedAssessment == nil)
+        #expect(run.subjectEvidence?.hasValidDigest == true)
+        #expect(fixture.completionRequestCount == 0)
+        #expect(try store.attachmentData(id: imported.attachment.id).data == imageData)
+        let retained = try #require(EvaluationStore(supportDirectory: directory).run(with: runID))
+        #expect(retained.results.first?.response == "RESULT")
+        #expect(retained.terminationReason == "assessmentUnavailable")
+        let retried = try await store.runFeatureAdapter(id: runID, expectedRevision: revision, adapter: adapter)
+        #expect(retried.id == retained.id)
+        #expect(await invocations.count == 1)
+    }
+
     @MainActor
     @Test(.timeLimit(.minutes(1)))
     func standaloneFeatureKeepsCompletedSamplesAcrossProcessInterruption() async throws {
@@ -608,6 +750,23 @@ struct EvaluationStoreRunLifecycleTests {
             .appending(path: "EvaluationStoreRunLifecycleTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+}
+
+private actor FeatureLifecycleSignal {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending { waiter.resume() }
     }
 }
 

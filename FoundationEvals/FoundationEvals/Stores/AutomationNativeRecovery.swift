@@ -70,11 +70,14 @@ extension AppAutomationStore {
     func refreshRecovery() async {
         await ownershipRecoveryTask?.value
         guard !busy, !recoveryLoading else { return }
+        recoveryLoading = true
+        defer { recoveryLoading = false }
+        // Re-read the paired campaign authority as well as device records. A
+        // paired reservation can remain without a currently acquired lease.
+        await restorePairedOwnership()
         guard FileManager.default.fileExists(atPath: support.appendingPathComponent("target-leases.json").path) else {
             recoveryItems = []; recoveryError = nil; await refreshTargets(); return
         }
-        recoveryLoading = true
-        defer { recoveryLoading = false }
         do {
             let leases = try AutomationDeviceLeaseManager(storeURL: support.appendingPathComponent("target-leases.json"))
             try await reconcileAbandonedOwnership(using: leases)
@@ -111,7 +114,7 @@ extension AppAutomationStore {
         await ownershipRecoveryTask?.value
         guard !busy, !closingForOwnershipRecovery else { return }
         do { try beginExecutionAdmission(allowingRecovery: true) }
-        catch { recoveryError = errorText(error); return }
+        catch { message = errorText(error); return }
         progress = "Resetting device ownership…"; recoveryError = nil
         defer { progress = nil; finishExecutionAdmission() }
         do {

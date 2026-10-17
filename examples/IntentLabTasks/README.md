@@ -40,4 +40,15 @@ The native regression `testScopedStrictTaskContractUsesRealActionAndIndependentF
 
 ## Outside-repository consumer check
 
-For a consumer-only install check, copy this example to a clean checkout, pin the `FoundationEvalsDeveloper` Swift package dependency to the reviewed repository revision, and retain only the consumer-owned integration and test files. The repository's local path package reference is for in-repository development; it is not a release dependency.
+For a consumer-only install check, copy this example to a directory outside the Intents checkout. In `project.yml`, replace the `path: ../..` entry under `packages.FoundationEvals` with the official Git URL and an exact reviewed, published revision, then regenerate the project. Keep the `FoundationEvals` package alias: the app target uses its `IntentLabContracts` product, and the UI-test target uses `IntentLabTesting` and `IntentLabContracts`. This Tasks example does not depend on the `FoundationEvalsDeveloper` product.
+
+For the SDK checkpoint accompanying this example's strict v3 support, the package entry is:
+
+```yaml
+packages:
+  FoundationEvals:
+    url: https://github.com/coryparrry/Intents.git
+    revision: 4047c97c36757df3719d57dde78a3e69e2769178
+```
+
+Retain `Sources`, `UITests`, and `IntentLabIntegration.json` from the example, along with the matching configurations, resource membership, and scheme in `project.yml`. Configure the development team for the app and UI-test target before running on a physical device. A successful dependency resolution or unsigned build proves compilation only; run the isolated suite to validate the real app and its evidence contract. The original local path reference is for in-repository development and stops working when the package checkout moves or disappears.

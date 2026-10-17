@@ -246,7 +246,7 @@ enum ScenarioCollectionService {
         let rowByID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var usedLaneResults = Set<UUID>()
         var usedFeatureSamples = Set<UUID>()
-        let assessments = manifest.coordinates.map { coordinate -> ScenarioBatchCoordinateAssessment in
+        var assessments = manifest.coordinates.map { coordinate -> ScenarioBatchCoordinateAssessment in
             guard let row = rowByID[coordinate.id] else {
                 return .init(coordinate: coordinate, terminalState: .notRun, outcome: nil,
                              reason: "No terminal record for this planned attempt.")
@@ -377,12 +377,16 @@ enum ScenarioCollectionService {
         }
         let plannedIDs = Set(manifest.coordinates.map(\.id))
         let hasUnexpectedRows = rows.contains { !plannedIDs.contains($0.id) }
+        for index in assessments.indices {
+            let assessment = assessments[index]
+            assessments[index].requiresEvidenceValidation = rowByID[assessment.coordinate.id]?.state == .completed
+                && (assessment.terminalState != .completed || assessment.outcome == nil)
+        }
         let passedCount = assessments.count { $0.outcome == .passed }
         let required = assessments.filter { $0.coordinate.required }
         let unresolvedOrInvalidExecution = assessments.contains { assessment in
             assessment.terminalState == .recoveryRequired
-                || (rowByID[assessment.coordinate.id]?.state == .completed
-                    && (assessment.terminalState != .completed || assessment.outcome == nil))
+                || assessment.requiresEvidenceValidation
         }
         let incomplete = unresolvedOrInvalidExecution || required.isEmpty
             || required.contains { $0.terminalState != .completed || $0.outcome == nil }
@@ -418,7 +422,8 @@ enum ScenarioCollectionService {
 
     static func failedCaseIDs(in assessment: ScenarioCollectionBatchAssessment) -> Set<UUID> {
         Set(assessment.coordinates.filter {
-            $0.coordinate.required && ($0.outcome != .passed || $0.terminalState != .completed)
+            ($0.coordinate.required && ($0.outcome != .passed || $0.terminalState != .completed))
+                || $0.terminalState == .recoveryRequired || $0.requiresEvidenceValidation
         }.map { $0.coordinate.caseID })
     }
 

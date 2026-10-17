@@ -85,11 +85,11 @@
     },
     {
       "source": "Services/EvaluationHTTPLanguageModel.swift",
-      "sha256": "91bf20928002496e422f977901fa98f054d4d02bd266c3a2127bd90e09ba3607",
+      "sha256": "d7c6a0c8ab92079ed8e936fa892c0b7663de9882c2f2cc7a0dca1309610c6965",
       "bundled": "EvaluationCustomProviderConfiguration.swift",
       "excerpt": "configuration only; model executor excluded",
       "bundledSHA256": "404579cfc079c248af2e10c3ab0c4a2ecfce9bf8ec4ec6082de86a1decb4558a",
-      "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present; app-only reserved MCP TCP port removed for independent stdio host"
+      "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present; app-only reserved MCP TCP port removed for independent stdio host; custom HTTP input-limit admission remains outside the on-device-only standalone executor"
     },
     {
       "source": "Services/EvaluationCustomTool.swift",
@@ -226,10 +226,10 @@
     },
     {
       "source": "Services/EvaluationRunner.swift",
-      "sha256": "7e46e2943b274c5cd24180a83bb93bca6e21cb637fd3e324e0deaf5bd035d535",
+      "sha256": "f96f3d1e75fd2edf533a4d009cd91ae27e1da925ec10df1bffa3aea45c691d67",
       "bundled": "EvaluationRunner.swift",
       "bundledSHA256": "f5b7b0b4df1755be4529c15c50c47775b0a86f98271b0de4f89c8f40212f4fa5",
-      "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
+      "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present; custom HTTP input-limit admission remains outside the on-device-only standalone executor"
     },
     {
       "source": "Services/EvaluationSchemaBuilder.swift",

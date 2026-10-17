@@ -31,8 +31,11 @@ struct ScenarioActionParityTests {
             (["when": observed], false),
             (["when": observed, "dates": .array([observed]), "extra": .null], false)
         ]
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let wireRequirement = try JSONDecoder.intentLab.decode(IntentLabActionRequirement.self,
-            from: CanonicalJSON.data(for: requirement, prettyPrinted: false))
+            from: encoder.encode(requirement))
         let recordedAt = Date(timeIntervalSince1970: 1_700_000_000)
         for (parameters, shouldPass) in variants {
             let receipt = ScenarioActionReceipt(executionID: UUID(), appSessionID: UUID(),
@@ -43,14 +46,14 @@ struct ScenarioActionParityTests {
             let host = ScenarioResultEvaluator.actionVerdict(definition: definition, lane: .siri,
                 attempt: 1, invocation: invocation, receipts: [receipt])
             let wireReceipt = try JSONDecoder.intentLab.decode(IntentLabActionReceipt.self,
-                from: CanonicalJSON.data(for: receipt, prettyPrinted: false))
+                from: encoder.encode(receipt))
             let device = IntentLabAssertionEvaluator.actionVerdict(requirement: wireRequirement,
                 receipts: [wireReceipt], lane: .siri, attempt: 1, context: context)
             #expect(host.0 == (shouldPass ? .passed : .failed))
             #expect(host.1 == (shouldPass ? nil : .wrongParameter))
             #expect(device.0.rawValue == host.0.rawValue)
             #expect(device.1?.rawValue == host.1?.rawValue)
-            let raw = String(decoding: try CanonicalJSON.data(for: [receipt], prettyPrinted: false), as: UTF8.self)
+            let raw = String(decoding: try encoder.encode([receipt]), as: UTF8.self)
             let lane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: .siri,
                 executionStatus: .completed, outcome: host.0, startedAt: recordedAt, completedAt: recordedAt,
                 observations: ["intentlab.actionReceipts": .string(raw)],

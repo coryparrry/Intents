@@ -162,6 +162,9 @@ struct ScenarioBatchCoordinateAssessment: Equatable, Identifiable, Sendable {
     var terminalState: ScenarioCoordinateTerminalState
     var outcome: ScenarioOutcome?
     var reason: String?
+    /// A completed record was supplied but its executed evidence did not validate.
+    /// This is distinct from an optional route that never executed.
+    var requiresEvidenceValidation = false
 }
 
 struct ScenarioCollectionBatchAssessment: Equatable, Sendable {

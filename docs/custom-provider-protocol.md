@@ -184,6 +184,10 @@ The tokenizer endpoint uses `POST` with `Content-Type: application/json` and `Ac
 
 `inputTokens` is required and must be nonnegative. `cachedInputTokens` is optional, defaults to zero, and must not exceed `inputTokens`. The endpoint must count the complete transcript, tools, schema, images, and context represented by the envelope. A non-2xx response, invalid JSON, or invalid count stops the generation request before `/generate` is contacted. If the input count plus `options.maximumResponseTokens` exceeds the declared provider context size, the run fails with `contextSizeExceeded`.
 
+For subject requests, the measured input count must also fit the suite's optional **Maximum input tokens** setting. This check runs before generation, including setup turns and subsequent tool requests. Same-model judge requests use their own response reserve and the provider's context size; the subject input ceiling does not apply to them.
+
+The full-request tokenizer path does not automatically shorten inline references for **Fit references**. Shorten the reference text, choose lookup delivery, or adjust the input limit before retrying an oversized request.
+
 The tokenizer endpoint is optional for compatibility with existing providers. Without it, Intents uses a conservative local estimate for prompt admission.
 
 ### Capabilities

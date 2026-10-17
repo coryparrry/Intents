@@ -115,7 +115,9 @@ The reusable **Build DMG and publish release** workflow also has a manual recove
 
 Published releases are rejected and existing tags are never moved. Uploads do not overwrite existing assets. A partial upload can leave assets on the draft; inspect and remove only those failed-attempt assets deliberately before retrying. **Release verification** remains available to recheck an existing published installer without changing it.
 
-Hosted CI uses GitHub's `xcode-27` macOS 27 runner. It runs the core test scheme and, for UI-impacting changes, builds the app and UI-test bundle; it does not execute UI tests or prove native model generation. Automatic publication does not claim those checks ran.
+Hosted CI uses GitHub's `xcode-27` macOS 27 runner. It runs selected core tests and, for UI-impacting changes, builds the app and executes the selected UI regressions from the retained test bundles. Automation changes also select prepared simulator acceptance. The SDK consumer gate independently builds fresh external projects against the installer's exact published package revision.
+
+Assess a release using the executed jobs and retained evidence for its immutable source commit. Selected UI and simulator fixtures do not establish live model generation, physical-device behavior, or Siri routing; those need their own native acceptance evidence.
 
 ## One-time signing setup
 

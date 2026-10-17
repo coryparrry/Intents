@@ -18,7 +18,10 @@ struct ScenarioNoMutationTests {
             resolvedInstant: instant.addingTimeInterval(0.125)
         ))
         #expect(actual != expected)
-        #expect(try CanonicalJSON.data(for: actual) != CanonicalJSON.data(for: expected))
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        #expect(try encoder.encode(actual) != encoder.encode(expected))
         let vectors: [(ScenarioValue, ScenarioValue, Bool)] = [
             (expected, actual, true), (expected, later, false),
             (.array([expected, .null]), .array([actual, .null]), true),

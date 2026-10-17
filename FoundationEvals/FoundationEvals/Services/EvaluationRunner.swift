@@ -110,6 +110,7 @@ actor EvaluationRunner {
             }
             let model = EvaluationHTTPLanguageModel(
                 configuration: configuration,
+                maximumInputTokens: suite.modelConfiguration.maximumInputTokens,
                 liveResponseObserver: liveResponseObserver
             )
             return await run(
