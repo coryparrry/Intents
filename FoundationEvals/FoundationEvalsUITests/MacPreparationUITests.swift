@@ -1,6 +1,39 @@
 import XCTest
 
 final class MacPreparationUITests: XCTestCase {
+    /// Exercises the native popup and its selection callback without preparing or building an app.
+    @MainActor
+    func testAppPickerSelectsSourceTargetWithoutAnAccessibilityLabel() throws {
+        executionTimeAllowance = 120; continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "native-mac-app-picker")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let project = storage.appendingPathComponent("PickerFixture.xcodeproj")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let objects: [String: Any] = [
+            "IOS": ["isa": "PBXNativeTarget", "name": "AutomationFixture",
+                    "productType": "com.apple.product-type.application", "buildConfigurationList": "CONFIGS"],
+            "MAC": ["isa": "PBXNativeTarget", "name": "AutomationFixtureMac",
+                    "productType": "com.apple.product-type.application", "buildConfigurationList": "CONFIGS"],
+            "CONFIGS": ["buildConfigurations": ["DEBUG"]],
+            "DEBUG": ["name": "Debug"]
+        ]
+        try PropertyListSerialization.data(fromPropertyList: ["objects": objects], format: .xml, options: 0)
+            .write(to: project.appendingPathComponent("project.pbxproj"))
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
+                                "--automation-select-path", project.path,
+                                "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
+        app.launch(); defer { app.terminate() }
+        app.activate(); app.typeKey("3", modifierFlags: .command)
+        waitForAutomationSelection(in: app)
+        selectAutomationMenu(automationAppPicker(in: app, selectedApp: "AutomationFixture"), item: "AutomationFixtureMac")
+        let selectedMac = automationAppPicker(in: app, selectedApp: "AutomationFixtureMac")
+        selectAutomationMenu(selectedMac, item: "AutomationFixture")
+        _ = automationAppPicker(in: app, selectedApp: "AutomationFixture")
+        XCTAssertFalse(app.buttons["Build private copy"].exists)
+        XCTAssertFalse(app.buttons["Run approved workflow"].exists)
+    }
+
     /// Opt-in: prepares the committed Mac fixture and runs approved native routes.
     @MainActor
     func testSelectedToolchainPreparesMacCopyAndRunsApprovedWorkflows() throws {
@@ -15,7 +48,8 @@ final class MacPreparationUITests: XCTestCase {
         app.launch(); defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)
         waitForAutomationSelection(in: app)
-        selectAutomationMenu(app.popUpButtons["App"], item: "AutomationFixtureMac")
+        selectAutomationMenu(automationAppPicker(in: app, selectedApp: "AutomationFixture"), item: "AutomationFixtureMac")
+        _ = automationAppPicker(in: app, selectedApp: "AutomationFixtureMac")
         selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "macOS")
         selectAutomationMenu(app.popUpButtons["automation.workflow.route"], item: "ui")
         let prepare = app.buttons["Prepare app…"]

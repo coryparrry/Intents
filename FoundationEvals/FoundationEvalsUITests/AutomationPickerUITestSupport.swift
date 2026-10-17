@@ -10,6 +10,16 @@ extension XCTestCase {
     }
 
     @MainActor
+    func automationAppPicker(in app: XCUIApplication, selectedApp: String, timeout: TimeInterval = 10) -> XCUIElement {
+        // Native SwiftUI exposes "App" as adjacent static text, not the popup's label.
+        let matches = app.popUpButtons.matching(NSPredicate(format: "value == %@", selectedApp))
+        let picker = matches.firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: timeout), app.debugDescription)
+        XCTAssertEqual(matches.count, 1, "Expected one app picker showing \(selectedApp).\n\(app.debugDescription)")
+        return picker
+    }
+
+    @MainActor
     func selectAutomationMenu(_ picker: XCUIElement, item identifier: String, timeout: TimeInterval = 10) {
         XCTAssertTrue(picker.waitForExistence(timeout: timeout))
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
