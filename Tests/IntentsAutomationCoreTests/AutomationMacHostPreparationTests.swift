@@ -147,7 +147,7 @@ final class AutomationMacHostPreparationTests: XCTestCase, @unchecked Sendable {
         let task = Task {
             try await preparation.prepare(candidate: candidate,
                 approval: .init(sourceRoot: source.path, candidateID: candidate.id, configuration: "Debug", target: current),
-                sessionRoot: session, templates: templates, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+                sessionRoot: session, templates: templates, developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         }
         let scannerSource = session.appendingPathComponent("source-syntax/Scanner.swift")
         let deadline = ContinuousClock.now.advanced(by: .seconds(20))
@@ -174,7 +174,7 @@ final class AutomationMacHostPreparationTests: XCTestCase, @unchecked Sendable {
         let prepared = try await AutomationPreparation().prepare(candidate: candidate,
             approval: .init(sourceRoot: source.path, candidateID: candidate.id, configuration: "Debug", target: AutomationMacGUIIdentity.currentTarget()),
             sessionRoot: root.appendingPathComponent("prepare-" + UUID().uuidString), templates: templates,
-            developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+            developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         let entity = try XCTUnwrap(prepared.catalog.entities?.first { $0.typeID == "IntegerEntity" })
         XCTAssertEqual(entity.properties, ["title": "text", "sequence": "integer"])
         let action = try XCTUnwrap(prepared.catalog.systemActions.first { $0.id == "IntegerEntityIntent" })
@@ -200,7 +200,7 @@ final class AutomationMacHostPreparationTests: XCTestCase, @unchecked Sendable {
         let session = root.appendingPathComponent("prepare-" + UUID().uuidString)
         let prepared = try await AutomationPreparation().prepare(candidate: candidate,
             approval: .init(sourceRoot: source.path, candidateID: candidate.id, configuration: "Debug", target: current),
-            sessionRoot: session, templates: templates, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+            sessionRoot: session, templates: templates, developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         XCTAssertEqual(prepared.host.target, current); XCTAssertEqual(prepared.host.app.platform, "macos")
         XCTAssertEqual(prepared.host.hostProductDigestVersion, 2); XCTAssertFalse(prepared.buildLogTruncated)
         let graph = try XCTUnwrap(prepared.sourceGraph)

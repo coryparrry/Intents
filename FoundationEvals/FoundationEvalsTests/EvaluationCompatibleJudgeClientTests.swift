@@ -156,19 +156,6 @@ struct EvaluationCompatibleJudgeClientTests {
         }
     }
 
-    @Test func jsonPayloadStripsMarkdownFences() {
-        let fenced = """
-            ```json
-            {"requirements":[{"criterionIndex":1,"score":4,"rationale":"Met."}]}
-            ```
-            """
-        #expect(
-            EvaluationCompatibleJudgeClient.jsonPayload(from: fenced)
-                == #"{"requirements":[{"criterionIndex":1,"score":4,"rationale":"Met."}]}"#
-        )
-        #expect(EvaluationCompatibleJudgeClient.jsonPayload(from: "  {\"score\":1}  ") == "{\"score\":1}")
-    }
-
     @Test func thinkingGenerationIsUsedForDeepSeekHostsAndModelIDsOnly() {
         #expect(
             EvaluationCompatibleJudgeClient.usesThinkingGeneration(

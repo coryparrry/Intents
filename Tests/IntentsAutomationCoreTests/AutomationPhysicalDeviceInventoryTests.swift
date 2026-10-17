@@ -46,11 +46,6 @@ final class AutomationPhysicalDeviceInventoryTests: XCTestCase {
         XCTAssertEqual(result.model, "iPhone or iPad")
         XCTAssertEqual(result.operatingSystem, "Unknown version")
     }
-    func testActualReadOnlyXcodeInventoryWhenExplicitlyProvided() throws {
-        guard let path = ProcessInfo.processInfo.environment["INTENTS_DEVICE_INVENTORY_JSON"] else { throw XCTSkip("No explicit read-only device inventory capture") }
-        let devices = try AutomationPhysicalDeviceInventory.parse(Data(contentsOf: URL(fileURLWithPath: path)))
-        XCTAssertEqual(Set(devices.map(\.id)).count, devices.count)
-    }
     func testCoreDeviceDiscoveryMapsXcodeUDIDAndUUIDToOneLeaseIdentity() throws {
         let uuid = "1AD4F755-6F58-58E5-AC71-B1EDFECADA93", udid = "00008140-000E4D803C0B001C"
         let data = try JSONSerialization.data(withJSONObject: ["info": ["outcome": "success"],

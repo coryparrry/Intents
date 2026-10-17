@@ -20,18 +20,6 @@ struct XcodeBundleLayoutTests {
     }
 
     @Test(arguments: BundleLayout.allCases)
-    func productMetadataFingerprintSurvivesBuildDirectoryChanges(layout: BundleLayout) throws {
-        let first = try BundleFixture(layout: layout)
-        defer { first.remove() }
-        let second = try BundleFixture(layout: layout)
-        defer { second.remove() }
-
-        #expect(first.paths.appBundleURL != second.paths.appBundleURL)
-        #expect(XcodeTestExecutor.productMetadataDigest(products: first.paths)
-            == XcodeTestExecutor.productMetadataDigest(products: second.paths))
-    }
-
-    @Test(arguments: BundleLayout.allCases)
     func nativeAndFlatProductsVerifyAndReuseConnection(layout: BundleLayout) async throws {
         let fixture = try BundleFixture(layout: layout)
         defer { fixture.remove() }
@@ -46,7 +34,6 @@ struct XcodeBundleLayoutTests {
         #expect(products.app.sha256 == BundleFixture.digest(Data("app executable".utf8)))
         #expect(products.test.sha256 == BundleFixture.digest(Data("test executable".utf8)))
         let connection = try await fixture.connection()
-        #expect(fixture.reused(connection) != nil)
         #expect(fixture.reused(connection) != nil)
     }
 

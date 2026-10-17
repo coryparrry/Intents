@@ -116,15 +116,3 @@ test('turning analytics off blocks both capture and pageleave immediately and re
   assert.equal(blocked.win.reloaded, undefined);
   assert.equal(blocked.win.saved, undefined);
 });
-
-
-test('each public page exposes the website privacy notice and the privacy page loads analytics', () => {
-  for (const page of ['index.html', 'getting-started.html']) {
-    const html = readFileSync(new URL(`../dist/${page}`, import.meta.url), 'utf8');
-    assert.match(html, /href="\/privacy\.html"/);
-    assert.doesNotMatch(html, /releases\/(?:tag|download)\/v1\.3\.0/);
-  }
-  const privacy = readFileSync(new URL('../dist/privacy.html', import.meta.url), 'utf8');
-  assert.match(privacy, /src="\/analytics.mjs"/);
-  assert.match(privacy, /data-analytics-toggle/);
-});

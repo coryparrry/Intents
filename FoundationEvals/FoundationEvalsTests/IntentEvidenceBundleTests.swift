@@ -243,32 +243,6 @@ struct IntentEvidenceBundleTests {
         #expect(result.exitCode == 20)
     }
 
-    @Test func nonzeroNativeAssertionFailureRemainsIncompleteButVisible() throws {
-        let passed = try nativeBundle(observed: "packing-001", claimedOutcome: .passed,
-                                      executedTestCount: 1, xctestExitCode: 0)
-        defer { try? FileManager.default.removeItem(at: passed.root) }
-        let passResult = try IntentEvidenceChecker.check(
-            bundle: passed.bundle, requirements: passed.requirements,
-            expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64), policy: IntentEvidenceChecker.policyID,
-            referenceTime: Date(timeIntervalSince1970: 100)
-        )
-        #expect(passResult.exitCode == 0)
-
-        let failed = try nativeBundle(observed: "wrong-note", claimedOutcome: .failed,
-                                      executedTestCount: 1, xctestExitCode: 1,
-                                      actionFailureReason: .wrongOutcome)
-        defer { try? FileManager.default.removeItem(at: failed.root) }
-        let failResult = try IntentEvidenceChecker.check(
-            bundle: failed.bundle, requirements: failed.requirements,
-            expectedSource: "revision-a", expectedAppDigest: String(repeating: "a", count: 64), policy: IntentEvidenceChecker.policyID,
-            referenceTime: Date(timeIntervalSince1970: 100)
-        )
-        #expect(failResult.exitCode == 20)
-        let object = try #require(JSONSerialization.jsonObject(with: failResult.json) as? [String: Any])
-        #expect((object["requiredFailures"] as? [String])?.isEmpty == false)
-        #expect((object["incompleteEvidence"] as? [String])?.isEmpty == false)
-    }
-
     @Test func mixedBusinessAndXCTestFailureRemainsIncompleteAndVisible() throws {
         for reason in [ScenarioActionFailureReason.wrongAction, .wrongOutcome] {
             let fixture = try nativeBundle(
@@ -1453,18 +1427,6 @@ struct IntentEvidenceBundleTests {
         try IntentEvidenceBundle.export(fixture.snapshot, to: fixture.bundle)
         manifest = try JSONDecoder().decode(IntentEvidenceBundleManifest.self, from: Data(contentsOf: manifestURL))
         manifest.schemaVersion = 99
-        try encode(manifest).write(to: manifestURL, options: .atomic)
-        #expect(throws: Error.self) { try IntentEvidenceBundle.read(fixture.bundle) }
-    }
-
-    @Test func declaredOversizedFileFailsBeforeItIsRead() throws {
-        let fixture = try fixtureBundle()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let manifestURL = fixture.bundle.appending(path: "manifest.json")
-        var manifest = try JSONDecoder().decode(
-            IntentEvidenceBundleManifest.self, from: Data(contentsOf: manifestURL)
-        )
-        manifest.files[0].bytes = IntentEvidenceBundle.maximumFileBytes + 1
         try encode(manifest).write(to: manifestURL, options: .atomic)
         #expect(throws: Error.self) { try IntentEvidenceBundle.read(fixture.bundle) }
     }

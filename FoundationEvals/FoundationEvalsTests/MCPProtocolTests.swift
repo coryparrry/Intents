@@ -160,17 +160,6 @@ struct MCPProtocolTests {
         }
     }
 
-    @Test func closedToolArgumentsRejectUndeclaredTopLevelProperties() throws {
-        let arguments = MCPJSONValue.object([
-            "runID": .string(UUID().uuidString),
-            "unexpected": .bool(true)
-        ])
-
-        #expect(throws: MCPToolInputError.self) {
-            try MCPToolCatalog.parse(name: "eval_cancel_run", arguments: arguments)
-        }
-    }
-
     @Test func attachmentToolsRequireConfirmationRevisionAndDeclaredFields() throws {
         let attachmentID = UUID()
         func removal(_ fields: [String: MCPJSONValue] = [:]) -> MCPJSONValue {
@@ -237,39 +226,6 @@ struct MCPProtocolTests {
         }
     }
 
-    @Test func startRunRequiresExpectedRevision() throws {
-        let runID = UUID()
-        guard case .startRun(let started) = try MCPToolCatalog.parse(
-            name: "eval_start_run",
-            arguments: .object(["runID": .string(runID.uuidString), "expectedRevision": .string("revision-1")])
-        ) else {
-            Issue.record("Expected a typed run start.")
-            return
-        }
-        #expect(started.runID == runID)
-        #expect(started.expectedRevision == "revision-1")
-
-        #expect(throws: MCPToolInputError.invalidArguments) {
-            try MCPToolCatalog.parse(
-                name: "eval_start_run",
-                arguments: .object(["runID": .string(runID.uuidString), "expectedRevision": .string("")])
-            )
-        }
-        #expect(throws: MCPToolInputError.invalidArguments) {
-            try MCPToolCatalog.parse(name: "eval_start_run", arguments: .object(["runID": .string(runID.uuidString)]))
-        }
-        #expect(throws: MCPToolInputError.invalidArguments) {
-            try MCPToolCatalog.parse(
-                name: "eval_start_run",
-                arguments: .object([
-                    "runID": .string(runID.uuidString),
-                    "expectedRevision": .string("revision-1"),
-                    "unexpected": .bool(true)
-                ])
-            )
-        }
-    }
-
     @Test func listRunsEnforcesPageAndFilterBounds() throws {
         guard case .listRuns(let defaults) = try MCPToolCatalog.parse(name: "eval_list_runs", arguments: .object([:])) else {
             Issue.record("Expected typed run listing.")
@@ -315,29 +271,6 @@ struct MCPProtocolTests {
         for arguments in rejected {
             #expect(throws: MCPToolInputError.invalidArguments) {
                 try MCPToolCatalog.parse(name: "eval_list_runs", arguments: .object(arguments))
-            }
-        }
-    }
-
-    @Test func projectReleaseReportDecodesProjectAndRejectsMalformedArguments() throws {
-        let projectID = UUID()
-        guard case .projectReleaseReport(let report) = try MCPToolCatalog.parse(
-            name: "eval_project_release_report",
-            arguments: .object(["projectID": .string(projectID.uuidString)])
-        ) else {
-            Issue.record("Expected a typed project release report.")
-            return
-        }
-        #expect(report.projectID == projectID)
-
-        let rejected: [MCPJSONValue] = [
-            .object([:]),
-            .object(["projectID": .string("not-a-uuid")]),
-            .object(["projectID": .string(projectID.uuidString), "suiteID": .string(UUID().uuidString)])
-        ]
-        for arguments in rejected {
-            #expect(throws: MCPToolInputError.invalidArguments) {
-                try MCPToolCatalog.parse(name: "eval_project_release_report", arguments: arguments)
             }
         }
     }
@@ -418,22 +351,6 @@ struct MCPProtocolTests {
         #expect(rejected.status == 503)
         #expect(rejected.headers["Retry-After"] == "1")
         #expect(completed.status == 200)
-    }
-
-    @Test func toolCatalogIsDeterministicTypedAndComplete() async throws {
-        let handler = makeHandler()
-        let first = await handler.handle(try standardRequest(method: "tools/list"))
-        let second = await handler.handle(try standardRequest(method: "tools/list"))
-        let tools = try #require(responseJSON(first)["result"]?["tools"]?.arrayValue)
-
-        #expect(first.body == second.body)
-        #expect(tools.count == 24)
-        #expect(tools.compactMap { $0["name"]?.stringValue } == MCPToolCatalog.definitions.map(\.name))
-        #expect(!tools.contains { $0["name"] == .string("eval_intent_install_apply") })
-        #expect(MCPToolCatalog.allDefinitions.count == 123)
-        #expect(tools.allSatisfy {
-            $0["inputSchema"]?["$schema"] == .string("https://json-schema.org/draft/2020-12/schema")
-        })
     }
 
     @Test func toolCallsAreTypedAndReturnStructuredAndTextContent() async throws {

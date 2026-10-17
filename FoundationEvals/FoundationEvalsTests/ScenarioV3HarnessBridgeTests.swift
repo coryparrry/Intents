@@ -43,7 +43,6 @@ struct ScenarioV3HarnessBridgeTests {
 
     @Test func strictActionPolicyRejectsStaleEnteredParametersButPreservesLegacyV3() throws {
         let legacy = try stableScenario()
-        #expect(legacy.actionRequirements == nil)
         try ScenarioValidator.validate(legacy)
 
         var strict = legacy

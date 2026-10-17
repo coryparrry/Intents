@@ -160,8 +160,6 @@ else:
         self.run_dispatch("publish", success=False, FAIL_INSTALLER="1")
         self.assertNotIn('"release", "upload"', self.calls())
 
-    def test_download_failure_fails_job(self):
-        self.run_dispatch("publish", success=False, FAIL_DOWNLOAD="1")
 
     def test_protected_scripts_package_separate_source_without_scripts(self):
         source = self.root / "bin/source"

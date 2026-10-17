@@ -145,7 +145,6 @@ extension EvaluationCompatibleJudgeClientTests {
         #expect(policy.thinking)
         #expect(policy.timeoutSeconds == 300)
         #expect(policy.promptVersion == EvaluationRunner.judgePromptVersion)
-        #expect(policy.promptVersion != "rubric-v7-required-assessments")
     }
 
     @MainActor

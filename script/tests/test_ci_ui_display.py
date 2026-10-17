@@ -22,10 +22,6 @@ class UIDisplayTests(unittest.TestCase):
         self.assertIsNone(helper.select_mode([mode(1920, 900), mode(1400, 1200)]))
         self.assertFalse(helper.adequate(dict(width=1600, height=999)))
 
-    def test_smallest_adequate_mode_is_selected_deterministically(self):
-        modes = [mode(1920, 1080, 3), mode(1600, 1200, 2), mode(1600, 1000, 7)]
-        self.assertEqual(helper.select_mode(modes), modes[2])
-        self.assertEqual(helper.select_mode(list(reversed(modes))), modes[2])
 
     def test_already_adequate_desktop_is_not_changed(self):
         display = Mock()

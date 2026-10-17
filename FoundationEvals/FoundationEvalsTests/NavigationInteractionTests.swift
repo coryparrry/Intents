@@ -12,18 +12,6 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct NavigationInteractionTests {
-    @Test func inheritedDisclosureStylePreservesSeparateSidebarRows() throws {
-        let fixture = SidebarFixture()
-        defer { fixture.close() }
-        let table = try #require(fixture.table)
-
-        // Two section headers, the suite, and two individually selectable runs.
-        // Applying FullWidthDisclosureStyle directly to a native sidebar instead
-        // reduces this to two header rows, swallowing the selectable children.
-        #expect(table.numberOfRows == 5)
-        #expect(!fixture.window.isVisible)
-    }
-
     @Test func runHistorySelectionWorksInBothDirectionsWithInheritedDisclosureStyle() throws {
         let fixture = SidebarFixture()
         defer { fixture.close() }

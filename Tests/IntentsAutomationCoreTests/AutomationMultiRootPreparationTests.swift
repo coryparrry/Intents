@@ -67,7 +67,7 @@ final class AutomationMultiRootPreparationTests: XCTestCase, @unchecked Sendable
         let templates = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Integration/AutomationHost")
         let approval = AutomationBuildApproval(sourceRoot: fixture.app.path, candidateID: candidate.id, configuration: "Debug", target: try AutomationMacGUIIdentity.currentTarget(), additionalSourceRoots: [fixture.shared.path, fixture.leaf.path])
         let prepared = try await AutomationPreparation().prepare(candidate: candidate, approval: approval,
-            sessionRoot: root.appendingPathComponent("prepare-" + UUID().uuidString), templates: templates, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+            sessionRoot: root.appendingPathComponent("prepare-" + UUID().uuidString), templates: templates, developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         XCTAssertEqual(prepared.source.schemaVersion, 2); try approval.validateSourceManifest(prepared.source)
         XCTAssertTrue(prepared.sourceGraph?.inputs.contains { $0.relativePath == "Packages/Leaf/Sources/Leaf/Leaf.swift" } == true)
         XCTAssertTrue(prepared.catalog.systemActions.contains { $0.id == "HostProbeIntent" && $0.compiled && !$0.executed && !$0.registered })
