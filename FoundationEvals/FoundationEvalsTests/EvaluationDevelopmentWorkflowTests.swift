@@ -2519,10 +2519,12 @@ struct EvaluationDevelopmentWorkflowTests {
         try runGit(["add", "fixture.txt"], in: directory)
         try runGit(["commit", "-m", "fixture"], in: directory)
         var snapshot = await EvaluationRepositoryInspector.snapshot(rootPath: directory.path)
+        #expect(snapshot.error == nil, "Clean repository snapshot failed: \(snapshot.error ?? "unknown error")")
         #expect(snapshot.commit?.isEmpty == false)
         #expect(snapshot.isDirty == false)
         try Data("two".utf8).write(to: directory.appending(path: "fixture.txt"))
         snapshot = await EvaluationRepositoryInspector.snapshot(rootPath: directory.path)
+        #expect(snapshot.error == nil, "Dirty repository snapshot failed: \(snapshot.error ?? "unknown error")")
         #expect(snapshot.isDirty == true)
     }
 

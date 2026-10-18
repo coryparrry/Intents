@@ -17,7 +17,7 @@ prevent a green required check when selected product checks did not pass.
   are built once and consumed by core and UI test jobs without rebuilding.
   Portable tests do not generate unused coverage instrumentation; no coverage
   report or threshold previously consumed it.
-- UI shards use recorded test durations, with conservative estimates for tests
+- UI shards use recorded test durations, with median estimates for tests
   without measurements. Sharding changes placement, not the selected coverage.
 - Fresh external SDK consumers run for SDK/installer changes and full runs.
   They still build the installer's immutable remote revision and verify a receipt
