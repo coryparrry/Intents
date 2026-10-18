@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto';
 import { EvaluationApp } from '../server/app.mjs';
 import { suite, nativeResult } from '../server/validation.mjs';
 import { revision, portableSuite, sampleEnvelope } from '../server/app-format.mjs';
-import { TOOLS } from '../server/catalog.mjs';
 import { health } from '../server/workspace.mjs';
 import { SPOTLIGHT_DEFAULTS } from '../server/app-defaults.mjs';
 const definition = () => ({ name: 'Local evaluation', version: 'v2', scoringMode: 'review', modelConfiguration: { samplingMode: 'topK', seedEnabled: true, seed: 17 }, features: { streamResponse: true }, cases: [{ id: randomUUID(), name: 'Named case', prompt: 'Say apple', expected: '' }] });
@@ -112,10 +111,6 @@ test('app evidence and flat envelope must describe the same sample', () => {
   const saved = suite(definition(), randomUUID); const raw = appRun(saved); const result = sampleEnvelope(raw.results[0]);
   nativeResult({ status: 'completed', results: [result], appRun: raw }, saved);
   const changed = structuredClone(raw); changed.results[0].response = 'changed'; assert.throws(() => nativeResult({ status: 'completed', results: [result], appRun: changed }, saved), /sample evidence/);
-});
-test('MCP nested schemas expose actual app configuration fields and recursive schema fields', () => {
-  const tool = TOOLS.find((item) => item.name === 'eval_save_suite'); assert.equal(tool.inputSchema.properties.suite.properties.modelConfiguration.properties.provider.enum[0], 'onDevice'); assert.equal(tool.inputSchema.$defs.field.properties.children.items.$ref, '#/$defs/field');
-  assert.equal(tool.inputSchema.properties.expectedRevision.type, 'string'); assert.equal(TOOLS.find((item) => item.name === 'eval_import_cases').inputSchema.properties.mapping.properties.promptColumn.type, 'string');
 });
 
 test('autosave persists unfinished app drafts and execution rejects them without starting a worker', async (t) => {
@@ -273,7 +268,6 @@ test('raw app exports parse for view-only host files without mutating any local 
   assert.equal((await app.call('eval_list_runs')).runs.length, 1);
 });
 
-
 for (const representation of ['suite', 'json', 'envelope']) {
   test(`imported Spotlight authorization is reset before execution (${representation})`, async (t) => {
     const requests = [];
@@ -339,7 +333,6 @@ test('import authorization reset preserves reference bundle verification and rej
   bundle.suite.id = randomUUID(); bundle.referenceFiles[0].base64 = Buffer.from('Tampered portable file').toString('base64');
   await assert.rejects(app.call('eval_import_suite', { json: JSON.stringify(bundle) }), /do not match/);
 });
-
 
 test('suite import rejects public authorization overrides and object envelopes without enabling search', async (t) => {
   let nativeCalls = 0;

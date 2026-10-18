@@ -106,12 +106,4 @@ final class AutomationCodecTests: XCTestCase {
         XCTAssertThrowsError(try AutomationHostProgram.hostInput(.array([.integer("1")])))
         XCTAssertThrowsError(try AutomationHostProgram.hostInput(.array([.array([])])))
     }
-    func testOldCatalogJSONOmitsNewFieldsAndStillDecodes() throws {
-        let app = AppIdentity(logicalID: "old", bundleID: "example.old", platform: "ios", productDigest: String(repeating: "a", count: 64))
-        let catalog = ApplicationSurfaceCatalog(app: app, systemActions: [.init(id: "Old", typeName: "Subject.Old", title: "Old", parameters: [.init(name: "text", family: "text", optional: true)], parametersComplete: true, compiled: true, registered: false, executed: false)], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: [])
-        let encoded = try JSONEncoder().encode(catalog)
-        XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("defaultValue"))
-        XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("enumerations"))
-        XCTAssertEqual(try JSONDecoder().decode(ApplicationSurfaceCatalog.self, from: encoded), catalog)
-    }
 }

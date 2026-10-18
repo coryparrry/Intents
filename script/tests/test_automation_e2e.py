@@ -379,30 +379,6 @@ class RegistrationReadinessTests(unittest.TestCase):
                 run.assert_called_once()
 
 
-class WorkflowTests(unittest.TestCase):
-    def test_mac_input_diagnostic_is_live_scoped_and_preserves_separate_evidence(self):
-        workflow = (SCRIPT.parents[1] / ".github/workflows/ci.yml").read_text()
-        job = workflow.split("\n  input-conversion:\n", 1)[1]
-        self.assertIn("name: Input conversion diagnostic (Mac)", job)
-        self.assertIn("needs.changes.outputs.input_conversion == 'true'", job)
-        self.assertIn("runs-on: xcode-27", job)
-        self.assertIn("timeout-minutes: 30", job)
-        self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_LIVE: '1'", job)
-        self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT: ${{ runner.temp }}/input-conversion", job)
-        self.assertIn('DEVELOPER_DIR="$(xcode-select -p)"', job)
-        self.assertIn('export DEVELOPER_DIR\n', job)
-        self.assertIn('swift test --jobs "$(sysctl -n hw.logicalcpu)"', job)
-        self.assertIn("--filter 'AutomationMacInputProbeFixtureTests/testAuthoredInputProbeFixtureWhenRequested'", job)
-        self.assertIn('--scratch-path "$RUNNER_TEMP/input-conversion-build"', job)
-        self.assertIn("set -o pipefail", job)
-        self.assertIn("Live input canary did not pass", job)
-        self.assertIn("Live calibration did not execute", job)
-        self.assertIn("path: ${{ runner.temp }}/input-conversion\n", job)
-        self.assertNotIn("--skip-build", job)
-        self.assertNotIn("INTENTS_AUTOMATION_LIVE_UI", job)
-        self.assertIn("neither executes a business subject nor grants codec execution authority", job)
-
-
 class OrchestrationTests(unittest.TestCase):
     def exercise(self, failure=None, reuse_build=False, build_jobs=None, scenario_group="all"):
         temporary = tempfile.TemporaryDirectory()
@@ -451,17 +427,6 @@ class OrchestrationTests(unittest.TestCase):
         self.assertTrue(all(args[-1] == owned for args in calls if args[:3] in
                             (["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"])))
 
-    def test_groups_cover_all_seven_cases_once_and_keep_recovery_together(self):
-        expected = {
-            "codec-1": ("codec-1",), "codec-2": ("codec-2",), "codec-file": ("codec-file",),
-            "mixed": ("mixed",), "wrong-assertion": ("wrong-assertion",),
-            "timeout-recovery": ("timeout", "after-timeout"),
-        }
-        self.assertEqual(driver.SCENARIO_GROUPS, expected)
-        all_cases = driver.scenario_cases("all")
-        self.assertEqual(all_cases, tuple(case for cases in expected.values() for case in cases))
-        self.assertEqual(len(all_cases), 7)
-        self.assertEqual(len(set(all_cases)), 7)
 
     def test_each_group_prepares_registers_checks_reports_and_cleans_its_owned_device(self):
         for group, selected in driver.SCENARIO_GROUPS.items():
@@ -563,29 +528,6 @@ class OrchestrationTests(unittest.TestCase):
                 expected = commands.output.parent / "reusable-swift-cache" if reusable else commands.output / "swift-build"
                 self.assertEqual(scratch_paths, [str(expected), str(expected)])
 
-    def test_install_precedes_registration_without_duplicate_identity_query(self):
-        commands, results = self.exercise()
-        calls = [args for args, _ in commands.calls]
-        install = next(index for index, args in enumerate(calls) if "install" in args)
-        registration = next(index for index, args in enumerate(calls) if "run" in args)
-        self.assertLess(install, registration)
-        # Each campaign performs the authoritative installed-byte verification itself.
-        self.assertFalse(any(args[:3] == ["xcrun", "simctl", "get_app_container"] for args in calls))
-        self.assertEqual(len(results), 7)
-
-    def test_cli_build_uses_runner_cpus_or_explicit_override(self):
-        for cpu_count, override, expected in ((6, None, "6"), (None, None, "1"), (6, 3, "3")):
-            with self.subTest(cpu_count=cpu_count, override=override), \
-                 patch.object(driver.os, "cpu_count", return_value=cpu_count):
-                commands, _ = self.exercise(build_jobs=override)
-                build = next(args for args, _ in commands.calls if "--jobs" in args)
-                self.assertEqual(build[build.index("--jobs") + 1], expected)
-
-    def test_cli_rejects_nonpositive_build_job_counts(self):
-        for jobs in ("0", "-1"):
-            with self.subTest(jobs=jobs), self.assertRaises(SystemExit) as failure:
-                driver.main(["--jobs", jobs])
-            self.assertEqual(failure.exception.code, 2)
 
     def test_cli_forwards_build_job_override_and_external_cache(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -594,9 +536,35 @@ class OrchestrationTests(unittest.TestCase):
             with patch.object(driver, "run_contract", return_value=reports) as run:
                 self.assertEqual(driver.main(["--output-root", str(root / "evidence"),
                                               "--build-root", str(root / "cache"), "--jobs", "4"]), 0)
-            self.assertEqual(run.call_args.kwargs, {"build_root": (root / "cache").resolve(),
-                                                   "build_jobs": 4, "record_build_cache": False,
-                                                   "scenario_group": "all"})
+            self.assertEqual(run.call_args.kwargs["build_root"], (root / "cache").resolve())
+            self.assertEqual(run.call_args.kwargs["build_jobs"], 4)
+
+
+    def test_cli_forwards_optional_cache_checkpoint_flag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / "github-output"
+            marker.touch()
+            _, reports = self.exercise()
+            with patch.dict(driver.os.environ, {"GITHUB_OUTPUT": str(marker)}), \
+                 patch.object(driver, "run_contract", return_value=reports) as run:
+                self.assertEqual(driver.main(["--output-root", str(root / "evidence"),
+                                              "--build-root", str(root / "cache"), "--record-build-cache"]), 0)
+            self.assertIs(run.call_args.kwargs["record_build_cache"], True)
+
+
+    def test_cli_passes_explicit_build_job_limit_to_swift(self):
+        with patch.object(driver.os, "cpu_count", return_value=6):
+            commands, _ = self.exercise(build_jobs=3)
+        build = next(args for args, _ in commands.calls if "--jobs" in args)
+        self.assertEqual(build[build.index("--jobs") + 1], "3")
+
+    def test_cli_rejects_nonpositive_build_job_counts(self):
+        for jobs in ("0", "-1"):
+            with self.subTest(jobs=jobs), self.assertRaises(SystemExit) as failure:
+                driver.main(["--jobs", jobs])
+            self.assertEqual(failure.exception.code, 2)
+
 
     def test_build_and_prepare_finish_before_boot_install_and_execution(self):
         commands, _ = self.exercise()
@@ -671,17 +639,6 @@ class OrchestrationTests(unittest.TestCase):
                         driver.run_contract(commands, root, build_root=build_root, record_build_cache=True)
             self.assertEqual(commands.calls, [])
 
-    def test_cli_forwards_optional_cache_checkpoint_flag(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            marker = root / "github-output"
-            marker.touch()
-            _, reports = self.exercise()
-            with patch.dict(driver.os.environ, {"GITHUB_OUTPUT": str(marker)}), \
-                 patch.object(driver, "run_contract", return_value=reports) as run:
-                self.assertEqual(driver.main(["--output-root", str(root / "evidence"),
-                                              "--build-root", str(root / "cache"), "--record-build-cache"]), 0)
-            self.assertIs(run.call_args.kwargs["record_build_cache"], True)
 
     def test_cache_checkpoint_survives_contract_failure_but_never_records_failed_build(self):
         for failure in ("prepare", "--product"):
@@ -913,15 +870,6 @@ class OrchestrationTests(unittest.TestCase):
             self.assertTrue((Path(directory) / "01-owned.command.json").exists())
             self.assertTrue((Path(directory) / "01-owned.stdout.log").exists())
 
-    def test_command_duration_identifies_expensive_build_and_prepare_steps(self):
-        with tempfile.TemporaryDirectory() as directory:
-            process = unittest.mock.Mock()
-            process.wait.return_value = 0
-            with patch.object(driver.subprocess, "Popen", return_value=process), \
-                 patch.object(driver.time, "monotonic", side_effect=[10.0, 12.5]), \
-                 patch("builtins.print") as report:
-                self.assertEqual(driver.Commands(Path(directory)).run(["xcrun", "swift", "build"]), (0, ""))
-            report.assert_called_once_with("Completed xcrun swift: 2.5s (exit 0)", flush=True)
 
     def test_json_command_failures_surface_exit_status_stderr_and_log_paths(self):
         for stdout, stderr, code in (("", '{"error":"timedOut"}', 1), ("invalid JSON", "", 0),

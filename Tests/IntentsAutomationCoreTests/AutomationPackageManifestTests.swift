@@ -17,6 +17,9 @@ final class AutomationPackageManifestTests: XCTestCase {
         XCTAssertEqual(manifest.targets[0].dependencies, ["Shared", "Other"])
         XCTAssertEqual(manifest.targets[0].exclude, ["Hidden", "Unused.swift"])
         XCTAssertTrue(manifest.targets[0].membershipAvailable)
+        XCTAssertEqual(manifest.productsByName["Local"]?.targets, ["Main"])
+        XCTAssertEqual(manifest.targetsByName["Main"]?.dependencies, ["Shared", "Other"])
+        for name in ["Main", "Shared", "Other"] { XCTAssertTrue(try XCTUnwrap(manifest.targetsByName[name]).membershipAvailable) }
     }
     func testDynamicConditionalMutatedOrDuplicateDeclarationsAreUnresolved() throws {
         let good = "import PackageDescription\nlet package = Package(name: \"Local\", products: [.library(name: \"Local\", targets: [\"Main\"])], targets: [.target(name: \"Main\", path: \"Code\")])"
@@ -36,13 +39,6 @@ final class AutomationPackageManifestTests: XCTestCase {
                      good.replacingOccurrences(of: "[.target(name: \"Main\", path: \"Code\")]", with: "[.target(name: \"Main\"), .target(name: \"Main\")]"), good + "/* unclosed"] {
             XCTAssertNil(try read(text), text)
         }
-    }
-    func testRepositoryCoreProductHasLiteralReachableDeclarations() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let manifest = try XCTUnwrap(AutomationPackageManifest.read(Data(contentsOf: root.appendingPathComponent("Package.swift"))))
-        XCTAssertEqual(manifest.productsByName["IntentsAutomationCore"]?.targets, ["IntentsAutomationCore"])
-        XCTAssertEqual(manifest.targetsByName["IntentsAutomationCore"]?.dependencies, ["IntentsAutomationDateCodec", "IntentLabContracts", "IntentsAutomationUIHostContracts"])
-        for name in ["IntentsAutomationCore", "IntentsAutomationDateCodec", "IntentLabContracts", "IntentsAutomationUIHostContracts"] { XCTAssertTrue(try XCTUnwrap(manifest.targetsByName[name]).membershipAvailable) }
     }
     func testGeneratorsAndConditionalDependenciesStayVisibleAndPartial() throws {
         let manifest = try XCTUnwrap(read("""

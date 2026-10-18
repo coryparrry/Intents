@@ -22,6 +22,10 @@ public actor AutomationXCUITestRouteDriver {
     private var subjectStarted = false
     private var testStarted = false
     private var stopVerified = true
+    private var macStopVerified = false
+    #if os(macOS)
+    private var macLifecycle: AutomationMacXCUITestLifecycle?
+    #endif
 
     public init(prepared: AutomationPreparedAppleHost, root: URL, artifacts: AutomationArtifactRegistry,
                 developerDirectory: URL, willStart: @escaping @Sendable () async throws -> Void = {},
@@ -34,7 +38,7 @@ public actor AutomationXCUITestRouteDriver {
         self.simulatorTerminationVerifier = nil
     }
 
-    /// Internal release-verification seam; public construction always runs simctl.
+    /// Internal simulator release-verification seam; native Mac uses exact executable observations.
     init(prepared: AutomationPreparedAppleHost, root: URL, artifacts: AutomationArtifactRegistry,
          developerDirectory: URL, simulatorTerminationVerifier: @escaping @Sendable () async -> Bool) {
         self.prepared = prepared; self.root = root; self.artifacts = artifacts; self.developerDirectory = developerDirectory
@@ -68,6 +72,13 @@ public actor AutomationXCUITestRouteDriver {
         let relativeDeadline = ContinuousClock.now.advanced(by: commandTimeout)
         let deadline = min(relativeDeadline, absoluteDeadline ?? relativeDeadline)
         guard commandTimeout > .zero else { throw AutomationRPCError.timedOut }
+        #if os(macOS)
+        if prepared.target.kind == .nativeMac {
+            let lifecycle = try AutomationMacXCUITestLifecycle(host: prepared)
+            macLifecycle = lifecycle
+            try await lifecycle.prepare()
+        }
+        #endif
         let directory = root.appendingPathComponent("xcuitest-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let scope = AutomationScope(runID: approval.runID, attemptID: attemptID, segmentID: plan.execution.id, leaseGeneration: leaseGeneration)
@@ -182,7 +193,23 @@ public actor AutomationXCUITestRouteDriver {
             let terminated = await Task.detached { [self] in await terminateSimulator() }.value
             stopVerified = stopVerified && terminated
         }
-        let runnerStopped = !testStarted || (prepared.target.kind == .simulator && drained && stopVerified)
+        #if os(macOS)
+        if subjectStarted, drained, prepared.target.kind == .nativeMac {
+            let lifecycle = macLifecycle
+            let terminated = await Task.detached { await lifecycle?.release() == true }.value
+            macStopVerified = terminated
+            stopVerified = stopVerified && terminated
+        }
+        if let macLifecycle {
+            // Diagnostics retain the independent kernel observations; they never
+            // convert a failed observation or failed termination into release.
+            if let data = try? JSONEncoder().encode(await macLifecycle.retainedObservations()),
+               let file = try? AutomationDurableFile(url: root.appendingPathComponent("native-mac-release.json"), maximumBytes: 4_194_304) {
+                try? file.write(data)
+            }
+        }
+        #endif
+        let runnerStopped = !testStarted || ((prepared.target.kind == .simulator || (prepared.target.kind == .nativeMac && macStopVerified)) && drained && stopVerified)
         var cleaned = privatePayload == nil
         if let privatePayload, drained, runnerStopped {
             do {
@@ -192,8 +219,8 @@ public actor AutomationXCUITestRouteDriver {
             } catch { cleaned = false }
         }
         subjectStarted = false
-        // A local xcodebuild exit cannot prove remote device or native Mac subject/controller absence.
-        // Those platforms require their runtime release verifier before reporting released resources.
+        // Remote devices require their separate runtime release verifier; Mac release
+        // additionally observes the exact prepared subject and host executables.
         return .init(commandsDrained: drained, runnerTerminated: runnerStopped && drained,
                      privatePayloadCleaned: cleaned)
     }

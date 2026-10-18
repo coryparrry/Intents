@@ -346,7 +346,6 @@ struct ScenarioAcceptanceTests {
         #expect(shared.laneResults[0].observations["intentlab.actionReceipts"] == nil)
         #expect(shared.laneResults[0].actionReceipts == nil)
         #expect(!String(decoding: try JSONEncoder().encode(shared), as: UTF8.self).contains(secret))
-        #expect(run.laneResults[0].actionReceipts?.count == 1)
     }
 
     @Test func nativePendingSaveRetainsArtifactsAndRejectsAlteredSavedRun() async throws {

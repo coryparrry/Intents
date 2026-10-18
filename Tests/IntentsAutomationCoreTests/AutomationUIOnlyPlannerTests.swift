@@ -116,13 +116,23 @@ final class AutomationUIOnlyPlannerTests: XCTestCase {
         XCTAssertThrowsError(try AutomationUIOnlyPlanner.compile(app: app, target: target, program: reviewedProgram, approval: approval(), localeIdentifier: ""))
     }
 
-    func testNativeMacUIRequiresAnAssociatedHostWorkflow() throws {
+    func testNativeMacUICompilesToExactApprovedAssociatedHostWorkflow() throws {
         var mac = app; mac.platform = "macos"; mac.productDigestVersion = 2
         mac.canonicalBundlePath = "/private/tmp/Qualification.app"
         let native = TargetIdentity(id: "host-macos-local", kind: .nativeMac, loginSession: "qualified-session")
-        let approved = RunApproval(runID: "approved", app: mac, target: native, environmentID: "owned",
+        var approved = RunApproval(runID: "approved", app: mac, target: native, environmentID: "owned",
             effects: [.observe, .navigate], maximumActions: 30, disposable: true)
-        XCTAssertThrowsError(try AutomationUIOnlyPlanner.compile(app: mac, target: native, program: reviewedProgram,
-            approval: approved, localeIdentifier: "en_GB"))
+        let plan = try AutomationUIOnlyPlanner.compile(app: mac, target: native, program: reviewedProgram,
+            expectedVisibleText: "Complete", approval: approved, localeIdentifier: "en_GB")
+        XCTAssertThrowsError(try AutomationXCUITestPlan.assemble(plan: plan, approval: approved,
+            attemptID: "attempt", leaseGeneration: 1))
+        approved.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+        let host = try AutomationXCUITestPlan.assemble(plan: plan, approval: approved,
+            attemptID: "attempt", leaseGeneration: 1)
+        XCTAssertEqual(host.steps.map(\.kind), [.launch, .clearAndType, .tap, .readProperty, .screenshot])
+        XCTAssertLessThanOrEqual(host.steps.filter { $0.segmentID == plan.execution.id }.count, plan.budget.subjectOperations)
+        var changed = plan; changed.execution.uiProgram?.bindings["approvedText"] = "Changed"
+        XCTAssertThrowsError(try AutomationXCUITestPlan.assemble(plan: changed, approval: approved,
+            attemptID: "attempt", leaseGeneration: 1))
     }
 }

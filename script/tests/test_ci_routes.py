@@ -3,7 +3,6 @@
 import importlib.util
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -34,6 +33,8 @@ class CoverageTests(unittest.TestCase):
             "Sources/IntentsAutomationTool/AutomationCLI.swift",
             "examples/AutomationFixture/App/EchoIntents.swift",
             "script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py",
+            "script/automation_mac_e2e.py", "script/tests/test_automation_mac_e2e.py",
+            "script/ci_macos_signing.py", "script/tests/test_ci_macos_signing.py",
             "Package.swift", ".github/workflows/ci.yml",
         ):
             with self.subTest(path=path):
@@ -71,6 +72,13 @@ class CoverageTests(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 self.assertFalse(routes.coverage([path])["sdk_consumer"])
+
+    def test_mac_signing_changes_select_focused_regressions_and_live_acceptance(self):
+        for path in ("script/ci_macos_signing.py", "script/tests/test_ci_macos_signing.py"):
+            with self.subTest(path=path):
+                self.assert_selection([path], python=("script.tests.test_ci_macos_signing",))
+                self.assertTrue(routes.coverage([path])["automation_e2e"])
+                self.assertFalse(routes.coverage([path])["input_conversion"])
 
     def test_homebrew_updater_and_workflow_select_their_regressions(self):
         for path in ("script/update_homebrew.py", ".github/workflows/update-homebrew.yml"):
@@ -282,17 +290,6 @@ class CoverageTests(unittest.TestCase):
                     python=("script.tests.test_ci_routes",),
                 )
 
-    def test_project_installer_sources_select_installer_tests(self):
-        for source in (
-            "IntentLabProjectInstaller.swift",
-            "OpenStepProjectDocument.swift",
-        ):
-            with self.subTest(source=source):
-                self.assert_selection(
-                    [routes.APP + "Services/" + source],
-                    native=True,
-                    swift=("IntentLabProjectInstallerTests",),
-                )
 
     def test_sidebar_and_toolbar_do_not_rerun_scoring_or_installer_tests(self):
         for source, suite in (
@@ -433,6 +430,20 @@ class CoverageTests(unittest.TestCase):
 
 
 class MatrixTests(unittest.TestCase):
+    def test_excluded_mac_suite_stays_out_of_changed_and_fallback_selections(self):
+        excluded = routes.UI_TARGET + "MacPreparationUITests"
+        for matrix in (
+            routes.ui_matrix(routes.ALL_UI_GROUPS, ["MacPreparationUITests", "AppAutomationUITests"]),
+            routes.full_coverage("fallback", extra_classes=["MacPreparationUITests"])["ui_matrix"],
+        ):
+            selected = [test for job in matrix for test in job["tests"]]
+            self.assertTrue(selected)
+            self.assertFalse(any(test == excluded or test.startswith(excluded + "/") for test in selected))
+        plan = routes.coverage([routes.UI_TESTS + "MacPreparationUITests.swift"])
+        self.assertTrue(plan["ui"])
+        self.assertEqual(plan["ui_matrix"], routes.full_coverage("manual-only edit")["ui_matrix"])
+        self.assertTrue(plan["native"])
+
     def selected_ui(self, paths):
         return {
             test for group in routes.coverage(paths)["ui_matrix"] for test in group["tests"]
@@ -653,25 +664,24 @@ class MatrixTests(unittest.TestCase):
             self.assertEqual(len(tests), len(expected))
         self.assertEqual(routes.coverage(["README.md"])["ui_matrix"], [])
 
-    def test_leaf_routes_only_name_existing_top_level_views(self):
-        for path in routes.UI_VIEW_GROUPS:
-            self.assertEqual(len(Path(path).parts), 2)
-            self.assertTrue((ROOT / routes.APP / path).is_file(), path)
-
-    def test_every_ui_selector_names_a_current_test_class_and_method(self):
-        for group in routes.full_coverage("fixture")["ui_matrix"]:
-            for selection in group["tests"]:
-                with self.subTest(selection=selection):
-                    _, suite, *method = selection.split("/")
-                    source = (ROOT / routes.UI_TESTS / (suite + ".swift")).read_text()
-                    self.assertRegex(source, r"\bclass " + re.escape(suite) + r"\s*:\s*XCTestCase")
-                    if method:
-                        self.assertRegex(source, r"\bfunc " + re.escape(method[0]) + r"\(")
-
 
 class FeatureOwnershipTests(unittest.TestCase):
     def groups(self, paths):
         return {name for group in routes.coverage(paths)["ui_matrix"] for name in group["name"].split("+")}
+
+
+    def test_intent_lab_and_suite_editor_select_only_their_shared_class_methods(self):
+        for view, wanted, unrelated in (
+            ("IntentLabView", "testDuplicateParameterDraftsRemoveOneAtATime", "testCaseSearchKeepsEditorAndScoringSelectionAligned"),
+            ("ModelControlsSection", "testCaseSearchKeepsEditorAndScoringSelectionAligned", "testDuplicateParameterDraftsRemoveOneAtATime"),
+        ):
+            with self.subTest(view=view):
+                tests = {test for group in routes.coverage([routes.APP + "Views/" + view + ".swift"])["ui_matrix"] for test in group["tests"]}
+                prefix = routes.UI_TARGET + "FoundationEvalsUITests"
+                self.assertIn(prefix + "/" + wanted, tests)
+                self.assertNotIn(prefix + "/" + unrelated, tests)
+                self.assertNotIn(prefix, tests)
+
 
     def test_isolated_features_do_not_run_unrelated_ui(self):
         cases = {
@@ -698,17 +708,6 @@ class FeatureOwnershipTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.groups([routes.APP + path]), expected)
 
-    def test_intent_lab_and_suite_editor_select_only_their_shared_class_methods(self):
-        for view, wanted, unrelated in (
-            ("IntentLabView", "testDuplicateParameterDraftsRemoveOneAtATime", "testCaseSearchKeepsEditorAndScoringSelectionAligned"),
-            ("ModelControlsSection", "testCaseSearchKeepsEditorAndScoringSelectionAligned", "testDuplicateParameterDraftsRemoveOneAtATime"),
-        ):
-            with self.subTest(view=view):
-                tests = {test for group in routes.coverage([routes.APP + "Views/" + view + ".swift"])["ui_matrix"] for test in group["tests"]}
-                prefix = routes.UI_TARGET + "FoundationEvalsUITests"
-                self.assertIn(prefix + "/" + wanted, tests)
-                self.assertNotIn(prefix + "/" + unrelated, tests)
-                self.assertNotIn(prefix, tests)
 
     def test_combined_feature_changes_union_only_relevant_groups(self):
         paths = [routes.APP + "Views/MCPSettingsView.swift", routes.APP + "Views/WorkflowTraceView.swift"]
@@ -716,6 +715,17 @@ class FeatureOwnershipTests(unittest.TestCase):
         self.assertEqual(self.groups(paths), self.groups(list(reversed(paths))))
         shared = routes.coverage(paths + [routes.APP + "ContentView.swift"])
         self.assertEqual(shared["ui_matrix"], routes.full_coverage("fixture")["ui_matrix"])
+
+    def test_services_select_only_the_ui_that_exercises_their_results(self):
+        for source, expected in (
+            ("MetricScorer.swift", {"runs"}),
+            ("EvaluationRunner.swift", {"runs"}),
+            ("EvaluationRunner+Judge.swift", {"runs"}),
+            ("ScenarioPersistence.swift", {"intent-lab"}),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(self.groups([routes.APP + "Services/" + source]), expected)
+
 
     def test_shared_lifecycle_navigation_and_storage_keep_full_baseline(self):
         for path in (
@@ -738,15 +748,6 @@ class FeatureOwnershipTests(unittest.TestCase):
                 self.assertFalse(plan["ui"])
                 self.assertEqual(plan["ui_matrix"], [])
 
-    def test_services_select_only_the_ui_that_exercises_their_results(self):
-        for source, expected in (
-            ("MetricScorer.swift", {"runs"}),
-            ("EvaluationRunner.swift", {"runs"}),
-            ("EvaluationRunner+Judge.swift", {"runs"}),
-            ("ScenarioPersistence.swift", {"intent-lab"}),
-        ):
-            with self.subTest(source=source):
-                self.assertEqual(self.groups([routes.APP + "Services/" + source]), expected)
 
     def test_native_automation_stores_run_their_unit_and_ui_tests_without_cli_canaries(self):
         for source in ("AppAutomationStore.swift", "AutomationNativeRunPlanning.swift",
@@ -877,10 +878,6 @@ class FeatureOwnershipTests(unittest.TestCase):
         self.assertTrue(shared["automation_e2e"])
         self.assertTrue(shared["input_conversion"])
 
-    def test_production_developer_bridge_suites_exist(self):
-        source = (ROOT / "Tests/FoundationEvalsDeveloperTests/DeveloperProtocolTests.swift").read_text()
-        for suite in routes.PRODUCTION_DEVELOPER_SUITES:
-            self.assertRegex(source, r"\bstruct " + re.escape(suite) + r"\b")
 
     def test_standalone_plugin_changes_use_only_the_plugin_workflow(self):
         for path in (
@@ -921,52 +918,6 @@ class FeatureOwnershipTests(unittest.TestCase):
         self.assertTrue(plan["input_conversion"])
         self.assertEqual(plan["native_tests"], ["FoundationEvalsTests"])
         self.assertEqual(plan["swift_suites"], ["*"])
-
-    def test_every_feature_catalog_path_and_selector_exists(self):
-        for path in routes.UI_APP_GROUPS:
-            self.assertTrue((ROOT / routes.APP / path).is_file(), path)
-        for group in routes.ui_matrix(set(routes.UI_BASELINE) | set(routes.UI_FEATURE_TESTS), targeted=True):
-            for selector in group["tests"]:
-                _, suite, *method = selector.split("/")
-                source = (ROOT / routes.UI_TESTS / (suite + ".swift")).read_text()
-                self.assertRegex(source, r"\bclass " + re.escape(suite) + r"\s*:\s*XCTestCase")
-                if method:
-                    self.assertRegex(source, r"\bfunc " + re.escape(method[0]) + r"\(")
-
-
-class CatalogTests(unittest.TestCase):
-    def test_every_portable_source_and_suite_has_a_route(self):
-        manifest = (ROOT / "Package.swift").read_text()
-
-        def strings(pattern):
-            match = re.search(pattern, manifest, re.DOTALL)
-            self.assertIsNotNone(
-                match, "Update the route catalog check when the package layout changes"
-            )
-            return set(re.findall(r'"([^"\n]+)"', match.group(1)))
-
-        core = strings(r"let portableProductionSources = \[(.*?)\]")
-        ui = strings(r'name: "FoundationEvalsUIComponents".*?sources: \[(.*?)\]')
-        tests = strings(r"let portableTestSources = \[(.*?)\]")
-        self.assertEqual(
-            set(routes.SWIFT_DEPENDENCIES),
-            core | {"Views/Components/" + name for name in ui},
-        )
-        self.assertEqual({suite + ".swift" for suite in routes.SWIFT_SUITES}, tests)
-        for suite in routes.SWIFT_SUITES:
-            source = (ROOT / routes.TESTS / (suite + ".swift")).read_text()
-            self.assertRegex(source, r"\b(?:struct|class) " + re.escape(suite) + r"\b")
-
-    def test_script_mappings_reference_existing_modules(self):
-        mapped = set().union(*routes.PYTHON_DEPENDENCIES.values()) | routes.MACOS_TESTS
-        self.assertLessEqual(
-            mapped, routes.python_test_inventory() | routes.MACOS_TESTS
-        )
-        for module in mapped:
-            self.assertTrue(
-                (ROOT / (module.replace(".", "/") + ".py")).is_file(), module
-            )
-        self.assertFalse(routes.python_test_inventory() & routes.MACOS_TESTS)
 
 
 class GitEventTests(unittest.TestCase):

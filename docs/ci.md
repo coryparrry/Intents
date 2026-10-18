@@ -51,7 +51,7 @@ prevent a green required check when selected product checks did not pass.
 
 Automatic runners exclude the [manual qualification methods](ci-manual-tests.md)
 whose fixtures, profiles, model assets or activation flags they do not provide.
-This includes 26 runtime opt-ins in ordinary Swift execution, the native model
+This includes 23 runtime opt-ins in ordinary Swift execution, the native model
 integration, and the native duplicate of the SDK installer integration. Dedicated
 SDK and input-conversion jobs keep their explicitly provisioned checks. These
 exclusions remove skipped entries from automatic selection, preserving the
@@ -61,7 +61,7 @@ ordinary methods in each suite and direct manual execution paths.
 
 The existing `Compile app and tests` check is retained because repository rules
 already require its name. It now always runs and also enforces the script,
-portable, external SDK, simulator acceptance, and selected Mac input diagnostic
+portable, external SDK, simulator and Mac acceptance, and selected Mac input diagnostic
 results. An expected skip passes only when the routing plan did not select that
 job. Failures, cancellations, missing results, and unexplained skips fail the
 gate, including for changes that do not require a native build.
@@ -101,7 +101,9 @@ explicit aggregate gate. Its matching
 Xcode builds, Swift UI tests, or simulator App Intent execution. That elapsed
 time is not an equivalent native-validation target.
 
-Simulator acceptance uses one worker. A two-group hosted trial took 16m11s for
+Simulator and signed Mac acceptance share one worker. The Mac phase runs after
+the simulator scenarios and verifies automation plus saved-fix comparison.
+The historical simulator-only measurements below predate that Mac phase. A two-group hosted trial took 16m11s for
 its slower group, versus 16m05s for the preceding single-worker run, and delayed a
 UI shard by over six minutes. That split was removed. Full runs allocate seven
 Mac workers instead of the original nine; all seven scenarios still run.

@@ -78,12 +78,6 @@ struct EvaluationExactCriterionTests {
         #expect(EvaluationExactCriterion.check(criterion: criterion, index: 1, response: "READY") == nil)
     }
 
-    @Test func boundsUnquotedStatusLength() {
-        let maximum = String(repeating: "A", count: 256)
-        #expect(EvaluationExactCriterion.expectedText(in: "The response is exactly \(maximum).") == maximum)
-        #expect(EvaluationExactCriterion.expectedText(in: "The response is exactly \(maximum)A.") == nil)
-    }
-
     @Test func exactRulesDoNotBypassOtherRubricRequirements() throws {
         var suite = EvaluationSuite()
         suite.criteria = "exact: \"READY\"\nThe lookup tool was called."

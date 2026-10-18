@@ -9,7 +9,6 @@ NATIVE_MANUAL_METHODS = frozenset({
 # The input-probe method has its own provisioned CI job, outside this dispatcher.
 SWIFT_MANUAL_METHODS = frozenset({
     "AutomationAppleFileDeclarationBuildTests/testActualFileDeclarationsBuildWithoutRuntimeWhenRequested",
-    "AutomationAppleNestedArrayBuildTests/testSelectedToolchainRejectsAuthoredNestedArrayMetadataWhenRequested",
     "AutomationFreshWorkflowLiveTests/testApprovedFreshDuplicateRecordsThroughProductionRunner",
     "AutomationIntakeBreadthTests/testActualOwnedServerDisposalAfterOperationFailureAndWrongBytes",
     "AutomationMacGUIIdentityTests/testCurrentSessionReadOnlyOptIn",
@@ -21,13 +20,11 @@ SWIFT_MANUAL_METHODS = frozenset({
     "AutomationMacProductionHostTests/testProductionMacHostExecutesAndReleasesTwiceWhenRequested",
     "AutomationMacSourceIntegrityBuildTests/testBuildMutationCannotProducePreparedCatalogWhenRequested",
     "AutomationMultiRootPreparationTests/testActualGrantedLocalPackageClosureBuildsAndReloadsWithoutRuntimeWhenRequested",
-    "AutomationPhysicalDeviceInventoryTests/testActualReadOnlyXcodeInventoryWhenExplicitlyProvided",
     "AutomationPhysicalReadOnlyTests/testOfficialInventoryChildrenAreDurablyTrackedAndDrained",
     "AutomationProcessTests/testActualOwnedSimulatorInventoryDrainsBothPipes",
     "AutomationReleaseTests/testActualOwnedSimulatorRetainedRunnerCannotBeReportedReleased",
     "AutomationRepositoryCheckoutTests/testActualPublicHTTPSFetchRetainsRevision",
     "AutomationRepositoryIntakeTests/testActualRepositoryFolderFindsAppWithoutProjectChangesWhenRequested",
-    "AutomationSourceGraphTests/testExplicitTrustedLocalPackageBuildFixtureMatchesRetainedGraph",
     "AutomationSourcePlatformPredicateBuildTests/testActualSelectedMacPlatformBranchesReconcileWithoutRuntimeWhenRequested",
     "AutomationSourceRecipeTests/testActualPinnedXcodeGenGenerationPreservesSource",
     "AutomationSourceRecipeTests/testActualSwiftPMPackagingAndWriteIsolation",

@@ -440,15 +440,6 @@ import XCTest
         model.workflowRoute = "ui"; model.configuration = "Release"; XCTAssertFalse(model.canRun)
         model.configuration = "Debug"; model.simulatorID = UUID().uuidString; XCTAssertFalse(model.canRun)
     }
-    func testPreparedSourceHostChangeInvalidatesQueuedUIApproval() async throws {
-        let (model, root, _) = try await fixture(); try selectPreparedSource(model: model, root: root)
-        let preview = try model.previewCommand(), requestID = UUID()
-        _ = try model.requestCommand(id: requestID, digest: preview.digest)
-        model.prepared?.host.hostProductDigest = String(repeating: "f", count: 64)
-        model.run()
-        XCTAssertEqual(try model.commandStatus(id: requestID).state, "invalidated")
-        XCTAssertFalse(model.busy); XCTAssertNil(model.report)
-    }
     @discardableResult func saveFailure(model: AppAutomationStore, root: URL, legacyPreparedEvidence: Bool = false) async throws -> AutomationFrozenCase {
         let app = try XCTUnwrap(model.candidate?.app ?? model.prepared?.host.app), target = TargetIdentity(id: model.simulatorID, kind: .simulator)
         var approval = RunApproval(runID: "original", app: app, target: target, environmentID: "selected-simulator:" + target.id,

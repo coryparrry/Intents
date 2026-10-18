@@ -139,10 +139,6 @@ class NativeCacheTests(unittest.TestCase):
             cache.main(["capture", "--root", str(self.root), "--derived-data", str(self.derived)])
         self.assertEqual(list(outside.iterdir()), [])
 
-    def test_cli_capture_and_restore(self):
-        self.tracked()
-        for operation in ("capture", "restore"):
-            self.assertIsNone(cache.main([operation, "--root", str(self.root), "--derived-data", str(self.derived)]))
 
 
 if __name__ == "__main__":

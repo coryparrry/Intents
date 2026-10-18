@@ -77,7 +77,7 @@ struct AppAutomationView: View {
                     AutomationPairedFeatureControls(model: model)
                 }
                 if model.isUIWorkflow && model.isMacWorkflowUnavailable {
-                    Text("Mac workflow execution is unavailable.").font(.callout).foregroundStyle(.secondary)
+                    Text("Select and prepare this Mac app’s Xcode project to run a workflow.").font(.callout).foregroundStyle(.secondary)
                 } else if model.isUIWorkflow {
                     GroupBox("UI workflow") {
                         VStack(alignment: .leading, spacing: 12) {
@@ -115,7 +115,9 @@ struct AppAutomationView: View {
                             }.accessibilityLabel("Effects of this workflow")
                             Toggle("I confirm this workflow stays within these effects", isOn: $model.effectsConfirmed)
                             Toggle("Disposable test environment", isOn: $model.disposable)
-                            Toggle("Allow starting this simulator and installing the selected app", isOn: $model.installApproved)
+                            if model.preparationDestination == .simulator {
+                                Toggle("Allow starting this simulator and installing the selected app", isOn: $model.installApproved)
+                            }
                             Text(model.uiExpectedText.isEmpty ? "Navigation completion will be unassessed. Add a visible-state check to assess a requirement." : "The visible-state check runs separately after navigation.").font(.callout).foregroundStyle(.secondary)
                             Button("Run workflow…") { presentNativeConfirmation(.run) }.disabled(!model.canRun || model.pendingCommandStatus?.kind != nil)
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(10).disabled(model.busy)
@@ -279,7 +281,7 @@ struct AppAutomationView: View {
                                 Text(failure.operationID + ": " + failure.message).font(.callout).textSelection(.enabled)
                             }
                             if report.result.summary == .assertionFailed,
-                               model.savedViewedCase?.plan.target.kind == .simulator, !model.isMacWorkflowUnavailable {
+                               model.savedViewedCase.map({ [.simulator, .nativeMac].contains($0.plan.target.kind) }) == true, !model.isMacWorkflowUnavailable {
                                 Button("Reproduce failure…") { presentNativeConfirmation(.reproduction) }.disabled(!model.canReproduceSavedFailure)
                                 if model.isInstalledUI {
                                     Button("Choose fixed app…") { chooseFixedApp() }.disabled(!model.canSelectFix)
@@ -565,9 +567,14 @@ struct AppAutomationView: View {
         } else { Text("This record input has no qualified query declaration.").foregroundStyle(.secondary) }
     }
     private func comparisonResult(_ report: AutomationFixComparisonReport, title: String) -> some View {
-        GroupBox(title) {
+        let outcome = switch report.outcome {
+        case .fixed: "Fixed in these assessed attempts"
+        case .notFixed: "The approved check still fails"
+        case .inconclusive: "Comparison inconclusive"
+        }
+        return GroupBox(title) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(report.complete ? "Both populations completed" : "Comparison incomplete").font(.headline)
+                Text(outcome).font(.headline)
                 Text("Before: \(report.beforeCounters.failed) failures · \(report.beforeCounters.assessed) assessed · \(report.before.count)/\(report.requestedAttemptsPerBuild) attempts")
                 Text("After: \(report.afterCounters.failed) failures · \(report.afterCounters.assessed) assessed · \(report.after.count)/\(report.requestedAttemptsPerBuild) attempts")
                 Text("Unassessed: before \(report.beforeCounters.unassessed), after \(report.afterCounters.unassessed)")

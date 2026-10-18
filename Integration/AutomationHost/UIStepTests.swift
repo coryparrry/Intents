@@ -15,15 +15,23 @@ final class UIStepTests: XCTestCase {
               let bytes = Data(base64Encoded: encoded), bytes.count <= 32768 else { throw UIHostError.invalidPlan }
         let plan = try JSONDecoder().decode(UIHostPlan.self, from: bytes)
         try plan.validate()
+        #if os(macOS)
+        // The frozen test configuration identifies the prepared private app by path.
+        let app = XCUIApplication()
+        #else
         let app = XCUIApplication(bundleIdentifier: plan.bundleID)
+        #endif
+        // This invocation owns the XCUIApplication controller across every step and
+        // terminates it on success and thrown failures. The Mac release observer
+        // never signals processes merely because their executable paths match.
         defer { app.terminate() }
         bindings = plan.bindings
-        #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+        #if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))
         let fixtureRegistrationDeadline = ContinuousClock.now.advanced(by: .seconds(120))
         var fixtureRegistrationNeeded = true
         #endif
         for (index, step) in plan.steps.enumerated() {
-            #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+            #if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))
             if fixtureRegistrationNeeded && (step.kind == .invokeIntent || step.kind == .query) {
                 let previousFailures = (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0)
                 app.activate()
@@ -45,7 +53,7 @@ final class UIStepTests: XCTestCase {
                 let previousFailures = (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0)
                 value = try await execute(step, app: app, plan: plan)
                 guard (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0) == previousFailures else { throw UIHostError.assertionFailed }
-                #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+                #if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))
                 if step.kind == .launch { fixtureRegistrationNeeded = true }
                 #endif
                 if let value { outputs[step.segmentID, default: [:]][step.id] = value }
@@ -56,11 +64,13 @@ final class UIStepTests: XCTestCase {
                 attach("intents-ui-step-\(index)", try JSONEncoder().encode(
                     UIHostStepReceipt(plan: plan, index: index, dispatched: true, completed: true, value: value)))
             } catch {
-                let screenshot = XCTAttachment(screenshot: app.screenshot())
-                screenshot.name = "intents-ui-failure-\(index)"; screenshot.lifetime = .keepAlways; add(screenshot)
                 attach("intents-ui-step-\(index)", try JSONEncoder().encode(
                     UIHostStepReceipt(plan: plan, index: index, dispatched: true, completed: false, value: value,
                                       error: String(String(describing: error).prefix(4096)))))
+                // A failed launch has no application to capture. Retain the actual error first.
+                let screenshot = XCTAttachment(screenshot: app.state == .notRunning
+                    ? XCUIScreen.main.screenshot() : app.screenshot())
+                screenshot.name = "intents-ui-failure-\(index)"; screenshot.lifetime = .keepAlways; add(screenshot)
                 throw error
             }
         }
@@ -76,11 +86,21 @@ final class UIStepTests: XCTestCase {
         case .checkFreshness: try plan.validateFreshSubject(outputs: outputs)
         case .launch:
             app.launchArguments = step.arguments ?? []; app.launchEnvironment = step.environment ?? [:]; app.launch()
-        case .tap: try element(step.query, app: app).tap()
+        case .tap:
+            let target = try element(step.query, app: app)
+            #if os(macOS)
+            target.click()
+            #else
+            target.tap()
+            #endif
         case .typeText, .clearAndType:
             let element = try element(step.query, app: app)
             guard let text = step.text ?? step.binding.flatMap({ bindings[step.segmentID + "/" + $0] }) else { throw UIHostError.bindingUnavailable }
+            #if os(macOS)
+            element.click()
+            #else
             element.tap()
+            #endif
             if step.kind == .clearAndType {
                 guard let current = element.value as? String else { throw UIHostError.missingElement }
                 // UITextInput cursor is placed explicitly; the placeholder is not entered text.
@@ -186,8 +206,24 @@ final class UIStepTests: XCTestCase {
         }
         var result = app.descendants(matching: type)
         if let id = locator.identifier { result = result.matching(identifier: id) }
-        if let label = locator.label { result = result.matching(NSPredicate(format: "label == %@", label)) }
-        if let contains = locator.labelContains { result = result.matching(NSPredicate(format: "label CONTAINS %@", contains)) }
+        #if os(macOS)
+        // AppKit static text can expose its displayed text as value with an empty label.
+        let usesStaticTextValue = type == .staticText
+        #else
+        let usesStaticTextValue = false
+        #endif
+        if let label = locator.label {
+            let predicate = usesStaticTextValue
+                ? NSPredicate(format: "label == %@ OR (label == '' AND value == %@)", label, label)
+                : NSPredicate(format: "label == %@", label)
+            result = result.matching(predicate)
+        }
+        if let contains = locator.labelContains {
+            let predicate = usesStaticTextValue
+                ? NSPredicate(format: "label CONTAINS %@ OR (label == '' AND value CONTAINS %@)", contains, contains)
+                : NSPredicate(format: "label CONTAINS %@", contains)
+            result = result.matching(predicate)
+        }
         return result
     }
     private func element(_ locator: UIHostQuery?, app: XCUIApplication) throws -> XCUIElement {

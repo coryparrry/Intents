@@ -1,6 +1,17 @@
 import Foundation
 
+public enum AutomationFixComparisonOutcome: String, Codable, Sendable {
+    case fixed, notFixed, inconclusive
+}
+
 extension AutomationFixComparisonReport {
+    /// A finite observation of this frozen case, not a reliability guarantee.
+    public var outcome: AutomationFixComparisonOutcome {
+        guard (try? validate()) != nil, complete,
+              before.allSatisfy({ $0.result.assessed && $0.result.evidenceComplete && $0.result.summary == .assertionFailed && !$0.result.failedObservations.isEmpty }),
+              after.allSatisfy({ $0.result.assessed && $0.result.evidenceComplete && [.passed, .assertionFailed].contains($0.result.summary) }) else { return .inconclusive }
+        return after.allSatisfy { $0.result.summary == .passed } ? .fixed : .notFixed
+    }
     public var complete: Bool {
         before.count == requestedAttemptsPerBuild && after.count == requestedAttemptsPerBuild && stopReason == nil && interruption == nil &&
             (before + after).allSatisfy { $0.resourcesReleased && !$0.result.subjectDispatchUncertain && ![.cancelled, .invalidFixture].contains($0.result.summary) }

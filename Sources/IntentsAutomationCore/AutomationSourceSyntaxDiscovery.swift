@@ -76,7 +76,7 @@ enum AutomationSourceSyntaxDiscovery {
         try sourceFile.withLock { try sourceFile.write(source) }
         let sdkResult = try await command.run(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
             arguments: ["--sdk", "macosx", "--show-sdk-path"], directory: directory, environment: environment, timeout: .seconds(30), willStart: willStart)
-        try requireComplete(sdkResult)
+        try requireComplete(sdkResult, stage: "SDK discovery")
         let sdk = try AutomationPath.canonical(URL(fileURLWithPath: String(decoding: sdkResult.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
         guard sdk.path.hasPrefix(developer.path + "/") else { throw AutomationContractError.invalidIdentity }
         let helper = directory.appendingPathComponent("source-scanner")
@@ -86,12 +86,12 @@ enum AutomationSourceSyntaxDiscovery {
             directory: directory, environment: environment, timeout: .seconds(300), willStart: willStart)
         let buildLog = try AutomationDurableFile(url: directory.appendingPathComponent("compiler.log"), maximumBytes: 2_100_000)
         try buildLog.withLock { try buildLog.write(built.stdout + built.stderr) }
-        try requireComplete(built)
+        try requireComplete(built, stage: "scanner compilation")
         let helperDigest = try digestFile(helper)
         guard tools == (try fingerprint(developer)) else { throw AutomationContractError.conflictingOperation }
         let scanned = try await command.run(executable: helper, arguments: [requestFile.url.path],
             directory: directory, environment: environment, timeout: .seconds(30), willStart: willStart)
-        try requireComplete(scanned); try Task.checkCancellation()
+        try requireComplete(scanned, stage: "scanner execution"); try Task.checkCancellation()
         guard helperDigest == (try digestFile(helper)), tools == (try fingerprint(developer)),
               source == (try AutomationReadOnlyFile.read(sourceFile.url, maximumBytes: 64 * 1024)),
               request == (try AutomationReadOnlyFile.read(requestFile.url, maximumBytes: 24 * 1024 * 1024)) else { throw AutomationContractError.conflictingOperation }
@@ -147,12 +147,22 @@ enum AutomationSourceSyntaxDiscovery {
         // Parser recovery cannot establish either a declaration or its branch.
         return (response.declarations, response.declarations.filter { !response.parseRecoveryFiles.contains($0.relativePath) }, gaps)
     }
-    static func requireComplete(_ result: AutomationOwnedCommand.Result) throws {
-        // A short-lived SDK lookup or scanner can be reaped before its kernel
-        // start identity is captured. OwnedCommand still proves this direct
-        // child's reap and drains its pipes/callbacks before returning success.
-        // This does not establish descendant closure or authorize signalling.
-        guard result.directChildReaped, result.pipesDrained, result.callbacksDrained else { throw AutomationContractError.terminationUnverified }
+    static func completionGaps(_ result: AutomationOwnedCommand.Result) -> [String] {
+        var gaps: [String] = []
+        if !result.directChildReaped { gaps.append("direct child not reaped") }
+        if !result.pipesDrained { gaps.append("output pipes not drained") }
+        if !result.callbacksDrained { gaps.append("callbacks not drained") }
+        return gaps
+    }
+    static func requireComplete(_ result: AutomationOwnedCommand.Result, stage: StaticString = "scanner") throws {
+        // Reaped short-lived commands can finish before their start identity is captured.
+        // Completion does not grant authority to signal a process or its descendants.
+        let gaps = completionGaps(result)
+        guard gaps.isEmpty else {
+            let diagnostic = "error: Source syntax \(stage) command completion unverified: \(gaps.joined(separator: "; ")) (exit \(result.exitStatus))\n"
+            FileHandle.standardError.write(Data(diagnostic.utf8))
+            throw AutomationContractError.terminationUnverified
+        }
         guard result.exitStatus == 0, !result.logsTruncated else { throw AutomationContractError.missingEvidence("Owned source syntax scanner output is unavailable") }
     }
     private static func fingerprint(_ developer: URL) throws -> [AutomationSourceSyntaxIndex.Tool] {

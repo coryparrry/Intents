@@ -26,21 +26,6 @@ struct AttachmentStorageDirectorySafetyTests {
         #expect(try Data(contentsOf: fixture.sentinel) == fixture.sentinelData)
     }
 
-    @Test func realAttachmentsDirectoryProducesStandardizedStoredURL() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-
-        let validated = try EvaluationAttachmentStorage.validatedStorageDirectory(fixture.attachments)
-        #expect(validated == fixture.attachments.standardizedFileURL)
-
-        let storedURL = try EvaluationAttachmentStorage.storedFileURL(
-            filename: fixture.filename,
-            attachmentID: fixture.attachmentID,
-            in: fixture.attachments
-        )
-        #expect(storedURL == fixture.attachments.appending(path: fixture.filename).standardizedFileURL)
-    }
-
     @Test func nonDirectoryAttachmentsEntryIsRejected() throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }

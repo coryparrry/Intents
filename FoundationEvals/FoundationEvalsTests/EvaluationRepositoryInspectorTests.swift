@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import FoundationEvals
 
-// Process deadlines must not include unrelated UI tests waiting on the main actor.
+// Process-only tests must not wait for unrelated UI work on the main actor.
 struct EvaluationRepositoryInspectorTests {
     @Test(.timeLimit(.minutes(1)), arguments: [false, true])
     func hangingRepositoryInspectionStopsItsChild(cancel: Bool) async throws {
@@ -12,8 +12,7 @@ struct EvaluationRepositoryInspectorTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let executable = root.appending(path: "fixture-git")
-        // Opening a FIFO for a shell builtin blocks one owned process without
-        // spinning a CPU or leaving descendants after termination.
+        // A FIFO blocks one owned process without spinning a CPU or leaving descendants.
         try #require(mkfifo(root.appending(path: "child-input").path, 0o600) == 0)
         try Data("#!/bin/sh\nprintf '%s' \"$$\" > child.pid\nIFS= read -r ignored < child-input\n".utf8)
             .write(to: executable)
@@ -30,8 +29,7 @@ struct EvaluationRepositoryInspectorTests {
         }
         if cancel { inspection.cancel() }
         let snapshot = await inspection.value
-        // The test time limit bounds completion. Wall-clock latency also includes
-        // unrelated parallel-suite scheduling, so verify the actual stop reason.
+        // The one-minute test limit bounds completion; verify the actual stop reason.
         if cancel {
             #expect(snapshot.error == CancellationError().localizedDescription)
         } else {

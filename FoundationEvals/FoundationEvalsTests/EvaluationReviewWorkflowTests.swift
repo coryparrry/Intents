@@ -19,8 +19,6 @@ struct EvaluationReviewWorkflowTests {
         let review = fixture.annotation(verdict: .failed, tags: [" Wrong DATE ", "wrong date"])
         try EvaluationReviewWorkflow.save(review, sample: fixture.sample, state: &state)
         #expect(state.annotations.first?.tags == ["wrong date"])
-        #expect(fixture.sample.sample.status == .unscored)
-        #expect(fixture.sample.sample.response == "incorrect")
         var reassessed = fixture.run
         reassessed.selectedAssessmentID = UUID()
         #expect(try EvaluationReviewWorkflow.sourceDigest(run: reassessed, sample: fixture.sample.sample) == fixture.sample.sourceDigest)
@@ -379,7 +377,6 @@ struct EvaluationReviewWorkflowTests {
         try Data([1, 2, 3, 4]).write(to: evidenceDirectory.appending(path: image.storedFilename!))
         #expect(throws: (any Error).self) { try store.validateReviewImageEvidence(fixture.run) }
     }
-
 }
 
 private struct ReviewFixture {

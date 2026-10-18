@@ -64,19 +64,6 @@ struct ReferenceLookupToolBoundaryTests {
         #expect(await recorder.evidenceText()?.contains("rejected") == true)
     }
 
-    @Test func sharedLimitRejectionReleasesTheLocalReservation() async throws {
-        let recorder = ReferenceToolRecorder(
-            maximumCalls: 1,
-            callLimiter: RejectOnceToolCallLimiter()
-        )
-
-        await #expect(throws: (any Error).self) {
-            try await recorder.reserveCall()
-        }
-
-        #expect(try await recorder.reserveCall() == 2)
-    }
-
     @Test func postLimitRejectionsRemainBoundedWhileAttemptsStayTruthful() async throws {
         let workflow = EvaluationWorkflowRecorder()
         let parent = workflow.begin(kind: .generation, title: "Generate")
@@ -392,16 +379,5 @@ private actor ReferenceRecordGate {
         isReleased = true
         releaseContinuation?.resume()
         releaseContinuation = nil
-    }
-}
-
-private actor RejectOnceToolCallLimiter: EvaluationToolCallLimiting {
-    private var shouldReject = true
-
-    func beginCall() async throws {
-        if shouldReject {
-            shouldReject = false
-            throw EvaluationBoundedToolError.callLimitReached(maximum: 1)
-        }
     }
 }

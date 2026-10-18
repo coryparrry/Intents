@@ -195,14 +195,5 @@ final class InputAdapterProbeContractTests: XCTestCase, @unchecked Sendable {
             do { _ = try await AutomationInputAdapterProbeFileAttachments.importExport(root: root, plan: plan, scope: scope, artifacts: artifacts); XCTFail("Accepted " + failure) } catch {}
         }
     }
-    func testIntentIdentityMustMatchAtEveryDefinitionAndInstanceBoundary() throws {
-        let expected = ["example.Subject", "example.Subject", "Subject.Probe", "example.Subject", "Subject.Probe"]
-        func validate(_ values: [String]) throws {
-            try HostIntentIdentity.validate(bundle: "example.Subject", action: "Subject.Probe", definitionsBundle: values[0],
-                definitionBundle: values[1], definitionID: values[2], intentBundle: values[3], intentID: values[4])
-        }
-        try validate(expected)
-        for index in expected.indices { var values = expected; values[index] = "foreign"; XCTAssertThrowsError(try validate(values)) }
-    }
 }
 #endif

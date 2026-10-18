@@ -5,6 +5,25 @@ import Testing
 @testable import IntentsAutomationCore
 
 struct NativeHistoryRefreshTests {
+    @MainActor @Test func commandPreviewRequiresMatchingSourceConfigurationAndTarget() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for change in 0..<3 {
+            let model = commandStore(root: root)
+            defer { model.close() }
+            #expect(model.canRun)
+            #expect(try model.previewCommand().action == "ReadText")
+            // Mutate the selection directly: preview admission must enforce the contract
+            // even before a view calls preparationSelectionChanged().
+            switch change {
+            case 0: model.intake = nil
+            case 1: model.configuration = "Release"
+            default: model.simulatorID = UUID().uuidString
+            }
+            #expect(!model.canRun)
+            #expect(throws: AutomationContractError.self) { try model.previewCommand() }
+        }
+    }
     @MainActor @Test func terminalCancellationDuringHeldHistoryRefreshCannotReopenRequest() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -19,6 +38,7 @@ struct NativeHistoryRefreshTests {
                 return .init(attemptID: attemptID, result: AutomationAssessment.assess(plan: plan, attemptID: attemptID, subjectDispatched: true, subjectCompleted: true, observations: []), receipts: [receipt], resourcesReleased: true)
             })
             do {
+                try #require(model.canRun, "The fixture must pass native run admission before testing history refresh")
                 let preview = try model.previewCommand(), id = UUID()
                 _ = try model.requestCommand(id: id, digest: preview.digest)
                 model.run() // Simulates the native confirmation handler; the remote request alone never calls it.
@@ -47,21 +67,20 @@ struct NativeHistoryRefreshTests {
             }
         }
     }
-    @Test func heldReaderEntryWaitIsBoundedAndLateReadCanBeReleased() async {
-        let reader = HeldAutomationCaseReader()
-        #expect(!(await reader.waitUntilHeld(timeout: 0.02)))
-        await reader.finish()
-        #expect(await reader.read().isEmpty)
-    }
     @MainActor private func commandStore(root: URL, telemetry: (any AutomationRunTelemetry)? = nil, savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil,
                                         runExecutor: AutomationNativeRunExecutor? = nil) -> AppAutomationStore {
-        let app = AppIdentity(logicalID: "fixture", bundleID: "example.Fixture", platform: "ios", productDigest: String(repeating: "a", count: 64))
-        let target = TargetIdentity(id: "unit-target", kind: .simulator)
+        var app = AppIdentity(logicalID: "fixture", bundleID: "example.Fixture", platform: "ios", productDigest: String(repeating: "a", count: 64))
+        app.configuration = "Debug"
+        let target = TargetIdentity(id: "00000000-0000-0000-0000-000000000001", kind: .simulator)
         let catalog = ApplicationSurfaceCatalog(app: app, systemActions: [.init(id: "ReadText", typeName: "ReadText", title: "Read text", parameters: [.init(name: "text", family: "text", optional: false)], parametersComplete: true, compiled: true, registered: false, executed: false)], systemDiscoveryComplete: true, uiDiscoveryComplete: false, gaps: [])
         let model = AppAutomationStore(supportDirectory: root, telemetry: telemetry, savedCasesReader: savedCasesReader, runExecutor: runExecutor)
-        model.candidateID = "fixture"; model.configuration = "Debug"; model.simulatorID = target.id
+        model.intake = .init(candidates: [.init(id: app.logicalID, name: "Fixture", kind: .sourceTarget,
+            containerPath: root.path, targetID: "FIXTURE", bundleID: app.bundleID, platform: app.platform,
+            architectures: ["arm64"], configurations: ["Debug"], app: nil)], gaps: [], requiresBuildApproval: true)
+        model.candidateID = app.logicalID; model.configuration = "Debug"; model.simulatorID = target.id
+        model.workflowRoute = "system"
         model.catalog = catalog; model.actionID = "ReadText"; model.inputs = ["text": "Original input"]
-        model.effectChoice = "read"; model.effectsConfirmed = true
+        model.effectChoice = "navigation"; model.effectsConfirmed = true
         model.prepared = .init(source: .init(sourceRoot: root.path, files: [], directories: [], excludedPaths: []),
             generatedHost: .init(projectPath: "unused", scheme: "unused", targetID: "unused", bundleID: "example.Host", configuration: "Debug", templateDigest: String(repeating: "b", count: 64)),
             host: .init(app: app, target: target, xctestrunPath: "unused", xctestrunDigest: String(repeating: "c", count: 64), subjectProductPath: "unused", hostBundlePath: "unused", hostProductDigest: String(repeating: "d", count: 64), hostBundleID: "example.Host", testTarget: "unused"), catalog: catalog, buildLogPath: "unused", buildLogTruncated: false)

@@ -65,7 +65,7 @@ final class AutomationMacPackagePlatformFixtureTests: XCTestCase {
         let templates = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Integration/AutomationHost")
         let prepared = try await AutomationPreparation().prepare(candidate: candidate,
             approval: .init(sourceRoot: root.appendingPathComponent("original").path, candidateID: candidate.id, configuration: "Debug", target: AutomationMacGUIIdentity.currentTarget()),
-            sessionRoot: root.appendingPathComponent("prepare"), templates: templates, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+            sessionRoot: root.appendingPathComponent("prepare"), templates: templates, developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         try AutomationSourceSnapshot.verifyOriginal(prepared.source)
         let graph = try XCTUnwrap(prepared.sourceGraph)
         XCTAssertEqual(graph.packagePlatformConditionVersion, 1); XCTAssertEqual(graph.platformContext?.filterFamily, "macos")

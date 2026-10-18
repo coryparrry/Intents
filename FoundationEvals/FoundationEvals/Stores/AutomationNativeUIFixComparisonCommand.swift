@@ -22,6 +22,7 @@ struct AutomationNativeFixComparisonOutcome: Codable, Sendable {
     typealias Attempt = AutomationNativeReproductionOutcome.Attempt
     var requestedAttemptsPerBuild: Int
     var complete: Bool
+    var outcome: AutomationFixComparisonOutcome
     var contractDigest: String
     var oracleDigest: String
     var candidateCaseDigest: String
@@ -42,7 +43,7 @@ struct AutomationNativeFixComparisonOutcome: Codable, Sendable {
               let beforeDigest = report.baseline.plan.app.productDigest, let afterDigest = report.candidate.plan.app.productDigest else {
             throw AutomationContractError.conflictingOperation
         }
-        requestedAttemptsPerBuild = report.requestedAttemptsPerBuild; complete = report.complete
+        requestedAttemptsPerBuild = report.requestedAttemptsPerBuild; complete = report.complete; outcome = report.outcome
         contractDigest = report.contractDigest; oracleDigest = report.baseline.oracleDigest; candidateCaseDigest = report.candidate.digest
         beforeProductDigest = beforeDigest; afterProductDigest = afterDigest
         before = report.before.map { .init(attemptID: $0.attemptID, result: $0.result, resourcesReleased: $0.resourcesReleased) }

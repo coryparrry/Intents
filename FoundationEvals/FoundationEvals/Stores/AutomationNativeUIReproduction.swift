@@ -76,12 +76,14 @@ struct AutomationNativeUIReproductionProposal: Sendable {
             [.ui, .systemIntent, .systemQuery].contains($0.kind) && $0.effects.isSubset(of: [.observe, .navigate, .fixtureWrite])
         }
         guard plan.app == subject.app, plan.target == subject.target,
-              plan.environmentID == "selected-simulator:" + subject.target.id,
+              plan.environmentID == (subject.target.kind == .nativeMac
+                ? "selected-mac-session:" + (subject.target.loginSession ?? "")
+                : "selected-simulator:" + subject.target.id),
               plan.provenance["ui.locale"] == Locale.current.identifier,
               (permitted || segments.allSatisfy({ $0.kind == .ui && $0.uiProgram != nil && $0.effects.isSubset(of: [.observe, .navigate]) })),
               original.result.summary == .assertionFailed, original.result.assessed, original.result.evidenceComplete,
               original.resourcesReleased, !original.result.subjectDispatchUncertain else {
-            throw AutomationContractError.missingEvidence("Select the same app and simulator as an assessed, released UI failure; its prepared host, locale must still match")
+            throw AutomationContractError.missingEvidence("Select the same app and destination as an assessed, released UI failure; its prepared host and locale must still match")
         }
         if case .prepared(let prepared) = subject {
             guard AutomationNativePreparedEvidence.preparedEvidenceMatches(plan: plan, prepared: prepared) else { throw AutomationContractError.conflictingOperation }
@@ -95,8 +97,8 @@ struct AutomationNativeUIReproductionProposal: Sendable {
     @concurrent func execute(subject: AutomationApplicationSubject, support: URL, developerDirectory: URL, allowBootAndInstall: Bool,
                  onProgress: AutomationReproductionProgressHandler? = nil) async throws -> AutomationReproductionReport {
         try Task.checkCancellation()
-        guard subject.target.kind == .simulator else {
-            throw AutomationContractError.missingEvidence("This workflow requires a prepared simulator host")
+        guard subject.target.kind == .simulator || (subject.target.kind == .nativeMac && frozen.plan.preparedMacBuildArtifacts != nil) else {
+            throw AutomationContractError.missingEvidence("This workflow requires a prepared associated host")
         }
         let cases = try AutomationCaseStore(root: support.appendingPathComponent("Cases"))
         let runner = try AutomationApplicationRunner(supportRoot: support,

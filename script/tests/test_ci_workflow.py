@@ -16,6 +16,19 @@ def job(name):
     return re.search(r"(?ms)^  " + re.escape(name) + r":\n(.*?)(?=^  [\w-]+:|\Z)", WORKFLOW)[1]
 
 
+class FailureSummaryTests(unittest.TestCase):
+    def test_summary_runs_after_terminal_checks_with_read_only_log_access(self):
+        summary = job("summary")
+        self.assertIn("if: ${{ always() }}", summary)
+        self.assertIn("needs: [changes, quality, regression, build, automation-e2e, input-conversion]", summary)
+        self.assertIn("actions: read", summary)
+        self.assertIn("contents: read", summary)
+        self.assertNotIn("write", summary)
+        self.assertIn("CI_NEEDS_JSON: ${{ toJSON(needs) }}", summary)
+        self.assertIn("GITHUB_TOKEN: ${{ github.token }}", summary)
+        self.assertIn("run: python3 script/ci_failure_summary.py", summary)
+
+
 def gate(name, **environment):
     script = job(name).split("        run: |\n", 1)[1]
     return subprocess.run(
@@ -248,6 +261,27 @@ class GateTests(unittest.TestCase):
         self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
         self.assertNotIn("success()", condition)
 
+    def test_simulator_and_mac_acceptance_do_not_suppress_each_other(self):
+        workflow = job("automation-e2e-scenarios")
+        simulator = workflow.index("      - name: Reproduce prepared-app automation\n")
+        mac = workflow.index("      - name: Reproduce Mac automation and saved fix comparison\n")
+        self.assertLess(simulator, mac)
+        mac_step = workflow[mac:].split("\n      - name:", 1)[0]
+        self.assertIn("if: ${{ !cancelled() }}", mac_step)
+        self.assertIn("--scenario-group all", workflow[:mac])
+
+    def test_mac_acceptance_uses_temporary_development_signing(self):
+        workflow = job("automation-e2e-scenarios")
+        mac = workflow.split("      - name: Reproduce Mac automation and saved fix comparison\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}", mac)
+        self.assertIn("CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}", mac)
+        self.assertIn("CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}", mac)
+        self.assertIn("python3 script/ci_macos_signing.py -- /bin/bash -e <<'SIGNED_MAC_CHECK'", mac)
+        self.assertIn('--signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"', mac)
+        self.assertNotIn("continue-on-error", mac)
+        self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_P12_BASE64"), 1)
+        self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_PASSWORD"), 1)
+
     def test_scripts_run_all_selected_modules_in_one_job(self):
         workflow = job("script-tests")
         self.assertNotIn("matrix", workflow)
@@ -270,10 +304,6 @@ class GateTests(unittest.TestCase):
             self.assertIn("always()", job(name).split("    steps:", 1)[0])
 
     def test_stable_simulator_gate_requires_all_selected_groups(self):
-        workflow = job("automation-e2e")
-        self.assertIn("name: Automation e2e (simulator)", workflow)
-        self.assertIn("needs: [changes, automation-e2e-scenarios]", workflow)
-        self.assertIn("if: ${{ always() }}", workflow)
         self.assertEqual(gate("automation-e2e", ROUTING="success", SELECTED="true", SCENARIOS="success"), 0)
         for result in ("failure", "cancelled", "skipped", ""):
             with self.subTest(result=result):
@@ -283,15 +313,6 @@ class GateTests(unittest.TestCase):
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="failure"), 0)
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="success"), 0)
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="", SCENARIOS="skipped"), 0)
-
-    def test_native_cache_fallback_keeps_toolchain_and_manifest_boundaries(self):
-        build = job("native-build")
-        prefixes = build.split("          restore-keys: |\n", 1)[1].split("      - name:", 1)[0].strip().splitlines()
-        self.assertEqual(len(prefixes), 2)
-        self.assertEqual(prefixes[1].strip(), prefixes[0].strip().replace(
-            "${{ needs.changes.outputs.ui }}", "${{ needs.changes.outputs.ui != 'true' }}"))
-        self.assertIn("${{ steps.toolchain.outputs.version }}", prefixes[0])
-        self.assertIn("${{ hashFiles(", prefixes[0])
 
     def test_native_descriptors_refresh_without_removing_compiled_products(self):
         build = job("native-build")

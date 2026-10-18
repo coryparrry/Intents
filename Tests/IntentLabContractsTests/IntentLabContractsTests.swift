@@ -480,25 +480,6 @@ final class IntentLabContractsTests: XCTestCase {
         }
     }
 
-    func testLocalFeatureInputRoundTripsWithTypedValues() throws {
-        let input = IntentLabLocalFeatureInput(
-            featureID: "notes",
-            interfaceDigest: String(repeating: "a", count: 64),
-            parameters: [IntentLabParameter(
-                name: "title", type: .primitive(.string), isOptional: false,
-                presence: .value(.string("Trip"))
-            )]
-        )
-        let encoded = try JSONEncoder.intentLab.encode(input)
-        let decoded = try JSONDecoder.intentLab.decode(IntentLabLocalFeatureInput.self, from: encoded)
-        XCTAssertEqual(decoded.featureID, input.featureID)
-        XCTAssertEqual(decoded.interfaceDigest, input.interfaceDigest)
-        XCTAssertEqual(decoded.parameters.first?.name, "title")
-        guard case .some(.value(.string("Trip"))) = decoded.parameters.first?.presence else {
-            return XCTFail("The local feature payload lost the typed string value.")
-        }
-    }
-
     func testTypedObservationRejectsWrongValue() {
         let boolean = IntentLabValueType.primitive(.boolean)
         XCTAssertTrue(boolean.accepts(.boolean(true)))

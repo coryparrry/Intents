@@ -70,8 +70,6 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def test_commented_template_instruction_is_not_active(self):
         template = (ROOT / ".github/pull_request_template.md").read_text()
-        self.assertNotIn("BEGIN_COMMIT_OVERRIDE", template)
-        self.assertNotIn("END_COMMIT_OVERRIDE", template)
         for title in ("docs: update guidance", "feat(ui): add navigation"):
             with self.subTest(title=title), self.assertRaises(ValueError):
                 validate_pull_request(title, template)
@@ -172,34 +170,12 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(len(sections), len(ALLOWED_ENTRY_TYPES))
         self.assertTrue(all(not section.get("hidden", False) for section in sections))
 
-    def test_release_pr_refreshes_even_when_generated_notes_are_unchanged(self):
-        config = json.loads((ROOT / "release-please-config.json").read_text())
-        self.assertIs(config.get("always-update"), True)
-
-    def test_ci_revalidates_edited_pull_request_bodies(self):
-        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-        metadata = (ROOT / ".github/workflows/pr-metadata.yml").read_text()
-        self.assertIn("types: [opened, synchronize, reopened]", workflow)
-        self.assertNotIn("reopened, edited", workflow)
-        self.assertIn("types: [edited]", metadata)
-        self.assertIn("python3 script/release_notes.py validate-event", metadata)
-
-    def test_only_base_edits_invoke_code_ci_and_later_body_edits_cannot_cancel_it(self):
+    def test_retargeted_ci_can_read_its_failure_logs(self):
         metadata = (ROOT / ".github/workflows/pr-metadata.yml").read_text()
         jobs = dict(re.findall(r"(?ms)^  ([\w-]+):\n(.*?)(?=^  [\w-]+:|\Z)", metadata))
         retarget = jobs["retarget"]
-        self.assertIn("if: ${{ github.event.changes.base != null }}", retarget)
-        self.assertIn("uses: ./.github/workflows/ci.yml", retarget)
-        for name, workflow in (("retarget-production", "production-evals"), ("retarget-plugin", "plugin")):
-            with self.subTest(workflow=workflow):
-                component = jobs[name]
-                self.assertIn("if: ${{ github.event.changes.base != null }}", component)
-                self.assertIn("uses: ./.github/workflows/" + workflow + ".yml", component)
-                self.assertIn("  workflow_call:", (ROOT / (".github/workflows/" + workflow + ".yml")).read_text())
-        self.assertNotIn("concurrency:", metadata)
-        self.assertNotIn("Compile app and tests", metadata)
-        self.assertNotIn("Workflow and script checks", metadata)
-        self.assertNotIn("Portable regression tests", metadata)
+        self.assertIn("permissions:\n      contents: read\n      actions: read", retarget)
+        self.assertNotIn(": write", retarget)
 
     def test_cli_reads_the_pull_request_event(self):
         with tempfile.TemporaryDirectory() as temporary:

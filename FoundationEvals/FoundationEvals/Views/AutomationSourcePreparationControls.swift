@@ -66,7 +66,7 @@ struct AutomationSourcePreparationControls: View {
                 Text(model.physicalDevices.isEmpty ? "Connect and unlock your iPhone or iPad, then refresh devices." : "Preparation builds a private copy for the selected device. Installation is reviewed separately.")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
-                Text("Build a private Mac copy for inspection. Mac workflow execution is not available yet.")
+                Text("Build a private Mac copy to run system actions and exact UI steps in this login session.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 8) {
