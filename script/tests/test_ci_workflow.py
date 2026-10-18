@@ -173,6 +173,44 @@ class GateTests(unittest.TestCase):
         self.assertIn("needs.changes.outputs.native_tests != '[]'", worker.split("      - name: Run core tests without rebuilding", 1)[1].split("      - name:", 1)[0])
         self.assertIn('python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products"', worker)
 
+    def test_independent_regression_groups_continue_after_failures_but_not_cancellation(self):
+        worker = job("swift-tests")
+        self.assertNotIn("continue-on-error:", worker)
+        for name in (
+            "Install consumer project generator", "Read immutable installer package revision",
+            "Run selected macOS script tests", "Identify Swift toolchain",
+            "Restore reusable Swift build", "Run selected Swift suites and fresh SDK consumers once",
+            "Verify external consumer build receipt",
+        ):
+            with self.subTest(step=name):
+                condition = re.search(re.escape(name) + r"\n        if: (.+)", worker)[1]
+                # An explicit status function overrides GitHub's implicit
+                # success() after an unrelated earlier group has failed.
+                self.assertIn("${{ !cancelled() &&", condition)
+                self.assertIn("steps.source.outcome == 'success'", condition)
+                self.assertNotIn("success()", condition)
+                self.assertNotIn("always()", condition)
+                self.assertTrue("needs.changes.outputs.swift_suites" in condition
+                                or "needs.changes.outputs.sdk_consumer" in condition
+                                or "needs.changes.outputs.macos_tests" in condition)
+
+    def test_continuation_respects_setup_and_keeps_receipt_evidence_after_test_failure(self):
+        worker = job("swift-tests")
+        conditions = {
+            name: re.search(re.escape(name) + r"\n        if: (.+)", worker)[1]
+            for name in ("Restore reusable Swift build", "Run selected Swift suites and fresh SDK consumers once",
+                         "Verify external consumer build receipt")
+        }
+        self.assertIn("steps.toolchain.outcome == 'success'", conditions["Restore reusable Swift build"])
+        run = conditions["Run selected Swift suites and fresh SDK consumers once"]
+        for prerequisite in ("toolchain", "swift-cache", "consumer-generator", "consumer-pin"):
+            self.assertIn("steps." + prerequisite + ".outcome == 'success'", run)
+        self.assertIn("needs.changes.outputs.sdk_consumer != 'true' ||", run)
+        receipt = conditions["Verify external consumer build receipt"]
+        self.assertIn("steps.consumer-pin.outcome == 'success'", receipt)
+        self.assertIn("steps.swift-regressions.outcome != 'skipped'", receipt)
+        self.assertNotIn("steps.swift-regressions.outcome == 'success'", receipt)
+
     def test_ui_consumers_only_depend_on_the_shared_build(self):
         for name in ("ui-tests", "picker-stability"):
             self.assertIn("needs: [changes, native-build]", job(name))

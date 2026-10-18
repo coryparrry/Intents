@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import FoundationEvals
 
-@MainActor
+// Process deadlines must not include unrelated UI tests waiting on the main actor.
 struct EvaluationRepositoryInspectorTests {
     @Test(.timeLimit(.minutes(1)), arguments: [false, true])
     func hangingRepositoryInspectionStopsItsChild(cancel: Bool) async throws {

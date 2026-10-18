@@ -446,9 +446,6 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
             capture(ROOT, scratch)
             with Path(github_output).open("a") as state:
                 state.write("cli_built=true\n")
-        # simctl boot starts the OS asynchronously; generic preparation can run while it boots.
-        # The readiness barrier and exact-Xcode checks still precede subject installation.
-        commands.run(["xcrun", "simctl", "boot", simulator])
         support, reports = output / "support", []
         flags = ["--support-root", support]
         _, prepared = commands.json([cli, "prepare", "--project", fixture / "AutomationFixture.xcodeproj",
@@ -482,7 +479,8 @@ def run_contract(commands, output, build_root=None, build_jobs=None, record_buil
                             "codecFamiliesCompared": ["intentFile"] if file else sorted({
                                 family.removeprefix("empty.") for family in expected or {}
                             })})
-        # Generic preparation need not wait for the OS; installation requires full readiness.
+        # Generic simulator builds and toolchain validation need no running device.
+        commands.run(["xcrun", "simctl", "boot", simulator])
         commands.run(["xcrun", "simctl", "bootstatus", simulator, "-b"], timeout=300)
         # Install once: reinstalling before each case invalidates the metadata index again.
         commands.run(["xcrun", "simctl", "install", simulator, prepared["host"]["subjectProductPath"]], timeout=180)

@@ -76,9 +76,10 @@ explicit aggregate gate. Its matching
 Xcode builds, Swift UI tests, or simulator App Intent execution. That elapsed
 time is not an equivalent native-validation target.
 
-The simulator starts booting while the generic fixture is prepared. Installation
-still waits for exact-Xcode validation and full simulator readiness, and failure
-cleanup still releases only the device created by this run. All seven scenarios,
+Fixture preparation and exact-Xcode validation finish before simulator boot.
+Overlapping these phases failed hosted toolchain probes and stalled simulator
+cleanup, so setup remains sequential. Installation waits for full readiness, and
+cleanup releases only the device created by this run. All seven scenarios,
 16 codec families, negative assertions, and timeout/recovery checks remain.
 
 The unused legacy skip guard and its five self-tests were removed; the invoked
