@@ -2518,11 +2518,20 @@ struct EvaluationDevelopmentWorkflowTests {
         try Data("one".utf8).write(to: directory.appending(path: "fixture.txt"))
         try runGit(["add", "fixture.txt"], in: directory)
         try runGit(["commit", "-m", "fixture"], in: directory)
-        var snapshot = await EvaluationRepositoryInspector.snapshot(rootPath: directory.path)
+        // This checks Git contents, not latency. Parallel native tests can delay
+        // executor work beyond the production budget; timeout tests cover that limit.
+        let inspectionTimeout: Duration = .seconds(60)
+        var snapshot = await EvaluationRepositoryInspector.snapshot(
+            rootPath: directory.path, timeout: inspectionTimeout
+        )
+        try #require(snapshot.error == nil, "\(snapshot.error ?? "Unknown inspection failure")")
         #expect(snapshot.commit?.isEmpty == false)
         #expect(snapshot.isDirty == false)
         try Data("two".utf8).write(to: directory.appending(path: "fixture.txt"))
-        snapshot = await EvaluationRepositoryInspector.snapshot(rootPath: directory.path)
+        snapshot = await EvaluationRepositoryInspector.snapshot(
+            rootPath: directory.path, timeout: inspectionTimeout
+        )
+        try #require(snapshot.error == nil, "\(snapshot.error ?? "Unknown inspection failure")")
         #expect(snapshot.isDirty == true)
     }
 
