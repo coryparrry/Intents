@@ -138,6 +138,15 @@ class GateTests(unittest.TestCase):
         self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
         self.assertNotIn("success()", condition)
 
+    def test_simulator_and_mac_acceptance_do_not_suppress_each_other(self):
+        workflow = job("automation-e2e-scenarios")
+        simulator = workflow.index("      - name: Reproduce prepared-app automation\n")
+        mac = workflow.index("      - name: Reproduce Mac automation and saved fix comparison\n")
+        self.assertLess(simulator, mac)
+        mac_step = workflow[mac:].split("\n      - name:", 1)[0]
+        self.assertIn("if: ${{ !cancelled() }}", mac_step)
+        self.assertIn("--scenario-group all", workflow[:mac])
+
     def test_mac_acceptance_uses_temporary_development_signing(self):
         workflow = job("automation-e2e-scenarios")
         mac = workflow.split("      - name: Reproduce Mac automation and saved fix comparison\n", 1)[1].split("      - name:", 1)[0]

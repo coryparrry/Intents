@@ -5,6 +5,7 @@ import http.client
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -16,6 +17,7 @@ GATES = {name.casefold() for name in (
     "Automation e2e (simulator)",
 )}
 LOG_LIMIT = 1024 * 1024
+REQUEST_TIMEOUT = 30
 ERROR_LIMIT = 6
 
 
@@ -99,7 +101,7 @@ class GitHubAPI:
                 request_headers["Authorization"] = "Bearer " + self.token
             request = urllib.request.Request(url, headers=request_headers)
             try:
-                response = self.opener.open(request, timeout=30)
+                response = self.opener.open(request, timeout=REQUEST_TIMEOUT)
             except urllib.error.HTTPError as error:
                 response = error
             except (OSError, urllib.error.URLError, http.client.HTTPException):
@@ -115,6 +117,31 @@ class GitHubAPI:
                     raise RuntimeError(f"GitHub request returned HTTP {response.status}")
                 limit = LOG_LIMIT if logs else 8 * 1024 * 1024
                 try:
+                    if logs and response.status == 200:
+                        # Some log hosts ignore Range. Keep a rolling suffix instead
+                        # of the setup-heavy prefix, without retaining the full log.
+                        deadline = time.monotonic() + REQUEST_TIMEOUT
+                        body, total = bytearray(), 0
+                        while True:
+                            if time.monotonic() >= deadline:
+                                raise RuntimeError("GitHub log response exceeded its read time limit")
+                            # read1 returns after one underlying read, so a trickling
+                            # response cannot keep read(size) waiting indefinitely.
+                            chunk = response.read1(64 * 1024)
+                            if not chunk:
+                                break
+                            total += len(chunk)
+                            body.extend(chunk)
+                            del body[:max(0, len(body) - limit - 1)]
+                        truncated = total > limit
+                        if truncated:
+                            # Drop a partial first line so truncation cannot remove
+                            # the credential label that makes redaction possible.
+                            if body[-limit - 1] == 10:
+                                body = body[-limit:]
+                            else:
+                                body = body[-limit:].split(b"\n", 1)[-1] if b"\n" in body[-limit:] else b""
+                        return bytes(body), truncated
                     body = response.read(limit + 1)
                 except (OSError, urllib.error.URLError, http.client.HTTPException):
                     raise RuntimeError("GitHub response could not be read") from None
@@ -199,7 +226,9 @@ def summarize(api, repository, run_id, attempt, server_url="https://github.com",
     for label, selected in (("Failed aggregate gates", gates), ("Cancelled jobs", cancelled), ("Skipped jobs", skipped)):
         if selected:
             lines.extend(["", label + ": " + ", ".join(escaped(job.get("name", "Unnamed job")) for job in selected) + "."])
-    lines.extend(["", "### Retained artifacts", ""])
+    lines.extend(["", "### Retained artifacts (entire workflow run)", "",
+                  f"Jobs above are from attempt {attempt}. Artifacts may include other attempts; "
+                  "the artifact listing does not identify the producing attempt.", ""])
     for artifact in artifacts:
         identifier = artifact.get("id")
         if isinstance(identifier, int) and not artifact.get("expired"):
