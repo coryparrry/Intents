@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -43,6 +44,33 @@ class CoverageTests(unittest.TestCase):
         self.assertTrue(routes.coverage(["unknown-new-tool.swift"])["automation_e2e"])
         self.assertFalse(routes.coverage(["docs/wiki/App-automation.md"])["automation_e2e"])
         self.assertFalse(routes.coverage([routes.APP + "Services/MetricScorer.swift"])["automation_e2e"])
+
+    def test_sdk_consumer_qualification_follows_installer_and_public_sdk_inputs(self):
+        for path in (
+            routes.APP + "Services/IntentLabProjectInstaller.swift",
+            routes.APP + "Services/OpenStepProjectDocument.swift",
+            routes.TESTS + "IntentLabProjectInstallerTests.swift",
+            "Package.swift", "Package.resolved", ".github/workflows/ci.yml",
+            "Sources/IntentLabContracts/Scenario.swift", "Sources/IntentLabTesting/Runner.swift",
+            "Sources/IntentLabCoreTesting/Runner.swift", "Sources/IntentLabSiriBridge/Bridge.swift",
+            "Sources/FoundationEvalsDeveloper/Developer.swift", "Tests/IntentLabTestingTests/RunnerTests.swift",
+            "Tests/FoundationEvalsDeveloperTests/DeveloperProtocolTests.swift",
+            "Packages/ProductionEvals/Package.swift", "script/ci_run_tests.py",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(routes.coverage([path])["sdk_consumer"])
+        self.assertTrue(routes.coverage(None)["sdk_consumer"])
+
+    def test_unrelated_app_ui_and_test_changes_do_not_repeat_pinned_sdk_builds(self):
+        for path in (
+            routes.APP + "Views/AppAutomationView.swift", routes.APP + "Services/MetricScorer.swift",
+            routes.TESTS + "MetricScorerTests.swift", routes.UI_TESTS + "WorkflowTraceUITests.swift",
+            "Tests/IntentsAutomationCoreTests/AutomationCodecTests.swift",
+            "Sources/IntentsAutomationCore/AutomationApplicationRunner.swift",
+            "README.md", "script/release_notes.py", "script/tests/test_ci_workflow.py",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(routes.coverage([path])["sdk_consumer"])
 
     def test_homebrew_updater_and_workflow_select_their_regressions(self):
         for path in ("script/update_homebrew.py", ".github/workflows/update-homebrew.yml"):
@@ -146,7 +174,7 @@ class CoverageTests(unittest.TestCase):
         self.assert_selection(
             [".github/workflows/package-installer.yml"],
             python=routes.RELEASE_VALIDATION
-            | {"script.tests.test_wait_release_ci", "script.tests.test_update_homebrew"},
+            | {"script.tests.test_wait_release_ci", "script.tests.test_update_homebrew", "script.tests.test_package_installer_workflow"},
         )
 
     def test_signature_code_and_test_run_on_macos_without_xcode_build(self):
@@ -410,31 +438,56 @@ class MatrixTests(unittest.TestCase):
             test for group in routes.coverage(paths)["ui_matrix"] for test in group["tests"]
         }
 
-    def test_full_matrix_preserves_every_previous_selector_and_picker_once(self):
-        expected = {
-            "FoundationEvalsUITests/FoundationEvalsUITests",
-            "FoundationEvalsUITests/IntentLabGuidanceUITests",
-            "FoundationEvalsUITests/SimplificationUITests",
-            "FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration",
-            "FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence",
-            "FoundationEvalsUITests/AutomationDependencyControlsUITests",
-        } | {"FoundationEvalsUITests/AppAutomationUITests/" + method for method in (
-            "testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled",
-            "testXcodeDefaultsFollowDestinationAndRestoreWithoutRunOverride",
-            "testEmptyAutomationAndPickerCancellationRemainReadOnly",
-            "testOwnershipResetConfirmationCanBeCancelledWithoutChangingTheReservation",
-            "testPreparationPickersUseStableIdentifiers",
+    def test_full_matrix_covers_every_ordinary_ui_suite_once(self):
+        expected = {routes.UI_TARGET + suite for suite in (
+            "FoundationEvalsUITests", "IntentLabGuidanceUITests", "SimplificationUITests",
+            "IntentLabArrayEntryUITests", "FoundationEvalsRunLifecycleUITests",
+            "WorkflowTraceUITests", "AppAutomationUITests", "AutomationDependencyControlsUITests",
+            "WorkspacePolishUITests", "EvaluationReviewUITests",
         )}
-        expected.update({
-            "FoundationEvalsUITests/WorkspacePolishUITests/testSettingsTabsKeepTheirPrimaryControlsAccessible",
-            "FoundationEvalsUITests/WorkspacePolishUITests/testImportIssuesKeepCancelAndImportVisible",
-            "FoundationEvalsUITests/EvaluationReviewUITests",
-        })
         matrix = routes.full_coverage("fixture")["ui_matrix"]
-        selections = [test for group in matrix for test in group["tests"]]
-        self.assertEqual(set(selections), expected)
-        self.assertEqual(len(selections), len(expected))
+        selected = [test for job in matrix for test in job["tests"]]
+        self.assertEqual(set(selected), expected)
+        self.assertEqual(len(selected), len(expected))
         self.assertEqual(len(matrix), 3)
+        self.assertFalse(any(test.removeprefix(routes.UI_TARGET) in routes.OPT_IN_UI_SUITES for test in selected))
+
+    def test_full_and_shared_helpers_discover_new_suites_without_a_catalog_edit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tests = root / routes.UI_TESTS
+            tests.mkdir(parents=True)
+            for suite in ("NewOrdinaryUITests", "FreshRecordAutomationUITests", "MacPreparationUITests"):
+                (tests / (suite + ".swift")).write_text("final class " + suite + ": XCTestCase { func testCase() {} }")
+            for plan in (routes.coverage(None, root), routes.coverage([routes.UI_TESTS + "SharedHelper.swift"], root)):
+                selected = {test for job in plan["ui_matrix"] for test in job["tests"]}
+                self.assertIn(routes.UI_TARGET + "NewOrdinaryUITests", selected)
+                self.assertFalse(any(routes.UI_TARGET + suite in selected for suite in routes.OPT_IN_UI_SUITES))
+            edited = routes.coverage([routes.UI_TESTS + "MacPreparationUITests.swift"], root)
+            self.assertEqual([test for job in edited["ui_matrix"] for test in job["tests"]],
+                             [routes.UI_TARGET + "MacPreparationUITests"])
+
+    def test_recorded_durations_keep_the_slowest_groups_on_separate_desktops(self):
+        groups = {"runs": 100, "traces": 80, "settings": 40, "imports": 30}
+        timings = {"seconds": {
+            ({**routes.UI_BASELINE, **routes.UI_FEATURE_TESTS})[group][0]: seconds
+            for group, seconds in groups.items()
+        }, "fallback_seconds": {"method": 10, "suite": 50}}
+        with patch.object(routes, "UI_TIMINGS", timings):
+            matrix = routes.ui_matrix(groups)
+            self.assertEqual({job["name"] for job in matrix}, {"runs", "traces", "imports+settings"})
+            self.assertEqual(sorted(sum(routes.ui_duration(test) for test in job["tests"]) for job in matrix),
+                             [70, 80, 100])
+            self.assertEqual(matrix, routes.ui_matrix(reversed(groups)))
+
+    def test_whole_suites_supersede_methods_globally_and_have_one_owner(self):
+        matrix = routes.ui_matrix(routes.ALL_UI_GROUPS, {"FoundationEvalsUITests", "WorkspacePolishUITests"}, targeted=True)
+        selected = [test for job in matrix for test in job["tests"]]
+        self.assertEqual(len(selected), len(set(selected)))
+        for suite in ("FoundationEvalsUITests", "WorkspacePolishUITests"):
+            selector = routes.UI_TARGET + suite
+            self.assertEqual(selected.count(selector), 1)
+            self.assertFalse(any(test.startswith(selector + "/") for test in selected))
 
     def test_feature_view_runs_its_full_regression_class_without_other_features(self):
         for view, expected, unrelated in (
@@ -586,7 +639,7 @@ class FeatureOwnershipTests(unittest.TestCase):
         self.assertEqual(self.groups(paths), {"settings", "traces"})
         self.assertEqual(self.groups(paths), self.groups(list(reversed(paths))))
         shared = routes.coverage(paths + [routes.APP + "ContentView.swift"])
-        self.assertLessEqual(set(routes.UI_BASELINE) | {"settings"}, {name for group in shared["ui_matrix"] for name in group["name"].split("+")})
+        self.assertEqual(shared["ui_matrix"], routes.full_coverage("fixture")["ui_matrix"])
 
     def test_shared_lifecycle_navigation_and_storage_keep_full_baseline(self):
         for path in (
@@ -595,7 +648,8 @@ class FeatureOwnershipTests(unittest.TestCase):
             "Views/WorkspaceSidebar.swift", "Views/Components/WorkspaceStyle.swift",
         ):
             with self.subTest(path=path):
-                self.assertEqual(self.groups([routes.APP + path]), routes.ALL_UI_GROUPS)
+                self.assertEqual(routes.coverage([routes.APP + path])["ui_matrix"],
+                                 routes.full_coverage("fixture")["ui_matrix"])
 
     def test_isolated_production_and_service_changes_have_no_ui(self):
         for path in (
@@ -907,10 +961,15 @@ class GitEventTests(unittest.TestCase):
     def test_push_uses_previous_tip_not_parent(self):
         self.commit(routes.APP + "Views/Components/RunToolbarProgress.swift", "UI")
         head = self.commit("README.md", "docs")
-        result = self.run_event("push", {"before": self.base, "after": head})
+        event = {"before": self.base, "after": head}
+        self.assertEqual(set(routes.changed_paths("push", event, self.root)),
+                         {routes.APP + "Views/Components/RunToolbarProgress.swift", "README.md"})
+        result = self.run_event("push", event)
         self.assertTrue(result["native"])
         self.assertTrue(result["ui"])
-        self.assertEqual(result["swift_suites"], ["RunToolbarProgressTests"])
+        self.assertTrue(result["sdk_consumer"])
+        self.assertEqual(result["swift_suites"], ["*"])
+        self.assertIn("main push verifies", (self.root / "summary").read_text())
 
     def test_deletion_and_rename_out_of_native_tree_still_select_dependents(self):
         native = routes.APP + "Services/MetricScorer.swift"
@@ -918,22 +977,32 @@ class GitEventTests(unittest.TestCase):
         self.git("mv", native, "README.md", "--force")
         self.git("commit", "-qm", "move source to docs")
         result = self.run_event(
-            "push", {"before": base, "after": self.git("rev-parse", "HEAD")}
+            "pull_request", {"pull_request": {"base": {"sha": base}, "head": {"sha": self.git("rev-parse", "HEAD")}}}
         )
         self.assertTrue(result["native"])
         self.assertEqual(result["swift_suites"], ["MetricScorerTests"])
 
-    def test_docs_only_push_skips_all_test_jobs_and_reports_why(self):
+    def test_docs_only_pull_request_skips_test_jobs_and_reports_why(self):
         head = self.commit("README.md", "new docs")
-        result = self.run_event("push", {"before": self.base, "after": head})
+        result = self.run_event("pull_request", {"pull_request": {"base": {"sha": self.base}, "head": {"sha": head}}})
         self.assertFalse(result["native"])
         self.assertFalse(result["regression"])
         self.assertEqual(result["python_tests"], [])
         self.assertIn("need no unit tests", (self.root / "summary").read_text())
 
+    def test_docs_only_main_push_still_runs_the_full_safety_net(self):
+        head = self.commit("README.md", "new docs")
+        result = self.run_event("push", {"before": self.base, "after": head})
+        self.assertTrue(result["native"])
+        self.assertTrue(result["regression"])
+        self.assertTrue(result["sdk_consumer"])
+        self.assertTrue(result["automation_e2e"])
+        self.assertEqual(result["swift_suites"], ["*"])
+        self.assertEqual(result["ui_matrix"], routes.coverage(None)["ui_matrix"])
+
     def test_signature_change_uses_regression_job_but_not_native_build(self):
         head = self.commit("script/verify_update_signature.swift", "verifier")
-        result = self.run_event("push", {"before": self.base, "after": head})
+        result = self.run_event("pull_request", {"pull_request": {"base": {"sha": self.base}, "head": {"sha": head}}})
         self.assertFalse(result["native"])
         self.assertTrue(result["regression"])
         self.assertEqual(result["swift_suites"], [])
@@ -942,6 +1011,8 @@ class GitEventTests(unittest.TestCase):
     def test_missing_history_malformed_and_manual_events_use_full_coverage(self):
         for name, event in [
             ("workflow_dispatch", {}),
+            ("workflow_call", {}),
+            ("schedule", {}),
             ("push", {"before": "0" * 40, "after": self.base}),
             ("push", {"before": "f" * 40, "after": self.base}),
             ("push", {}),

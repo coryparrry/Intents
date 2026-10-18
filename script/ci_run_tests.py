@@ -32,7 +32,7 @@ def run_tests(kind, selection, scratch_path=None):
         raise ValueError(
             "Swift selections must name test suites, or use a single wildcard for full coverage"
         )
-    command = ["swift", "test", "--enable-code-coverage"]
+    command = ["swift", "test"]
     if scratch_path:
         command.extend(["--scratch-path", scratch_path])
     if names != ["*"]:
@@ -51,7 +51,6 @@ def run_tests(kind, selection, scratch_path=None):
                 "Selected Swift suites were not discovered: "
                 + ", ".join(sorted(missing))
             )
-        # Let Swift initialize coverage output; discovery alone does not do so.
         command.extend(["--filter", r"(?:^|\.)(?:" + "|".join(names) + r")/"])
     subprocess.run(command, check=True)
 

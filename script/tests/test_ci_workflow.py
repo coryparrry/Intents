@@ -30,27 +30,61 @@ class GateTests(unittest.TestCase):
         self.assertEqual(gate("quality", **common, TESTS="success"), 0)
         for result in ("skipped", "failure", "cancelled"):
             self.assertNotEqual(gate("quality", **common, TESTS=result), 0)
-        self.assertEqual(gate("quality", ROUTING="success", LINT="success", SELECTED="[]", TESTS="skipped"), 0)
+        self.assertEqual(gate("quality", ROUTING="success", LINT="success", SELECTED="[]", TESTS="success"), 0)
+        self.assertNotEqual(gate("quality", ROUTING="success", LINT="success", SELECTED="[]", TESTS="skipped"), 0)
         self.assertNotEqual(gate("quality", ROUTING="failure", LINT="success", SELECTED="[]", TESTS="skipped"), 0)
 
-    def test_regression_requires_both_independent_platform_results(self):
-        common = dict(ROUTING="success", SWIFT="success", SDK="success", MACOS="success", SWIFT_SELECTION='["A"]', MACOS_SELECTION='["B"]')
+    def test_regression_requires_selected_tests_and_external_consumer(self):
+        common = dict(ROUTING="success", QUALITY="success", SWIFT="success", SDK="success", SDK_SELECTED="true", SWIFT_SELECTION='["A"]', MACOS_SELECTION='["B"]')
         self.assertEqual(gate("regression", **common), 0)
-        for field in ("SWIFT", "SDK", "MACOS", "ROUTING"):
+        for field in ("SWIFT", "SDK", "QUALITY", "ROUTING"):
             for result in ("failure", "cancelled", "skipped"):
                 self.assertNotEqual(gate("regression", **{**common, field: result}), 0)
-        self.assertEqual(gate("regression", **{**common, "MACOS_SELECTION": "[]", "MACOS": "skipped"}), 0)
+        for selection in ("SWIFT_SELECTION", "MACOS_SELECTION"):
+            self.assertEqual(gate("regression", **{**common, selection: "[]"}), 0)
+            self.assertNotEqual(gate("regression", **{**common, selection: "[]", "SWIFT": "skipped"}), 0)
+        self.assertEqual(gate("regression", **{**common, "SWIFT_SELECTION": "[]", "MACOS_SELECTION": "[]", "SWIFT": "skipped"}), 0)
+        self.assertEqual(gate("regression", **{**common, "SDK_SELECTED": "false", "SDK": "skipped"}), 0)
+        self.assertNotEqual(gate("regression", **{**common, "SDK_SELECTED": "false"}), 0)
+        self.assertNotEqual(gate("regression", **{**common, "SDK_SELECTED": ""}), 0)
 
-    def test_native_gate_rejects_any_missing_build_core_or_ui_shard(self):
-        common = dict(ROUTING="success", BUILD="success", SDK="success", CORE="success", CORE_SELECTION='["FoundationEvalsTests"]', UI="success", UI_SELECTED="true", STABILITY="skipped", STABILITY_SELECTED="false")
+    def test_required_gate_rejects_failed_cancelled_or_skipped_selected_checks(self):
+        common = dict(ROUTING="success", QUALITY="success", REGRESSION="success", AUTOMATION="success", BUILD="success", BUILD_SELECTED="true", SDK="success", SDK_SELECTED="true", CORE="success", CORE_SELECTION='["FoundationEvalsTests"]', UI="success", UI_SELECTED="true", STABILITY="skipped", STABILITY_SELECTED="false", INPUT_CONVERSION="success", INPUT_CONVERSION_SELECTED="true")
         self.assertEqual(gate("build", **common), 0)
-        for field in ("ROUTING", "BUILD", "SDK", "CORE", "UI"):
-            for result in ("failure", "cancelled", "skipped"):
-                self.assertNotEqual(gate("build", **{**common, field: result}), 0)
-        self.assertEqual(gate("build", **{**common, "UI_SELECTED": "false", "UI": "skipped"}), 0)
+        for field in ("ROUTING", "QUALITY", "REGRESSION", "AUTOMATION", "BUILD", "SDK", "CORE", "UI", "INPUT_CONVERSION"):
+            for result in ("failure", "cancelled", "skipped", ""):
+                with self.subTest(field=field, result=result):
+                    self.assertNotEqual(gate("build", **{**common, field: result}), 0)
+        for field in ("BUILD", "SDK", "UI", "INPUT_CONVERSION"):
+            self.assertEqual(gate("build", **{**common, field + "_SELECTED": "false", field: "skipped"}), 0)
+            self.assertNotEqual(gate("build", **{**common, field + "_SELECTED": "false"}), 0)
+            self.assertNotEqual(gate("build", **{**common, field + "_SELECTED": ""}), 0)
         self.assertEqual(gate("build", **{**common, "CORE_SELECTION": "[]", "CORE": "skipped"}), 0)
         self.assertNotEqual(gate("build", **{**common, "STABILITY_SELECTED": "true"}), 0)
         self.assertEqual(gate("build", **{**common, "STABILITY_SELECTED": "true", "STABILITY": "success"}), 0)
+        # Docs-only changes still produce a required result; expected skips pass.
+        unselected = {**common, "CORE_SELECTION": "[]", "CORE": "skipped"}
+        for field in ("BUILD", "SDK", "UI", "INPUT_CONVERSION"):
+            unselected.update({field: "skipped", field + "_SELECTED": "false"})
+        self.assertEqual(gate("build", **unselected), 0)
+        self.assertNotEqual(gate("build", **{**unselected, "ROUTING": "failure"}), 0)
+
+    def test_required_gate_waits_for_acceptance_even_without_native_build(self):
+        workflow = job("build")
+        self.assertIn("if: ${{ always() }}", workflow)
+        dependencies = re.search(r"needs: \[([^]]+)\]", workflow)[1].split(", ")
+        for required in ("quality", "regression", "automation-e2e", "input-conversion", "native-build", "native-tests", "ui-tests", "sdk-consumer", "picker-stability"):
+            self.assertIn(required, dependencies)
+
+    def test_expensive_jobs_wait_for_fast_checks_and_share_macos_scripts(self):
+        for name in ("swift-tests", "sdk-consumer", "native-build", "automation-e2e-scenarios", "input-conversion"):
+            header = job(name).split("    steps:", 1)[0]
+            self.assertIn("needs: [changes, quality]", header)
+            self.assertNotIn("always()", header)
+        self.assertNotIn("\n  macos-script-tests:", WORKFLOW)
+        self.assertIn("CI_TEST_SELECTION: ${{ needs.changes.outputs.macos_tests }}", job("swift-tests"))
+        self.assertIn("needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.macos_tests != '[]'", job("swift-tests"))
+        self.assertIn("needs.changes.outputs.sdk_consumer == 'true'", job("sdk-consumer"))
 
     def test_external_consumer_requires_exact_remote_revision_and_both_products(self):
         script = job("sdk-consumer").split("      - name: Verify external consumer build receipt\n        run: |\n", 1)[1].split("      - name:", 1)[0]
@@ -116,7 +150,7 @@ class GateTests(unittest.TestCase):
 
     def test_simulator_runs_every_scenario_with_one_setup_and_cache_writer(self):
         workflow = job("automation-e2e-scenarios")
-        self.assertIn("needs: changes", workflow)
+        self.assertIn("needs: [changes, quality]", workflow)
         self.assertNotIn("matrix", workflow)
         self.assertIn("--scenario-group all", workflow)
         self.assertIn("name: automation-e2e", workflow)
@@ -128,6 +162,7 @@ class GateTests(unittest.TestCase):
     def test_scripts_run_all_selected_modules_in_one_job(self):
         workflow = job("script-tests")
         self.assertNotIn("matrix", workflow)
+        self.assertNotIn("    if:", workflow.split("    steps:", 1)[0])
         self.assertIn("CI_TEST_SELECTION: ${{ needs.changes.outputs.python_tests }}", workflow)
         self.assertIn("python3 script/ci_run_tests.py python", workflow)
 

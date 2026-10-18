@@ -41,9 +41,8 @@ class SelectionTests(unittest.TestCase):
             runner.run_tests("swift", ["MetricScorerTests"])
         self.assertEqual(run.call_count, 2)
         command = run.call_args.args[0]
-        self.assertNotIn(
-            "--skip-build", command
-        )  # The first run must initialize coverage output.
+        self.assertNotIn("--skip-build", command)
+        self.assertNotIn("--enable-code-coverage", command)
         expression = command[command.index("--filter") + 1]
         self.assertRegex(catalog, expression)
         self.assertNotRegex(
@@ -69,7 +68,7 @@ class SelectionTests(unittest.TestCase):
         with patch.object(runner.subprocess, "run") as run:
             runner.run_tests("swift", ["*"])
         run.assert_called_once_with(
-            ["swift", "test", "--enable-code-coverage"], check=True
+            ["swift", "test"], check=True
         )
 
     def test_malformed_or_option_like_selections_never_start_processes(self):

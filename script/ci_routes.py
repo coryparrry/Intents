@@ -16,6 +16,19 @@ APP = "FoundationEvals/FoundationEvals/"
 TESTS = "FoundationEvals/FoundationEvalsTests/"
 UI_TESTS = "FoundationEvals/FoundationEvalsUITests/"
 UI_TARGET = "FoundationEvalsUITests/"
+# These require staged fixtures and explicit live-run opt-in. Ordinary full
+# coverage excludes them; editing either class still selects it explicitly.
+OPT_IN_UI_SUITES = {"FreshRecordAutomationUITests", "MacPreparationUITests"}
+UI_TIMINGS = json.loads(Path(__file__).with_name("ci_ui_timings.json").read_text())
+SDK_CONSUMER_PATHS = {
+    APP + "Services/IntentLabProjectInstaller.swift",
+    APP + "Services/OpenStepProjectDocument.swift",
+    TESTS + "IntentLabProjectInstallerTests.swift",
+}
+SDK_CONSUMER_PREFIXES = (
+    "Sources/IntentLab", "Sources/FoundationEvalsDeveloper/",
+    "Tests/IntentLab", "Tests/FoundationEvalsDeveloperTests/",
+)
 PRODUCTION_PACKAGE = "Packages/ProductionEvals/"
 PRODUCTION_DEVELOPER_SUITES = {
     "DeveloperProtocolTests", "DeveloperFeatureRegistryTests", "DeveloperRunnerHostEngineTests",
@@ -280,6 +293,7 @@ PYTHON_DEPENDENCIES = {
         "script.tests.test_wait_release_ci",
     },
     ".github/workflows/package-installer.yml": RELEASE_VALIDATION
+    | {"script.tests.test_package_installer_workflow"}
     | {"script.tests.test_wait_release_ci", "script.tests.test_update_homebrew"},
     ".github/workflows/release.yml": RELEASE_VALIDATION,
 }
@@ -293,6 +307,7 @@ FULL_COVERAGE_PATHS = {
     "script/tests/test_ci_run_tests.py",
     "script/tests/test_ci_native_cache.py",
     "script/ci_native_routes.py",
+    "script/ci_ui_timings.json",
     "script/tests/test_ci_native_routes.py",
     "script/build_and_run.sh",
     "Package.swift",
@@ -365,6 +380,19 @@ def package_ui_groups(path):
     return None
 
 
+def ordinary_ui_classes(root=ROOT):
+    return {
+        suite
+        for source in (root / UI_TESTS).rglob("*.swift")
+        for suite in re.findall(r"\bclass\s+(\w+)\s*:\s*XCTestCase\b", source.read_text())
+    } - OPT_IN_UI_SUITES
+
+
+def ui_duration(selector):
+    kind = "method" if selector.count("/") == 2 else "suite"
+    return UI_TIMINGS["seconds"].get(selector, UI_TIMINGS["fallback_seconds"][kind])
+
+
 def ui_matrix(groups, extra_classes=(), targeted=False):
     catalog = {**UI_BASELINE, **UI_FEATURE_TESTS}
     selections = {
@@ -385,16 +413,29 @@ def ui_matrix(groups, extra_classes=(), targeted=False):
         selections.setdefault(owner, set()).add(selector)
         for tests in selections.values():
             tests.difference_update(test for test in list(tests) if test.startswith(selector + "/"))
-    # Three desktops bound runner demand while retaining every selected test.
-    jobs = [{"groups": [], "tests": set()} for _ in range(min(3, len(selections)))]
-    for name, tests in sorted(selections.items(), key=lambda item: (-len(item[1]), item[0])):
-        if tests:
-            target = min(jobs, key=lambda job: (len(job["tests"]), len(job["groups"])))
-            target["groups"].append(name)
-            target["tests"].update(tests)
+    # Normalize overlaps globally: a suite supersedes each of its methods,
+    # including methods owned by a different feature group.
+    whole_suites = {test for tests in selections.values() for test in tests if test.count("/") == 1}
+    seen = set()
+    for name in sorted(selections):
+        unique = {
+            test for test in selections[name]
+            if test not in seen and not any(test.startswith(suite + "/") for suite in whole_suites)
+        }
+        selections[name] = unique
+        seen.update(unique)
+    # Recorded CI durations, rather than selector counts, keep slow feature
+    # groups apart. Longest-first placement is deterministic on every runner.
+    weights = {name: sum(ui_duration(test) for test in tests) for name, tests in selections.items() if tests}
+    jobs = [{"groups": [], "tests": set(), "seconds": 0} for _ in range(min(3, len(weights)))]
+    for name in sorted(weights, key=lambda name: (-weights[name], name)):
+        target = min(jobs, key=lambda job: (job["seconds"], len(job["groups"])))
+        target["groups"].append(name)
+        target["tests"].update(selections[name])
+        target["seconds"] += weights[name]
     return sorted([
         {"name": "+".join(sorted(job["groups"])), "tests": sorted(job["tests"])}
-        for job in jobs if job["tests"]
+        for job in jobs
     ], key=lambda job: job["name"])
 
 
@@ -418,11 +459,12 @@ def full_coverage(reason, root=ROOT, extra_classes=(), extra_groups=()):
         "ui": True,
         "automation_e2e": True,
         "input_conversion": True,
+        "sdk_consumer": True,
         "swift_suites": ["*"],
         "python_tests": sorted(python_test_inventory(root)),
         "macos_tests": sorted(MACOS_TESTS),
         "reasons": [reason],
-    }, ALL_UI_GROUPS | set(extra_groups), extra_classes)
+    }, ALL_UI_GROUPS | set(extra_groups), set(extra_classes) | ordinary_ui_classes(root))
 
 
 def coverage_plan(paths, root=ROOT):
@@ -439,10 +481,11 @@ def coverage_plan(paths, root=ROOT):
             "Full coverage: unsupported event, malformed payload, or unavailable Git history.",
             root,
         )
-    native = ui = automation_e2e = input_conversion = False
+    native = ui = automation_e2e = input_conversion = sdk_consumer = False
     ui_groups, ui_fallback = set(), False
     swift, python, macos, reasons = set(), set(), set(), set()
     for path in paths:
+        sdk_consumer |= path in SDK_CONSUMER_PATHS or path.startswith(SDK_CONSUMER_PREFIXES) or production_package_runtime(path)
         automation_e2e |= not path.startswith("Integration/AutomationHost/NativeMac/") and path.startswith((
             "Sources/IntentsAutomationCore/", "Sources/IntentsAutomationTool/",
             "Integration/AutomationHost/", "examples/AutomationFixture/",
@@ -585,11 +628,14 @@ def coverage_plan(paths, root=ROOT):
         "ui": ui,
         "automation_e2e": automation_e2e,
         "input_conversion": input_conversion,
+        "sdk_consumer": sdk_consumer,
         "swift_suites": ["*"] if "*" in swift else sorted(swift),
         "python_tests": sorted(python),
         "macos_tests": sorted(macos),
         "reasons": sorted(reasons),
-    }, ALL_UI_GROUPS | ui_groups if ui_fallback else ui_groups, extra_classes, not ui_fallback)
+    }, ALL_UI_GROUPS | ui_groups if ui_fallback else ui_groups,
+        extra_classes | ordinary_ui_classes(root) if ui_fallback else extra_classes,
+        not ui_fallback)
 
 
 def coverage(paths, root=ROOT):
@@ -650,10 +696,16 @@ def main():
     except (ValueError, OSError):
         event = None
     paths = changed_paths(os.environ["GITHUB_EVENT_NAME"], event, Path.cwd())
-    plan = coverage(paths)
-    outputs = {key: str(plan[key]).lower() for key in ("native", "ui", "automation_e2e", "input_conversion")}
+    if os.environ["GITHUB_EVENT_NAME"] == "push":
+        # The workflow restricts pushes to main. This catches dependency edges
+        # intentionally not inferred by the faster pull-request router.
+        plan = coverage(None)
+        plan["reasons"] = ["Full coverage: main push verifies the complete ordinary suite after affected PR checks."]
+    else:
+        plan = coverage(paths)
+    outputs = {key: str(plan[key]).lower() for key in ("native", "ui", "automation_e2e", "input_conversion", "sdk_consumer")}
     outputs["regression"] = str(
-        bool(plan["swift_suites"] or plan["macos_tests"])
+        bool(plan["swift_suites"] or plan["macos_tests"] or plan["sdk_consumer"])
     ).lower()
     outputs.update(
         {

@@ -24,21 +24,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build, notarize, verify, and publish
-    runs-on: xcode-27
-    environment: release
-    timeout-minutes: 90
+  preflight:
+    name: Validate release source and wait for CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
       actions: read
+    outputs:
+      source_sha: ${{ steps.candidate.outputs.source_sha }}
     env:
-      SOURCE_DIR: ${{ github.workspace }}/source
       RELEASE_TAG: ${{ inputs.tag }}
       EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
       RELEASE_BRANCH: ${{ github.event.repository.default_branch }}
-      APPLE_TEAM_ID: 3Z3955EFRE
-      EXPECTED_TEAM_ID: 3Z3955EFRE
     steps:
       - name: Require the default branch
         env:
@@ -68,10 +66,52 @@ jobs:
             echo 'Draft release source must match the immutable release candidate SHA.' >&2
             exit 1
           fi
+          remote_tag="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" \
+            --jq ".[] | select(.ref == \"refs/tags/$RELEASE_TAG\") | .ref")"
+          if [[ -n "$remote_tag" ]]; then
+            remote_commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)"
+            if [[ "$remote_commit" != "$source_sha" ]]; then
+              echo 'Existing remote tag points to different source.' >&2
+              exit 1
+            fi
+          fi
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+      # Polling can take 35 minutes; finish it before reserving an Xcode runner.
+      - name: Wait for the release commit's CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+        run: bash control/script/wait_release_ci.sh
+      - name: Validate exact source CI jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+        run: bash control/script/verify_release_source.sh "$RELEASE_SOURCE_SHA"
+
+  release:
+    name: Build, notarize, verify, and publish
+    needs: preflight
+    runs-on: xcode-27
+    environment: release
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      actions: read
+    env:
+      SOURCE_DIR: ${{ github.workspace }}/source
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_BRANCH: ${{ github.event.repository.default_branch }}
+      APPLE_TEAM_ID: 3Z3955EFRE
+      EXPECTED_TEAM_ID: 3Z3955EFRE
+    steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ steps.candidate.outputs.source_sha }}
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
           path: source
           fetch-depth: 0
           persist-credentials: false
@@ -95,11 +135,7 @@ jobs:
             fi
           done
           exit "$missing"
-      - name: Wait for the release commit's CI
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
-        run: bash control/script/wait_release_ci.sh
+      # Revalidate after runner/environment queueing before building signed artifacts.
       - name: Validate candidate and exact source CI
         env:
           GH_TOKEN: ${{ github.token }}
