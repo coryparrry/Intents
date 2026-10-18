@@ -107,6 +107,30 @@ class SelectionTests(unittest.TestCase):
             ):
                 runner.run_tests(kind, names)
 
+    def test_installer_selection_unions_once_with_portable_suites(self):
+        catalog = "FoundationEvalsPortableTests.MetricScorerTests/testScore\nFoundationEvalsPortableTests.IntentLabProjectInstallerTests/testBuild\n"
+        for selection in ([], ["MetricScorerTests"], ["IntentLabProjectInstallerTests"],
+                          ["MetricScorerTests", "IntentLabProjectInstallerTests"]):
+            with self.subTest(selection=selection), patch.object(runner.subprocess, "run") as run:
+                run.return_value.stdout = catalog
+                runner.run_tests("swift", selection, "/tmp/shared-root-build", include_installer=True)
+                self.assertEqual(run.call_count, 2)
+                command = run.call_args.args[0]
+                self.assertEqual(command.count("--filter"), 1)
+                expression = command[command.index("--filter") + 1]
+                self.assertEqual(expression.count("IntentLabProjectInstallerTests"), 1)
+                self.assertIn("/tmp/shared-root-build", command)
+                if "MetricScorerTests" in selection:
+                    self.assertEqual(expression.count("MetricScorerTests"), 1)
+
+    def test_installer_wildcard_uses_one_unfiltered_run_and_python_cannot_enable_it(self):
+        with patch.object(runner.subprocess, "run") as run:
+            runner.run_tests("swift", ["*"], include_installer=True)
+            run.assert_called_once_with(["swift", "test"], check=True)
+        with patch.object(runner.subprocess, "run") as run, self.assertRaisesRegex(ValueError, "requires Swift"):
+            runner.run_tests("python", [], include_installer=True)
+        run.assert_not_called()
+
     def test_real_python_dispatch_loads_just_the_requested_fixture_module(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -598,13 +598,14 @@ class OrchestrationTests(unittest.TestCase):
                                                    "build_jobs": 4, "record_build_cache": False,
                                                    "scenario_group": "all"})
 
-    def test_build_and_prepare_finish_before_boot_install_and_execution(self):
+    def test_verified_cli_starts_boot_before_prepare_and_waits_before_install(self):
         commands, _ = self.exercise()
         calls = [args for args, _ in commands.calls]
         position = lambda token: next(index for index, args in enumerate(calls) if token in args)
-        self.assertLess(position("--jobs"), position("prepare"))
-        self.assertLess(position("prepare"), position("boot"))
-        self.assertLess(position("boot"), position("bootstatus"))
+        self.assertLess(position("--show-bin-path"), position("boot"))
+        self.assertLess(position("boot"), position("prepare"))
+        self.assertLess(position("prepare"), position("actions"))
+        self.assertLess(position("actions"), position("bootstatus"))
         self.assertLess(position("bootstatus"), position("install"))
         self.assertLess(position("install"), position("run"))
 
@@ -639,6 +640,8 @@ class OrchestrationTests(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, "different Xcode"):
                     self.exercise()
                 calls = [args for args, _ in observed[0].calls]
+                self.assertIn(["xcrun", "simctl", "boot", prepared()["host"]["target"]["id"]], calls)
+                self.assertFalse(any(args[:3] == ["xcrun", "simctl", "bootstatus"] for args in calls))
                 self.assertFalse(any(args[:3] == ["xcrun", "simctl", "install"] for args in calls))
                 self.assertFalse(any("run" in args for args in calls))
                 self.assertIn(["xcrun", "simctl", "delete", prepared()["host"]["target"]["id"]], calls)
@@ -657,6 +660,8 @@ class OrchestrationTests(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, "run context is missing"):
                     self.exercise()
                 calls = [args for args, _ in observed[0].calls]
+                self.assertIn(["xcrun", "simctl", "boot", prepared()["host"]["target"]["id"]], calls)
+                self.assertFalse(any(args[:3] == ["xcrun", "simctl", "bootstatus"] for args in calls))
                 self.assertFalse(any(args[:3] == ["xcrun", "simctl", "install"] for args in calls))
                 self.assertFalse(any("run" in args for args in calls))
                 self.assertIn(["xcrun", "simctl", "delete", prepared()["host"]["target"]["id"]], calls)
@@ -834,9 +839,9 @@ class OrchestrationTests(unittest.TestCase):
         native_cache.capture.assert_called_once_with(repository, scratch)
         calls = [args for args, _ in commands.calls]
         position = lambda token: next(index for index, args in enumerate(calls) if token in args)
+        self.assertLess(position("boot"), position("prepare"))
         self.assertLess(position("prepare"), position("actions"))
-        self.assertLess(position("actions"), position("boot"))
-        self.assertLess(position("boot"), position("bootstatus"))
+        self.assertLess(position("actions"), position("bootstatus"))
         self.assertLess(position("bootstatus"), position("install"))
         self.assertLess(position("install"), position("run"))
         return commands, results, cache_module
@@ -846,15 +851,25 @@ class OrchestrationTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "Build cache must stay outside"):
                 driver.main(["--output-root", directory, "--build-root", str(driver.ROOT / "cache")])
 
-    def test_prepare_or_boot_failure_still_deletes_only_owned_simulator(self):
-        for failure in ("prepare", "bootstatus", "install"):
+    def test_early_boot_prepare_or_readiness_failure_cleans_only_owned_simulator(self):
+        for failure in ("boot", "prepare", "bootstatus", "install"):
             with self.subTest(failure=failure):
                 commands, _ = self.exercise(failure)
                 calls = [args for args, _ in commands.calls]
-                self.assertIn(["xcrun", "simctl", "delete", prepared()["host"]["target"]["id"]], calls)
+                owned = prepared()["host"]["target"]["id"]
+                self.assertIn(["xcrun", "simctl", "boot", owned], calls)
+                self.assertEqual([args[:3] for args in calls[-3:]], [
+                    ["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"],
+                    ["xcrun", "simctl", "list"]])
+                self.assertTrue(all(args[-1] == owned for args in calls if args[:3] in (
+                    ["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"])))
                 self.assertFalse(any("run" in args for args in calls))
-                if failure == "prepare":
-                    self.assertFalse(any(args[:3] == ["xcrun", "simctl", "boot"] for args in calls))
+                if failure == "boot":
+                    self.assertFalse(any("prepare" in args for args in calls))
+                if failure in ("boot", "prepare"):
+                    self.assertFalse(any(args[:3] == ["xcrun", "simctl", "bootstatus"] for args in calls))
+                if failure in ("boot", "prepare", "bootstatus"):
+                    self.assertFalse(any(args[:3] == ["xcrun", "simctl", "install"] for args in calls))
 
     def test_simulator_selection_requires_available_ios_and_supported_iphone(self):
         runtimes = {"runtimes": [{"identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0", "version": "27.0",

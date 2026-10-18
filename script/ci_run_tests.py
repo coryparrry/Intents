@@ -8,12 +8,17 @@ import subprocess
 import sys
 
 
-def run_tests(kind, selection, scratch_path=None):
+def run_tests(kind, selection, scratch_path=None, include_installer=False):
     if not isinstance(selection, list) or any(
         not isinstance(name, str) or not name for name in selection
     ):
         raise ValueError("CI test selection must be an array of nonempty names")
     names = sorted(set(selection))
+    if include_installer:
+        if kind != "swift":
+            raise ValueError("Installer coverage requires Swift tests")
+        if names != ["*"]:
+            names = sorted(set(names) | {"IntentLabProjectInstallerTests"})
     if not names:
         print("No tests selected.")
         return
@@ -59,8 +64,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("kind", choices=("python", "swift"))
     parser.add_argument("--scratch-path")
+    parser.add_argument("--include-installer", action="store_true")
     args = parser.parse_args()
-    run_tests(args.kind, json.loads(os.environ["CI_TEST_SELECTION"]), args.scratch_path)
+    run_tests(args.kind, json.loads(os.environ["CI_TEST_SELECTION"]), args.scratch_path, args.include_installer)
 
 
 if __name__ == "__main__":

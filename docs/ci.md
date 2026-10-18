@@ -15,8 +15,15 @@ prevent a green required check when selected product checks did not pass.
   test file still selects it explicitly, with its specialized runtime prerequisites.
 - Linux workflow validation and selected script tests finish before Mac workers
   are allocated. A failure here blocks expensive builds and simulator setup.
-- Portable Swift and macOS script tests share one Mac job. Native test products
-  are built once and consumed by core and UI test jobs without rebuilding.
+- Portable Swift, macOS script, native core and selected SDK consumer checks
+  share one Mac regression worker. Native test products are built once; core
+  tests reuse that artifact while UI shards run independently from the same build.
+  Portable and installer tests share one root Swift build and one test selection.
+  SDK consumers still build fresh temporary projects against the pinned remote
+  revision; their checkouts, build products and receipts are never cached. The
+  `Native core tests` and `Clean Intent Lab SDK consumer` checks are Ubuntu
+  result gates. Actual Apple test execution remains in `Mac regression tests`;
+  the gates link to that shared worker and its unchanged evidence artifact names.
   Portable tests do not generate unused coverage instrumentation; no coverage
   report or threshold previously consumed it.
 - UI shards use recorded test durations, with median estimates for tests
@@ -68,6 +75,17 @@ explicit aggregate gate. Its matching
 2m26s. It runs a different workload: Linux/browser checks, without Intents'
 Xcode builds, Swift UI tests, or simulator App Intent execution. That elapsed
 time is not an equivalent native-validation target.
+
+The simulator starts booting while the generic fixture is prepared. Installation
+still waits for exact-Xcode validation and full simulator readiness, and failure
+cleanup still releases only the device created by this run. All seven scenarios,
+16 codec families, negative assertions, and timeout/recovery checks remain.
+
+The unused legacy skip guard and its five self-tests were removed; the invoked
+native runner still rejects missing, failed, and skipped selected UI tests. A
+normally inactive fixture-generation method was also removed from the native
+suite. Persistence, rollback, and review UI tests remain. These removals clean up
+misleading test counts; they are not a material runtime speed improvement.
 
 The slow simulator contract remains selected when relevant and on full runs.
 Queue capacity, simulator boot/install, and cold Xcode compilation remain real
