@@ -26,6 +26,15 @@ prevent a green required check when selected product checks did not pass.
   the gates link to that shared worker and its unchanged evidence artifact names.
   Portable tests do not generate unused coverage instrumentation; no coverage
   report or threshold previously consumed it.
+- Native core Swift Testing cases use a maximum concurrency of 16 instead of
+  unbounded in-process scheduling. Selected cases and command deadlines are
+  unchanged. This uses Swift Testing's experimental environment control through
+  Xcode's `TEST_RUNNER_` forwarding; revalidate it when upgrading Xcode. A local
+  Xcode 27.1 probe completed all 64 cases with observed peaks of 64 without the
+  setting, 16 with this setting, and 32 with a width of 32. This bounds case
+  scheduling, not the subprocesses each case can launch. The probe qualifies
+  Xcode 27.1 locally; the hosted Xcode 27.0 run must qualify the real suite before
+  this is treated as a fix for its intermittent Git timeout.
 - UI shards use recorded test durations, with median estimates for tests
   without measurements. Sharding changes placement, not the selected coverage.
 - Fresh external SDK consumers run for SDK/installer changes and full runs.
@@ -75,6 +84,13 @@ explicit aggregate gate. Its matching
 2m26s. It runs a different workload: Linux/browser checks, without Intents'
 Xcode builds, Swift UI tests, or simulator App Intent execution. That elapsed
 time is not an equivalent native-validation target.
+
+Simulator scenarios run in two independent groups: three codec scenarios and
+four behavior scenarios. Timeout and recovery stay together on the same owned
+simulator. Their union is exactly the original seven cases; each group checks its
+complete result set. Both groups must pass, and failure does not cancel the other
+group. Each pays its own setup cost; only the codec group writes the shared CLI
+cache. Full runs allocate eight Mac workers, down from nine before consolidation.
 
 Fixture preparation and exact-Xcode validation finish before simulator boot.
 Overlapping these phases failed hosted toolchain probes and stalled simulator

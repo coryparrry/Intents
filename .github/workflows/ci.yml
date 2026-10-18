@@ -143,6 +143,9 @@ jobs:
         if: needs.changes.outputs.native_tests != '[]'
         env:
           CI_TEST_SELECTION: ${{ needs.changes.outputs.native_tests }}
+          # Swift Testing cases otherwise run without a bound inside one process.
+          # Xcode forwards TEST_RUNNER_ variables to that test process.
+          TEST_RUNNER_SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH: '16'
         run: |
           defaults write com.coryparry.FoundationEvals SUEnableAutomaticChecks -bool false
           defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
@@ -492,11 +495,15 @@ jobs:
           require_selected "$INPUT_CONVERSION_SELECTED" "$INPUT_CONVERSION"
 
   automation-e2e-scenarios:
-    name: Simulator acceptance tests
+    name: Simulator acceptance (${{ matrix.group }})
     needs: [changes, quality]
     if: ${{ needs.changes.outputs.automation_e2e == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [codecs, behavior]
     env:
       # Exercise the cross-build acceptance from Phase 1, beyond local Xcode 27.0.
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
@@ -529,9 +536,9 @@ jobs:
         id: contract
         run: |
           python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/automation-e2e-build"
-          python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --record-build-cache --scenario-group all
+          python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --record-build-cache --scenario-group "${{ matrix.group }}"
       - name: Save successfully compiled automation CLI
-        if: ${{ !cancelled() && steps.contract.outputs.cli_built == 'true' && steps.cli-cache.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && matrix.group == 'codecs' && steps.contract.outputs.cli_built == 'true' && steps.cli-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/automation-e2e-build
@@ -540,7 +547,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: automation-e2e
+          name: automation-e2e-${{ matrix.group }}
           path: ${{ runner.temp }}/automation-e2e
           if-no-files-found: error
 

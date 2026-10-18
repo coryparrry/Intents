@@ -10,11 +10,16 @@ import Glibc
 /// Native-only process primitive. It is never exposed through the worker broker.
 public actor AutomationOwnedCommand {
     private final class LogOverflow: Sendable { let value = Mutex(false) }
+    /// Fixed lifecycle stages; retained failure attribution contains no command content.
+    public enum Phase: String, Sendable {
+        case prelaunchCallback, launch, startCallback, exitWait, pipeDrain
+    }
     public struct Result: Sendable {
         public var exitStatus: Int32
         public var stdout: Data
         public var stderr: Data
         public var logsTruncated: Bool
+        public var failurePhase: Phase? = nil
         public var ownedIdentity: AutomationProcessIdentity? = nil
         public var directChildReaped = false
         public var pipesDrained = false
@@ -25,6 +30,7 @@ public actor AutomationOwnedCommand {
     private var lastCapturedIdentity: AutomationProcessIdentity?
     private var output = Data(), diagnostics = Data()
     private var truncated = false
+    private var failurePhase: Phase?
     private var launchRevoked = false
     private var lastLogOverflow: LogOverflow?
     private let presenceReader: @Sendable (AutomationProcessIdentity) -> AutomationProcessIdentity.Presence
@@ -37,7 +43,7 @@ public actor AutomationOwnedCommand {
     /// Available after failure/cancellation as well as success; bounded by the same pipe limits.
     public func retainedLogs() -> Result {
         .init(exitStatus: launched && process?.isRunning == false ? process!.terminationStatus : -1, stdout: output, stderr: diagnostics,
-              logsTruncated: truncated || (lastLogOverflow?.value.withLock { $0 } ?? false), ownedIdentity: lastCapturedIdentity)
+              logsTruncated: truncated || (lastLogOverflow?.value.withLock { $0 } ?? false), failurePhase: failurePhase, ownedIdentity: lastCapturedIdentity)
     }
     public func run(executable: URL, arguments: [String], directory: URL, environment: [String: String],
                     timeout: Duration,
@@ -55,6 +61,7 @@ public actor AutomationOwnedCommand {
               environment.count <= 32, environment.allSatisfy({ !$0.key.contains("=") && !$0.key.contains("\0") && !$0.value.contains("\0") && $0.value.utf8.count <= 65_536 }) else {
             throw AutomationContractError.invalidIdentity
         }
+        failurePhase = nil
         let relativeDeadline = ContinuousClock.now.advanced(by: timeout)
         let deadline = min(relativeDeadline, absoluteDeadline ?? relativeDeadline)
         guard deadline > ContinuousClock.now else { throw AutomationRPCError.timedOut }
@@ -69,16 +76,19 @@ public actor AutomationOwnedCommand {
         process = child; launchRevoked = false; launched = false
         runInProgress = true
         defer { runInProgress = false }
+        var phase = Phase.prelaunchCallback
         do {
             let pending = AutomationBoundedTask<Bool>(); callback = pending
             _ = try await pending.run(until: deadline) { try await willStart(); return true }
             callback = nil
+            phase = .launch
             try Task.checkCancellation()
             guard !launchRevoked else { throw CancellationError() }
             guard ContinuousClock.now < deadline else { throw AutomationRPCError.timedOut }
             try child.run()
             launched = true
         } catch {
+            failurePhase = phase
             let stopped = await Task.detached { await self.stopOwned() }.value
             stdout.fileHandleForReading.readabilityHandler = nil; stderr.fileHandleForReading.readabilityHandler = nil
             try? stdout.fileHandleForWriting.close(); try? stderr.fileHandleForWriting.close()
@@ -94,6 +104,7 @@ public actor AutomationOwnedCommand {
             if let started = AutomationProcessIdentity.inspect(pid: child.processIdentifier) {
                 identity = started
                 lastCapturedIdentity = started
+                phase = .startCallback
                 let pending = AutomationBoundedTask<Bool>(); callback = pending
                 _ = try await pending.run(until: deadline) { try await didStart(started); return true }
                 callback = nil
@@ -102,7 +113,9 @@ public actor AutomationOwnedCommand {
                     throw AutomationContractError.invalidIdentity
                 }
             }
+            phase = .exitWait
             let exited = try await waiter.run(until: deadline) { await self.waitForExit(child) }
+            phase = .pipeDrain
             _ = try await AutomationBoundedTask<Bool>().run(until: deadline) { await outReader.value; await errReader.value; return true }
             try Task.checkCancellation()
             guard exited, terminated(child) else { throw AutomationContractError.terminationUnverified }
@@ -113,6 +126,7 @@ public actor AutomationOwnedCommand {
             process = nil; identity = nil; output = Data(); diagnostics = Data(); truncated = false
             return result
         } catch {
+            failurePhase = phase
             let stopped = await Task.detached { await self.stopOwned() }.value
             outReader.cancel(); errReader.cancel()
             await outReader.value; await errReader.value

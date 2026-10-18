@@ -56,6 +56,7 @@ final class AutomationCommandCallbackDrainTests: XCTestCase, @unchecked Sendable
         do { _ = try await task.value; XCTFail("Unsettled callback was released") }
         catch { XCTAssertEqual(error as? AutomationContractError, .terminationUnverified) }
         let logs = await command.retainedLogs()
+        XCTAssertEqual(logs.failurePhase, phase == "will" ? .prelaunchCallback : .startCallback)
         XCTAssertFalse(logs.callbacksDrained)
         if phase == "did" { XCTAssertNotNil(logs.ownedIdentity) }
         let finishedBeforeRelease = await gate.finished
@@ -74,6 +75,7 @@ final class AutomationCommandCallbackDrainTests: XCTestCase, @unchecked Sendable
                                          environment: [:], timeout: .seconds(2))
         XCTAssertEqual(next.exitStatus, 0)
         XCTAssertTrue(next.callbacksDrained)
+        XCTAssertNil(next.failurePhase)
     }
     func testTimedOutPrelaunchCallbackRetainsOwnership() async throws { try await check(phase: "will", cancelled: false) }
     func testCancelledPrelaunchCallbackRetainsOwnership() async throws { try await check(phase: "will", cancelled: true) }

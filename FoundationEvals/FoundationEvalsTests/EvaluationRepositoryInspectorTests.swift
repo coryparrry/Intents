@@ -31,8 +31,35 @@ struct EvaluationRepositoryInspectorTests {
         let snapshot = await inspection.value
         #expect(started.duration(to: .now) < .seconds(10))
         #expect(snapshot.error != nil)
+        if !cancel {
+            #expect(snapshot.error?.hasPrefix("Git rev-parse timedOut during ") == true)
+        }
         #expect(snapshot.commit == nil && snapshot.isDirty == nil)
         let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8)))
+        #expect(Darwin.kill(pid, 0) == -1 && errno == ESRCH)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func statusTimeoutRetainsItsOperationAndPhase() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+            .resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executable = root.appending(path: "fixture-git")
+        let script = """
+        #!/bin/sh
+        case "$*" in
+          *"rev-parse HEAD") printf '%s\\n' '\(String(repeating: "a", count: 40))' ;;
+          *) printf '%s' "$$" > child.pid; while :; do :; done ;;
+        esac
+        """
+        try Data(script.utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        let snapshot = await EvaluationRepositoryInspector.snapshot(rootPath: root.path,
+            gitExecutable: executable, timeout: .seconds(2))
+        #expect(snapshot.error?.hasPrefix("Git status timedOut during ") == true)
+        #expect(snapshot.commit == nil && snapshot.isDirty == nil)
+        let pid = try #require(Int32(String(contentsOf: root.appending(path: "child.pid"), encoding: .utf8)))
         #expect(Darwin.kill(pid, 0) == -1 && errno == ESRCH)
     }
 
