@@ -27,17 +27,22 @@ prevent a green required check when selected product checks did not pass.
   the gates link to that shared worker and its unchanged evidence artifact names.
   Portable tests do not generate unused coverage instrumentation; no coverage
   report or threshold previously consumed it.
-- Native core Swift Testing cases use a maximum concurrency of 16 instead of
-  unbounded in-process scheduling. Selected cases and command deadlines are
-  unchanged. This uses Swift Testing's experimental environment control through
-  Xcode's `TEST_RUNNER_` forwarding; revalidate it when upgrading Xcode. A local
-  Xcode 27.1 probe completed all 64 cases with observed peaks of 64 without the
-  setting, 16 with this setting, and 32 with a width of 32. This bounds case
-  scheduling, not the subprocesses each case can launch. The probe qualifies
-  Xcode 27.1 locally; the hosted Xcode 27.0 run must qualify the real suite before
-  this is treated as a fix for its intermittent Git timeout.
+- Native core Swift Testing cases use a maximum concurrency of four. The maintained
+  app scheme sets `SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH=4`, and the
+  generated core scheme preserves it in the built test descriptor. The workflow
+  does not override that value through `TEST_RUNNER_`. This experimental control
+  bounds case scheduling, not the subprocesses each case can launch; revalidate
+  it when upgrading Xcode. Repository timeout/cancellation fixtures block on a
+  FIFO instead of spinning a CPU, and verify stop reasons and child reaping
+  within a one-minute test bound rather than asserting whole-suite scheduling
+  latency. The full local native suite passed 1,110 tests, and the hosted native
+  step passed on `c94df1e99` with this configuration.
 - UI shards use recorded test durations, with median estimates for tests
   without measurements. Sharding changes placement, not the selected coverage.
+  Test output streams to Actions and a durable log. Individual UI tests have a
+  three-minute default allowance, preserving explicit fixture allowances up to
+  ten minutes. The test step has a 16-minute limit inside the 20-minute job so
+  failures can still export and upload diagnostics.
 - Fresh external SDK consumers run for SDK/installer changes and full runs.
   They still build the installer's immutable remote revision and verify a receipt
   for both public products. Unrelated app changes do not rebuild that SDK.
