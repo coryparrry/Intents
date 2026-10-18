@@ -442,9 +442,18 @@ class MatrixTests(unittest.TestCase):
         expected = {routes.UI_TARGET + suite for suite in (
             "FoundationEvalsUITests", "IntentLabGuidanceUITests", "SimplificationUITests",
             "IntentLabArrayEntryUITests", "FoundationEvalsRunLifecycleUITests",
-            "WorkflowTraceUITests", "AppAutomationUITests", "AutomationDependencyControlsUITests",
+            "WorkflowTraceUITests", "AutomationDependencyControlsUITests",
             "WorkspacePolishUITests", "EvaluationReviewUITests",
         )}
+        expected.update(routes.UI_TARGET + "AppAutomationUITests/" + method for method in (
+            "testOwnershipResetConfirmationCanBeCancelledWithoutChangingTheReservation",
+            "testXcodeDefaultsFollowDestinationAndRestoreWithoutRunOverride",
+            "testPreparationPickersUseStableIdentifiers",
+            "testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled",
+            "testEmptyAutomationAndPickerCancellationRemainReadOnly",
+            "testInstalledAppWorkflowKeepsSeparatePropertyCheckAndNeedsApproval",
+            "testSourceSelectionSurvivesNavigationWithoutBuildingOrRunning",
+        ))
         matrix = routes.full_coverage("fixture")["ui_matrix"]
         selected = [test for job in matrix for test in job["tests"]]
         self.assertEqual(set(selected), expected)
@@ -466,6 +475,43 @@ class MatrixTests(unittest.TestCase):
             edited = routes.coverage([routes.UI_TESTS + "MacPreparationUITests.swift"], root)
             self.assertEqual([test for job in edited["ui_matrix"] for test in job["tests"]],
                              [routes.UI_TARGET + "MacPreparationUITests"])
+
+    def test_live_fixture_callers_are_explicitly_classified(self):
+        callers = {}
+        for source in (ROOT / routes.UI_TESTS).glob("*.swift"):
+            methods = {
+                chunk.split("(", 1)[0].strip()
+                for chunk in source.read_text().split("func ")[1:]
+                if "AutomationFixtureUITestSupport(" in chunk
+            }
+            if methods:
+                callers[source.stem] = methods
+        self.assertEqual(set(callers), routes.OPT_IN_UI_SUITES | set(routes.OPT_IN_UI_METHODS))
+        for suite, methods in routes.OPT_IN_UI_METHODS.items():
+            self.assertEqual(callers[suite], methods)
+
+    def test_mixed_suite_discovers_future_ordinary_methods_without_live_opt_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / routes.UI_TESTS / "AppAutomationUITests.swift"
+            source.parent.mkdir(parents=True)
+            live = "testPreparedPureEchoShowsUnassessedNativeEvidence"
+            source.write_text("final class AppAutomationUITests: XCTestCase { "
+                              "func testExistingOrdinary() {} func testFutureOrdinary() {} func " + live + "() {} }")
+            prefix = routes.UI_TARGET + "AppAutomationUITests"
+            for plan in (
+                routes.coverage(None, root),
+                routes.coverage([routes.UI_TESTS + "SharedHelper.swift"], root),
+                routes.coverage([routes.APP + "Views/AppAutomationView.swift"], root),
+            ):
+                selected = [test for job in plan["ui_matrix"] for test in job["tests"]]
+                self.assertNotIn(prefix, selected)
+                self.assertNotIn(prefix + "/" + live, selected)
+                self.assertIn(prefix + "/testExistingOrdinary", selected)
+                self.assertIn(prefix + "/testFutureOrdinary", selected)
+                self.assertEqual(len(selected), len(set(selected)))
+            explicit = routes.coverage([routes.UI_TESTS + "AppAutomationUITests.swift"], root)
+            self.assertEqual([test for job in explicit["ui_matrix"] for test in job["tests"]], [prefix])
 
     def test_recorded_durations_keep_the_slowest_groups_on_separate_desktops(self):
         groups = {"runs": 100, "traces": 80, "settings": 40, "imports": 30}
@@ -497,9 +543,13 @@ class MatrixTests(unittest.TestCase):
         ):
             with self.subTest(view=view):
                 selected = self.selected_ui([routes.APP + "Views/" + view + ".swift"])
-                self.assertIn(routes.UI_TARGET + expected, selected)
+                if expected in routes.OPT_IN_UI_METHODS:
+                    self.assertIn(routes.UI_TARGET + expected + "/testSourceSelectionSurvivesNavigationWithoutBuildingOrRunning", selected)
+                    self.assertNotIn(routes.UI_TARGET + expected, selected)
+                else:
+                    self.assertIn(routes.UI_TARGET + expected, selected)
+                    self.assertFalse(any(test.startswith(routes.UI_TARGET + expected + "/") for test in selected))
                 self.assertFalse(any(test.startswith(routes.UI_TARGET + unrelated) for test in selected))
-                self.assertFalse(any(test.startswith(routes.UI_TARGET + expected + "/") for test in selected))
 
     def test_shared_and_unknown_ui_sources_keep_the_full_baseline(self):
         baseline = self.selected_ui(None)

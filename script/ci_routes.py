@@ -19,6 +19,9 @@ UI_TARGET = "FoundationEvalsUITests/"
 # These require staged fixtures and explicit live-run opt-in. Ordinary full
 # coverage excludes them; editing either class still selects it explicitly.
 OPT_IN_UI_SUITES = {"FreshRecordAutomationUITests", "MacPreparationUITests"}
+OPT_IN_UI_METHODS = {
+    "AppAutomationUITests": {"testPreparedPureEchoShowsUnassessedNativeEvidence"},
+}
 UI_TIMINGS = json.loads(Path(__file__).with_name("ci_ui_timings.json").read_text())
 SDK_CONSUMER_PATHS = {
     APP + "Services/IntentLabProjectInstaller.swift",
@@ -393,7 +396,7 @@ def ui_duration(selector):
     return UI_TIMINGS["seconds"].get(selector, UI_TIMINGS["fallback_seconds"][kind])
 
 
-def ui_matrix(groups, extra_classes=(), targeted=False):
+def ui_matrix(groups, extra_classes=(), targeted=False, root=ROOT, include_opt_in=()):
     catalog = {**UI_BASELINE, **UI_FEATURE_TESTS}
     selections = {
         name: set(catalog[name] if targeted or name not in UI_BASELINE else UI_BASELINE[name])
@@ -413,6 +416,19 @@ def ui_matrix(groups, extra_classes=(), targeted=False):
         selections.setdefault(owner, set()).add(selector)
         for tests in selections.values():
             tests.difference_update(test for test in list(tests) if test.startswith(selector + "/"))
+    # Mixed suites need method selectors so ordinary coverage cannot silently
+    # select live fixtures. Discover methods each run, including newly added ones.
+    for suite, excluded in OPT_IN_UI_METHODS.items():
+        if suite in include_opt_in:
+            continue
+        selector = UI_TARGET + suite
+        for tests in selections.values():
+            tests.difference_update(selector + "/" + method for method in excluded)
+            if selector in tests:
+                source = root / UI_TESTS / (suite + ".swift")
+                methods = set(re.findall(r"\bfunc\s+(test\w+)\s*\(", source.read_text()))
+                tests.remove(selector)
+                tests.update(selector + "/" + method for method in methods - excluded)
     # Normalize overlaps globally: a suite supersedes each of its methods,
     # including methods owned by a different feature group.
     whole_suites = {test for tests in selections.values() for test in tests if test.count("/") == 1}
@@ -447,12 +463,12 @@ def changed_ui_classes(paths, root):
     return classes
 
 
-def with_matrices(plan, groups=(), extra_classes=(), targeted=False):
-    plan["ui_matrix"] = ui_matrix(groups, extra_classes, targeted) if plan["ui"] else []
+def with_matrices(plan, groups=(), extra_classes=(), targeted=False, root=ROOT, include_opt_in=()):
+    plan["ui_matrix"] = ui_matrix(groups, extra_classes, targeted, root, include_opt_in) if plan["ui"] else []
     return plan
 
 
-def full_coverage(reason, root=ROOT, extra_classes=(), extra_groups=()):
+def full_coverage(reason, root=ROOT, extra_classes=(), extra_groups=(), include_opt_in=()):
     return with_matrices({
         "full_coverage": True,
         "native": True,
@@ -464,11 +480,13 @@ def full_coverage(reason, root=ROOT, extra_classes=(), extra_groups=()):
         "python_tests": sorted(python_test_inventory(root)),
         "macos_tests": sorted(MACOS_TESTS),
         "reasons": [reason],
-    }, ALL_UI_GROUPS | set(extra_groups), set(extra_classes) | ordinary_ui_classes(root))
+    }, ALL_UI_GROUPS | set(extra_groups), set(extra_classes) | ordinary_ui_classes(root),
+        root=root, include_opt_in=include_opt_in)
 
 
 def coverage_plan(paths, root=ROOT):
     extra_classes = changed_ui_classes(paths, root)
+    explicit_classes = set(extra_classes)
     affected_groups = set()
     # Gather affected feature classes before any full-coverage early return.
     for path in paths or ():
@@ -499,7 +517,7 @@ def coverage_plan(paths, root=ROOT):
         if path in FULL_COVERAGE_PATHS:
             return full_coverage(
                 f"Full coverage: {path} changes CI, dependencies, or the release candidate.",
-                root, extra_classes, affected_groups,
+                root, extra_classes, affected_groups, explicit_classes,
             )
         if path in PYTHON_DEPENDENCIES:
             python.update(PYTHON_DEPENDENCIES[path])
@@ -601,7 +619,7 @@ def coverage_plan(paths, root=ROOT):
             )
         elif path.startswith("FoundationEvals/"):
             return full_coverage(
-                f"Full coverage: native project/configuration change in {path}.", root, extra_classes, affected_groups
+                f"Full coverage: native project/configuration change in {path}.", root, extra_classes, affected_groups, explicit_classes
             )
         elif path.startswith("website/"):
             reasons.add("Website changes use Linux website checks without native app tests.")
@@ -622,7 +640,7 @@ def coverage_plan(paths, root=ROOT):
                 "Unmapped tooling changes conservatively select all script suites."
             )
         else:
-            return full_coverage(f"Full coverage: unclassified path {path}.", root, extra_classes, affected_groups)
+            return full_coverage(f"Full coverage: unclassified path {path}.", root, extra_classes, affected_groups, explicit_classes)
     return with_matrices({
         "native": native,
         "ui": ui,
@@ -635,7 +653,7 @@ def coverage_plan(paths, root=ROOT):
         "reasons": sorted(reasons),
     }, ALL_UI_GROUPS | ui_groups if ui_fallback else ui_groups,
         extra_classes | ordinary_ui_classes(root) if ui_fallback else extra_classes,
-        not ui_fallback)
+        not ui_fallback, root, explicit_classes)
 
 
 def coverage(paths, root=ROOT):

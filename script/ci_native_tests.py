@@ -40,14 +40,20 @@ def test_command(products, selection, result, iterations=1):
 
 
 def verify_ui_selection(log, selection):
-    """Xcode can return success for a stale -only-testing identifier."""
+    """Reject empty selections and skipped methods hidden by passing siblings."""
     executed = set(re.findall(
         r"Test Case '-\[(?:FoundationEvalsUITests\.)?(\w+) (\w+)\]' passed", log
+    ))
+    skipped = set(re.findall(
+        r"Test Case '-\[(?:FoundationEvalsUITests\.)?(\w+) (\w+)\]' skipped", log
     ))
     for test in selection:
         parts = test.split("/")
         if parts[0] != "FoundationEvalsUITests":
             continue
+        for suite, method in sorted(skipped):
+            if (len(parts) < 2 or suite == parts[1]) and (len(parts) < 3 or method == parts[2]):
+                raise ValueError(f"Selected UI test was skipped: FoundationEvalsUITests/{suite}/{method}")
         if not any(
             (len(parts) < 2 or suite == parts[1])
             and (len(parts) < 3 or method == parts[2])

@@ -73,6 +73,19 @@ class NativeShardTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             runner.verify_ui_selection("Executed 0 tests", ["FoundationEvalsUITests/Foo"])
 
+    def test_passing_sibling_does_not_hide_a_selected_skipped_method(self):
+        log = "\n".join([
+            "Test Case '-[FoundationEvalsUITests.Foo testOrdinary]' passed (1.0 seconds).",
+            "Test Case '-[FoundationEvalsUITests.Foo testLive]' skipped (0.1 seconds).",
+        ])
+        for selection in (["FoundationEvalsUITests"], ["FoundationEvalsUITests/Foo"],
+                          ["FoundationEvalsUITests/Foo/testLive"]):
+            with self.subTest(selection=selection), self.assertRaisesRegex(
+                ValueError, "Selected UI test was skipped: FoundationEvalsUITests/Foo/testLive"
+            ):
+                runner.verify_ui_selection(log, selection)
+        runner.verify_ui_selection(log, ["FoundationEvalsUITests/Foo/testOrdinary"])
+
     def test_native_swift_testing_symbols_are_checked_independently_of_display_names(self):
         document = {"testNodes": [{"children": [{
             "nodeType": "Test Case", "name": "A friendly display name", "result": "Passed",
