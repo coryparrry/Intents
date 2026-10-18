@@ -1,8 +1,11 @@
 """Check native shard selection and relocated test-product execution."""
 
 import importlib.util
+import io
+import re
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -35,7 +38,13 @@ class NativeShardTests(unittest.TestCase):
         self.assertEqual(command[:2], ["xcodebuild", "test-without-building"])
         self.assertEqual(command.count(f"-only-testing:{test}"), 1)
         self.assertEqual(command[command.index("-parallel-testing-enabled") + 1], "NO")
+        self.assertEqual(command[command.index("-test-timeouts-enabled") + 1], "YES")
+        self.assertEqual(command[command.index("-default-test-execution-time-allowance") + 1], "180")
+        self.assertEqual(command[command.index("-maximum-test-execution-time-allowance") + 1], "600")
         self.assertNotIn("-test-iterations", command)
+        self.assertEqual({argument for argument in command if argument.startswith("-skip-testing:")}, {
+            "-skip-testing:FoundationEvalsUITests/MacPreparationUITests",
+        })
 
     def test_core_shard_keeps_parallel_execution_and_excludes_ui(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -46,6 +55,31 @@ class NativeShardTests(unittest.TestCase):
         self.assertIn(str(descriptor), command)
         self.assertIn("-only-testing:FoundationEvalsTests", command)
         self.assertEqual(command[command.index("-parallel-testing-enabled") + 1], "YES")
+        self.assertEqual({argument for argument in command if argument.startswith("-skip-testing:")}, {
+            "-skip-testing:FoundationEvalsTests/CoreAIModelLoaderTests/configuredResourcesLoadAndGenerate()",
+            "-skip-testing:FoundationEvalsTests/IntentLabProjectInstallerTests/generatedMacUITestTargetBuildsWithXcode()",
+        })
+
+    def test_native_manual_signatures_exist_in_their_owning_test_sources(self):
+        for selector in runner.NATIVE_MANUAL_METHODS:
+            target, suite, method = selector.split("/")
+            self.assertEqual(target, "FoundationEvalsTests")
+            self.assertTrue(method.endswith("()"), "Swift Testing requires a complete function signature")
+            source = SCRIPT.parents[1] / "FoundationEvals/FoundationEvalsTests" / (suite + ".swift")
+            self.assertRegex(source.read_text(), r"\bfunc\s+" + re.escape(method.removesuffix("()")) + r"\s*\(")
+
+    def test_manual_exclusions_keep_ordinary_suites_and_repository_process_checks(self):
+        selected = ["FoundationEvalsTests/CoreAIModelLoaderTests", "FoundationEvalsTests/IntentLabProjectInstallerTests",
+                    "FoundationEvalsTests/EvaluationRepositoryInspectorTests"]
+        with tempfile.TemporaryDirectory() as temporary:
+            products = Path(temporary)
+            (products / "FoundationEvalsCoreCI_macosx27.xctestrun").touch()
+            command = runner.test_command(products, selected, Path("core.xcresult"))
+        self.assertEqual({argument.removeprefix("-only-testing:") for argument in command
+                          if argument.startswith("-only-testing:")}, set(selected))
+        self.assertFalse(any("hangingRepositoryInspectionStopsItsChild" in argument
+                             for argument in command if argument.startswith("-skip-testing:")))
+        self.assertTrue(all(argument.count("/") == 2 for argument in command if argument.startswith("-skip-testing:")))
 
     def test_missing_or_ambiguous_descriptors_fail(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -55,6 +89,43 @@ class NativeShardTests(unittest.TestCase):
                     (products / name).touch()
                 with self.assertRaisesRegex(ValueError, "exactly one"):
                     runner.test_command(products, ["FoundationEvalsTests"], Path("result"))
+
+    def test_log_is_persisted_and_streamed_before_process_exit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "test.log"
+            acknowledgement = Path(temporary) / "observed"
+
+            class ProgressObserver(io.StringIO):
+                def write(self, text):
+                    if "test started" in text and "test started" in log.read_text():
+                        acknowledgement.touch()
+                    return super().write(text)
+
+            script = (
+                "import pathlib, time, sys\n"
+                f"ack = pathlib.Path({str(acknowledgement)!r})\n"
+                "print('test started', flush=True)\n"
+                "deadline = time.monotonic() + 5\n"
+                "while not ack.exists() and time.monotonic() < deadline: time.sleep(0.01)\n"
+                "sys.exit(0 if ack.exists() else 23)\n"
+            )
+            output = ProgressObserver()
+            with patch.object(runner.sys, "stdout", output):
+                runner.run_logged([sys.executable, "-c", script], log)
+            self.assertEqual(output.getvalue(), "test started\n")
+            self.assertEqual(log.read_text(), output.getvalue())
+
+    def test_failed_process_keeps_stderr_and_nonzero_exit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "failed.log"
+            with patch.object(runner.sys, "stdout", io.StringIO()), self.assertRaises(
+                subprocess.CalledProcessError
+            ) as failure:
+                runner.run_logged([
+                    sys.executable, "-c", "import sys; print('failure detail', file=sys.stderr); sys.exit(7)",
+                ], log)
+            self.assertEqual(failure.exception.returncode, 7)
+            self.assertEqual(log.read_text(), "failure detail\n")
 
     def test_invalid_and_empty_selections_fail_before_descriptor_access(self):
         for selection in ([], None, {}, [None], ["--help"], ["FoundationEvalsUITests/Foo/../../bad"], ["OtherTests"]):
@@ -84,6 +155,19 @@ class NativeShardTests(unittest.TestCase):
                 runner.verify_ui_selection(f"Test Case '-[Foo testPicker]' {outcome}", ["FoundationEvalsUITests/Foo"])
         with self.assertRaises(ValueError):
             runner.verify_ui_selection("Executed 0 tests", ["FoundationEvalsUITests/Foo"])
+
+    def test_passing_sibling_does_not_hide_a_selected_skipped_method(self):
+        log = "\n".join([
+            "Test Case '-[FoundationEvalsUITests.Foo testOrdinary]' passed (1.0 seconds).",
+            "Test Case '-[FoundationEvalsUITests.Foo testLive]' skipped (0.1 seconds).",
+        ])
+        for selection in (["FoundationEvalsUITests"], ["FoundationEvalsUITests/Foo"],
+                          ["FoundationEvalsUITests/Foo/testLive"]):
+            with self.subTest(selection=selection), self.assertRaisesRegex(
+                ValueError, "Selected UI test was skipped: FoundationEvalsUITests/Foo/testLive"
+            ):
+                runner.verify_ui_selection(log, selection)
+        runner.verify_ui_selection(log, ["FoundationEvalsUITests/Foo/testOrdinary"])
 
     def test_native_swift_testing_symbols_are_checked_independently_of_display_names(self):
         document = {"testNodes": [{"children": [{

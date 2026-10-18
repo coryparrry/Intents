@@ -48,8 +48,35 @@ final class AutomationProcessTests: XCTestCase, @unchecked Sendable {
             XCTFail("Expected a timeout")
         } catch { XCTAssertEqual(error as? AutomationRPCError, .timedOut) }
         let retained = await command.retainedLogs()
+        XCTAssertEqual(retained.failurePhase, .exitWait)
         XCTAssertTrue(String(decoding: retained.stdout, as: UTF8.self).contains("failure context"))
         XCTAssertTrue(String(decoding: retained.stderr, as: UTF8.self).contains("diagnostic"))
+        do {
+            _ = try await command.run(executable: try AutomationPath.canonical(URL(fileURLWithPath: "/usr/bin/true")),
+                arguments: [], directory: URL(fileURLWithPath: "/private/tmp"), environment: [:], timeout: .seconds(-1))
+            XCTFail("An expired invocation cannot run")
+        } catch { XCTAssertEqual(error as? AutomationRPCError, .timedOut) }
+        let expired = await command.retainedLogs()
+        XCTAssertNil(expired.failurePhase, "An expired invocation must not inherit an earlier failure phase")
+        XCTAssertEqual(expired.stdout, retained.stdout)
+        XCTAssertEqual(expired.stderr, retained.stderr)
+    }
+    func testLaunchFailureRetainsOnlyTheFixedPhase() async throws {
+        let command = AutomationOwnedCommand()
+        let directory = try AutomationPath.canonical(FileManager.default.temporaryDirectory)
+        do {
+            _ = try await command.run(executable: directory, arguments: ["private-argument"],
+                directory: directory, environment: ["PRIVATE_VALUE": "private-environment"], timeout: .seconds(3))
+            XCTFail("A directory cannot be launched")
+        } catch {
+            let retained = await command.retainedLogs()
+            XCTAssertEqual(retained.failurePhase, .launch)
+            XCTAssertEqual(retained.failurePhase?.rawValue, "launch")
+            XCTAssertNil(retained.ownedIdentity)
+            let stopped = await command.stopOwned(); XCTAssertTrue(stopped)
+            let afterCleanup = await command.retainedLogs()
+            XCTAssertEqual(afterCleanup.failurePhase, .launch)
+        }
     }
     func testAbsoluteDeadlineIncludesPreparationAndDoesNotRenewRelativeAllowance() async throws {
         let command = AutomationOwnedCommand(), recorder = ProcessRecorder()
@@ -66,6 +93,7 @@ final class AutomationProcessTests: XCTestCase, @unchecked Sendable {
         } catch { XCTAssertEqual(error as? AutomationRPCError, .timedOut) }
         let recorded = await recorder.wasRecorded; XCTAssertFalse(recorded)
         let retained = await command.retainedLogs(); XCTAssertNil(retained.ownedIdentity)
+        XCTAssertEqual(retained.failurePhase, .prelaunchCallback)
         let stopped = await command.stopOwned(); XCTAssertTrue(stopped)
     }
     func testRelativeCommandLimitStillWinsWhenAbsoluteDeadlineIsLater() async throws {
@@ -108,6 +136,8 @@ final class AutomationProcessTests: XCTestCase, @unchecked Sendable {
             })
         XCTAssertNotNil(result.ownedIdentity)
         XCTAssertEqual(result.exitStatus, 0); XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self), "done\n")
+        let retained = await command.retainedLogs()
+        XCTAssertNil(result.failurePhase); XCTAssertNil(retained.failurePhase)
     }
     func testExpiredCommandNeverStartsAProcess() async throws {
         let recorder = ProcessRecorder()

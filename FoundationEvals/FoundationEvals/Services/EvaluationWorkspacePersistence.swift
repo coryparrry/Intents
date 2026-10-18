@@ -377,11 +377,11 @@ enum EvaluationRepositoryInspector {
     ) async -> EvaluationRepositorySnapshot {
         let capturedAt = Date()
         do {
-            let commit = try await runGit(["rev-parse", "HEAD"], rootPath: rootPath,
+            let commit = try await runGit(.revision, rootPath: rootPath,
                                           executable: gitExecutable, timeout: timeout)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let status = try await runGit(["status", "--porcelain=v1", "--untracked-files=normal"],
-                                          rootPath: rootPath, executable: gitExecutable, timeout: timeout)
+            let status = try await runGit(.status, rootPath: rootPath,
+                                          executable: gitExecutable, timeout: timeout)
             return EvaluationRepositorySnapshot(rootPath: rootPath, commit: commit.isEmpty ? nil : commit,
                                                 isDirty: !status.isEmpty, capturedAt: capturedAt, error: nil)
         } catch {
@@ -390,19 +390,33 @@ enum EvaluationRepositoryInspector {
         }
     }
 
+    private enum GitOperation: String, Sendable {
+        case revision = "rev-parse", status
+        var arguments: [String] {
+            self == .revision ? ["rev-parse", "HEAD"] : ["status", "--porcelain=v1", "--untracked-files=normal"]
+        }
+    }
+
     private static func runGit(
-        _ arguments: [String], rootPath: String, executable: URL, timeout: Duration
+        _ operation: GitOperation, rootPath: String, executable: URL, timeout: Duration
     ) async throws -> String {
         // Repository provenance must not hold a run or app shutdown indefinitely.
         // Avoid a repository's optional fsmonitor process and retain bounded logs.
-        let result = try await AutomationOwnedCommand().run(
-            executable: try AutomationPath.canonical(executable),
-            arguments: ["--no-pager", "-c", "core.fsmonitor=false", "-C", rootPath] + arguments,
-            directory: URL(filePath: rootPath),
-            environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": NSHomeDirectory(),
-                          "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"],
-            timeout: timeout
-        )
+        let command = AutomationOwnedCommand()
+        let result: AutomationOwnedCommand.Result
+        do {
+            result = try await command.run(
+                executable: try AutomationPath.canonical(executable),
+                arguments: ["--no-pager", "-c", "core.fsmonitor=false", "-C", rootPath] + operation.arguments,
+                directory: URL(filePath: rootPath),
+                environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": NSHomeDirectory(),
+                              "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"],
+                timeout: timeout
+            )
+        } catch AutomationRPCError.timedOut {
+            let phase = await command.retainedLogs().failurePhase?.rawValue ?? "beforeExecution"
+            throw EvaluationRepositoryInspectionError.git("Git \(operation.rawValue) timedOut during \(phase).")
+        }
         guard result.directChildReaped, result.pipesDrained, result.callbacksDrained,
               !result.logsTruncated else {
             throw EvaluationRepositoryInspectionError.git("Git inspection did not return complete bounded output.")
