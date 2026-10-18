@@ -25,7 +25,8 @@ struct EvaluationDeveloperFeatureAdmissionTests {
         let result = await registry.execute(.init(
             runID: UUID(), featureID: feature.id, featureVersion: feature.version,
             encodedInput: try JSONEncoder().encode(input), inputTypeName: feature.inputTypeName,
-            deadline: Date().addingTimeInterval(10)
+            // This checks input-contract admission, not CI scheduler latency.
+            deadline: .distantFuture
         ))
         #expect(result.failure == nil)
         #expect(result.output?.response == input.prompt)
