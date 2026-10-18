@@ -12,16 +12,17 @@ struct EvaluationRepositoryInspectorTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let executable = root.appending(path: "fixture-git")
-        // A shell builtin loop creates one owned process, with no descendants
-        // that could outlive the timeout and obscure the termination assertion.
-        try Data("#!/bin/sh\nprintf '%s' \"$$\" > child.pid\nwhile :; do :; done\n".utf8)
+        // Opening a FIFO for a shell builtin blocks one owned process without
+        // spinning a CPU or leaving descendants after termination.
+        try #require(mkfifo(root.appending(path: "child-input").path, 0o600) == 0)
+        try Data("#!/bin/sh\nprintf '%s' \"$$\" > child.pid\nIFS= read -r ignored < child-input\n".utf8)
             .write(to: executable)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
-        let started = ContinuousClock.now
         let inspection = Task {
             await EvaluationRepositoryInspector.snapshot(rootPath: root.path, gitExecutable: executable,
                 timeout: cancel ? .seconds(30) : .seconds(2))
         }
+        defer { inspection.cancel() }
         let pidFile = root.appending(path: "child.pid")
         let launchDeadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !FileManager.default.fileExists(atPath: pidFile.path), ContinuousClock.now < launchDeadline {
@@ -29,9 +30,11 @@ struct EvaluationRepositoryInspectorTests {
         }
         if cancel { inspection.cancel() }
         let snapshot = await inspection.value
-        #expect(started.duration(to: .now) < .seconds(10))
-        #expect(snapshot.error != nil)
-        if !cancel {
+        // The test time limit bounds completion. Wall-clock latency also includes
+        // unrelated parallel-suite scheduling, so verify the actual stop reason.
+        if cancel {
+            #expect(snapshot.error == CancellationError().localizedDescription)
+        } else {
             #expect(snapshot.error?.hasPrefix("Git rev-parse timedOut during ") == true)
         }
         #expect(snapshot.commit == nil && snapshot.isDirty == nil)
@@ -46,11 +49,12 @@ struct EvaluationRepositoryInspectorTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let executable = root.appending(path: "fixture-git")
+        try #require(mkfifo(root.appending(path: "child-input").path, 0o600) == 0)
         let script = """
         #!/bin/sh
         case "$*" in
           *"rev-parse HEAD") printf '%s\\n' '\(String(repeating: "a", count: 40))' ;;
-          *) printf '%s' "$$" > child.pid; while :; do :; done ;;
+          *) printf '%s' "$$" > child.pid; IFS= read -r ignored < child-input ;;
         esac
         """
         try Data(script.utf8).write(to: executable)

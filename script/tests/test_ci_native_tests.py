@@ -1,9 +1,11 @@
 """Check native shard selection and relocated test-product execution."""
 
 import importlib.util
+import io
 import re
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -24,6 +26,9 @@ class NativeShardTests(unittest.TestCase):
         self.assertEqual(command[:2], ["xcodebuild", "test-without-building"])
         self.assertEqual(command.count(f"-only-testing:{test}"), 1)
         self.assertEqual(command[command.index("-parallel-testing-enabled") + 1], "NO")
+        self.assertEqual(command[command.index("-test-timeouts-enabled") + 1], "YES")
+        self.assertEqual(command[command.index("-default-test-execution-time-allowance") + 1], "180")
+        self.assertEqual(command[command.index("-maximum-test-execution-time-allowance") + 1], "600")
         self.assertNotIn("-test-iterations", command)
         self.assertFalse(any(argument.startswith("-skip-testing:") for argument in command))
 
@@ -70,6 +75,43 @@ class NativeShardTests(unittest.TestCase):
                     (products / name).touch()
                 with self.assertRaisesRegex(ValueError, "exactly one"):
                     runner.test_command(products, ["FoundationEvalsTests"], Path("result"))
+
+    def test_log_is_persisted_and_streamed_before_process_exit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "test.log"
+            acknowledgement = Path(temporary) / "observed"
+
+            class ProgressObserver(io.StringIO):
+                def write(self, text):
+                    if "test started" in text and "test started" in log.read_text():
+                        acknowledgement.touch()
+                    return super().write(text)
+
+            script = (
+                "import pathlib, time, sys\n"
+                f"ack = pathlib.Path({str(acknowledgement)!r})\n"
+                "print('test started', flush=True)\n"
+                "deadline = time.monotonic() + 5\n"
+                "while not ack.exists() and time.monotonic() < deadline: time.sleep(0.01)\n"
+                "sys.exit(0 if ack.exists() else 23)\n"
+            )
+            output = ProgressObserver()
+            with patch.object(runner.sys, "stdout", output):
+                runner.run_logged([sys.executable, "-c", script], log)
+            self.assertEqual(output.getvalue(), "test started\n")
+            self.assertEqual(log.read_text(), output.getvalue())
+
+    def test_failed_process_keeps_stderr_and_nonzero_exit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "failed.log"
+            with patch.object(runner.sys, "stdout", io.StringIO()), self.assertRaises(
+                subprocess.CalledProcessError
+            ) as failure:
+                runner.run_logged([
+                    sys.executable, "-c", "import sys; print('failure detail', file=sys.stderr); sys.exit(7)",
+                ], log)
+            self.assertEqual(failure.exception.returncode, 7)
+            self.assertEqual(log.read_text(), "failure detail\n")
 
     def test_invalid_and_empty_selections_fail_before_descriptor_access(self):
         for selection in ([], None, {}, [None], ["--help"], ["FoundationEvalsUITests/Foo/../../bad"], ["OtherTests"]):

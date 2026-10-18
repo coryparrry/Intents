@@ -7,7 +7,10 @@
          </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
-   <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES">
+   <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="NO">
+      <EnvironmentVariables>
+         <EnvironmentVariable key="SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH" value="4" isEnabled="YES"/>
+      </EnvironmentVariables>
       <Testables>
          <TestableReference skipped="NO">
             <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="AFC28B523047331D0023273E" BuildableName="FoundationEvalsTests.xctest" BlueprintName="FoundationEvalsTests" ReferencedContainer="container:FoundationEvals.xcodeproj"/>

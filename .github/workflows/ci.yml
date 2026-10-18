@@ -143,9 +143,6 @@ jobs:
         if: needs.changes.outputs.native_tests != '[]'
         env:
           CI_TEST_SELECTION: ${{ needs.changes.outputs.native_tests }}
-          # Swift Testing cases otherwise run without a bound inside one process.
-          # Xcode forwards TEST_RUNNER_ variables to that test process.
-          TEST_RUNNER_SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH: '16'
         run: |
           defaults write com.coryparry.FoundationEvals SUEnableAutomaticChecks -bool false
           defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
@@ -390,6 +387,8 @@ jobs:
           defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
           python3 script/ci_ui_display.py
       - name: Run affected UI tests once
+        # Leave time to export/upload evidence when this step times out.
+        timeout-minutes: 16
         env:
           CI_TEST_SELECTION: ${{ toJSON(matrix.tests) }}
         run: python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products" --result "$RUNNER_TEMP/ui-tests.xcresult"

@@ -173,12 +173,11 @@ class GateTests(unittest.TestCase):
         self.assertIn("needs.changes.outputs.native_tests != '[]'", worker.split("      - name: Run core tests without rebuilding", 1)[1].split("      - name:", 1)[0])
         self.assertIn('python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products"', worker)
 
-    def test_case_concurrency_bound_is_scoped_to_native_core(self):
+    def test_case_concurrency_uses_the_built_scheme_without_runtime_override(self):
         worker = job("swift-tests")
         step = worker.split("      - name: Run core tests without rebuilding\n", 1)[1].split("      - name:", 1)[0]
         variable = "TEST_RUNNER_SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH"
-        self.assertIn(f"{variable}: '16'", step)
-        self.assertEqual(WORKFLOW.count(variable + ":"), 1)
+        self.assertNotIn(variable, WORKFLOW)
         self.assertIn("CI_TEST_SELECTION: ${{ needs.changes.outputs.native_tests }}", step)
 
     def test_independent_regression_groups_continue_after_failures_but_not_cancellation(self):

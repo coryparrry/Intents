@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 from urllib.parse import unquote, urlparse
 
 from ci_ui_xctestrun import prepare_ui_xctestrun
@@ -35,6 +36,13 @@ def test_command(products, selection, result, iterations=1):
         "-parallel-testing-enabled", "NO" if ui else "YES",
     ]
     command.extend(f"-only-testing:{test}" for test in sorted(set(selection)))
+    if ui:
+        # Let XCTest report a stalled case before Actions kills the whole job.
+        command.extend([
+            "-test-timeouts-enabled", "YES",
+            "-default-test-execution-time-allowance", "180",
+            "-maximum-test-execution-time-allowance", "600",
+        ])
     if any(test == "FoundationEvalsTests" or test.startswith("FoundationEvalsTests/") for test in selection):
         command.extend(f"-skip-testing:{test}" for test in sorted(NATIVE_MANUAL_METHODS))
     if iterations > 1:
@@ -90,6 +98,21 @@ def verify_native_selection(document, selection):
             raise ValueError(f"Selected native test did not pass: {test}")
 
 
+def run_logged(command, log):
+    """Persist and stream diagnostics before a runner or job can be cancelled."""
+    with log.open("w") as output, subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+    ) as process:
+        for line in process.stdout:
+            output.write(line)
+            output.flush()
+            sys.stdout.write(line)
+            sys.stdout.flush()
+        returncode = process.wait()
+    if returncode:
+        raise subprocess.CalledProcessError(returncode, command)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--products", type=Path, required=True)
@@ -99,12 +122,7 @@ def main():
     selection = json.loads(os.environ["CI_TEST_SELECTION"])
     command = test_command(args.products, selection, args.result, args.iterations)
     log = args.result.with_suffix(".log")
-    # Keep a durable log even when xcodebuild fails; print it for the Actions log.
-    try:
-        with log.open("w") as output:
-            subprocess.run(command, stdout=output, stderr=subprocess.STDOUT, check=True)
-    finally:
-        print(log.read_text(), flush=True)
+    run_logged(command, log)
     verify_ui_selection(log.read_text(), selection)
     if any(test.startswith("FoundationEvalsTests") for test in selection):
         result = subprocess.run([
