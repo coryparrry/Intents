@@ -6,9 +6,21 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 from urllib.parse import unquote, urlparse
 
-from ci_ui_xctestrun import prepare_ui_xctestrun
+try:
+    from ci_ui_xctestrun import prepare_ui_xctestrun
+    from ci_test_policy import NATIVE_MANUAL_METHODS
+except ModuleNotFoundError:
+    from script.ci_ui_xctestrun import prepare_ui_xctestrun
+    from script.ci_test_policy import NATIVE_MANUAL_METHODS
+
+# Retained for manual reproduction, excluded from CI until metadata admission works.
+CI_EXCLUDED_UI_TESTS = {
+    "FoundationEvalsUITests/MacPreparationUITests":
+        "App Intents metadata admission fails after Mac app launch (error 400).",
+}
 
 
 def test_command(products, selection, result, iterations=1):
@@ -17,6 +29,9 @@ def test_command(products, selection, result, iterations=1):
     pattern = r"FoundationEvals(?:UI)?Tests(?:/[A-Za-z_][A-Za-z0-9_]*(?:/[A-Za-z_][A-Za-z0-9_]*)?)?"
     if any(not isinstance(test, str) or not re.fullmatch(pattern, test) for test in selection):
         raise ValueError("Invalid native test identifier")
+    if any(test == excluded or test.startswith(excluded + "/")
+           for test in selection for excluded in CI_EXCLUDED_UI_TESTS):
+        raise ValueError("Selected UI suite is excluded from CI: MacPreparationUITests")
     if type(iterations) is not int or iterations < 1:
         raise ValueError("Test iterations must be positive")
     ui = any(test.startswith("FoundationEvalsUITests") for test in selection)
@@ -34,20 +49,36 @@ def test_command(products, selection, result, iterations=1):
         "-parallel-testing-enabled", "NO" if ui else "YES",
     ]
     command.extend(f"-only-testing:{test}" for test in sorted(set(selection)))
+    if ui:
+        # Let XCTest report a stalled case before Actions kills the whole job.
+        command.extend([
+            "-test-timeouts-enabled", "YES",
+            "-default-test-execution-time-allowance", "180",
+            "-maximum-test-execution-time-allowance", "600",
+        ])
+        command.extend(f"-skip-testing:{test}" for test in CI_EXCLUDED_UI_TESTS)
+    if any(test == "FoundationEvalsTests" or test.startswith("FoundationEvalsTests/") for test in selection):
+        command.extend(f"-skip-testing:{test}" for test in sorted(NATIVE_MANUAL_METHODS))
     if iterations > 1:
         command.extend(["-test-iterations", str(iterations)])
     return [*command, "CODE_SIGNING_ALLOWED=NO"]
 
 
 def verify_ui_selection(log, selection):
-    """Xcode can return success for a stale -only-testing identifier."""
+    """Reject empty selections and skipped methods hidden by passing siblings."""
     executed = set(re.findall(
         r"Test Case '-\[(?:FoundationEvalsUITests\.)?(\w+) (\w+)\]' passed", log
+    ))
+    skipped = set(re.findall(
+        r"Test Case '-\[(?:FoundationEvalsUITests\.)?(\w+) (\w+)\]' skipped", log
     ))
     for test in selection:
         parts = test.split("/")
         if parts[0] != "FoundationEvalsUITests":
             continue
+        for suite, method in sorted(skipped):
+            if (len(parts) < 2 or suite == parts[1]) and (len(parts) < 3 or method == parts[2]):
+                raise ValueError(f"Selected UI test was skipped: FoundationEvalsUITests/{suite}/{method}")
         if not any(
             (len(parts) < 2 or suite == parts[1])
             and (len(parts) < 3 or method == parts[2])
@@ -81,6 +112,21 @@ def verify_native_selection(document, selection):
             raise ValueError(f"Selected native test did not pass: {test}")
 
 
+def run_logged(command, log):
+    """Persist and stream diagnostics before a runner or job can be cancelled."""
+    with log.open("w") as output, subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+    ) as process:
+        for line in process.stdout:
+            output.write(line)
+            output.flush()
+            sys.stdout.write(line)
+            sys.stdout.flush()
+        returncode = process.wait()
+    if returncode:
+        raise subprocess.CalledProcessError(returncode, command)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--products", type=Path, required=True)
@@ -90,12 +136,7 @@ def main():
     selection = json.loads(os.environ["CI_TEST_SELECTION"])
     command = test_command(args.products, selection, args.result, args.iterations)
     log = args.result.with_suffix(".log")
-    # Keep a durable log even when xcodebuild fails; print it for the Actions log.
-    try:
-        with log.open("w") as output:
-            subprocess.run(command, stdout=output, stderr=subprocess.STDOUT, check=True)
-    finally:
-        print(log.read_text(), flush=True)
+    run_logged(command, log)
     verify_ui_selection(log.read_text(), selection)
     if any(test.startswith("FoundationEvalsTests") for test in selection):
         result = subprocess.run([

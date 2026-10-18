@@ -1,5 +1,5 @@
 import Foundation
-#if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+#if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))
 import AppIntentsTesting
 #endif
 
@@ -7,6 +7,7 @@ import AppIntentsTesting
 @MainActor
 enum HostFixtureRegistration {
     static let bundleID = "com.coryparry.IntentsAutomation.AutomationFixture"
+    static let macBundleID = bundleID + "Mac"
     static let intentID = "EchoTextIntent"
     static let value = "registration-ready"
     enum Failure: Error, Equatable { case wrongBundle, wrongOutput, deadlineExceeded }
@@ -16,7 +17,7 @@ enum HostFixtureRegistration {
         let error: String?
     }
 
-    #if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)
+    #if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))
     static func waitForAuthoredFixture(bundleID: String, deadline: ContinuousClock.Instant,
                                        record: (Attempt) throws -> Void) async throws {
         try await wait(bundleID: bundleID, deadline: deadline, probe: { typeID, value in
@@ -38,7 +39,7 @@ enum HostFixtureRegistration {
                      probe: (String, String) async throws -> String,
                      pause: (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
                      record: (Attempt) throws -> Void = { _ in }) async throws {
-        guard selectedBundle == bundleID else { throw Failure.wrongBundle }
+        guard selectedBundle == bundleID || selectedBundle == macBundleID else { throw Failure.wrongBundle }
         func checkDeadline() throws {
             try Task.checkCancellation()
             guard now() < deadline else { throw Failure.deadlineExceeded }
@@ -61,7 +62,7 @@ enum HostFixtureRegistration {
                 try checkDeadline()
                 let native = error as NSError
                 guard index < 3, native.domain == "AppIntentsServicesMetadataErrorDomain", native.code == 400,
-                      native.localizedDescription == "\(bundleID) is not present" else { throw error }
+                      native.localizedDescription == "\(selectedBundle) is not present" else { throw error }
                 // Do not begin a pause that cannot fit inside the existing host deadline.
                 guard now().duration(to: deadline) > .seconds(5) else { throw Failure.deadlineExceeded }
                 try await pause(.seconds(5))

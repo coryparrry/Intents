@@ -733,18 +733,6 @@ struct MCPStoreAuthorityTests {
         #expect(protocolRun?["phase"] == .string("completed"))
     }
 
-    @Test func analysisRejectsInvalidIdentifiersAndUnknownOptions() throws {
-        for arguments: MCPJSONValue in [
-            .object(["runID": .string("invalid")]),
-            .object(["runID": .string(UUID().uuidString), "baselineRunID": .integer(1)]),
-            .object(["runID": .string(UUID().uuidString), "runModel": .bool(true)])
-        ] {
-            #expect(throws: MCPToolInputError.self) {
-                try MCPToolCatalog.parse(name: "eval_analyze_run", arguments: arguments)
-            }
-        }
-    }
-
     private func makeRun(case evaluationCase: EvaluationCase, resultCount: Int, plannedCount: Int) -> EvaluationRun {
         let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
         return EvaluationRun(

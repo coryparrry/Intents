@@ -4,7 +4,7 @@ import Foundation
 /// Authored throwaway source only; never consumes an arbitrary project or intent.
 enum AutomationMacInputProbeFixture {
     struct Fixture { let project: URL; let targetID: String; let projectData: Data }
-    enum SourceKind { case host, input, nestedArrays }
+    enum SourceKind { case host, input }
     static let hostSource = """
     import SwiftUI
     import AppIntents
@@ -34,35 +34,6 @@ enum AutomationMacInputProbeFixture {
     }
     struct ProbePerformForbidden: Error {}
     """
-    static let nestedSource = source.replacingOccurrences(of: "@Parameter(title: \"Sample\") var sample: String", with: """
-    @Parameter(title: "Texts") var texts: [[String]]
-    @Parameter(title: "Flags") var flags: [[Bool]]
-    @Parameter(title: "Counts") var counts: [[Int]]
-    @Parameter(title: "Amounts") var amounts: [[Double]]
-    @Parameter(title: "Dates") var dates: [[Date]]
-    """) + """
-
-    struct TextNestedResultIntent: AppIntent {
-        static let title: LocalizedStringResource = "Nested text result"
-        func perform() async throws -> some IntentResult & ReturnsValue<[[String]]> { .result(value: [[String]]()) }
-    }
-    struct BoolNestedResultIntent: AppIntent {
-        static let title: LocalizedStringResource = "Nested bool result"
-        func perform() async throws -> some IntentResult & ReturnsValue<[[Bool]]> { .result(value: [[Bool]]()) }
-    }
-    struct IntegerNestedResultIntent: AppIntent {
-        static let title: LocalizedStringResource = "Nested integer result"
-        func perform() async throws -> some IntentResult & ReturnsValue<[[Int]]> { .result(value: [[Int]]()) }
-    }
-    struct DecimalNestedResultIntent: AppIntent {
-        static let title: LocalizedStringResource = "Nested decimal result"
-        func perform() async throws -> some IntentResult & ReturnsValue<[[Double]]> { .result(value: [[Double]]()) }
-    }
-    struct DateNestedResultIntent: AppIntent {
-        static let title: LocalizedStringResource = "Nested date result"
-        func perform() async throws -> some IntentResult & ReturnsValue<[[Date]]> { .result(value: [[Date]]()) }
-    }
-    """
     static func write(at original: URL, sourceKind: SourceKind = .input) throws -> Fixture {
         guard !FileManager.default.fileExists(atPath: original.path) else { throw AutomationContractError.conflictingOperation }
         try FileManager.default.createDirectory(at: original, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -91,7 +62,7 @@ enum AutomationMacInputProbeFixture {
         ]
         let bytes = try PropertyListSerialization.data(fromPropertyList: ["archiveVersion": "1", "objectVersion": "56", "classes": [String: String](), "rootObject": projectID, "objects": objects], format: .xml, options: 0)
         try bytes.write(to: project.appendingPathComponent("project.pbxproj"), options: .withoutOverwriting)
-        let selected: String = switch sourceKind { case .host: hostSource; case .input: source; case .nestedArrays: nestedSource }
+        let selected: String = switch sourceKind { case .host: hostSource; case .input: source }
         try Data(selected.utf8).write(to: original.appendingPathComponent("Subject.swift"), options: .withoutOverwriting)
         return .init(project: project, targetID: app, projectData: bytes)
     }

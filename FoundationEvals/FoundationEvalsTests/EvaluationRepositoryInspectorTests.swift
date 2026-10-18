@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import FoundationEvals
 
-@MainActor
+// Process-only tests must not wait for unrelated UI work on the main actor.
 struct EvaluationRepositoryInspectorTests {
     @Test(.timeLimit(.minutes(1)), arguments: [false, true])
     func hangingRepositoryInspectionStopsItsChild(cancel: Bool) async throws {
@@ -12,16 +12,16 @@ struct EvaluationRepositoryInspectorTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let executable = root.appending(path: "fixture-git")
-        // A shell builtin loop creates one owned process, with no descendants
-        // that could outlive the timeout and obscure the termination assertion.
-        try Data("#!/bin/sh\nprintf '%s' \"$$\" > child.pid\nwhile :; do :; done\n".utf8)
+        // A FIFO blocks one owned process without spinning a CPU or leaving descendants.
+        try #require(mkfifo(root.appending(path: "child-input").path, 0o600) == 0)
+        try Data("#!/bin/sh\nprintf '%s' \"$$\" > child.pid\nIFS= read -r ignored < child-input\n".utf8)
             .write(to: executable)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
-        let started = ContinuousClock.now
         let inspection = Task {
             await EvaluationRepositoryInspector.snapshot(rootPath: root.path, gitExecutable: executable,
                 timeout: cancel ? .seconds(30) : .seconds(2))
         }
+        defer { inspection.cancel() }
         let pidFile = root.appending(path: "child.pid")
         let launchDeadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !FileManager.default.fileExists(atPath: pidFile.path), ContinuousClock.now < launchDeadline {
@@ -29,10 +29,39 @@ struct EvaluationRepositoryInspectorTests {
         }
         if cancel { inspection.cancel() }
         let snapshot = await inspection.value
-        #expect(started.duration(to: .now) < .seconds(10))
-        #expect(snapshot.error != nil)
+        // The one-minute test limit bounds completion; verify the actual stop reason.
+        if cancel {
+            #expect(snapshot.error == CancellationError().localizedDescription)
+        } else {
+            #expect(snapshot.error?.hasPrefix("Git rev-parse timedOut during ") == true)
+        }
         #expect(snapshot.commit == nil && snapshot.isDirty == nil)
         let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8)))
+        #expect(Darwin.kill(pid, 0) == -1 && errno == ESRCH)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func statusTimeoutRetainsItsOperationAndPhase() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+            .resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executable = root.appending(path: "fixture-git")
+        try #require(mkfifo(root.appending(path: "child-input").path, 0o600) == 0)
+        let script = """
+        #!/bin/sh
+        case "$*" in
+          *"rev-parse HEAD") printf '%s\\n' '\(String(repeating: "a", count: 40))' ;;
+          *) printf '%s' "$$" > child.pid; IFS= read -r ignored < child-input ;;
+        esac
+        """
+        try Data(script.utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        let snapshot = await EvaluationRepositoryInspector.snapshot(rootPath: root.path,
+            gitExecutable: executable, timeout: .seconds(2))
+        #expect(snapshot.error?.hasPrefix("Git status timedOut during ") == true)
+        #expect(snapshot.commit == nil && snapshot.isDirty == nil)
+        let pid = try #require(Int32(String(contentsOf: root.appending(path: "child.pid"), encoding: .utf8)))
         #expect(Darwin.kill(pid, 0) == -1 && errno == ESRCH)
     }
 

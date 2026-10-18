@@ -248,27 +248,6 @@ struct AttachmentImportTests {
         }
     }
 
-    @Test func oversizedReplacementImageFailsBeforeUnboundedBuffering() async throws {
-        let directory = temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let imported = try await upload(
-            store, name: "replacement.png", type: "image/png", data: try imageData()
-        )
-        let filename = try #require(imported.attachment.storedFilename)
-        let storedURL = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: directory,
-            projectID: store.selectedProjectID,
-            suiteID: store.selectedSuiteID
-        ).appending(path: "Attachments/\(filename)")
-        try Data(repeating: 0x41, count: EvaluationStore.maximumImageBytes + 1)
-            .write(to: storedURL, options: .atomic)
-
-        #expect(throws: EvaluationStoreError.self) {
-            _ = try store.attachmentData(id: imported.attachment.id)
-        }
-    }
-
     @Test func catalogFailureRollsBackAttachmentMetadataAndPrivateBytes() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

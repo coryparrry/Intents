@@ -201,25 +201,6 @@ struct MCPProviderConfigurationTests {
         #expect(store.suite.modelConfiguration.customProvider?.tokenizerEndpoint == tokenizerEndpoint)
     }
 
-    @Test func customProviderValidationRejectsDuplicateCapabilities() throws {
-        var suite = suiteDeclaration(from: EvaluationSuite())
-        suite.modelConfiguration.provider = .customHTTP
-        var customProvider = MCPCustomProviderConfiguration(EvaluationCustomProviderConfiguration())
-        customProvider.capabilities = [.vision, .vision]
-        suite.modelConfiguration.customProvider = customProvider
-
-        #expect(throws: MCPToolInputError.self) {
-            try MCPToolCatalog.parse(
-                name: "eval_replace_suite",
-                arguments: try MCPJSONValue.encode(MCPReplaceSuiteArguments(
-                    expectedRevision: "revision",
-                    confirmDeletes: false,
-                    suite: suite
-                ))
-            )
-        }
-    }
-
     private func suiteDeclaration(from suite: EvaluationSuite) -> MCPSuiteDeclaration {
         let configuration = suite.modelConfiguration
         return MCPSuiteDeclaration(

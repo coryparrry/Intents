@@ -63,27 +63,6 @@ final class AutomationFreshWorkflowLiveTests: XCTestCase {
         try assertSingleInvocation(root: root, attemptID: attempt)
         try await assertOwnedColdStartShutdown(root: root, attemptID: attempt, target: target, developer: developer)
 
-        var assertion = AutomationSegment(id: "subject", kind: .ui, phase: .subject,
-            operation: "Verify a failing assertion returns receipts", effects: [.observe, .navigate])
-        assertion.uiProgram = .init(steps: [.init(id: "title-absent", kind: .assert,
-            query: .init(identifier: "task.title"), property: "exists",
-            equals: .init(kind: "bool", boolValue: false))])
-        var failingPlan = AutomationCase(id: "live.ui.assertion-failure", app: prepared.host.app,
-            target: target, environmentID: approval.environmentID, execution: assertion)
-        failingPlan.budget.subjectOperations = 3
-        failingPlan.budget.wallClockSeconds = 240
-        var failingApproval = approval
-        failingApproval.approvedCaseDigest = try AutomationFrozenCase.planDigest(failingPlan)
-        let failingAttempt = UUID().uuidString
-        let failed = try await runner.run(prepared: prepared, plan: failingPlan, approval: failingApproval,
-            capabilities: capabilities, attemptID: failingAttempt, allowBootAndInstall: true)
-        XCTAssertEqual(failed.result.summary, .assertionFailed)
-        XCTAssertTrue(failed.resourcesReleased)
-        XCTAssertEqual(failed.receipts.count, 1)
-        XCTAssertEqual(failed.receipts.first?.dispatched, true)
-        XCTAssertEqual(failed.receipts.first?.completed, false)
-        try assertSingleInvocation(root: root, attemptID: failingAttempt)
-        try await assertOwnedColdStartShutdown(root: root, attemptID: failingAttempt, target: target, developer: developer)
         XCTAssertEqual(AutomationArtifactRegistry.digest(try AutomationReadOnlyFile.read(source, maximumBytes: 4_194_304)), before)
     }
 

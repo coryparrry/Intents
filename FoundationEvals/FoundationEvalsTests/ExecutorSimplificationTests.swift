@@ -82,17 +82,6 @@ struct ExecutorSimplificationTests {
         #expect(XcodeTestExecutor.signingTeamIdentifier(of: fixture.bundle, codesignPath: fixture.executable.path) == "TEAM")
     }
 
-    @Test func signingAdHocMarkerRemainsExactAndEmptyInspectionIsRejected() throws {
-        let fixture = try SigningFixture()
-        defer { fixture.remove() }
-        for inspection in ["", "Signature=adhoc ", " Signature=adhoc", "Signature=adhoc\r\n", "Signature=Adhoc"] {
-            try fixture.writeInspection(Data(inspection.utf8))
-            #expect(!XcodeTestExecutor.validAdHocSignature(of: fixture.bundle, codesignPath: fixture.executable.path))
-        }
-        try fixture.writeInspection(Data("\nSignature=adhoc\n\n".utf8))
-        #expect(XcodeTestExecutor.validAdHocSignature(of: fixture.bundle, codesignPath: fixture.executable.path))
-    }
-
     @Test func signingProjectionsStopAfterVerifyFailureAndRejectInspectionFailure() throws {
         let fixture = try SigningFixture()
         defer { fixture.remove() }

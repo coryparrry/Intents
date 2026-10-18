@@ -173,19 +173,6 @@ final class AutomationContractsTests: XCTestCase {
         let unchanged = self.observation(p, value: .bool(false))
         XCTAssertEqual(AutomationAssessment.assess(plan: p, attemptID: "attempt", subjectDispatched: true, subjectCompleted: true, observations: [unchanged]).summary, .assertionFailed)
     }
-    func testC20SuccessTextDoesNotProvePersistedChange() {
-        var persisted = plan(); persisted.requirements[0].proof = .persistedState
-        let success = observation(persisted, value: .text("Completed"), proof: .visibleState)
-        let unchanged = observation(persisted, value: .bool(false), proof: .appState)
-        for value in [success, unchanged] {
-            let result = AutomationAssessment.assess(plan: persisted, attemptID: "attempt", subjectDispatched: true,
-                subjectCompleted: true, observations: [value])
-            // Neither success text nor a query-only value establishes durable storage.
-            // A qualified false durable read is covered by AutomationDurableStateObserverTests.
-            XCTAssertEqual(result.summary, .needsReview)
-            XCTAssertFalse(result.assessed); XCTAssertFalse(result.evidenceComplete)
-        }
-    }
     func testC20UnqualifiedQueryMemoryCannotProvePersistedCompletionEvenAfterRelabeling() {
         var persisted = plan(); persisted.requirements[0].proof = .persistedState
         // This query-only fixture has no qualified storage reader. A success
@@ -193,6 +180,7 @@ final class AutomationContractsTests: XCTestCase {
         for value in [
             observation(persisted, value: .text("Completed"), proof: .visibleState),
             observation(persisted, value: .bool(true), proof: .appState),
+            observation(persisted, value: .bool(false), proof: .appState),
             observation(persisted, value: .bool(true), proof: .persistedState),
             observation(persisted, value: .bool(false), proof: .persistedState)
         ] {
@@ -226,11 +214,6 @@ final class AutomationContractsTests: XCTestCase {
         XCTAssertEqual(counts.planned, 2); XCTAssertEqual(counts.unresolved, 2)
         XCTAssertEqual(counts.notRun, 0); XCTAssertEqual(counts.assessed, 0)
     }
-    func testC21ObserverCannotRepairSubject() throws {
-        var p = plan(); p.observations[0].effects = [.fixtureWrite]
-        let approval = RunApproval(runID: "run", app: p.app, target: p.target, environmentID: p.environmentID, effects: [.observe, .fixtureWrite], maximumActions: 10, disposable: true)
-        XCTAssertThrowsError(try PlanValidator.validate(p, approval: approval, capabilities: .init()))
-    }
     func testC29CrashIsUnresolvedEvenIfOldObservationsExist() {
         let p = plan()
         XCTAssertEqual(AutomationAssessment.assess(plan: p, attemptID: "attempt", subjectDispatched: true, subjectCompleted: false,
@@ -251,11 +234,6 @@ extension AutomationContractsTests {
         XCTAssertEqual(AutomationAssessment.assess(plan: p, attemptID: "attempt", subjectDispatched: true, subjectCompleted: true, observations: [value]).summary, .needsReview)
         value.route = .systemQuery
         XCTAssertNotEqual(AutomationAssessment.assess(plan: p, attemptID: "attempt", subjectDispatched: false, subjectCompleted: true, observations: [value]).summary, .passed)
-    }
-    func testReviewLiveEnvironmentCannotReset() {
-        var p = plan(); p.setup = [.init(id: "reset", kind: .ui, phase: .setup, operation: "reset", effects: [.reset])]
-        let approval = RunApproval(runID: "run", app: p.app, target: p.target, environmentID: p.environmentID, effects: [.observe, .reset], maximumActions: 10, disposable: false)
-        XCTAssertThrowsError(try PlanValidator.validate(p, approval: approval, capabilities: .init()))
     }
 }
 

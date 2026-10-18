@@ -34,6 +34,7 @@ jobs:
       ui: ${{ steps.route.outputs.ui }}
       automation_e2e: ${{ steps.route.outputs.automation_e2e }}
       input_conversion: ${{ steps.route.outputs.input_conversion }}
+      sdk_consumer: ${{ steps.route.outputs.sdk_consumer }}
       native_tests: ${{ steps.route.outputs.native_tests }}
       regression: ${{ steps.route.outputs.regression }}
       swift_suites: ${{ steps.route.outputs.swift_suites }}
@@ -86,7 +87,8 @@ jobs:
   script-tests:
     name: Script tests
     needs: changes
-    if: ${{ needs.changes.outputs.python_tests != '[]' }}
+    # Finish an empty selection successfully: a skipped ancestor can also skip
+    # Mac workers downstream of the always-running quality aggregate.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -110,58 +112,56 @@ jobs:
           ROUTING: ${{ needs.changes.result }}
           LINT: ${{ needs.lint.result }}
           TESTS: ${{ needs.script-tests.result }}
-          SELECTED: ${{ needs.changes.outputs.python_tests }}
         run: |
           test "$ROUTING" = success
           test "$LINT" = success
-          if [[ "$SELECTED" == '[]' ]]; then test "$TESTS" = skipped; else test "$TESTS" = success; fi
+          test "$TESTS" = success
 
   swift-tests:
-    name: Portable Swift tests
-    needs: changes
-    if: ${{ needs.changes.outputs.swift_suites != '[]' }}
-    runs-on: xcode-27
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - name: Identify Swift toolchain
-        id: toolchain
-        run: echo "version=$(xcrun swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - name: Restore reusable Swift build
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ runner.temp }}/portable-build
-          key: ${{ runner.os }}-${{ runner.arch }}-swift-tests-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved', '**/Package.resolved') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-swift-tests-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved', '**/Package.resolved') }}-
-      - name: Run selected portable Swift suites
-        if: needs.changes.outputs.swift_suites != '[]'
-        env:
-          CI_TEST_SELECTION: ${{ needs.changes.outputs.swift_suites }}
-        run: |
-          python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/portable-build"
-          python3 script/ci_run_tests.py swift --scratch-path "$RUNNER_TEMP/portable-build"
-          python3 script/ci_native_cache.py capture --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/portable-build"
-
-  sdk-consumer:
-    name: Clean Intent Lab SDK consumer
-    needs: changes
-    if: ${{ needs.changes.outputs.native == 'true' || needs.changes.outputs.swift_suites != '[]' }}
+    name: Mac regression tests
+    needs: [changes, quality, native-build]
+    # A skipped native build must not suppress portable-only or SDK-only work.
+    if: ${{ always() && !cancelled() && needs.changes.result == 'success' && needs.quality.result == 'success' && (needs.changes.outputs.native_tests == '[]' || needs.native-build.result == 'success') && (needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.macos_tests != '[]' || needs.changes.outputs.native_tests != '[]' || needs.changes.outputs.sdk_consumer == 'true') }}
     runs-on: xcode-27
     timeout-minutes: 35
     env:
-      CI_TEST_SELECTION: '["IntentLabProjectInstallerTests"]'
-      INTENT_LAB_RUN_MAC_INSTALLER_BUILD_TEST: '1'
       INTENT_LAB_CONSUMER_PACKAGE_URL: https://github.com/coryparrry/Intents.git
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        id: source
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: needs.changes.outputs.native_tests != '[]'
+        with:
+          name: native-test-products
+          path: ${{ runner.temp }}
+      - name: Restore built test products
+        if: needs.changes.outputs.native_tests != '[]'
+        run: tar -xf "$RUNNER_TEMP/native-tests.tar" -C "$RUNNER_TEMP"
+      - name: Run core tests without rebuilding
+        if: needs.changes.outputs.native_tests != '[]'
+        env:
+          CI_TEST_SELECTION: ${{ needs.changes.outputs.native_tests }}
+        run: |
+          defaults write com.coryparry.FoundationEvals SUEnableAutomaticChecks -bool false
+          defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
+          python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products" --result "$RUNNER_TEMP/core-tests.xcresult"
+      - name: Upload core results
+        if: ${{ !cancelled() && needs.changes.outputs.native_tests != '[]' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-core-results
+          path: |
+            ${{ runner.temp }}/core-tests.xcresult
+            ${{ runner.temp }}/core-tests.log
       - name: Install consumer project generator
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && needs.changes.outputs.sdk_consumer == 'true' }}
+        id: consumer-generator
         run: command -v xcodegen || brew install xcodegen
       - name: Read immutable installer package revision
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && needs.changes.outputs.sdk_consumer == 'true' }}
+        id: consumer-pin
         run: |
           python3 - <<'PY'
           import os, re
@@ -174,12 +174,41 @@ jobs:
               output.write(f"INTENT_LAB_CONSUMER_REVISION={revisions[0]}\n")
               output.write(f"INTENT_LAB_CONSUMER_BUILD_RECEIPT={os.environ['RUNNER_TEMP']}/intentlab-consumer/receipt.json\n")
           PY
-      - name: Build fresh external consumers of the pinned SDK
+      - name: Run selected macOS script tests
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && needs.changes.outputs.macos_tests != '[]' }}
+        env:
+          CI_TEST_SELECTION: ${{ needs.changes.outputs.macos_tests }}
+        run: python3 script/ci_run_tests.py python
+      - name: Identify Swift toolchain
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && (needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.sdk_consumer == 'true') }}
+        id: toolchain
+        run: echo "version=$(xcrun swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Restore reusable Swift build
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && steps.toolchain.outcome == 'success' && (needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.sdk_consumer == 'true') }}
+        id: swift-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/portable-build
+          key: ${{ runner.os }}-${{ runner.arch }}-swift-tests-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved', '**/Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-swift-tests-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved', '**/Package.resolved') }}-
+      - name: Run selected Swift suites and fresh SDK consumers once
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && steps.toolchain.outcome == 'success' && steps.swift-cache.outcome == 'success' && (needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.sdk_consumer == 'true') && (needs.changes.outputs.sdk_consumer != 'true' || (steps.consumer-generator.outcome == 'success' && steps.consumer-pin.outcome == 'success')) }}
+        id: swift-regressions
+        env:
+          CI_TEST_SELECTION: ${{ needs.changes.outputs.swift_suites }}
+          SDK_SELECTED: ${{ needs.changes.outputs.sdk_consumer }}
+          INTENT_LAB_RUN_MAC_INSTALLER_BUILD_TEST: ${{ needs.changes.outputs.sdk_consumer == 'true' && '1' || '0' }}
         run: |
-          set -o pipefail
+          python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/portable-build"
+          args=()
+          if [[ "$SDK_SELECTED" == true ]]; then args+=(--include-installer); fi
           mkdir -p "$RUNNER_TEMP/intentlab-consumer"
-          python3 script/ci_run_tests.py swift --scratch-path "$RUNNER_TEMP/intentlab-consumer-build" 2>&1 | tee "$RUNNER_TEMP/intentlab-consumer/build.log"
+          set -o pipefail
+          python3 script/ci_run_tests.py swift --scratch-path "$RUNNER_TEMP/portable-build" "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/intentlab-consumer/build.log"
+          python3 script/ci_native_cache.py capture --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/portable-build"
       - name: Verify external consumer build receipt
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && needs.changes.outputs.sdk_consumer == 'true' && steps.consumer-pin.outcome == 'success' && steps.swift-regressions.outcome != 'skipped' }}
         run: |
           python3 - <<'PY'
           import json, os
@@ -200,52 +229,64 @@ jobs:
           print(f"Verified fresh external consumers of {expected['revision']}")
           PY
       - name: Upload external consumer build evidence
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.sdk_consumer == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: intentlab-external-consumer
           path: ${{ runner.temp }}/intentlab-consumer
           if-no-files-found: error
 
-  macos-script-tests:
-    name: macOS script tests
-    needs: changes
-    if: ${{ needs.changes.outputs.macos_tests != '[]' }}
-    runs-on: xcode-27
-    timeout-minutes: 12
+  sdk-consumer:
+    name: Clean Intent Lab SDK consumer
+    needs: [changes, swift-tests]
+    if: ${{ always() && needs.changes.outputs.sdk_consumer == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - name: Run selected macOS script tests
+      - name: Require fresh external SDK consumer verification
         env:
-          CI_TEST_SELECTION: ${{ needs.changes.outputs.macos_tests }}
-        run: python3 script/ci_run_tests.py python
+          ROUTING: ${{ needs.changes.result }}
+          WORKER: ${{ needs.swift-tests.result }}
+        run: |
+          echo "Execution: Mac regression tests; evidence: intentlab-external-consumer artifact."
+          echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          test "$ROUTING" = success
+          test "$WORKER" = success
 
   regression:
     name: Portable regression tests
-    needs: [changes, swift-tests, sdk-consumer, macos-script-tests]
-    if: ${{ always() && needs.changes.outputs.regression == 'true' }}
+    needs: [changes, quality, swift-tests, sdk-consumer]
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require all selected regressions
         env:
           ROUTING: ${{ needs.changes.result }}
+          QUALITY: ${{ needs.quality.result }}
           SWIFT: ${{ needs.swift-tests.result }}
           SDK: ${{ needs.sdk-consumer.result }}
-          MACOS: ${{ needs.macos-script-tests.result }}
+          SDK_SELECTED: ${{ needs.changes.outputs.sdk_consumer }}
           SWIFT_SELECTION: ${{ needs.changes.outputs.swift_suites }}
           MACOS_SELECTION: ${{ needs.changes.outputs.macos_tests }}
+          CORE_SELECTION: ${{ needs.changes.outputs.native_tests }}
         run: |
           test "$ROUTING" = success
-          if [[ "$SWIFT_SELECTION" == '[]' ]]; then test "$SWIFT" = skipped; else test "$SWIFT" = success; fi
-          if [[ "$SWIFT_SELECTION" != '[]' ]]; then test "$SDK" = success; fi
-          if [[ "$MACOS_SELECTION" == '[]' ]]; then test "$MACOS" = skipped; else test "$MACOS" = success; fi
+          test "$QUALITY" = success
+          if [[ "$SWIFT_SELECTION" == '[]' && "$MACOS_SELECTION" == '[]' && "$CORE_SELECTION" == '[]' && "$SDK_SELECTED" == false ]]; then
+            test "$SWIFT" = skipped
+          else
+            test "$SWIFT" = success
+          fi
+          case "$SDK_SELECTED" in
+            true) test "$SDK" = success ;;
+            false) test "$SDK" = skipped ;;
+            *) exit 1 ;;
+          esac
 
   native-build:
     name: Build native test bundles
-    needs: changes
+    needs: [changes, quality]
     if: ${{ needs.changes.outputs.native == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 25
@@ -300,37 +341,41 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  native-tests:
-    name: Native core tests
-    needs: [changes, native-build]
-    if: ${{ needs.changes.outputs.native_tests != '[]' }}
-    runs-on: xcode-27
-    timeout-minutes: 15
+  summary:
+    name: CI failure summary
+    needs: [changes, quality, regression, build, automation-e2e, input-conversion]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: native-test-products
-          path: ${{ runner.temp }}
-      - name: Restore built test products
-        run: tar -xf "$RUNNER_TEMP/native-tests.tar" -C "$RUNNER_TEMP"
-      - name: Run core tests without rebuilding
+      - name: Explain failed checks and link their evidence
         env:
-          CI_TEST_SELECTION: ${{ needs.changes.outputs.native_tests }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python3 script/ci_failure_summary.py
+
+  native-tests:
+    name: Native core tests
+    needs: [changes, swift-tests]
+    if: ${{ always() && needs.changes.outputs.native_tests != '[]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require selected native core tests
+        env:
+          ROUTING: ${{ needs.changes.result }}
+          WORKER: ${{ needs.swift-tests.result }}
         run: |
-          defaults write com.coryparry.FoundationEvals SUEnableAutomaticChecks -bool false
-          defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
-          python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products" --result "$RUNNER_TEMP/core-tests.xcresult"
-      - name: Upload core results
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: native-core-results
-          path: |
-            ${{ runner.temp }}/core-tests.xcresult
-            ${{ runner.temp }}/core-tests.log
+          echo "Execution: Mac regression tests; evidence: native-core-results artifact."
+          echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          test "$ROUTING" = success
+          test "$WORKER" = success
 
   ui-tests:
     name: UI tests (${{ matrix.name }})
@@ -361,6 +406,8 @@ jobs:
           defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
           python3 script/ci_ui_display.py
       - name: Run affected UI tests once
+        # Leave time to export/upload evidence when this step times out.
+        timeout-minutes: 16
         env:
           CI_TEST_SELECTION: ${{ toJSON(matrix.tests) }}
         run: python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products" --result "$RUNNER_TEMP/ui-tests.xcresult"
@@ -388,7 +435,7 @@ jobs:
   picker-stability:
     name: Picker stability (10 repetitions)
     needs: [changes, native-build]
-    if: ${{ inputs.stability && needs.changes.outputs.ui == 'true' }}
+    if: ${{ inputs.stability == true && needs.changes.outputs.ui == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 20
     steps:
@@ -421,37 +468,56 @@ jobs:
             ${{ runner.temp }}/picker-tests.log
 
   build:
+    # Retain the existing required-check name while covering every selected lane.
     name: Compile app and tests
-    needs: [changes, native-build, sdk-consumer, native-tests, ui-tests, picker-stability]
-    if: ${{ always() && needs.changes.outputs.native == 'true' }}
+    needs: [changes, quality, regression, native-build, sdk-consumer, native-tests, ui-tests, picker-stability, automation-e2e, input-conversion]
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Require build and all selected native tests
+      - name: Require every selected CI check
         env:
           ROUTING: ${{ needs.changes.result }}
+          QUALITY: ${{ needs.quality.result }}
+          REGRESSION: ${{ needs.regression.result }}
           BUILD: ${{ needs.native-build.result }}
+          BUILD_SELECTED: ${{ needs.changes.outputs.native }}
           SDK: ${{ needs.sdk-consumer.result }}
+          SDK_SELECTED: ${{ needs.changes.outputs.sdk_consumer }}
           CORE: ${{ needs.native-tests.result }}
           CORE_SELECTION: ${{ needs.changes.outputs.native_tests }}
           UI: ${{ needs.ui-tests.result }}
           UI_SELECTED: ${{ needs.changes.outputs.ui }}
           STABILITY: ${{ needs.picker-stability.result }}
-          STABILITY_SELECTED: ${{ inputs.stability && needs.changes.outputs.ui == 'true' }}
+          STABILITY_SELECTED: ${{ inputs.stability == true && needs.changes.outputs.ui == 'true' }}
+          AUTOMATION: ${{ needs.automation-e2e.result }}
+          INPUT_CONVERSION: ${{ needs.input-conversion.result }}
+          INPUT_CONVERSION_SELECTED: ${{ needs.changes.outputs.input_conversion }}
         run: |
+          require_selected() {
+            case "$1" in
+              true) test "$2" = success ;;
+              false) test "$2" = skipped ;;
+              *) return 1 ;;
+            esac
+          }
           test "$ROUTING" = success
-          test "$BUILD" = success
-          test "$SDK" = success
+          test "$QUALITY" = success
+          test "$REGRESSION" = success
+          test "$AUTOMATION" = success
+          require_selected "$BUILD_SELECTED" "$BUILD"
+          require_selected "$SDK_SELECTED" "$SDK"
           if [[ "$CORE_SELECTION" == '[]' ]]; then test "$CORE" = skipped; else test "$CORE" = success; fi
-          if [[ "$UI_SELECTED" == true ]]; then test "$UI" = success; else test "$UI" = skipped; fi
-          if [[ "$STABILITY_SELECTED" == true ]]; then test "$STABILITY" = success; else test "$STABILITY" = skipped; fi
+          require_selected "$UI_SELECTED" "$UI"
+          require_selected "$STABILITY_SELECTED" "$STABILITY"
+          require_selected "$INPUT_CONVERSION_SELECTED" "$INPUT_CONVERSION"
 
   automation-e2e-scenarios:
-    name: Simulator acceptance tests
-    needs: changes
+    name: Simulator and Mac acceptance tests
+    needs: [changes, quality]
     if: ${{ needs.changes.outputs.automation_e2e == 'true' }}
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       # Exercise the cross-build acceptance from Phase 1, beyond local Xcode 27.0.
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
@@ -472,6 +538,8 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-automation-e2e-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved', '**/Package.resolved') }}-
       - name: Install fixture project generator
         run: command -v xcodegen || brew install xcodegen
+      - name: Restore automation build paths
+        run: python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/automation-e2e-build"
       - name: Install matching simulator runtime
         timeout-minutes: 15
         run: |
@@ -483,8 +551,17 @@ jobs:
       - name: Reproduce prepared-app automation
         id: contract
         run: |
-          python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/automation-e2e-build"
           python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --record-build-cache --scenario-group all
+      - name: Reproduce Mac automation and saved fix comparison
+        if: ${{ !cancelled() }}
+        env:
+          CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}
+          CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}
+          CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}
+        run: |
+          python3 script/ci_macos_signing.py -- /bin/bash -e <<'SIGNED_MAC_CHECK'
+            python3 script/automation_mac_e2e.py --output-root "$RUNNER_TEMP/automation-mac-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --jobs 2 --signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"
+          SIGNED_MAC_CHECK
       - name: Save successfully compiled automation CLI
         if: ${{ !cancelled() && steps.contract.outputs.cli_built == 'true' && steps.cli-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -496,7 +573,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: automation-e2e
-          path: ${{ runner.temp }}/automation-e2e
+          path: |
+            ${{ runner.temp }}/automation-e2e
+            ${{ runner.temp }}/automation-mac-e2e
           if-no-files-found: error
 
 
@@ -522,7 +601,7 @@ jobs:
 
   input-conversion:
     name: Input conversion diagnostic (Mac)
-    needs: changes
+    needs: [changes, quality]
     if: ${{ needs.changes.outputs.input_conversion == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 30

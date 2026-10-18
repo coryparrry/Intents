@@ -4,20 +4,21 @@ import IntentsAutomationCore
 import IntentsAutomationCLIResources
 
 struct AutomationCLICommand: Equatable {
-    enum Operation: String { case prepare, actions, run, show }
+    enum Operation: String { case prepare, actions, run, show, compare }
     let operation: Operation
     var options: [String: String]
     var attemptID: String?
 
     static func parse(_ arguments: [String]) throws -> Self {
         guard let first = arguments.first, let operation = Operation(rawValue: first) else {
-            throw AutomationContractError.invalidPlan("Use prepare, actions, run --plan <file>, or show <attempt>")
+            throw AutomationContractError.invalidPlan("Use prepare, actions, run --plan <file>, show <attempt>, or compare --baseline-support <root> --baseline-attempt <ID> --support-root <candidate-root> [--attempts 3]")
         }
         let allowed: Set<String>
         switch operation {
         case .prepare: allowed = ["--project", "--scheme", "--target", "--destination", "--xcode", "--support-root"]
         case .run: allowed = ["--plan", "--support-root"]
         case .actions, .show: allowed = ["--support-root"]
+        case .compare: allowed = ["--baseline-support", "--baseline-attempt", "--support-root", "--attempts"]
         }
         var options: [String: String] = [:], attempt: String?, index = 1
         while index < arguments.count {
@@ -44,6 +45,13 @@ struct AutomationCLICommand: Equatable {
             guard let attempt else { throw AutomationContractError.invalidPlan("Show needs an attempt ID") }
             try AutomationCLI.validateAttemptID(attempt)
         case .actions: break
+        case .compare:
+            guard options["--baseline-support"] != nil, let attempt = options["--baseline-attempt"],
+                  options["--support-root"] != nil else {
+                throw AutomationContractError.invalidPlan("Compare needs --baseline-support, --baseline-attempt and --support-root")
+            }
+            try AutomationCLI.validateAttemptID(attempt)
+            _ = try AutomationCLI.comparisonAttempts(options["--attempts"])
         }
         return .init(operation: operation, options: options, attemptID: attempt)
     }
@@ -112,6 +120,14 @@ enum AutomationCLI {
             return exitStatus(report) == 0
         case .show:
             try writeJSON(await show(attemptID: command.attemptID!, supportRoot: support))
+        case .compare:
+            let baselineSupport = try supportRoot(command.options["--baseline-support"]!)
+            let result = try await compare(baselineSupport: baselineSupport,
+                originalAttemptID: command.options["--baseline-attempt"]!, support: support,
+                attempts: comparisonAttempts(command.options["--attempts"]))
+            try writeJSON(result)
+            // A completed comparison is a successful command, including an observed unfixed case.
+            return result.report.complete
         }
         return true
     }
@@ -261,14 +277,17 @@ enum AutomationCLI {
         return approval
     }
     static func show(attemptID: String, supportRoot: URL) async throws -> AutomationAttemptReport {
+        try await savedAttempt(attemptID: attemptID, supportRoot: supportRoot).1
+    }
+    static func savedAttempt(attemptID: String, supportRoot: URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport) {
         try validateAttemptID(attemptID)
         let root = supportRoot.appendingPathComponent("Cases")
         let store = try AutomationCaseStore(readOnlyRoot: root)
-        var matches: [AutomationAttemptReport] = []
+        var matches: [(AutomationFrozenCase, AutomationAttemptReport)] = []
         for frozen in try await store.definitions() {
             let path = root.appendingPathComponent("Attempts/" + frozen.digest + "/" + attemptID + ".json")
             if FileManager.default.fileExists(atPath: path.path) {
-                matches.append(try await store.loadAttempt(id: attemptID, frozen: frozen))
+                matches.append((frozen, try await store.loadAttempt(id: attemptID, frozen: frozen)))
             }
         }
         guard matches.count == 1 else { throw AutomationContractError.missingEvidence("Attempt must identify exactly one saved report") }

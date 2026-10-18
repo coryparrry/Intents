@@ -341,9 +341,9 @@ final class AppAutomationStore {
     var canRun: Bool {
         guard permitsExecutionAdmission, !closing, !pairedExecutionUnresolved, !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery else { return false }
         if isSiriWorkflow { return canRunSiriSubmission }
-        guard prepared?.host.target.kind != .nativeMac, candidate?.kind != .sourceTarget || preparationDestination == .simulator else { return false }
+        guard !isMacWorkflowUnavailable, candidate?.kind != .sourceTarget || preparationDestination != .physical else { return false }
         if isUIWorkflow {
-            return preparedUISelectionMatches && concreteUIWorkflowValid && !busy && UUID(uuidString: simulatorID) != nil && !uiInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            return preparedUISelectionMatches && concreteUIWorkflowValid && !busy && !uiInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 uiInstruction.utf16.count <= 4096 && !uiEndpoint.isEmpty && uiEndpoint.utf16.count <= 1024 &&
                 uiExpectedText.utf16.count <= 1024 && uiObservationLabel.utf16.count <= 1024 && uiApprovedText.utf16.count <= 32768 &&
                 ["text", "value", "checked", "selected"].contains(uiObservationProperty) &&
@@ -361,8 +361,7 @@ final class AppAutomationStore {
                 ["true", "false"].contains(freshInitialState) && ["true", "false"].contains(freshExpectedState) &&
                 effectChoice == "fixture" && disposable && effectsConfirmed && report?.resourcesReleased != false && report?.result.subjectDispatchUncertain != true
         }
-        return !busy && prepared?.host.app.logicalID == candidateID && prepared?.generatedHost.configuration == configuration &&
-        prepared?.host.target.id == simulatorID && action?.parametersComplete == true && !effectChoice.isEmpty && effectsConfirmed &&
+        return !busy && preparedUISelectionMatches && action?.compiled == true && action?.parametersComplete == true && !effectChoice.isEmpty && effectsConfirmed &&
         (effectChoice != "fixture" || disposable) &&
         action?.parameters.allSatisfy({ parameter in
             if parameter.family == "entity" { return parameter.optional || selectedEntity(parameter.name) != nil }
@@ -385,7 +384,7 @@ final class AppAutomationStore {
         guard isUIWorkflow || isFreshRecordWorkflow, candidate?.kind == .sourceTarget, let frozen = savedViewedCase,
               let baseline = savedPreparedBaseline, baseline.host.app == frozen.plan.app,
               candidateID == baseline.host.app.logicalID, configuration == baseline.host.app.configuration,
-              simulatorID == baseline.host.target.id else { return nil }
+              baseline.host.target == sourcePreparationTarget else { return nil }
         if let selected = prepared, selected.host.app == baseline.host.app, selected != baseline { return nil }
         return baseline
     }
@@ -403,8 +402,9 @@ final class AppAutomationStore {
               pendingCommandStatus == nil || pendingCommandStatus?.kind == commandKind,
               effectsConfirmed, let frozen = savedViewedCase,
               let original = savedViewedReport else { return false }
-        guard !isMacWorkflowUnavailable, frozen.plan.target.kind == .simulator, UUID(uuidString: simulatorID) != nil else { return false }
-        return frozen.plan.app == (isInstalledUI ? candidate?.app : sourceSavedBaseline?.host.app) && frozen.plan.target.id == simulatorID &&
+        guard !isMacWorkflowUnavailable,
+              frozen.plan.target == (isInstalledUI ? TargetIdentity(id: simulatorID, kind: .simulator) : sourcePreparationTarget) else { return false }
+        return frozen.plan.app == (isInstalledUI ? candidate?.app : sourceSavedBaseline?.host.app) &&
             original.result.summary == .assertionFailed && original.result.assessed && original.result.evidenceComplete &&
             original.resourcesReleased && !original.result.subjectDispatchUncertain &&
             report?.resourcesReleased != false && report?.result.subjectDispatchUncertain != true
@@ -469,7 +469,8 @@ final class AppAutomationStore {
             throw AutomationContractError.missingEvidence("Select a released, assessed saved UI failure and its original app in the native window")
         }
         let epoch = selectionEpoch, viewID = savedViewRequestID, targetID = simulatorID
-        let install = installApproved, approvedDisposable = disposable
+        let selectedTarget = sourcePreparationTarget, selectedInstall = installApproved
+        let install = frozen.plan.target.kind == .simulator && installApproved, approvedDisposable = disposable
         let casesRoot = support.appendingPathComponent("Cases")
         let stored: AutomationFrozenCase, failure: AutomationAttemptReport
         if let reproductionPreflightReader { (stored, failure) = try await reproductionPreflightReader(frozen, original.attemptID, casesRoot) }
@@ -483,7 +484,7 @@ final class AppAutomationStore {
         guard !closing, selectionEpoch == epoch, savedViewRequestID == viewID,
               savedViewedCase == frozen, savedViewedReport == original, candidateID == candidate.id, simulatorID == targetID,
               !unresolvedNormalAttempt, !unresolvedSearch, !unresolvedReproduction, !unresolvedComparison, !unresolvedEntityQuery, effectsConfirmed, permitsSavedWorkflow,
-              installApproved == install, disposable == approvedDisposable else { throw AutomationContractError.conflictingOperation }
+              installApproved == selectedInstall, sourcePreparationTarget == selectedTarget, disposable == approvedDisposable else { throw AutomationContractError.conflictingOperation }
         let subject: AutomationApplicationSubject
         if isInstalledUI {
             let installed = try AutomationInstalledUIApplication(bundleURL: URL(fileURLWithPath: candidate.containerPath), target: .init(id: targetID, kind: .simulator))
@@ -596,7 +597,7 @@ final class AppAutomationStore {
     var canPrepareSourceFix: Bool { !isInstalledUI && !isInstalledMacUI && canPrepare && canReproduceSavedFailure && pendingCommand == nil }
     var canCheckFix: Bool {
         guard canUseSavedFailure(commandKind: .fixComparison) else { return false }
-        guard installApproved else { return false }
+        guard savedViewedCase?.plan.target.kind != .simulator || installApproved else { return false }
         if isInstalledUI { return fixedProduct != nil }
         guard let before = sourceSavedBaseline, let after = prepared else { return false }
         return (try? AutomationNativeUIFixComparisonProposal.validatePreparedCandidate(before: before, after: after)) != nil
@@ -622,7 +623,7 @@ final class AppAutomationStore {
     private func makeComparisonRequest(runID: String) async throws -> AutomationNativeFixComparisonRequest {
         guard let original = savedViewedReport else { throw AutomationContractError.conflictingOperation }
         let request = try await makeReproductionRequest(runID: runID)
-        guard installApproved else { throw AutomationContractError.conflictingOperation }
+        guard request.subject.target.kind != .simulator || installApproved else { throw AutomationContractError.conflictingOperation }
         let before = request.subject, after: AutomationApplicationSubject
         switch before {
         case .installedMacUI: throw AutomationContractError.missingEvidence("Mac installed-app execution is unavailable")
@@ -643,7 +644,7 @@ final class AppAutomationStore {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let fields = ["original": AutomationArtifactRegistry.digest(try encoder.encode(original)), "baseline": proposal.baseline.digest,
             "candidate": proposal.candidate.digest,
-            "beforeBuild": try comparisonBuildDigest(before), "afterBuild": try comparisonBuildDigest(after), "install": "true", "disposable": String(disposable),
+            "beforeBuild": try comparisonBuildDigest(before), "afterBuild": try comparisonBuildDigest(after), "install": String(before.target.kind == .simulator), "disposable": String(disposable),
             "attemptsPerBuild": String(proposal.attemptsPerBuild), "uiActions": String(proposal.limits.uiActions),
             "controllerCalls": String(proposal.limits.controllerCalls), "wallClockSeconds": String(proposal.limits.wallClockSeconds)]
         return .init(proposal: proposal, before: before, after: after,
@@ -907,7 +908,7 @@ final class AppAutomationStore {
                 }
                 prepared = value; siriCapabilities = siriProfile; catalog = value.catalog; actionID = ""; report = nil
                 message = target.kind == .nativeMac
-                    ? "Prepared a private Mac copy for inspection. Mac workflow execution is not available yet."
+                    ? "Prepared a private Mac copy. Choose a system action or exact UI steps and review their permitted effects."
                     : fixedAppName == nil ? "Prepared a private copy. Choose a workflow and its permitted effects." : "Prepared the changed source. The original build and saved checks are retained for Check fix."
             } catch { message = errorText(error) }
         }

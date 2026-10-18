@@ -66,7 +66,7 @@ final class AutomationWorkspaceBuildContextTests: XCTestCase, @unchecked Sendabl
         XCTAssertEqual(candidate.workspacePath, container.path)
         let templates = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Integration/AutomationHost")
         let approval = AutomationBuildApproval(sourceRoot: source.path, candidateID: candidate.id, configuration: "Debug", target: try AutomationMacGUIIdentity.currentTarget())
-        let prepared = try await AutomationPreparation().prepare(candidate: candidate, approval: approval, sessionRoot: root.appendingPathComponent("prepare-" + UUID().uuidString), templates: templates, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+        let prepared = try await AutomationPreparation().prepare(candidate: candidate, approval: approval, sessionRoot: root.appendingPathComponent("prepare-" + UUID().uuidString), templates: templates, developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         XCTAssertEqual(prepared.workspace?.relativePath, "Workspace/Subject.xcworkspace")
         XCTAssertEqual(try AutomationPreparedApplicationRecord.load(app: prepared.host.app, supportRoot: root), prepared)
         try AutomationSourceSnapshot.verifyOriginal(prepared.source)

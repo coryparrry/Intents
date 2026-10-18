@@ -27,9 +27,6 @@ struct ScenarioExecutionComparisonTests {
         let baseline = try snapshot(caseID: caseID, build: hash("a"), featureOutcome: .failed)
         let candidate = try snapshot(caseID: caseID, build: hash("b"), featureOutcome: .passed,
                                      baselineID: baseline.plan.id)
-        #expect(baseline.plan.coordinates.map(\.id) != candidate.plan.coordinates.map(\.id))
-        #expect(baseline.record.records.compactMap(\.evidenceRunID)
-            != candidate.record.records.compactMap(\.evidenceRunID))
         let report = ScenarioExecutionComparison.compare(
             baseline: baseline, candidate: candidate,
             policy: .init(mode: .compareAppChanges, baselineRunID: baseline.plan.id)

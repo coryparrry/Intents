@@ -20,7 +20,7 @@ struct AutomationNativeApplicationListing: Codable, Equatable, Sendable {
 extension AppAutomationStore {
     var isInstalledMacUI: Bool { candidate?.kind == .installedProduct && candidate?.app?.platform == "macos" }
     var isMacWorkflowUnavailable: Bool {
-        isInstalledMacUI || (candidate?.kind == .sourceTarget && preparationDestination == .macOS)
+        isInstalledMacUI || (candidate?.kind == .sourceTarget && preparationDestination == .macOS && isFreshRecordWorkflow)
     }
 
     /// Only the population already admitted through the native file picker is visible.

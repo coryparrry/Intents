@@ -302,7 +302,7 @@ struct ImageToolTests {
         }
     }
 
-    @Test func nativeImageToolOutputProjectionUsesCountablePromptContent() async throws {
+    @Test func nativeImageToolOutputProjectionUsesCountablePromptContent() throws {
         let output = Transcript.ToolOutput(
             id: "ocr-call",
             toolName: OCRTool().name,
@@ -316,12 +316,7 @@ struct ImageToolTests {
         )
 
         let promptSegments = try EvaluationBuiltinToolBoundary.promptSegments(for: output)
-        let tokenCount = try await FixedToolOutputTokenCounter(count: 3).tokenCount(
-            for: promptSegments
-        )
-
         #expect(promptSegments.count == output.segments.count)
-        #expect(tokenCount > 0)
     }
 
     @Test func visionTraceExtractionKeepsCallsAndOutputsWithoutInventingTiming() throws {

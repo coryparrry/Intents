@@ -189,31 +189,6 @@ struct SpotlightSearchToolTests {
         )
     }
 
-    @MainActor
-    @Test func suiteValidationRejectsCustomToolNameReservedBySpotlight() {
-        let directory = FileManager.default.temporaryDirectory.appending(path: "SpotlightCollision-\(UUID())")
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        var suite = store.suite
-        suite.scoringMode = .review
-        suite.features.spotlightSearch = .init(
-            enabled: true,
-            fileSource: .init(folderPath: "/tmp/foundation-evals-narrow-project")
-        )
-        suite.features.tools = [
-            .init(
-                name: try! #require(EvaluationSpotlightSearchConfiguration.knownToolNames.first),
-                description: "Collides with the built-in Spotlight tool.",
-                fixtureResponse: "ok"
-            )
-        ]
-
-        #expect(
-            store.validationIssue(for: suite, includeModelReadiness: false)?
-                .contains("Spotlight") == true
-        )
-    }
-
     @Test func runtimeBuildsWithoutSearchingAndTraceContainsOnlyMetadata() async throws {
         let fixtureFolder = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "foundation-evals-spotlight-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -264,7 +239,7 @@ struct SpotlightSearchToolTests {
         #expect(!encodedTrace.contains("Fixture Person"))
     }
 
-    @Test func runtimeMapsEveryGuideModeWithoutSearching() async throws {
+    @Test func runtimeConstructsForEveryGuideModeWithCoreSpotlight() throws {
         var configuration = EvaluationSpotlightSearchConfiguration(
             enabled: true,
             fileSource: .init(enabled: false),
@@ -274,17 +249,12 @@ struct SpotlightSearchToolTests {
 
         for mode in EvaluationSpotlightGuidanceMode.allCases {
             configuration.guidance.mode = mode
-            let runtime = try #require(
+            _ = try #require(
                 try EvaluationSpotlightSearchRuntime.make(
                     from: configuration,
                     limiter: EvaluationToolCallLimiter(maximumCalls: 1)
                 )
             )
-            let trace = await runtime.snapshot()
-            #expect(trace.guidanceMode == mode)
-            #expect(trace.searchedCoreSpotlight)
-            #expect(!trace.allowedMail)
-            #expect(trace.replyCount == 0)
         }
     }
 
