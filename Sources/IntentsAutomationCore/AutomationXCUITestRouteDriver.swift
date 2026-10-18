@@ -200,15 +200,12 @@ public actor AutomationXCUITestRouteDriver {
 
     private func terminateSimulator() async -> Bool {
         if let simulatorTerminationVerifier { return await simulatorTerminationVerifier() }
-        var stopped = true
-        for bundle in [prepared.app.bundleID, prepared.hostBundleID] {
-            do {
-                let result = try await run(["simctl", "terminate", prepared.target.id, bundle], directory: root, timeout: .seconds(15), authorize: false)
-                let text = String(decoding: result.stdout + result.stderr, as: UTF8.self)
-                if result.logsTruncated || !Self.terminationSucceeded(exitStatus: result.exitStatus, output: text) { stopped = false }
-            } catch { stopped = false }
-        }
-        return stopped
+        return await AutomationSimulatorTermination.stop(
+            bundleIDs: [prepared.app.bundleID, prepared.hostBundleID], diagnosticRoot: root,
+            run: { [self] bundle, timeout in
+                try await run(["simctl", "terminate", prepared.target.id, bundle], directory: root,
+                              timeout: timeout, authorize: false)
+            }, retainedLogs: { [self] in await command.retainedLogs() })
     }
 
     static func terminationSucceeded(exitStatus: Int32, output: String) -> Bool {
