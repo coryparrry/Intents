@@ -1107,9 +1107,9 @@ public enum IntentLabScenarioEngine {
             // Unscoped v1/v2 evidence retains its original final-value semantics.
             return IntentLabAssertionResult(
                 assertionID: assertion.id,
-                passed: observed != nil && observed == assertion.expectedValue,
+                passed: IntentLabValueComparison.matches(observed, assertion.expectedValue),
                 observedValue: observed,
-                message: observed != nil && observed == assertion.expectedValue ? "Matched the frozen expectation." : "Observed value did not match."
+                message: IntentLabValueComparison.matches(observed, assertion.expectedValue) ? "Matched the frozen expectation." : "Observed value did not match."
             )
         }
         let required = assertions.filter(\.required)
@@ -1144,7 +1144,8 @@ public enum IntentLabScenarioEngine {
                   observer.type.accepts(observed) else { return false }
             let freshCompletion = integration.completed(observations: observations, context: context)
                 || (lane == .intentIntegration && baseline?[assertion.observationKey] != nil
-                    && (baseline?[assertion.observationKey] != observed || assertion.kind == .noMutation))
+                    && (!IntentLabValueComparison.matches(baseline?[assertion.observationKey], observed)
+                        || assertion.kind == .noMutation))
             guard freshCompletion else { return false }
             let actual = observationSource(assertion.observationKey)
             let expected = plan.source == .uiElement ? "accessibleUI" : plan.source.rawValue

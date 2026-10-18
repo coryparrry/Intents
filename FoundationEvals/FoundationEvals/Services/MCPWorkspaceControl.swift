@@ -287,8 +287,11 @@ import Foundation
       let id = try call.id("operationID")
       let projectID = store.selectedProjectID
       let suiteID = store.selectedSuiteID
-      control.mcp.track(id) {
+      try control.mcp.track(id) {
         while store.isRunning || store.isReassessing {
+          if Task.isCancelled {
+            return .failure(code: "cancelled", message: "App control stopped waiting during shutdown. Inspect saved execution evidence.")
+          }
           try? await Task.sleep(for: .milliseconds(100))
         }
         guard store.selectedProjectID == projectID, store.selectedSuiteID == suiteID else {

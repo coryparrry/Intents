@@ -151,11 +151,12 @@ enum AutomationSourceSyntaxDiscovery {
         var gaps: [String] = []
         if !result.directChildReaped { gaps.append("direct child not reaped") }
         if !result.pipesDrained { gaps.append("output pipes not drained") }
-        if result.ownedIdentity == nil { gaps.append("process start identity not captured") }
         if !result.callbacksDrained { gaps.append("callbacks not drained") }
         return gaps
     }
-    private static func requireComplete(_ result: AutomationOwnedCommand.Result, stage: StaticString) throws {
+    static func requireComplete(_ result: AutomationOwnedCommand.Result, stage: StaticString = "scanner") throws {
+        // Reaped short-lived commands can finish before their start identity is captured.
+        // Completion does not grant authority to signal a process or its descendants.
         let gaps = completionGaps(result)
         guard gaps.isEmpty else {
             let diagnostic = "error: Source syntax \(stage) command completion unverified: \(gaps.joined(separator: "; ")) (exit \(result.exitStatus))\n"

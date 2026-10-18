@@ -145,6 +145,68 @@ jobs:
           python3 script/ci_run_tests.py swift --scratch-path "$RUNNER_TEMP/portable-build"
           python3 script/ci_native_cache.py capture --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/portable-build"
 
+  sdk-consumer:
+    name: Clean Intent Lab SDK consumer
+    needs: changes
+    if: ${{ needs.changes.outputs.native == 'true' || needs.changes.outputs.swift_suites != '[]' }}
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      CI_TEST_SELECTION: '["IntentLabProjectInstallerTests"]'
+      INTENT_LAB_RUN_MAC_INSTALLER_BUILD_TEST: '1'
+      INTENT_LAB_CONSUMER_PACKAGE_URL: https://github.com/coryparrry/Intents.git
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install consumer project generator
+        run: command -v xcodegen || brew install xcodegen
+      - name: Read immutable installer package revision
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          source = Path("FoundationEvals/FoundationEvals/Services/IntentLabProjectInstaller.swift").read_text()
+          revisions = re.findall(r'static let verifiedRevision: String\? = "([0-9a-f]{40})"', source)
+          if len(revisions) != 1:
+              raise SystemExit("Installer must pin exactly one immutable package revision")
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"INTENT_LAB_CONSUMER_REVISION={revisions[0]}\n")
+              output.write(f"INTENT_LAB_CONSUMER_BUILD_RECEIPT={os.environ['RUNNER_TEMP']}/intentlab-consumer/receipt.json\n")
+          PY
+      - name: Build fresh external consumers of the pinned SDK
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/intentlab-consumer"
+          python3 script/ci_run_tests.py swift --scratch-path "$RUNNER_TEMP/intentlab-consumer-build" 2>&1 | tee "$RUNNER_TEMP/intentlab-consumer/build.log"
+      - name: Verify external consumer build receipt
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          receipt = json.loads(Path(os.environ["INTENT_LAB_CONSUMER_BUILD_RECEIPT"]).read_text())
+          expected = {
+              "schemaVersion": 1,
+              "packageURL": os.environ["INTENT_LAB_CONSUMER_PACKAGE_URL"],
+              "revision": os.environ["INTENT_LAB_CONSUMER_REVISION"],
+              "check": "generatedMacUITestTargetBuildsWithXcode",
+              "signing": "disabled",
+              "runtime": "not-executed",
+          }
+          if any(receipt.get(key) != value for key, value in expected.items()):
+              raise SystemExit("External consumer receipt does not match the required SDK build")
+          if sorted(receipt.get("products", [])) != ["FoundationEvalsDeveloper", "IntentLabTesting"]:
+              raise SystemExit("Both public SDK products must compile from the pinned remote revision")
+          print(f"Verified fresh external consumers of {expected['revision']}")
+          PY
+      - name: Upload external consumer build evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: intentlab-external-consumer
+          path: ${{ runner.temp }}/intentlab-consumer
+          if-no-files-found: error
+
   macos-script-tests:
     name: macOS script tests
     needs: changes
@@ -162,7 +224,7 @@ jobs:
 
   regression:
     name: Portable regression tests
-    needs: [changes, swift-tests, macos-script-tests]
+    needs: [changes, swift-tests, sdk-consumer, macos-script-tests]
     if: ${{ always() && needs.changes.outputs.regression == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
@@ -171,12 +233,14 @@ jobs:
         env:
           ROUTING: ${{ needs.changes.result }}
           SWIFT: ${{ needs.swift-tests.result }}
+          SDK: ${{ needs.sdk-consumer.result }}
           MACOS: ${{ needs.macos-script-tests.result }}
           SWIFT_SELECTION: ${{ needs.changes.outputs.swift_suites }}
           MACOS_SELECTION: ${{ needs.changes.outputs.macos_tests }}
         run: |
           test "$ROUTING" = success
           if [[ "$SWIFT_SELECTION" == '[]' ]]; then test "$SWIFT" = skipped; else test "$SWIFT" = success; fi
+          if [[ "$SWIFT_SELECTION" != '[]' ]]; then test "$SDK" = success; fi
           if [[ "$MACOS_SELECTION" == '[]' ]]; then test "$MACOS" = skipped; else test "$MACOS" = success; fi
 
   native-build:
@@ -377,7 +441,7 @@ jobs:
 
   build:
     name: Compile app and tests
-    needs: [changes, native-build, native-tests, ui-tests, picker-stability]
+    needs: [changes, native-build, sdk-consumer, native-tests, ui-tests, picker-stability]
     if: ${{ always() && needs.changes.outputs.native == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
@@ -386,6 +450,7 @@ jobs:
         env:
           ROUTING: ${{ needs.changes.result }}
           BUILD: ${{ needs.native-build.result }}
+          SDK: ${{ needs.sdk-consumer.result }}
           CORE: ${{ needs.native-tests.result }}
           CORE_SELECTION: ${{ needs.changes.outputs.native_tests }}
           UI: ${{ needs.ui-tests.result }}
@@ -395,6 +460,7 @@ jobs:
         run: |
           test "$ROUTING" = success
           test "$BUILD" = success
+          test "$SDK" = success
           if [[ "$CORE_SELECTION" == '[]' ]]; then test "$CORE" = skipped; else test "$CORE" = success; fi
           if [[ "$UI_SELECTED" == true ]]; then test "$UI" = success; else test "$UI" = skipped; fi
           if [[ "$STABILITY_SELECTED" == true ]]; then test "$STABILITY" = success; else test "$STABILITY" = skipped; fi
@@ -427,15 +493,6 @@ jobs:
         run: command -v xcodegen || brew install xcodegen
       - name: Restore automation build paths
         run: python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/automation-e2e-build"
-      - name: Reproduce Mac automation and saved fix comparison
-        env:
-          CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}
-          CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}
-          CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}
-        run: |
-          python3 script/ci_macos_signing.py -- /bin/bash -e <<'SIGNED_MAC_CHECK'
-            python3 script/automation_mac_e2e.py --output-root "$RUNNER_TEMP/automation-mac-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --jobs 2 --signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"
-          SIGNED_MAC_CHECK
       - name: Install matching simulator runtime
         timeout-minutes: 15
         run: |
@@ -448,6 +505,16 @@ jobs:
         id: contract
         run: |
           python3 script/automation_e2e.py --output-root "$RUNNER_TEMP/automation-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --record-build-cache --scenario-group all
+      - name: Reproduce Mac automation and saved fix comparison
+        if: ${{ !cancelled() }}
+        env:
+          CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}
+          CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}
+          CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}
+        run: |
+          python3 script/ci_macos_signing.py -- /bin/bash -e <<'SIGNED_MAC_CHECK'
+            python3 script/automation_mac_e2e.py --output-root "$RUNNER_TEMP/automation-mac-e2e" --build-root "$RUNNER_TEMP/automation-e2e-build" --jobs 2 --signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"
+          SIGNED_MAC_CHECK
       - name: Save successfully compiled automation CLI
         if: ${{ !cancelled() && steps.contract.outputs.cli_built == 'true' && steps.cli-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4

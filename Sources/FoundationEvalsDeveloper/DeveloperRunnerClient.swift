@@ -2,7 +2,7 @@ import Foundation
 @preconcurrency import MultipeerConnectivity
 import Observation
 
-private final class DeveloperPeerBox: @unchecked Sendable {
+final class DeveloperPeerBox: @unchecked Sendable {
     let peer: MCPeerID
     init(_ peer: MCPeerID) { self.peer = peer }
 }
@@ -10,6 +10,7 @@ private final class DeveloperPeerBox: @unchecked Sendable {
 private struct DeveloperClientCandidate {
     var runnerID: UUID
     var endpoint: String
+    var isDiscoverable = true
     var reconnectChallenge: DeveloperReconnectChallenge?
     var pairingChallenge: DeveloperPairingChallenge?
     var requestedPairingSessionID: UUID?
@@ -146,6 +147,7 @@ public final class DeveloperRunnerClient {
     @ObservationIgnored private var candidatesByPeer: [MCPeerID: DeveloperClientCandidate] = [:]
     @ObservationIgnored private var trustByRunnerID: [UUID: DeveloperDesktopTrustState.Entry] = [:]
     @ObservationIgnored private var activeRunnerID: UUID?
+    @ObservationIgnored private var connectingPeers: Set<MCPeerID> = []
     @ObservationIgnored private var intentionalDisconnects = DeveloperIntentionalDisconnects()
     @ObservationIgnored private var unauthenticatedSessionTimeoutTask: Task<Void, Never>?
     @ObservationIgnored private var continuations: [UUID: CheckedContinuation<DeveloperFeatureExecutionResult, any Error>] = [:]
@@ -198,6 +200,7 @@ public final class DeveloperRunnerClient {
         unauthenticatedSessionTimeoutTask = nil
         selectedCandidatePeerByRunnerID = [:]
         activeRunnerID = nil
+        connectingPeers.removeAll()
         intentionalDisconnects.removeAll()
         let pending = Array(continuations.keys)
         for requestID in pending {
@@ -216,8 +219,17 @@ public final class DeveloperRunnerClient {
     }
 
     public func connect(to runnerID: UUID, timeout: TimeInterval = 20) throws {
+        let peers = try prepareConnection(to: runnerID)
+        for peer in peers {
+            browser.invitePeer(peer, to: session, withContext: nil, timeout: timeout)
+        }
+    }
+
+    /// Records invitation ownership before asking the transport to connect.
+    /// Kept separate so transport failure transitions can be tested without networking.
+    func prepareConnection(to runnerID: UUID) throws -> [MCPeerID] {
         let peers = candidatesByPeer.compactMap { peer, candidate in
-            candidate.runnerID == runnerID ? peer : nil
+            candidate.runnerID == runnerID && candidate.isDiscoverable ? peer : nil
         }
         guard !peers.isEmpty else {
             throw DeveloperExecutionFailure(code: .disconnected, message: "The runner is no longer discoverable.")
@@ -228,13 +240,17 @@ public final class DeveloperRunnerClient {
                 message: "Disconnect the active runner before connecting another device."
             )
         }
+        beginConnecting(to: runnerID, peers: peers)
+        return peers
+    }
+
+    private func beginConnecting(to runnerID: UUID, peers: [MCPeerID]) {
         activeRunnerID = runnerID
+        connectingPeers.formUnion(peers)
+        startUnauthenticatedSessionTimeoutIfNeeded()
         updateRunner(runnerID) {
             $0.state = .connecting
             $0.availabilityDetail = nil
-        }
-        for peer in peers {
-            browser.invitePeer(peer, to: session, withContext: nil, timeout: timeout)
         }
     }
 
@@ -278,7 +294,7 @@ public final class DeveloperRunnerClient {
     }
 
     public func disconnect(_ runnerID: UUID) {
-        guard selectedCandidatePeerByRunnerID[runnerID] != nil || authenticatedPeersByRunnerID[runnerID] != nil else { return }
+        guard activeRunnerID == runnerID || selectedCandidatePeerByRunnerID[runnerID] != nil || authenticatedPeersByRunnerID[runnerID] != nil else { return }
         guard activeRunnerID == runnerID else {
             markDisconnected(runnerID: runnerID, detail: "Disconnected by the user.")
             return
@@ -288,7 +304,10 @@ public final class DeveloperRunnerClient {
             intentionalDisconnects.begin(for: peer)
         }
         session.disconnect()
+        connectingPeers = connectingPeers.filter { candidatesByPeer[$0]?.runnerID != runnerID }
         activeRunnerID = nil
+        unauthenticatedSessionTimeoutTask?.cancel()
+        unauthenticatedSessionTimeoutTask = nil
         markDisconnected(runnerID: runnerID, detail: "Disconnected by the user.")
     }
 
@@ -363,12 +382,13 @@ public final class DeveloperRunnerClient {
         )
     }
 
-    fileprivate func found(_ box: DeveloperPeerBox, runnerID advertisedRunnerID: UUID?) {
+    func found(_ box: DeveloperPeerBox, runnerID advertisedRunnerID: UUID?) {
         let endpoint = box.peer.displayName
         let runnerID = advertisedRunnerID ?? candidatesByPeer[box.peer]?.runnerID ?? UUID()
         if let authenticated = authenticatedPeersByRunnerID[runnerID], authenticated.peer != box.peer { return }
         if candidatesByPeer[box.peer]?.runnerID == runnerID {
             candidatesByPeer[box.peer]?.endpoint = endpoint
+            candidatesByPeer[box.peer]?.isDiscoverable = true
         } else {
             candidatesByPeer[box.peer] = DeveloperClientCandidate(runnerID: runnerID, endpoint: endpoint)
         }
@@ -384,7 +404,7 @@ public final class DeveloperRunnerClient {
                     : "Disconnect the active runner before connecting this device."
             ))
             if activeRunnerID == nil || activeRunnerID == runnerID {
-                activeRunnerID = runnerID
+                beginConnecting(to: runnerID, peers: [box.peer])
                 browser.invitePeer(box.peer, to: session, withContext: nil, timeout: 20)
             }
         } else {
@@ -404,27 +424,25 @@ public final class DeveloperRunnerClient {
                 availabilityDetail: "Connect, then enter the code shown by the runner app."
             ))
             if activeRunnerID == runnerID {
+                beginConnecting(to: runnerID, peers: [box.peer])
                 browser.invitePeer(box.peer, to: session, withContext: nil, timeout: 20)
             }
         }
     }
 
-    fileprivate func lostPeer(_ box: DeveloperPeerBox) {
+    func lostPeer(_ box: DeveloperPeerBox) {
         intentionalDisconnects.forget(box.peer)
         guard let runnerID = candidatesByPeer[box.peer]?.runnerID else { return }
-        candidatesByPeer[box.peer] = nil
-        if selectedCandidatePeerByRunnerID[runnerID] == box.peer {
-            selectedCandidatePeerByRunnerID[runnerID] = nil
-            promoteCandidate(for: runnerID, excluding: box.peer)
-        }
-        if authenticatedPeersByRunnerID[runnerID]?.peer == box.peer {
-            authenticatedPeersByRunnerID[runnerID] = nil
-            activeRunnerID = nil
-            markDisconnected(runnerID: runnerID, detail: "Runner discovery was lost.")
-        }
+        candidatesByPeer[box.peer]?.isDiscoverable = false
+        // Discovery describes availability for new invitations, not an existing session.
+        guard authenticatedPeersByRunnerID[runnerID]?.peer != box.peer,
+              !session.connectedPeers.contains(box.peer),
+              !connectingPeers.contains(box.peer) else { return }
+        evictCandidate(box, runnerID: runnerID)
+        releaseFailedConnectionIfNeeded(runnerID)
     }
 
-    fileprivate func peerChanged(_ box: DeveloperPeerBox, state: MCSessionState) {
+    func peerChanged(_ box: DeveloperPeerBox, state: MCSessionState) {
         guard let runnerID = candidatesByPeer[box.peer]?.runnerID else { return }
         switch state {
         case .connected:
@@ -438,15 +456,21 @@ public final class DeveloperRunnerClient {
         case .connecting:
             updateRunner(runnerID) { $0.state = .connecting }
         case .notConnected:
-            let retainDiscoveredCandidate = intentionalDisconnects.consume(for: box.peer)
+            _ = intentionalDisconnects.consume(for: box.peer)
+            connectingPeers.remove(box.peer)
             candidatesByPeer[box.peer]?.reconnectChallenge = nil
             candidatesByPeer[box.peer]?.secureSession = nil
             if authenticatedPeersByRunnerID[runnerID]?.peer == box.peer {
                 authenticatedPeersByRunnerID[runnerID] = nil
                 activeRunnerID = nil
                 markDisconnected(runnerID: runnerID, detail: "Runner disconnected.")
-            } else if !retainDiscoveredCandidate {
-                evictCandidate(box, runnerID: runnerID)
+            } else {
+                // A failed invitation does not remove an endpoint that the browser
+                // still discovers. Keep it available for an explicit retry.
+                if candidatesByPeer[box.peer]?.isDiscoverable != true {
+                    evictCandidate(box, runnerID: runnerID)
+                }
+                releaseFailedConnectionIfNeeded(runnerID)
             }
         @unknown default:
             if authenticatedPeersByRunnerID[runnerID]?.peer == box.peer {
@@ -805,17 +829,33 @@ public final class DeveloperRunnerClient {
         session.disconnect()
         unauthenticatedSessionTimeoutTask?.cancel()
         unauthenticatedSessionTimeoutTask = nil
-        candidatesByPeer = [:]
-        selectedCandidatePeerByRunnerID = [:]
+        candidatesByPeer = candidatesByPeer.filter { $0.value.isDiscoverable }
+        for peer in candidatesByPeer.keys {
+            candidatesByPeer[peer]?.reconnectChallenge = nil
+            candidatesByPeer[peer]?.secureSession = nil
+        }
+        selectedCandidatePeerByRunnerID = selectedCandidatePeerByRunnerID.filter { candidatesByPeer[$0.value] != nil }
         activeRunnerID = nil
+        connectingPeers.removeAll()
         intentionalDisconnects.removeAll()
         for runnerID in runnerIDs {
-            pendingPairingChallenges[runnerID] = nil
+            clearPairingState(for: runnerID)
             updateRunner(runnerID) {
                 $0.state = .disconnected
                 $0.availabilityDetail = "Authentication timed out. Reconnect to try again."
             }
         }
+    }
+
+    private func releaseFailedConnectionIfNeeded(_ runnerID: UUID) {
+        guard activeRunnerID == runnerID,
+              authenticatedPeersByRunnerID[runnerID] == nil,
+              !connectingPeers.contains(where: { candidatesByPeer[$0]?.runnerID == runnerID }),
+              !session.connectedPeers.contains(where: { candidatesByPeer[$0]?.runnerID == runnerID }) else { return }
+        activeRunnerID = nil
+        unauthenticatedSessionTimeoutTask?.cancel()
+        unauthenticatedSessionTimeoutTask = nil
+        markDisconnected(runnerID: runnerID, detail: "The connection failed. Reconnect to try again.")
     }
 
     private func evictCandidate(_ box: DeveloperPeerBox, runnerID: UUID) {

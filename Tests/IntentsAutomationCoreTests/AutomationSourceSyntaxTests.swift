@@ -3,6 +3,22 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationSourceSyntaxTests: XCTestCase {
+    func testSuccessfulReapedScannerDoesNotRequireHistoricalProcessIdentity() throws {
+        let complete = AutomationOwnedCommand.Result(exitStatus: 0, stdout: Data("{}".utf8), stderr: Data(),
+            logsTruncated: false, ownedIdentity: nil, directChildReaped: true, pipesDrained: true, callbacksDrained: true)
+        XCTAssertNoThrow(try AutomationSourceSyntaxDiscovery.requireComplete(complete))
+        for field in [\AutomationOwnedCommand.Result.directChildReaped, \.pipesDrained, \.callbacksDrained] {
+            var incomplete = complete; incomplete[keyPath: field] = false
+            XCTAssertThrowsError(try AutomationSourceSyntaxDiscovery.requireComplete(incomplete)) {
+                XCTAssertEqual($0 as? AutomationContractError, .terminationUnverified)
+            }
+        }
+        var failed = complete; failed.exitStatus = 1
+        XCTAssertThrowsError(try AutomationSourceSyntaxDiscovery.requireComplete(failed))
+        var truncated = complete; truncated.logsTruncated = true
+        XCTAssertThrowsError(try AutomationSourceSyntaxDiscovery.requireComplete(truncated))
+    }
+
     func testNestedQualifiedCandidatesCannotMatchUnrelatedTopLevelTypes() throws {
         let graph = AutomationSourceGraph(sourceManifestDigest: String(repeating: "a", count: 64), projectRelativePath: "App.xcodeproj", targetID: "APP", configuration: "Debug", nodes: [], edges: [],
             inputs: [.init(relativePath: "App.swift", sha256: String(repeating: "b", count: 64), owner: "App.xcodeproj#APP", role: "explicitSwiftMembership")], declarations: [], gaps: [])

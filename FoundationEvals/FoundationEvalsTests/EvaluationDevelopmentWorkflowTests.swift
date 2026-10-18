@@ -169,7 +169,8 @@ struct EvaluationDevelopmentWorkflowTests {
     }
 
     @MainActor
-    @Test func failedSuiteSwitchRestoresPendingCompletedRunsBeforeRetry() async throws {
+    @Test(arguments: [false, true])
+    func failedSuiteSwitchRestoresPendingCompletedRunsBeforeRetry(retainsFeatureCheckpoint: Bool) async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let failRunWrites = true
@@ -188,11 +189,15 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(producer.saveSuite())
 
         let runID = UUID()
+        let invoked = FeatureInvocationCounter()
         await #expect(throws: EvaluationStoreError.self) {
             try await producer.runFeatureAdapter(
                 id: runID,
                 expectedRevision: producer.suiteRevision,
-                adapter: ClosureFeatureAdapter(displayName: "Saved response") { _ in "READY" }
+                adapter: ClosureFeatureAdapter(displayName: "Saved response") { _ in
+                    await invoked.increment()
+                    return "READY"
+                }
             )
         }
         let destinationDirectory = EvaluationWorkspacePersistence.suiteDirectory(
@@ -205,6 +210,16 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(FileManager.default.fileExists(atPath: pendingMarkerURL.path))
         #expect(try Data(contentsOf: pendingMarkerURL).isEmpty == false)
         #expect(!FileManager.default.fileExists(atPath: destinationRunURL.path))
+
+        let featureCheckpointURL = destinationDirectory
+            .appending(path: "SnapshotRuns", directoryHint: .isDirectory)
+            .appending(path: "\(runID.uuidString).json")
+        #expect(FileManager.default.fileExists(atPath: featureCheckpointURL.path))
+        if !retainsFeatureCheckpoint {
+            // Preserve coverage of legacy pending-marker-only recovery as well
+            // as the independent completed-feature checkpoint now written.
+            try FileManager.default.removeItem(at: featureCheckpointURL)
+        }
 
         var catalogWithSourceSelected = producer.workspace
         catalogWithSourceSelected.selectedProjectID = projectID
@@ -229,6 +244,15 @@ struct EvaluationDevelopmentWorkflowTests {
         )
         #expect(store.selectedSuiteID == sourceSuiteID)
         #expect(!store.hasUnsavedCompletedRun)
+        let destinationDataBeforeSwitch = try? Data(contentsOf: destinationRunURL)
+        #expect((destinationDataBeforeSwitch != nil) == retainsFeatureCheckpoint)
+        if let destinationDataBeforeSwitch {
+            let recovered = try CanonicalJSON.decode(EvaluationRun.self, from: destinationDataBeforeSwitch)
+            #expect(recovered.id == runID)
+            #expect(recovered.suiteID == destinationSuiteID)
+            #expect(recovered.results.first?.response == "READY")
+            #expect(recovered.results.first?.status == .passed)
+        }
         let sourceDirectory = EvaluationWorkspacePersistence.suiteDirectory(
             supportDirectory: directory, projectID: projectID, suiteID: sourceSuiteID
         )
@@ -244,7 +268,7 @@ struct EvaluationDevelopmentWorkflowTests {
         store.retryPendingRunSave()
         #expect(!store.hasUnsavedCompletedRun)
         #expect(!FileManager.default.fileExists(atPath: sourceRunURL.path))
-        #expect(!FileManager.default.fileExists(atPath: destinationRunURL.path))
+        #expect((try? Data(contentsOf: destinationRunURL)) == destinationDataBeforeSwitch)
         #expect(FileManager.default.fileExists(atPath: pendingMarkerURL.path))
 
         let originalCatalogData = try #require(catalogBeforeFailure)
@@ -258,6 +282,7 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(FileManager.default.fileExists(atPath: destinationRunURL.path))
         #expect(!FileManager.default.fileExists(atPath: pendingMarkerURL.path))
         #expect(!FileManager.default.fileExists(atPath: sourceRunURL.path))
+        #expect(await invoked.value == 1)
     }
 
     @MainActor
@@ -1752,7 +1777,7 @@ struct EvaluationDevelopmentWorkflowTests {
     }
 
     @MainActor
-    @Test func simultaneousRetryMarkerAndRunWriteFailureWarnsToKeepAppOpen() async throws {
+    @Test func simultaneousRetryMarkerAndRunWriteFailureRetainsWarningAndRecoverableCheckpoint() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         var failRunWrite = true
@@ -1772,23 +1797,46 @@ struct EvaluationDevelopmentWorkflowTests {
         store.draftSuite.cases = [EvaluationCase(name: "Feature", prompt: "ready", expected: "READY")]
         #expect(store.saveSuite())
         let runID = UUID()
+        let invoked = FeatureInvocationCounter()
         await #expect(throws: EvaluationStoreError.self) {
             try await store.runFeatureAdapter(
                 id: runID, expectedRevision: store.suiteRevision,
-                adapter: ClosureFeatureAdapter(displayName: "Saved response") { _ in "READY" }
+                adapter: ClosureFeatureAdapter(displayName: "Saved response") { _ in
+                    await invoked.increment()
+                    return "READY"
+                }
             )
         }
         #expect(store.hasUnsavedCompletedRun)
         #expect(store.run(with: runID)?.results.first?.status == .passed)
         #expect(store.pendingRunSaveMessage?.contains("Keep the app open") == true)
         #expect(store.notice?.contains("Keep the app open") == true)
-        #expect(EvaluationStore(supportDirectory: directory).run(with: runID) == nil)
+
+        // Final history and retry-marker failures must not erase the separately
+        // checkpointed app response. Relaunch imports it without invoking again.
+        let reopened = EvaluationStore(supportDirectory: directory)
+        let recovered = try #require(reopened.run(with: runID))
+        #expect(recovered.results.count == 1)
+        #expect(recovered.results.first?.response == "READY")
+        #expect(recovered.results.first?.status == .passed)
+        #expect(recovered.subjectEvidence?.hasValidDigest == true)
+        #expect(recovered.subjectEvidence?.digest == store.run(with: runID)?.subjectEvidence?.digest)
 
         failRunWrite = false
         failMarkerWrite = false
         store.retryPendingRunSave()
         #expect(!store.hasUnsavedCompletedRun)
         #expect(EvaluationStore(supportDirectory: directory).run(with: runID)?.results.first?.status == .passed)
+        let retried = try await store.runFeatureAdapter(
+            id: runID, expectedRevision: store.suiteRevision,
+            adapter: ClosureFeatureAdapter(displayName: "Must not replay") { _ in
+                await invoked.increment()
+                return "REPLAYED"
+            }
+        )
+        #expect(retried.id == recovered.id)
+        #expect(retried.results.first?.response == "READY")
+        #expect(await invoked.value == 1)
     }
 
     @MainActor
@@ -2481,6 +2529,74 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(assessment.samples[0].trace?.judgedCriterionIndexes == [])
         #expect(assessment.errorCount == 0)
         #expect(assessment.durationMilliseconds == 0)
+    }
+
+    @Test(arguments: [false, true])
+    func reassessmentDoesNotPresentPartialCostAsAnEstimate(missingCostFirst: Bool) async throws {
+        let shapes: [CompatibleJudgeFixture.UsageShape] = missingCostFirst
+            ? [.missing, .complete] : [.complete, .missing]
+        let fixture = try CompatibleJudgeFixture(mode: .usageSequence(shapes))
+        defer { fixture.stop() }
+        var suite = EvaluationSuite()
+        suite.criteria = "The answer is supported by the evidence."
+        suite.cases.append(EvaluationCase(name: "Second", prompt: "Second prompt", expected: "Answer"))
+        var run = makeRun(cases: suite.cases, statuses: [[.passed], [.passed]])
+        for index in run.results.indices { run.results[index].response = "A complete response." }
+        let connection = EvaluationJudgeConnection(
+            id: UUID(), name: "Partial cost fixture", kind: .localCompatible,
+            baseURL: fixture.baseURL, modelID: "judge-fixture",
+            inputUSDPerMillionTokens: 1, outputUSDPerMillionTokens: 2
+        )
+        suite.judgeConfiguration = .init(
+            mode: .connection, connectionID: connection.id,
+            externalEvidenceApprovedAt: Date(), includeReferenceAttachments: false,
+            approvedConnectionID: connection.id, approvedIncludeReferenceAttachments: false,
+            approvedConnectionDigest: connection.disclosureDigest
+        )
+
+        let assessment = try await EvaluationReassessmentService().reassess(
+            run: run, suite: suite, images: [], resolved: .init(connection: connection, apiKey: nil)
+        )
+
+        #expect(fixture.completionRequestCount == 2)
+        #expect(assessment.samples.count == 2)
+        #expect(assessment.samples.allSatisfy { $0.status == .passed })
+        #expect(assessment.cost.availability == .unavailable)
+        #expect(assessment.cost.usd == nil)
+    }
+
+    @Test func completeReassessmentCostCombinesReportedAndEstimatedRequests() async throws {
+        let fixture = try CompatibleJudgeFixture(mode: .usageSequence([.completeWithReportedCost, .complete]))
+        defer { fixture.stop() }
+        var suite = EvaluationSuite()
+        suite.criteria = "The answer is supported by the evidence."
+        suite.cases.append(EvaluationCase(name: "Second", prompt: "Second prompt", expected: "Answer"))
+        var run = makeRun(cases: suite.cases, statuses: [[.passed], [.passed]])
+        for index in run.results.indices { run.results[index].response = "A complete response." }
+        let connection = EvaluationJudgeConnection(
+            id: UUID(), name: "Complete cost fixture", kind: .localCompatible,
+            baseURL: fixture.baseURL, modelID: "judge-fixture",
+            inputUSDPerMillionTokens: 1, outputUSDPerMillionTokens: 2
+        )
+        suite.judgeConfiguration = .init(
+            mode: .connection, connectionID: connection.id,
+            externalEvidenceApprovedAt: Date(), includeReferenceAttachments: false,
+            approvedConnectionID: connection.id, approvedIncludeReferenceAttachments: false,
+            approvedConnectionDigest: connection.disclosureDigest
+        )
+
+        let assessment = try await EvaluationReassessmentService().reassess(
+            run: run, suite: suite, images: [], resolved: .init(connection: connection, apiKey: nil)
+        )
+
+        #expect(fixture.completionRequestCount == 2)
+        #expect(assessment.samples.count == 2)
+        #expect(assessment.samples.allSatisfy { $0.status == .passed })
+        #expect(assessment.cost.availability == .estimated)
+        #expect(assessment.totalUsage?.inputTokens == 20)
+        #expect(assessment.totalUsage?.outputTokens == 10)
+        let cost = try #require(assessment.cost.usd)
+        #expect(abs(cost - 0.25002) < 0.0000001)
     }
 
     @Test func failedReassessmentRecordsJudgeAttemptDuration() async throws {

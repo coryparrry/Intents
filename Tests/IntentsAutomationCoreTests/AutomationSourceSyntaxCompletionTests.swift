@@ -11,10 +11,11 @@ final class AutomationSourceSyntaxCompletionTests: XCTestCase {
     func testVerifiedCompletionHasNoDiagnosticGaps() {
         XCTAssertEqual(AutomationSourceSyntaxDiscovery.completionGaps(completeResult()), [])
     }
-    func testMissingIdentityIsDistinguishedFromUnreleasedResources() {
+    func testReapedCommandNeedsNoCapturedIdentityForCompletion() {
         var result = completeResult()
         result.ownedIdentity = nil
-        XCTAssertEqual(AutomationSourceSyntaxDiscovery.completionGaps(result), ["process start identity not captured"])
+        XCTAssertEqual(AutomationSourceSyntaxDiscovery.completionGaps(result), [])
+        XCTAssertNoThrow(try AutomationSourceSyntaxDiscovery.requireComplete(result))
     }
     func testEachIncompleteResourceProofIsReportedWithoutDroppingOtherGaps() {
         var result = completeResult()

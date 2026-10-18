@@ -90,7 +90,13 @@ enum EvaluationStarterPack: String, CaseIterable, Identifiable, Sendable {
     private func groundedAnswersSuite() -> EvaluationSuite {
         var suite = EvaluationSuite()
         suite.name = "Grounded product answers"
-        suite.instructions = "Answer only from the verified reference. If the reference does not contain an answer, say that it is not specified."
+        suite.instructions = """
+        Answer only from the verified reference below. If the reference does not contain an answer, say that it is not specified.
+
+        Verified product reference:
+        - A saved run can be exported as a JSON report from its detail view.
+        - A passing local build proves compilation in the environment where it ran. App Store approval is a separate external review outcome.
+        """
         suite.criteria = """
         Every material claim is supported by the verified reference.
         The response directly answers the question and includes the decisive fact.

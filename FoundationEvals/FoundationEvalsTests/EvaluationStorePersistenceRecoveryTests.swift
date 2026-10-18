@@ -5,6 +5,36 @@ import Testing
 @MainActor
 struct EvaluationStorePersistenceRecoveryTests {
     @Test(arguments: [false, true])
+    func failedProjectMutationDoesNotRemainInMemory(create: Bool) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var failCatalogWrite = false
+        let store = EvaluationStore(supportDirectory: directory, workspaceCatalogWriter: { catalog, destination in
+            if failCatalogWrite { throw CatalogWriteFailure.injected }
+            try EvaluationWorkspacePersistence.save(catalog, in: destination)
+        })
+        let before = store.workspace
+        let originalProjectID = store.selectedProjectID
+        let originalSuiteID = store.selectedSuiteID
+        let catalogURL = directory.appending(path: EvaluationWorkspacePersistence.catalogFilename)
+        let originalBytes = try Data(contentsOf: catalogURL)
+        failCatalogWrite = true
+        #expect(throws: (any Error).self) {
+            if create { _ = try store.createProject(name: "Unpublished") }
+            else { try store.renameProject(id: originalProjectID, name: "Unpublished") }
+        }
+        #expect(store.workspace == before)
+        #expect(store.selectedProjectID == originalProjectID)
+        #expect(store.selectedSuiteID == originalSuiteID)
+        #expect(try Data(contentsOf: catalogURL) == originalBytes)
+        failCatalogWrite = false
+        try store.renameProject(id: originalProjectID, name: "Later successful edit")
+        let reloaded = EvaluationStore(supportDirectory: directory)
+        #expect(reloaded.projects.count == before.projects.count)
+        #expect(!reloaded.projects.contains { $0.name == "Unpublished" })
+    }
+
+    @Test(arguments: [false, true])
     func experimentDecisionSurvivesRepositoryFailureRelaunchAndSwitch(repositoryConflict: Bool) throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

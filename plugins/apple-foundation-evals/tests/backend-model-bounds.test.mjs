@@ -95,3 +95,22 @@ test('native-compatible inactive saved settings round-trip and fail only when ac
     assert.deepEqual(await app.store.read('suites', suite.id), suite);
   }
 });
+
+
+test('app suite repetitions match native bounds before save while legacy limits stay compatible', async (t) => {
+  const app = await fixture(t);
+  for (const repetitions of [1, 5]) {
+    const source = { ...definition(), repetitions };
+    const { suite } = await app.call('eval_save_suite', { suite: source });
+    assert.equal(strictSuite(suite, randomUUID).repetitions, repetitions);
+  }
+  for (const repetitions of [0, 6, 10]) {
+    const source = { ...definition(), repetitions };
+    assert.throws(() => strictSuite(source, randomUUID), /repetitions/);
+    await assert.rejects(app.call('eval_save_suite', { suite: source }), /repetitions/);
+    await assert.rejects(app.store.read('suites', source.id), /not found/);
+  }
+  const legacy = { name: 'legacy repetitions', repetitions: 10, maxTokens: 64, cases: [{ id: 'one', prompt: 'fruit', scoring: 'none' }] };
+  assert.equal(strictSuite(legacy, randomUUID).repetitions, 10);
+  assert.equal((await app.call('eval_save_suite', { suite: legacy })).suite.repetitions, 10);
+});

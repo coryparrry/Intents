@@ -2200,10 +2200,84 @@ struct ScenarioContractsTests {
         #expect(report.dimensions.contains { $0.name == "siriConfigurationSource" && !$0.compatible })
     }
 
+    @Test func connectedFeatureProducerRecordsOnlyVerifiedLegacyReturnClaims() throws {
+        var definition = try stableScenario()
+        definition.coverage.intentIntegration = .notApplicable
+        definition.directControl.outputFields = []
+        definition.assertions[0].observationKey = "feature.response"
+        definition.purpose = .releaseRequirement
+        definition.checkMode = .basic
+        definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
+        definition.observationPlan = [.init(id: "feature.response", source: .testOnlyIntent)]
+        definition.integration = .init(id: "notes", version: "1", digest: String(repeating: "a", count: 64))
+        definition = try definition.frozen()
+        #expect(ScenarioValidator.issues(in: definition).filter { $0.severity == .error }.isEmpty)
+        var captured = try #require(stableRun(definition: definition, build: "build-A", outcome: .passed).laneResults.first)
+        captured.observations = [
+            "feature.response": .string("Expected summary"),
+            "feature.runID": .string(UUID().uuidString),
+            "feature.sampleID": .string(UUID().uuidString),
+            "feature.resultCount": .integer(1)
+        ]
+        captured.observationSources = Dictionary(uniqueKeysWithValues: captured.observations.keys.map {
+            ($0, .applicationInstrumentation)
+        })
+        captured.assertionResults = ScenarioResultEvaluator.evaluate(
+            definition: definition, lane: .appFeature, observations: captured.observations,
+            executionStatus: .completed
+        ).1
+        let produced = ScenarioObservedFeatureOutput.recordingVerifiedClaims(in: captured, definition: definition)
+        #expect(produced.claims == [.executionCompleted, .returnedValueChecked])
+        #expect(produced.observations == captured.observations)
+        #expect(produced.assertionResults == captured.assertionResults)
+        #expect(produced.actionReceipts == nil)
+        #expect(ScenarioResultEvaluator.overall(definition: definition, laneResults: [produced]) == .passed)
+
+        for defect in ["wrongValue", "missingResponse", "manualResponse", "missingSample", "wrongCount",
+                       "wrongLane", "wrongCase", "unfinished", "failed", "strictPolicy", "strictEmptyRequirements",
+                       "strictAction", "legacySchema", "stateClaim"] {
+            var changed = captured
+            var contract = definition
+            switch defect {
+            case "wrongValue": changed.observations["feature.response"] = .string("Wrong summary")
+            case "missingResponse": changed.observations.removeValue(forKey: "feature.response")
+            case "manualResponse": changed.observationSources?["feature.response"] = .manuallySupplied
+            case "missingSample": changed.observations.removeValue(forKey: "feature.sampleID")
+            case "wrongCount": changed.observations["feature.resultCount"] = .integer(2)
+            case "wrongLane": changed.lane = .intentIntegration
+            case "wrongCase": changed.caseID = UUID()
+            case "unfinished": changed.executionStatus = .cancelled
+            case "failed": changed.outcome = .failed
+            case "strictPolicy": contract.actionPolicyVersion = 1
+            case "strictEmptyRequirements": contract.actionRequirements = []
+            case "strictAction":
+                contract.actionPolicyVersion = 1
+                contract.actionRequirements = [.init(lane: .appFeature, kind: .productionService,
+                    operationID: "summarize", resolvedParameters: [:])]
+            case "legacySchema": contract.schemaVersion = ScenarioDefinition.reusableSchemaVersion
+            default: contract.requiredClaims = [.executionCompleted, .applicationStateChecked]
+            }
+            // Keep the original passing assertion row to ensure that its label
+            // cannot manufacture a claim for changed or unavailable evidence.
+            let rejected = ScenarioObservedFeatureOutput.recordingVerifiedClaims(in: changed, definition: contract)
+            #expect(rejected.claims?.contains(.returnedValueChecked) == false, "\(defect)")
+            #expect(rejected.claims?.contains(.applicationStateChecked) == false, "\(defect)")
+            #expect(rejected.actionReceipts == nil, "\(defect)")
+            #expect(ScenarioResultEvaluator.overall(definition: contract, laneResults: [rejected]) != .passed,
+                    "\(defect)")
+        }
+    }
+
     @Test func stableAbsoluteReleaseDoesNotBorrowOldRequirementComparison() async throws {
         var definition = try stableScenario()
         definition.version = 2
-        definition.assertions[0].applicableLanes = [.appFeature, .intentIntegration]
+        definition.assertions[0].applicableLanes = [.intentIntegration]
+        definition.assertions.append(.init(
+            kind: .returnedField, observationKey: "feature.response",
+            expectedValue: .string("Expected summary"),
+            explanation: "The captured Feature response preserves the key point.",
+            applicableLanes: [.appFeature]
+        ))
         definition.directControl.outputFields = [.init(
             name: "summary", type: .primitive(.string),
             path: [.init(kind: .property, name: "summary")]
@@ -2211,7 +2285,10 @@ struct ScenarioContractsTests {
         definition.purpose = .releaseRequirement
         definition.checkMode = .basic
         definition.requiredClaims = [.executionCompleted, .returnedValueChecked]
-        definition.observationPlan = [.init(id: "summary", source: .intentResult)]
+        definition.observationPlan = [
+            .init(id: "summary", source: .intentResult),
+            .init(id: "feature.response", source: .testOnlyIntent)
+        ]
         definition.integration = .init(id: "notes", version: "1", digest: String(repeating: "a", count: 64))
         definition = try definition.frozen()
         #expect(ScenarioValidator.issues(in: definition).filter { $0.severity == .error }.isEmpty)
@@ -2227,19 +2304,30 @@ struct ScenarioContractsTests {
         intent.lane = .intentIntegration
         candidate.laneResults.append(intent)
         for index in candidate.laneResults.indices {
-            candidate.laneResults[index].observations = ["summary": .string("Expected summary")]
-            candidate.laneResults[index].observationSources = ["summary": candidate.laneResults[index].lane == .appFeature
+            let lane = candidate.laneResults[index].lane
+            let assertion = try #require(definition.assertions.first { $0.applies(to: lane) })
+            candidate.laneResults[index].observations = [assertion.observationKey: .string("Expected summary")]
+            candidate.laneResults[index].observationSources = [assertion.observationKey: lane == .appFeature
                 ? .applicationInstrumentation : .appIntentsTesting]
-            if candidate.laneResults[index].lane == .appFeature {
+            if lane == .appFeature {
                 candidate.laneResults[index].observations["feature.runID"] = .string(candidate.id.uuidString)
+                candidate.laneResults[index].observations["feature.sampleID"] = .string(UUID().uuidString)
                 candidate.laneResults[index].observations["feature.resultCount"] = .integer(1)
+                candidate.laneResults[index].observationSources?["feature.runID"] = .applicationInstrumentation
+                candidate.laneResults[index].observationSources?["feature.sampleID"] = .applicationInstrumentation
                 candidate.laneResults[index].observationSources?["feature.resultCount"] = .applicationInstrumentation
             }
-            candidate.laneResults[index].claims = [.executionCompleted, .returnedValueChecked]
             candidate.laneResults[index].assertionResults = [
-                .init(assertionID: definition.assertions[0].id, passed: true,
+                .init(assertionID: assertion.id, passed: true,
                       observedValue: .string("Expected summary"), message: "matched")
             ]
+            if lane == .appFeature {
+                candidate.laneResults[index] = ScenarioObservedFeatureOutput.recordingVerifiedClaims(
+                    in: candidate.laneResults[index], definition: definition
+                )
+            } else {
+                candidate.laneResults[index].claims = [.executionCompleted, .returnedValueChecked]
+            }
         }
         candidate.integration = definition.integration
         candidate.runnerPackageVersion = "1"

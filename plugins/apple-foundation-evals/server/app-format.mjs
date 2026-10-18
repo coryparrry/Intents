@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { SPOTLIGHT_DEFAULTS, PROFILE_DEFAULTS } from './app-defaults.mjs';
-import { SUITE_SCHEMA, DRAFT_SUITE_SCHEMA, validateSchema } from './app-schema.mjs';
+import { APP_SUITE_SCHEMA, DRAFT_APP_SUITE_SCHEMA, validateSchema } from './app-schema.mjs';
 export const isAppSuite = (value) => ['version', 'criteria', 'scoringMode', 'modelConfiguration', 'features', 'attachments', 'judgeConfiguration', 'releasePolicy'].some((key) => value[key] !== undefined) || value.cases?.some((item) => item.conversation !== undefined || item.fieldAssertions !== undefined);
 const clean = (value) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== null));
 export const MODEL_DEFAULTS = { provider: 'onDevice', reasoningLevel: 'automatic', samplingMode: 'automatic', temperatureEnabled: false, temperature: 0.7, seedEnabled: false, seed: 42, topK: 40, probabilityThreshold: 0.9, maximumResponseTokens: 1024, referenceMode: 'inline', contextPolicy: 'fitReferences', maximumToolCalls: 2 };
@@ -43,7 +43,7 @@ function withDefaults(defaults, value) {
   return result;
 }
 export function appSuite(value, generateId = randomUUID, { draft = false } = {}) {
-  const schema = draft ? DRAFT_SUITE_SCHEMA : SUITE_SCHEMA;
+  const schema = draft ? DRAFT_APP_SUITE_SCHEMA : APP_SUITE_SCHEMA;
   validateSchema(value, schema, 'suite', schema);
   const modelConfiguration = { ...MODEL_DEFAULTS, ...clean(value.modelConfiguration || {}) };
   if (modelConfiguration.customization?.visionTools) modelConfiguration.customization.visionTools = { ocrEnabled: false, barcodeEnabled: false, ...clean(modelConfiguration.customization.visionTools) };

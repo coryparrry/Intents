@@ -6,6 +6,303 @@ import Testing
 struct EvaluationStoreRunLifecycleTests {
     @MainActor
     @Test(.timeLimit(.minutes(1)))
+    func standaloneFeatureCloseJoinsAdapterCleanupAndTerminalSave() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [
+            EvaluationCase(name: "Completed", prompt: "first", expected: "FIRST"),
+            EvaluationCase(name: "Held", prompt: "second", expected: "LATE"),
+            EvaluationCase(name: "Must not run", prompt: "third", expected: "NEVER")
+        ]
+        try #require(store.saveSuite())
+        let revision = try store.currentSuiteRevision()
+        let entered = FeatureLifecycleSignal(), cancelled = FeatureLifecycleSignal()
+        let cleanupAllowed = FeatureLifecycleSignal()
+        let cancellationWait = AsyncStream<Void>.makeStream()
+        defer { cancellationWait.continuation.finish() }
+        let invocations = SnapshotInvocationCount()
+        let id = UUID()
+        let caller = Task { @MainActor in
+            try await store.runFeatureAdapter(
+                id: id, expectedRevision: revision,
+                adapter: ClosureFeatureAdapter(displayName: "Held direct integration") { input in
+                    await invocations.increment()
+                    if input.prompt == "first" { return "FIRST" }
+                    #expect(input.prompt == "second")
+                    await entered.open()
+                    var iterator = cancellationWait.stream.makeAsyncIterator()
+                    _ = await iterator.next()
+                    #expect(Task.isCancelled)
+                    await cancelled.open()
+                    // The real adapter still owns cleanup after cancellation.
+                    // Its late output must survive the terminal history save.
+                    await cleanupAllowed.wait()
+                    return "LATE"
+                }
+            )
+        }
+        await entered.wait()
+        var closed = false
+        let closing = Task { @MainActor in
+            await store.closeAndWait()
+            closed = true
+        }
+        await cancelled.wait()
+        #expect(!closed)
+        #expect(store.isRunning)
+        #expect(await invocations.count == 2)
+        await #expect(throws: EvaluationStoreError.self) {
+            try await store.runFeatureAdapter(
+                expectedRevision: revision,
+                adapter: ClosureFeatureAdapter(displayName: "Must remain closed") { _ in
+                    Issue.record("A new action ran after store closing began.")
+                    return "NEVER"
+                }
+            )
+        }
+        await cleanupAllowed.open()
+        await closing.value
+
+        // Read durable history before joining the API caller. closeAndWait
+        // itself must guarantee that the child saved its terminal outcome.
+        let retained = try #require(EvaluationStore(supportDirectory: directory).run(with: id))
+        #expect(closed)
+        #expect(!store.isRunning)
+        #expect(retained.cancelled)
+        #expect(retained.terminationReason == "cancelled")
+        #expect(retained.results.map(\.response) == ["FIRST", "LATE"])
+        #expect(retained.results.last?.errorCategory == "lateAfterCancellation")
+        #expect(await invocations.count == 2)
+        let completed = try await caller.value
+        #expect(completed.id == retained.id)
+        await store.closeAndWait()
+    }
+
+    @MainActor
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func featureAssessmentImagePreflightFailureRetainsCompletedOutput(removeImage: Bool) async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixture = try CompatibleJudgeFixture(mode: .valid)
+        defer { fixture.stop() }
+        let store = EvaluationStore(supportDirectory: directory)
+        let connection = EvaluationJudgeConnection(
+            id: UUID(), name: "Preflight judge", kind: .localCompatible,
+            baseURL: fixture.baseURL, modelID: "judge-fixture"
+        )
+        try store.saveJudgeConnection(connection, apiKey: nil)
+        store.draftSuite.scoringMode = .modelJudge
+        store.draftSuite.criteria = "The response is accurate and complete."
+        store.draftSuite.cases = [EvaluationCase(name: "Completed", prompt: "request", expected: "RESULT")]
+        store.draftSuite.modelConfiguration.provider = .customHTTP
+        store.draftSuite.modelConfiguration.customProviderSettings.supportsVision = true
+        store.draftSuite.judgeConfiguration = .init(
+            mode: .connection, connectionID: connection.id, includeReferenceAttachments: false
+        )
+        store.approveExternalJudgeDisclosure()
+        try #require(store.saveSuite())
+        let imageData = try #require(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        ))
+        let imported = try await store.importAttachment(
+            id: UUID(), name: "reference.png", mediaType: "image/png", data: imageData,
+            expectedRevision: store.suiteRevision
+        )
+        let runID = UUID()
+        let revision = try store.currentSuiteRevision()
+        let evidenceDirectory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID
+        ).appending(path: "RunEvidence/\(runID.uuidString)")
+        let invocations = SnapshotInvocationCount()
+        let adapter = ClosureFeatureAdapter(displayName: "Completed before image failure") { _ in
+            await invocations.increment()
+            let images = try FileManager.default.contentsOfDirectory(
+                at: evidenceDirectory, includingPropertiesForKeys: nil
+            )
+            try #require(images.count == 1)
+            let image = try #require(images.first)
+            if removeImage {
+                try FileManager.default.removeItem(at: image)
+            } else {
+                try Data("changed historical bytes".utf8).write(to: image, options: .atomic)
+            }
+            return "RESULT"
+        }
+
+        let run = try await store.runFeatureAdapter(id: runID, expectedRevision: revision, adapter: adapter)
+
+        #expect(run.results.first?.response == "RESULT")
+        #expect(run.results.first?.status == .unscored)
+        #expect(run.terminationReason == "assessmentUnavailable")
+        #expect(!run.cancelled)
+        #expect(run.selectedAssessment == nil)
+        #expect(run.subjectEvidence?.hasValidDigest == true)
+        #expect(fixture.completionRequestCount == 0)
+        #expect(try store.attachmentData(id: imported.attachment.id).data == imageData)
+        let retained = try #require(EvaluationStore(supportDirectory: directory).run(with: runID))
+        #expect(retained.results.first?.response == "RESULT")
+        #expect(retained.terminationReason == "assessmentUnavailable")
+        let retried = try await store.runFeatureAdapter(id: runID, expectedRevision: revision, adapter: adapter)
+        #expect(retried.id == retained.id)
+        #expect(await invocations.count == 1)
+    }
+
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
+    func standaloneFeatureKeepsCompletedSamplesAcrossProcessInterruption() async throws {
+        let directory = try temporaryDirectory()
+        let recoveredDirectory = directory.appendingPathExtension("recovered")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: recoveredDirectory)
+        }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [
+            EvaluationCase(name: "First", prompt: "first", expected: "RESULT"),
+            EvaluationCase(name: "Second", prompt: "second", expected: "RESULT")
+        ]
+        try #require(store.saveSuite())
+        let id = UUID()
+        let run = try await store.runFeatureAdapter(
+            id: id, expectedRevision: store.currentSuiteRevision(),
+            adapter: ClosureFeatureAdapter(displayName: "Durable feature") { _ in "RESULT" }
+        ) { completed, _ in
+            guard completed == 1 else { return }
+            do {
+                // Reopen a disk snapshot taken while the original process has
+                // completed only one action. Recovery must not invoke the app.
+                try FileManager.default.copyItem(at: directory, to: recoveredDirectory)
+                await MainActor.run {
+                    let recovered = EvaluationStore(supportDirectory: recoveredDirectory)
+                    let interrupted = recovered.run(with: id)
+                    #expect(interrupted?.results.map(\.response) == ["RESULT"])
+                    #expect(interrupted?.terminationReason == "interrupted")
+                    #expect(interrupted?.plannedSampleCount == 2)
+                }
+            } catch { Issue.record("Could not snapshot the in-progress feature run: \(error)") }
+        }
+        #expect(run.results.count == 2)
+        #expect(run.results.allSatisfy { $0.status == .passed })
+    }
+
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
+    func runtimeTerminationJoinsTheRunAndPersistsCancellation() async throws {
+        let fixture = try LifecycleCustomModelFixture(responseDelay: 5)
+        defer { fixture.stop() }
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [EvaluationCase(name: "Shutdown", prompt: "request", expected: "RESULT")]
+        store.draftSuite.modelConfiguration.provider = .customHTTP
+        store.draftSuite.modelConfiguration.customProviderSettings.endpoint = fixture.endpoint(path: "/text")
+        try #require(store.saveSuite())
+        let id = UUID()
+        _ = try store.startRun(id: id, expectedRevision: store.currentSuiteRevision())
+        await FoundationEvalsMCPRuntime(store: store).prepareForTermination()
+        #expect(!store.isRunning)
+        #expect(EvaluationStore(supportDirectory: directory).run(with: id)?.cancelled == true)
+        #expect(throws: EvaluationStoreError.self) {
+            try store.startRun(id: UUID(), expectedRevision: store.currentSuiteRevision())
+        }
+    }
+
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
+    func cancellationStillStopsRunWhenCheckpointCannotBeWritten() async throws {
+        let fixture = try LifecycleCustomModelFixture(responseDelay: 5)
+        defer { fixture.stop() }
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [EvaluationCase(name: "Cancel", prompt: "request", expected: "RESULT")]
+        store.draftSuite.modelConfiguration.provider = .customHTTP
+        store.draftSuite.modelConfiguration.customProviderSettings.endpoint = fixture.endpoint(path: "/text")
+        try #require(store.saveSuite())
+        let runID = UUID()
+        _ = try store.startRun(id: runID, expectedRevision: store.currentSuiteRevision())
+        let checkpoint = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID
+        ).appending(path: "active-run.json")
+        try FileManager.default.removeItem(at: checkpoint)
+        try FileManager.default.createDirectory(at: checkpoint, withIntermediateDirectories: false)
+        // A directory at the file destination simulates a failed checkpoint
+        // without relying on permission bits or the account running the test.
+        #expect(throws: EvaluationStoreError.self) { try store.cancelRun(id: runID) }
+        #expect(store.runStatus(id: runID)?.phase == .cancellationRequested)
+        try FileManager.default.removeItem(at: checkpoint)
+        try await waitForRunToFinish(in: store)
+        #expect(store.run(with: runID)?.cancelled == true)
+        #expect(store.runStatus(id: runID)?.phase == .cancelled)
+    }
+
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
+    func featureSnapshotUsesFeatureAdmissionInsteadOfUnusedDesktopProvider() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        var featureSuite = EvaluationSuite()
+        featureSuite.scoringMode = .exactMatch
+        featureSuite.cases = [EvaluationCase(name: "Feature", prompt: "request", expected: "RESULT")]
+        featureSuite.modelConfiguration.provider = .customHTTP
+        featureSuite.modelConfiguration.customProviderSettings.endpoint = "unused-desktop-endpoint"
+        #expect(store.validationIssue(for: featureSuite, includeModelReadiness: false) != nil)
+        let revision = try store.ensureScenarioFeatureSuite(projectID: store.selectedProjectID, suite: featureSuite)
+        let run = try await store.runFeatureAdapterSnapshot(
+            id: UUID(), projectID: store.selectedProjectID, suite: featureSuite,
+            expectedRevision: revision,
+            adapter: ClosureFeatureAdapter(displayName: "Independent app feature") { input in
+                #expect(input.prompt == "request")
+                return "RESULT"
+            }
+        )
+        #expect(run.results.first?.status == .passed)
+        #expect(EvaluationStore(supportDirectory: directory).run(with: run.id)?.id == run.id)
+    }
+
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
+    func legacyFeatureRunRejectsConversationItCannotTransmit() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [EvaluationCase(name: "Conversation", prompt: "Recall it", expected: "RESULT")]
+        store.draftSuite.cases[0].conversation.setupTurns = [.init(prompt: "Remember the meeting is Friday.")]
+        try #require(store.saveSuite())
+        let feature = DeveloperFeatureDescriptor(
+            id: "feature", displayName: "Feature", version: "1",
+            inputTypeName: String(reflecting: DeveloperTextFeatureInput.self),
+            outputTypeName: String(reflecting: DeveloperFeatureOutput.self)
+        )
+        let identity = DeveloperRunnerIdentity(
+            id: UUID(), displayName: "Fixture", platform: .iPhone,
+            operatingSystem: "iOS 27", hardwareModel: "iPhone",
+            appBundleIdentifier: "example.fixture", appVersion: "1"
+        )
+        let runner = DeveloperRunnerSnapshot(identity: identity, features: [feature], state: .connected)
+        let client = DeveloperRunnerClient(desktopID: UUID(), trustStoreURL: directory.appending(path: "trust.json"))
+        defer { client.shutdown() }
+        do {
+            _ = try await store.runDeveloperFeature(
+                expectedRevision: store.currentSuiteRevision(), runner: runner, feature: feature, client: client
+            )
+            Issue.record("A conversation must not be silently omitted from the app request.")
+        } catch let error as EvaluationStoreError {
+            guard case .invalidSuite(let message) = error else { throw error }
+            #expect(message.contains("conversation history"))
+        }
+        #expect(store.runs.isEmpty)
+    }
+
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
     func scenarioFeatureSuiteRegistrationPreservesSelectionAndRejectsChangedContract() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -329,6 +626,23 @@ struct EvaluationStoreRunLifecycleTests {
             .appending(path: "EvaluationStoreRunLifecycleTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+}
+
+private actor FeatureLifecycleSignal {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending { waiter.resume() }
     }
 }
 

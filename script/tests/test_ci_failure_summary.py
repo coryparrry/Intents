@@ -100,6 +100,18 @@ class FailureSummaryTests(unittest.TestCase):
         for value in ["Mac UI", "Build private app", "Job listing incomplete", "Artifact listing incomplete", "Log unavailable for job 23", "HTTP 403"]:
             self.assertIn(value, report)
 
+    def test_run_wide_artifacts_are_not_attributed_to_current_attempt(self):
+        api = FakeAPI(artifacts=[{"id": 77, "name": "results-attempt-1", "expired": False,
+            "created_at": "2026-10-17T18:00:00Z", "workflow_run": {
+                "id": 99, "head_sha": "same-commit-for-both-attempts", "head_branch": "main"}}])
+        report = self.render(api)
+        self.assertIn("### Retained artifacts (entire workflow run)", report)
+        self.assertIn("Jobs above are from attempt 2", report)
+        self.assertIn("Artifacts may include other attempts", report)
+        self.assertIn("does not identify the producing attempt", report)
+        self.assertIn("results\\-attempt\\-1", report)
+        self.assertIn("/repos/owner/repo/actions/runs/99/artifacts", api.paths)
+
     def test_redaction_and_markdown_escaping_cover_all_untrusted_fields(self):
         log = "\n".join(["2026-10-17T18:00:00Z error: valid <diagnostic> [x](evil)",
             "error: Authorization: Bearer actual-credential", "error: ghp_ABCDEFGHIJK123",
@@ -181,6 +193,7 @@ class FailureSummaryTests(unittest.TestCase):
         class UnreadableResponse(Response):
             def read(self, size):
                 raise OSError("https://logs.example/file?sig=private")
+            read1 = read
         api = summary.GitHubAPI("https://api.github.com", "", Opener([UnreadableResponse()]))
         with self.assertRaisesRegex(RuntimeError, "GitHub response could not be read") as raised:
             api.get("/logs", logs=True)
@@ -200,7 +213,7 @@ class FailureSummaryTests(unittest.TestCase):
         api = summary.GitHubAPI("https://api.github.com", "", Opener([Response(b"x" * (summary.LOG_LIMIT + 20))]))
         body, truncated = api.get("/logs", logs=True)
         self.assertTrue(truncated)
-        self.assertEqual(len(body), summary.LOG_LIMIT)
+        self.assertLessEqual(len(body), summary.LOG_LIMIT)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "summary.md"
             with patch.object(summary, "GitHubAPI", return_value=FakeAPI()):
@@ -208,6 +221,53 @@ class FailureSummaryTests(unittest.TestCase):
                     "GITHUB_RUN_ATTEMPT": "2", "GITHUB_STEP_SUMMARY": str(path),
                     "CI_NEEDS_JSON": '{"gate":{"result":"cancelled"}}'})
             self.assertIn("cancellation", path.read_text())
+
+    def test_ignored_range_retains_late_assertion_with_bounded_reads(self):
+        assertion = b"/project/Tests.swift:118: error: XCTAssertTrue failed - late failure"
+        log = b"setup output\n" * summary.LOG_LIMIT + b"error: token=private-token\n" + assertion + b"\n"
+        class ChunkedResponse(Response):
+            def read1(self, size):
+                self.asserted_read_size = size
+                if size > 64 * 1024:
+                    raise AssertionError("unbounded read")
+                return super().read1(size)
+        response = ChunkedResponse(log)
+        opener = Opener([response])
+        api = summary.GitHubAPI("https://api.github.com", "", opener)
+        body, truncated = api.get("/logs", logs=True)
+        self.assertTrue(truncated)
+        self.assertLessEqual(len(body), summary.LOG_LIMIT)
+        self.assertEqual(summary.error_excerpt(body.decode()), [assertion.decode()])
+        self.assertEqual(opener.requests[0].get_header("Range"), f"bytes=-{summary.LOG_LIMIT}")
+
+    def test_partial_content_retains_late_assertion_and_bounds_oversized_response(self):
+        assertion = b"/project/Tests.swift:118: error: XCTAssertTrue failed - late failure\n"
+        suffix = b"setup\n" * 100 + assertion
+        api = summary.GitHubAPI("https://api.github.com", "", Opener([Response(suffix, status=206),
+            Response(b"x" * (summary.LOG_LIMIT + 20), status=206)]))
+        body, truncated = api.get("/logs", logs=True)
+        self.assertFalse(truncated)
+        self.assertEqual(summary.error_excerpt(body.decode()), [assertion.decode().strip()])
+        body, truncated = api.get("/logs", logs=True)
+        self.assertTrue(truncated)
+        self.assertEqual(len(body), summary.LOG_LIMIT)
+
+    def test_ignored_range_stream_has_a_read_deadline(self):
+        class EndlessResponse(Response):
+            def read1(self, size):
+                return b"still running\n"
+        api = summary.GitHubAPI("https://api.github.com", "", Opener([EndlessResponse()]))
+        with patch.object(summary.time, "monotonic", side_effect=[0, 0, 31]):
+            with self.assertRaisesRegex(RuntimeError, "exceeded its read time limit"):
+                api.get("/logs", logs=True)
+
+    def test_truncated_suffix_drops_partial_credential_line(self):
+        log = b"Authorization: " + b"x" * summary.LOG_LIMIT + b"error: sensitive-fragment\nerror: actual failure\n"
+        api = summary.GitHubAPI("https://api.github.com", "", Opener([Response(log)]))
+        body, truncated = api.get("/logs", logs=True)
+        self.assertTrue(truncated)
+        self.assertNotIn(b"sensitive-fragment", body)
+        self.assertEqual(summary.error_excerpt(body.decode()), ["error: actual failure"])
 
 
 if __name__ == "__main__":

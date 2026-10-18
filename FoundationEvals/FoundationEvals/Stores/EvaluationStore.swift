@@ -71,6 +71,8 @@ final class EvaluationStore {
     @ObservationIgnored private let onDeviceContextSizes = ModelContextSizeCache()
     private(set) var isDraftSavePending = false
     private var runTask: Task<Void, Never>?
+    private var directFeatureTask: Task<EvaluationRun, Error>?
+    private var isClosing = false
     private var activeRunSuite: EvaluationSuite?
     private var activeRunEvidence: EvaluationSubjectEvidenceSnapshot?
     private var activeRunResults: [EvaluationSampleResult] = []
@@ -383,8 +385,17 @@ final class EvaluationStore {
         )
         try EvaluationWorkspacePersistence.createSuiteDirectories(at: directory)
         try CanonicalJSON.data(for: newSuite).write(to: directory.appending(path: "suite.json"), options: .atomic)
+        let previousWorkspace = workspace
         workspace.projects.append(project)
-        try persistWorkspace()
+        do {
+            try persistWorkspace()
+        } catch {
+            workspace = previousWorkspace
+            // This project was never published. Its newly staged suite is not
+            // reachable from the restored catalog and can be removed safely.
+            try? FileManager.default.removeItem(at: directory.deletingLastPathComponent().deletingLastPathComponent())
+            throw error
+        }
         try switchWorkspace(projectID: projectID, suiteID: newSuite.id)
         return projectID
     }
@@ -458,9 +469,15 @@ final class EvaluationStore {
         guard let index = workspace.projects.firstIndex(where: { $0.id == id }) else {
             throw EvaluationWorkspaceError.missingProject
         }
+        let previousWorkspace = workspace
         workspace.projects[index].name = trimmed
         workspace.projects[index].updatedAt = Date()
-        try persistWorkspace()
+        do {
+            try persistWorkspace()
+        } catch {
+            workspace = previousWorkspace
+            throw error
+        }
     }
 
     func archiveProject(id: UUID) throws {
@@ -530,7 +547,7 @@ final class EvaluationStore {
         guard let projectIndex = workspace.projects.firstIndex(where: {
             $0.id == projectID && !$0.isArchived
         }) else { throw EvaluationWorkspaceError.missingProject }
-        if let issue = validationIssue(for: scenarioSuite, includeModelReadiness: false) {
+        if let issue = validationIssue(for: scenarioSuite, includeModelReadiness: false, includeSubjectModelConfiguration: false) {
             throw EvaluationStoreError.invalidSuite(issue)
         }
         let revision = try Self.revision(for: scenarioSuite)
@@ -1654,13 +1671,20 @@ final class EvaluationStore {
             }
             return existing
         }
+        if let pending = try retrySnapshotRunSave(
+            id: id, projectID: selectedProjectID, suiteID: selectedSuiteID
+        ) {
+            guard pending.suiteRevision == expectedRevision else {
+                throw EvaluationStoreError.resourceConflict("Feature run ID already belongs to another suite revision.")
+            }
+            return pending
+        }
         try requireIdle()
         try requireRevision(expectedRevision)
-        guard validationIssue(for: suite, includeModelReadiness: false) == nil else {
-            throw EvaluationStoreError.invalidSuite(
-                validationIssue(for: suite, includeModelReadiness: false)
-                    ?? "The suite is not ready for a feature-adapter run."
-            )
+        if let issue = validationIssue(
+            for: suite, includeModelReadiness: false, includeSubjectModelConfiguration: false
+        ) {
+            throw EvaluationStoreError.invalidSuite(issue)
         }
         let suiteSnapshot = suite
         let featureJudge = try resolvedFeatureJudge(for: suiteSnapshot)
@@ -1672,70 +1696,109 @@ final class EvaluationStore {
             projectID: ownerProjectID,
             suiteID: ownerSuiteID
         )
+        let checkpointURL = snapshotCheckpointURL(id: id, projectID: ownerProjectID, suiteID: ownerSuiteID)
+        let checkpointSummary = EvaluationActiveRun(
+            id: id, suiteRevision: expectedRevision, startedAt: Date(), completedSamples: 0,
+            totalSamples: suiteSnapshot.cases.count * suiteSnapshot.repetitions,
+            cancellationRequested: false, projectID: ownerProjectID, suiteID: ownerSuiteID
+        )
+        try persistSnapshotCheckpoint(
+            ActiveRunRecord(summary: checkpointSummary, suite: suiteSnapshot, results: [], subjectEvidence: evidence),
+            at: checkpointURL
+        )
         isRunning = true
         completedSamples = 0
         totalSamples = suiteSnapshot.cases.count * suiteSnapshot.repetitions
-        defer {
-            isRunning = false
-            completedSamples = 0
-            totalSamples = 0
-        }
-        let repositorySnapshot: EvaluationRepositorySnapshot? = if let root = selectedProject.repository?.rootPath {
-            await EvaluationRepositoryInspector.snapshot(rootPath: root)
-        } else {
-            nil
-        }
-        var run = await featureAdapterRunner.run(
-            id: id,
-            projectID: ownerProjectID,
-            repository: repositorySnapshot,
-            suiteRevision: expectedRevision,
-            suite: suiteSnapshot,
-            adapter: adapter
-        ) { [weak self] _, completed, total in
-            await self?.updateFeatureAdapterProgress(completed: completed, total: total)
-            await progress(completed, total)
-        }
-        do {
+        let repositoryRoot = selectedProject.repository?.rootPath
+        // Direct integrations have no separate coordinator to drain their
+        // caller task. Retain ownership through the terminal history write.
+        let task = Task<EvaluationRun, Error> { @MainActor [self] in
+            defer {
+                directFeatureTask = nil
+                isRunning = false
+                completedSamples = 0
+                totalSamples = 0
+            }
+            let repositorySnapshot: EvaluationRepositorySnapshot? = if let repositoryRoot {
+                await EvaluationRepositoryInspector.snapshot(rootPath: repositoryRoot)
+            } else {
+                nil
+            }
+            var run = await featureAdapterRunner.run(
+                id: id,
+                projectID: ownerProjectID,
+                repository: repositorySnapshot,
+                suiteRevision: expectedRevision,
+                suite: suiteSnapshot,
+                adapter: adapter
+            ) { [weak self] result, completed, total in
+                await self?.checkpointSnapshotProgress(result: result, completed: completed, checkpointURL: checkpointURL)
+                await self?.updateFeatureAdapterProgress(completed: completed, total: total)
+                await progress(completed, total)
+            }
             run.subjectEvidence = evidence
             if suiteSnapshot.scoringMode == .modelJudge,
                !run.cancelled,
                run.terminationReason == nil {
-                let images = try imageInputs(
-                    for: evidence,
-                    projectID: ownerProjectID,
-                    suiteID: ownerSuiteID,
-                    runID: id
-                )
-                let assessment = try await reassessmentService.reassess(
-                    run: run,
-                    suite: suiteSnapshot,
-                    images: images,
-                    resolved: featureJudge,
-                    scoringContract: try? EvaluationScoringContract(suite: suiteSnapshot),
-                    subjectEvidenceDigest: evidence.digest,
-                    origin: .initialRun
-                )
-                run.assessments = [assessment]
-                run.selectedAssessmentID = assessment.id
-                if assessment.samples.contains(where: { $0.errorCategory == "cancelled" }) {
-                    run.cancelled = true
-                    run.terminationReason = "cancelled"
+                do {
+                    let images = try imageInputs(
+                        for: evidence,
+                        projectID: ownerProjectID,
+                        suiteID: ownerSuiteID,
+                        runID: id
+                    )
+                    let assessment = try await reassessmentService.reassess(
+                        run: run,
+                        suite: suiteSnapshot,
+                        images: images,
+                        resolved: featureJudge,
+                        scoringContract: try? EvaluationScoringContract(suite: suiteSnapshot),
+                        subjectEvidenceDigest: evidence.digest,
+                        origin: .initialRun
+                    )
+                    run.assessments = [assessment]
+                    run.selectedAssessmentID = assessment.id
+                    if assessment.samples.contains(where: { $0.errorCategory == "cancelled" }) {
+                        run.cancelled = true
+                        run.terminationReason = "cancelled"
+                    }
+                } catch {
+                    // Image/evidence preparation can fail outside the judge's
+                    // per-sample handling. Preserve the completed app response.
+                    run.terminationReason = "assessmentUnavailable"
                 }
             }
             run = runPreparedForHistory(run)
-            try saveCompletedRuns([run])
-        } catch {
-            if pendingCompletedRuns == nil {
-                try? FileManager.default.removeItem(at: runEvidenceDirectory(
-                    projectID: ownerProjectID,
-                    suiteID: ownerSuiteID,
-                    runID: id
-                ))
+            do {
+                do {
+                    try persistSnapshotCheckpoint(
+                        ActiveRunRecord(summary: checkpointSummary, suite: suiteSnapshot, results: run.results,
+                                        completedRun: run, subjectEvidence: evidence), at: checkpointURL
+                    )
+                } catch {
+                    snapshotUnsavedRuns[id] = run
+                    throw error
+                }
+                try saveCompletedRuns([run])
+                try? FileManager.default.removeItem(at: checkpointURL)
+            } catch {
+                if pendingCompletedRuns == nil && !FileManager.default.fileExists(atPath: checkpointURL.path) {
+                    try? FileManager.default.removeItem(at: runEvidenceDirectory(
+                        projectID: ownerProjectID,
+                        suiteID: ownerSuiteID,
+                        runID: id
+                    ))
+                }
+                throw error
             }
-            throw error
+            return run
         }
-        return run
+        directFeatureTask = task
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     func runDeveloperFeature(
@@ -1747,6 +1810,12 @@ final class EvaluationStore {
         timeout: Duration = .seconds(120),
         progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }
     ) async throws -> EvaluationRun {
+        // The legacy feature protocol carries one prompt and instructions. Do
+        // not record unsent references or conversation history as tested inputs.
+        try EvaluationDeveloperFeatureAdapter.validate(feature)
+        if let issue = developerFeatureValidationIssue(for: suite) {
+            throw EvaluationStoreError.invalidSuite(issue)
+        }
         let adapter = EvaluationDeveloperFeatureAdapter(
             runID: id,
             runner: runner,
@@ -1798,7 +1867,7 @@ final class EvaluationStore {
             return pending
         }
         try requireIdle(ownerID: executionOwnerID)
-        if let issue = validationIssue(for: snapshot, includeModelReadiness: false) {
+        if let issue = validationIssue(for: snapshot, includeModelReadiness: false, includeSubjectModelConfiguration: false) {
             throw EvaluationStoreError.invalidSuite(issue)
         }
         let judge = try resolvedFeatureJudge(for: snapshot)
@@ -1882,6 +1951,25 @@ final class EvaluationStore {
     private func updateFeatureAdapterProgress(completed: Int, total: Int) {
         completedSamples = completed
         totalSamples = total
+    }
+
+    /// The connected app owns its model configuration; this client validates
+    /// only the input it can transmit and the scoring performed on this Mac.
+    func developerFeatureValidationIssue(for candidate: EvaluationSuite) -> String? {
+        if let issue = validationIssue(for: candidate, includeModelReadiness: false,
+                                       includeSubjectModelConfiguration: false) { return issue }
+        if !candidate.attachments.isEmpty {
+            return "App feature runs do not send reference attachments. Remove them or use a feature integration that explicitly carries those inputs."
+        }
+        if candidate.cases.contains(where: {
+            !$0.conversation.setupTurns.isEmpty || $0.conversation.restoredTranscriptJSON != nil
+        }) {
+            return "App feature runs do not send conversation history. Use a single prompt per case or an integration with explicit conversation inputs."
+        }
+        if candidate.needsModelJudge && !candidate.judgeConfiguration.usesExternalConnection {
+            return "Choose an independent judge connection for AI-rubric app feature runs."
+        }
+        return nil
     }
 
     private func resolvedFeatureJudge(
@@ -2783,7 +2871,7 @@ final class EvaluationStore {
     }
 
     @discardableResult
-    func saveSuite() -> Bool {
+    func saveSuite(forDeveloperFeature: Bool = false) -> Bool {
         let diagnostic = telemetry?.begin(.suiteSave)
         var diagnosticFailure: TelemetryFailure?
         defer { telemetry?.end(diagnostic, failure: diagnosticFailure) }
@@ -2798,7 +2886,10 @@ final class EvaluationStore {
         draftSaveTask = nil
         if isDraftSavePending { isDraftSavePending = false }
         do {
-            try commitSuite(draftSuite)
+            if forDeveloperFeature, let issue = developerFeatureValidationIssue(for: draftSuite) {
+                throw EvaluationStoreError.invalidSuite(issue)
+            }
+            try commitSuite(draftSuite, includeSubjectModelConfiguration: !forDeveloperFeature)
             return true
         } catch EvaluationStoreError.invalidSuite {
             diagnosticFailure = .validation
@@ -2837,6 +2928,7 @@ final class EvaluationStore {
     }
 
     func cancelRun() {
+        directFeatureTask?.cancel()
         guard let id = activeRun?.id else {
             runTask?.cancel()
             return
@@ -2846,6 +2938,22 @@ final class EvaluationStore {
         } catch {
             notice = error.localizedDescription
         }
+    }
+
+    /// Called after paired and coordinated feature owners have joined their work.
+    /// Await ordinary and direct feature terminal saves before the app exits.
+    func closeAndWait() async {
+        let task = runTask
+        let featureTask = directFeatureTask
+        beginClosing()
+        await task?.value
+        _ = await featureTask?.result
+        _ = saveSuite()
+    }
+
+    func beginClosing() {
+        isClosing = true
+        cancelRun()
     }
 
     func retryPendingRunSave() {
@@ -3020,6 +3128,10 @@ final class EvaluationStore {
         }
         if !active.cancellationRequested {
             active.cancellationRequested = true
+            // Stopping the subject must not depend on storage remaining writable.
+            // Retain the in-memory request even if its checkpoint cannot be saved.
+            activeRun = active
+            runTask?.cancel()
             guard let activeRunSuite else {
                 throw EvaluationStoreError.persistence("The active run snapshot is unavailable.")
             }
@@ -3027,8 +3139,6 @@ final class EvaluationStore {
                 summary: active, suite: activeRunSuite, results: activeRunResults,
                 subjectEvidence: activeRunEvidence
             ))
-            activeRun = active
-            runTask?.cancel()
         }
         if !isRunning {
             try retryUnsavedRun()
@@ -3176,54 +3286,57 @@ final class EvaluationStore {
 
     func validationIssue(
         for candidate: EvaluationSuite,
-        includeModelReadiness: Bool = true
+        includeModelReadiness: Bool = true,
+        includeSubjectModelConfiguration: Bool = true
     ) -> String? {
         let configuration = candidate.modelConfiguration
         let capabilities = selectedModelCapabilities(for: candidate)
         let validateCapabilities = configuration.provider != .coreAI || coreAIModel(for: candidate) != nil
-        if let issue = configuration.customizationSettings.validationIssue { return issue }
-        if configuration.reasoningLevel == .custom,
-           configuration.customizationSettings.reasoningName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "Enter the reasoning value supported by the selected provider."
-        }
-        if let issue = candidate.features.validationIssue { return issue }
-        if candidate.features.profile.enabled, candidate.features.profile.requireToolFirst,
-           !candidate.hasConfiguredTools {
-            return "A profile that requires a tool call must enable at least one tool."
-        }
-        if candidate.hasConfiguredTools, validateCapabilities, !capabilities.contains(.toolCalling) {
-            return "The selected model does not support tool calling."
-        }
-        if candidate.features.tools.contains(where: { $0.name == ReferenceLookupTool.toolName }) {
-            return "Custom tools must not use the reserved reference lookup name."
-        }
-        let vision = configuration.customizationSettings.visionSettings
-        if !vision.isEmpty {
-            if validateCapabilities && !capabilities.contains(.toolCalling) { return "Image tools require a model that supports tool calling." }
-            if !candidate.attachments.contains(where: { $0.kind == .image }) {
-                return "Attach an image before enabling OCR or barcode tools."
+        if includeSubjectModelConfiguration {
+            if let issue = configuration.customizationSettings.validationIssue { return issue }
+            if configuration.reasoningLevel == .custom,
+               configuration.customizationSettings.reasoningName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return "Enter the reasoning value supported by the selected provider."
             }
-        }
-        if candidate.features.tools.contains(where: { vision.enabledToolNames.contains($0.name) }) {
-            return "Custom tool names must differ from the enabled image tool names."
-        }
-        if candidate.features.tools.contains(where: {
-            candidate.features.spotlightSearch.enabledToolNames.contains($0.name)
-        }) {
-            return "Custom tool names must differ from the enabled Spotlight tool name."
-        }
-        if !candidate.features.tools.isEmpty, validateCapabilities && !capabilities.contains(.toolCalling) {
-            return "The current model does not support custom tool calls."
-        }
-        if !candidate.features.outputFields.isEmpty, validateCapabilities && !capabilities.contains(.guidedGeneration) {
-            return "The current model does not support guided output."
-        }
-        if configuration.provider == .customHTTP, let issue = configuration.customProviderSettings.validationIssue {
-            return issue
-        }
-        if configuration.customizationSettings.toolCalling == .required,
-           !candidate.hasConfiguredTools {
-            return "Required tool calling needs at least one enabled tool."
+            if let issue = candidate.features.validationIssue { return issue }
+            if candidate.features.profile.enabled, candidate.features.profile.requireToolFirst,
+               !candidate.hasConfiguredTools {
+                return "A profile that requires a tool call must enable at least one tool."
+            }
+            if candidate.hasConfiguredTools, validateCapabilities, !capabilities.contains(.toolCalling) {
+                return "The selected model does not support tool calling."
+            }
+            if candidate.features.tools.contains(where: { $0.name == ReferenceLookupTool.toolName }) {
+                return "Custom tools must not use the reserved reference lookup name."
+            }
+            let vision = configuration.customizationSettings.visionSettings
+            if !vision.isEmpty {
+                if validateCapabilities && !capabilities.contains(.toolCalling) { return "Image tools require a model that supports tool calling." }
+                if !candidate.attachments.contains(where: { $0.kind == .image }) {
+                    return "Attach an image before enabling OCR or barcode tools."
+                }
+            }
+            if candidate.features.tools.contains(where: { vision.enabledToolNames.contains($0.name) }) {
+                return "Custom tool names must differ from the enabled image tool names."
+            }
+            if candidate.features.tools.contains(where: {
+                candidate.features.spotlightSearch.enabledToolNames.contains($0.name)
+            }) {
+                return "Custom tool names must differ from the enabled Spotlight tool name."
+            }
+            if !candidate.features.tools.isEmpty, validateCapabilities && !capabilities.contains(.toolCalling) {
+                return "The current model does not support custom tool calls."
+            }
+            if !candidate.features.outputFields.isEmpty, validateCapabilities && !capabilities.contains(.guidedGeneration) {
+                return "The current model does not support guided output."
+            }
+            if configuration.provider == .customHTTP, let issue = configuration.customProviderSettings.validationIssue {
+                return issue
+            }
+            if configuration.customizationSettings.toolCalling == .required,
+               !candidate.hasConfiguredTools {
+                return "Required tool calling needs at least one enabled tool."
+            }
         }
         if candidate.cases.isEmpty {
             return "Add at least one evaluation case."
@@ -3324,61 +3437,63 @@ final class EvaluationStore {
                    !candidate.judgeConfiguration.hasCurrentExternalEvidenceApproval(for: connection) {
                     return "Review and approve the exact external judge evidence disclosure before running."
                 }
-            } else if validateCapabilities && !capabilities.contains(.guidedGeneration) {
+            } else if includeSubjectModelConfiguration && validateCapabilities && !capabilities.contains(.guidedGeneration) {
                 return "The selected subject model does not support the guided output required for same-model judging. Choose an independent judge or another subject model."
             }
         }
-        if !(128...4_096).contains(configuration.maximumResponseTokens) {
-            return "Choose a maximum response length between 128 and 4,096 tokens."
-        }
-        if let maximumInputTokens = configuration.maximumInputTokens,
-           !(512...32_768).contains(maximumInputTokens) {
-            return "Choose an input ceiling between 512 and 32,768 tokens."
-        }
-        if configuration.temperatureEnabled,
-           !configuration.temperature.isFinite || !(0...1).contains(configuration.temperature) {
-            return "Temperature must be between 0 and 1."
-        }
-        if configuration.samplingMode == .topK, !(1...1_000).contains(configuration.topK) {
-            return "Top K must be between 1 and 1,000."
-        }
-        if configuration.samplingMode == .probability,
-           !configuration.probabilityThreshold.isFinite || !(0.01...1).contains(configuration.probabilityThreshold) {
-            return "Probability threshold must be between 0.01 and 1."
-        }
-        if configuration.reasoningLevel != .automatic,
-           validateCapabilities && !capabilities.contains(.reasoning) {
-            return "The selected model does not support explicit reasoning levels. Choose Automatic."
-        }
-        if candidate.features.profile.enabled,
-           candidate.features.profile.afterToolReasoningLevel != .automatic,
-           validateCapabilities && !capabilities.contains(.reasoning) {
-            return "The selected model does not support explicit reasoning levels in the active profile. Choose Automatic."
-        }
-        if candidate.hasConfiguredTools, !(1...4).contains(configuration.maximumToolCalls) {
-            return "The tool call limit must be between one and four calls per sample."
-        }
-        if configuration.referenceMode == .lookupTool {
-            if validateCapabilities && !capabilities.contains(.toolCalling) {
-                return "The selected model does not support tool calling."
+        if includeSubjectModelConfiguration {
+            if !(128...4_096).contains(configuration.maximumResponseTokens) {
+                return "Choose a maximum response length between 128 and 4,096 tokens."
             }
-            if !candidate.attachments.contains(where: { $0.kind == .text }) {
-                return "Import at least one text reference before enabling reference search."
+            if let maximumInputTokens = configuration.maximumInputTokens,
+               !(512...32_768).contains(maximumInputTokens) {
+                return "Choose an input ceiling between 512 and 32,768 tokens."
             }
-            if !(1...4).contains(configuration.maximumToolCalls) {
-                return "The reference tool limit must be between one and four calls per response."
+            if configuration.temperatureEnabled,
+               !configuration.temperature.isFinite || !(0...1).contains(configuration.temperature) {
+                return "Temperature must be between 0 and 1."
             }
-        }
-        let modelContextSize = contextSize(for: candidate)
-        let allocation = configuration.contextAllocation(
-            contextSize: modelContextSize,
-            includesModelJudge: candidate.needsModelJudge,
-            sharedToolOutputReserve: candidate.sharedToolOutputReserve
-        )
-        let contextSizeIsAuthoritative = candidate.modelConfiguration.provider != .onDevice
-            || !onDeviceContextSizes.usedFallback(for: configuration)
-        if contextSizeIsAuthoritative, modelContextSize > 0, allocation.effectiveInputLimit < 512 {
-            return "Reduce the response limit or reference-tool call limit so at least 512 input tokens remain."
+            if configuration.samplingMode == .topK, !(1...1_000).contains(configuration.topK) {
+                return "Top K must be between 1 and 1,000."
+            }
+            if configuration.samplingMode == .probability,
+               !configuration.probabilityThreshold.isFinite || !(0.01...1).contains(configuration.probabilityThreshold) {
+                return "Probability threshold must be between 0.01 and 1."
+            }
+            if configuration.reasoningLevel != .automatic,
+               validateCapabilities && !capabilities.contains(.reasoning) {
+                return "The selected model does not support explicit reasoning levels. Choose Automatic."
+            }
+            if candidate.features.profile.enabled,
+               candidate.features.profile.afterToolReasoningLevel != .automatic,
+               validateCapabilities && !capabilities.contains(.reasoning) {
+                return "The selected model does not support explicit reasoning levels in the active profile. Choose Automatic."
+            }
+            if candidate.hasConfiguredTools, !(1...4).contains(configuration.maximumToolCalls) {
+                return "The tool call limit must be between one and four calls per sample."
+            }
+            if configuration.referenceMode == .lookupTool {
+                if validateCapabilities && !capabilities.contains(.toolCalling) {
+                    return "The selected model does not support tool calling."
+                }
+                if !candidate.attachments.contains(where: { $0.kind == .text }) {
+                    return "Import at least one text reference before enabling reference search."
+                }
+                if !(1...4).contains(configuration.maximumToolCalls) {
+                    return "The reference tool limit must be between one and four calls per response."
+                }
+            }
+            let modelContextSize = contextSize(for: candidate)
+            let allocation = configuration.contextAllocation(
+                contextSize: modelContextSize,
+                includesModelJudge: candidate.usesSubjectModelForJudging,
+                sharedToolOutputReserve: candidate.sharedToolOutputReserve
+            )
+            let contextSizeIsAuthoritative = candidate.modelConfiguration.provider != .onDevice
+                || !onDeviceContextSizes.usedFallback(for: configuration)
+            if contextSizeIsAuthoritative, modelContextSize > 0, allocation.effectiveInputLimit < 512 {
+                return "Reduce the response limit or reference-tool call limit so at least 512 input tokens remain."
+            }
         }
         if candidate.attachments.count > Self.maximumAttachments {
             return "A suite can attach up to \(Self.maximumAttachments) files."
@@ -3389,7 +3504,8 @@ final class EvaluationStore {
         if Set(candidate.attachments.map(\.id)).count != candidate.attachments.count {
             return "Every attachment needs a unique ID."
         }
-        if candidate.attachments.contains(where: { $0.kind == .image }),
+        if includeSubjectModelConfiguration,
+           candidate.attachments.contains(where: { $0.kind == .image }),
            validateCapabilities && !capabilities.contains(.vision) {
             return "The selected model does not support image input."
         }
@@ -3779,9 +3895,10 @@ final class EvaluationStore {
         }
     }
 
-    private func commitSuite(_ candidate: EvaluationSuite) throws {
+    private func commitSuite(_ candidate: EvaluationSuite, includeSubjectModelConfiguration: Bool = true) throws {
         try requireNoReassessmentMutation()
-        if let issue = validationIssue(for: candidate, includeModelReadiness: false) {
+        if let issue = validationIssue(for: candidate, includeModelReadiness: false,
+                                       includeSubjectModelConfiguration: includeSubjectModelConfiguration) {
             throw EvaluationStoreError.invalidSuite(issue)
         }
         let canonicalChanged = candidate != suite
@@ -4122,6 +4239,9 @@ final class EvaluationStore {
     }
 
     private func requireIdle(ownerID: UUID? = nil) throws {
+        guard !isClosing else {
+            throw EvaluationStoreError.resourceConflict("The workspace is closing.")
+        }
         try requireWorkspaceWritable()
         if !ScenarioExecutionAdmission.shared.allows(ownerID) {
             throw EvaluationStoreError.resourceConflict("Another coordinated execution owns the destination.")

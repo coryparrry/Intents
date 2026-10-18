@@ -18,6 +18,8 @@ struct IntentLabSetupInstallerView: View {
     @State private var scheme = ""
     @State private var appBundleID = ""
     @State private var intentIdentifier = ""
+    @State private var parameterDeclarationsJSON = ""
+    @State private var resultProjectionsJSON = ""
     @State private var declaredReadOnly = false
     @State private var supportMode: SupportMode = .direct
     @State private var packageSource = "https://github.com/coryparrry/Intents.git"
@@ -73,6 +75,30 @@ struct IntentLabSetupInstallerView: View {
                     ForEach(SupportMode.allCases, id: \.self) { mode in Text(mode.rawValue).tag(mode) }
                 }
                 .pickerStyle(.segmented)
+                if supportMode == .direct {
+                    DisclosureGroup("Declare inputs and returned values") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Use the exact names and types from this App Intent. Blank inputs reuse a matching draft, or mean no parameters. A Basic check needs at least one returned-value projection.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text("Parameter declarations (JSON array)").font(.caption.weight(.semibold))
+                            TextEditor(text: $parameterDeclarationsJSON)
+                                .font(.system(.caption, design: .monospaced)).frame(minHeight: 64)
+                                .accessibilityLabel("Basic intent parameter declarations")
+                            Text("Returned-value projections (JSON array)").font(.caption.weight(.semibold))
+                            TextEditor(text: $resultProjectionsJSON)
+                                .font(.system(.caption, design: .monospaced)).frame(minHeight: 96)
+                                .accessibilityLabel("Basic intent returned value projections")
+                            Button("My intent returns a String value") {
+                                resultProjectionsJSON = """
+                                [{"id":"returnedValue","type":{"primitive":{"_0":"string"}},"path":[{"kind":"property","name":"value"}]}]
+                                """
+                            }
+                            .buttonStyle(.borderless)
+                            Text("For an entity result property, extend the path with a property entry, for example {\"kind\":\"property\",\"name\":\"title\"}. Declare an input as {\"name\":\"text\",\"type\":{\"primitive\":{\"_0\":\"string\"}},\"required\":true}.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }.padding(.top, 8)
+                    }
+                }
                 TextField("Package Git URL or local development path", text: $packageSource)
                 Button("Choose local package checkout…", systemImage: "folder") {
                     choosingLocalPackage = true
@@ -82,7 +108,7 @@ struct IntentLabSetupInstallerView: View {
                 }
                 IntentLabHelp("For a reusable installation, enter an exact published package revision. A local checkout is for development and will not work after that checkout moves or disappears.")
                 IntentLabHelp(supportMode == .direct
-                    ? "The generated entry point supports Basic direct checks. Behaviour checks require your app's own observation adapter."
+                    ? "Basic Direct checks invoke this read-only App Intent with typed inputs and compare declared returned values. Siri, Feature controls, independent app-state checks, and mutation require your app's own observation adapter."
                     : "Siri support uses the XCTest-only package. Add a typed app-owned UI observer with a stable selector to the declaration, then implement preparation, observation, and completion in the adapter. Preview will give manual setup steps until that observer exists. The scaffold does not invent app results.")
                 HStack {
                     Button("Choose installed integration declaration…", systemImage: "checkmark.seal") {
@@ -377,17 +403,30 @@ struct IntentLabSetupInstallerView: View {
             ?? "IntentLabUITests"
         let usesDraftAction = coordinator.draft.target.bundleIdentifier == appBundleID
             && coordinator.draft.directControl.intentIdentifier == intentIdentifier
-        let parameters: [[String: Any]] = try usesDraftAction
+        var parameters: [[String: Any]] = try usesDraftAction
             ? coordinator.draft.directControl.parameters.map { parameter in
                 ["name": parameter.name, "type": try jsonObject(parameter.type),
                  "required": !parameter.isOptional]
             } : []
-        let projections: [[String: Any]] = try usesDraftAction
+        var projections: [[String: Any]] = try usesDraftAction
             ? coordinator.draft.directControl.outputFields.compactMap { field in
                 guard let path = field.path else { return nil }
                 return ["id": field.name, "type": try jsonObject(field.type),
                         "path": try jsonObject(path)]
             } : []
+        if supportMode == .direct {
+            parameters = try IntentLabConsumerTemplates.declarationEntries(
+                parameterDeclarationsJSON, fallback: parameters, field: "parameters"
+            )
+            projections = try IntentLabConsumerTemplates.declarationEntries(
+                resultProjectionsJSON, fallback: projections, field: "resultProjections"
+            )
+            guard !projections.isEmpty else {
+                throw IntentLabProjectInstallerError.unsupported(
+                    "Declare a typed returned value before installing Basic Direct support. Open Declare inputs and returned values, or use a matching draft with result projections."
+                )
+            }
+        }
         var capabilities = supportMode == .siri
             ? ["environment-payload", "preparation", "siri", "siri-completion", "accessible-result", "invocation-correlation"]
             : ["environment-payload", "direct-intent-execution"]
@@ -408,6 +447,9 @@ struct IntentLabSetupInstallerView: View {
             "isolation": ["kind": "readOnly"],
             "capabilities": capabilities
         ]
+        if supportMode == .direct {
+            return try IntentLabConsumerTemplates.basicDeclarationData(declaration)
+        }
         return try JSONSerialization.data(withJSONObject: declaration, options: [.prettyPrinted, .sortedKeys])
     }
 

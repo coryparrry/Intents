@@ -11,10 +11,15 @@ Intents independently checks that the exact prepared subject and runner exited.
 An incomplete inventory or a remaining process leaves the run unresolved. Cleanup
 does not signal a process merely because it has the expected executable path.
 
-Run the reproducible native contract on an interactive Mac:
+Run the reproducible native contract on an interactive Mac. Set
+`APPLE_DEVELOPMENT_TEAM` to your ten-character team ID and
+`APPLE_DEVELOPMENT_CERTIFICATE_SHA1` to the SHA-1 of an installed Apple Development
+certificate (`security find-identity -v -p codesigning` lists available identities):
 
 ```sh
-python3 script/automation_mac_e2e.py --xcode /Applications/Xcode.app --jobs 2
+python3 script/automation_mac_e2e.py --xcode /Applications/Xcode.app --jobs 2 \
+  --signing-team "$APPLE_DEVELOPMENT_TEAM" \
+  --signing-identity "$APPLE_DEVELOPMENT_CERTIFICATE_SHA1"
 ```
 
 It stages a disposable fixture outside the repository, compares exact codec

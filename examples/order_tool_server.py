@@ -13,10 +13,15 @@ class OrderToolHandler(BaseHTTPRequestHandler):
                 self.send_error(400, "Use POST /tool with a bounded JSON body")
                 return
             payload = json.loads(self.rfile.read(length))
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a JSON object")
             if payload.get("toolName") != "lookupOrder":
                 self.send_error(400, "Unknown tool")
                 return
-            order_id = payload["arguments"]["orderID"]
+            arguments = payload["arguments"]
+            if not isinstance(arguments, dict) or not isinstance(arguments.get("orderID"), str):
+                raise ValueError("Expected a string order ID")
+            order_id = arguments["orderID"]
             status = "delivered" if order_id == "A-104" else "unknown"
             response = json.dumps({"orderID": order_id, "status": status}).encode()
             self.send_response(200)

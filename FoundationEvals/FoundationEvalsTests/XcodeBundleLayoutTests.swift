@@ -5,6 +5,26 @@ import Testing
 
 struct XcodeBundleLayoutTests {
     @Test(arguments: BundleLayout.allCases)
+    func catalogReadsUseTheSameResourceAsConnectionVerification(layout: BundleLayout) throws {
+        let fixture = try BundleFixture(layout: layout)
+        defer { fixture.remove() }
+        let expected = fixture.layout.declarationURL(bundle: fixture.paths.testBundleURL)
+        let actual = XcodeTestExecutor.integrationDeclarationURL(in: fixture.paths.testBundleURL)
+        // Bundle may return a URL relative to its bundle root. Compare the
+        // resolved resource identity rather than its Foundation representation.
+        #expect(actual.absoluteURL == expected.absoluteURL)
+        #expect(try Data(contentsOf: actual) == Data(contentsOf: expected))
+
+        if layout == .nativeMac {
+            let decoy = fixture.paths.testBundleURL.appending(path: "IntentLabIntegration.json")
+            try Data("incorrect flat resource".utf8).write(to: decoy)
+            #expect(try Data(contentsOf: actual) != Data(contentsOf: decoy))
+            try FileManager.default.removeItem(at: expected)
+            #expect(throws: (any Error).self) { _ = try Data(contentsOf: actual) }
+        }
+    }
+
+    @Test(arguments: BundleLayout.allCases)
     func executionEnvironmentReadsNativeAndFlatMetadata(layout: BundleLayout) throws {
         let fixture = try BundleFixture(layout: layout)
         defer { fixture.remove() }

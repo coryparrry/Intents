@@ -58,9 +58,10 @@ extension AppAutomationStore {
             guard current.digest == reviewed.digest, current.selectionEpoch == reviewed.selectionEpoch,
                   case .prepared(let prepared) = reviewed.request.subject else { throw AutomationContractError.conflictingOperation }
             advanceSelection(); report = nil; reportDirectory = nil; searchReport = nil; message = nil
+            try beginExecutionAdmission()
             progress = "Running the approved Siri phrases on the selected device…"
             task = Task {
-                defer { progress = nil; task = nil; releaseScopeIfClosing() }
+                defer { progress = nil; task = nil; releaseScopeIfClosing(); finishExecutionAdmission() }
                 do {
                     let result: AutomationFailureSearchReport
                     if let siriSearchExecutor { result = try await siriSearchExecutor(reviewed, support) }

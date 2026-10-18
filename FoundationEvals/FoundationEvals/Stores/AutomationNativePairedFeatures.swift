@@ -55,10 +55,8 @@ struct AutomationNativePairedReview: Identifiable, Sendable {
 
 extension AppAutomationStore {
     func restorePairedOwnership() async {
-        pairedOwnershipChanged?(true)
         do {
             pairedExecutionUnresolved = try await AutomationPairedFeatureCampaign.hasAnyRetainedOwnership(supportRoot: support)
-            pairedOwnershipChanged?(pairedExecutionUnresolved)
             if pairedExecutionUnresolved { message = "A previous app feature may still be running. Its saved ownership blocks another request until the runner is reconciled." }
         } catch {
             pairedExecutionUnresolved = true
@@ -77,7 +75,7 @@ extension AppAutomationStore {
         return features.first { $0.id == pairedFeatureID } ?? (pairedFeatureID.isEmpty && features.count == 1 ? features[0] : nil)
     }
     var canRunPairedFeature: Bool {
-        canSelectApplicationFromCommand && pairedCanStart?() != false && selectedPairedFeature != nil && pairedEffectsConfirmed &&
+        permitsExecutionAdmission && canSelectApplicationFromCommand && pairedCanStart?() != false && selectedPairedFeature != nil && pairedEffectsConfirmed &&
             ["navigation", "fixture", "external"].contains(effectChoice) && (effectChoice != "fixture" || disposable) &&
             !pairedPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && pairedPrompt.utf16.count <= 32768 &&
             pairedInstructions.utf16.count <= 32768 && pairedExpectedResponse.utf16.count <= 32768
@@ -100,22 +98,20 @@ extension AppAutomationStore {
     }
     func runPairedFeature(_ review: AutomationNativePairedReview) {
         do { guard try reviewPairedFeature().id == review.id, let client = pairedClient else { throw AutomationContractError.conflictingOperation }
-            pairedOwnershipChanged?(true)
+            try beginExecutionAdmission()
             progress = "Running the registered app feature…"; message = nil; report = nil
             var approval = review.approval; approval.runID = UUID().uuidString
             task = Task {
-                defer { progress = nil; task = nil; releaseScopeIfClosing() }
+                defer { progress = nil; task = nil; releaseScopeIfClosing(); finishExecutionAdmission() }
                 do {
                     let attemptID = UUID().uuidString
                     let result = try await AutomationPairedFeatureCampaign.run(plan: review.plan, approval: approval, attemptID: attemptID,
                         supportRoot: support, client: AutomationNativePairedClient(client: client))
                     report = result; reportDirectory = support.appendingPathComponent(attemptID)
                     pairedExecutionUnresolved = !result.resourcesReleased || result.result.subjectDispatchUncertain
-                    if result.resourcesReleased && !result.result.subjectDispatchUncertain { pairedOwnershipChanged?(false) }
                     await importEvidence(plan: review.plan, report: result); await refreshSavedCases()
                 } catch {
                     pairedExecutionUnresolved = (try? await AutomationPairedFeatureCampaign.hasRetainedOwnership(target: review.plan.target, supportRoot: support)) != false
-                    if !pairedExecutionUnresolved { pairedOwnershipChanged?(false) }
                     message = errorText(error); await refreshSavedCases()
                 }
             }

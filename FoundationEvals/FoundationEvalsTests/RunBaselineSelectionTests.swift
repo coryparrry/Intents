@@ -49,6 +49,30 @@ struct RunBaselineSelectionTests {
         ) == nil)
     }
 
+    @Test func excludesBaselineWhoseSelectedAssessmentChangedTheRubric() {
+        let current = makeRun()
+        var baseline = current
+        baseline.id = UUID()
+        baseline.startedAt = current.startedAt.addingTimeInterval(-10)
+        let selected = EvaluationAssessment(
+            id: UUID(), runID: baseline.id, createdAt: baseline.completedAt, origin: .reassessment,
+            judge: .init(mode: .sameModel, connectionID: nil, connectionName: "Judge",
+                         endpointKind: nil, baseURL: nil, requestedModelID: "judge",
+                         reportedModelID: nil, provider: nil, providerOrder: []),
+            promptVersion: "judge-v1", rubric: "A different selected rubric", passingScore: 3,
+            samples: baseline.results.map {
+                .init(id: UUID(), sampleID: $0.id, status: .passed, score: 4, rationale: "Passed",
+                      trace: nil, errorCategory: nil, errorMessage: nil, usage: nil, durationMilliseconds: nil)
+            }, totalUsage: nil, durationMilliseconds: 0,
+            cost: .init(availability: .unavailable, usd: nil, explanation: "Fixture"),
+            supersedesAssessmentID: nil
+        )
+        baseline.assessments = [selected]
+        baseline.selectedAssessmentID = selected.id
+
+        #expect(RunBaselineSelection.defaultID(for: current, candidates: [baseline]) == nil)
+    }
+
     private func makeRun() -> EvaluationRun {
         let evaluationCase = EvaluationCase(name: "Case", prompt: "Prompt", expected: "Expected")
         let sample = EvaluationSampleResult(

@@ -9,6 +9,8 @@ final class TaskIntegration: IntentLabIntegration {
     static let testingBundleIdentifier = "com.example.IntentLabTasks.integration-tests"
     static let preparationOperation = "prepare-task-fixture"
     static let cleanupOperation = "cleanup-task-fixture"
+    // SHA-256 of the canonical persisted task IDs/titles documented in README.
+    static let fixtureDigest = "3447bff21b3851a36f3e0c0cf6af4a1a4982ada69f2cf69c92db396611f64a75"
     static let capabilities: Set<String> = [
         "environment-payload",
         "direct-intent-execution",
@@ -19,7 +21,8 @@ final class TaskIntegration: IntentLabIntegration {
         "siri-completion",
         "invocation-correlation",
         "local-feature-controls",
-        "test-only-intent"
+        "test-only-intent",
+        "action-receipt-v1"
     ]
 
     private let faultMode: String
@@ -65,6 +68,16 @@ final class TaskIntegration: IntentLabIntegration {
 
         activeBundleIdentifier = bundleIdentifier
         activeContext = context
+        do {
+            guard try readTaskObservations()["intentlab.fixtureDigest"] == .string(Self.fixtureDigest) else {
+                throw TaskIntegrationError.invalidPreparedDataset
+            }
+        } catch {
+            application.terminate()
+            activeBundleIdentifier = nil
+            activeContext = nil
+            throw error
+        }
         return application
     }
 
@@ -84,7 +97,8 @@ final class TaskIntegration: IntentLabIntegration {
         let state = try readTaskObservations()
         guard state["task-001.isComplete"] == .boolean(false),
               state["task-002.isComplete"] == .boolean(false),
-              state["actionReceiptID"] == .string("") else {
+              state["actionReceiptID"] == .string(""),
+              state["intentlab.fixtureDigest"] == .string(Self.fixtureDigest) else {
             throw TaskIntegrationError.invalidCleanedDataset
         }
         completedCleanups += 1
@@ -113,7 +127,7 @@ final class TaskIntegration: IntentLabIntegration {
         let queryObservations: Set<String> = [
             "task-001.id", "task-001.title", "task-001.isComplete",
             "task-002.id", "task-002.title", "task-002.isComplete",
-            "invocationContext", "actionReceiptID", "intentlab.actionReceipts"
+            "invocationContext", "actionReceiptID", "intentlab.actionReceipts", "intentlab.fixtureDigest"
         ]
         return queryObservations.contains(observationKey) ? "entityQuery" : "accessibleUI"
     }

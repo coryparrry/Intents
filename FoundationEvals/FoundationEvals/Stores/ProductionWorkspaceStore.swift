@@ -26,6 +26,8 @@ final class ProductionWorkspaceStore {
         if let value = UserDefaults.standard.string(forKey: key) { return value }
         let value = UUID().uuidString; UserDefaults.standard.set(value, forKey: key); return value
     }()
+    @ObservationIgnored private var isClosing = false
+    @ObservationIgnored private var operationTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var refreshID = UUID()
     init(root: URL) {
@@ -34,7 +36,7 @@ final class ProductionWorkspaceStore {
     }
     var selectedJob: ProductionJob? { jobs.first { $0.id == selectedJobID } }
     func refresh() async {
-        guard let storage else { return }
+        guard !isClosing, let storage else { return }
         let token = UUID(); refreshID = token
         let selectedID = selectedJobID, page = offset
         isLoading = true
@@ -51,8 +53,9 @@ final class ProductionWorkspaceStore {
         } catch { if refreshID == token { self.error = error.localizedDescription } }
         if refreshID == token { isLoading = false }
     }
-    func select(_ id: UUID) { selectedJobID = id; offset = 0; selectedRecord = nil; review = nil; report = nil; Task { await refresh() } }
+    func select(_ id: UUID) { guard !isClosing else { return }; selectedJobID = id; offset = 0; selectedRecord = nil; review = nil; report = nil; Task { await refresh() } }
     func selectRecord(_ record: ProductionRecord) {
+        guard !isClosing else { return }
         selectedRecord = record; selectedExample = nil; review = nil
         guard let job = selectedJob, let storage else { return }
         Task {
@@ -62,7 +65,7 @@ final class ProductionWorkspaceStore {
                     let example = try reader.example(at: record.slot / (job.configuration.repetitions * job.configuration.targets.count))
                     return (example, try storage.review(jobID: job.id, requestID: record.response.requestID))
                 }.value
-                guard selectedJobID == job.id, selectedRecord?.slot == record.slot else { return }
+                guard !isClosing, selectedJobID == job.id, selectedRecord?.slot == record.slot else { return }
                 selectedExample = value.0; review = value.1
             } catch { self.error = error.localizedDescription }
         }
@@ -70,12 +73,41 @@ final class ProductionWorkspaceStore {
 
     func perform<T: Sendable>(_ operation: @escaping @Sendable (ProductionStorage) throws -> T,
                               completed: @escaping @MainActor (T) -> Void = { _ in }) {
-        guard let storage else { return }
-        Task {
-            do { let result = try await Task.detached(priority: .utility) { try operation(storage) }.value; completed(result); await refresh() }
-            catch { self.error = error.localizedDescription }
+        guard !isClosing, let storage else { return }
+        trackOperation {
+            do {
+                let result = try await Task.detached(priority: .utility) { try operation(storage) }.value
+                guard !self.isClosing else { return }
+                completed(result)
+                await self.refresh()
+            } catch { self.error = error.localizedDescription }
         }
     }
+    @discardableResult
+    private func trackOperation(_ operation: @escaping @MainActor @Sendable () async -> Void) -> Task<Void, Never> {
+        guard !isClosing else { return Task {} }
+        let id = UUID()
+        let task = Task { @MainActor [weak self] in
+            defer { self?.operationTasks[id] = nil }
+            await operation()
+        }
+        operationTasks[id] = task
+        return task
+    }
+
+    /// Cancels execution and drains already admitted storage writes before exit.
+    /// Interrupted slots keep the runner's existing journal/reconciliation policy.
+    func closeAndWait() async {
+        isClosing = true
+        refreshID = UUID()
+        isLoading = false
+        let running = runTask
+        let operations = Array(operationTasks.values)
+        running?.cancel()
+        if let running { await running.value }
+        for task in operations { await task.value }
+    }
+
     func importDataset(file: URL, name: String, version: String, sampling: ProductionSampling, productionData: Bool, confirmed: Bool) {
         perform { try $0.importDataset(from: file, name: name, version: version, sampling: sampling, productionData: productionData, redactionConfirmed: confirmed) }
     }
@@ -139,7 +171,8 @@ final class ProductionWorkspaceStore {
     }
     @discardableResult
     func resume(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool) -> Task<Void, Never> {
-        Task {
+        trackOperation { [self] in
+            guard !isClosing else { return }
             do {
                 guard let storage else { throw ProductionFailure.unavailable("Production storage is unavailable.") }
                 try await Task.detached(priority: .utility) {
@@ -163,7 +196,7 @@ final class ProductionWorkspaceStore {
     }
     func interrupt(jobID: UUID) { if jobID == runningJobID { runTask?.cancel() } }
     func start(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool) throws {
-        guard let storage, runTask == nil else { throw EvaluationStoreError.runBusy }
+        guard !isClosing, let storage, runTask == nil else { throw EvaluationStoreError.runBusy }
         do {
             let kind = (try JSONSerialization.jsonObject(with: job.configuration.executionContext) as? [String: Any])?["kind"] as? String
             let executor: ProductionExecutor

@@ -216,6 +216,10 @@ struct EvaluationSuite: Codable, Equatable, Sendable {
         scoringMode == .modelJudge && rubricCriteria.contains { EvaluationExactCriterion.expectedText(in: $0) == nil }
     }
 
+    var usesSubjectModelForJudging: Bool {
+        needsModelJudge && !judgeConfiguration.usesExternalConnection
+    }
+
     var rubricCriteria: [String] {
         criteria
             .split(whereSeparator: \Character.isNewline)

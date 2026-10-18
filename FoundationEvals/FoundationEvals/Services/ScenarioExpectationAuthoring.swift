@@ -69,6 +69,10 @@ struct ScenarioIntegrationCatalog: Codable, Sendable {
     var capabilities: [String]
     var localFeatureControls: [FeatureControl]? = nil
 
+    var supportsBasicDirectReadOnlyChecks: Bool {
+        capabilities.contains("basic-direct-read-only") && !capabilities.contains("action-receipt-v1")
+    }
+
     func localFeatureControl(for definition: ScenarioDefinition) -> FeatureControl? {
         guard let binding = definition.featureBinding,
               let operationID = definition.actionRequirements?.first(where: {
@@ -139,6 +143,7 @@ enum ScenarioAuthoringError: LocalizedError {
     case missingCheck
     case missingFeature
     case missingLocalFeatureControl
+    case basicDirectOnly
 
     var errorDescription: String? {
         switch self {
@@ -153,6 +158,7 @@ enum ScenarioAuthoringError: LocalizedError {
         case .missingCheck: "The selected check is no longer in this scenario."
         case .missingFeature: "Choose a connected App Feature before checking its response."
         case .missingLocalFeatureControl: "The checked app has no matching local Feature control. Rebuild and check support."
+        case .basicDirectOnly: "Basic support checks a new read-only Direct invocation and its typed returned values. Use an app-owned observation adapter for Siri, Feature, state, mutation, or existing strict action-receipt requirements."
         }
     }
 }
@@ -160,6 +166,36 @@ enum ScenarioAuthoringError: LocalizedError {
 /// Works on a copy and returns a whole new definition. A failed operation
 /// cannot leave an assertion without its projection/observation/claim.
 enum ScenarioExpectationAuthoring {
+    /// Explicitly no independent fixture claim: only a read-only Direct
+    /// invocation and its required typed returned values. Instrumented or
+    /// nonempty fixture contracts must continue to supply app-owned evidence.
+    static func isUnpreparedBasicDirectCheck(_ definition: ScenarioDefinition) -> Bool {
+        supportsBasicDirectContract(definition)
+            && definition.fixture.id.isEmpty && definition.fixture.version.isEmpty
+            && definition.fixture.digest.isEmpty && !definition.fixture.isSynthetic
+            && (definition.requiredClaims ?? []).contains(.returnedValueChecked)
+            && definition.assertions.contains { $0.required && $0.kind == .returnedField }
+            && (definition.observationPlan ?? []).allSatisfy { $0.source == .intentResult }
+    }
+
+    static func supportsBasicDirectContract(_ definition: ScenarioDefinition) -> Bool {
+        definition.schemaVersion == ScenarioDefinition.stableSchemaVersion
+            && definition.coverage.intentIntegration == .required
+            && definition.coverage.siri == .notApplicable
+            && definition.coverage.appFeature == .notApplicable
+            && definition.safety.mutationPolicy == .readOnly
+            && ["none", "noop", "readOnly"].contains(definition.fixture.preparationOperation)
+            && ["", "none", "noop", "readOnly"].contains(definition.fixture.cleanupOperation)
+            && definition.checkMode == .basic
+            && definition.actionRequirements == nil && definition.actionPolicyVersion == nil
+            && definition.featureBinding == nil
+            && !(definition.requiredClaims ?? []).contains(.applicationStateChecked)
+            && definition.assertions.allSatisfy {
+                $0.kind == .returnedField && $0.applies(to: .intentIntegration)
+                    && !$0.applies(to: .siri) && !$0.applies(to: .appFeature)
+            }
+    }
+
     static func withDeclaredIntentActionRequirements(
         _ definition: ScenarioDefinition,
         catalog: ScenarioIntegrationCatalog
@@ -167,6 +203,13 @@ enum ScenarioExpectationAuthoring {
         guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
               catalog.actions.contains(where: { $0.id == definition.directControl.intentIdentifier }) else {
             throw ScenarioAuthoringError.missingAction
+        }
+        if catalog.supportsBasicDirectReadOnlyChecks {
+            // AppIntentsTesting binds this direct invocation to the selected
+            // definition and typed parameters. Basic does not manufacture an
+            // app-owned receipt or claim independent application-state proof.
+            guard supportsBasicDirectContract(definition) else { throw ScenarioAuthoringError.basicDirectOnly }
+            return definition
         }
         let parameters = Dictionary(uniqueKeysWithValues: definition.directControl.parameters.compactMap {
             parameter -> (String, ScenarioValue)? in
@@ -296,6 +339,7 @@ enum ScenarioExpectationAuthoring {
         }
         var copy = definition
         copy.directControl.intentIdentifier = action.id
+        if copy.safety.allowedActions.isEmpty { copy.safety.allowedActions = [action.id] }
         copy.directControl.parameters = action.parameters.map {
             .init(name: $0.name, type: $0.type, isOptional: !$0.required, presence: .missing)
         }

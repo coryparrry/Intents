@@ -13,6 +13,7 @@ public struct AutomationSegmentReceipt: Codable, Equatable, Sendable {
     public var verifiedOutputs: [String: AutomationValue]?
     public var environmentID: String?
     public var terminalUIAssertionFailure: AutomationTerminalUIAssertionFailure? = nil
+    public var terminalHostFailure: AutomationHostOperationFailure? = nil
     var durableStateRead: AutomationDurableStateReadReceipt? = nil
     var hostReceiptDigest: String? = nil
     public init(scope: AutomationScope, app: AppIdentity, target: TargetIdentity, segmentID: String,
@@ -98,7 +99,10 @@ public actor AutomationCoordinator {
                 receipts.append(receipt)
                 if segment.phase == .subject { subjectDispatched = receipt.dispatched; subjectCompleted = receipt.completed }
                 if !controlReleased { released = false; termination = .unresolved; break }
-                if !receipt.completed { termination = segment.phase == .setup ? .invalidFixture : .unresolved; break }
+                if !receipt.completed {
+                    termination = segment.phase == .setup ? .invalidFixture : receipt.terminalHostFailure != nil ? .infrastructureFailed : .unresolved
+                    break
+                }
                 if segment.phase == .setup, !AutomationFixtureValidator.validates(receipt: receipt, segment: resolution.segment, plan: plan, runID: approval.runID, attemptID: attemptID) {
                     termination = .invalidFixture; break
                 }
@@ -199,11 +203,14 @@ public actor AutomationCoordinator {
                   receipt.environmentID == nil || receipt.environmentID == plan.environmentID else {
                 throw AutomationContractError.ambiguousDispatch
             }
+            try receipt.terminalHostFailure?.validate(receipt: receipt, segment: segment)
             knownReceipt = receipt
             let controlReleased = await release(driver: driver, scope: scope, lease: lease, workDrained: { true })
             guard controlReleased else { return (receipt, false) }
             alreadyReleased = true
-            if receipt.completed { try await journal.complete(operationID: operationID, digest: digest, response: .bool(true)) }
+            if receipt.completed || receipt.terminalHostFailure != nil {
+                try await journal.complete(operationID: operationID, digest: digest, response: .bool(receipt.completed))
+            }
             return (receipt, true)
         } catch {
             let acquisitionStarted = await acquisition.started

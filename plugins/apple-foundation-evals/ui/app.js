@@ -21,6 +21,7 @@ import {
   traceExportPayload,
 } from "./presentation.js";
 import { createDraftAutosave } from "./autosave.js";
+import { createStatusPoller } from "./polling.js";
 import { APP_SCORING, newAppSuite, renderNativeCases } from "./native-suite.js";
 import { renderNativeSetup } from "./native-setup.js";
 import { renderNativeOverview } from "./native-overview.js";
@@ -77,8 +78,7 @@ const state = {
   disclosures: {},
 };
 const workspaceScope = createWorkspaceScope(state);
-let polling,
-  initialResult = false,
+let initialResult = false,
   fileSequence = 0,
   comparisonSequence = 0,
   fieldSequence = 0;
@@ -187,6 +187,7 @@ async function call(name, args = {}) {
 }
 const clone = (value) => structuredClone(value),
   active = () =>
+    state.run?.status === "running" ||
     state.allRuns.some((run) => run.status === "running") ||
     state.experiment?.status === "running" ||
     state.activeExperiment?.status === "running",
@@ -522,6 +523,7 @@ async function startRun() {
     state.runTab = "trace";
     state.resultId = null;
     state.imported = false;
+    schedulePoll();
     await refresh();
     if (!workspaceScope.current(request)) return;
     notice("Evaluation running on this Mac.");
@@ -694,10 +696,11 @@ async function refresh() {
     renderMain();
   schedulePoll();
 }
+const statusPoller = createStatusPoller({
+  active, refresh, error: fail, disposed: () => state.disposed,
+});
 function schedulePoll() {
-  clearTimeout(polling);
-  if (active() && !state.disposed)
-    polling = setTimeout(() => refresh().catch(fail), 1800);
+  statusPoller.schedule();
 }
 function dialog(title, renderBody) {
   return libraryDialog(title, renderBody);
@@ -1532,7 +1535,7 @@ transport.handle("ui/resource-teardown", async () => {
   workspaceScope.navigate();
   await flush();
   state.disposed = true;
-  clearTimeout(polling);
+  statusPoller.dispose();
   autosave.dispose();
   setTimeout(() => transport.dispose(), 0);
   return {};

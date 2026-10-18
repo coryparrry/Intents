@@ -374,6 +374,83 @@ struct EvaluationHTTPLanguageModelTests {
         #expect(updates.allSatisfy { $0.caseID == caseID && $0.repetition == 1 })
     }
 
+    @Test(.timeLimit(.minutes(1)), arguments: [6, 7])
+    func providerTokenizerEnforcesTheConfiguredSubjectInputLimit(maximumInputTokens: Int) async throws {
+        let requestLog = FileManager.default.temporaryDirectory
+            .appending(path: "intents-input-limit-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: requestLog) }
+        let fixture = try RunningCustomModelFixture(streamDelay: 0, requestLog: requestLog)
+        defer { fixture.stop() }
+        var suite = EvaluationSuite()
+        suite.scoringMode = .review
+        suite.cases = [EvaluationCase(name: "Input limit", prompt: "A complete prompt", expected: "")]
+        suite.modelConfiguration.provider = .customHTTP
+        suite.modelConfiguration.maximumInputTokens = maximumInputTokens
+        suite.modelConfiguration.customProviderSettings.endpoint = "http://127.0.0.1:\(fixture.port)/text"
+        suite.modelConfiguration.customProviderSettings.tokenizerEndpoint =
+            "http://127.0.0.1:\(fixture.port)/tokenize"
+
+        let run = await EvaluationRunner().run(
+            id: UUID(), suiteRevision: "input-limit", startedAt: Date(), suite: suite, images: []
+        ) { _, _, _ in }
+
+        let result = try #require(run.results.first)
+        let requests = try String(contentsOf: requestLog, encoding: .utf8).split(whereSeparator: \.isNewline)
+        #expect(run.results.count == 1)
+        // This fixture reports exactly seven input tokens. One log entry is the
+        // tokenizer request; a second would prove generation was dispatched.
+        if maximumInputTokens == 6 {
+            #expect(requests.count == 1)
+            #expect(result.response.isEmpty)
+            #expect(result.errorMessage?.contains("configured input limit of 6 tokens") == true)
+        } else {
+            #expect(requests.count == 2)
+            #expect(result.errorCategory == nil)
+            #expect(result.response == "Deterministic fixture stream.")
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [8, 8_192])
+    func tokenizerJudgeAdmissionUsesItsOwnResponseAndContextBudget(contextSize: Int) async throws {
+        let requestLog = FileManager.default.temporaryDirectory
+            .appending(path: "intents-judge-limit-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: requestLog) }
+        let fixture = try RunningCustomModelFixture(streamDelay: 0, requestLog: requestLog)
+        defer { fixture.stop() }
+        var configuration = EvaluationCustomProviderConfiguration()
+        configuration.endpoint = "http://127.0.0.1:\(fixture.port)/text"
+        configuration.tokenizerEndpoint = "http://127.0.0.1:\(fixture.port)/tokenize"
+        configuration.contextSize = contextSize
+        let model = EvaluationHTTPLanguageModel(configuration: configuration, maximumInputTokens: 6)
+        let executor = try EvaluationHTTPLanguageModelExecutor(configuration: model.executorConfiguration)
+        let channel = LanguageModelExecutorGenerationChannel()
+        let eventDrain = Task { for try await _ in channel {} }
+        var failure: Error?
+        do {
+            try await executor.respond(
+                to: LanguageModelExecutorGenerationRequest(
+                    id: UUID(), transcript: Transcript(), enabledTools: [],
+                    generationOptions: GenerationOptions(maximumResponseTokens: 8),
+                    contextOptions: ContextOptions(), metadata: ["role": "judge"]
+                ),
+                model: model, streamingInto: channel
+            )
+        } catch {
+            failure = error
+        }
+        eventDrain.cancel()
+        _ = await eventDrain.result
+        let requests = try String(contentsOf: requestLog, encoding: .utf8).split(whereSeparator: \.isNewline)
+        if contextSize == 8 {
+            #expect(requests.count == 1)
+            let error = try #require(failure as? EvaluationHTTPProviderError)
+            #expect(error.localizedDescription.contains("insufficient context for the requested response"))
+        } else {
+            #expect(failure == nil)
+            #expect(requests.count == 2)
+        }
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func runnerStreamingUpdatesRetainCaseNamesAcrossRepetitions() async throws {
         let fixture = try RunningCustomModelFixture(streamDelay: 0.05)
@@ -613,7 +690,7 @@ private final class RunningCustomModelFixture {
     private let process: Process
     private let termination: DispatchSemaphore
 
-    init(streamDelay: Double, gateTextStream: Bool = false) throws {
+    init(streamDelay: Double, gateTextStream: Bool = false, requestLog: URL? = nil) throws {
         let sourceFile = URL(fileURLWithPath: #filePath)
         let repository = sourceFile
             .deletingLastPathComponent()
@@ -634,6 +711,9 @@ private final class RunningCustomModelFixture {
         ]
         if gateTextStream {
             process.arguments?.append("--gate-text-stream")
+        }
+        if let requestLog {
+            process.arguments?.append(contentsOf: ["--request-log", requestLog.path])
         }
         process.standardOutput = output
         process.standardError = errors

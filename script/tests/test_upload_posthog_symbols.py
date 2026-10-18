@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-HELPER = Path(__file__).with_name('upload_posthog_symbols.sh')
+HELPER = Path(__file__).resolve().parents[1] / 'upload_posthog_symbols.sh'
 
 
 class ArchiveSymbolUploadTests(unittest.TestCase):

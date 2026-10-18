@@ -212,6 +212,9 @@ struct AppAutomationView: View {
                             if let reason = report.result.policyDenial {
                                 Text(reason.explanation).font(.callout)
                             }
+                            if let failure = report.receipts.compactMap(\.terminalHostFailure).last {
+                                Text(failure.operationID + ": " + failure.message).font(.callout).textSelection(.enabled)
+                            }
                             Text("Subject dispatched: \(report.result.subjectDispatched ? "yes" : "no") · completed: \(report.result.subjectCompleted ? "yes" : "no")")
                             Text(report.resourcesReleased ? "Test runner released." : "Test runner release is unresolved.")
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
@@ -273,6 +276,9 @@ struct AppAutomationView: View {
                             Text(resultTitle(report)).font(.headline)
                             if let reason = report.result.policyDenial {
                                 Text(reason.explanation).font(.callout)
+                            }
+                            if let failure = report.receipts.compactMap(\.terminalHostFailure).last {
+                                Text(failure.operationID + ": " + failure.message).font(.callout).textSelection(.enabled)
                             }
                             if report.result.summary == .assertionFailed,
                                model.savedViewedCase.map({ [.simulator, .nativeMac].contains($0.plan.target.kind) }) == true, !model.isMacWorkflowUnavailable {
@@ -605,7 +611,8 @@ struct AppAutomationView: View {
         else { panel.begin(completionHandler: completion) }
     }
     private func resultTitle(_ report: AutomationAttemptReport) -> String {
-        switch report.result.summary {
+        if report.resourcesReleased, report.receipts.contains(where: { $0.terminalHostFailure != nil }) { return "Operation returned an error" }
+        return switch report.result.summary {
         case .executedUnassessed: "Executed · unassessed"
         case .passed: "Passed the approved requirements"
         case .assertionFailed: "Requirement failed"

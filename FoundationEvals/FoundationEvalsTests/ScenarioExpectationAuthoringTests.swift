@@ -4,6 +4,83 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioExpectationAuthoringTests {
+    @Test func explicitBasicDirectContractRequiresNoInventedAppActionReceipt() throws {
+        var catalog = sampleCatalog()
+        catalog.capabilities = ["environment-payload", "direct-intent-execution", "direct-intent-output",
+                                "test-only-intent", "basic-direct-read-only"]
+        var definition = ScenarioDefinition.starter()
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.coverage = .init(appFeature: .notApplicable, intentIntegration: .required,
+                                    siri: .notApplicable, siriAttemptCount: nil)
+        definition.assertions = []
+        definition.directControl.outputFields = []
+        definition.observationPlan = []
+        definition.requiredClaims = [.executionCompleted]
+        definition.checkMode = .basic
+        definition.purpose = .exploratory
+        definition.safety.mutationPolicy = .readOnly
+        definition.safety.allowedActions = []
+        definition.fixture.preparationOperation = "none"
+        definition.fixture.cleanupOperation = "none"
+        definition.fixture.id = ""
+        definition.fixture.version = ""
+        definition.fixture.digest = ""
+        definition.fixture.isSynthetic = false
+        definition.integration = .init(id: catalog.id, version: catalog.version, digest: String(repeating: "a", count: 64))
+        definition = try ScenarioExpectationAuthoring.selectingAction("SummarizeNoteIntent", in: definition, catalog: catalog)
+        definition.directControl.parameters[0].presence = .value(.string("packing-001"))
+        definition = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(definition, catalog: catalog)
+        definition = try ScenarioExpectationAuthoring.addingReturnedCheck(
+            projectionID: "generatedSummary", expected: .string("Packing list"), lanes: [.intentIntegration],
+            to: definition, catalog: catalog
+        )
+        definition = try definition.frozen()
+        try ScenarioValidator.validate(definition)
+        #expect(definition.actionRequirements == nil)
+        #expect(definition.actionPolicyVersion == nil)
+        #expect(definition.safety.allowedActions == ["SummarizeNoteIntent"])
+        #expect(ScenarioExpectationAuthoring.isUnpreparedBasicDirectCheck(definition))
+        #expect(ScenarioHarnessCapabilities.required(for: definition).contains("basic-direct-read-only"))
+
+        var unsupported = definition
+        unsupported.coverage.siri = .required
+        #expect(throws: ScenarioAuthoringError.self) {
+            _ = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(unsupported, catalog: catalog)
+        }
+        unsupported = definition
+        unsupported.safety.mutationPolicy = .syntheticMutation
+        #expect(throws: ScenarioAuthoringError.self) {
+            _ = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(unsupported, catalog: catalog)
+        }
+        var instrumented = catalog
+        instrumented.capabilities.append("action-receipt-v1")
+        let strict = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(definition, catalog: instrumented)
+        #expect(strict.actionPolicyVersion == 1)
+        #expect(strict.actionRequirements?.count == 1)
+        #expect(throws: ScenarioAuthoringError.self) {
+            _ = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(strict, catalog: catalog)
+        }
+    }
+
+    @Test func changingCoverageUpdatesZeroParameterActionRequirements() throws {
+        var catalog = sampleCatalog()
+        catalog.actions[0].parameters = []
+        var definition = ScenarioDefinition.starter()
+        definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
+        definition.assertions = []
+        definition.coverage = .init(appFeature: .notApplicable, intentIntegration: .required,
+                                    siri: .notApplicable, siriAttemptCount: nil)
+        definition = try ScenarioExpectationAuthoring.selectingAction(catalog.actions[0].id, in: definition, catalog: catalog)
+        definition = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(definition, catalog: catalog)
+        #expect(definition.actionRequirements?.map(\.lane) == [.intentIntegration])
+        definition.coverage.siri = .required
+        definition = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(definition, catalog: catalog)
+        #expect(Set(definition.actionRequirements?.map(\.lane) ?? []) == [.intentIntegration, .siri])
+        definition.coverage.intentIntegration = .notApplicable
+        definition = try ScenarioExpectationAuthoring.withDeclaredIntentActionRequirements(definition, catalog: catalog)
+        #expect(definition.actionRequirements?.map(\.lane) == [.siri])
+    }
+
     @Test func guidedExpectedValuesMatchDeclaredTypes() throws {
         let types: [ScenarioValueType] = [
             .primitive(.string), .primitive(.boolean), .primitive(.integer),

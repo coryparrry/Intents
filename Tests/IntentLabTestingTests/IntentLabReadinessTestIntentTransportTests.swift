@@ -5,6 +5,14 @@ import IntentLabContracts
 @available(macOS 27.0, iOS 27.0, *)
 @MainActor
 final class IntentLabReadinessTestIntentTransportTests: XCTestCase {
+    func testBasicIntegrationDeclaresHarmlessReadinessSupport() throws {
+        let declaration = try readinessDeclaration()
+        let integration = IntentLabBasicIntegration()
+        XCTAssertTrue(Set(declaration.capabilities).isSubset(of: integration.supportedCapabilities))
+        XCTAssertFalse(integration.supportsMutatingChecks)
+        XCTAssertFalse(integration.supportedCapabilities.contains("local-feature-controls"))
+    }
+
     func testTransportInvokesOnlyTheDeclaredReadinessIntentAndReturnsTypedObservation() async throws {
         let declaration = try readinessDeclaration()
         var received: (String, String, [IntentLabParameter], [IntentLabIntegrationDeclaration.Projection])?
