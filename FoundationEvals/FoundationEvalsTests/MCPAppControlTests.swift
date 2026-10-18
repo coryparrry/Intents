@@ -22,6 +22,36 @@ import Testing
       "expectedWorkspaceRevision": .string(try MCPWorkspaceControl.revision(control.store)),
     ]
   }
+  @Test(.timeLimit(.minutes(1))) func closingControlCancelsAndJoinsTrackedWorkBeforeReturning() async throws {
+    let (control, root) = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var request = try workspace(control)
+    request["name"] = .string("Tracked operation")
+    #expect(!(try await call("eval_project_create", request, control: control)).isError)
+    let idValue = try #require(request["operationID"])
+    let idText = try #require(idValue.stringValue)
+    let id = try #require(UUID(uuidString: idText))
+    let entered = AsyncStream<Void>.makeStream()
+    var observedCancellation = false
+    try control.mcp.track(id) {
+      entered.continuation.yield(())
+      entered.continuation.finish()
+      do { try await Task.sleep(for: .seconds(60)) }
+      catch { observedCancellation = true }
+      return .failure(code: "cancelled", message: "Cancelled during shutdown.")
+    }
+    var enteredIterator = entered.stream.makeAsyncIterator()
+    _ = await enteredIterator.next()
+    await control.mcp.closeAndWait()
+    #expect(observedCancellation)
+    #expect(throws: EvaluationStoreError.self) {
+      try control.mcp.track(UUID()) { .init(structuredContent: .object([:])) }
+    }
+    // Read the persisted terminal receipt through a fresh control instance.
+    let restarted = EvaluationAppControl(store: EvaluationStore(supportDirectory: root))
+    let status = try await call("eval_operation_status", ["operationID": idValue], control: restarted)
+    #expect(status.structuredContent.objectValue?["receipt"]?.objectValue?["phase"] == .string("failed"))
+  }
   @Test func resumeStartsClickedJobAfterSelectionChanges() async throws {
     let (control, root) = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }

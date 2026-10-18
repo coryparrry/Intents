@@ -13,6 +13,7 @@ struct MCPControlReceipt: Codable, Sendable {
   private let directory: URL
   private var activeMutation: UUID?
   private var tasks: [UUID: Task<Void, Never>] = [:]
+  private var isClosing = false
   var deviceOperationID: UUID?
   var installations: [UUID: MCPIntentInstallationPreview] = [:]
   init(control: EvaluationAppControl) {
@@ -21,6 +22,9 @@ struct MCPControlReceipt: Codable, Sendable {
   }
   func execute(_ call: MCPControlCall) async -> MCPToolPayload {
     do {
+      guard !isClosing else {
+        throw EvaluationStoreError.resourceConflict("App control is closing.")
+      }
       guard let definition = MCPControlTools.definitions.first(where: { $0.name == call.name })
       else { throw MCPToolInputError.unknownTool }
       if call.name == "eval_control_capabilities" {
@@ -132,7 +136,19 @@ struct MCPControlReceipt: Codable, Sendable {
         "MCP completion receipt could not be saved: \(error.localizedDescription)"
     }
   }
-  func track(_ id: UUID, body: @escaping @MainActor () async -> MCPToolPayload) {
+  func beginClosing() {
+    isClosing = true
+    for task in tasks.values { task.cancel() }
+  }
+  func closeAndWait() async {
+    beginClosing()
+    let pending = Array(tasks.values)
+    for task in pending { await task.value }
+  }
+  func track(_ id: UUID, body: @escaping @MainActor () async -> MCPToolPayload) throws {
+    guard !isClosing else {
+      throw EvaluationStoreError.resourceConflict("App control is closing.")
+    }
     tasks[id] = Task {
       defer { tasks[id] = nil }
       let payload = await body()
@@ -142,6 +158,9 @@ struct MCPControlReceipt: Codable, Sendable {
   func dispatch(
     _ call: MCPControlCall, body: @escaping @MainActor () async throws -> MCPToolPayload
   ) throws -> MCPToolPayload {
+    guard !isClosing else {
+      throw EvaluationStoreError.resourceConflict("App control is closing.")
+    }
     guard deviceOperationID == nil else { throw EvaluationStoreError.runBusy }
     let id = try call.id("operationID")
     deviceOperationID = id

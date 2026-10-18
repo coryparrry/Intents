@@ -11,6 +11,7 @@ struct ScenarioReportView: View {
     @State private var currentQualification: IntentEvidenceCaseDecision?
     @State private var qualificationError: String?
     @State private var baselineAssessmentOverlay: ScenarioAssessmentSelectionRecord?
+    @State private var assessmentLoadID = UUID()
 
     var body: some View {
         ScrollView {
@@ -259,25 +260,34 @@ struct ScenarioReportView: View {
     }
 
     private func reloadAssessmentDecision() async {
+        let loadID = UUID()
+        assessmentLoadID = loadID
         let selectedID = coordinator.selectedExecutionID
         currentQualification = nil
         qualificationError = nil
         baselineAssessmentOverlay = nil
         guard let selectedID else { return }
         await coordinator.reloadSelectedAssessmentOverlay(expectedExecutionID: selectedID)
+        guard !Task.isCancelled, assessmentLoadID == loadID,
+              coordinator.selectedExecutionID == selectedID else { return }
+        var baselineOverlay: ScenarioAssessmentSelectionRecord?
         if let policy = coordinator.selectedExecutionPlan?.comparisonPolicy {
-            baselineAssessmentOverlay = try? await coordinator.assessmentOverlay(for: policy.baselineRunID)
+            baselineOverlay = try? await coordinator.assessmentOverlay(for: policy.baselineRunID)
         }
+        guard !Task.isCancelled, assessmentLoadID == loadID,
+              coordinator.selectedExecutionID == selectedID else { return }
+        var qualification: IntentEvidenceCaseDecision?
+        var errorMessage: String?
         do {
-            currentQualification = try await coordinator.qualificationForSelectedExecution()
+            qualification = try await coordinator.qualificationForSelectedExecution()
         } catch {
-            qualificationError = error.localizedDescription
+            errorMessage = error.localizedDescription
         }
-        if coordinator.selectedExecutionID != selectedID {
-            currentQualification = nil
-            qualificationError = nil
-            baselineAssessmentOverlay = nil
-        }
+        guard !Task.isCancelled, assessmentLoadID == loadID,
+              coordinator.selectedExecutionID == selectedID else { return }
+        currentQualification = qualification
+        qualificationError = errorMessage
+        baselineAssessmentOverlay = baselineOverlay
     }
 
     private func comparison(plan: ScenarioExecutionPlan,

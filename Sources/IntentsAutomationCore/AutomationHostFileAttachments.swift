@@ -19,7 +19,7 @@ struct AutomationHostFileDescriptor {
 enum AutomationHostFileAttachments {
     struct Imported: Sendable { let receiptData: Data; let receipt: AutomationImportedHostReceipt }
     static func importExport(root: URL, scope: AutomationScope, app: AppIdentity, program: AutomationHostProgram,
-                             artifacts: AutomationArtifactRegistry, planDigest: String, testIdentifier: String = "SegmentTests/testSegment()") async throws -> Imported {
+                             artifacts: AutomationArtifactRegistry, planDigest: String, testIdentifier: String = "SegmentTests/testSegment()", allowTerminalFailure: Bool = false) async throws -> Imported {
         var allowedNames: Set<String> = ["intents-system-receipt"]
         for operation in program.operations {
             allowedNames.formUnion(["intents-dispatch-" + operation.id, "intents-system-receipt-" + operation.id])
@@ -29,10 +29,12 @@ enum AutomationHostFileAttachments {
         guard let finalName = entries["intents-system-receipt"] else { throw invalid() }
         let data = try AutomationReadOnlyFile.read(root: root, relativePath: finalName, maximumBytes: 1_048_576, requirePrivateOwnership: true)
         guard let receiptRoot = try JSONDecoder().decode(AutomationJSON.self, from: data).object,
-              case .array(let operations) = receiptRoot["operations"], operations.count == program.operations.count else { throw invalid() }
+              case .array(let operations) = receiptRoot["operations"], !operations.isEmpty,
+              operations.count <= program.operations.count else { throw invalid() }
         var claims: [String: (AutomationHostFileDescriptor, Data)] = [:], placeholders: [String: AutomationValue] = [:]
         for (expected, operation) in zip(program.operations, operations) {
             if expected.resultCodec == "intentFile" {
+                if allowTerminalFailure, case .string = operation.object?["error"] { continue }
                 guard let value = operation.object?["value"] else { throw invalid() }
                 let descriptor = try AutomationHostFileDescriptor(value, operationID: expected.id)
                 guard let exportedName = entries[descriptor.attachmentName] else { throw invalid() }
@@ -42,9 +44,10 @@ enum AutomationHostFileAttachments {
                 placeholders[expected.id] = .artifact(handle: "validated-file", sha256: descriptor.metadata.sha256)
             }
         }
-        guard Set(entries.keys).isSubset(of: allowedNames) else { throw invalid() }
+        guard Set(entries.keys).isSubset(of: allowedNames),
+              Set(entries.keys.filter { $0.hasPrefix("intents-file-") }) == Set(claims.keys.map { "intents-file-" + $0 }) else { throw invalid() }
         // Validate the complete receipt and every declared binary before persisting any file artifact.
-        _ = try AutomationHostReceiptImporter.importValidatedReceipt(data, scope: scope, app: app, program: program, fileValues: placeholders)
+        _ = try AutomationHostReceiptImporter.importValidatedReceipt(data, scope: scope, app: app, program: program, fileValues: placeholders, allowTerminalFailure: allowTerminalFailure)
         for (name, filename) in entries where name != "intents-system-receipt" && !name.hasPrefix("intents-file-") {
             let progress = try AutomationReadOnlyFile.read(root: root, relativePath: filename, maximumBytes: 1_048_576, requirePrivateOwnership: true)
             let json = try JSONDecoder().decode(AutomationJSON.self, from: progress)
@@ -58,7 +61,7 @@ enum AutomationHostFileAttachments {
                 fileValues[operation.id] = .artifact(handle: artifact.handle, sha256: artifact.sha256)
             }
         }
-        return .init(receiptData: data, receipt: try AutomationHostReceiptImporter.importValidatedReceipt(data, scope: scope, app: app, program: program, fileValues: fileValues))
+        return .init(receiptData: data, receipt: try AutomationHostReceiptImporter.importValidatedReceipt(data, scope: scope, app: app, program: program, fileValues: fileValues, allowTerminalFailure: allowTerminalFailure))
     }
     static func exportEntries(root: URL, testIdentifier: String, expectedNames: Set<String>) throws -> [String: String] {
         let manifestData = try AutomationReadOnlyFile.read(root: root, relativePath: "manifest.json", maximumBytes: 1_048_576, requirePrivateOwnership: true)

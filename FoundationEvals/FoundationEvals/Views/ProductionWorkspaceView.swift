@@ -28,6 +28,7 @@ struct ProductionWorkspaceView: View {
     }
     @State private var importURL: URL?
     @State private var creatingJob = false
+    @State private var jobDatasetRevision: String?
     @State private var search = ""
     @State private var approvedDisclosure = false
     @State private var cancelling = false
@@ -65,7 +66,9 @@ struct ProductionWorkspaceView: View {
         .sheet(isPresented: Binding(get: { importURL != nil }, set: { if !$0 { importURL = nil } })) {
             if let url = importURL { ProductionImportSheet(model: model, file: url) }
         }
-        .sheet(isPresented: $creatingJob) { ProductionJobSheet(model: model, store: store) }
+        .sheet(isPresented: $creatingJob) {
+            ProductionJobSheet(model: model, store: store, initialDatasetRevision: jobDatasetRevision)
+        }
         .alert("Batch runs", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
@@ -98,7 +101,10 @@ struct ProductionWorkspaceView: View {
                         Text("\(dataset.sampling.rawValue.capitalized) · \(dataset.partitionCounts.map { "\($0.value) \($0.key)" }.sorted().joined(separator: " · "))").font(.caption).foregroundStyle(.secondary)
                         Text("Revision \(dataset.revision.prefix(16))").font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                         HStack {
-                            Button("New batch") { creatingJob = true }.buttonStyle(.bordered)
+                            Button("New batch") {
+                                jobDatasetRevision = dataset.revision
+                                creatingJob = true
+                            }.buttonStyle(.bordered)
                             Button("Review captured outputs") { model.createCaptured(dataset); pane = .jobs }.buttonStyle(.bordered)
                         }
                     }.padding(18)
@@ -110,7 +116,10 @@ struct ProductionWorkspaceView: View {
     private var jobsPane: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Button("New batch", systemImage: "plus") { creatingJob = true }.buttonStyle(.borderedProminent).disabled(model.datasets.isEmpty)
+                Button("New batch", systemImage: "plus") {
+                    jobDatasetRevision = nil
+                    creatingJob = true
+                }.buttonStyle(.borderedProminent).disabled(model.datasets.isEmpty)
                 if let id = model.selectedJobID {
                     Button("Review") { pane = .review }.buttonStyle(.bordered)
                     Button("Report") { pane = .reports }.buttonStyle(.bordered)

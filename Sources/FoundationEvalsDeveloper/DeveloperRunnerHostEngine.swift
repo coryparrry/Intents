@@ -158,6 +158,17 @@ public actor DeveloperRunnerHostEngine {
         return messages
     }
 
+    /// Refresh both challenges when pairing starts on a connection that is
+    /// already open. Its original reconnect challenge may have expired while
+    /// the developer was finding the pairing controls.
+    func pairingChallenges(for connectionID: String, now: Date = Date()) -> [DeveloperRunnerEnvelope] {
+        guard authenticatedConnections[connectionID] == nil,
+              reconnectChallenges[connectionID] != nil,
+              let session = pairingSession,
+              session.expiresAt > now else { return [] }
+        return connectionOpened(id: connectionID, now: now)
+    }
+
     public func connectionClosed(id connectionID: String) async {
         authenticatedConnections[connectionID] = nil
         reconnectChallenges[connectionID] = nil

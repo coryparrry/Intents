@@ -46,6 +46,15 @@ struct MCPIntentInstallationPreview {
         let declaration = Data(base64Encoded: input.declarationBase64),
         declaration.count <= 1_048_576
       else { throw MCPToolInputError.invalidArguments }
+      let installationDeclaration: Data
+      if input.mode == "basic" {
+        guard let object = try JSONSerialization.jsonObject(with: declaration) as? [String: Any] else {
+          throw MCPToolInputError.invalidArguments
+        }
+        installationDeclaration = try IntentLabConsumerTemplates.basicDeclarationData(object)
+      } else {
+        installationDeclaration = declaration
+      }
       let package: URL
       if let source = input.packageSource {
         if source.hasPrefix("https://") {
@@ -65,11 +74,11 @@ struct MCPIntentInstallationPreview {
         packageProduct: input.mode == "siri" ? "IntentLabCoreTesting" : "IntentLabTesting",
         consumerSource: input.mode == "siri"
           ? IntentLabConsumerTemplates.siri : IntentLabConsumerTemplates.basic,
-        declarationData: declaration)
+        declarationData: installationDeclaration)
       let plan = try IntentLabProjectInstaller().preview(request)
       let id = try call.id("operationID")
       _ = try IntentLabProjectInstaller.validateDeclaration(
-        declaration, targetBundleIdentifier: input.appBundleID, testTargetName: plan.targetName)
+        installationDeclaration, targetBundleIdentifier: input.appBundleID, testTargetName: plan.targetName)
       let changes = MCPJSONValue.array(
         plan.changes.map {
           .object([
@@ -136,41 +145,4 @@ struct MCPIntentInstallationPreview {
     default: throw MCPToolInputError.unknownTool
     }
   }
-}
-
-enum IntentLabConsumerTemplates {
-  static let basic = """
-    import XCTest
-    import IntentLabTesting
-
-    @available(macOS 27.0, iOS 27.0, *)
-    @MainActor
-    final class IntentLabScenarioTests: XCTestCase {
-        func testIntentLabScenario() throws {
-            try IntentLabScenarioRunner.run(testCase: self, integration: IntentLabBasicIntegration())
-        }
-
-        func testIntentLabConnection() throws {
-            try IntentLabScenarioRunner.checkConnection(testCase: self, integration: IntentLabBasicIntegration())
-        }
-    }
-    """
-
-  static let siri = """
-    import XCTest
-    import IntentLabCoreTesting
-
-    @available(macOS 27.0, iOS 27.0, *)
-    @MainActor
-    final class IntentLabScenarioTests: XCTestCase {
-        func testIntentLabScenario() throws {
-            try IntentLabSiriScenarioRunner.run(testCase: self, integration: IntentLabAppAdapter())
-        }
-
-        func testIntentLabConnection() throws {
-            try IntentLabSiriScenarioRunner.checkConnection(testCase: self, integration: IntentLabAppAdapter())
-        }
-    }
-    """
-
 }

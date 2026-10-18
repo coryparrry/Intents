@@ -5,6 +5,29 @@ import XCTest
 @testable import IntentsAutomationCore
 
 extension InstalledUIStoreTests {
+    func testVerifiedRemoteRequestAdmitsFreshIDBeforeAndAfterNativeHistoryFills() async throws {
+        for nativeCount in [0, AutomationCommandHistory.retentionLimit] {
+            let (model, root, _) = try await fixture()
+            try selectPreparedSource(model: model, root: root)
+            for _ in 0..<nativeCount {
+                let review = try await model.prepareNativeConfirmation(.run)
+                _ = try model.cancelCommand(id: review.id)
+            }
+            let preview = try await model.verifiedPreviewCommand()
+            let id = UUID()
+            let status = try await model.verifiedRequestCommand(id: id, digest: preview.digest)
+            XCTAssertEqual(status.state, "awaitingApproval")
+            XCTAssertEqual(model.pendingCommandStatus?.requestID, id)
+            XCTAssertFalse(model.busy, "Queuing a remote request must not execute it")
+            let repeated = try await model.verifiedRequestCommand(id: id, digest: preview.digest)
+            XCTAssertEqual(repeated.requestID, status.requestID)
+            XCTAssertEqual(repeated.digest, status.digest)
+            XCTAssertEqual(repeated.state, status.state)
+            _ = try model.cancelCommand(id: id)
+            await model.closeAndWait()
+        }
+    }
+
     func testNativeConfirmationHistoryExpiresTerminalPayloadsWithoutExhaustingAdmission() async throws {
         let (model, root, _) = try await fixture()
         XCTAssertFalse(model.canRun, "An installed app without an associated host cannot run a workflow")

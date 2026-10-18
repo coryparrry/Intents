@@ -6,6 +6,46 @@ import Synchronization
 @testable import IntentsAutomationNativeUI
 
 @MainActor final class OwnershipRecoveryStoreTests: XCTestCase {
+    func testCheckAgainReconcilesPairedAdmissionOnlyAfterTheActualCampaignIsReleased() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-refresh-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("target-leases.json")
+        let owner = try AutomationDeviceLeaseManager(storeURL: url)
+        let target = TargetIdentity(id: UUID().uuidString, kind: .pairedRunner)
+        try await owner.reserveCampaign(runID: "paired-request", target: target)
+        let model = AppAutomationStore(supportDirectory: root,
+            simulatorInventoryReader: { _, _ in [] }, physicalInventoryReader: { _, _ in [] })
+        var blocked = false
+        model.executionCanStart = { true }
+        model.executionOwnershipChanged = { blocked = $0 }
+        await model.ownershipRecoveryTask?.value
+        XCTAssertTrue(model.pairedExecutionUnresolved)
+        XCTAssertTrue(blocked)
+
+        // There is no active lease, but its retained paired campaign still owns
+        // the request. A refresh must not infer runner completion from that.
+        await model.refreshRecovery()
+        XCTAssertTrue(model.pairedExecutionUnresolved)
+        XCTAssertEqual(model.recoveryItems.map(\.record.runID), ["paired-request"])
+        XCTAssertTrue(blocked)
+
+        let saved = try Data(contentsOf: url)
+        try Data("invalid ownership".utf8).write(to: url, options: .atomic)
+        await model.refreshRecovery()
+        XCTAssertTrue(model.pairedExecutionUnresolved)
+        XCTAssertNotNil(model.recoveryError)
+        XCTAssertTrue(blocked)
+        try saved.write(to: url, options: .atomic)
+
+        try await owner.releaseCampaign(runID: "paired-request", target: target)
+        await model.refreshRecovery()
+        XCTAssertFalse(model.pairedExecutionUnresolved)
+        XCTAssertTrue(model.recoveryItems.isEmpty)
+        XCTAssertNil(model.recoveryError)
+        XCTAssertFalse(blocked)
+        XCTAssertTrue(model.permitsExecutionAdmission)
+    }
+
     func testRecoveryDisplaysPersistedOwnershipWithoutClearingOrRedispatching() async throws {
         let (_, root, _) = try await InstalledUIStoreTests().fixture()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -266,24 +306,25 @@ import Synchronization
             } else {
                 try await owner.reserveCampaign(runID: runID, target: target)
             }
-            let model = AppAutomationStore(supportDirectory: root)
+            let model = AppAutomationStore(supportDirectory: root,
+                simulatorInventoryReader: { _, _ in [] }, physicalInventoryReader: { _, _ in [] })
             await model.ownershipRecoveryTask?.value
             XCTAssertNotNil(try AutomationLeaseStore(url: url).read().campaigns[target.leaseKey])
             XCTAssertEqual(model.recoveryItems.map(\.record.runID), [runID])
+            XCTAssertTrue(model.pairedExecutionUnresolved)
             if !absentOwner {
-                model.pairedExecutionUnresolved = true
                 model.retainUnresolvedRequest(runID: runID, target: target)
             }
             await model.refreshRecovery()
             await model.clearUnresolvedAttempt()
-            XCTAssertNotNil(model.recoveryError)
+            XCTAssertNotNil(model.recoveryError, "A paired reservation cannot be cleared by a local device reset; absentOwner=\(absentOwner)")
             let absent = try await owner.campaignAbsent(target: target)
             XCTAssertFalse(absent)
             XCTAssertEqual(model.recoveryItems.map(\.record.runID), [runID])
+            XCTAssertTrue(model.pairedExecutionUnresolved)
+            XCTAssertFalse(model.canSelectApplicationFromCommand)
             if !absentOwner {
-                XCTAssertTrue(model.pairedExecutionUnresolved)
                 XCTAssertEqual(model.retainedUnresolvedRequestTargets[runID], target)
-                XCTAssertFalse(model.canSelectApplicationFromCommand)
             }
         }
     }

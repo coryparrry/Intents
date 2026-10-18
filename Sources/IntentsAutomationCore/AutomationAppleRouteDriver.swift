@@ -168,13 +168,14 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
             timeout: .seconds(plan.budget.wallClockSeconds))
         if program.usesFiles { _ = try await artifacts.storeNativeEvidence(data: result.stdout + result.stderr, scope: scope) }
         else { _ = try await artifacts.store(data: result.stdout + result.stderr, name: "apple-log-\(lease.generation).txt", scope: scope) }
-        guard result.exitStatus == 0 else { throw AutomationContractError.ambiguousDispatch }
+        // A failed XCTest can still carry a terminal error from the exact
+        // hosted operation. Export it before deciding whether dispatch is unknown.
         let attachmentRoot = active.directory.appendingPathComponent("attachments")
         let exported = try await run(["xcresulttool", "export", "attachments", "--path", resultPath.path, "--output-path", attachmentRoot.path], scope: scope, lease: lease, timeout: .seconds(plan.budget.wallClockSeconds))
         guard exported.exitStatus == 0 else { throw AutomationContractError.missingEvidence("Apple attachments unavailable") }
         let data: Data, receipt: AutomationImportedHostReceipt
         if program.usesFiles {
-            let imported = try await AutomationHostFileAttachments.importExport(root: attachmentRoot, scope: scope, app: plan.app, program: program, artifacts: artifacts, planDigest: AutomationFrozenCase.planDigest(plan))
+            let imported = try await AutomationHostFileAttachments.importExport(root: attachmentRoot, scope: scope, app: plan.app, program: program, artifacts: artifacts, planDigest: AutomationFrozenCase.planDigest(plan), allowTerminalFailure: result.exitStatus != 0)
             data = imported.receiptData; receipt = imported.receipt
         } else {
             let files = try FileManager.default.contentsOfDirectory(at: attachmentRoot, includingPropertiesForKeys: [.isRegularFileKey])
@@ -182,11 +183,12 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
             var matching: [(Data, AutomationImportedHostReceipt)] = []
             for file in files where file.pathExtension == "json" && file.lastPathComponent != "manifest.json" {
                 let data = try AutomationReadOnlyFile.read(root: attachmentRoot, relativePath: file.lastPathComponent, maximumBytes: 1_048_576)
-                if let receipt = try? AutomationHostReceiptImporter.importReceipt(data, scope: scope, app: plan.app, program: program) { matching.append((data, receipt)) }
+                if let receipt = try? AutomationHostReceiptImporter.importReceipt(data, scope: scope, app: plan.app, program: program, allowTerminalFailure: result.exitStatus != 0) { matching.append((data, receipt)) }
             }
-            guard matching.count == 1 else { throw AutomationContractError.missingEvidence("No unique completed correlated Apple receipt") }
+            guard matching.count == 1 else { throw AutomationContractError.missingEvidence("No unique terminal correlated Apple receipt") }
             (data, receipt) = matching[0]
         }
+        guard result.exitStatus == 0 || receipt.terminalFailure != nil else { throw AutomationContractError.ambiguousDispatch }
         try await authorizeLaunch(scope: scope, lease: lease)
         if plan.target.kind == .physical {
             let info = try PropertyListSerialization.propertyList(from: AutomationReadOnlyFile.read(root: URL(fileURLWithPath: prepared.hostBundlePath), relativePath: "Info.plist", maximumBytes: 1_048_576), format: nil) as? [String: Any]
@@ -208,12 +210,13 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
         try await authorizeLaunch(scope: scope, lease: lease)
         let artifact = try await artifacts.store(data: data, name: "apple-receipt-\(lease.generation).json", scope: scope)
         let observations: [AutomationObservation]
-        if segment.phase == .observe, segment.kind == .systemQuery, program.operations.count == 1, let value = receipt.values[program.operations[0].id] {
+        if receipt.terminalFailure == nil, segment.phase == .observe, segment.kind == .systemQuery, program.operations.count == 1, let value = receipt.values[program.operations[0].id] {
             observations = [.init(id: segment.id, app: plan.app, target: plan.target, environmentID: plan.environmentID,
                 attemptID: scope.attemptId, stepID: segment.id, route: segment.kind, proof: .appState, value: value)]
         } else { observations = [] }
         try await authorizeLaunch(scope: scope, lease: lease)
-        var segmentReceipt = AutomationSegmentReceipt(scope: scope, app: plan.app, target: plan.target, segmentID: segment.id, route: segment.kind, dispatched: true, completed: true, observations: observations, artifact: artifact.handle, verifiedOutputs: receipt.values, environmentID: plan.environmentID)
+        var segmentReceipt = AutomationSegmentReceipt(scope: scope, app: plan.app, target: plan.target, segmentID: segment.id, route: segment.kind, dispatched: true, completed: receipt.terminalFailure == nil, observations: observations, artifact: artifact.handle, verifiedOutputs: receipt.values, environmentID: plan.environmentID)
+        segmentReceipt.terminalHostFailure = receipt.terminalFailure
         if program.usesFiles { segmentReceipt.hostReceiptDigest = AutomationArtifactRegistry.digest(data) }
         return segmentReceipt
     }

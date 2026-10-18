@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { createWorkspaceScope, resetSuiteEvidence, mutateSuiteDraft } from '../ui/workspace-state.js';
 import { createDraftAutosave } from '../ui/autosave.js';
+import { createStatusPoller } from '../ui/polling.js';
 import { newAppSuite } from '../ui/native-suite.js';
 import { comparisonSelection } from '../ui/workspace-controls.js';
 
@@ -16,7 +17,7 @@ function node(tag, text) { return { tag, text, children: [], value: text || '', 
 const walk = item => [item, ...(item.children || []).flatMap(walk)];
 function load(names, state, overrides = {}) {
   const scope = createWorkspaceScope(state);
-  const sandbox = { state, workspaceScope: scope, resetSuiteEvidence, clone: structuredClone, structuredClone,
+  const sandbox = { state, workspaceScope: scope, resetSuiteEvidence, createStatusPoller, fail() {}, clone: structuredClone, structuredClone,
     flush: async () => {}, render() {}, renderMain() {}, renderSidebar() {}, renderToolbar() {}, notice() {}, filterProject() {}, schedulePoll() {}, active: () => false,
     newAppSuite, comparisonSelection, $: () => ({ scrollTop: 0 }), node, button: (text, action) => ({ ...node('button', text), action }),
     panelHeader: () => node('header'), empty: () => node('empty'), renderExperiment() {}, context: () => ({}),

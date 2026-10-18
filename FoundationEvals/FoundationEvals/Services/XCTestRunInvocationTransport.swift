@@ -129,6 +129,11 @@ enum XCTestRunInvocationTransport {
             purpose = definition.purpose
             checkMode = definition.checkMode
             requiredClaims = definition.requiredClaims
+            if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion, let scope {
+                let claims = ScenarioResultEvaluator.requiredClaims(for: definition, lane: scope.lane)
+                requiredClaims = claims
+                checkMode = claims.contains(.applicationStateChecked) ? .behaviour : .basic
+            }
             // The Feature response is produced by the local Feature driver. A
             // Direct or Siri child has no Feature binding or transport for it.
             observationPlan = scope?.lane == .appFeature

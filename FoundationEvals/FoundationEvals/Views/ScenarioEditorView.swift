@@ -82,6 +82,11 @@ struct ScenarioEditorView: View {
                 coordinator.synchronizeDeclaredActionRequirements()
             }
         }
+        .onChange(of: coordinator.draft.coverage) { _, _ in
+            if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                coordinator.synchronizeDeclaredActionRequirements()
+            }
+        }
     }
 
     private var diagnosticRouteSection: some View {

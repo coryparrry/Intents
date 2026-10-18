@@ -3,6 +3,64 @@ import Testing
 @testable import FoundationEvals
 
 struct IntentLabProjectInstallerTests {
+    @Test func freshBasicMetadataIsTypedBoundedAndPreservesExplicitEmptyInputs() throws {
+        let parameters = """
+        [{"name":"text","type":{"primitive":{"_0":"string"}},"required":true}]
+        """
+        let projections = """
+        [{"id":"returnedValue","type":{"primitive":{"_0":"string"}},"path":[{"kind":"property","name":"value"}]}]
+        """
+        let input = try IntentLabConsumerTemplates.declarationEntries(parameters, fallback: [], field: "parameters")
+        let output = try IntentLabConsumerTemplates.declarationEntries(projections, fallback: [], field: "resultProjections")
+        #expect(input.first?["name"] as? String == "text")
+        #expect(output.first?["id"] as? String == "returnedValue")
+        #expect(try IntentLabConsumerTemplates.declarationEntries("", fallback: input, field: "parameters").count == 1)
+        #expect(try IntentLabConsumerTemplates.declarationEntries("[]", fallback: input, field: "parameters").isEmpty)
+        #expect(throws: (any Error).self) {
+            _ = try IntentLabConsumerTemplates.declarationEntries(
+                "[{\"name\":\"text\",\"type\":\"String\",\"required\":true}]", fallback: [], field: "parameters"
+            )
+        }
+        #expect(throws: IntentLabProjectInstallerError.self) {
+            _ = try IntentLabConsumerTemplates.declarationEntries(
+                "[" + Array(repeating: "{}", count: 17).joined(separator: ",") + "]",
+                fallback: [], field: "resultProjections"
+            )
+        }
+        var declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        declaration["actions"] = [["id": "EchoIntent", "parameters": input]]
+        declaration["resultProjections"] = output
+        declaration["capabilities"] = ["environment-payload", "direct-intent-execution", "direct-intent-output"]
+        let data = try IntentLabConsumerTemplates.basicDeclarationData(declaration)
+        _ = try IntentLabProjectInstaller.validateDeclaration(
+            data, targetBundleIdentifier: "com.example.Consumer", testTargetName: "UITests"
+        )
+    }
+
+    @Test func generatedBasicConsumerInstallsItsRequiredReadinessPath() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let declaration = try #require(JSONSerialization.jsonObject(with: Fixture.declarationData) as? [String: Any])
+        let data = try IntentLabConsumerTemplates.basicDeclarationData(declaration)
+        let request = fixture.request(declarationData: data, consumerSource: IntentLabConsumerTemplates.basic)
+        let installer = IntentLabProjectInstaller()
+        let plan = try installer.preview(request)
+        #expect(plan.supported, "\(plan.manualSteps)")
+        #expect(plan.changes.contains { $0.url.lastPathComponent == "IntentLabReadinessTestSupport.swift" })
+        let installedDeclaration = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let readiness = try #require(installedDeclaration["readinessControl"] as? [String: Any])
+        #expect(readiness["testIntentIdentifier"] as? String == "IntentLabReadinessIntent")
+        #expect((installedDeclaration["capabilities"] as? [String])?.contains("test-only-intent") == true)
+        for source in [IntentLabConsumerTemplates.basic, IntentLabConsumerTemplates.siri] {
+            #expect(source.contains("func testIntentLabScenario()"))
+            #expect(source.contains("func testIntentLabConnection()"))
+            #expect(source.contains("func testIntentLabReadiness()"))
+        }
+        _ = try installer.apply(plan)
+        #expect(try installer.verify(request).installed)
+        #expect(try installer.preview(request).changes.isEmpty)
+    }
+
     @Test func generatedBasicDeclarationCannotClaimStableFixtureProof() throws {
         let basic = try IntentLabProjectInstaller.validateDeclaration(
             Fixture.declarationData,
@@ -714,29 +772,26 @@ struct IntentLabProjectInstallerTests {
             "isolation": ["kind": "readOnly"],
             "capabilities": ["direct-intent-execution", "environment-payload"],
         ]
-        let consumerSource = """
-        import XCTest
-        import IntentLabTesting
-
-        @available(macOS 27.0, iOS 27.0, *)
-        @MainActor
-        final class IntentLabScenarioTests: XCTestCase {
-            func testIntentLabScenario() throws {
-                try IntentLabScenarioRunner.run(testCase: self, integration: IntentLabBasicIntegration())
-            }
-
-            func testIntentLabConnection() throws {
-                try IntentLabScenarioRunner.checkConnection(testCase: self, integration: IntentLabBasicIntegration())
-            }
+        let consumerSource = IntentLabConsumerTemplates.basic
+        let remoteRevision = ProcessInfo.processInfo.environment["INTENT_LAB_CONSUMER_REVISION"]
+        let packageURL: URL
+        if let remoteRevision {
+            try #require(remoteRevision.utf8.count == 40)
+            try #require(remoteRevision.range(of: "^[a-f0-9]{40}$", options: .regularExpression) != nil)
+            let remoteURL = ProcessInfo.processInfo.environment["INTENT_LAB_CONSUMER_PACKAGE_URL"]
+                ?? IntentLabPackageRevisionManifest.packageURL.absoluteString
+            packageURL = try #require(URL(string: remoteURL))
+            try #require(packageURL.scheme == "https" && packageURL.host == "github.com")
+        } else {
+            packageURL = URL(filePath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         }
-        """
-        let packageURL = URL(filePath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let request = IntentLabInstallationRequest(
             projectURL: project, scheme: "IntentLabMacInstallerFixture",
             applicationTargetID: appTarget.id, packageURL: packageURL,
+            packageRevision: remoteRevision,
             packageProduct: "IntentLabTesting", consumerSource: consumerSource,
-            declarationData: try JSONSerialization.data(withJSONObject: declaration, options: [.sortedKeys]))
+            declarationData: try IntentLabConsumerTemplates.basicDeclarationData(declaration))
         let installer = IntentLabProjectInstaller()
         let plan = try installer.preview(request)
         #expect(plan.supported, "\(plan.manualSteps)")
@@ -750,6 +805,70 @@ struct IntentLabProjectInstallerTests {
             "-derivedDataPath", root.appending(path: "DerivedData").path,
             "CODE_SIGNING_ALLOWED=NO", "-quiet",
         ], in: root)
+        if let remoteRevision {
+            func requirePinnedRevision(at resolvedURL: URL) throws {
+                let resolved = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: resolvedURL)) as? [String: Any])
+                let pins = try #require(resolved["pins"] as? [[String: Any]])
+                let packagePins = pins.filter { $0["location"] as? String == packageURL.absoluteString }
+                try #require(packagePins.count == 1)
+                let state = try #require(packagePins.first?["state"] as? [String: Any])
+                try #require(state["revision"] as? String == remoteRevision)
+            }
+            try requirePinnedRevision(at: project.appending(path: "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"))
+
+            // Use a second, independent package graph to exercise the paired SDK
+            // and its public capture export, including every transitive target.
+            let swift = try #require(Self.executable(named: "swift"))
+            let developerRoot = root.appending(path: "DeveloperConsumer")
+            let developerSources = developerRoot.appending(path: "Sources/DeveloperConsumerFixture")
+            try fileManager.createDirectory(at: developerSources, withIntermediateDirectories: true)
+            let packageName = packageURL.lastPathComponent
+            let packageIdentity = (packageName.hasSuffix(".git") ? String(packageName.dropLast(4)) : packageName).lowercased()
+            let developerManifest = """
+            // swift-tools-version: 6.2
+            import PackageDescription
+            let package = Package(
+                name: "DeveloperConsumerFixture",
+                platforms: [.macOS(.v26)],
+                dependencies: [
+                    .package(url: \(String(reflecting: packageURL.absoluteString)), revision: \(String(reflecting: remoteRevision)))
+                ],
+                targets: [
+                    .target(name: "DeveloperConsumerFixture", dependencies: [
+                        .product(name: "FoundationEvalsDeveloper", package: \(String(reflecting: packageIdentity)))
+                    ])
+                ]
+            )
+            """
+            try Data(developerManifest.utf8).write(to: developerRoot.appending(path: "Package.swift"))
+            try Data("""
+            import FoundationEvalsDeveloper
+
+            public let pairedSDKProtocolVersion = DeveloperProtocolVersion.current
+            public typealias ProductionCaptureFromPairedSDK = DeveloperProductionCapture
+            """.utf8).write(to: developerSources.appending(path: "PublicConsumer.swift"))
+            _ = try Self.run(swift, arguments: [
+                "build", "--package-path", developerRoot.path,
+                "--scratch-path", developerRoot.appending(path: ".build").path,
+                "-j", "2", "--target", "DeveloperConsumerFixture",
+            ], in: developerRoot)
+            try requirePinnedRevision(at: developerRoot.appending(path: "Package.resolved"))
+
+            if let receiptPath = ProcessInfo.processInfo.environment["INTENT_LAB_CONSUMER_BUILD_RECEIPT"] {
+                let receipt: [String: Any] = [
+                    "schemaVersion": 1,
+                    "packageURL": packageURL.absoluteString,
+                    "revision": remoteRevision,
+                    "check": "generatedMacUITestTargetBuildsWithXcode",
+                    "consumer": "external-macos-ui-test-target",
+                    "signing": "disabled",
+                    "runtime": "not-executed",
+                    "products": ["IntentLabTesting", "FoundationEvalsDeveloper"],
+                ]
+                try JSONSerialization.data(withJSONObject: receipt, options: [.sortedKeys, .prettyPrinted])
+                    .write(to: URL(filePath: receiptPath), options: .atomic)
+            }
+        }
     }
 
     @Test func unsupportedAppPlatformGetsManualGuidance() throws {

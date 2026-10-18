@@ -239,7 +239,7 @@ extension EvaluationRunner {
             for: Instructions(suite.features.profile.afterToolInstructions)) : 0
         let allocation = suite.modelConfiguration.contextAllocation(
             contextSize: contextSize,
-            includesModelJudge: suite.needsModelJudge,
+            includesModelJudge: suite.usesSubjectModelForJudging,
             sharedToolOutputReserve: suite.sharedToolOutputReserve
         )
         let inputCeiling = allocation.effectiveInputLimit
@@ -293,7 +293,7 @@ extension EvaluationRunner {
                 budget: inputCeiling
             )
         }
-        if suite.needsModelJudge {
+        if suite.usesSubjectModelForJudging {
             var judgeAdmissionSuite = suite
             judgeAdmissionSuite.criteria = suite.rubricCriteria
                 .filter { EvaluationExactCriterion.expectedText(in: $0) == nil }

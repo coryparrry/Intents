@@ -74,7 +74,7 @@ public struct IntentLabBasicIntegration: IntentLabIntegration {
     public var supportsMutatingChecks: Bool { false }
     public var supportedCapabilities: Set<String> {
         ["environment-payload", "direct-intent-execution", "direct-intent-output",
-         "entity-query", "value-query"]
+         "entity-query", "value-query", "test-only-intent", "basic-direct-read-only"]
     }
 
     public func prepare(bundleIdentifier: String, context: String, operationID: String) throws -> XCUIApplication {

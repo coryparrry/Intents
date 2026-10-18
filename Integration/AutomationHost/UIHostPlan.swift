@@ -1,5 +1,16 @@
 import Foundation
 
+/// A missing or unsupported accessibility value is not evidence of an unchecked control.
+public enum UIHostBooleanProperty {
+    public static func checked(from value: String?) throws -> Bool {
+        switch value {
+        case "0": return false
+        case "1": return true
+        default: throw UIHostError.unavailableProperty
+        }
+    }
+}
+
 /// Portable wire contracts shared by the controller and generated XCTest bundle.
 public struct UIHostValue: Codable, Equatable, Sendable {
     public var kind: String
@@ -182,4 +193,4 @@ public struct UIHostStepReceipt: Codable, Equatable, Sendable {
         self.value = value; self.error = error
     }
 }
-public enum UIHostError: Error { case invalidPlan, missingElement, ambiguousElement, assertionFailed, bindingUnavailable, timedOut, reusedEntity }
+public enum UIHostError: Error { case invalidPlan, missingElement, ambiguousElement, assertionFailed, bindingUnavailable, timedOut, reusedEntity, unavailableProperty }

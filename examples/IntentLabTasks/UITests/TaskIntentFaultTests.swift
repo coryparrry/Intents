@@ -6,6 +6,56 @@ import XCTest
 @available(iOS 27.0, *)
 @MainActor
 final class TaskIntentFaultTests: XCTestCase {
+    func testProductionIntentReceiptsBindEveryPreparedSiriAttempt() async throws {
+        for attempt in 1...3 {
+            let integration = TaskIntegration()
+            let context = "siri-\(UUID().uuidString)-\(attempt)"
+            let application = try integration.prepare(
+                bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+                context: context, operationID: TaskIntegration.preparationOperation
+            )
+            defer { application.terminate() }
+            XCTAssertEqual(try integration.observeTasks()["task-001.isComplete"], .boolean(false))
+            var scenario = try probeScenario(context: context, schemaVersion: 2)
+            scenario.directControl.intentIdentifier = "CompleteTaskIntent"
+            scenario.directControl.parameters = [.init(
+                name: "task", type: .entity(typeIdentifier: "TaskEntity"), isOptional: false,
+                presence: .value(.entity(.init(typeIdentifier: "TaskEntity", identifier: "task-001")))
+            )]
+            // Invoke the production intent through Apple's entity resolution. This
+            // tests receipt binding after Siri preparation, not Siri activation.
+            let returned = try await IntentProbe.run(scenario)
+            XCTAssertEqual(returned["response"], .string("Completed Buy milk."))
+            let observed = try integration.observeTasks()
+            XCTAssertEqual(observed["task-001.isComplete"], .boolean(true))
+            XCTAssertEqual(observed["task-002.isComplete"], .boolean(false))
+            XCTAssertEqual(observed["intentlab.fixtureDigest"], .string(TaskIntegration.fixtureDigest))
+            let receipts = try actionReceipts(from: observed)
+            XCTAssertEqual(receipts.count, 1)
+            let requirement = IntentLabActionRequirement(
+                lane: .siri, kind: .productionIntent, operationID: "CompleteTaskIntent",
+                resolvedParameters: ["task": .entity(.init(typeIdentifier: "TaskEntity", identifier: "task-001"))]
+            )
+            let verdict = IntentLabAssertionEvaluator.actionVerdict(
+                requirement: requirement, receipts: receipts, lane: .siri, attempt: attempt, context: context
+            )
+            XCTAssertEqual(verdict.0, .passed)
+            XCTAssertNil(verdict.1)
+            XCTAssertEqual(IntentLabAssertionEvaluator.actionVerdict(
+                requirement: requirement, receipts: receipts, lane: .intentIntegration,
+                attempt: attempt, context: context
+            ).1, .staleActionEvidence)
+            XCTAssertEqual(IntentLabAssertionEvaluator.actionVerdict(
+                requirement: requirement, receipts: receipts, lane: .siri,
+                attempt: attempt == 3 ? 1 : attempt + 1, context: context
+            ).1, .staleActionEvidence)
+            try integration.cleanup(
+                bundleIdentifier: TaskIntegration.testingBundleIdentifier,
+                context: context, operationID: TaskIntegration.cleanupOperation
+            )
+        }
+    }
+
     func testLocalFeatureControlUsesProductionTaskServiceAndRecordsServiceReceipt() async throws {
         let integration = TaskIntegration()
         let context = "feature-\(UUID().uuidString)"
@@ -26,6 +76,8 @@ final class TaskIntentFaultTests: XCTestCase {
         try declaration.validate()
         XCTAssertTrue(declaration.capabilities.contains("local-feature-controls"))
         XCTAssertTrue(declaration.capabilities.contains("test-only-intent"))
+        XCTAssertTrue(declaration.capabilities.contains("action-receipt-v1"))
+        XCTAssertEqual(Set(declaration.capabilities), TaskIntegration.capabilities)
         let digest = "caeb9a954c99c4e035ec5d94bd8892622bb0676d24541dfedecae3d42096937d"
         let control = try declaration.localFeatureControl(
             featureID: "com.example.intent-lab-tasks",
@@ -89,6 +141,14 @@ final class TaskIntentFaultTests: XCTestCase {
         XCTAssertEqual(wrapperReceipt.terminalStatus, .succeeded)
         XCTAssertFalse(wrapperReceipt.isTopLevel)
         XCTAssertLessThan(wrapperReceipt.sequence, receipt.sequence)
+        XCTAssertEqual(observations["intentlab.fixtureDigest"], .string(TaskIntegration.fixtureDigest))
+        let verdict = IntentLabAssertionEvaluator.actionVerdict(
+            requirement: .init(lane: .appFeature, kind: .productionService, operationID: "complete-task",
+                               resolvedParameters: ["taskID": .string("task-001")]),
+            receipts: receipts, lane: .appFeature, attempt: 1, context: context
+        )
+        XCTAssertEqual(verdict.0, .passed)
+        XCTAssertNil(verdict.1)
     }
 
     func testReceiptCountOverflowFailsClosedUntilTaskFixtureReset() async throws {

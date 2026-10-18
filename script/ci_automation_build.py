@@ -10,7 +10,7 @@ import tempfile
 RECEIPT = "ci-automation-executable.json"
 # These manifests define the reviewed source roots below. Unknown layouts still build normally.
 MANIFESTS = {
-    "Package.swift": "b7b2c3975e55c5dbfb81b531338f4abee09a3cba9df5952bdef0fb5dc454eab2",
+    "Package.swift": "2a0964b1bad8bca6638ae9591d0d80ece166b6eabe55bee65552e14d28fd7efe",
     "Packages/ProductionEvals/Package.swift": "1c8f054724f1c8d1e2addcb6479ee3185266f977e128f8acf389eb731325edbf",
 }
 SOURCE_ROOTS = ("Sources", "Tools", "Integration", "Packages")

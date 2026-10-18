@@ -52,7 +52,9 @@ struct ScenarioGuidedActionFeatureView: View {
             .disabled(coordinator.declarationCatalog == nil)
             if coordinator.draft.schemaVersion == ScenarioDefinition.stableSchemaVersion,
                !coordinator.draft.directControl.intentIdentifier.isEmpty {
-                Text("The selected production action and its typed inputs are verified on every requested route.")
+                Text(coordinator.declarationCatalog?.supportsBasicDirectReadOnlyChecks == true
+                     ? "Basic Direct checks invoke the selected read-only App Intent with these inputs and compare its typed returned values. App state and Siri routing require app-owned observations."
+                     : "The selected production action and its typed inputs are verified on every requested route.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if coordinator.declarationCatalog == nil {

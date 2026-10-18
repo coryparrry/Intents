@@ -16,7 +16,7 @@ struct NativeAutomationEvidenceView: View {
             Text("Saved result · not reverified").font(.subheadline.weight(.medium))
             Text("Results are shown as recorded. Re-run the case to verify the current app.").font(.caption).foregroundStyle(.secondary)
             LabeledContent("Recorded result", value: summary)
-            LabeledContent("Recorded subject", value: report.result.subjectDispatchUncertain ? "Dispatch unresolved" : report.result.subjectCompleted ? "Completed" : report.result.subjectDispatched ? "Dispatched; completion unproven" : "Not dispatched")
+            LabeledContent("Recorded subject", value: subjectState)
             LabeledContent("Recorded assessment", value: report.result.assessed ? "Assessed" : "Unassessed")
             LabeledContent("Recorded evidence", value: report.result.evidenceComplete ? "Complete" : "Incomplete")
             LabeledContent("Controller release", value: report.resourcesReleased ? "Recorded as released" : "Unresolved")
@@ -34,9 +34,12 @@ struct NativeAutomationEvidenceView: View {
                                     Text(route(step.route)).font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Text(step.receipt.map { $0.completed ? "Completed receipt" : $0.dispatched ? "Dispatched receipt" : "Not dispatched" } ?? "No recorded receipt").font(.caption)
+                                Text(step.receipt.map { $0.terminalHostFailure != nil ? "Terminal error receipt" : $0.completed ? "Completed receipt" : $0.dispatched ? "Dispatched receipt" : "Not dispatched" } ?? "No recorded receipt").font(.caption)
                             }
                             if let receipt = step.receipt {
+                                if let failure = receipt.terminalHostFailure {
+                                    Text(failure.operationID + ": " + failure.message).font(.callout).textSelection(.enabled)
+                                }
                                 ForEach(Array(receipt.observations.enumerated()), id: \.offset) { _, observation in
                                     Text("\(observation.proof.rawValue) · \(observation.collectedAt.formatted(date: .abbreviated, time: .standard)) · \(observation.complete ? "complete" : "incomplete") · \(observation.fresh ? "fresh" : "stale")").font(.caption).textSelection(.enabled)
                                     DisclosureGroup("Observed value") {
@@ -71,7 +74,8 @@ struct NativeAutomationEvidenceView: View {
         return String(decoding: data, as: UTF8.self)
     }
     private var summary: String {
-        switch report.result.summary {
+        if report.resourcesReleased, report.receipts.contains(where: { $0.terminalHostFailure != nil }) { return "Operation returned an error" }
+        return switch report.result.summary {
         case .passed: "Passed"
         case .assertionFailed: "Check failed"
         case .executedUnassessed: "Executed without a business assessment"
@@ -79,6 +83,11 @@ struct NativeAutomationEvidenceView: View {
         case .unresolved: "Unresolved"
         default: report.result.summary.rawValue
         }
+    }
+    private var subjectState: String {
+        if report.result.subjectDispatchUncertain { return "Dispatch unresolved" }
+        if report.receipts.first(where: { $0.segmentID == document.frozen.plan.execution.id })?.terminalHostFailure != nil { return "Returned an error" }
+        return report.result.subjectCompleted ? "Completed" : report.result.subjectDispatched ? "Dispatched; completion unproven" : "Not dispatched"
     }
     private func route(_ value: AutomationSegment.Kind) -> String {
         switch value {

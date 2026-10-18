@@ -6,6 +6,89 @@ import XCTest
 @available(macOS 27.0, iOS 27.0, *)
 @MainActor
 final class IntentLabRunnerLifecycleTests: XCTestCase {
+    func testDirectDateReturnsMatchNonUTCExpectationsInScopedAndLegacyRuns() throws {
+        let instant = Date(timeIntervalSince1970: 1_700_000_000.375)
+        let expected = IntentLabValue.date(.init(source: "Local calendar", timeZoneIdentifier: "Europe/London",
+                                                 resolvedInstant: instant))
+        let actual = IntentLabValue.date(.init(source: ISO8601DateFormatter().string(from: instant),
+                                               timeZoneIdentifier: "UTC", resolvedInstant: instant))
+        let wrong = IntentLabValue.date(.init(source: ISO8601DateFormatter().string(from: instant),
+                                              timeZoneIdentifier: "UTC", resolvedInstant: instant.addingTimeInterval(0.125)))
+        XCTAssertNotEqual(expected, actual)
+        for scoped in [false, true] {
+            for array in [false, true] {
+                var scenario = try localFeatureScenario(requirement: .init(lane: .intentIntegration,
+                    kind: .productionIntent, operationID: "EchoDateIntent", resolvedParameters: [:]))
+                scenario.coverage.appFeature = .notApplicable
+                scenario.coverage.intentIntegration = .required
+                scenario.coverage.siri = .notApplicable
+                scenario.executionScope = scoped ? .init(lane: .intentIntegration, attempt: 1) : nil
+                scenario.actionRequirements = nil
+                scenario.directControl.outputFields = [.init(name: "when",
+                    type: array ? .array(element: .primitive(.date)) : .primitive(.date),
+                    path: [.init(kind: .property, name: "value")])]
+                scenario.assertions = [.init(id: UUID(), kind: .returnedField, observationKey: "when",
+                    expectedValue: array ? .array([expected]) : expected, required: true,
+                    applicableLanes: [.intentIntegration])]
+                for (value, shouldPass) in [(actual, true), (wrong, false)] {
+                    let result = IntentLabScenarioEngine.result(for: .intentIntegration, scenario: scenario,
+                        observations: ["when": array ? .array([value]) : value], baseline: nil,
+                        integration: InertIntegration(), declaration: nil,
+                        context: "intent-date", startedAt: instant)
+                    XCTAssertEqual(result.outcome, shouldPass ? .passed : .failed)
+                    XCTAssertEqual(result.claims?.contains(.returnedValueChecked), shouldPass)
+                    XCTAssertEqual(result.assertionResults.first?.passed, shouldPass)
+                }
+                let assertion = IntentLabAssertion(id: UUID(), kind: .noMutation, observationKey: "when",
+                    expectedValue: array ? .array([expected]) : expected, required: true,
+                    applicableLanes: [.intentIntegration])
+                XCTAssertTrue(IntentLabAssertionEvaluator.evaluate(assertion,
+                    observed: array ? .array([actual]) : actual,
+                    before: array ? .array([expected]) : expected).passed)
+                XCTAssertFalse(IntentLabAssertionEvaluator.evaluate(assertion,
+                    observed: array ? .array([actual]) : actual,
+                    before: array ? .array([wrong]) : wrong).passed)
+            }
+        }
+    }
+
+    func testBasicDirectReturnedValueDoesNotInventActionOrStateProof() throws {
+        let requirement = IntentLabActionRequirement(
+            lane: .intentIntegration, kind: .productionIntent,
+            operationID: "ReadSummaryIntent", resolvedParameters: [:]
+        )
+        var scenario = try localFeatureScenario(requirement: requirement)
+        scenario.coverage.appFeature = .notApplicable
+        scenario.coverage.intentIntegration = .required
+        scenario.coverage.siri = .notApplicable
+        scenario.executionScope = .init(lane: .intentIntegration, attempt: 1)
+        scenario.actionRequirements = nil
+        scenario.directControl.outputFields = [.init(
+            name: "returnedValue", type: .primitive(.string), path: [.init(kind: .property, name: "value")]
+        )]
+        scenario.assertions = [.init(
+            id: UUID(), kind: .returnedField, observationKey: "returnedValue",
+            expectedValue: .string("A concise summary"), required: true,
+            applicableLanes: [.intentIntegration]
+        )]
+        func result(_ value: String) -> IntentLabLaneResult {
+            IntentLabScenarioEngine.result(
+                for: .intentIntegration, scenario: scenario,
+                observations: ["returnedValue": .string(value)], baseline: [:],
+                integration: InertIntegration(), declaration: nil,
+                context: "intent-current", startedAt: Date(timeIntervalSince1970: 10)
+            )
+        }
+        let passed = result("A concise summary")
+        XCTAssertEqual(passed.outcome, .passed)
+        XCTAssertEqual(passed.claims, [.executionCompleted, .returnedValueChecked])
+        XCTAssertNil(passed.actionReceipts)
+        XCTAssertEqual(passed.observationSources?["returnedValue"], "appIntentsTesting")
+        XCTAssertEqual(result("The wrong summary").outcome, .failed)
+        scenario.actionRequirements = [requirement]
+        XCTAssertEqual(result("A concise summary").outcome, .notObserved)
+    }
+
     func testDirectDriverErrorCapturesRawStateBeforeReturning() throws {
         var observationRead = false
         let receiptValue = try serializedReceipt(status: .failed)

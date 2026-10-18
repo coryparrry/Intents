@@ -110,6 +110,7 @@ actor EvaluationRunner {
             }
             let model = EvaluationHTTPLanguageModel(
                 configuration: configuration,
+                maximumInputTokens: suite.modelConfiguration.maximumInputTokens,
                 liveResponseObserver: liveResponseObserver
             )
             return await run(
@@ -246,7 +247,7 @@ actor EvaluationRunner {
 
         let allocation = suite.modelConfiguration.contextAllocation(
             contextSize: contextSize,
-            includesModelJudge: suite.needsModelJudge,
+            includesModelJudge: suite.usesSubjectModelForJudging,
             sharedToolOutputReserve: suite.sharedToolOutputReserve
         )
         var run = EvaluationRun(

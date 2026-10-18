@@ -168,6 +168,14 @@ public final class DeveloperRunnerService {
             duration: duration
         )
         pairingState = state
+        for (peer, connectionID) in connectionIDs {
+            let challenges = await engine.pairingChallenges(for: connectionID)
+            guard connectionIDs[peer] == connectionID else { continue }
+            let peerBox = DeveloperRunnerPeerBox(peer)
+            for challenge in challenges {
+                send(challenge, peer: peerBox)
+            }
+        }
         return state
     }
 

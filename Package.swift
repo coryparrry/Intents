@@ -73,9 +73,11 @@ let package = Package(
         .executable(name: "intents-evals", targets: ["ProductionEvalsCLI"]),
         .executable(name: "intents-automation", targets: ["IntentsAutomationApplicationProbe"]),
     ],
-    dependencies: [.package(path: "Packages/ProductionEvals")],
     targets: [
-        .executableTarget(name: "ProductionEvalsCLI", dependencies: [.product(name: "ProductionEvals", package: "ProductionEvals")], path: "Sources/ProductionEvalsCLI"),
+        // A remotely pinned package cannot depend on a local package. Reuse these
+        // sources as a target here while retaining their standalone test package.
+        .target(name: "ProductionEvals", path: "Packages/ProductionEvals/Sources/ProductionEvals"),
+        .executableTarget(name: "ProductionEvalsCLI", dependencies: ["ProductionEvals"], path: "Sources/ProductionEvalsCLI"),
         .target(name: "IntentsAutomationDateCodec", path: "Integration/AutomationHost", exclude: ["NativeMac", "HostFixtureRegistration.swift", "UIHostPlan.swift", "UIStepTests.swift", "HostPlan.swift", "IntentDefinitionsHost.swift", "HostReceipt.swift", "SegmentTests.swift", "HostInputAdapterProbePlan.swift", "InputAdapterProbeTests.swift"], sources: ["AutomationDateCodec.swift", "AutomationDurationCodec.swift", "AutomationCalendarCodec.swift", "AutomationURLCodec.swift", "AutomationIntentFileCodec.swift"]),
         .target(name: "IntentsAutomationUIHostContracts", path: "Integration/AutomationHost", exclude: ["NativeMac", "HostFixtureRegistration.swift", "SiriSubmissionTests.swift", "AutomationDateCodec.swift", "AutomationDurationCodec.swift", "AutomationCalendarCodec.swift", "AutomationURLCodec.swift", "AutomationIntentFileCodec.swift", "IntentDefinitionsHost.swift", "HostReceipt.swift", "SegmentTests.swift", "HostPlan.swift", "UIStepTests.swift", "HostInputAdapterProbePlan.swift", "InputAdapterProbeTests.swift"], sources: ["UIHostPlan.swift"]),
         .target(name: "IntentsAutomationCore", dependencies: ["IntentsAutomationDateCodec", "IntentLabContracts", "IntentsAutomationUIHostContracts"], path: "Sources/IntentsAutomationCore"),
@@ -112,7 +114,7 @@ let package = Package(
         ),
         .target(
             name: "FoundationEvalsDeveloper",
-            dependencies: [.product(name: "ProductionEvals", package: "ProductionEvals")],
+            dependencies: ["ProductionEvals"],
             path: "Sources/FoundationEvalsDeveloper"
         ),
         .executableTarget(

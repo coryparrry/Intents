@@ -18,9 +18,7 @@ extension AppAutomationStore {
             do {
                 let restored = try await AutomationNativeOffMainVerification.run {
                     guard let prepared = try AutomationPreparedApplicationRecord.loadLatest(supportRoot: root) else { return nil as (AutomationPreparedApplication, AutomationIntakeAssessment)? }
-                    guard let separator = prepared.host.app.logicalID.lastIndex(of: "#") else { throw AutomationContractError.invalidIdentity }
-                    let project = URL(fileURLWithPath: String(prepared.host.app.logicalID[..<separator]))
-                    return (prepared, try assess(project))
+                    return (prepared, try assess(AutomationPreparedApplicationRecord.intakeURL(for: prepared)))
                 }
                 try Task.checkCancellation()
                 guard !closing, selectionEpoch == epoch, let (value, assessment) = restored else { return }

@@ -14,8 +14,9 @@ struct ScenarioSavedExecutionReportTests {
     }
 
     private func savedFixture(root: URL, semanticOnlyFeature: Bool = false, siriOnlySummary: Bool = false,
-                              response: String = "A summary", directState: String = "packing-001") async throws -> Fixture {
-        var definition = ScenarioDefinition.starter()
+                              response: String = "A summary", directState: String = "packing-001",
+                              projectID: UUID? = nil, includeFeatureReturnClaim: Bool = true) async throws -> Fixture {
+        var definition = ScenarioDefinition.starter(projectID: projectID)
         definition.target.destinationIdentifier = "simulator"
         definition.schemaVersion = ScenarioDefinition.stableSchemaVersion
         definition.coverage = .init(appFeature: .required, intentIntegration: .required,
@@ -141,11 +142,22 @@ struct ScenarioSavedExecutionReportTests {
             actionReceipts: [receipt], invocation: invocation, attempt: 1)
         var sources = Dictionary(uniqueKeysWithValues: observations.keys.map { ($0, transport) })
         sources["intentlab.actionReceipts"] = transport
+        var claims: [ScenarioProofClaim] = [.executionCompleted]
+        if siriOnlySummary {
+            claims.append(.applicationStateChecked)
+        } else if includeFeatureReturnClaim, definition.assertions.contains(where: { assertion in
+            assertion.required && assertion.kind == .returnedField && assertion.applies(to: .appFeature)
+                && evaluated.1.contains { $0.assertionID == assertion.id && $0.passed }
+        }) {
+            // The native Feature capture records its checked deterministic
+            // return independently from the later semantic assessment.
+            claims.append(.returnedValueChecked)
+        }
         let lane = ScenarioLaneResult(caseID: definition.id, attempt: 1, lane: route,
             executionStatus: .completed, outcome: semanticOnlyFeature ? .notObserved : evaluated.0, startedAt: now, completedAt: now,
             observations: observations, assertionResults: evaluated.1,
             observationSources: sources,
-            claims: siriOnlySummary ? [.executionCompleted, .applicationStateChecked] : [.executionCompleted],
+            claims: claims,
             beforeObservations: before, actionReceipts: [receipt], cleanupVerified: true)
         var run = ScenarioRun(id: invocation.id, scenarioID: definition.id, scenarioVersion: definition.version,
             scenarioDigest: definition.definitionDigest, invocation: invocation, startedAt: now, completedAt: now,
@@ -268,10 +280,13 @@ struct ScenarioSavedExecutionReportTests {
         defer { try? FileManager.default.removeItem(at: support) }
         let store = EvaluationStore(supportDirectory: support)
         let root = store.overviewStorageDirectory.appending(path: "IntentLab")
-        let fixture = try await savedFixture(root: root, semanticOnlyFeature: semanticOnlyFeature)
+        let fixture = try await savedFixture(root: root, semanticOnlyFeature: semanticOnlyFeature,
+                                            projectID: store.selectedProjectID)
         if semanticOnlyFeature {
             #expect(fixture.run.laneResults[0].outcome == .notObserved)
             #expect(fixture.run.laneResults[0].claims == [.executionCompleted])
+        } else {
+            #expect(fixture.run.laneResults[0].claims == [.executionCompleted, .returnedValueChecked])
         }
         let service = ScenarioSavedExecutionReportService(rootDirectory: root)
         let coordinator = ScenarioCoordinator(supportDirectory: store.overviewStorageDirectory, evaluationStore: store,
@@ -288,6 +303,19 @@ struct ScenarioSavedExecutionReportTests {
         let mcpDecision = try #require(response.structuredContent.objectValue?["qualification"])
         #expect(mcpDecision.objectValue?["incompleteEvidence"] == .array([]))
         #expect(mcpDecision.objectValue?["requiredFailures"] == .array([]))
+        let projectResponse = await MCPStoreAuthority.make(store: store).call(
+            .projectReleaseReport(.init(projectID: store.selectedProjectID))
+        )
+        #expect(!projectResponse.isError)
+        let projectReport = try #require(projectResponse.structuredContent.objectValue?["report"])
+        guard case .array(let scenarios) = try #require(projectReport.objectValue?["scenarios"]) else {
+            Issue.record("The project report must include its coordinated scenario reports.")
+            return
+        }
+        let scenario = try #require(scenarios.first?.objectValue)
+        #expect(scenario["outcome"] == .string("passed"))
+        #expect(scenario["executionID"] == .string(fixture.record.id.uuidString))
+        #expect(scenario["runID"] == nil || scenario["runID"] == .null)
         let gui = try #require(await coordinator.qualificationForSelectedExecution())
         #expect(gui.report?.outcome == qualification.report?.outcome)
         var artifacts: [UUID: Data] = [:]
@@ -308,6 +336,57 @@ struct ScenarioSavedExecutionReportTests {
             policy: IntentEvidenceChecker.policyID, referenceTime: Date())
         #expect(cli.exitCode == 0)
         #expect(try fileSnapshot(root) == before)
+    }
+
+    @Test func semanticAssessmentCannotReplaceMissingFeatureReturnClaim() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try await savedFixture(root: root, includeFeatureReturnClaim: false)
+        #expect(fixture.run.laneResults[0].outcome == .needsReview)
+        #expect(fixture.run.laneResults[0].claims == [.executionCompleted])
+        #expect(ScenarioResultEvaluator.requiredClaims(for: fixture.definition, lane: .appFeature)
+            .contains(.returnedValueChecked))
+        let before = try fileSnapshot(root)
+        let decision = try await ScenarioSavedExecutionReportService(rootDirectory: root)
+            .qualification(executionID: fixture.record.id)
+        #expect(decision.requiredFailures.isEmpty)
+        #expect(decision.incompleteEvidence == [
+            "Required proof claims are incomplete across the coordinated route population."
+        ])
+        #expect(decision.report?.outcome == .incompleteOrIncompatibleEvidence)
+        #expect(try fileSnapshot(root) == before)
+    }
+
+    @MainActor
+    @Test func projectReleaseDoesNotBorrowAnOlderPassForANewerUnfinishedPlan() async throws {
+        let support = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: support) }
+        let store = EvaluationStore(supportDirectory: support)
+        let root = store.overviewStorageDirectory.appending(path: "IntentLab")
+        let fixture = try await savedFixture(root: root, projectID: store.selectedProjectID)
+        let pending = try ScenarioExecutionPlan.make(
+            definition: fixture.definition, profile: fixture.plan.profile,
+            appProductDigest: fixture.plan.appProductDigest, testProductDigest: fixture.plan.testProductDigest,
+            sourceInputsDigest: try #require(fixture.plan.sourceInputsDigest),
+            runnerBuildID: nil, runnerID: nil,
+            createdAt: fixture.plan.createdAt.addingTimeInterval(2)
+        )
+        try await ScenarioPersistence(rootDirectory: root).savePlan(pending)
+        let response = await MCPStoreAuthority.make(store: store).call(
+            .projectReleaseReport(.init(projectID: store.selectedProjectID))
+        )
+        #expect(!response.isError)
+        let report = try #require(response.structuredContent.objectValue?["report"])
+        guard case .array(let scenarios) = try #require(report.objectValue?["scenarios"]) else {
+            Issue.record("The project report omitted a required scenario.")
+            return
+        }
+        #expect(scenarios.first?.objectValue?["outcome"] == .string("incompleteOrIncompatibleEvidence"))
+        if case .string(let summary) = scenarios.first?.objectValue?["summary"] {
+            #expect(summary.contains("no terminal coordinated execution"))
+        } else {
+            Issue.record("Expected an incomplete execution summary")
+        }
     }
 
     @Test(arguments: ["semantic", "direct"])

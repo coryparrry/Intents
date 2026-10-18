@@ -11,6 +11,33 @@ struct EvaluationDeveloperFeatureAdapter: EvaluationFeatureAdapter {
     let client: DeveloperRunnerClient
     let timeout: Duration
 
+    static func validationIssue(for feature: DeveloperFeatureDescriptor) -> String? {
+        if feature.subjectInputSchema != nil
+            || feature.capabilityNames.contains(DeveloperSubjectInputSchema.capabilityName) {
+            return "\(feature.displayName) requires business inputs. Use it in an Intents scenario, or choose a text feature for this suite."
+        }
+        // Historical text registrations have no capability/schema metadata.
+        // Their declared input type is sufficient; arbitrary typed registrations
+        // need their own mapping instead of receiving a text payload by accident.
+        // The desktop embeds the SDK sources in its own module; app runners
+        // normally import the FoundationEvalsDeveloper package instead.
+        let textTypes = [
+            "FoundationEvalsDeveloper.DeveloperTextFeatureInput",
+            String(reflecting: DeveloperTextFeatureInput.self),
+            String(describing: DeveloperTextFeatureInput.self)
+        ]
+        guard textTypes.contains(feature.inputTypeName) else {
+            return "\(feature.displayName) uses a different input format. Choose a feature registered with registerTextFeature to run text cases."
+        }
+        return nil
+    }
+
+    static func validate(_ feature: DeveloperFeatureDescriptor) throws {
+        if let issue = validationIssue(for: feature) {
+            throw DeveloperExecutionFailure(code: .unsupportedInputContract, message: issue)
+        }
+    }
+
     var displayName: String {
         "\(feature.displayName) on \(runner.identity.displayName)"
     }
@@ -42,6 +69,7 @@ struct EvaluationDeveloperFeatureAdapter: EvaluationFeatureAdapter {
 
     func evaluate(_ input: EvaluationFeatureInput) async throws -> EvaluationFeatureOutput {
         try Task.checkCancellation()
+        try Self.validate(feature)
         let wireInput = DeveloperTextFeatureInput(
             caseID: input.caseID,
             instructions: input.instructions,
