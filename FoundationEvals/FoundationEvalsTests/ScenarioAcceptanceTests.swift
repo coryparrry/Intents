@@ -547,7 +547,10 @@ struct ScenarioAcceptanceTests {
     @MainActor
     private func assertMCPRejects(runID: UUID, root: URL) async throws {
         let store = EvaluationStore(supportDirectory: root.deletingLastPathComponent())
-        let result = await MCPStoreAuthority.make(store: store).call(
+        let gate = IntentLabFeatureGate(load: { true })
+        await gate.refresh()
+        let control = EvaluationAppControl(store: store, intentLabFeatureGate: gate)
+        let result = await MCPStoreAuthority.make(store: store, control: control).call(
             .getScenarioReport(.init(runID: runID))
         )
         #expect(!result.isError)
@@ -559,7 +562,10 @@ struct ScenarioAcceptanceTests {
     @MainActor
     private func assertMCPRejectsUnreadableJournal(runID: UUID, root: URL) async throws {
         let store = EvaluationStore(supportDirectory: root.deletingLastPathComponent())
-        let result = await MCPStoreAuthority.make(store: store).call(
+        let gate = IntentLabFeatureGate(load: { true })
+        await gate.refresh()
+        let control = EvaluationAppControl(store: store, intentLabFeatureGate: gate)
+        let result = await MCPStoreAuthority.make(store: store, control: control).call(
             .getScenarioReport(.init(runID: runID))
         )
         #expect(result.isError)

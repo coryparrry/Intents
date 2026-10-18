@@ -298,12 +298,15 @@ struct ScenarioSavedExecutionReportTests {
         #expect(qualification.incompleteEvidence.isEmpty)
         #expect(qualification.requiredFailures.isEmpty)
         #expect(qualification.report?.outcome == .passed)
-        let response = await MCPStoreAuthority.make(store: store).call(.getScenarioExecutionReport(.init(executionID: fixture.record.id)))
+        let gate = IntentLabFeatureGate(load: { true })
+        await gate.refresh()
+        let control = EvaluationAppControl(store: store, intentLabFeatureGate: gate)
+        let response = await MCPStoreAuthority.make(store: store, control: control).call(.getScenarioExecutionReport(.init(executionID: fixture.record.id)))
         #expect(!response.isError)
         let mcpDecision = try #require(response.structuredContent.objectValue?["qualification"])
         #expect(mcpDecision.objectValue?["incompleteEvidence"] == .array([]))
         #expect(mcpDecision.objectValue?["requiredFailures"] == .array([]))
-        let projectResponse = await MCPStoreAuthority.make(store: store).call(
+        let projectResponse = await MCPStoreAuthority.make(store: store, control: control).call(
             .projectReleaseReport(.init(projectID: store.selectedProjectID))
         )
         #expect(!projectResponse.isError)
@@ -362,6 +365,9 @@ struct ScenarioSavedExecutionReportTests {
         let support = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: support) }
         let store = EvaluationStore(supportDirectory: support)
+        let gate = IntentLabFeatureGate(load: { true })
+        await gate.refresh()
+        let control = EvaluationAppControl(store: store, intentLabFeatureGate: gate)
         let root = store.overviewStorageDirectory.appending(path: "IntentLab")
         let fixture = try await savedFixture(root: root, projectID: store.selectedProjectID)
         let pending = try ScenarioExecutionPlan.make(
@@ -372,7 +378,7 @@ struct ScenarioSavedExecutionReportTests {
             createdAt: fixture.plan.createdAt.addingTimeInterval(2)
         )
         try await ScenarioPersistence(rootDirectory: root).savePlan(pending)
-        let response = await MCPStoreAuthority.make(store: store).call(
+        let response = await MCPStoreAuthority.make(store: store, control: control).call(
             .projectReleaseReport(.init(projectID: store.selectedProjectID))
         )
         #expect(!response.isError)
@@ -441,7 +447,10 @@ struct ScenarioSavedExecutionReportTests {
         let store = EvaluationStore(supportDirectory: support)
         let root = store.overviewStorageDirectory.appending(path: "IntentLab")
         let fixture = try await savedFixture(root: root, semanticOnlyFeature: true)
-        let authority = MCPStoreAuthority.make(store: store)
+        let gate = IntentLabFeatureGate(load: { true })
+        await gate.refresh()
+        let control = EvaluationAppControl(store: store, intentLabFeatureGate: gate)
+        let authority = MCPStoreAuthority.make(store: store, control: control)
         let missing = await authority.call(.getScenarioExecutionReport(.init(executionID: UUID())))
         #expect(missing.isError)
         let service = ScenarioSavedExecutionReportService(rootDirectory: root)

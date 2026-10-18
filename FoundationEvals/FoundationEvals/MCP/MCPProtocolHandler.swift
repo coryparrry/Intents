@@ -196,12 +196,7 @@ actor MCPProtocolHandler {
             return rpcError(id: request.id!, code: -32_602, message: "Invalid tool arguments.")
         }
 
-        var payload: MCPToolPayload
-        if case .actionCatalog(let request) = call {
-            payload = MCPActionDiscovery.respond(request)
-        } else {
-            payload = await authority.call(call)
-        }
+        var payload = await authority.call(call)
         let text: String
         do {
             text = try payload.structuredContent.jsonText()

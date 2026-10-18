@@ -14,9 +14,16 @@ enum MCPStoreAuthority {
 
     private static func handle(_ call: MCPToolCall, store: EvaluationStore, control: EvaluationAppControl, automationStore: AppAutomationStore?) async -> MCPToolPayload {
         do {
+            if !control.intentLabFeatureGate.isEnabled {
+                switch call {
+                case .listScenarioRuns, .getScenarioReport, .getScenarioExecutionReport:
+                    return .failure(code: "feature_disabled", message: "Intent Lab is unavailable.")
+                default: break
+                }
+            }
             switch call {
             case .actionCatalog(let request):
-                return MCPActionDiscovery.respond(request)
+                return MCPActionDiscovery.respond(request, intentLabEnabled: control.intentLabFeatureGate.isEnabled)
             case .control(let request):
                 return await control.mcp.execute(request)
             case .listAutomationApplications:
@@ -119,7 +126,15 @@ enum MCPStoreAuthority {
                     "markdown": .string(EvaluationReleaseCheckEvaluator.markdown(report))
                 ])
             case .projectReleaseReport(let arguments):
-                let suiteReport = try store.projectReleaseCheckReport(projectID: arguments.projectID)
+                var suiteReport = try store.projectReleaseCheckReport(projectID: arguments.projectID)
+                suiteReport.intentLabAvailable = control.intentLabFeatureGate.isEnabled
+                guard suiteReport.intentLabAvailable == true else {
+                    suiteReport.summary += " Intent Lab is unavailable; this report covers evaluation suites only. Saved Intent Lab evidence was not evaluated."
+                    return readPayload([
+                        "report": try json(suiteReport),
+                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(suiteReport))
+                    ])
+                }
                 let persistence = scenarioPersistence(store)
                 let allDefinitions: [ScenarioDefinition]
                 do {

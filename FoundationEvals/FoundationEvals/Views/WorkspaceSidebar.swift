@@ -13,6 +13,7 @@ private enum WorkspaceDestination: Hashable {
 
 struct WorkspaceSidebar: View {
     @Bindable var store: EvaluationStore
+    var intentLabEnabled = false
     @State private var isManagingWorkspace = false
     @State private var isCreatingSuite = false
     @State private var isCreatingProject = false
@@ -47,7 +48,9 @@ struct WorkspaceSidebar: View {
                 do {
                     switch selection {
                     case .overview: store.selection = .overview
-                    case .intentLab: store.selection = .intentLab
+                    case .intentLab:
+                        guard intentLabEnabled else { return }
+                        store.selection = .intentLab
                     case .evaluations: store.selection = .evaluations
                     case .batchRuns: store.selection = .batchRuns
                     case .traces: store.selection = .traces
@@ -68,19 +71,21 @@ struct WorkspaceSidebar: View {
             Section {
                 Label("Overview", systemImage: "square.grid.2x2")
                     .tag(WorkspaceDestination.overview)
-                Label {
-                    HStack(spacing: 6) {
-                        Text("Intent Lab")
-                        Text("Beta")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(.fill.tertiary, in: .capsule)
-                    }
-                } icon: { Image(systemName: WorkspaceIcon.systemName(for: "intent-lab")) }
-                    .accessibilityElement(children: .combine)
-                    .tag(WorkspaceDestination.intentLab)
+                if intentLabEnabled {
+                    Label {
+                        HStack(spacing: 6) {
+                            Text("Intent Lab")
+                            Text("Beta")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(.fill.tertiary, in: .capsule)
+                        }
+                    } icon: { Image(systemName: WorkspaceIcon.systemName(for: "intent-lab")) }
+                        .accessibilityElement(children: .combine)
+                        .tag(WorkspaceDestination.intentLab)
+                }
                 Label { Text("Evaluations") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
                     .accessibilityIdentifier("Sidebar evaluations")
                     .tag(WorkspaceDestination.evaluations)

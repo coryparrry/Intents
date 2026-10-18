@@ -37,7 +37,7 @@ final class FoundationEvalsUITests: XCTestCase {
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -63,7 +63,7 @@ final class FoundationEvalsUITests: XCTestCase {
         let storageName = UUID().uuidString
         let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()

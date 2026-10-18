@@ -451,7 +451,8 @@ class MatrixTests(unittest.TestCase):
 
     def test_full_matrix_covers_every_ordinary_ui_suite_once(self):
         expected = {routes.UI_TARGET + suite for suite in (
-            "FoundationEvalsUITests", "IntentLabGuidanceUITests", "SimplificationUITests",
+            "FoundationEvalsUITests", "IntentLabGuidanceUITests", "IntentLabFeatureGateUITests",
+            "SimplificationUITests",
             "IntentLabArrayEntryUITests", "FoundationEvalsRunLifecycleUITests",
             "WorkflowTraceUITests", "AutomationDependencyControlsUITests",
             "WorkspacePolishUITests", "EvaluationReviewUITests",

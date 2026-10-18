@@ -44,7 +44,8 @@ STANDALONE_PLUGIN_METADATA = {
 # Keep the existing PR baseline, including the picker once, across independent desktops.
 UI_BASELINE = {
     "suite-editor": [UI_TARGET + "FoundationEvalsUITests"],
-    "intent-lab": [UI_TARGET + "IntentLabGuidanceUITests", UI_TARGET + "SimplificationUITests"],
+    "intent-lab": [UI_TARGET + "IntentLabGuidanceUITests", UI_TARGET + "SimplificationUITests",
+                   UI_TARGET + "IntentLabFeatureGateUITests"],
     "runs": [UI_TARGET + "FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration"],
     "traces": [UI_TARGET + "WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence"],
     "automation": [
@@ -142,6 +143,7 @@ UI_APP_GROUPS = {
     "Services/MetricScorer.swift": {"runs"},
     "MCP/Installer/MCPSettingsController.swift": {"settings"},
     "Services/TelemetryController.swift": {"settings"},
+    "Services/IntentLabFeatureGate.swift": {"intent-lab"},
     "Views/Components/RunToolbarProgress.swift": {"runs"},
     "Views/Components/SolidTimelineBar.swift": {"traces"},
     # Batch workspace has native tests but no dedicated authored UI test class.
@@ -183,7 +185,7 @@ def app_ui_groups(relative):
     return None
 
 UI_FEATURE_CLASSES = {
-    "intent-lab": {"IntentLabArrayEntryUITests"},
+    "intent-lab": {"IntentLabArrayEntryUITests", "IntentLabFeatureGateUITests"},
     "runs": {"FoundationEvalsRunLifecycleUITests"},
     "traces": {"WorkflowTraceUITests"},
     "automation": {"AppAutomationUITests"},
@@ -203,6 +205,7 @@ PHYSICAL_SCENARIO_SUITES = {
 }
 SCENARIO_EXECUTION_SUITES = {"ScenarioContractsTests"} | PHYSICAL_SCENARIO_SUITES
 SWIFT_DEPENDENCIES = {
+    "Services/IntentLabFeatureGate.swift": {"IntentLabFeatureGateTests"},
     "MCP/Installer/CodexMCPInstaller.swift": {"CodexMCPInstallerTests"},
     "Models/EvaluationFieldAssertion.swift": {"EvaluationFieldAssertionTests"},
     "Models/EvaluationScoringTypes.swift": {

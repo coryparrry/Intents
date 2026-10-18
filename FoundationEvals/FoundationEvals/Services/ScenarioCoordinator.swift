@@ -101,6 +101,7 @@ final class ScenarioCoordinator {
     private let rootDirectory: URL
     private let evaluationStore: EvaluationStore
     private let executionAdmission: ScenarioExecutionAdmission
+    private let intentLabFeatureGate: IntentLabFeatureGate?
     @ObservationIgnored private weak var developerRunnerStore: DeveloperRunnerStore?
     private var ledger = ScenarioImportLedger()
     private var preflightRevision = 0
@@ -114,7 +115,9 @@ final class ScenarioCoordinator {
 
     init(supportDirectory: URL, evaluationStore: EvaluationStore,
          initialConnectionDiscovery: XcodeConnectionDiscovery? = nil,
-         executionAdmission: ScenarioExecutionAdmission = .shared) {
+         executionAdmission: ScenarioExecutionAdmission = .shared,
+         intentLabFeatureGate: IntentLabFeatureGate? = nil) {
+        self.intentLabFeatureGate = intentLabFeatureGate
         let root = supportDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
         rootDirectory = root
         automationSupport = supportDirectory.appendingPathComponent("Automation")
@@ -190,6 +193,9 @@ final class ScenarioCoordinator {
     /// ordinary run cannot start between them, and its own start checks this
     /// lease before dispatching an app action.
     private func acquireExecutionOwner(_ id: UUID) throws {
+        guard intentLabFeatureGate?.isEnabled != false else {
+            throw EvaluationStoreError.resourceConflict(IntentLabFeatureGate.unavailableMessage)
+        }
         guard !isClosing else {
             throw EvaluationStoreError.resourceConflict("Intent Lab is closing. No new device run can start.")
         }
