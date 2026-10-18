@@ -211,8 +211,6 @@ class FakeCommands:
             envelope = json.loads(Path(args[args.index("--plan") + 1]).read_text())
             self.envelopes.append(envelope)
             plan = envelope["plan"]
-            if self.failure == plan["id"]:
-                raise RuntimeError("injected scenario failure")
             summary = "executedUnassessed"
             if plan["requirements"]:
                 summary = "passed" if plan["requirements"][0]["expected"]["value"] else "assertionFailed"
@@ -458,15 +456,10 @@ class OrchestrationTests(unittest.TestCase):
             "codec-1": ("codec-1",), "codec-2": ("codec-2",), "codec-file": ("codec-file",),
             "mixed": ("mixed",), "wrong-assertion": ("wrong-assertion",),
             "timeout-recovery": ("timeout", "after-timeout"),
-            "codecs": ("codec-1", "codec-2", "codec-file"),
-            "behavior": ("mixed", "wrong-assertion", "timeout", "after-timeout"),
         }
         self.assertEqual(driver.SCENARIO_GROUPS, expected)
         all_cases = driver.scenario_cases("all")
-        self.assertEqual(all_cases, ("codec-1", "codec-2", "codec-file", "mixed",
-                                     "wrong-assertion", "timeout", "after-timeout"))
-        self.assertEqual(expected["codecs"] + expected["behavior"], all_cases)
-        self.assertTrue(set(expected["codecs"]).isdisjoint(expected["behavior"]))
+        self.assertEqual(all_cases, tuple(case for cases in expected.values() for case in cases))
         self.assertEqual(len(all_cases), 7)
         self.assertEqual(len(set(all_cases)), 7)
 
@@ -487,10 +480,10 @@ class OrchestrationTests(unittest.TestCase):
                     ["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"],
                 )]
                 self.assertEqual(cleanup, [["xcrun", "simctl", verb, owned] for verb in ("shutdown", "delete")])
-                if "timeout" in selected:
+                if group == "timeout-recovery":
                     runs = [args for args in calls if "run" in args]
                     self.assertEqual(len({args[args.index("--support-root") + 1] for args in runs}), 1)
-                    self.assertEqual([result["summary"] for result in results[-2:]], ["timedOut", "executedUnassessed"])
+                    self.assertEqual([result["summary"] for result in results], ["timedOut", "executedUnassessed"])
 
     def test_setup_launch_failure_aborts_before_registration_and_cleans_owned_simulator(self):
         commands, _ = self.exercise(failure="launch")
@@ -511,20 +504,6 @@ class OrchestrationTests(unittest.TestCase):
                 )]
                 owned = prepared()["host"]["target"]["id"]
                 self.assertEqual(cleanup, [["xcrun", "simctl", verb, owned] for verb in ("shutdown", "delete")])
-
-    def test_aggregate_group_case_failures_abort_and_clean_the_owned_simulator(self):
-        for group in ("codecs", "behavior"):
-            selected = driver.scenario_cases(group)
-            for index, case in enumerate(selected):
-                with self.subTest(group=group, case=case):
-                    commands, _ = self.exercise(failure="phase3." + case, scenario_group=group)
-                    self.assertEqual([envelope["plan"]["id"] for envelope in commands.envelopes],
-                                     ["phase3.registration", *("phase3." + value for value in selected[:index + 1])])
-                    cleanup = [args for args, _ in commands.calls if args[:3] in (
-                        ["xcrun", "simctl", "shutdown"], ["xcrun", "simctl", "delete"],
-                    )]
-                    owned = prepared()["host"]["target"]["id"]
-                    self.assertEqual(cleanup, [["xcrun", "simctl", verb, owned] for verb in ("shutdown", "delete")])
 
     def test_partial_duplicate_extra_reordered_or_invalid_reports_cannot_pass(self):
         _, reports = self.exercise()
@@ -554,8 +533,7 @@ class OrchestrationTests(unittest.TestCase):
             ("codec-1", set(driver.FAMILIES[:7]) | set(driver.ARRAYS[:3])),
             ("codec-2", set(driver.ARRAYS) | {"duration", "calendarComponents", "url"}),
             ("codec-file", {"intentFile"}), ("mixed", set()), ("wrong-assertion", set()),
-            ("timeout-recovery", {"text"}), ("codecs", set(driver.FAMILIES)),
-            ("behavior", {"text"}), ("all", set(driver.FAMILIES)),
+            ("timeout-recovery", {"text"}), ("all", set(driver.FAMILIES)),
         ):
             with self.subTest(group=group), tempfile.TemporaryDirectory() as directory:
                 _, reports = self.exercise(scenario_group=group)

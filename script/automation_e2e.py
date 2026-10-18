@@ -30,8 +30,6 @@ SCENARIO_GROUPS = {
     "mixed": ("mixed",),
     "wrong-assertion": ("wrong-assertion",),
     "timeout-recovery": ("timeout", "after-timeout"),
-    "codecs": ("codec-1", "codec-2", "codec-file"),
-    "behavior": ("mixed", "wrong-assertion", "timeout", "after-timeout"),
 }
 SCENARIO_SUMMARIES = {
     "codec-1": "executedUnassessed", "codec-2": "executedUnassessed",
@@ -48,8 +46,7 @@ def ensure(condition, message):
 
 def scenario_cases(group):
     ensure(group == "all" or group in SCENARIO_GROUPS, "Unknown scenario group: " + str(group))
-    # The canonical cases, rather than overlapping group aliases, define full coverage.
-    return tuple(SCENARIO_SUMMARIES) if group == "all" else SCENARIO_GROUPS[group]
+    return tuple(case for cases in SCENARIO_GROUPS.values() for case in cases) if group == "all" else SCENARIO_GROUPS[group]
 
 
 def verify_scenario_selection(reports, group):

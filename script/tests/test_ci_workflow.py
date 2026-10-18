@@ -238,17 +238,15 @@ class GateTests(unittest.TestCase):
         self.assertIn("uses: actions/cache/save@", workflow)
         self.assertIn("key: ${{ steps.cli-cache.outputs.cache-primary-key }}", workflow)
 
-    def test_simulator_partitions_coverage_with_independent_results_and_one_cache_writer(self):
+    def test_simulator_runs_every_scenario_with_one_setup_and_cache_writer(self):
         workflow = job("automation-e2e-scenarios")
         self.assertIn("needs: [changes, quality]", workflow)
-        self.assertIn("group: [codecs, behavior]", workflow)
-        self.assertIn("fail-fast: false", workflow)
-        self.assertIn('--scenario-group "${{ matrix.group }}"', workflow)
-        self.assertIn("name: automation-e2e-${{ matrix.group }}", workflow)
+        self.assertNotIn("matrix", workflow)
+        self.assertIn("--scenario-group all", workflow)
+        self.assertIn("name: automation-e2e", workflow)
         condition = re.search(r"Save successfully compiled automation CLI\n        if: (.+)", workflow)[1]
         self.assertIn("!cancelled()", condition)
         self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
-        self.assertIn("matrix.group == 'codecs'", condition)
         self.assertNotIn("success()", condition)
 
     def test_scripts_run_all_selected_modules_in_one_job(self):

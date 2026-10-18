@@ -9,6 +9,7 @@ import subprocess
 from urllib.parse import unquote, urlparse
 
 from ci_ui_xctestrun import prepare_ui_xctestrun
+from ci_test_policy import NATIVE_MANUAL_METHODS
 
 
 def test_command(products, selection, result, iterations=1):
@@ -34,6 +35,8 @@ def test_command(products, selection, result, iterations=1):
         "-parallel-testing-enabled", "NO" if ui else "YES",
     ]
     command.extend(f"-only-testing:{test}" for test in sorted(set(selection)))
+    if any(test == "FoundationEvalsTests" or test.startswith("FoundationEvalsTests/") for test in selection):
+        command.extend(f"-skip-testing:{test}" for test in sorted(NATIVE_MANUAL_METHODS))
     if iterations > 1:
         command.extend(["-test-iterations", str(iterations)])
     return [*command, "CODE_SIGNING_ALLOWED=NO"]

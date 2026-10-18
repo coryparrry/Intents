@@ -17,7 +17,7 @@ TESTS = "FoundationEvals/FoundationEvalsTests/"
 UI_TESTS = "FoundationEvals/FoundationEvalsUITests/"
 UI_TARGET = "FoundationEvalsUITests/"
 # These require staged fixtures and explicit live-run opt-in. Ordinary full
-# coverage excludes them; editing either class still selects it explicitly.
+# coverage excludes them, including when their source files change.
 OPT_IN_UI_SUITES = {"FreshRecordAutomationUITests", "MacPreparationUITests"}
 OPT_IN_UI_METHODS = {
     "AppAutomationUITests": {"testPreparedPureEchoShowsUnassessedNativeEvidence"},
@@ -405,7 +405,7 @@ def ui_matrix(groups, extra_classes=(), targeted=False, root=ROOT):
     # New or edited classes include methods outside the baseline; mixed suites
     # are expanded below to exclude live fixtures even when their file changes.
     # A whole-class selector supersedes partial selectors everywhere, avoiding repeats.
-    for suite in sorted(extra_classes):
+    for suite in sorted(set(extra_classes) - OPT_IN_UI_SUITES):
         selector = UI_TARGET + suite
         owner = next((
             name for name, tests in UI_BASELINE.items()
@@ -610,7 +610,10 @@ def coverage_plan(paths, root=ROOT):
             )
         elif path.startswith(UI_TESTS):
             native = ui = True
-            if not changed_ui_classes([path], root):
+            # Keep the edited UI bundle compiled and use ordinary coverage when
+            # its only declared suites need unavailable manual fixtures. This
+            # avoids selecting unsupported tests or emitting an empty UI matrix.
+            if not (changed_ui_classes([path], root) - OPT_IN_UI_SUITES):
                 ui_fallback = True
             reasons.add(
                 "App UI tests require the UI test bundle to compile; unrelated portable suites are omitted."

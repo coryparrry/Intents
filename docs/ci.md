@@ -12,7 +12,8 @@ prevent a green required check when selected product checks did not pass.
   not part of ordinary coverage; the prepared pure-echo method in the mixed
   AppAutomation suite is also excluded, including when that file changes. Other
   methods in mixed suites are discovered automatically. Editing an opt-in-only
-  test file still selects it explicitly, with its specialized runtime prerequisites.
+  test file keeps its bundle compiled but selects ordinary UI coverage; live
+  qualification remains a separate manual run.
 - Linux workflow validation and selected script tests finish before Mac workers
   are allocated. A failure here blocks expensive builds and simulator setup.
 - Portable Swift, macOS script, native core and selected SDK consumer checks
@@ -40,6 +41,16 @@ prevent a green required check when selected product checks did not pass.
 - Fresh external SDK consumers run for SDK/installer changes and full runs.
   They still build the installer's immutable remote revision and verify a receipt
   for both public products. Unrelated app changes do not rebuild that SDK.
+
+## Manual qualifications
+
+Automatic runners exclude the [manual qualification methods](ci-manual-tests.md)
+whose fixtures, profiles, model assets or activation flags they do not provide.
+This includes 26 runtime opt-ins in ordinary Swift execution, the native model
+integration, and the native duplicate of the SDK installer integration. Dedicated
+SDK and input-conversion jobs keep their explicitly provisioned checks. These
+exclusions remove skipped entries from automatic selection, preserving the
+ordinary methods in each suite and direct manual execution paths.
 
 ## Required result
 
@@ -85,12 +96,10 @@ explicit aggregate gate. Its matching
 Xcode builds, Swift UI tests, or simulator App Intent execution. That elapsed
 time is not an equivalent native-validation target.
 
-Simulator scenarios run in two independent groups: three codec scenarios and
-four behavior scenarios. Timeout and recovery stay together on the same owned
-simulator. Their union is exactly the original seven cases; each group checks its
-complete result set. Both groups must pass, and failure does not cancel the other
-group. Each pays its own setup cost; only the codec group writes the shared CLI
-cache. Full runs allocate eight Mac workers, down from nine before consolidation.
+Simulator acceptance uses one worker. A two-group hosted trial took 16m11s for
+its slower group, versus 16m05s for the preceding single-worker run, and delayed a
+UI shard by over six minutes. That split was removed. Full runs allocate seven
+Mac workers instead of the original nine; all seven scenarios still run.
 
 Fixture preparation and exact-Xcode validation finish before simulator boot.
 Overlapping these phases failed hosted toolchain probes and stalled simulator

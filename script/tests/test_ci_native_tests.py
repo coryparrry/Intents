@@ -1,6 +1,7 @@
 """Check native shard selection and relocated test-product execution."""
 
 import importlib.util
+import re
 from pathlib import Path
 import sys
 import tempfile
@@ -24,6 +25,7 @@ class NativeShardTests(unittest.TestCase):
         self.assertEqual(command.count(f"-only-testing:{test}"), 1)
         self.assertEqual(command[command.index("-parallel-testing-enabled") + 1], "NO")
         self.assertNotIn("-test-iterations", command)
+        self.assertFalse(any(argument.startswith("-skip-testing:") for argument in command))
 
     def test_core_shard_keeps_parallel_execution_and_excludes_ui(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -34,6 +36,31 @@ class NativeShardTests(unittest.TestCase):
         self.assertIn(str(descriptor), command)
         self.assertIn("-only-testing:FoundationEvalsTests", command)
         self.assertEqual(command[command.index("-parallel-testing-enabled") + 1], "YES")
+        self.assertEqual({argument for argument in command if argument.startswith("-skip-testing:")}, {
+            "-skip-testing:FoundationEvalsTests/CoreAIModelLoaderTests/configuredResourcesLoadAndGenerate()",
+            "-skip-testing:FoundationEvalsTests/IntentLabProjectInstallerTests/generatedMacUITestTargetBuildsWithXcode()",
+        })
+
+    def test_native_manual_signatures_exist_in_their_owning_test_sources(self):
+        for selector in runner.NATIVE_MANUAL_METHODS:
+            target, suite, method = selector.split("/")
+            self.assertEqual(target, "FoundationEvalsTests")
+            self.assertTrue(method.endswith("()"), "Swift Testing requires a complete function signature")
+            source = SCRIPT.parents[1] / "FoundationEvals/FoundationEvalsTests" / (suite + ".swift")
+            self.assertRegex(source.read_text(), r"\bfunc\s+" + re.escape(method.removesuffix("()")) + r"\s*\(")
+
+    def test_manual_exclusions_keep_ordinary_suites_and_repository_process_checks(self):
+        selected = ["FoundationEvalsTests/CoreAIModelLoaderTests", "FoundationEvalsTests/IntentLabProjectInstallerTests",
+                    "FoundationEvalsTests/EvaluationRepositoryInspectorTests"]
+        with tempfile.TemporaryDirectory() as temporary:
+            products = Path(temporary)
+            (products / "FoundationEvalsCoreCI_macosx27.xctestrun").touch()
+            command = runner.test_command(products, selected, Path("core.xcresult"))
+        self.assertEqual({argument.removeprefix("-only-testing:") for argument in command
+                          if argument.startswith("-only-testing:")}, set(selected))
+        self.assertFalse(any("hangingRepositoryInspectionStopsItsChild" in argument
+                             for argument in command if argument.startswith("-skip-testing:")))
+        self.assertTrue(all(argument.count("/") == 2 for argument in command if argument.startswith("-skip-testing:")))
 
     def test_missing_or_ambiguous_descriptors_fail(self):
         with tempfile.TemporaryDirectory() as temporary:

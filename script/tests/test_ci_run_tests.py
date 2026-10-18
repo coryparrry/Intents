@@ -1,8 +1,11 @@
 """Verify test dispatch never expands an empty or invalid selection into a full run."""
 
 import importlib.util
+from contextlib import redirect_stdout
+import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -67,9 +70,12 @@ class SelectionTests(unittest.TestCase):
     def test_full_swift_selection_runs_all_including_new_suites(self):
         with patch.object(runner.subprocess, "run") as run:
             runner.run_tests("swift", ["*"])
-        run.assert_called_once_with(
-            ["swift", "test"], check=True
-        )
+        self.assertEqual(run.call_count, 1)
+        command = run.call_args.args[0]
+        self.assertEqual(command[:2], ["swift", "test"])
+        self.assertNotIn("--filter", command)
+        pattern = command[command.index("--skip") + 1]
+        self.assertNotRegex("NewTests.NewOrdinaryTests/testFutureCase", pattern)
 
     def test_malformed_or_option_like_selections_never_start_processes(self):
         for kind, names in (
@@ -126,10 +132,88 @@ class SelectionTests(unittest.TestCase):
     def test_installer_wildcard_uses_one_unfiltered_run_and_python_cannot_enable_it(self):
         with patch.object(runner.subprocess, "run") as run:
             runner.run_tests("swift", ["*"], include_installer=True)
-            run.assert_called_once_with(["swift", "test"], check=True)
+            self.assertEqual(run.call_count, 1)
+            command = run.call_args.args[0]
+            self.assertNotIn("--filter", command)
+            self.assertEqual(command.count("--skip"), 1)
+            self.assertNotRegex("FoundationEvalsPortableTests.IntentLabProjectInstallerTests/generatedMacUITestTargetBuildsWithXcode()",
+                                command[command.index("--skip") + 1])
         with patch.object(runner.subprocess, "run") as run, self.assertRaisesRegex(ValueError, "requires Swift"):
             runner.run_tests("python", [], include_installer=True)
         run.assert_not_called()
+
+    def test_swift_skip_pattern_excludes_only_exact_manual_methods(self):
+        from script.ci_test_policy import SWIFT_MANUAL_METHODS, INSTALLER_METHOD
+        with patch.object(runner.subprocess, "run") as run:
+            runner.run_tests("swift", ["*"])
+        command = run.call_args.args[0]
+        pattern = command[command.index("--skip") + 1]
+        for identifier in SWIFT_MANUAL_METHODS | {INSTALLER_METHOD}:
+            suite, method = identifier.split("/", 1)
+            with self.subTest(identifier=identifier):
+                self.assertRegex("Module." + identifier, pattern)
+                self.assertRegex("Module." + identifier + "()", pattern)
+                self.assertNotRegex("Module." + identifier + "Extra", pattern)
+                self.assertNotRegex("Module." + suite + "Extra/" + method, pattern)
+        for identifier in (
+            "IntentsAutomationCoreTests.AutomationProcessTests/testTimeoutRetainsBoundedFailureOutputAfterStoppingOwnedChild",
+            "IntentsAutomationCoreTests.AutomationCommandCallbackDrainTests/testCancelledPrelaunchCallbackRetainsOwnership",
+            "Module.AutomationMacHostPreparationTests/testNewOrdinaryCase",
+        ):
+            self.assertNotRegex(identifier, pattern)
+
+    def test_manual_policy_matches_runtime_opt_in_methods_in_source(self):
+        from script.ci_test_policy import SWIFT_MANUAL_METHODS
+        found = set()
+        for source in (SCRIPT.parents[1] / "Tests/IntentsAutomationCoreTests").glob("*.swift"):
+            text = source.read_text()
+            suites = list(re.finditer(r"\bclass\s+(\w+Tests)\s*:", text))
+            methods = list(re.finditer(r"\bfunc\s+(test\w+)\s*\(", text))
+            for skip in re.finditer(r"\bthrow XCTSkip\(", text):
+                suite = next(match[1] for match in reversed(suites) if match.start() < skip.start())
+                method = next(match[1] for match in reversed(methods) if match.start() < skip.start())
+                found.add(suite + "/" + method)
+        self.assertEqual(found, SWIFT_MANUAL_METHODS)
+
+    def test_manual_only_suite_reports_no_automatic_cases_without_test_execution(self):
+        catalog = "IntentsAutomationCoreTests.AutomationMacProductionHostTests/testProductionMacHostExecutesAndReleasesTwiceWhenRequested\n"
+        output = io.StringIO()
+        with patch.object(runner.subprocess, "run") as run, redirect_stdout(output):
+            run.return_value.stdout = catalog
+            runner.run_tests("swift", ["AutomationMacProductionHostTests"])
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0], ["swift", "test", "list"])
+        self.assertIn("No automatic eligible cases", output.getvalue())
+        self.assertIn("AutomationMacProductionHostTests", output.getvalue())
+        with patch.object(runner.subprocess, "run") as run, self.assertRaisesRegex(ValueError, "not discovered"):
+            run.return_value.stdout = catalog
+            runner.run_tests("swift", ["AutomationMacProductionHostTests", "UnknownTests"])
+        self.assertEqual(run.call_count, 1)
+
+    def test_manual_only_suite_does_not_remove_an_ordinary_selected_suite(self):
+        catalog = ("Module.AutomationMacProductionHostTests/testProductionMacHostExecutesAndReleasesTwiceWhenRequested\n"
+                   "Module.AutomationProcessTests/testTimeoutRetainsBoundedFailureOutputAfterStoppingOwnedChild\n"
+                   "Module.AutomationProcessTests/testActualOwnedSimulatorInventoryDrainsBothPipes\n")
+        with patch.object(runner.subprocess, "run") as run:
+            run.return_value.stdout = catalog
+            runner.run_tests("swift", ["AutomationMacProductionHostTests", "AutomationProcessTests"])
+        self.assertEqual(run.call_count, 2)
+        command = run.call_args.args[0]
+        selection = command[command.index("--filter") + 1]
+        self.assertNotIn("AutomationMacProductionHostTests", selection)
+        self.assertRegex(catalog.splitlines()[1], selection)
+        self.assertRegex(catalog.splitlines()[2], command[command.index("--skip") + 1])
+
+    def test_installer_only_method_is_eligible_only_when_its_sdk_lane_is_selected(self):
+        identifier = "Module.IntentLabProjectInstallerTests/generatedMacUITestTargetBuildsWithXcode()"
+        for include_installer in (False, True):
+            with self.subTest(include_installer=include_installer), patch.object(runner.subprocess, "run") as run:
+                run.return_value.stdout = identifier + "\n"
+                runner.run_tests("swift", ["IntentLabProjectInstallerTests"], include_installer=include_installer)
+                self.assertEqual(run.call_count, 2 if include_installer else 1)
+                if include_installer:
+                    command = run.call_args.args[0]
+                    self.assertNotRegex(identifier, command[command.index("--skip") + 1])
 
     def test_real_python_dispatch_loads_just_the_requested_fixture_module(self):
         with tempfile.TemporaryDirectory() as temporary:

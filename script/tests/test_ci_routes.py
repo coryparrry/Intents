@@ -472,9 +472,25 @@ class MatrixTests(unittest.TestCase):
                 selected = {test for job in plan["ui_matrix"] for test in job["tests"]}
                 self.assertIn(routes.UI_TARGET + "NewOrdinaryUITests", selected)
                 self.assertFalse(any(routes.UI_TARGET + suite in selected for suite in routes.OPT_IN_UI_SUITES))
-            edited = routes.coverage([routes.UI_TESTS + "MacPreparationUITests.swift"], root)
+            for suite in routes.OPT_IN_UI_SUITES:
+                with self.subTest(edited=suite):
+                    edited = routes.coverage([routes.UI_TESTS + suite + ".swift"], root)
+                    selected = {test for job in edited["ui_matrix"] for test in job["tests"]}
+                    self.assertTrue(edited["native"])
+                    self.assertTrue(edited["ui"])
+                    self.assertIn(routes.UI_TARGET + "NewOrdinaryUITests", selected)
+                    self.assertFalse(any(routes.UI_TARGET + name in selected for name in routes.OPT_IN_UI_SUITES))
+            edited = routes.coverage([routes.UI_TESTS + "NewOrdinaryUITests.swift"], root)
             self.assertEqual([test for job in edited["ui_matrix"] for test in job["tests"]],
-                             [routes.UI_TARGET + "MacPreparationUITests"])
+                             [routes.UI_TARGET + "NewOrdinaryUITests"])
+            mixed = routes.coverage([routes.UI_TESTS + suite + ".swift"
+                                     for suite in (*sorted(routes.OPT_IN_UI_SUITES), "NewOrdinaryUITests")], root)
+            selected = {test for job in mixed["ui_matrix"] for test in job["tests"]}
+            self.assertIn(routes.UI_TARGET + "NewOrdinaryUITests", selected)
+            self.assertFalse(any(routes.UI_TARGET + suite in selected for suite in routes.OPT_IN_UI_SUITES))
+            selected = {test for job in routes.ui_matrix((), routes.OPT_IN_UI_SUITES, root=root)
+                        for test in job["tests"]}
+            self.assertEqual(selected, set())
 
     def test_live_fixture_callers_are_explicitly_classified(self):
         callers = {}
