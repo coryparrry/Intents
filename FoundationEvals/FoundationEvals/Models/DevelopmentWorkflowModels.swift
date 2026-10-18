@@ -610,4 +610,5 @@ struct EvaluationProjectReleaseCheckReport: Codable, Sendable {
     var suites: [EvaluationProjectReleaseSuiteReport]
     var generatedAt: Date
     var scenarios: [ScenarioReleaseCheckReport]? = nil
+    var intentLabAvailable: Bool? = nil
 }

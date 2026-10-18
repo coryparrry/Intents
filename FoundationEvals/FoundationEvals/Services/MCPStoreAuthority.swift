@@ -126,7 +126,15 @@ enum MCPStoreAuthority {
                     "markdown": .string(EvaluationReleaseCheckEvaluator.markdown(report))
                 ])
             case .projectReleaseReport(let arguments):
-                let suiteReport = try store.projectReleaseCheckReport(projectID: arguments.projectID)
+                var suiteReport = try store.projectReleaseCheckReport(projectID: arguments.projectID)
+                suiteReport.intentLabAvailable = control.intentLabFeatureGate.isEnabled
+                guard suiteReport.intentLabAvailable == true else {
+                    suiteReport.summary += " Intent Lab is unavailable; this report covers evaluation suites only. Saved Intent Lab evidence was not evaluated."
+                    return readPayload([
+                        "report": try json(suiteReport),
+                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(suiteReport))
+                    ])
+                }
                 let persistence = scenarioPersistence(store)
                 let allDefinitions: [ScenarioDefinition]
                 do {

@@ -42,7 +42,7 @@ struct MCPControlReceipt: Codable, Sendable {
       if call.name == "eval_control_capabilities" {
         return Self.read([
           "tools": .array(MCPControlTools.definitions.filter {
-            control.intentLabFeatureGate.isEnabled || !$0.name.hasPrefix("eval_intent_")
+            MCPActionDiscovery.isAvailable($0.name, intentLabEnabled: control.intentLabFeatureGate.isEnabled)
           }.map { .string($0.name) }),
           "boundary": .string(
             "Authenticated app control; original suite tools remain available. Operator confirmations, pairing, readiness, disclosure and execution leases remain required."

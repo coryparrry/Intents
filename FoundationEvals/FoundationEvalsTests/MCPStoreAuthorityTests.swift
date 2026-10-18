@@ -72,6 +72,9 @@ struct MCPStoreAuthorityTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = EvaluationStore(supportDirectory: directory)
+        let gate = IntentLabFeatureGate(load: { true })
+        await gate.refresh()
+        let control = EvaluationAppControl(store: store, intentLabFeatureGate: gate)
         let intentLabDirectory = store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
         let persistence = ScenarioPersistence(rootDirectory: intentLabDirectory)
         var definition = ScenarioDefinition.starter(projectID: store.selectedProjectID)
@@ -81,7 +84,7 @@ struct MCPStoreAuthorityTests {
         let path = intentLabDirectory.appending(path: "Definitions/\(definition.id.uuidString)/v\(definition.version)-\(definition.definitionDigest).json")
         try Data("{corrupt".utf8).write(to: path, options: .atomic)
 
-        let result = await MCPStoreAuthority.make(store: store).call(
+        let result = await MCPStoreAuthority.make(store: store, control: control).call(
             .projectReleaseReport(.init(projectID: store.selectedProjectID))
         )
         #expect(!result.isError)
@@ -97,6 +100,9 @@ struct MCPStoreAuthorityTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = EvaluationStore(supportDirectory: directory)
+        let gate = IntentLabFeatureGate(load: { true })
+        await gate.refresh()
+        let control = EvaluationAppControl(store: store, intentLabFeatureGate: gate)
         let persistence = ScenarioPersistence(
             rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
         )
@@ -105,7 +111,7 @@ struct MCPStoreAuthorityTests {
         definition = try definition.frozen()
         try await persistence.saveDefinition(definition)
 
-        let result = await MCPStoreAuthority.make(store: store).call(
+        let result = await MCPStoreAuthority.make(store: store, control: control).call(
             .projectReleaseReport(.init(projectID: store.selectedProjectID))
         )
         #expect(!result.isError)
@@ -121,6 +127,9 @@ struct MCPStoreAuthorityTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = EvaluationStore(supportDirectory: directory)
+        let gate = IntentLabFeatureGate(load: { true })
+        await gate.refresh()
+        let control = EvaluationAppControl(store: store, intentLabFeatureGate: gate)
         let persistence = ScenarioPersistence(
             rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
         )
@@ -151,7 +160,7 @@ struct MCPStoreAuthorityTests {
         )
         _ = try await persistence.saveRun(run, artifactRoot: nil)
 
-        let result = await MCPStoreAuthority.make(store: store).call(
+        let result = await MCPStoreAuthority.make(store: store, control: control).call(
             .projectReleaseReport(.init(projectID: store.selectedProjectID))
         )
         #expect(!result.isError)
@@ -161,7 +170,7 @@ struct MCPStoreAuthorityTests {
         let report = payload?["report"] as? [String: Any]
         #expect(report?["outcome"] as? Int == Int(EvaluationReleaseCheckExit.incompleteOrIncompatibleEvidence.rawValue))
         try await persistence.saveDefinition(definition)
-        let restoredDefinitionReport = await MCPStoreAuthority.make(store: store).call(
+        let restoredDefinitionReport = await MCPStoreAuthority.make(store: store, control: control).call(
             .projectReleaseReport(.init(projectID: store.selectedProjectID))
         )
         #expect(!restoredDefinitionReport.isError)

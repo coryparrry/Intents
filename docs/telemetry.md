@@ -8,6 +8,8 @@ Release builds check the flag at launch and every 60 seconds while the app is ru
 
 These availability requests are independent of optional usage/diagnostic consent and use the shared identifier `intents-macos-release`, never an installation or user identifier. They send the public project token and flag key, with no app content or analytics events. PostHog handles the source network address. Debug builds do not make these requests; unit tests inject decisions explicitly, and UI tests opt in with both `--enable-intent-lab-for-testing` and `--evaluation-storage`. This override is absent from release builds. The flag uses a global rollout: keep it off until ready, then enable it for the release population. Existing shipped builds require an update containing this gate. Explicit MCP cancellation remains available while disabled so an existing run can still be stopped.
 
+Cancellation remains discoverable in the MCP action catalog and capabilities while Intent Lab is disabled. Project release reports continue to evaluate ordinary suites, explicitly mark Intent Lab unavailable, and skip all saved Intent Lab evidence. They do not claim to qualify that evidence while the flag is off.
+
 The request follows PostHog's [feature flag API](https://posthog.com/docs/feature-flags/adding-feature-flag-code).
 
 Intents has two independent switches in **Settings → Privacy**:

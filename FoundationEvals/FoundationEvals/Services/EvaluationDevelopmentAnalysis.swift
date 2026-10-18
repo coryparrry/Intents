@@ -305,13 +305,17 @@ enum EvaluationReleaseCheckEvaluator {
     }
 
     static func projectMarkdown(_ report: EvaluationProjectReleaseCheckReport) -> String {
-        let heading = report.outcome == .passed ? "Project release check passed" : "Project release check did not pass"
+        let scope = report.intentLabAvailable == false ? "Evaluation suite release check" : "Project release check"
+        let heading = report.outcome == .passed ? "\(scope) passed" : "\(scope) did not pass"
         let suites = report.suites.map { item in
             "- \(item.suiteName) (`\(item.suiteID.uuidString)`): \(item.report.outcome.rawValue) — \(item.report.summary)"
         }.joined(separator: "\n")
         let scenarios = (report.scenarios ?? []).map { item in
             "- `\(item.scenarioID.uuidString)`: \(item.outcome.rawValue) — \(item.summary)"
         }.joined(separator: "\n")
+        let scenarioSummary = report.intentLabAvailable == false
+            ? "- Intent Lab is unavailable. Saved scenario evidence was not evaluated."
+            : (scenarios.isEmpty ? "- None configured" : scenarios)
         return """
         # \(heading)
 
@@ -326,7 +330,7 @@ enum EvaluationReleaseCheckEvaluator {
 
         ## Required Intent Lab scenarios
 
-        \(scenarios.isEmpty ? "- None configured" : scenarios)
+        \(scenarioSummary)
         """
     }
 

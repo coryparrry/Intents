@@ -122,7 +122,11 @@ enum MCPActionDiscovery {
   }
 
   static func availableDefinitions(intentLabEnabled: Bool) -> [MCPToolDefinition] {
-    MCPToolCatalog.allDefinitions.filter { intentLabEnabled || domain($0.name) != "intentLab" }
+    MCPToolCatalog.allDefinitions.filter { isAvailable($0.name, intentLabEnabled: intentLabEnabled) }
+  }
+
+  static func isAvailable(_ name: String, intentLabEnabled: Bool) -> Bool {
+    intentLabEnabled || domain(name) != "intentLab" || name == "eval_intent_cancel"
   }
 
   static func respond(_ call: MCPActionCatalogCall, intentLabEnabled: Bool = true) -> MCPToolPayload {

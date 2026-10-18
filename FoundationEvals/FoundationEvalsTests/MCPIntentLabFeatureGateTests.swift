@@ -92,14 +92,17 @@ import Testing
       let authority = MCPStoreAuthority.make(store: control.store, control: control)
       let search = await authority.call(.actionCatalog(.search(query: "", domain: "intentLab", offset: 0, limit: 10)))
       let actions = try array(search.structuredContent.objectValue?["actions"])
-      #expect(actions.isEmpty == !enabled)
+      #expect(!actions.isEmpty)
+      if !enabled { #expect(actions.map { $0.objectValue?["name"] } == [.string("eval_intent_cancel")]) }
       let described = await authority.call(.actionCatalog(.describe(name: "eval_intent_state")))
       #expect(described.isError == !enabled)
+      #expect(!(await authority.call(.actionCatalog(.describe(name: "eval_intent_cancel")))).isError)
       let runners = await authority.call(.actionCatalog(.search(query: "", domain: "runners", offset: 0, limit: 10)))
       #expect(!(try array(runners.structuredContent.objectValue?["actions"])).isEmpty)
       let capabilities = await control.mcp.execute(.init(name: "eval_control_capabilities", arguments: .object([:])))
       let names = try array(capabilities.structuredContent.objectValue?["tools"])
       #expect(names.contains(.string("eval_intent_state")) == enabled)
+      #expect(names.contains(.string("eval_intent_cancel")))
       #expect(names.contains(.string("eval_runner_state")))
       let report = await authority.call(.listScenarioRuns(.init(scenarioID: nil, cursor: nil, limit: 20)))
       #expect(report.isError == !enabled)
@@ -114,7 +117,11 @@ import Testing
     let requests: [(String, [String: MCPJSONValue])] = [
       ("eval_find_actions", ["domain": .string("intentLab")]),
       ("eval_describe_action", ["action": .string("eval_intent_state")]),
-      ("eval_read_action", ["action": .string("eval_intent_state"), "arguments": .object([:])])
+      ("eval_read_action", ["action": .string("eval_intent_state"), "arguments": .object([:])]),
+      ("eval_describe_action", ["action": .string("eval_intent_cancel")]),
+      ("eval_apply_action", ["action": .string("eval_intent_cancel"), "arguments": .object([
+        "operationID": .string(UUID().uuidString), "expectedIntentRevision": .string("disabled")
+      ])])
     ]
     for (name, arguments) in requests {
       let body = try MCPJSONValue.object([
@@ -129,11 +136,51 @@ import Testing
       let data = try #require(response.body)
       let result = try #require(JSONDecoder().decode(MCPJSONValue.self, from: data).objectValue?["result"]?.objectValue)
       if name == "eval_find_actions" {
-        #expect(try array(result["structuredContent"]?.objectValue?["actions"]).isEmpty)
+        let actions = try array(result["structuredContent"]?.objectValue?["actions"])
+        #expect(actions.map { $0.objectValue?["name"] } == [.string("eval_intent_cancel")])
+      } else if arguments["action"] == .string("eval_intent_cancel") {
+        #expect(result["isError"] != .bool(true))
       } else {
         #expect(result["isError"] == .bool(true))
       }
     }
+    #expect(!control.scenarios.hasLoaded)
+  }
+
+  @Test(arguments: [false, true])
+  func disabledProjectReportSkipsSavedAndUnreadableIntentLabEvidence(corrupt: Bool) async throws {
+    let (control, root) = try await fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = control.store
+    var definition = ScenarioDefinition.starter(projectID: store.selectedProjectID)
+    definition.name = "Hidden Intent Lab evidence"
+    definition.target.destinationIdentifier = "test-device"
+    definition = try definition.frozen()
+    let evidenceRoot = store.overviewStorageDirectory.appendingPathComponent("IntentLab")
+    let persistence = ScenarioPersistence(rootDirectory: evidenceRoot)
+    try await persistence.saveDefinition(definition)
+    let definitionURL = evidenceRoot.appendingPathComponent(
+      "Definitions/\(definition.id.uuidString)/v\(definition.version)-\(definition.definitionDigest).json")
+    if corrupt { try Data("{corrupt".utf8).write(to: definitionURL, options: .atomic) }
+    let savedBytes = try Data(contentsOf: definitionURL)
+    let baseline = try store.projectReleaseCheckReport(projectID: store.selectedProjectID)
+    let authority = MCPStoreAuthority.make(store: store, control: control)
+    let result = await authority.call(.projectReleaseReport(.init(projectID: store.selectedProjectID)))
+    #expect(!result.isError)
+    let value = try #require(result.structuredContent.objectValue?["report"])
+    let report = try CanonicalJSON.decode(EvaluationProjectReleaseCheckReport.self, from: Data(try value.jsonText().utf8))
+    #expect(report.intentLabAvailable == false)
+    #expect(report.scenarios == nil)
+    #expect(report.outcome == baseline.outcome)
+    #expect(report.suites.map(\.suiteID) == baseline.suites.map(\.suiteID))
+    #expect(report.suites.map(\.report.outcome) == baseline.suites.map(\.report.outcome))
+    #expect(report.summary.contains("evaluation suites only"))
+    let output = try result.structuredContent.jsonText()
+    #expect(!output.contains(definition.id.uuidString))
+    #expect(!output.contains(definition.name))
+    #expect(result.structuredContent.objectValue?["markdown"]?.stringValue?.contains("Intent Lab is unavailable") == true)
+    #expect(result.structuredContent.objectValue?["markdown"]?.stringValue?.hasPrefix("# Evaluation suite release check") == true)
+    #expect(try Data(contentsOf: definitionURL) == savedBytes)
     #expect(!control.scenarios.hasLoaded)
   }
 
