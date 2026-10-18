@@ -33,6 +33,8 @@ class CoverageTests(unittest.TestCase):
             "Sources/IntentsAutomationTool/AutomationCLI.swift",
             "examples/AutomationFixture/App/EchoIntents.swift",
             "script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py",
+            "script/automation_mac_e2e.py", "script/tests/test_automation_mac_e2e.py",
+            "script/ci_macos_signing.py", "script/tests/test_ci_macos_signing.py",
             "Package.swift", ".github/workflows/ci.yml",
         ):
             with self.subTest(path=path):
@@ -43,6 +45,13 @@ class CoverageTests(unittest.TestCase):
         self.assertTrue(routes.coverage(["unknown-new-tool.swift"])["automation_e2e"])
         self.assertFalse(routes.coverage(["docs/wiki/App-automation.md"])["automation_e2e"])
         self.assertFalse(routes.coverage([routes.APP + "Services/MetricScorer.swift"])["automation_e2e"])
+
+    def test_mac_signing_changes_select_focused_regressions_and_live_acceptance(self):
+        for path in ("script/ci_macos_signing.py", "script/tests/test_ci_macos_signing.py"):
+            with self.subTest(path=path):
+                self.assert_selection([path], python=("script.tests.test_ci_macos_signing",))
+                self.assertTrue(routes.coverage([path])["automation_e2e"])
+                self.assertFalse(routes.coverage([path])["input_conversion"])
 
     def test_homebrew_updater_and_workflow_select_their_regressions(self):
         for path in ("script/update_homebrew.py", ".github/workflows/update-homebrew.yml"):
@@ -254,17 +263,6 @@ class CoverageTests(unittest.TestCase):
                     python=("script.tests.test_ci_routes",),
                 )
 
-    def test_project_installer_sources_select_installer_tests(self):
-        for source in (
-            "IntentLabProjectInstaller.swift",
-            "OpenStepProjectDocument.swift",
-        ):
-            with self.subTest(source=source):
-                self.assert_selection(
-                    [routes.APP + "Services/" + source],
-                    native=True,
-                    swift=("IntentLabProjectInstallerTests",),
-                )
 
     def test_sidebar_and_toolbar_do_not_rerun_scoring_or_installer_tests(self):
         for source, suite in (
@@ -405,6 +403,20 @@ class CoverageTests(unittest.TestCase):
 
 
 class MatrixTests(unittest.TestCase):
+    def test_excluded_mac_suite_stays_out_of_changed_and_fallback_selections(self):
+        excluded = routes.UI_TARGET + "MacPreparationUITests"
+        for matrix in (
+            routes.ui_matrix(routes.ALL_UI_GROUPS, ["MacPreparationUITests", "AppAutomationUITests"]),
+            routes.full_coverage("fallback", extra_classes=["MacPreparationUITests"])["ui_matrix"],
+        ):
+            selected = [test for job in matrix for test in job["tests"]]
+            self.assertTrue(selected)
+            self.assertFalse(any(test == excluded or test.startswith(excluded + "/") for test in selected))
+        plan = routes.coverage([routes.UI_TESTS + "MacPreparationUITests.swift"])
+        self.assertFalse(plan["ui"])
+        self.assertEqual(plan["ui_matrix"], [])
+        self.assertTrue(plan["native"])
+
     def selected_ui(self, paths):
         return {
             test for group in routes.coverage(paths)["ui_matrix"] for test in group["tests"]

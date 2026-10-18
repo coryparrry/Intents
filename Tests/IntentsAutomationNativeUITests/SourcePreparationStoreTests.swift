@@ -599,7 +599,7 @@ import XCTest
         XCTAssertNil(model.prepared); XCTAssertNil(model.catalog); XCTAssertEqual(ledger.stopped, [extra])
         model.close(); XCTAssertEqual(ledger.stopped, [extra])
     }
-    func testMacPreparationNeedsNoSimulatorAndRetainsExactSessionWithoutRunPermission() async throws {
+    func testMacPreparationNeedsNoSimulatorAndEnablesOnlyReviewedSupportedRoutes() async throws {
         let box = TargetBox(), gate = PreparationGate()
         let model = try await model(executor: { candidate, approval, session in
             await gate.suspend(approval); return preparedFixture(candidate, approval, session)
@@ -615,11 +615,24 @@ import XCTest
         await gate.release(); await task.value
         XCTAssertEqual(model.prepared?.host.target, box.read()); XCTAssertFalse(model.busy)
         model.uiInstruction = "Open Settings"; model.uiEndpoint = "Settings"; model.effectChoice = "navigation"; model.effectsConfirmed = true
-        model.simulatorID = "host-macos-local"
-        for route in ["ui", "system", "fresh"] {
-            model.workflowRoute = route; XCTAssertFalse(model.canRun)
-            XCTAssertThrowsError(try model.previewCommand())
-        }
+        model.workflowRoute = "ui"
+        XCTAssertTrue(model.canRun, "A matching prepared Mac source supports exact UI steps without a simulator")
+        XCTAssertTrue(model.simulatorID.isEmpty)
+        XCTAssertNil(model.pendingCommandStatus, "Preparation does not approve or queue execution")
+        XCTAssertNil(model.report)
+        model.workflowRoute = "system"
+        XCTAssertNil(model.action, "This preparation fixture declares no system action")
+        XCTAssertFalse(model.canRun)
+        XCTAssertThrowsError(try model.previewCommand())
+        model.workflowRoute = "fresh"
+        XCTAssertTrue(model.isMacWorkflowUnavailable, "Mac fresh-record workflows remain unavailable")
+        XCTAssertFalse(model.canRun)
+        XCTAssertThrowsError(try model.previewCommand())
+        model.workflowRoute = "ui"
+        box.change()
+        XCTAssertFalse(model.canRun, "A new login session cannot reuse the prepared target approval")
+        XCTAssertThrowsError(try model.previewCommand())
+        XCTAssertNil(model.pendingCommandStatus)
         XCTAssertNil(model.report)
     }
     func testReturnedPreparationCannotAddRootGrantsOrChangeTheApprovedPrimaryRoot() async throws {

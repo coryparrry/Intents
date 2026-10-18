@@ -16,6 +16,19 @@ def job(name):
     return re.search(r"(?ms)^  " + re.escape(name) + r":\n(.*?)(?=^  [\w-]+:|\Z)", WORKFLOW)[1]
 
 
+class FailureSummaryTests(unittest.TestCase):
+    def test_summary_runs_after_terminal_checks_with_read_only_log_access(self):
+        summary = job("summary")
+        self.assertIn("if: ${{ always() }}", summary)
+        self.assertIn("needs: [changes, quality, regression, build, automation-e2e, input-conversion]", summary)
+        self.assertIn("actions: read", summary)
+        self.assertIn("contents: read", summary)
+        self.assertNotIn("write", summary)
+        self.assertIn("CI_NEEDS_JSON: ${{ toJSON(needs) }}", summary)
+        self.assertIn("GITHUB_TOKEN: ${{ github.token }}", summary)
+        self.assertIn("run: python3 script/ci_failure_summary.py", summary)
+
+
 def gate(name, **environment):
     script = job(name).split("        run: |\n", 1)[1]
     return subprocess.run(
@@ -124,6 +137,27 @@ class GateTests(unittest.TestCase):
         self.assertIn("!cancelled()", condition)
         self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
         self.assertNotIn("success()", condition)
+
+    def test_simulator_and_mac_acceptance_do_not_suppress_each_other(self):
+        workflow = job("automation-e2e-scenarios")
+        simulator = workflow.index("      - name: Reproduce prepared-app automation\n")
+        mac = workflow.index("      - name: Reproduce Mac automation and saved fix comparison\n")
+        self.assertLess(simulator, mac)
+        mac_step = workflow[mac:].split("\n      - name:", 1)[0]
+        self.assertIn("if: ${{ !cancelled() }}", mac_step)
+        self.assertIn("--scenario-group all", workflow[:mac])
+
+    def test_mac_acceptance_uses_temporary_development_signing(self):
+        workflow = job("automation-e2e-scenarios")
+        mac = workflow.split("      - name: Reproduce Mac automation and saved fix comparison\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}", mac)
+        self.assertIn("CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}", mac)
+        self.assertIn("CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}", mac)
+        self.assertIn("python3 script/ci_macos_signing.py -- /bin/bash -e <<'SIGNED_MAC_CHECK'", mac)
+        self.assertIn('--signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"', mac)
+        self.assertNotIn("continue-on-error", mac)
+        self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_P12_BASE64"), 1)
+        self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_PASSWORD"), 1)
 
     def test_scripts_run_all_selected_modules_in_one_job(self):
         workflow = job("script-tests")

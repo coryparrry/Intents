@@ -92,7 +92,7 @@ struct AutomationNativeUIFixComparisonProposal: Sendable {
               before.catalog.app == a, after.catalog.app == b, before.host.target == after.host.target,
               before.generatedHost.configuration == a.configuration, after.generatedHost.configuration == b.configuration,
               before.generatedHost.templateDigest == after.generatedHost.templateDigest else {
-            throw AutomationContractError.missingEvidence("Prepare changed source for the same app, configuration, simulator and host template; retain both original products")
+            throw AutomationContractError.missingEvidence("Prepare changed source for the same app, configuration, destination and host template; retain both original products")
         }
     }
     typealias ExecutorFactory = @Sendable (AutomationApplicationSubject, CapabilityProfile, Bool) -> any AutomationCampaignAttemptExecutor

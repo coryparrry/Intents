@@ -155,6 +155,12 @@ public enum AutomationHostGenerator {
         let rootConfigs = rootList.flatMap { objects[$0]?["buildConfigurations"] as? [String] } ?? []
         let projectSettings = rootConfigs.compactMap { objects[$0] }.first { $0["name"] as? String == configuration }?["buildSettings"] as? [String: Any] ?? [:]
         if let team = subjectSettings["DEVELOPMENT_TEAM"] ?? projectSettings["DEVELOPMENT_TEAM"] { settings["DEVELOPMENT_TEAM"] = team }
+        if macOS {
+            // Keep the app and its associated native test host on the selected identity.
+            for key in ["CODE_SIGN_STYLE", "CODE_SIGN_IDENTITY"] {
+                if let value = subjectSettings[key] ?? projectSettings[key] { settings[key] = value }
+            }
+        }
         let config = try insert(["isa": "XCBuildConfiguration", "name": configuration, "buildSettings": settings])
         let list = try insert(["isa": "XCConfigurationList", "buildConfigurations": [config], "defaultConfigurationIsVisible": 0, "defaultConfigurationName": configuration])
         let proxy = try insert(["isa": "PBXContainerItemProxy", "containerPortal": rootID, "proxyType": 1, "remoteGlobalIDString": subjectTargetID, "remoteInfo": subjectName])

@@ -44,16 +44,16 @@ extension AppAutomationStore {
         guard !isMacWorkflowUnavailable else {
             throw AutomationContractError.missingEvidence("Native Mac workflow execution is unavailable")
         }
-        if isUIWorkflow { return try simulatorUIRunVerificationWork(runID: runID) }
+        if isUIWorkflow { return try preparedUIRunVerificationWork(runID: runID) }
         let request = try makeNativeRunRequest(runID: runID)
         return { request }
     }
-    private func simulatorUIRunVerificationWork(runID: String) throws -> @Sendable () throws -> AutomationNativeRunRequest {
+    private func preparedUIRunVerificationWork(runID: String) throws -> @Sendable () throws -> AutomationNativeRunRequest {
         guard let candidate else { throw AutomationContractError.invalidIdentity }
         let retainedPrepared = prepared, selection = nativeRunSelection
         let locale = Locale.current.identifier
         guard candidate.kind == .sourceTarget && workflowRoute == "ui" && preparedUISelectionMatches && retainedPrepared != nil else {
-            throw AutomationContractError.missingEvidence("Prepare this source app for the selected configuration and simulator")
+            throw AutomationContractError.missingEvidence("Prepare this source app for the selected configuration and destination")
         }
         return {
             guard let prepared = retainedPrepared else { throw AutomationContractError.invalidIdentity }
@@ -61,8 +61,9 @@ extension AppAutomationStore {
             var effects: Set<AutomationEffect> = [.observe, .navigate]
             if selection.effectChoice == "fixture" { effects.insert(.fixtureWrite) }
             if selection.effectChoice == "external" { effects.insert(.externalWrite) }
+            let install = subject.target.kind == .simulator && selection.installApproved
             var approval = RunApproval(runID: runID, app: subject.app, target: subject.target,
-                environmentID: "selected-simulator:" + selection.simulatorID, effects: effects, maximumActions: 30, disposable: selection.disposable)
+                environmentID: Self.preparedEnvironmentID(prepared), effects: effects, maximumActions: 30, disposable: selection.disposable)
             var plan = try AutomationUIOnlyPlanner.compile(app: subject.app, target: subject.target, program: try AutomationNativeWorkflowSteps.program(tapControls: selection.tapControls,
                     textEntry: selection.textEntry, approvedText: selection.approvedText, submitControl: selection.submitControl, endpoint: selection.endpoint),
                 description: selection.instruction, expectedVisibleText: selection.expectedText,
@@ -75,10 +76,10 @@ extension AppAutomationStore {
             let digest = try AutomationFrozenCase.planDigest(plan); approval.approvedCaseDigest = digest
             try PlanValidator.validate(plan, approval: approval, capabilities: .init(), purpose: .review)
             let fields = ["plan": digest,
-                "install": String(selection.installApproved), "disposable": String(selection.disposable), "maximumActions": String(approval.maximumActions)]
+                "install": String(install), "disposable": String(selection.disposable), "maximumActions": String(approval.maximumActions)]
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
             return .init(subject: subject, plan: plan, approval: approval, capabilities: .init(),
-                installApproved: selection.installApproved, digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: digest)
+                installApproved: install, digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: digest)
         }
     }
     func verifiedNativeRunRequest(runID: String) async throws -> AutomationNativeRunRequest {
@@ -97,10 +98,21 @@ extension AppAutomationStore {
         return request
     }
 
+    nonisolated static func preparedEnvironmentID(_ prepared: AutomationPreparedApplication) -> String {
+        prepared.host.target.kind == .nativeMac
+            ? "selected-mac-session:" + (prepared.host.target.loginSession ?? "")
+            : "selected-simulator:" + prepared.host.target.id
+    }
     var preparedUISelectionMatches: Bool {
-        prepared?.host.app.logicalID == candidateID && prepared?.host.app.platform == "ios" &&
-        prepared?.host.app.configuration == configuration && prepared?.generatedHost.configuration == configuration &&
-        prepared?.host.target.kind == .simulator && prepared?.host.target.id == simulatorID && prepared?.host.app.productDigest != nil
+        guard let prepared, candidate?.kind == .sourceTarget,
+              prepared.host.app.logicalID == candidateID,
+              prepared.host.app.configuration == configuration, prepared.generatedHost.configuration == configuration,
+              prepared.host.app.productDigest != nil, prepared.host.target == sourcePreparationTarget else { return false }
+        switch prepared.host.target.kind {
+        case .simulator: return prepared.host.app.platform == "ios"
+        case .nativeMac: return prepared.host.app.platform == "macos"
+        case .physical, .pairedRunner: return false
+        }
     }
     func makeFreshRecordRequest(runID: String) throws -> AutomationNativeRunRequest {
         guard let prepared, preparedUISelectionMatches, ["true", "false"].contains(freshInitialState),
@@ -145,7 +157,7 @@ extension AppAutomationStore {
         if effectChoice == "fixture" { effects.insert(.fixtureWrite) }
         if effectChoice == "external" { effects.insert(.externalWrite) }
         var approval = RunApproval(runID: runID, app: prepared.host.app, target: prepared.host.target,
-            environmentID: "selected-simulator:" + prepared.host.target.id, effects: effects, maximumActions: 20, disposable: disposable)
+            environmentID: Self.preparedEnvironmentID(prepared), effects: effects, maximumActions: 20, disposable: disposable)
         let capabilities = AutomationPreparedCapabilities.base(prepared)
         var values: [String: AutomationActionInput] = [:]
         for parameter in action.parameters where parameter.family != "entity" {
@@ -153,7 +165,7 @@ extension AppAutomationStore {
         }
         let declaration = AutomationActionEffectDeclaration(app: prepared.host.app, actionID: action.id, effects: effects,
             developerConfirmation: "Developer confirmed the selected action stays within " + effectChoice + " effects in the approval view")
-        let plan: AutomationCase
+        var plan: AutomationCase
         if action.parameters.contains(where: { $0.family == "entity" }) {
             var selections: [String: AutomationQueryEntityChoice] = [:], protected: [String: [AutomationQueryEntityChoice]] = [:], expectations: [String: [String: AutomationValue]] = [:]
             for parameter in action.parameters where parameter.family == "entity" {
@@ -176,17 +188,21 @@ extension AppAutomationStore {
             plan = try AutomationTemplatePlanner.compile(catalog: prepared.catalog, actionID: action.id, inputs: values,
                 declaredEffects: declaration, approval: approval, capabilities: capabilities, purpose: .review)
         }
+        if prepared.host.target.kind == .nativeMac {
+            try AutomationNativePreparedEvidence.attachPreparedEvidence(to: &plan, prepared: prepared)
+        }
+        let install = prepared.host.target.kind == .simulator && installApproved
         let caseDigest = try AutomationFrozenCase.planDigest(plan)
         approval.approvedCaseDigest = caseDigest
         let fields = ["plan": caseDigest, "host": prepared.host.hostProductDigest,
             "xctestrun": prepared.host.xctestrunDigest, "catalog": try AutomationRecipeContext.catalogDigest(prepared.catalog),
-            "install": String(installApproved), "disposable": String(disposable), "maximumActions": String(approval.maximumActions)]
+            "install": String(install), "disposable": String(disposable), "maximumActions": String(approval.maximumActions)]
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return .init(subject: .prepared(prepared), plan: plan, approval: approval, capabilities: capabilities, installApproved: installApproved,
+        return .init(subject: .prepared(prepared), plan: plan, approval: approval, capabilities: capabilities, installApproved: install,
             digest: AutomationArtifactRegistry.digest(try encoder.encode(fields)), caseDigest: caseDigest)
     }
     func makeUIRunRequest(runID: String) throws -> AutomationNativeRunRequest {
-        try simulatorUIRunVerificationWork(runID: runID)()
+        try preparedUIRunVerificationWork(runID: runID)()
     }
 }
 #endif

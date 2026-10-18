@@ -5,6 +5,7 @@ import XCTest
 @MainActor
 final class HostFixtureRegistrationTests: XCTestCase {
     private let fixture = "com.coryparry.IntentsAutomation.AutomationFixture"
+    private let macFixture = "com.coryparry.IntentsAutomation.AutomationFixtureMac"
     private func metadataError(domain: String = "AppIntentsServicesMetadataErrorDomain", code: Int = 400,
                                bundle: String? = nil) -> NSError {
         NSError(domain: domain, code: code, userInfo: [NSLocalizedDescriptionKey: "\(bundle ?? fixture) is not present"])
@@ -29,6 +30,30 @@ final class HostFixtureRegistrationTests: XCTestCase {
         realActions += 1
         XCTAssertEqual(probes, 3); XCTAssertEqual(pauses, [.seconds(5), .seconds(5)]); XCTAssertEqual(realActions, 1)
         XCTAssertEqual(diagnostics.map(\.index), [1, 2, 3]); XCTAssertEqual(diagnostics.map(\.succeeded), [false, false, true])
+    }
+    func testNativeMacDiagnosticRetriesItsRegistrationBeforeOneRealAction() async throws {
+        var probes = 0, pauses: [Duration] = [], diagnostics: [HostFixtureRegistration.Attempt] = [], realActions = 0
+        try await HostFixtureRegistration.wait(bundleID: macFixture, deadline: .now.advanced(by: .seconds(120)), probe: { intent, value in
+            XCTAssertEqual(intent, "EchoTextIntent"); XCTAssertEqual(value, "registration-ready")
+            probes += 1
+            if probes < 3 { throw self.metadataError(bundle: self.macFixture) }
+            return value
+        }, pause: { pauses.append($0) }, record: { diagnostics.append($0) })
+        realActions += 1
+        XCTAssertEqual(probes, 3); XCTAssertEqual(pauses, [.seconds(5), .seconds(5)]); XCTAssertEqual(realActions, 1)
+        XCTAssertEqual(diagnostics.map(\.succeeded), [false, false, true])
+    }
+    func testRegistrationErrorMustMatchTheSelectedAuthoredBundle() async {
+        for (selected, foreign) in [(macFixture, fixture), (fixture, macFixture), (macFixture, "other.fixture")] {
+            var probes = 0
+            do {
+                try await HostFixtureRegistration.wait(bundleID: selected, deadline: .now.advanced(by: .seconds(120)), probe: { _, _ in
+                    probes += 1; throw self.metadataError(bundle: foreign)
+                }, pause: { _ in XCTFail("Another bundle's metadata error must not pause") })
+                XCTFail("Another bundle's metadata error accepted")
+            } catch { XCTAssertEqual((error as NSError).localizedDescription, "\(foreign) is not present") }
+            XCTAssertEqual(probes, 1)
+        }
     }
     func testThreeFailedDiagnosticsNeverInvokeRealAction() async throws {
         var probes = 0, pauses = 0, diagnostics = 0, realActions = 0
@@ -146,7 +171,7 @@ final class HostFixtureRegistrationTests: XCTestCase {
     func testUIHostChecksReadinessAfterActivationBeforeMetadataDispatchAndResetsAfterLaunch() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Integration/AutomationHost/UIStepTests.swift"), encoding: .utf8)
-        XCTAssertTrue(source.contains("#if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)"))
+        XCTAssertTrue(source.contains("#if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))"))
         XCTAssertTrue(source.contains("fixtureRegistrationNeeded && (step.kind == .invokeIntent || step.kind == .query)"))
         XCTAssertTrue(source.contains("fixtureRegistrationDeadline = ContinuousClock.now.advanced(by: .seconds(120))"))
         let activation = try XCTUnwrap(source.range(of: "app.activate()"))
@@ -167,7 +192,7 @@ final class HostFixtureRegistrationTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let helper = try String(contentsOf: root.appendingPathComponent("Integration/AutomationHost/HostFixtureRegistration.swift"), encoding: .utf8)
         let wrapper = try XCTUnwrap(helper.range(of: "static func waitForAuthoredFixture("))
-        let guardStart = try XCTUnwrap(helper.range(of: "#if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)",
+        let guardStart = try XCTUnwrap(helper.range(of: "#if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))",
                                                    options: .backwards, range: helper.startIndex..<wrapper.lowerBound))
         let guardEnd = try XCTUnwrap(helper.range(of: "#endif", range: wrapper.upperBound..<helper.endIndex))
         let probe = try XCTUnwrap(helper.range(of: "let definitions = IntentDefinitions(bundleIdentifier: bundleID)"))
@@ -179,6 +204,17 @@ final class HostFixtureRegistrationTests: XCTestCase {
             XCTAssertTrue(caller.contains("HostFixtureRegistration.waitForAuthoredFixture("))
             XCTAssertFalse(caller.contains("let definitions = IntentDefinitions("))
         }
+    }
+
+    func testAuthoredFixtureRegistersShortcutsAtAppStartup() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("examples/AutomationFixture/App/AutomationFixtureApp.swift"), encoding: .utf8)
+        let app = try XCTUnwrap(source.range(of: "struct AutomationFixtureApp: App"))
+        let initializer = try XCTUnwrap(source.range(of: "init()", range: app.upperBound..<source.endIndex))
+        let registration = try XCTUnwrap(source.range(of: "AutomationFixtureShortcuts.updateAppShortcutParameters()"))
+        let scene = try XCTUnwrap(source.range(of: "var body: some Scene"))
+        XCTAssertLessThan(initializer.lowerBound, registration.lowerBound)
+        XCTAssertLessThan(registration.lowerBound, scene.lowerBound)
     }
 
 }
