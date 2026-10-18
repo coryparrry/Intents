@@ -190,6 +190,10 @@ class ReleaseNotesTests(unittest.TestCase):
         retarget = jobs["retarget"]
         self.assertIn("if: ${{ github.event.changes.base != null }}", retarget)
         self.assertIn("uses: ./.github/workflows/ci.yml", retarget)
+        # Reusable workflows cannot elevate the caller's token permissions.
+        # CI's diagnostic summary reads Actions logs, including on skipped retargets.
+        self.assertIn("permissions:\n      contents: read\n      actions: read", retarget)
+        self.assertNotIn(": write", retarget)
         for name, workflow in (("retarget-production", "production-evals"), ("retarget-plugin", "plugin")):
             with self.subTest(workflow=workflow):
                 component = jobs[name]
