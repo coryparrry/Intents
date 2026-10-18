@@ -880,12 +880,18 @@ actor ScenarioPersistence {
     func redactedSharingCopy(of run: ScenarioRun) -> ScenarioRun {
         var copy = run
         let sensitiveKeys = ["response", "account", "token", "path", "email"]
+        func mayShareObservation(_ key: String) -> Bool {
+            !sensitiveKeys.contains { key.localizedCaseInsensitiveContains($0) }
+                && !key.localizedCaseInsensitiveContains("actionReceipts")
+                && !key.hasPrefix("feature.encodedValue")
+                && !key.hasPrefix("feature.metadata.")
+        }
         for laneIndex in copy.laneResults.indices {
             copy.laneResults[laneIndex].observations = copy.laneResults[laneIndex].observations.filter { key, _ in
-                !sensitiveKeys.contains { key.localizedCaseInsensitiveContains($0) }
-                    && !key.localizedCaseInsensitiveContains("actionReceipts")
-                    && !key.hasPrefix("feature.encodedValue")
-                    && !key.hasPrefix("feature.metadata.")
+                mayShareObservation(key)
+            }
+            copy.laneResults[laneIndex].beforeObservations = copy.laneResults[laneIndex].beforeObservations?.filter { key, _ in
+                mayShareObservation(key)
             }
             copy.laneResults[laneIndex].actionReceipts = nil
             copy.laneResults[laneIndex].observationSources = copy.laneResults[laneIndex]

@@ -115,7 +115,9 @@ struct WorkflowSpanDetail: View {
             }
             detailSection("METADATA") {
                 TraceDetailMetric(label: "Operation", value: operation)
-                if node.kind == .sample || node.kind == .generation || node.kind == .judge {
+                if node.kind == .judge || node.metadata["role"] == "judge" {
+                    TraceDetailMetric(label: "Judge model", value: result.judgeIdentity?.displayName ?? "Not recorded")
+                } else if node.kind == .sample || node.kind == .generation {
                     TraceDetailMetric(label: "Model", value: run.execution?.modelDisplayName ?? run.environment.model)
                 }
                 if let parent = trace.nodes.first(where: { $0.id == node.parentID }) {
@@ -318,6 +320,7 @@ private struct TraceDetailMetric: View {
         }
         .font(.caption).monospacedDigit()
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("Trace detail \(label)")
     }
 }
 

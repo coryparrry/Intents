@@ -49,6 +49,13 @@ class CoverageTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assert_selection([path], python=("script.tests.test_update_homebrew",))
 
+    def test_symbol_uploader_tests_are_discovered_and_routed(self):
+        module = "script.tests.test_upload_posthog_symbols"
+        self.assertIn(module, routes.python_test_inventory())
+        for path in ("script/upload_posthog_symbols.sh", "script/tests/test_upload_posthog_symbols.py"):
+            with self.subTest(path=path):
+                self.assert_selection([path], python=(module,))
+
     def test_cli_checkpoint_changes_cover_reuse_and_live_execution(self):
         path = "script/ci_automation_build.py"
         self.assert_selection([path], python=("script.tests.test_ci_automation_build", "script.tests.test_automation_e2e"))

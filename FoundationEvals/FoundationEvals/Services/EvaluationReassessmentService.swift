@@ -125,7 +125,10 @@ actor EvaluationReassessmentService {
                 if let usage = judged.usage { totalUsage.add(usage); hasUsage = true }
                 if let cost = judged.cost.usd {
                     totalCost += cost
-                    if judged.cost.availability == .estimated { costAvailability = .estimated }
+                    // A later estimate cannot make an earlier unpriced request complete.
+                    if judged.cost.availability == .estimated, costAvailability == .known {
+                        costAvailability = .estimated
+                    }
                 } else {
                     costAvailability = .unavailable
                 }

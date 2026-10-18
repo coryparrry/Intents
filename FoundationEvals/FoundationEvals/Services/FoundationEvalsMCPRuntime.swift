@@ -25,6 +25,7 @@ final class FoundationEvalsMCPRuntime {
     private let serverFactory: ServerFactory
     private var server: (any MCPServerLifecycle)?
     private var serverGeneration: UUID?
+    private var isClosing = false
     weak var settingsController: MCPSettingsController?
 
     init(
@@ -45,9 +46,11 @@ final class FoundationEvalsMCPRuntime {
         self.control = control ?? EvaluationAppControl(store: store)
         self.automationStore = automationStore
         self.serverFactory = serverFactory
+        if let automationStore { self.control.bindAutomationExecution(automationStore) }
     }
 
     func start(_ configuration: CodexMCPConfiguration) async throws {
+        guard !isClosing else { throw MCPServerError.stoppedAfterReady(nil) }
         guard server == nil, serverGeneration == nil else { throw MCPServerError.alreadyRunning }
         let generation = UUID()
         serverGeneration = generation
@@ -88,9 +91,16 @@ final class FoundationEvalsMCPRuntime {
     }
 
     func prepareForTermination() async {
-        store.saveSuite()
-        store.cancelRun()
+        isClosing = true
+        store.beginClosing()
+        control.mcp.beginClosing()
         await stop()
+        await automationStore?.closeAndWait()
+        await control.runners.closeAndWait()
+        await control.scenarios.closeAndWait()
+        await control.production.closeAndWait()
+        await store.closeAndWait()
+        await control.mcp.closeAndWait()
     }
 
     private func serverDidStop(generation: UUID, error: MCPServerError) {

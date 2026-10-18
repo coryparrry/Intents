@@ -295,12 +295,23 @@ struct MCPStoreAuthorityTests {
                 rubric: "Do not expose rubric-secret@example.com"
             )]
         )
-        _ = try await persistence.saveRun(run, artifactRoot: nil)
+        var captured = run
+        captured.laneResults[0].beforeObservations = [
+            "selectedNoteID": .string("before-public-selection"),
+            "accountEmail": .string("before-secret@example.com"),
+            "feature.encodedValue": .string("before-private-encoded"),
+            "feature.metadata.note": .string("before-private-metadata"),
+            "intentlab.actionReceipts": .string("before-private-receipt")
+        ]
+        _ = try await persistence.saveRun(captured, artifactRoot: nil)
 
         let payload = await MCPStoreAuthority.make(store: store).call(.getScenarioReport(.init(runID: run.id)))
         let text = try payload.structuredContent.jsonText()
 
         #expect(text.contains("packing-001"))
+        #expect(text.contains("before-public-selection"))
+        #expect(!text.contains("before-secret@example.com"))
+        #expect(!text.contains("before-private-"))
         #expect(!text.contains("secret@example.com"))
         #expect(!text.contains("assertion-secret@example.com"))
         #expect(!text.contains("assessment-secret@example.com"))

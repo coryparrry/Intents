@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var productionWorkspace: ProductionWorkspaceStore
     @State private var appliedAutomationLaunchSelection = false
     @State private var automationStore: AppAutomationStore
+    @State private var appControl: EvaluationAppControl
     @State private var scenarioCoordinator: ScenarioCoordinator
     @Environment(DeveloperRunnerStore.self) private var runners
     @Environment(\.controlActiveState) private var windowActivity
@@ -14,9 +15,11 @@ struct ContentView: View {
     init(store: EvaluationStore, control: EvaluationAppControl? = nil, automationStore: AppAutomationStore? = nil) {
         self.store = store
         let control = control ?? EvaluationAppControl(store: store)
+        _appControl = State(initialValue: control)
         _productionWorkspace = State(initialValue: control.production)
         _scenarioCoordinator = State(initialValue: control.scenarios)
-        _automationStore = State(initialValue: automationStore ?? AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"), telemetry: store.telemetry))
+        let automationStore = automationStore ?? AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"), telemetry: store.telemetry)
+        _automationStore = State(initialValue: automationStore)
     }
 
     var body: some View {
@@ -29,10 +32,9 @@ struct ContentView: View {
         .toolbar(removing: .title)
         .background { SuiteAutosaveObserver(store: store) }
         .task {
-            automationStore.pairedClient = runners.client
-            automationStore.pairedCanStart = { ScenarioExecutionAdmission.shared.allows(nil) && runners.executingRunID == nil && !store.hasActiveExecution && !runners.automationExecutionBlocked }
-            automationStore.pairedOwnershipChanged = { runners.automationExecutionBlocked = $0 }
-            await automationStore.restorePairedOwnership()
+            // App and MCP composition bind before exposure. Standalone views
+            // bind their retained dependencies here, outside view construction.
+            appControl.bindAutomationExecution(automationStore)
             await automationStore.migrateEvidenceHistory()
             #if DEBUG
             if !appliedAutomationLaunchSelection {
@@ -83,20 +85,24 @@ struct ContentView: View {
             WorkspaceSidebar(store: store)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
-            GeometryReader { geometry in
-                ZStack(alignment: .topLeading) { detail }
-                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
-                    .workspacePageTransition(value: WorkspacePageLocation(
-                        selection: store.selection, suiteID: store.selectedSuiteID
-                    ))
-            }
-                // Pages are dense with text, so bars get a solid edge that keeps their controls legible.
-                .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
-                .safeAreaBar(edge: .bottom, spacing: 0) {
-                    WorkbenchStatusBar(store: store)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("Workspace status")
+            VStack(spacing: 0) {
+                GeometryReader { geometry in
+                    ZStack(alignment: .topLeading) { detail }
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                        .workspacePageTransition(value: WorkspacePageLocation(
+                            selection: store.selection, suiteID: store.selectedSuiteID
+                        ))
                 }
+                .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
+
+                // Reserve layout space for the footer. Native split/list panes
+                // must end above it, including their final scrollable row.
+                WorkbenchStatusBar(store: store)
+                    .background(WorkspaceStyle.surface)
+                    .overlay(alignment: .top) { Divider() }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("Workspace status")
+            }
         }
     }
 

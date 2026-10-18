@@ -70,11 +70,14 @@ extension AppAutomationStore {
     func refreshRecovery() async {
         await ownershipRecoveryTask?.value
         guard !busy, !recoveryLoading else { return }
+        recoveryLoading = true
+        defer { recoveryLoading = false }
+        // Re-read the paired campaign authority as well as device records. A
+        // paired reservation can remain without a currently acquired lease.
+        await restorePairedOwnership()
         guard FileManager.default.fileExists(atPath: support.appendingPathComponent("target-leases.json").path) else {
             recoveryItems = []; recoveryError = nil; await refreshTargets(); return
         }
-        recoveryLoading = true
-        defer { recoveryLoading = false }
         do {
             let leases = try AutomationDeviceLeaseManager(storeURL: support.appendingPathComponent("target-leases.json"))
             try await reconcileAbandonedOwnership(using: leases)
@@ -110,8 +113,10 @@ extension AppAutomationStore {
         guard !busy, !closingForOwnershipRecovery else { return }
         await ownershipRecoveryTask?.value
         guard !busy, !closingForOwnershipRecovery else { return }
+        do { try beginExecutionAdmission(allowingRecovery: true) }
+        catch { message = errorText(error); return }
         progress = "Resetting device ownership…"; recoveryError = nil
-        defer { progress = nil }
+        defer { progress = nil; finishExecutionAdmission() }
         do {
             let leases = try AutomationDeviceLeaseManager(storeURL: support.appendingPathComponent("target-leases.json"))
             let records = try await leases.recoveryRecords().filter { !$0.runID.hasPrefix("intent-lab-") }
@@ -121,7 +126,12 @@ extension AppAutomationStore {
                     ([.absent, .replaced].contains($0.owner.presence()) ||
                      ($0.owner == current && retainedUnresolvedRequestTargets[$0.runID]?.leaseKey == $0.target.leaseKey))
             }
-            guard !eligible.isEmpty || hasUnresolvedActiveAttempt || records.isEmpty else { throw AutomationContractError.targetBusy }
+            // A restored paired reservation is not proof of a resettable device
+            // attempt. Its runner must supply verified completion first.
+            guard !eligible.isEmpty || records.isEmpty ||
+                (hasUnresolvedActiveAttempt && !pairedExecutionUnresolved) else {
+                throw AutomationContractError.targetBusy
+            }
             guard eligible.allSatisfy({ $0.runners.allSatisfy { [.absent, .replaced].contains($0.process.presence()) } }) else {
                 throw AutomationContractError.terminationUnverified
             }

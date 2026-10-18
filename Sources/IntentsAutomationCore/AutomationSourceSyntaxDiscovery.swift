@@ -147,8 +147,12 @@ enum AutomationSourceSyntaxDiscovery {
         // Parser recovery cannot establish either a declaration or its branch.
         return (response.declarations, response.declarations.filter { !response.parseRecoveryFiles.contains($0.relativePath) }, gaps)
     }
-    private static func requireComplete(_ result: AutomationOwnedCommand.Result) throws {
-        guard result.directChildReaped, result.pipesDrained, result.ownedIdentity != nil, result.callbacksDrained else { throw AutomationContractError.terminationUnverified }
+    static func requireComplete(_ result: AutomationOwnedCommand.Result) throws {
+        // A short-lived SDK lookup or scanner can be reaped before its kernel
+        // start identity is captured. OwnedCommand still proves this direct
+        // child's reap and drains its pipes/callbacks before returning success.
+        // This does not establish descendant closure or authorize signalling.
+        guard result.directChildReaped, result.pipesDrained, result.callbacksDrained else { throw AutomationContractError.terminationUnverified }
         guard result.exitStatus == 0, !result.logsTruncated else { throw AutomationContractError.missingEvidence("Owned source syntax scanner output is unavailable") }
     }
     private static func fingerprint(_ developer: URL) throws -> [AutomationSourceSyntaxIndex.Tool] {

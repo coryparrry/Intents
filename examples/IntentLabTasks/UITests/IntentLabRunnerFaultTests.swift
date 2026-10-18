@@ -7,8 +7,37 @@ import XCTest
 @available(iOS 27.0, *)
 @MainActor
 final class IntentLabRunnerFaultTests: XCTestCase {
+    func testScopedStrictTaskContractUsesRealActionAndIndependentFixtureReadback() throws {
+        let (scenario, invocation) = try makeBehaviourScenario(strict: true)
+        let integration = TaskIntegration()
+        let evidence = try IntentLabScenarioRunner.run(
+            testCase: self, integration: integration, scenario: scenario, invocation: invocation
+        )
+        let result = try XCTUnwrap(evidence.results.first)
+        XCTAssertEqual(evidence.results.count, 1)
+        XCTAssertEqual(result.beforeObservations?["task-001.isComplete"], .boolean(false))
+        XCTAssertEqual(result.observations["task-001.isComplete"], .boolean(true))
+        XCTAssertEqual(result.observations["task-002.isComplete"], .boolean(false))
+        XCTAssertEqual(result.beforeObservations?["intentlab.fixtureDigest"], .string(TaskIntegration.fixtureDigest))
+        XCTAssertEqual(result.observations["intentlab.fixtureDigest"], .string(scenario.fixture.digest))
+        XCTAssertEqual(result.observationSources?["intentlab.fixtureDigest"], "entityQuery")
+        XCTAssertTrue(evidence.negotiatedCapabilities?.contains("action-receipt-v1") ?? false)
+        let receipts = try XCTUnwrap(result.actionReceipts)
+        XCTAssertEqual(receipts.count, 1)
+        XCTAssertEqual(receipts.first?.operationID, "CompleteTaskIntent")
+        let verdict = IntentLabAssertionEvaluator.actionVerdict(
+            requirement: scenario.actionRequirements?.first, receipts: receipts,
+            lane: .intentIntegration, attempt: 1, context: "intent-\(invocation.id.uuidString)"
+        )
+        XCTAssertEqual(verdict.0, .passed)
+        XCTAssertNil(verdict.1)
+        XCTAssertEqual(result.outcome, .passed)
+        XCTAssertTrue(qualifiesForRelease(scenario: scenario, lane: result))
+        XCTAssertEqual(integration.completedCleanups, 1)
+    }
+
     func testRunnerRejectsPlausibleSuccessWhenPersistenceIsSuppressed() throws {
-        let (scenario, invocation) = try makeBehaviourScenario()
+        let (scenario, invocation) = try makeBehaviourScenario(strict: true)
         let evidence = try IntentLabScenarioRunner.run(
             testCase: self,
             integration: TaskIntegration(faultMode: "suppressPersistence"),
@@ -27,7 +56,7 @@ final class IntentLabRunnerFaultTests: XCTestCase {
     }
 
     func testRunnerRejectsUnrelatedMutationEvenWithFreshReceipt() throws {
-        let (scenario, invocation) = try makeBehaviourScenario()
+        let (scenario, invocation) = try makeBehaviourScenario(strict: true)
         let evidence = try IntentLabScenarioRunner.run(
             testCase: self,
             integration: TaskIntegration(faultMode: "mutateUnrelatedTask"),
@@ -190,7 +219,8 @@ final class IntentLabRunnerFaultTests: XCTestCase {
     private func makeBehaviourScenario(
         checkMode: String = "behaviour",
         expectedTaskOneComplete: Bool = true,
-        expectedTaskTwoComplete: Bool = false
+        expectedTaskTwoComplete: Bool = false,
+        strict: Bool = false
     ) throws -> (IntentLabScenario, IntentLabInvocation) {
         let declarationURL = try XCTUnwrap(
             Bundle(for: TaskIntegration.self).url(forResource: "IntentLabIntegration", withExtension: "json")
@@ -230,7 +260,7 @@ final class IntentLabRunnerFaultTests: XCTestCase {
             "definitionDigest": definitionDigest,
             "target": ["bundleIdentifier": targetBundleIdentifier],
             "goal": ["requestText": "Complete Buy milk in Intent Lab Tasks", "languageCode": "en"],
-            "fixture": ["id": "task-fixture", "version": "1", "digest": String(repeating: "d", count: 64), "preparationOperation": TaskIntegration.preparationOperation, "cleanupOperation": TaskIntegration.cleanupOperation],
+            "fixture": ["id": "task-fixture", "version": "1", "digest": TaskIntegration.fixtureDigest, "preparationOperation": TaskIntegration.preparationOperation, "cleanupOperation": TaskIntegration.cleanupOperation],
             "directControl": [
                 "intentIdentifier": "CompleteTaskIntent",
                 "parameters": [[
@@ -254,10 +284,19 @@ final class IntentLabRunnerFaultTests: XCTestCase {
             "observationPlan": checkMode == "behaviour" ? observations : [],
             "integration": integration
         ]
-        let scenario = try JSONDecoder.intentLab.decode(
+        var scenario = try JSONDecoder.intentLab.decode(
             IntentLabScenario.self,
             from: JSONSerialization.data(withJSONObject: scenarioJSON)
         )
+        if strict {
+            scenario.executionScope = .init(lane: .intentIntegration, attempt: 1)
+            scenario.actionPolicyVersion = 1
+            scenario.actionRequirements = [.init(
+                lane: .intentIntegration, kind: .productionIntent, operationID: "CompleteTaskIntent",
+                resolvedParameters: ["task": .entity(.init(typeIdentifier: "TaskEntity", identifier: "task-001"))]
+            )]
+            scenario.safety.mutationPolicy = .syntheticMutation
+        }
         let invocationID = UUID()
         let productHash = String(repeating: "a", count: 64)
         let invocationJSON: [String: Any] = [

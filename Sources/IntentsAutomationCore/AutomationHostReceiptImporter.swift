@@ -1,21 +1,36 @@
 import Foundation
 import IntentsAutomationDateCodec
 
+/// A terminal error returned by one hosted operation. It does not assert that
+/// the action had no side effects or that a business requirement was assessed.
+public struct AutomationHostOperationFailure: Codable, Equatable, Sendable {
+    public let operationID: String
+    public let message: String
+
+    func validate(receipt: AutomationSegmentReceipt, segment: AutomationSegment) throws {
+        guard [.systemIntent, .systemQuery].contains(receipt.route), receipt.dispatched, !receipt.completed,
+              receipt.observations.isEmpty, receipt.terminalUIAssertionFailure == nil,
+              segment.hostProgram?.operations.contains(where: { $0.id == operationID }) == true,
+              message.utf16.count <= 4096 else { throw AutomationContractError.conflictingOperation }
+    }
+}
+
 public struct AutomationImportedHostReceipt: Sendable {
     public var runner: AutomationProcessIdentity
     public var executablePath: String
     public var values: [String: AutomationValue]
     var runtimeObservation: AutomationAppleRuntimeObservation? = nil
+    public var terminalFailure: AutomationHostOperationFailure? = nil
 }
 
 /// Correlates the unique completed receipt with the exact frozen program. XCTest exit is insufficient.
 public enum AutomationHostReceiptImporter {
     public static func importReceipt(_ data: Data, scope: AutomationScope, app: AppIdentity,
-                                     program: AutomationHostProgram) throws -> AutomationImportedHostReceipt {
-        try importValidatedReceipt(data, scope: scope, app: app, program: program, fileValues: [:])
+                                     program: AutomationHostProgram, allowTerminalFailure: Bool = false) throws -> AutomationImportedHostReceipt {
+        try importValidatedReceipt(data, scope: scope, app: app, program: program, fileValues: [:], allowTerminalFailure: allowTerminalFailure)
     }
     static func importValidatedReceipt(_ data: Data, scope: AutomationScope, app: AppIdentity,
-                                       program: AutomationHostProgram, fileValues: [String: AutomationValue]) throws -> AutomationImportedHostReceipt {
+                                       program: AutomationHostProgram, fileValues: [String: AutomationValue], allowTerminalFailure: Bool = false) throws -> AutomationImportedHostReceipt {
         guard data.count <= 1_048_576 else { throw AutomationContractError.missingEvidence("Host receipt exceeds budget") }
         let receipt = try JSONDecoder().decode(AutomationJSON.self, from: data)
         guard let root = receipt.object else { throw AutomationContractError.invalidIdentity }
@@ -30,10 +45,11 @@ public enum AutomationHostReceiptImporter {
         var keys: Set<String> = ["schemaVersion", "runner", "runID", "attemptID", "segmentID", "leaseGeneration", "bundleID", "productDigest", "operations", "complete"]
         if observation != nil { keys.insert("runtimeContext") }
         if app.productDigestVersion != nil { keys.insert("productDigestVersion") }
+        let complete = root["complete"] == .bool(true)
         guard app.productDigestVersion == nil || app.productDigestVersion == 1 || app.productDigestVersion == 2,
               let fields = receipt.object, Set(fields.keys) == keys,
               fields["productDigestVersion"] == app.productDigestVersion.map({ .number(Double($0)) }),
-              fields["complete"] == .bool(true), fields["runID"] == .string(scope.runId),
+              (complete || (allowTerminalFailure && fields["complete"] == .bool(false))), fields["runID"] == .string(scope.runId),
               fields["attemptID"] == .string(scope.attemptId), fields["segmentID"] == .string(scope.segmentId),
               fields["leaseGeneration"] == .number(Double(scope.leaseGeneration)), fields["bundleID"] == .string(app.bundleID),
               fields["productDigest"] == app.productDigest.map(AutomationJSON.string), let runner = fields["runner"]?.object,
@@ -41,14 +57,28 @@ public enum AutomationHostReceiptImporter {
               pid > 0, pid <= Double(Int32.max), pid.rounded() == pid, case .string(let start) = runner["startIdentity"],
               start.range(of: #"^[0-9]{1,20}:[0-9]{1,6}$"#, options: .regularExpression) != nil,
               case .string(let path) = runner["executablePath"], path.hasPrefix("/"), path.utf16.count <= 4096,
-              case .array(let operations) = fields["operations"], operations.count == program.operations.count else {
+              case .array(let operations) = fields["operations"], !operations.isEmpty,
+              (complete ? operations.count == program.operations.count : operations.count <= program.operations.count) else {
             throw AutomationContractError.missingEvidence("Host receipt scope or runner mismatch")
         }
         var values: [String: AutomationValue] = [:]
-        for (operation, expected) in zip(operations, program.operations) {
+        var failure: AutomationHostOperationFailure?
+        for (index, pair) in zip(operations, program.operations).enumerated() {
+            let (operation, expected) = pair
             guard let fields = operation.object, Set(fields.keys).isSubset(of: ["operationID", "dispatched", "value", "error"]),
-                  fields["operationID"] == .string(expected.id), fields["dispatched"] == .bool(true), fields["error"] == nil || fields["error"] == .null,
-                  let value = fields["value"] else { throw AutomationContractError.missingEvidence("Host operation did not complete") }
+                  fields["operationID"] == .string(expected.id), fields["dispatched"] == .bool(true) else {
+                throw AutomationContractError.missingEvidence("Host operation does not match the frozen program")
+            }
+            if let error = fields["error"], error != .null {
+                guard allowTerminalFailure, !complete, index == operations.count - 1,
+                      case .string(let message) = error, message.utf16.count <= 4096,
+                      fields["value"] == nil || fields["value"] == .null else {
+                    throw AutomationContractError.missingEvidence("Host failure is not an exact terminal operation")
+                }
+                failure = .init(operationID: expected.id, message: message)
+                continue
+            }
+            guard let value = fields["value"] else { throw AutomationContractError.missingEvidence("Host operation did not complete") }
             let decoded: AutomationValue
             if expected.resultCodec == "intentFile" {
                 let descriptor = try AutomationHostFileDescriptor(value, operationID: expected.id)
@@ -60,7 +90,9 @@ public enum AutomationHostReceiptImporter {
             else { guard matchesResult(decoded, codec: expected.resultCodec ?? "noValue") else { throw AutomationContractError.invalidPlan("Host result does not match the frozen codec") } }
             values[expected.id] = decoded
         }
-        return .init(runner: .init(pid: Int32(pid), startIdentity: start), executablePath: path, values: values, runtimeObservation: observation)
+        guard complete || failure != nil else { throw AutomationContractError.missingEvidence("Host progress has no terminal outcome") }
+        return .init(runner: .init(pid: Int32(pid), startIdentity: start), executablePath: path, values: values,
+            runtimeObservation: observation, terminalFailure: failure)
     }
     private static func matchesResult(_ value: AutomationValue, codec: String) -> Bool {
         switch (codec, value) {

@@ -111,19 +111,24 @@ struct EvaluationHTTPLanguageModel: LanguageModel {
     typealias Executor = EvaluationHTTPLanguageModelExecutor
 
     let configuration: EvaluationCustomProviderConfiguration
+    /// Explicit subject input ceiling; judge requests retain their own context budget.
+    let maximumInputTokens: Int?
     let liveResponseObserver: EvaluationHTTPLiveResponseObserver?
 
     init(
         configuration: EvaluationCustomProviderConfiguration,
+        maximumInputTokens: Int? = nil,
         liveResponseObserver: EvaluationHTTPLiveResponseObserver? = nil
     ) {
         self.configuration = configuration
+        self.maximumInputTokens = maximumInputTokens
         self.liveResponseObserver = liveResponseObserver
     }
 
     var capabilities: LanguageModelCapabilities { configuration.capabilities }
     var executorConfiguration: Executor.Configuration {
-        .init(provider: configuration, liveResponseObserver: liveResponseObserver)
+        .init(provider: configuration, maximumInputTokens: maximumInputTokens,
+              liveResponseObserver: liveResponseObserver)
     }
     var contextSize: Int { configuration.contextSize }
 }
@@ -161,6 +166,7 @@ final class EvaluationHTTPLiveResponseObserver: Hashable, Sendable {
 
 struct EvaluationHTTPLanguageModelExecutionConfiguration: Hashable, Sendable {
     var provider: EvaluationCustomProviderConfiguration
+    var maximumInputTokens: Int? = nil
     var liveResponseObserver: EvaluationHTTPLiveResponseObserver?
 }
 
@@ -174,13 +180,18 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
     private static let maximumEventBytes = 1 * 1_024 * 1_024
 
     private let configuration: EvaluationCustomProviderConfiguration
+    private let maximumInputTokens: Int?
     private let liveResponseObserver: EvaluationHTTPLiveResponseObserver?
 
     init(configuration: Configuration) throws {
         if let issue = configuration.provider.validationIssue {
             throw EvaluationHTTPProviderError.invalidConfiguration(issue)
         }
+        if let limit = configuration.maximumInputTokens, limit < 1 {
+            throw EvaluationHTTPProviderError.invalidConfiguration("The input token limit must be positive.")
+        }
         self.configuration = configuration.provider
+        self.maximumInputTokens = configuration.maximumInputTokens
         self.liveResponseObserver = configuration.liveResponseObserver
     }
 
@@ -210,10 +221,14 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
             throw EvaluationHTTPProviderError.requestTooLarge(maximum: Self.maximumRequestBytes)
         }
         if let tokenizerEndpoint = configuration.validatedTokenizerEndpoint {
+            let requestRole = request.metadata["role"].flatMap {
+                try? JSONDecoder().decode(String.self, from: Data($0.jsonString.utf8))
+            }
             try await Self.validateTokenBudget(
                 body: body,
                 endpoint: tokenizerEndpoint,
                 request: request,
+                maximumInputTokens: requestRole == "judge" ? nil : maximumInputTokens,
                 contextSize: configuration.contextSize,
                 timeout: configuration.requestTimeoutSeconds
             )
@@ -309,6 +324,7 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         body: Data,
         endpoint: URL,
         request: LanguageModelExecutorGenerationRequest,
+        maximumInputTokens: Int?,
         contextSize: Int,
         timeout: TimeInterval
     ) async throws {
@@ -349,6 +365,12 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
               tokenization.cachedInputTokens <= tokenization.inputTokens else {
             throw EvaluationHTTPProviderError.invalidTokenizationResponse(
                 "cachedInputTokens must be between zero and inputTokens."
+            )
+        }
+        if let maximumInputTokens, tokenization.inputTokens > maximumInputTokens {
+            throw EvaluationHTTPProviderError.backend(
+                code: "contextSizeExceeded",
+                message: "The provider tokenizer measured \(tokenization.inputTokens) input tokens, exceeding the configured input limit of \(maximumInputTokens) tokens."
             )
         }
         let responseReserve = request.generationOptions.maximumResponseTokens ?? 0

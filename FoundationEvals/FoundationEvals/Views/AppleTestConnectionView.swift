@@ -324,11 +324,17 @@ struct AppleTestConnectionView: View {
     @ViewBuilder private var connectionStatus: some View {
         if let report = coordinator.preflight {
             let anyRouteReady = coordinator.routeReadiness.values.contains { $0.state == .ready }
+            let requiredLanes = ScenarioLane.allCases.filter { coordinator.draft.coverage[$0] == .required }
+            let requiredRoutesReady = coordinator.draft.schemaVersion != ScenarioDefinition.stableSchemaVersion
+                || (!requiredLanes.isEmpty && requiredLanes.allSatisfy {
+                    coordinator.routeReadiness[$0]?.state == .ready
+                })
+            let readyToRun = report.isReady && requiredRoutesReady
             VStack(alignment: .leading, spacing: 8) {
                 WorkspaceNotice(
-                    report.isReady || anyRouteReady ? .success : .warning,
+                    readyToRun || anyRouteReady ? .success : .warning,
                     message:
-                    report.isReady ? "Ready to run on \(selectedDeviceName ?? "selected destination")"
+                    readyToRun ? "Ready to run on \(selectedDeviceName ?? "selected destination")"
                         : (anyRouteReady ? "Some routes are ready on \(selectedDeviceName ?? "selected destination")"
                             : "Finish setup before running")
                 )

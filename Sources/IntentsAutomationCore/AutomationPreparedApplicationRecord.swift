@@ -4,6 +4,54 @@ import Foundation
 /// Resolves one saved preparation from its exact retained product path. It
 /// neither searches other projects nor authorises a build or device command.
 public enum AutomationPreparedApplicationRecord {
+    /// Reassess the original container that issued the candidate identity.
+    /// Current records carry structured graph paths; older records retain the
+    /// project/workspace candidate ID and need a bounded compatibility decoder.
+    public static func intakeURL(for prepared: AutomationPreparedApplication) throws -> URL {
+        let source = prepared.source
+        let project: String, workspace: String?, targetID: String
+        if let graph = prepared.sourceGraph {
+            guard graph.workspaceRelativePath == prepared.workspace?.relativePath,
+                  AutomationSourceCaptureLayout.relative(graph.projectRelativePath),
+                  graph.workspaceRelativePath.map(AutomationSourceCaptureLayout.relative) ?? true else {
+                throw AutomationContractError.conflictingOperation
+            }
+            project = source.layoutRoot + "/" + graph.projectRelativePath
+            workspace = graph.workspaceRelativePath.map { source.layoutRoot + "/" + $0 }
+            targetID = graph.targetID
+        } else {
+            let logicalID = prepared.host.app.logicalID
+            guard let separator = logicalID.lastIndex(of: "#") else { throw AutomationContractError.invalidIdentity }
+            targetID = String(logicalID[logicalID.index(after: separator)...])
+            let containers = String(logicalID[..<separator]).components(separatedBy: "::")
+            guard (1...2).contains(containers.count) else { throw AutomationContractError.invalidIdentity }
+            project = containers.last!
+            workspace = containers.count == 2 ? containers[0] : nil
+        }
+        guard !targetID.isEmpty, project.hasSuffix(".xcodeproj"),
+              AutomationSourceCaptureLayout.absolute(project), source.includesOrigin(project),
+              workspace.map({ AutomationSourceCaptureLayout.absolute($0) && $0.hasSuffix(".xcworkspace") && source.includesOrigin($0) }) ?? true,
+              prepared.host.app.logicalID == (workspace.map { $0 + "::" } ?? "") + project + "#" + targetID else {
+            throw AutomationContractError.conflictingOperation
+        }
+        if let workspace {
+            let container = URL(fileURLWithPath: workspace)
+            if container.deletingLastPathComponent().path != source.sourceRoot {
+                // A repository selection may authorise sibling projects outside
+                // a nested workspace's folder. Reuse that exact primary root;
+                // the caller still selects only the retained candidate identity.
+                guard AutomationSourceCaptureLayout.absolute(source.sourceRoot),
+                      workspace.hasPrefix(source.sourceRoot + "/"),
+                      project.hasPrefix(source.sourceRoot + "/") else {
+                    throw AutomationContractError.conflictingOperation
+                }
+                return URL(fileURLWithPath: source.sourceRoot)
+            }
+            return container
+        }
+        return URL(fileURLWithPath: project)
+    }
+
     // Includes the bounded source manifest plus up to 16 MiB of host/catalog evidence.
     public static let maximumRecordBytes = AutomationSourceSnapshot.maximumManifestBytes + 16 * 1024 * 1024
     /// Reuses the newest completed preparation without rebuilding. Unfinished

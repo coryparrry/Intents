@@ -5,6 +5,68 @@ import XCTest
 @testable import IntentsAutomationNativeUI
 
 @MainActor final class AutomationPreparationRestorationTests: XCTestCase {
+    func testWorkspaceSelectionRestoresExactCandidateWithoutRebuilding() async throws {
+        let fixture = try RetainedPreparationFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let prepared = try fixture.savePreparation(workspaceSelection: true)
+        let model = AppAutomationStore(supportDirectory: fixture.support, preparationExecutor: { _, _, _ in
+            XCTFail("Workspace restoration must reuse the retained build")
+            throw AutomationContractError.invalidIdentity
+        })
+        await model.waitForPreparation()
+        XCTAssertEqual(model.prepared, prepared)
+        XCTAssertEqual(model.candidateID, prepared.host.app.logicalID)
+        XCTAssertEqual(model.candidate?.workspacePath, fixture.source.appendingPathComponent("Subject.xcworkspace").path)
+        XCTAssertEqual(model.sourcePreparationTarget, prepared.host.target)
+        XCTAssertFalse(model.effectsConfirmed)
+        model.candidateSelectionChanged()
+        XCTAssertEqual(model.prepared, prepared)
+        await model.closeAndWait()
+    }
+
+    func testStructuredRestorationUsesWorkspacePathAndRejectsIdentityDrift() throws {
+        let fixture = try RetainedPreparationFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var prepared = try fixture.savePreparation(workspaceSelection: true)
+        var graph = AutomationSourceGraph(sourceManifestDigest: try prepared.source.digest,
+            projectRelativePath: "Source/Subject.xcodeproj", targetID: "APP", configuration: "Debug",
+            nodes: [], edges: [], inputs: [], declarations: [], gaps: [])
+        graph.workspaceRelativePath = "Source/Subject.xcworkspace"
+        prepared.sourceGraph = graph
+        prepared.workspace = .init(relativePath: "Source/Subject.xcworkspace", subjectScheme: "Subject",
+            projectPaths: ["Source/Subject.xcodeproj"], generatedFiles: [:])
+        XCTAssertEqual(try AutomationPreparedApplicationRecord.intakeURL(for: prepared),
+            fixture.source.appendingPathComponent("Subject.xcworkspace"))
+        prepared.host.app.logicalID = fixture.project.path + "#APP"
+        XCTAssertThrowsError(try AutomationPreparedApplicationRecord.intakeURL(for: prepared))
+        prepared.sourceGraph?.projectRelativePath = "../Outside.xcodeproj"
+        XCTAssertThrowsError(try AutomationPreparedApplicationRecord.intakeURL(for: prepared))
+    }
+
+    func testNestedWorkspaceRestoresItsSiblingProjectWithinRetainedPrimaryRoot() async throws {
+        let fixture = try RetainedPreparationFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let prepared = try fixture.savePreparation(workspaceSelection: true, nestedWorkspace: true)
+        let workspace = fixture.source.appendingPathComponent("Containers/Subject.xcworkspace")
+        // Direct workspace intake cannot use the wider source grant that made
+        // this sibling reference selectable during the original preparation.
+        XCTAssertTrue(try AutomationApplicationIntake.assess(workspace).candidates.isEmpty)
+        XCTAssertEqual(try AutomationPreparedApplicationRecord.intakeURL(for: prepared), fixture.source)
+        let model = AppAutomationStore(supportDirectory: fixture.support, preparationExecutor: { _, _, _ in
+            XCTFail("Nested workspace restoration must reuse the retained build")
+            throw AutomationContractError.invalidIdentity
+        })
+        await model.waitForPreparation()
+        XCTAssertEqual(model.prepared, prepared)
+        XCTAssertEqual(model.candidateID, prepared.host.app.logicalID)
+        XCTAssertEqual(model.candidate?.workspacePath, workspace.path)
+        XCTAssertEqual(model.candidate?.containerPath, fixture.project.path)
+        XCTAssertEqual(model.selectedSourceRoot, fixture.source)
+        XCTAssertEqual(model.sourceGrants.urls, [fixture.library])
+        XCTAssertFalse(model.effectsConfirmed)
+        await model.closeAndWait()
+    }
+
     func testLaunchRestoresDependencyInclusiveBuildWithoutPreparingOrRestoringEffectsApproval() async throws {
         let fixture = try RetainedPreparationFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -158,10 +220,17 @@ private struct RetainedPreparationFixture {
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-120)], ofItemAtPath: oldRecord.path)
         try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: newRecord.path)
     }
-    func savePreparation(appName: String = "Subject", includesDependencies: Bool = false) throws -> AutomationPreparedApplication {
+    func savePreparation(appName: String = "Subject", includesDependencies: Bool = false, workspaceSelection: Bool = false,
+                         nestedWorkspace: Bool = false) throws -> AutomationPreparedApplication {
         let selectedProject = source.appendingPathComponent(appName + ".xcodeproj")
         if selectedProject != project {
             try FileManager.default.copyItem(at: project, to: selectedProject)
+        }
+        let selectedWorkspace = source.appendingPathComponent((nestedWorkspace ? "Containers/" : "") + appName + ".xcworkspace")
+        if workspaceSelection {
+            try FileManager.default.createDirectory(at: selectedWorkspace, withIntermediateDirectories: true)
+            let xml = "<?xml version=\"1.0\"?><Workspace version=\"1.0\"><FileRef location=\"group:" + (nestedWorkspace ? "../" : "") + appName + ".xcodeproj\"/></Workspace>"
+            try Data(xml.utf8).write(to: selectedWorkspace.appendingPathComponent("contents.xcworkspacedata"))
         }
         let session = support.appendingPathComponent("prepare-" + UUID().uuidString)
         let manifest = try AutomationSourceSnapshot.capture(source: source, sessionRoot: session, additionalRoots: [library], includesDependencies: includesDependencies)
@@ -171,6 +240,7 @@ private struct RetainedPreparationFixture {
             try Data("retained payload".utf8).write(to: product.appendingPathComponent("payload"))
         }
         var app = AppIdentity(logicalID: selectedProject.path + "#APP", bundleID: "example." + appName, platform: "ios", productDigest: try AutomationProductDigest.compute(bundle: subject))
+        if workspaceSelection { app.logicalID = selectedWorkspace.path + "::" + app.logicalID }
         app.canonicalBundlePath = subject.path; app.sourceManifestDigest = try manifest.digest; app.configuration = "Debug"
         let sources = session.appendingPathComponent("generated-host/Owned/Sources")
         try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)

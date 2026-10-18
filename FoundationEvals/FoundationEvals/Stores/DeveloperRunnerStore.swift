@@ -29,6 +29,7 @@ final class DeveloperRunnerStore {
     @ObservationIgnored private let automationAdmissionID = UUID()
 
     @ObservationIgnored private let evaluationStore: EvaluationStore
+    @ObservationIgnored private var isClosing = false
     @ObservationIgnored private var runTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var snapshotTasks: [UUID: Task<EvaluationRun, Error>] = [:]
 
@@ -68,6 +69,7 @@ final class DeveloperRunnerStore {
     var lastError: String? { client.lastError }
 
     func start() {
+        guard !isClosing else { return }
         client.startBrowsing()
     }
 
@@ -84,9 +86,20 @@ final class DeveloperRunnerStore {
         client.shutdown()
     }
 
+    /// Closes admission and waits for owned work to retain its terminal evidence.
+    func closeAndWait() async {
+        isClosing = true
+        let runs = Array(runTasks.values)
+        let snapshots = Array(snapshotTasks.values)
+        stop()
+        for task in runs { await task.value }
+        for task in snapshots { _ = try? await task.value }
+    }
+
     /// Connects to a discovered endpoint. Pairing remains incomplete until the
     /// user enters the code displayed by the runner app in `trustRunner`.
     func beginPairing(with runnerID: UUID) throws {
+        guard !isClosing else { throw EvaluationStoreError.resourceConflict("Developer runners are closing.") }
         try client.connect(to: runnerID)
     }
 
@@ -95,6 +108,7 @@ final class DeveloperRunnerStore {
     }
 
     func trustRunner(_ runnerID: UUID, pairingCode: String) throws {
+        guard !isClosing else { throw EvaluationStoreError.resourceConflict("Developer runners are closing.") }
         try client.trustRunner(runnerID, pairingCode: pairingCode)
     }
 
@@ -112,7 +126,7 @@ final class DeveloperRunnerStore {
         featureID: String,
         timeout: Duration = .seconds(120)
     ) throws -> UUID {
-        guard ScenarioExecutionAdmission.shared.allows(nil),
+        guard !isClosing, ScenarioExecutionAdmission.shared.allows(nil),
               executingRunID == nil, !evaluationStore.hasActiveExecution, !automationExecutionBlocked else {
             throw EvaluationStoreError.resourceConflict("Another evaluation is already running.")
         }
@@ -125,6 +139,7 @@ final class DeveloperRunnerStore {
                 message: "The selected feature is not available on this runner."
             )
         }
+        try EvaluationDeveloperFeatureAdapter.validate(feature)
 
         let revision = try evaluationStore.currentSuiteRevision()
         let runID = UUID()
@@ -182,7 +197,7 @@ final class DeveloperRunnerStore {
         executionOwnerID: UUID? = nil,
         adapter: any EvaluationFeatureAdapter
     ) async throws -> EvaluationRun {
-        guard ScenarioExecutionAdmission.shared.allows(executionOwnerID),
+        guard !isClosing, ScenarioExecutionAdmission.shared.allows(executionOwnerID),
               !automationExecutionBlocked, executingRunID == nil else {
             throw EvaluationStoreError.resourceConflict("Another developer runner execution is active.")
         }
@@ -241,6 +256,7 @@ final class DeveloperRunnerStore {
         runID: UUID,
         operation: @escaping @MainActor @Sendable () async -> Void
     ) {
+        guard !isClosing else { return }
         precondition(executingRunID == nil, "Only one developer runner execution may be active.")
         executingRunID = runID
         let task = Task { @MainActor [weak self] in

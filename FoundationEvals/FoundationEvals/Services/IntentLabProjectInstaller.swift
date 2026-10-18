@@ -2,10 +2,10 @@ import Foundation
 import CryptoKit
 import Darwin
 
-/// Published package commit verified by a clean external SwiftPM consumer.
+/// Immutable SDK revision checked by the clean external-consumer CI gate before merge.
 enum IntentLabPackageRevisionManifest {
     static let packageURL = URL(string: "https://github.com/coryparrry/Intents.git")!
-    static let verifiedRevision: String? = "32ee15ecb982a850c89168e4053e513936e554fe"
+    static let verifiedRevision: String? = "4047c97c36757df3719d57dde78a3e69e2769178"
     static let product = "IntentLabTesting"
 }
 
@@ -612,7 +612,8 @@ struct IntentLabProjectInstaller: Sendable {
             }
         }
         let needsAppAdapter = !Set(declaredCapabilities).isDisjoint(with: [
-            "siri", "siri-completion", "accessible-result", "preparation", "invocation-correlation"
+            "siri", "siri-completion", "accessible-result", "preparation", "invocation-correlation",
+            "action-receipt-v1", "local-feature-controls"
         ]) || ((declaration["isolation"] as? [String: Any])?["kind"] as? String != "readOnly")
         if request.consumerSource.contains("IntentLabBasicIntegration"), needsAppAdapter {
             return manual(project, request: request,
@@ -1653,4 +1654,110 @@ struct IntentLabProjectInstaller: Sendable {
         }
         return buildable
     }
+}
+
+enum IntentLabConsumerTemplates {
+  static func declarationEntries(
+    _ text: String, fallback: [[String: Any]], field: String
+  ) throws -> [[String: Any]] {
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return fallback }
+    guard text.utf8.count <= 65_536,
+          let data = text.data(using: .utf8),
+          let entries = try JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+          entries.count <= 16 else {
+      throw IntentLabProjectInstallerError.unsupported("Declare \(field) as a JSON array with at most sixteen entries.")
+    }
+    if field == "parameters" {
+      _ = try JSONDecoder().decode([ScenarioIntegrationCatalog.Action.Parameter].self, from: data)
+    } else {
+      _ = try JSONDecoder().decode([ScenarioIntegrationCatalog.Projection].self, from: data)
+    }
+    return entries
+  }
+
+  /// Creates the declaration used by the Basic installer and its integration
+  /// tests. Readiness support is separate from the selected production action.
+  static func basicDeclarationData(_ declaration: [String: Any]) throws -> Data {
+    var declaration = declaration
+    var capabilities = declaration["capabilities"] as? [String] ?? []
+    for capability in ["test-only-intent", "basic-direct-read-only"] where !capabilities.contains(capability) {
+      capabilities.append(capability)
+    }
+    declaration["capabilities"] = capabilities
+    let response: [String: Any] = [
+      "id": "readiness.ready",
+      "type": ["primitive": ["_0": "boolean"]],
+      "path": [["kind": "property", "name": "value"], ["kind": "property", "name": "ready"]],
+    ]
+    let readinessControl: [String: Any] = [
+      "operationID": "intentLabReadiness",
+      "testIntentIdentifier": "IntentLabReadinessIntent",
+      "response": response,
+    ]
+    declaration["readinessControl"] = readinessControl
+    return try JSONSerialization.data(withJSONObject: declaration, options: [.prettyPrinted, .sortedKeys])
+  }
+
+  static let basic = """
+    import XCTest
+    import IntentLabTesting
+    import IntentLabContracts
+
+    @available(macOS 27.0, iOS 27.0, *)
+    @MainActor
+    final class IntentLabScenarioTests: XCTestCase {
+        func testIntentLabScenario() throws {
+            try IntentLabScenarioRunner.run(testCase: self, integration: IntentLabInstalledBasicIntegration())
+        }
+
+        func testIntentLabConnection() throws {
+            try IntentLabScenarioRunner.checkConnection(testCase: self, integration: IntentLabInstalledBasicIntegration())
+        }
+
+        func testIntentLabReadiness() throws {
+            try IntentLabScenarioRunner.testIntentLabReadiness(testCase: self, integration: IntentLabInstalledBasicIntegration())
+        }
+    }
+
+    // Keep the declared Basic Direct and harmless readiness support compatible
+    // with the pinned SDK as well as newer local package revisions.
+    @available(macOS 27.0, iOS 27.0, *)
+    @MainActor
+    private struct IntentLabInstalledBasicIntegration: IntentLabIntegration {
+        private let base = IntentLabBasicIntegration()
+        var supportsMutatingChecks: Bool { false }
+        var supportedCapabilities: Set<String> {
+            base.supportedCapabilities.union(["test-only-intent", "basic-direct-read-only"])
+        }
+        func prepare(bundleIdentifier: String, context: String, operationID: String) throws -> XCUIApplication {
+            try base.prepare(bundleIdentifier: bundleIdentifier, context: context, operationID: operationID)
+        }
+        func observe(application: XCUIApplication) throws -> [String: IntentLabValue] {
+            try base.observe(application: application)
+        }
+        func completed(observations: [String: IntentLabValue], context: String) -> Bool { false }
+    }
+    """
+
+  static let siri = """
+    import XCTest
+    import IntentLabCoreTesting
+
+    @available(macOS 27.0, iOS 27.0, *)
+    @MainActor
+    final class IntentLabScenarioTests: XCTestCase {
+        func testIntentLabScenario() throws {
+            try IntentLabSiriScenarioRunner.run(testCase: self, integration: IntentLabAppAdapter())
+        }
+
+        func testIntentLabConnection() throws {
+            try IntentLabSiriScenarioRunner.checkConnection(testCase: self, integration: IntentLabAppAdapter())
+        }
+
+        func testIntentLabReadiness() throws {
+            try IntentLabSiriScenarioRunner.testIntentLabReadiness(testCase: self, integration: IntentLabAppAdapter())
+        }
+    }
+    """
+
 }

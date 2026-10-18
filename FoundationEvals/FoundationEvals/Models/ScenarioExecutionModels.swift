@@ -936,6 +936,40 @@ struct ScenarioFeatureSuiteIdentity: Equatable, Sendable {
 }
 
 enum ScenarioObservedFeatureOutput {
+    /// Records only historical connected-runner claims supported by the actual
+    /// captured sample. This does not supply action or application-state proof;
+    /// saved child, fixture and build binding are still qualified separately.
+    static func recordingVerifiedClaims(
+        in result: ScenarioLaneResult, definition: ScenarioDefinition
+    ) -> ScenarioLaneResult {
+        var verified = result
+        verified.claims = []
+        guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
+              definition.actionPolicyVersion == nil, definition.actionRequirements == nil,
+              definition.featureBinding != nil,
+              result.lane == .appFeature, result.caseID == definition.id,
+              result.executionStatus == .completed, result.outcome == .passed,
+              result.startedAt <= result.completedAt,
+              case .string? = result.observations["feature.response"],
+              case .string(let runID) = result.observations["feature.runID"],
+              UUID(uuidString: runID) != nil,
+              case .string(let sampleID) = result.observations["feature.sampleID"],
+              UUID(uuidString: sampleID) != nil,
+              result.observations["feature.resultCount"] == .integer(1),
+              ["feature.response", "feature.runID", "feature.sampleID", "feature.resultCount"].allSatisfy({
+                  result.observationSources?[$0] == .applicationInstrumentation
+              }) else { return verified }
+
+        let candidates = ScenarioResultEvaluator.requiredClaims(for: definition, lane: .appFeature)
+            .filter { $0 == .executionCompleted || $0 == .returnedValueChecked }
+        var proposed = result
+        proposed.claims = candidates
+        verified.claims = candidates.filter {
+            ScenarioResultEvaluator.verifiedClaim($0, definition: definition, result: proposed)
+        }
+        return verified
+    }
+
     /// Reads only fields actually present in the runner's encoded value.
     /// Missing or mistyped fields remain absent so required assertions fail.
     static func project(_ encoded: Data?, fields: [ScenarioOutputField]) -> [String: ScenarioValue] {

@@ -607,6 +607,7 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
         case stalled
         case oversized
         case usage(UsageShape)
+        case usageSequence([UsageShape])
     }
 
     enum UsageShape {
@@ -615,6 +616,7 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
         case completionOnly
         case costOnly
         case complete
+        case completeWithReportedCost
         case negative
         case overflow
         case array
@@ -772,7 +774,7 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
             case .sse:
                 sendSSEVerdict(to: connection)
                 return
-            case .usage:
+            case .usage, .usageSequence:
                 break
             case .valid, .redirect, .malformed, .fenced, .contentParts:
                 let verdict = #"{"requirements":[{"criterionIndex":1,"score":4,"rationale":"Supported by the saved evidence."}]}"#
@@ -794,7 +796,13 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
                 ], options: [.sortedKeys])
             }
         }
-        if case .usage(let shape) = mode {
+        let usageShape: UsageShape? = switch mode {
+        case .usage(let shape): shape
+        case .usageSequence(let shapes):
+            shapes.isEmpty ? .missing : shapes[min(max(0, completionRequestCount - 1), shapes.count - 1)]
+        default: nil
+        }
+        if let shape = usageShape {
             let content = #"{"requirements":[{"criterionIndex":1,"score":4,"rationale":"Supported by the saved evidence."}]}"#
             let escapedContent = String(
                 data: try! JSONSerialization.data(withJSONObject: content, options: [.fragmentsAllowed]),
@@ -806,6 +814,7 @@ final class CompatibleJudgeFixture: @unchecked Sendable {
             case .completionOnly: #"{"completion_tokens":5}"#
             case .costOnly: #"{"cost":0.25}"#
             case .complete: #"{"prompt_tokens":10,"completion_tokens":5}"#
+            case .completeWithReportedCost: #"{"prompt_tokens":10,"completion_tokens":5,"cost":0.25}"#
             case .negative: #"{"prompt_tokens":-1,"completion_tokens":5}"#
             case .overflow: #"{"prompt_tokens":9223372036854775808,"completion_tokens":5}"#
             case .array: "[]"

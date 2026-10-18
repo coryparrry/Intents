@@ -4,6 +4,26 @@ import Testing
 
 @MainActor
 struct SuiteRunActionTests {
+    @Test func appFeatureCanSaveItsInputsWithoutUnusedDesktopModelSettings() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        fixture.store.draftSuite.scoringMode = .exactMatch
+        fixture.store.draftSuite.cases = [EvaluationCase(name: "App input", prompt: "Echo this", expected: "Echo this")]
+        fixture.store.draftSuite.modelConfiguration.provider = .customHTTP
+        fixture.store.draftSuite.modelConfiguration.customProviderSettings.endpoint = "unused-invalid-endpoint"
+        #expect(fixture.store.validationIssue(for: fixture.store.draftSuite, includeModelReadiness: false) != nil)
+        #expect(fixture.store.developerFeatureValidationIssue(for: fixture.store.draftSuite) == nil)
+        #expect(fixture.store.saveSuite(forDeveloperFeature: true))
+        let reloaded = EvaluationStore(supportDirectory: fixture.directory)
+        #expect(reloaded.suite == fixture.store.draftSuite)
+        #expect(reloaded.validationIssue(for: reloaded.suite, includeModelReadiness: false) != nil)
+        // The same UI admission helper rejects inputs the connected protocol
+        // cannot carry, instead of reporting a valid run and dropping them.
+        fixture.store.draftSuite.cases[0].conversation.setupTurns = [.init(prompt: "Remember this")]
+        #expect(fixture.store.developerFeatureValidationIssue(for: fixture.store.draftSuite)?.contains("conversation history") == true)
+        #expect(!fixture.store.saveSuite(forDeveloperFeature: true))
+    }
+
     @Test func unavailableDeviceDoesNotFallBackToLocalExecution() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }

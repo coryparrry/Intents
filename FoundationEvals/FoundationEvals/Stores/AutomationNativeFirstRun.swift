@@ -12,7 +12,7 @@ struct AutomationNativeFirstRunReview: Sendable, Identifiable {
 
 extension AppAutomationStore {
     var canReviewFirstChecks: Bool {
-        canSelectApplicationFromCommand && candidate != nil && (candidate?.kind == .installedProduct ||
+        permitsExecutionAdmission && canSelectApplicationFromCommand && candidate != nil && (candidate?.kind == .installedProduct ||
             (candidate?.kind == .sourceTarget && preparationDestination == .macOS) ||
             (prepared?.host.app.logicalID == candidateID && prepared?.host.app.configuration == configuration && prepared?.host.target == sourcePreparationTarget))
     }
@@ -96,10 +96,11 @@ extension AppAutomationStore {
         } catch { message = errorText(error); return }
         firstRunGaps = reviewed.gaps; firstRunReports = []
         guard !reviewed.requests.isEmpty else { message = reviewed.gaps.joined(separator: "\n"); return }
+        do { try beginExecutionAdmission() } catch { message = errorText(error); return }
         invalidatePendingCommand(); selectionEpoch += 1
         message = nil; progress = "Starting checks…"
         task = Task {
-            defer { progress = nil; task = nil; releaseScopeIfClosing() }
+            defer { progress = nil; task = nil; releaseScopeIfClosing(); finishExecutionAdmission() }
             let campaignID = UUID().uuidString
             var requestTarget: TargetIdentity?
             do {

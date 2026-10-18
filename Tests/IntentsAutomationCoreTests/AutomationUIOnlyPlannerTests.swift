@@ -1,5 +1,6 @@
 import XCTest
 @testable import IntentsAutomationCore
+import IntentsAutomationUIHostContracts
 
 final class AutomationUIOnlyPlannerTests: XCTestCase {
     private let app = AppIdentity(logicalID: "selected", bundleID: "example.UI", platform: "ios", productDigest: String(repeating: "a", count: 64))
@@ -11,6 +12,27 @@ final class AutomationUIOnlyPlannerTests: XCTestCase {
         XCTAssertTrue(plan.requirements.isEmpty); XCTAssertTrue(plan.observations.isEmpty)
         XCTAssertEqual(plan.budget.attempts, 1); XCTAssertEqual(plan.budget.controllerCalls, 0)
         XCTAssertEqual(AutomationAssessment.assess(plan: plan, attemptID: "attempt", subjectDispatched: true, subjectCompleted: true, observations: []).summary, .executedUnassessed)
+    }
+    func testUnknownCheckedValueCannotPassAnUncheckedRequirement() throws {
+        let plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, program: reviewedProgram,
+            expectedVisibleText: "false", observationLabel: "Complete", observationProperty: "checked",
+            approval: approval(), localeIdentifier: "en_GB")
+        let observer = plan.observations[0]
+        func assess(_ value: Bool) -> AttemptResult {
+            let fact = AutomationObservation(id: observer.id, app: app, target: target,
+                environmentID: plan.environmentID, attemptID: "attempt", stepID: observer.id,
+                route: .ui, proof: .visibleState, value: .object(["visible-text": .bool(value)]))
+            return AutomationAssessment.assess(plan: plan, attemptID: "attempt", subjectDispatched: true,
+                subjectCompleted: true, observations: [fact])
+        }
+        XCTAssertEqual(assess(try UIHostBooleanProperty.checked(from: "0")).summary, .passed)
+        XCTAssertEqual(assess(try UIHostBooleanProperty.checked(from: "1")).summary, .assertionFailed)
+        let unavailable: [String?] = [nil, "", "2", "mixed", "false", "true", " 0", "0 "]
+        for raw in unavailable {
+            XCTAssertThrowsError(try UIHostBooleanProperty.checked(from: raw))
+        }
+        XCTAssertEqual(AutomationAssessment.assess(plan: plan, attemptID: "attempt", subjectDispatched: true,
+            subjectCompleted: true, observations: []).summary, .needsReview)
     }
     func testHumanDescriptionChangesMetadataWhilePreservingReviewedSteps() throws {
         let plan = try AutomationUIOnlyPlanner.compile(app: app, target: target, program: reviewedProgram,

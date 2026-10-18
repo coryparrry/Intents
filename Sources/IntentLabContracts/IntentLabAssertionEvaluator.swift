@@ -33,7 +33,9 @@ public enum IntentLabAssertionEvaluator {
         guard topLevel.allSatisfy({
             $0.kind == requirement.kind && $0.operationID == requirement.operationID
         }) else { return (.failed, .wrongAction) }
-        guard topLevel.allSatisfy({ $0.resolvedParameters == requirement.resolvedParameters }) else {
+        guard topLevel.allSatisfy({ IntentLabValueComparison.parametersMatch(
+            $0.resolvedParameters, requirement.resolvedParameters
+        ) }) else {
             return (.failed, .wrongParameter)
         }
         guard topLevel.allSatisfy({ $0.terminalStatus == .succeeded }) else {
@@ -63,7 +65,7 @@ public enum IntentLabAssertionEvaluator {
                     message: "Unchanged state requires both before and after observations."
                 )
             }
-            guard observed == before else {
+            guard IntentLabValueComparison.matches(observed, before) else {
                 return .init(
                     assertionID: assertion.id,
                     passed: false,
@@ -71,7 +73,7 @@ public enum IntentLabAssertionEvaluator {
                     message: "The selected state changed from its observed baseline."
                 )
             }
-            guard assertion.expectedValue == nil || assertion.expectedValue == before else {
+            guard assertion.expectedValue == nil || IntentLabValueComparison.matches(assertion.expectedValue, before) else {
                 return .init(
                     assertionID: assertion.id,
                     passed: false,
@@ -86,7 +88,7 @@ public enum IntentLabAssertionEvaluator {
                 message: "The selected state was unchanged after the completed action."
             )
         }
-        let passed = observed != nil && observed == assertion.expectedValue
+        let passed = IntentLabValueComparison.matches(observed, assertion.expectedValue)
         return .init(
             assertionID: assertion.id,
             passed: passed,

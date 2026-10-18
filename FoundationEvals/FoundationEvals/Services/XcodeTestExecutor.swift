@@ -327,6 +327,9 @@ enum ScenarioHarnessCapabilities {
         }
         let includesDirectLane = definition.coverage.intentIntegration != .notApplicable
         var capabilities: Set<String> = ["environment-payload"]
+        if ScenarioExpectationAuthoring.isUnpreparedBasicDirectCheck(definition) {
+            capabilities.insert("basic-direct-read-only")
+        }
         if definition.actionRequirements != nil { capabilities.insert("action-receipt-v1") }
         if includesDirectLane {
             capabilities.insert("direct-intent-execution")
@@ -368,6 +371,9 @@ enum ScenarioHarnessCapabilities {
             return capabilities
         }
         var capabilities: Set<String> = ["environment-payload"]
+        if ScenarioExpectationAuthoring.isUnpreparedBasicDirectCheck(definition) {
+            capabilities.insert("basic-direct-read-only")
+        }
         if definition.actionRequirements != nil { capabilities.insert("action-receipt-v1") }
         switch scope.lane {
         case .appFeature:
@@ -521,6 +527,12 @@ enum XcodeTestDeadlineBudget {
 }
 
 actor XcodeTestExecutor {
+    /// The same bundle layout must be used for verification and later catalog
+    /// reads. Native macOS test resources live inside Contents/Resources.
+    nonisolated static func integrationDeclarationURL(in testBundleURL: URL) -> URL {
+        XcodeProductBundle(url: testBundleURL).declarationURL
+    }
+
     private struct ActiveExecution: Sendable {
         var invocationID: UUID
         var destinationIdentifier: String

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import IntentLabContracts
 import SwiftData
@@ -97,7 +98,7 @@ final class TaskRepository {
 
     /// Opens a new SwiftData container for every observation so a query reads saved store state
     /// independently from the context that performed the measured action.
-    func persistedTasks(identifiers: [String]) throws -> [TaskSnapshot] {
+    func persistedTasks(identifiers: [String]? = nil) throws -> [TaskSnapshot] {
         let schema = Schema([TaskRecord.self])
         let configuration = ModelConfiguration(
             "IntentLabTasks",
@@ -107,11 +108,25 @@ final class TaskRepository {
         )
         let readbackContainer = try ModelContainer(for: schema, configurations: [configuration])
         let readbackContext = ModelContext(readbackContainer)
-        let requested = Set(identifiers)
+        let requested = identifiers.map { Set($0) }
         return try readbackContext.fetch(FetchDescriptor<TaskRecord>(sortBy: [SortDescriptor(\.taskID)]))
-            .filter { requested.contains($0.taskID) }
+            .filter { requested?.contains($0.taskID) ?? true }
             .map(Self.snapshot)
     }
+
+#if DEBUG
+    /// The fixture identifies the persisted business inputs (all task IDs and titles).
+    /// Completion state is measured separately by before/after assertions. Read the
+    /// store independently; never copy the expected digest from the test request.
+    var integrationFixtureDigest: String {
+        get throws {
+            guard !Self.currentInvocationContext.isEmpty else { return "" }
+            let inputs = try persistedTasks().map { ["id": $0.id, "title": $0.title] }
+            let bytes = try JSONSerialization.data(withJSONObject: inputs, options: [.sortedKeys, .withoutEscapingSlashes])
+            return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        }
+    }
+#endif
 
 #if INTENT_LAB_TESTING || INTENT_LAB_TEST_SUPPORT
     var integrationContextForEntity: String { Self.currentInvocationContext }
@@ -124,12 +139,24 @@ final class TaskRepository {
         try completeTask(taskID: taskID)
     }
 
-    /// Completes a task selected through App Intents. Test builds require a nonempty entity context
-    /// so a shortcut with a serialized, unbound entity cannot act on a later prepared dataset.
+    /// Prepared stores require an exact entity context. An ordinary, unprepared
+    /// Debug app may use ordinary entities, while the isolated test product always
+    /// requires preparation before an intent can mutate its store.
     func complete(taskID: String, expectedIntegrationContext: String) throws -> TaskCompletionReceipt {
 #if INTENT_LAB_TESTING || INTENT_LAB_TEST_SUPPORT
         let activeContext = Self.currentInvocationContext
+#if INTENT_LAB_TESTING
         guard !activeContext.isEmpty else { throw TaskRepositoryError.missingTestContext }
+#else
+        if activeContext.isEmpty {
+            guard expectedIntegrationContext.isEmpty else {
+                throw TaskRepositoryError.staleIntegrationContext(
+                    expected: expectedIntegrationContext, actual: activeContext
+                )
+            }
+            return try completeTask(taskID: taskID)
+        }
+#endif
         guard !expectedIntegrationContext.isEmpty else {
             throw TaskRepositoryError.missingIntegrationEntityContext
         }
@@ -312,14 +339,19 @@ enum TaskActionReceipts {
         operationID: String,
         resolvedParameters: [String: IntentLabValue],
         isTopLevel: Bool = true
-    ) -> TaskActionExecution {
+    ) -> TaskActionExecution? {
+        // Ordinary Debug execution has no test receipt. Canonical harness
+        // contexts bind the real action to Direct, Feature, or the Siri attempt.
+        // Explicit lane/attempt remain available for the older diagnostic tests.
+        guard !context.isEmpty else { return nil }
+        let scope = invocationScope(for: context)
         sequence += 1
         return TaskActionExecution(
             executionID: UUID(),
             appSessionID: appSessionID,
             attemptContext: context,
-            lane: lane,
-            attempt: attempt,
+            lane: scope?.lane ?? lane,
+            attempt: scope?.attempt ?? attempt,
             kind: kind,
             operationID: operationID,
             resolvedParameters: resolvedParameters,
@@ -329,7 +361,8 @@ enum TaskActionReceipts {
         )
     }
 
-    static func finish(_ action: TaskActionExecution, error: Error? = nil) {
+    static func finish(_ action: TaskActionExecution?, error: Error? = nil) {
+        guard let action else { return }
         let message = error.map { error -> String in
             let description = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
             return String((description.isEmpty ? "The task operation failed." : description).prefix(errorCharacterLimit))
@@ -385,6 +418,21 @@ enum TaskActionReceipts {
         defaults.set(encode([]), forKey: key)
         defaults.set(false, forKey: overflowKey)
         sequence = 0
+    }
+
+    private static func invocationScope(for context: String) -> (lane: IntentLabLane, attempt: Int)? {
+        for (prefix, lane) in [("feature-", IntentLabLane.appFeature), ("intent-", .intentIntegration)] {
+            if context.hasPrefix(prefix), UUID(uuidString: String(context.dropFirst(prefix.count))) != nil {
+                return (lane, 1)
+            }
+        }
+        guard context.hasPrefix("siri-") else { return nil }
+        let value = String(context.dropFirst("siri-".count))
+        guard let separator = value.lastIndex(of: "-"),
+              UUID(uuidString: String(value[..<separator])) != nil,
+              let attempt = Int(value[value.index(after: separator)...]),
+              ["1", "2", "3"].contains(String(value[value.index(after: separator)...])) else { return nil }
+        return (.siri, attempt)
     }
 
     private static func decode(_ data: Data?) -> [IntentLabActionReceipt]? {

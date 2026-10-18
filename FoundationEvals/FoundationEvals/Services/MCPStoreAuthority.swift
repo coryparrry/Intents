@@ -150,13 +150,20 @@ enum MCPStoreAuthority {
                     .filter { $0.projectID == arguments.projectID }
                 let runs: [ScenarioRun]
                 let journals: [ScenarioExecutionJournal]
+                let plans: [ScenarioExecutionPlan]
+                let executions: [ScenarioExecutionRecord]
                 do {
                     runs = try await persistence.loadRuns()
                     journals = try await persistence.loadJournals()
+                    plans = try await persistence.loadPlans()
+                    executions = try await persistence.loadExecutionRecords()
+                    guard executions.allSatisfy({ execution in plans.contains { $0.id == execution.planID } }) else {
+                        throw ScenarioPersistenceError.invalidRun("A saved execution has no frozen plan.")
+                    }
                 } catch {
                     var incomplete = suiteReport
                     incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " Intent Lab run or journal storage could not be verified: \(error.localizedDescription)"
+                    incomplete.summary += " Intent Lab run, execution, plan, or journal storage could not be verified: \(error.localizedDescription)"
                     incomplete.scenarios = []
                     return readPayload([
                         "report": try json(incomplete),
@@ -179,7 +186,55 @@ enum MCPStoreAuthority {
                         "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
                     ])
                 }
-                let scenarioReports = definitions.map { definition in
+                let orphanedPlans = plans.filter {
+                    !definitionIdentities.contains("\($0.definitionID.uuidString):\($0.definitionVersion):\($0.definitionDigest)")
+                }
+                if !orphanedPlans.isEmpty {
+                    var incomplete = suiteReport
+                    incomplete.outcome = .incompleteOrIncompatibleEvidence
+                    incomplete.summary += " \(orphanedPlans.count) saved Intent Lab plan(s) have no matching definition; restore their frozen definition before a project release check can pass."
+                    incomplete.scenarios = []
+                    return readPayload([
+                        "report": try json(incomplete),
+                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
+                    ])
+                }
+                let savedEvidence = ScenarioSavedExecutionReportService(
+                    rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
+                )
+                var scenarioReports: [ScenarioReleaseCheckReport] = []
+                for definition in definitions {
+                    if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+                        // A v3 run is a population of separately bound child invocations.
+                        // Qualify the newest plan, including unfinished work; an older
+                        // passing child or execution must not stand in for that attempt.
+                        let plan = plans.first {
+                            $0.definitionID == definition.id && $0.definitionVersion == definition.version
+                                && $0.definitionDigest == definition.definitionDigest
+                                && $0.purpose == .fullRequirement
+                        }
+                        let execution = plan.flatMap { plan in executions.first { $0.planID == plan.id } }
+                        var report = ScenarioReleaseCheckReport(
+                            scenarioID: definition.id, runID: nil,
+                            outcome: .incompleteOrIncompatibleEvidence,
+                            summary: "The latest frozen check has no terminal coordinated execution.",
+                            failures: ["Finish the current check and save its complete coordinated evidence."],
+                            generatedAt: Date(), policyVersion: IntentEvidenceBundle.policyID,
+                            executionID: execution?.id
+                        )
+                        if let execution {
+                            do {
+                                if let qualified = try await savedEvidence.qualification(executionID: execution.id).report {
+                                    report = qualified
+                                }
+                            } catch {
+                                report.summary = "The latest coordinated execution could not be verified."
+                                report.failures = [error.localizedDescription]
+                            }
+                        }
+                        scenarioReports.append(report)
+                        continue
+                    }
                     let run = runs.first {
                         $0.scenarioID == definition.id
                             && $0.scenarioVersion == definition.version
@@ -194,14 +249,14 @@ enum MCPStoreAuthority {
                                 && $0.startedAt < candidate.startedAt
                         }).map { ScenarioComparison.compare(baseline: $0, candidate: candidate) }
                     }
-                    return ScenarioReleaseCheckEvaluator.report(
+                    scenarioReports.append(ScenarioReleaseCheckEvaluator.report(
                         definition: definition,
                         run: run,
                         comparison: comparison,
                         journalAccepted: run.map {
                             ScenarioReleaseCheckEvaluator.acceptedJournal(for: $0, in: journals)
                         }
-                    )
+                    ))
                 }
                 let report = EvaluationReleaseCheckEvaluator.integratingScenarios(
                     suiteReport,

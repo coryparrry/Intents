@@ -296,6 +296,8 @@ struct ScenarioReleaseCheckReport: Codable, Equatable, Sendable {
     var failures: [String]
     var generatedAt: Date
     var policyVersion: String? = nil
+    /// Version 3 reports identify the coordinated execution, not one child run.
+    var executionID: UUID? = nil
 }
 
 enum ScenarioReleaseCheckEvaluator {

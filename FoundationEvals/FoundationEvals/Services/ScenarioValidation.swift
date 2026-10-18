@@ -522,6 +522,31 @@ enum ScenarioValidator {
 }
 
 enum ScenarioResultEvaluator {
+    static func applyingNativeFixtureEvidence(
+        to captured: ScenarioRun, definition: ScenarioDefinition
+    ) -> ScenarioRun {
+        if ScenarioExpectationAuthoring.isUnpreparedBasicDirectCheck(definition),
+           captured.negotiatedCapabilities?.contains("basic-direct-read-only") == true {
+            return captured
+        }
+        var run = captured
+        guard !run.laneResults.isEmpty else { return run }
+        let receipt = ScenarioFixtureReceipt(
+            observations: run.laneResults[0].observations, expected: definition.fixture.digest
+        )
+        if receipt == .missing {
+            run.executionStatus = .invalidEvidence
+            run.outcome = .needsReview
+            run.laneResults[0].executionStatus = .invalidEvidence
+            run.laneResults[0].outcome = .notObserved
+            run.laneResults[0].diagnostic = "The app did not expose an observed fixture content digest for this route."
+        } else if receipt == .wrongSource {
+            run.laneResults[0].outcome = .failed
+            run.laneResults[0].diagnostic = "The app used different source content than the planned fixture."
+        }
+        return run
+    }
+
     static func actionObservationIsConsistent(_ result: ScenarioLaneResult) -> Bool {
         guard let receipts = result.actionReceipts else { return false }
         guard receipts.count <= 16,
@@ -577,7 +602,9 @@ enum ScenarioResultEvaluator {
         guard topLevel.allSatisfy({
             $0.kind == requirement.kind && $0.operationID == requirement.operationID
         }) else { return (.failed, .wrongAction) }
-        guard topLevel.allSatisfy({ $0.resolvedParameters == requirement.resolvedParameters }) else {
+        guard topLevel.allSatisfy({ ScenarioValueComparison.parametersMatch(
+            $0.resolvedParameters, requirement.resolvedParameters
+        ) }) else {
             return (.failed, .wrongParameter)
         }
         guard topLevel.allSatisfy({ $0.terminalStatus == .succeeded }) else {
@@ -630,10 +657,10 @@ enum ScenarioResultEvaluator {
             let hasBaseline = definition.schemaVersion != ScenarioDefinition.stableSchemaVersion
                 || assertion.kind != .noMutation
                 || beforeObservations?[assertion.observationKey] != nil
-            let passed = observed == assertion.expectedValue
+            let passed = ScenarioValueComparison.matches(observed, assertion.expectedValue)
                 && (definition.schemaVersion != ScenarioDefinition.stableSchemaVersion
                     || assertion.kind != .noMutation
-                    || beforeObservations?[assertion.observationKey] == observed)
+                    || ScenarioValueComparison.matches(beforeObservations?[assertion.observationKey], observed))
             return .init(
                 assertionID: assertion.id,
                 passed: passed,
@@ -671,6 +698,49 @@ enum ScenarioResultEvaluator {
         return (.passed, results)
     }
 
+    /// A stable contract's claims summarize its lane-scoped assertions. A
+    /// Feature response must not become a returned-value requirement on Siri,
+    /// or a Siri state check become a state requirement on a read-only action.
+    static func requiredClaims(
+        for definition: ScenarioDefinition, lane: ScenarioLane
+    ) -> [ScenarioProofClaim] {
+        let claims = definition.requiredClaims ?? []
+        guard definition.schemaVersion == ScenarioDefinition.stableSchemaVersion else { return claims }
+        let plan = definition.observationPlan ?? []
+        func owns(_ claim: ScenarioProofClaim, on route: ScenarioLane) -> Bool {
+            let assertions = definition.assertions.filter { $0.required && $0.applies(to: route) }
+            switch claim {
+            case .executionCompleted:
+                return true
+            case .returnedValueChecked:
+                return route != .siri && assertions.contains { assertion in
+                    assertion.kind == .returnedField && plan.contains { observation in
+                        observation.id == assertion.observationKey
+                            && (observation.source == .intentResult
+                                || (route == .appFeature && observation.id == "feature.response"
+                                    && observation.source == .testOnlyIntent))
+                    }
+                }
+            case .applicationStateChecked:
+                return assertions.contains { assertion in
+                    assertion.kind != .returnedField && assertion.kind != .semanticRubric
+                        && assertion.expectedValue != nil && plan.contains {
+                            $0.id == assertion.observationKey && $0.source.checksApplicationState
+                        }
+                }
+            }
+        }
+        return claims.filter { claim in
+            if claim == .executionCompleted { return true }
+            let owners = ScenarioLane.allCases.filter {
+                definition.coverage[$0] != .notApplicable && owns(claim, on: $0)
+            }
+            // An unsupported global claim must fail verification, rather than
+            // disappearing because no assertion can substantiate it anywhere.
+            return owners.isEmpty || owners.contains(lane)
+        }
+    }
+
     static func overall(definition: ScenarioDefinition, laneResults: [ScenarioLaneResult]) -> ScenarioOutcome {
         let requiredLanes = ScenarioLane.allCases.filter { definition.coverage[$0] == .required }
         guard !requiredLanes.isEmpty else { return .needsReview }
@@ -692,21 +762,29 @@ enum ScenarioResultEvaluator {
         }
         if requiredResults.contains(where: { $0.outcome == .needsReview }) { return .needsReview }
         if !requiredResults.allSatisfy({ $0.outcome == .passed }) { return .notObserved }
-        if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion {
+        if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion {
+            for result in requiredResults {
+                for claim in requiredClaims(for: definition, lane: result.lane) {
+                    if !verifiedClaim(claim, definition: definition, result: result) { return .notObserved }
+                }
+                if result.lane == .siri,
+                   !verifiedClaim(.applicationStateChecked, definition: definition, result: result) {
+                    return .notObserved
+                }
+            }
+        } else if definition.schemaVersion >= ScenarioDefinition.reusableSchemaVersion {
             let direct = requiredResults.filter { $0.lane == .intentIntegration }
-            let completionRoutes = definition.schemaVersion == ScenarioDefinition.stableSchemaVersion ? requiredResults : direct
-            let claimRoutes = direct.isEmpty && definition.schemaVersion == ScenarioDefinition.stableSchemaVersion ? requiredResults : direct
             let claims = definition.requiredClaims ?? []
             if claims.contains(.executionCompleted),
-               (completionRoutes.isEmpty || !completionRoutes.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
+               (direct.isEmpty || !direct.allSatisfy({ verifiedClaim(.executionCompleted, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.returnedValueChecked),
-               (claimRoutes.isEmpty || !claimRoutes.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) })) {
+               (direct.isEmpty || !direct.allSatisfy({ verifiedClaim(.returnedValueChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if claims.contains(.applicationStateChecked),
-               (claimRoutes.isEmpty || !claimRoutes.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) })) {
+               (direct.isEmpty || !direct.allSatisfy({ verifiedClaim(.applicationStateChecked, definition: definition, result: $0) })) {
                 return .notObserved
             }
             if definition.coverage.siri != .notApplicable,
@@ -745,7 +823,7 @@ enum ScenarioResultEvaluator {
                 && receipts.allSatisfy({ $0.lane == result.lane && $0.attempt == result.attempt })
                 && topLevel.allSatisfy({
                     $0.kind == requirement.kind && $0.operationID == requirement.operationID
-                        && $0.resolvedParameters == requirement.resolvedParameters
+                        && ScenarioValueComparison.parametersMatch($0.resolvedParameters, requirement.resolvedParameters)
                         && $0.terminalStatus == .succeeded && $0.operationError == nil
                 })
         }
@@ -765,10 +843,10 @@ enum ScenarioResultEvaluator {
             case .uiElement: sourceMatches = source == .accessibleUI
             case .testOnlyIntent: sourceMatches = source == .testOnlyIntent || source == .applicationInstrumentation
             }
-            guard sourceMatches, observed == assertion.expectedValue else { return false }
+            guard sourceMatches, ScenarioValueComparison.matches(observed, assertion.expectedValue) else { return false }
             if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion,
                assertion.kind == .noMutation,
-               result.beforeObservations?[assertion.observationKey] != observed {
+               !ScenarioValueComparison.matches(result.beforeObservations?[assertion.observationKey], observed) {
                 return false
             }
             switch claim {

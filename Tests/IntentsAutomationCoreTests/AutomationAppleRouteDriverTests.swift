@@ -68,6 +68,93 @@ final class AutomationAppleRouteDriverTests: XCTestCase, @unchecked Sendable {
         var values: [Duration] = []
         func record(_ timeout: Duration) { values.append(timeout) }
     }
+    func testFailedXCTestImportsTerminalOperationErrorAndReleasesForNextExplicitRun() async throws {
+        let h = try await fixture(), calls = CommandTimeouts()
+        try await h.leases.release(h.lease, commandsDrained: true, ownedRunnerTerminated: true)
+        let receipt: [String: Any] = ["schemaVersion": 2,
+            "runner": ["pid": Int32.max, "startIdentity": "123456:100", "executablePath": h.host.hostBundlePath + "/OwnedHost-Runner"],
+            "runID": "run", "attemptID": "attempt", "segmentID": "subject", "leaseGeneration": h.lease.generation + 1,
+            "bundleID": h.plan.app.bundleID, "productDigest": h.plan.app.productDigest!, "productDigestVersion": 1,
+            "complete": false, "operations": [["operationID": "probe", "dispatched": true, "error": "Record was deleted"]]]
+        let data = try JSONSerialization.data(withJSONObject: receipt)
+        let commands = AutomationAppleRouteDriver.Commands(run: { arguments, _, timeout in
+            await calls.record(timeout)
+            if arguments.first == "xcodebuild" {
+                return .init(exitStatus: 65, stdout: Data("test failed".utf8), stderr: Data(), logsTruncated: false)
+            }
+            XCTAssertEqual(arguments.first, "xcresulttool")
+            let index = try XCTUnwrap(arguments.firstIndex(of: "--output-path"))
+            let output = URL(fileURLWithPath: arguments[index + 1])
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            try data.write(to: output.appendingPathComponent("terminal.json"))
+            return .init(exitStatus: 0, stdout: Data(), stderr: Data(), logsTruncated: false)
+        }, stop: { true })
+        let driver = try driver(h, commands: commands)
+        let journal = try AutomationJournal(url: h.root.appendingPathComponent("journal.json"))
+        let report = try await AutomationCoordinator(leases: h.leases, journal: journal).run(plan: h.plan,
+            approval: h.approval, capabilities: .init(), attemptID: "attempt", driver: driver)
+        XCTAssertEqual(report.result.summary, .infrastructureFailed)
+        XCTAssertTrue(report.result.subjectDispatched)
+        XCTAssertFalse(report.result.subjectCompleted)
+        XCTAssertFalse(report.result.subjectDispatchUncertain)
+        XCTAssertTrue(report.resourcesReleased)
+        XCTAssertFalse(report.executionSucceeded)
+        XCTAssertEqual(report.receipts.first?.terminalHostFailure?.message, "Record was deleted")
+        let invoked = await calls.values
+        XCTAssertEqual(invoked.count, 2, "One test invocation and one receipt export; never replay the intent")
+        let unresolved = try await journal.unresolvedEntries()
+        XCTAssertTrue(unresolved.isEmpty)
+        let cases = try AutomationCaseStore(root: h.root.appendingPathComponent("Cases"))
+        let frozen = try await cases.freeze(h.plan)
+        try await cases.saveAttempt(report, for: frozen)
+        let restored = try await cases.loadAttempt(id: "attempt", frozen: frozen)
+        XCTAssertEqual(restored, report)
+        let next = try await h.leases.acquire(runID: "next-explicit-run", target: h.plan.target, control: .system)
+        try await h.leases.release(next, commandsDrained: true, ownedRunnerTerminated: true)
+        try await h.leases.releaseCampaign(runID: "next-explicit-run", target: h.plan.target)
+    }
+
+    func testFailedXCTestWithoutUniqueCorrelatedTerminalFailureRemainsUncertain() async throws {
+        for variant in 0..<4 {
+            let h = try await fixture(), calls = CommandTimeouts()
+            try await h.leases.release(h.lease, commandsDrained: true, ownedRunnerTerminated: true)
+            var receipt: [String: Any] = ["schemaVersion": 2,
+                "runner": ["pid": Int32.max, "startIdentity": "123456:100", "executablePath": h.host.hostBundlePath + "/OwnedHost-Runner"],
+                "runID": "run", "attemptID": "attempt", "segmentID": "subject", "leaseGeneration": h.lease.generation + 1,
+                "bundleID": h.plan.app.bundleID, "productDigest": h.plan.app.productDigest!, "productDigestVersion": 1,
+                "complete": false, "operations": [["operationID": "probe", "dispatched": true, "error": "Record was deleted"]]]
+            if variant == 2 { receipt["attemptID"] = "foreign" }
+            if variant == 3 {
+                receipt["complete"] = true
+                receipt["operations"] = [["operationID": "probe", "dispatched": true, "value": ["kind": "noValue"]]]
+            }
+            let data = try JSONSerialization.data(withJSONObject: receipt)
+            let commands = AutomationAppleRouteDriver.Commands(run: { arguments, _, timeout in
+                await calls.record(timeout)
+                if arguments.first == "xcodebuild" {
+                    return .init(exitStatus: 65, stdout: Data(), stderr: Data(), logsTruncated: false)
+                }
+                let index = try XCTUnwrap(arguments.firstIndex(of: "--output-path"))
+                let output = URL(fileURLWithPath: arguments[index + 1])
+                try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+                if variant != 0 { try data.write(to: output.appendingPathComponent("terminal.json")) }
+                if variant == 1 { try data.write(to: output.appendingPathComponent("duplicate.json")) }
+                return .init(exitStatus: 0, stdout: Data(), stderr: Data(), logsTruncated: false)
+            }, stop: { true })
+            let journal = try AutomationJournal(url: h.root.appendingPathComponent("journal.json"))
+            let report = try await AutomationCoordinator(leases: h.leases, journal: journal).run(plan: h.plan,
+                approval: h.approval, capabilities: .init(), attemptID: "attempt", driver: driver(h, commands: commands))
+            XCTAssertTrue(report.result.subjectDispatchUncertain, "Missing, duplicate, foreign, or contradictory XCTest evidence stays uncertain: \(variant)")
+            XCTAssertTrue(report.receipts.isEmpty)
+            XCTAssertFalse(report.executionSucceeded)
+            XCTAssertTrue(report.resourcesReleased, "Independent resource release cannot invent an operation outcome")
+            let unresolved = try await journal.unresolvedEntries()
+            XCTAssertEqual(unresolved.count, 1)
+            let invoked = await calls.values
+            XCTAssertEqual(invoked.count, 2, "Evidence failure must never replay the hosted operation")
+        }
+    }
+
     func testHostStartupUsesApprovedCaseBudgetWithoutRetryingTimedOutOperations() async throws {
         for seconds in [30, 600] {
             try await assertHostCommandTimeout(caseSeconds: seconds, expected: .seconds(seconds))
