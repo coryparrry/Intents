@@ -122,7 +122,8 @@ import Testing
         "params": .object(["name": .string(name), "arguments": .object(arguments)])
       ]).jsonText()
       let response = await handler.handle(.init(method: "POST", headers: [
-        "host": "127.0.0.1:17873", "authorization": "Bearer \(credential)", "content-type": "application/json"
+        "host": "127.0.0.1:17873", "authorization": "Bearer \(credential)", "content-type": "application/json",
+        "MCP-Protocol-Version": MCPProtocolHandler.protocolVersion
       ], body: Data(body.utf8)))
       #expect(response.status == 200)
       let data = try #require(response.body)

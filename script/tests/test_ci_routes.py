@@ -414,6 +414,7 @@ class MatrixTests(unittest.TestCase):
         expected = {
             "FoundationEvalsUITests/FoundationEvalsUITests",
             "FoundationEvalsUITests/IntentLabGuidanceUITests",
+            "FoundationEvalsUITests/IntentLabFeatureGateUITests",
             "FoundationEvalsUITests/SimplificationUITests",
             "FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration",
             "FoundationEvalsUITests/WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence",
