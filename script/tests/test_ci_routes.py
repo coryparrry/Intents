@@ -503,6 +503,8 @@ class MatrixTests(unittest.TestCase):
                 routes.coverage(None, root),
                 routes.coverage([routes.UI_TESTS + "SharedHelper.swift"], root),
                 routes.coverage([routes.APP + "Views/AppAutomationView.swift"], root),
+                routes.coverage([routes.UI_TESTS + "AppAutomationUITests.swift"], root),
+                routes.coverage([routes.UI_TESTS + "AppAutomationUITests.swift", "Package.swift"], root),
             ):
                 selected = [test for job in plan["ui_matrix"] for test in job["tests"]]
                 self.assertNotIn(prefix, selected)
@@ -510,8 +512,6 @@ class MatrixTests(unittest.TestCase):
                 self.assertIn(prefix + "/testExistingOrdinary", selected)
                 self.assertIn(prefix + "/testFutureOrdinary", selected)
                 self.assertEqual(len(selected), len(set(selected)))
-            explicit = routes.coverage([routes.UI_TESTS + "AppAutomationUITests.swift"], root)
-            self.assertEqual([test for job in explicit["ui_matrix"] for test in job["tests"]], [prefix])
 
     def test_recorded_durations_keep_the_slowest_groups_on_separate_desktops(self):
         groups = {"runs": 100, "traces": 80, "settings": 40, "imports": 30}
@@ -562,12 +562,21 @@ class MatrixTests(unittest.TestCase):
                 self.assertEqual(self.selected_ui([routes.APP + path]), baseline)
 
     def test_changed_ui_class_runs_whole_class_including_previously_unselected_tests(self):
-        for suite in ("WorkflowTraceUITests", "AppAutomationUITests", "EvaluationReviewUITests"):
+        for suite in ("WorkflowTraceUITests", "EvaluationReviewUITests"):
             with self.subTest(suite=suite):
                 self.assertEqual(
                     self.selected_ui([routes.UI_TESTS + suite + ".swift"]),
                     {routes.UI_TARGET + suite},
                 )
+
+    def test_changed_mixed_suite_selects_every_ordinary_method_without_live_fixture(self):
+        prefix = routes.UI_TARGET + "AppAutomationUITests"
+        selected = self.selected_ui([routes.UI_TESTS + "AppAutomationUITests.swift"])
+        ordinary = {test for test in self.selected_ui(None) if test.startswith(prefix + "/")}
+        self.assertEqual(selected, ordinary)
+        self.assertEqual(len(selected), 7)
+        self.assertNotIn(prefix, selected)
+        self.assertNotIn(prefix + "/testPreparedPureEchoShowsUnassessedNativeEvidence", selected)
 
     def test_mixed_changes_deduplicate_whole_classes_and_preserve_affected_new_class(self):
         paths = [
@@ -577,9 +586,10 @@ class MatrixTests(unittest.TestCase):
         ]
         selected = self.selected_ui(paths)
         self.assertIn(routes.UI_TARGET + "EvaluationReviewUITests", selected)
-        self.assertIn(routes.UI_TARGET + "AppAutomationUITests", selected)
+        self.assertNotIn(routes.UI_TARGET + "AppAutomationUITests", selected)
         self.assertIn(routes.UI_TARGET + "WorkflowTraceUITests", selected)
-        self.assertFalse(any(test.startswith(routes.UI_TARGET + "AppAutomationUITests/") for test in selected))
+        self.assertEqual(sum(test.startswith(routes.UI_TARGET + "AppAutomationUITests/") for test in selected), 7)
+        self.assertNotIn(routes.UI_TARGET + "AppAutomationUITests/testPreparedPureEchoShowsUnassessedNativeEvidence", selected)
         self.assertEqual(selected, self.selected_ui(list(reversed(paths))))
 
     def test_new_class_name_is_discovered_without_a_manual_catalog_entry(self):

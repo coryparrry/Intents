@@ -10,9 +10,9 @@ prevent a green required check when selected product checks did not pass.
 - Main pushes, manual runs, and the scheduled stability workflow run full
   ordinary coverage. The opt-in FreshRecord and MacPreparation UI fixtures are
   not part of ordinary coverage; the prepared pure-echo method in the mixed
-  AppAutomation suite is also excluded. Other methods in mixed suites are
-  discovered automatically; editing an opt-in test file still selects that file
-  explicitly, with its specialized runtime prerequisites.
+  AppAutomation suite is also excluded, including when that file changes. Other
+  methods in mixed suites are discovered automatically. Editing an opt-in-only
+  test file still selects it explicitly, with its specialized runtime prerequisites.
 - Linux workflow validation and selected script tests finish before Mac workers
   are allocated. A failure here blocks expensive builds and simulator setup.
 - Portable Swift and macOS script tests share one Mac job. Native test products
