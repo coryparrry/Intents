@@ -10,10 +10,8 @@ import unittest
 
 WORKFLOW = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text()
 
-
 def job(name):
     return re.search(r"(?ms)^  " + re.escape(name) + r":\n(.*?)(?=^  [\w-]+:|\Z)", WORKFLOW)[1]
-
 
 class FailureSummaryTests(unittest.TestCase):
     def test_summary_runs_after_terminal_checks_with_read_only_log_access(self):
@@ -27,14 +25,12 @@ class FailureSummaryTests(unittest.TestCase):
         self.assertIn("GITHUB_TOKEN: ${{ github.token }}", summary)
         self.assertIn("run: python3 script/ci_failure_summary.py", summary)
 
-
 def gate(name, **environment):
     script = job(name).split("        run: |\n", 1)[1]
     return subprocess.run(
         ["bash", "-e", "-c", textwrap.dedent(script)],
         env={**os.environ, **environment}, capture_output=True,
     ).returncode
-
 
 class GateTests(unittest.TestCase):
     def test_script_job_invokes_selected_python_test_runner(self):
@@ -69,8 +65,35 @@ class GateTests(unittest.TestCase):
         self.assertNotEqual(gate("build", **{**common, "STABILITY_SELECTED": "true"}), 0)
         self.assertEqual(gate("build", **{**common, "STABILITY_SELECTED": "true", "STABILITY": "success"}), 0)
 
+    def test_parallel_consumers_only_depend_on_the_shared_build(self):
+        for name in ("native-tests", "ui-tests", "picker-stability"):
+            self.assertIn("needs: [changes, native-build]", job(name))
+            self.assertIn("name: native-test-products", job(name))
+            self.assertIn("tar -xf", job(name))
+            self.assertNotIn("xcodebuild build", job(name))
+        self.assertIn("fail-fast: false", job("ui-tests"))
+        self.assertNotIn("max-parallel:", job("ui-tests"))
+        self.assertNotIn("--iterations", job("ui-tests"))
 
+    def test_simulator_cache_is_saved_only_after_successful_compilation(self):
+        workflow = job("automation-e2e-scenarios")
+        self.assertIn("uses: actions/cache/restore@", workflow)
+        self.assertIn("--record-build-cache", workflow)
+        self.assertIn("steps.contract.outputs.cli_built == 'true'", workflow)
+        self.assertIn("steps.cli-cache.outputs.cache-hit != 'true'", workflow)
+        self.assertIn("uses: actions/cache/save@", workflow)
+        self.assertIn("key: ${{ steps.cli-cache.outputs.cache-primary-key }}", workflow)
 
+    def test_simulator_runs_every_scenario_with_one_setup_and_cache_writer(self):
+        workflow = job("automation-e2e-scenarios")
+        self.assertIn("needs: changes", workflow)
+        self.assertNotIn("matrix", workflow)
+        self.assertIn("--scenario-group all", workflow)
+        self.assertIn("name: automation-e2e", workflow)
+        condition = re.search(r"Save successfully compiled automation CLI\n        if: (.+)", workflow)[1]
+        self.assertIn("!cancelled()", condition)
+        self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
+        self.assertNotIn("success()", condition)
 
     def test_mac_acceptance_uses_temporary_development_signing(self):
         workflow = job("automation-e2e-scenarios")
@@ -84,8 +107,6 @@ class GateTests(unittest.TestCase):
         self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_P12_BASE64"), 1)
         self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_PASSWORD"), 1)
 
-
-
     def test_stable_simulator_gate_requires_all_selected_groups(self):
         self.assertEqual(gate("automation-e2e", ROUTING="success", SELECTED="true", SCENARIOS="success"), 0)
         for result in ("failure", "cancelled", "skipped", ""):
@@ -96,7 +117,6 @@ class GateTests(unittest.TestCase):
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="failure"), 0)
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="success"), 0)
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="", SCENARIOS="skipped"), 0)
-
 
     def test_native_descriptors_refresh_without_removing_compiled_products(self):
         build = job("native-build")
@@ -128,7 +148,6 @@ class GateTests(unittest.TestCase):
             self.assertNotEqual(status(), 0)
             (products / "FoundationEvals_macosx27.0-arm64.xctestrun").touch()
             self.assertNotEqual(status(), 0)
-
 
 if __name__ == "__main__":
     unittest.main()
