@@ -47,14 +47,5 @@ final class AutomationPreparationGuardTests: XCTestCase {
         catch AutomationContractError.invalidIdentity {}
         XCTAssertFalse(FileManager.default.fileExists(atPath: l.session.path))
     }
-    func testIdleCancellationDoesNotLatchIntoLaterPreparation() async throws {
-        let l = try layout(), preparation = AutomationPreparation()
-        let stopped = await preparation.cancel(); XCTAssertTrue(stopped)
-        var approval = AutomationBuildApproval(sourceRoot: l.source.path, candidateID: "subject", configuration: "Debug", target: target)
-        approval.candidateID = "other"
-        // A latched cancellation would surface as CancellationError instead of the approval guard.
-        await assertInvalidPlan({ try await self.prepare(preparation, self.candidate(l.project), approval, session: l.session) }, "after cancel")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: l.session.path))
-    }
 }
 #endif

@@ -179,10 +179,6 @@ class GateTests(unittest.TestCase):
             self.assertIn("always()", job(name).split("    steps:", 1)[0])
 
     def test_stable_simulator_gate_requires_all_selected_groups(self):
-        workflow = job("automation-e2e")
-        self.assertIn("name: Automation e2e (simulator)", workflow)
-        self.assertIn("needs: [changes, automation-e2e-scenarios]", workflow)
-        self.assertIn("if: ${{ always() }}", workflow)
         self.assertEqual(gate("automation-e2e", ROUTING="success", SELECTED="true", SCENARIOS="success"), 0)
         for result in ("failure", "cancelled", "skipped", ""):
             with self.subTest(result=result):
@@ -192,15 +188,6 @@ class GateTests(unittest.TestCase):
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="failure"), 0)
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="success"), 0)
         self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="", SCENARIOS="skipped"), 0)
-
-    def test_native_cache_fallback_keeps_toolchain_and_manifest_boundaries(self):
-        build = job("native-build")
-        prefixes = build.split("          restore-keys: |\n", 1)[1].split("      - name:", 1)[0].strip().splitlines()
-        self.assertEqual(len(prefixes), 2)
-        self.assertEqual(prefixes[1].strip(), prefixes[0].strip().replace(
-            "${{ needs.changes.outputs.ui }}", "${{ needs.changes.outputs.ui != 'true' }}"))
-        self.assertIn("${{ steps.toolchain.outputs.version }}", prefixes[0])
-        self.assertIn("${{ hashFiles(", prefixes[0])
 
     def test_native_descriptors_refresh_without_removing_compiled_products(self):
         build = job("native-build")

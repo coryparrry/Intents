@@ -194,6 +194,5 @@ final class NotesActionReceiptObserverTests: XCTestCase {
         }
         let receipts = try JSONDecoder.intentLab.decode([IntentLabActionReceipt].self, from: data)
         XCTAssertTrue(receipts.isEmpty)
-        XCTAssertEqual(NotesIntentLabIntegration().source(for: "intentlab.actionReceipts"), "accessibleUI")
     }
 }

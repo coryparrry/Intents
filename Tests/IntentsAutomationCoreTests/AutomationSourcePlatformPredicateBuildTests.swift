@@ -29,7 +29,7 @@ final class AutomationSourcePlatformPredicateBuildTests: XCTestCase, @unchecked 
         let templates = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Integration/AutomationHost")
         let prepared = try await AutomationPreparation().prepare(candidate: candidate,
             approval: .init(sourceRoot: original.path, candidateID: candidate.id, configuration: "Debug", target: AutomationMacGUIIdentity.currentTarget()),
-            sessionRoot: root.appendingPathComponent("prepare-" + UUID().uuidString), templates: templates, developerDirectory: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"))
+            sessionRoot: root.appendingPathComponent("prepare-" + UUID().uuidString), templates: templates, developerDirectory: URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"))
         try AutomationSourceSnapshot.verifyOriginal(prepared.source)
         let syntax = try XCTUnwrap(prepared.sourceSyntax), conditions = try XCTUnwrap(syntax.compilationConditions)
         XCTAssertEqual(conditions.platformPredicates, .init(version: 1, operatingSystem: "macOS", environment: "native"))

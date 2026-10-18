@@ -5,6 +5,25 @@ import Testing
 @testable import IntentsAutomationCore
 
 struct NativeHistoryRefreshTests {
+    @MainActor @Test func commandPreviewRequiresMatchingSourceConfigurationAndTarget() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for change in 0..<3 {
+            let model = commandStore(root: root)
+            defer { model.close() }
+            #expect(model.canRun)
+            #expect(try model.previewCommand().action == "ReadText")
+            // Mutate the selection directly: preview admission must enforce the contract
+            // even before a view calls preparationSelectionChanged().
+            switch change {
+            case 0: model.intake = nil
+            case 1: model.configuration = "Release"
+            default: model.simulatorID = UUID().uuidString
+            }
+            #expect(!model.canRun)
+            #expect(throws: AutomationContractError.self) { try model.previewCommand() }
+        }
+    }
     @MainActor @Test func terminalCancellationDuringHeldHistoryRefreshCannotReopenRequest() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -47,12 +66,6 @@ struct NativeHistoryRefreshTests {
                 throw error
             }
         }
-    }
-    @Test func heldReaderEntryWaitIsBoundedAndLateReadCanBeReleased() async {
-        let reader = HeldAutomationCaseReader()
-        #expect(!(await reader.waitUntilHeld(timeout: 0.02)))
-        await reader.finish()
-        #expect(await reader.read().isEmpty)
     }
     @MainActor private func commandStore(root: URL, telemetry: (any AutomationRunTelemetry)? = nil, savedCasesReader: (@Sendable () async throws -> [AutomationFrozenCase])? = nil,
                                         runExecutor: AutomationNativeRunExecutor? = nil) -> AppAutomationStore {

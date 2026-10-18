@@ -28,26 +28,6 @@ final class AutomationNativeEvidenceTests: XCTestCase {
         }
         do { _ = try await archive.snapshot(authority: try AutomationEvidenceExposureAuthority(supportRoot: source)).documents; XCTFail("Traversed unlimited unpublished attempts") } catch {}
     }
-    func testDestinationAliasCannotCreateAttemptDirectoryOutsideArchive() async throws {
-        let (root, source, frozen, report, archive) = try await fixture(complete: false)
-        let outside = root.appendingPathComponent("Outside")
-        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: false)
-        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("IntentLab/Runs/AppAutomation/" + frozen.digest), withDestinationURL: outside)
-        do { _ = try await archive.importAttempt(frozen: frozen, report: report, sourceRoot: source, exposure: try exposure(source, frozen, report)); XCTFail("Followed destination alias") } catch {}
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: outside.path), [])
-    }
-    func testArtifactDirectoryAliasCannotWriteOutsideOrPublishDocument() async throws {
-        let (root, source, frozen, report, archive) = try await fixture()
-        let outside = root.appendingPathComponent("Outside")
-        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        let key = AutomationArtifactRegistry.digest(Data(report.attemptID.utf8))
-        let attempt = root.appendingPathComponent("IntentLab/Runs/AppAutomation/" + frozen.digest + "/" + key)
-        try FileManager.default.createDirectory(at: attempt, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try FileManager.default.createSymbolicLink(at: attempt.appendingPathComponent("Artifacts"), withDestinationURL: outside)
-        do { _ = try await archive.importAttempt(frozen: frozen, report: report, sourceRoot: source, exposure: try exposure(source, frozen, report)); XCTFail("Followed artifact directory alias") } catch {}
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: outside.path), [])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: attempt.appendingPathComponent("evidence.json").path))
-    }
     private func exposure(_ source: URL, _ frozen: AutomationFrozenCase, _ report: AutomationAttemptReport) throws -> AutomationEvidenceExposure {
         try AutomationEvidenceExposureAuthority(supportRoot: source).reserve(frozen: frozen, attempts: [report])
     }

@@ -10,6 +10,47 @@ final class HostFixtureRegistrationTests: XCTestCase {
                                bundle: String? = nil) -> NSError {
         NSError(domain: domain, code: code, userInfo: [NSLocalizedDescriptionKey: "\(bundle ?? fixture) is not present"])
     }
+    func testSystemHostStartsSharedOperationDeadlineAfterVerifiedActivation() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Integration/AutomationHost/SegmentTests.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("#if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)"))
+        let activation = try XCTUnwrap(source.range(of: "app.activate()"))
+        let foreground = try XCTUnwrap(source.range(of: "guard app.wait(for: .runningForeground"))
+        let cancellation = try XCTUnwrap(source.range(of: "try Task.checkCancellation()"))
+        let deadline = try XCTUnwrap(source.range(of: "let deadline = ContinuousClock.now.advanced(by: .seconds(120))"))
+        let readiness = try XCTUnwrap(source.range(of: "HostFixtureRegistration.waitForAuthoredFixture("))
+        let operations = try XCTUnwrap(source.range(of: "for operation in plan.operations"))
+        let marker = try XCTUnwrap(source.range(of: "intents-dispatch-"))
+        XCTAssertLessThan(activation.lowerBound, foreground.lowerBound)
+        XCTAssertLessThan(foreground.lowerBound, cancellation.lowerBound)
+        XCTAssertLessThan(cancellation.lowerBound, deadline.lowerBound)
+        XCTAssertLessThan(deadline.lowerBound, readiness.lowerBound)
+        XCTAssertEqual(source.components(separatedBy: "let deadline =").count - 1, 1)
+        XCTAssertLessThan(readiness.lowerBound, operations.lowerBound)
+        XCTAssertLessThan(operations.lowerBound, marker.lowerBound)
+        XCTAssertTrue(source.contains("intents-fixture-registration-"))
+    }
+
+    func testUIHostChecksReadinessAfterActivationBeforeMetadataDispatchAndResetsAfterLaunch() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Integration/AutomationHost/UIStepTests.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("#if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))"))
+        XCTAssertTrue(source.contains("fixtureRegistrationDeadline = ContinuousClock.now.advanced(by: .seconds(120))"))
+        XCTAssertTrue(source.contains("fixtureRegistrationNeeded && (step.kind == .invokeIntent || step.kind == .query)"))
+        let activation = try XCTUnwrap(source.range(of: "app.activate()"))
+        let readiness = try XCTUnwrap(source.range(of: "HostFixtureRegistration.waitForAuthoredFixture("))
+        let ready = try XCTUnwrap(source.range(of: "fixtureRegistrationNeeded = false"))
+        let marker = try XCTUnwrap(source.range(of: "intents-ui-dispatch-"))
+        let execution = try XCTUnwrap(source.range(of: "value = try await execute(step, app: app, plan: plan)"))
+        let launchReset = try XCTUnwrap(source.range(of: "if step.kind == .launch { fixtureRegistrationNeeded = true }"))
+        XCTAssertLessThan(activation.lowerBound, readiness.lowerBound)
+        XCTAssertLessThan(readiness.lowerBound, ready.lowerBound)
+        XCTAssertLessThan(ready.lowerBound, marker.lowerBound)
+        XCTAssertLessThan(marker.lowerBound, execution.lowerBound)
+        XCTAssertLessThan(execution.lowerBound, launchReset.lowerBound)
+        XCTAssertTrue(source.contains("intents-fixture-registration-"))
+    }
+
     func testFixedProbeReturnsExactValueAndRecordsSuccess() async throws {
         var diagnostics: [HostFixtureRegistration.Attempt] = [], realActions = 0
         try await HostFixtureRegistration.wait(bundleID: fixture, deadline: .now.advanced(by: .seconds(120)), probe: { intent, value in
@@ -147,47 +188,6 @@ final class HostFixtureRegistrationTests: XCTestCase {
         }
         do { try await task.value; XCTFail("Cancellation ignored") } catch { XCTAssertTrue(error is CancellationError) }
     }
-    func testSystemHostStartsSharedOperationDeadlineAfterVerifiedActivation() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let source = try String(contentsOf: root.appendingPathComponent("Integration/AutomationHost/SegmentTests.swift"), encoding: .utf8)
-        XCTAssertTrue(source.contains("#if INTENTS_AUTOMATION_CI_FIXTURE && os(iOS) && targetEnvironment(simulator)"))
-        let activation = try XCTUnwrap(source.range(of: "app.activate()"))
-        let foreground = try XCTUnwrap(source.range(of: "guard app.wait(for: .runningForeground"))
-        let cancellation = try XCTUnwrap(source.range(of: "try Task.checkCancellation()"))
-        let deadline = try XCTUnwrap(source.range(of: "let deadline = ContinuousClock.now.advanced(by: .seconds(120))"))
-        let readiness = try XCTUnwrap(source.range(of: "HostFixtureRegistration.waitForAuthoredFixture("))
-        let operations = try XCTUnwrap(source.range(of: "for operation in plan.operations"))
-        let marker = try XCTUnwrap(source.range(of: "intents-dispatch-"))
-        XCTAssertLessThan(activation.lowerBound, foreground.lowerBound)
-        XCTAssertLessThan(foreground.lowerBound, cancellation.lowerBound)
-        XCTAssertLessThan(cancellation.lowerBound, deadline.lowerBound)
-        XCTAssertLessThan(deadline.lowerBound, readiness.lowerBound)
-        XCTAssertEqual(source.components(separatedBy: "let deadline =").count - 1, 1)
-        XCTAssertLessThan(readiness.lowerBound, operations.lowerBound)
-        XCTAssertLessThan(operations.lowerBound, marker.lowerBound)
-        XCTAssertTrue(source.contains("intents-fixture-registration-"))
-    }
-
-    func testUIHostChecksReadinessAfterActivationBeforeMetadataDispatchAndResetsAfterLaunch() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let source = try String(contentsOf: root.appendingPathComponent("Integration/AutomationHost/UIStepTests.swift"), encoding: .utf8)
-        XCTAssertTrue(source.contains("#if INTENTS_AUTOMATION_CI_FIXTURE && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))"))
-        XCTAssertTrue(source.contains("fixtureRegistrationNeeded && (step.kind == .invokeIntent || step.kind == .query)"))
-        XCTAssertTrue(source.contains("fixtureRegistrationDeadline = ContinuousClock.now.advanced(by: .seconds(120))"))
-        let activation = try XCTUnwrap(source.range(of: "app.activate()"))
-        let readiness = try XCTUnwrap(source.range(of: "HostFixtureRegistration.waitForAuthoredFixture("))
-        let ready = try XCTUnwrap(source.range(of: "fixtureRegistrationNeeded = false"))
-        let marker = try XCTUnwrap(source.range(of: "intents-ui-dispatch-"))
-        let execution = try XCTUnwrap(source.range(of: "value = try await execute(step, app: app, plan: plan)"))
-        let launchReset = try XCTUnwrap(source.range(of: "if step.kind == .launch { fixtureRegistrationNeeded = true }"))
-        XCTAssertLessThan(activation.lowerBound, readiness.lowerBound)
-        XCTAssertLessThan(readiness.lowerBound, ready.lowerBound)
-        XCTAssertLessThan(ready.lowerBound, marker.lowerBound)
-        XCTAssertLessThan(marker.lowerBound, execution.lowerBound)
-        XCTAssertLessThan(execution.lowerBound, launchReset.lowerBound)
-        XCTAssertTrue(source.contains("intents-fixture-registration-"))
-    }
-
     func testBothHostsUseTheSingleGuardedAuthoredProbe() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let helper = try String(contentsOf: root.appendingPathComponent("Integration/AutomationHost/HostFixtureRegistration.swift"), encoding: .utf8)

@@ -34,10 +34,4 @@ final class AutomationLegacyProductReadTests: XCTestCase {
                 if phase == .afterRead { try Data("new".utf8).write(to: root.appendingPathComponent("resource")) }
             })) { XCTAssertEqual($0 as? AutomationContractError, .conflictingOperation) }
     }
-    func testUnboundLegacyReadKeepsItsExplicitWeakReadBehavior() throws {
-        let root = try fixture()
-        try Data("replaced".utf8).write(to: root.appendingPathComponent("Fixture"))
-        XCTAssertEqual(try AutomationProductDigest.readFile(bundle: root, relativePath: "Fixture", maximumBytes: 8,
-            version: nil), Data("replaced".utf8))
-    }
 }

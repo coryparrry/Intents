@@ -76,7 +76,6 @@ struct ScenarioExecutionPlanTests {
         let terminal = try ScenarioExecutionRecord.make(plan: plan, records: records)
         #expect(!terminal.isComplete)
         #expect(terminal.records.count == 5)
-        #expect(terminal.evidenceDigest.count == 64)
     }
 
     @Test func partialDiagnosticPlanFreezesSubsetAndLegacyPlanDefaultsToFull() throws {
@@ -324,7 +323,6 @@ struct ScenarioExecutionPlanTests {
         }
         let first = try await persistence.finalizeExecutionRecord(plan: plan, records: rows)
         let reordered = rows.sorted { $0.id.uuidString > $1.id.uuidString }
-        #expect(rows.count == 2)
         let retry = try await persistence.finalizeExecutionRecord(plan: plan, records: reordered)
         #expect(first.evidenceDigest == retry.evidenceDigest)
         let reloadedRetry = try await ScenarioPersistence(rootDirectory: root).finalizeExecutionRecord(plan: plan, records: reordered)

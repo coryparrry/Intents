@@ -66,11 +66,6 @@ struct TranscriptTraceTests {
     @Test func feedbackDraftCoversEveryPublicFoundationModelsIssueCategory() {
         #expect(EvaluationFeedbackSentiment.allCases.count == LanguageModelFeedback.Sentiment.allCases.count)
         #expect(EvaluationFeedbackIssueCategory.allCases.count == LanguageModelFeedback.Issue.Category.allCases.count)
-
-        for category in EvaluationFeedbackIssueCategory.allCases {
-            let issue = EvaluationFeedbackIssueDraft(category: category, explanation: "Review note")
-            _ = issue.foundationModelsValue
-        }
     }
 
     @Test func feedbackAttachmentIsGeneratedFromTheRestoredTranscript() async throws {

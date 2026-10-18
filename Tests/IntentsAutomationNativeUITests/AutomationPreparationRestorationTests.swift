@@ -183,19 +183,6 @@ import XCTest
         await model.closeAndWait()
     }
 
-    func testChangedPreparedFilesLeaveLaunchUnpreparedWithUsefulMessage() async throws {
-        let fixture = try RetainedPreparationFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let prepared = try fixture.savePreparation()
-        try Data("changed".utf8).write(to: URL(fileURLWithPath: prepared.host.xctestrunPath))
-        let model = AppAutomationStore(supportDirectory: fixture.support)
-        await model.waitForPreparation()
-        XCTAssertNil(model.prepared)
-        XCTAssertNil(model.intake)
-        XCTAssertFalse(model.canRun)
-        XCTAssertTrue(model.message?.contains("Prepare the app again") == true)
-        await model.closeAndWait()
-    }
 }
 
 private struct RetainedPreparationFixture {

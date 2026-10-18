@@ -35,6 +35,24 @@ class CoreSchemeTests(unittest.TestCase):
             ET.tostring(ET.fromstring(before).find("BuildAction")),
         )
 
+    def test_core_scheme_retains_swift_testing_concurrency_limit(self):
+        source = ROOT / scheme.SCHEMES / "FoundationEvals.xcscheme"
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "Core.xcscheme"
+            scheme.create_core_scheme(source, output)
+            test_action = ET.parse(output).find("TestAction")
+        # TestAction must use its own environment, not LaunchAction's, so the
+        # bounded Swift Testing scheduler also applies to CI build artifacts.
+        self.assertEqual(test_action.get("shouldUseLaunchSchemeArgsEnv"), "NO")
+        variables = {
+            node.get("key"): (node.get("value"), node.get("isEnabled"))
+            for node in test_action.findall("EnvironmentVariables/EnvironmentVariable")
+        }
+        self.assertEqual(
+            variables.get("SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH"),
+            ("4", "YES"),
+        )
+
     def test_missing_ui_or_core_target_fails_instead_of_omitting_tests(self):
         for name in ["FoundationEvalsUITests", "FoundationEvalsTests"]:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:

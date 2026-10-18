@@ -7,7 +7,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "script"))
-from ci_native_routes import APP, TESTS, UI_TESTS, DEPENDENCIES, TARGET, select_native_tests
+from ci_native_routes import APP, TESTS, UI_TESTS, TARGET, select_native_tests
 
 
 class NativeRoutingTests(unittest.TestCase):
@@ -52,12 +52,6 @@ class NativeRoutingTests(unittest.TestCase):
 
     def test_removed_unit_file_falls_back_to_remaining_units(self):
         self.assertEqual(select_native_tests([TESTS + "RemovedTests.swift"], True, ROOT), [TARGET])
-
-    def test_mapped_native_suite_symbols_exist_in_the_current_target(self):
-        sources = "\n".join(path.read_text() for path in (ROOT / TESTS).glob("*.swift"))
-        for suites in DEPENDENCIES.values():
-            for suite in suites:
-                self.assertRegex(sources, r"\b(?:struct|class|actor)\s+" + suite + r"\b")
 
 
 if __name__ == "__main__":

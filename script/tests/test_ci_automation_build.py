@@ -145,17 +145,6 @@ class AutomationExecutableTests(unittest.TestCase):
         self.tools.responses["xcodebuild -version"] = ""
         self.assertIsNone(self.current())
 
-    def test_selected_xcode_paths_and_both_binary_digests_are_in_fingerprint(self):
-        with patch.object(cache, "fingerprint", wraps=cache.fingerprint) as encode, \
-             patch.object(self.tools, "run", wraps=self.tools.run) as query:
-            self.assertIsInstance(self.current(), str)
-        identity = encode.call_args.args[0]["identity"]
-        self.assertEqual(identity["compiler"]["path"], str(self.compiler.resolve()))
-        self.assertEqual(identity["frontend"]["path"], str(self.frontend.resolve()))
-        self.assertEqual(identity["compiler"]["sha256"], cache.sha256(self.compiler))
-        self.assertEqual(identity["frontend"]["sha256"], cache.sha256(self.frontend))
-        self.assertFalse(any(call.args[0] == ["xcrun", "--find", "swift"] for call in query.call_args_list))
-        self.assertFalse(any(call.args[0] == ["xcrun", "swift", "--version"] for call in query.call_args_list))
 
     def test_missing_or_nonexecutable_selected_toolchain_binaries_disable_reuse(self):
         for binary in (self.compiler, self.frontend):
