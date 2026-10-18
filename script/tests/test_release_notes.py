@@ -1,6 +1,7 @@
 """Release-note policy for squash-merged pull requests."""
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -169,6 +170,12 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(len(sections), len(ALLOWED_ENTRY_TYPES))
         self.assertTrue(all(not section.get("hidden", False) for section in sections))
 
+    def test_retargeted_ci_can_read_its_failure_logs(self):
+        metadata = (ROOT / ".github/workflows/pr-metadata.yml").read_text()
+        jobs = dict(re.findall(r"(?ms)^  ([\w-]+):\n(.*?)(?=^  [\w-]+:|\Z)", metadata))
+        retarget = jobs["retarget"]
+        self.assertIn("permissions:\n      contents: read\n      actions: read", retarget)
+        self.assertNotIn(": write", retarget)
 
     def test_cli_reads_the_pull_request_event(self):
         with tempfile.TemporaryDirectory() as temporary:

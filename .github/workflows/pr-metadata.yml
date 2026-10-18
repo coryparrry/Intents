@@ -23,6 +23,9 @@ jobs:
   retarget:
     name: Retargeted pull request CI
     if: ${{ github.event.changes.base != null }}
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/ci.yml
 
   retarget-production:
