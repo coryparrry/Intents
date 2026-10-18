@@ -22,7 +22,7 @@ final class SimplificationUITests: XCTestCase {
             try Data(contents.utf8).write(to: destination)
         }
         let app = XCUIApplication()
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()

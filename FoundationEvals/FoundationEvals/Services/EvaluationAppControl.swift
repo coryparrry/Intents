@@ -5,17 +5,20 @@ import Observation
 @MainActor @Observable final class EvaluationAppControl {
   @ObservationIgnored lazy var mcp = MCPControlService(control: self)
   let store: EvaluationStore
+  let intentLabFeatureGate: IntentLabFeatureGate
   let production: ProductionWorkspaceStore
   let scenarios: ScenarioCoordinator
   let runners: DeveloperRunnerStore
   @ObservationIgnored private weak var boundAutomationStore: AppAutomationStore?
   @ObservationIgnored private weak var boundAutomationAdmission: ScenarioExecutionAdmission?
 
-  init(store: EvaluationStore) {
+  init(store: EvaluationStore, intentLabFeatureGate: IntentLabFeatureGate? = nil) {
     self.store = store
+    self.intentLabFeatureGate = intentLabFeatureGate ?? IntentLabFeatureGate()
     production = ProductionWorkspaceStore(root: store.overviewStorageDirectory)
     scenarios = ScenarioCoordinator(
-      supportDirectory: store.overviewStorageDirectory, evaluationStore: store)
+      supportDirectory: store.overviewStorageDirectory, evaluationStore: store,
+      intentLabFeatureGate: self.intentLabFeatureGate)
     runners = DeveloperRunnerStore(evaluationStore: store)
     scenarios.bindRunnerStore(runners)
   }

@@ -4,11 +4,11 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct MCPAppControlTests {
-  private func fixture() throws -> (EvaluationAppControl, URL) {
+  private func fixture(intentLabFeatureGate: IntentLabFeatureGate? = nil) throws -> (EvaluationAppControl, URL) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "mcp-control-\(UUID())")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return (EvaluationAppControl(store: EvaluationStore(supportDirectory: root)), root)
+    return (EvaluationAppControl(store: EvaluationStore(supportDirectory: root), intentLabFeatureGate: intentLabFeatureGate), root)
   }
   private func call(_ name: String, _ fields: [String: MCPJSONValue], control: EvaluationAppControl)
     async throws -> MCPToolPayload
@@ -185,7 +185,9 @@ import Testing
       ).isError)
   }
   @Test func confirmationsAndNavigationShareAppState() async throws {
-    let (control, root) = try fixture()
+    let gate = IntentLabFeatureGate(load: { true })
+    await gate.refresh()
+    let (control, root) = try fixture(intentLabFeatureGate: gate)
     defer { try? FileManager.default.removeItem(at: root) }
     var fields = try workspace(control)
     fields["projectID"] = .string(control.store.selectedProjectID.uuidString)
@@ -231,7 +233,9 @@ import Testing
     #expect(control.store.suite.judgeConfiguration.externalEvidenceApprovedAt == nil)
   }
   @Test func completeDraftReplacementClearsStaleEditorErrors() async throws {
-    let (control, root) = try fixture()
+    let gate = IntentLabFeatureGate(load: { true })
+    await gate.refresh()
+    let (control, root) = try fixture(intentLabFeatureGate: gate)
     defer { try? FileManager.default.removeItem(at: root) }
     _ = try await call("eval_intent_state", [:], control: control)
     control.scenarios.invalidParameterDraftIndices = [0]

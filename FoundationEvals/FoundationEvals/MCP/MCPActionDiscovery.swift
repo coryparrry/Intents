@@ -110,21 +110,27 @@ enum MCPActionDiscovery {
     return "evaluations"
   }
 
-  static func metrics() throws -> MCPJSONValue {
+  static func metrics(intentLabEnabled: Bool = true) throws -> MCPJSONValue {
+    let actions = availableDefinitions(intentLabEnabled: intentLabEnabled)
     let compact = try MCPJSONValue.encode(MCPToolCatalog.definitions).jsonText().utf8.count
-    let full = try MCPJSONValue.encode(MCPToolCatalog.allDefinitions).jsonText().utf8.count
+    let full = try MCPJSONValue.encode(actions).jsonText().utf8.count
     return .object([
       "defaultToolCount": .integer(Int64(MCPToolCatalog.definitions.count)),
-      "actionCount": .integer(Int64(MCPToolCatalog.allDefinitions.count)),
+      "actionCount": .integer(Int64(actions.count)),
       "defaultSchemaBytes": .integer(Int64(compact)), "fullSchemaBytes": .integer(Int64(full)),
     ])
   }
 
-  static func respond(_ call: MCPActionCatalogCall) -> MCPToolPayload {
+  static func availableDefinitions(intentLabEnabled: Bool) -> [MCPToolDefinition] {
+    MCPToolCatalog.allDefinitions.filter { intentLabEnabled || domain($0.name) != "intentLab" }
+  }
+
+  static func respond(_ call: MCPActionCatalogCall, intentLabEnabled: Bool = true) -> MCPToolPayload {
+    let definitions = availableDefinitions(intentLabEnabled: intentLabEnabled)
     do {
       switch call {
       case .describe(let name):
-        guard let value = MCPToolCatalog.allDefinitions.first(where: { $0.name == name }) else {
+        guard let value = definitions.first(where: { $0.name == name }) else {
           throw MCPToolInputError.unknownTool
         }
         return .init(
@@ -135,7 +141,7 @@ enum MCPActionDiscovery {
           ]))
       case .search(let query, let requestedDomain, let offset, let limit):
         let words = query.lowercased().split { $0.isWhitespace || $0 == "_" || $0 == "-" }
-        let matches = MCPToolCatalog.allDefinitions.filter { value in
+        let matches = definitions.filter { value in
           let text = (value.name + " " + value.description).lowercased()
           return (requestedDomain == nil || domain(value.name) == requestedDomain)
             && words.allSatisfy { text.contains($0) }
@@ -161,7 +167,7 @@ enum MCPActionDiscovery {
             "actions": .array(page), "total": .integer(Int64(matches.count)),
             "nextOffset": offset + page.count < matches.count
               ? .integer(Int64(offset + page.count)) : .null,
-            "catalog": try metrics(),
+            "catalog": try metrics(intentLabEnabled: intentLabEnabled),
           ]))
       }
     } catch {

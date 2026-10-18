@@ -7,7 +7,7 @@ final class IntentLabArrayEntryUITests: XCTestCase {
         let app = XCUIApplication()
         let storage = try UITestStorage.makeDirectory(prefix: "intent-arrays")
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()

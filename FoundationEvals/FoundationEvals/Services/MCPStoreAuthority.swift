@@ -14,9 +14,16 @@ enum MCPStoreAuthority {
 
     private static func handle(_ call: MCPToolCall, store: EvaluationStore, control: EvaluationAppControl, automationStore: AppAutomationStore?) async -> MCPToolPayload {
         do {
+            if !control.intentLabFeatureGate.isEnabled {
+                switch call {
+                case .listScenarioRuns, .getScenarioReport, .getScenarioExecutionReport:
+                    return .failure(code: "feature_disabled", message: "Intent Lab is unavailable.")
+                default: break
+                }
+            }
             switch call {
             case .actionCatalog(let request):
-                return MCPActionDiscovery.respond(request)
+                return MCPActionDiscovery.respond(request, intentLabEnabled: control.intentLabFeatureGate.isEnabled)
             case .control(let request):
                 return await control.mcp.execute(request)
             case .listAutomationApplications:

@@ -19,7 +19,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         )
 
         let app = XCUIApplication()
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.typeKey("2", modifierFlags: .command)
@@ -35,7 +35,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         let app = XCUIApplication()
         let storage = try UITestStorage.makeDirectory(prefix: "intent-guidance")
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -86,7 +86,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         let storage = try UITestStorage.makeDirectory(prefix: "intent-new-test")
         defer { try? FileManager.default.removeItem(at: storage) }
         let app = XCUIApplication()
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -114,7 +114,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         let storage = try UITestStorage.makeDirectory(prefix: "intent-guided-check")
         defer { try? FileManager.default.removeItem(at: storage) }
         let app = XCUIApplication()
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -150,7 +150,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         let project = storage.appendingPathComponent("Preview.xcodeproj", isDirectory: true)
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         let app = XCUIApplication()
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -204,7 +204,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         let invalidProject = storage.appendingPathComponent("Not a project.txt")
         try Data("Not an Xcode project".utf8).write(to: invalidProject)
         let app = XCUIApplication()
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()

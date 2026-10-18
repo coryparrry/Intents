@@ -22,6 +22,18 @@ struct MCPControlReceipt: Codable, Sendable {
   }
   func execute(_ call: MCPControlCall) async -> MCPToolPayload {
     do {
+      // Revocation must never prevent an operator from stopping an existing run.
+      if !control.intentLabFeatureGate.isEnabled, call.name == "eval_intent_cancel" {
+        await control.scenarios.cancel()
+        return Self.committed()
+      }
+      guard control.intentLabFeatureGate.isEnabled || !call.name.hasPrefix("eval_intent_") else {
+        return .failure(code: "feature_disabled", message: "Intent Lab is unavailable.")
+      }
+      if !control.intentLabFeatureGate.isEnabled,
+        call.name == "eval_workspace_navigate", call.optionalText("section") == "intentLab" {
+        return .failure(code: "feature_disabled", message: "Intent Lab is unavailable.")
+      }
       guard !isClosing else {
         throw EvaluationStoreError.resourceConflict("App control is closing.")
       }
@@ -29,7 +41,9 @@ struct MCPControlReceipt: Codable, Sendable {
       else { throw MCPToolInputError.unknownTool }
       if call.name == "eval_control_capabilities" {
         return Self.read([
-          "tools": .array(MCPControlTools.definitions.map { .string($0.name) }),
+          "tools": .array(MCPControlTools.definitions.filter {
+            control.intentLabFeatureGate.isEnabled || !$0.name.hasPrefix("eval_intent_")
+          }.map { .string($0.name) }),
           "boundary": .string(
             "Authenticated app control; original suite tools remain available. Operator confirmations, pairing, readiness, disclosure and execution leases remain required."
           ),
@@ -170,7 +184,13 @@ struct MCPControlReceipt: Codable, Sendable {
         deviceOperationID = nil
       }
       let result: MCPToolPayload
-      do { result = try await body() } catch { result = Self.failure(error) }
+      do {
+        if !control.intentLabFeatureGate.isEnabled && call.name.hasPrefix("eval_intent_") {
+          result = .failure(code: "feature_disabled", message: "Intent Lab is unavailable.")
+        } else {
+          result = try await body()
+        }
+      } catch { result = Self.failure(error) }
       do {
         guard var receipt = try load(id) else { return }
         receipt.phase = result.isError ? "failed" : "completed"

@@ -8,7 +8,10 @@ struct MCPStoreAuthorityTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = EvaluationStore(supportDirectory: directory)
-        let authority = MCPStoreAuthority.make(store: store)
+        let gate = IntentLabFeatureGate(load: { true })
+        await gate.refresh()
+        let control = EvaluationAppControl(store: store, intentLabFeatureGate: gate)
+        let authority = MCPStoreAuthority.make(store: store, control: control)
 
         for cursor in ["bad", "-1", "1"] {
             let response = await authority.call(.listScenarioRuns(.init(
@@ -305,7 +308,10 @@ struct MCPStoreAuthorityTests {
         ]
         _ = try await persistence.saveRun(captured, artifactRoot: nil)
 
-        let payload = await MCPStoreAuthority.make(store: store).call(.getScenarioReport(.init(runID: run.id)))
+        let gate = IntentLabFeatureGate(load: { true })
+        await gate.refresh()
+        let control = EvaluationAppControl(store: store, intentLabFeatureGate: gate)
+        let payload = await MCPStoreAuthority.make(store: store, control: control).call(.getScenarioReport(.init(runID: run.id)))
         let text = try payload.structuredContent.jsonText()
 
         #expect(text.contains("packing-001"))

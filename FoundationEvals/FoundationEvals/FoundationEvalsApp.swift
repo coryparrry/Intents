@@ -53,6 +53,10 @@ struct FoundationEvalsApp: App {
         _automationStore = State(initialValue: automationStore)
         _mcpSettings = State(initialValue: settings)
         mcpRuntime = runtime
+        if !ProductionNativeWorkerCommand.isRequested {
+            // MCP remains usable even when every workspace window is closed.
+            Task { await control.intentLabFeatureGate.monitor() }
+        }
         if ProductionNativeWorkerCommand.isRequested {
             NSApplication.shared.setActivationPolicy(.prohibited)
             Task { await ProductionNativeWorkerCommand.run(store: store) }
@@ -174,11 +178,14 @@ struct FoundationEvalsApp: App {
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
-                Button("Show Intent Lab") {
-                    store.selection = .intentLab
-                    openWindow(id: "evaluation-main", value: "main")
+                if appControl.intentLabFeatureGate.isEnabled {
+                    Button("Show Intent Lab") {
+                        guard appControl.intentLabFeatureGate.isEnabled else { return }
+                        store.selection = .intentLab
+                        openWindow(id: "evaluation-main", value: "main")
+                    }
+                    .keyboardShortcut("2", modifiers: [.command])
                 }
-                .keyboardShortcut("2", modifiers: [.command])
 
                 Button("Show App Automation") {
                     store.selection = .appAutomation

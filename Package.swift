@@ -4,6 +4,7 @@ import PackageDescription
 // This package deliberately exposes deterministic production logic for focused CI tests.
 // GitHub's xcode-27 hosted runner provides macOS 27; the app remains an independent Xcode target.
 let portableProductionSources = [
+    "Services/IntentLabFeatureGate.swift",
     "MCP/Installer/CodexMCPInstaller.swift",
     "Models/EvaluationFieldAssertion.swift",
     "Models/EvaluationScoringTypes.swift",
@@ -35,6 +36,7 @@ let portableProductionSources = [
 ]
 
 let portableTestSources = [
+    "IntentLabFeatureGateTests.swift",
     "CodexMCPInstallerTests.swift",
     "EvaluationFieldAssertionTests.swift",
     "MetricScorerTests.swift",
@@ -229,6 +231,7 @@ let package = Package(
                 "MCPAppControlTests.swift",
                 "JudgeCredentialBindingTests.swift",
                 "MCPActionDiscoveryTests.swift",
+                "MCPIntentLabFeatureGateTests.swift",
                 "MCPFeatureTests.swift",
                 "MCPProtocolTests.swift",
                 "MCPProviderConfigurationTests.swift",
