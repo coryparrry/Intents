@@ -96,6 +96,14 @@ final class IntentLabContractsTests: XCTestCase {
         XCTAssertTrue(declaration.allowsCleanupOperation("none"))
         XCTAssertFalse(declaration.allowsCleanupOperation("delete-records"))
         XCTAssertFalse(declaration.allowsCleanupOperation("none", requiresMutationCleanup: true))
+        declaration.cleanupOperations = [""]
+        XCTAssertTrue(declaration.allowsCleanupOperation("none"))
+        XCTAssertFalse(declaration.allowsCleanupOperation("none", requiresMutationCleanup: true))
+        declaration.cleanupOperations = ["reset"]
+        XCTAssertFalse(declaration.allowsCleanupOperation("none"))
+        XCTAssertTrue(declaration.allowsCleanupOperation("reset"))
+        XCTAssertTrue(declaration.allowsCleanupOperation("reset", requiresMutationCleanup: true))
+        XCTAssertFalse(declaration.allowsCleanupOperation("resetNotes", requiresMutationCleanup: true))
         declaration.cleanupOperations = ["restore-synthetic-records"]
         XCTAssertTrue(declaration.allowsCleanupOperation("restore-synthetic-records"))
         XCTAssertTrue(declaration.allowsCleanupOperation("restore-synthetic-records", requiresMutationCleanup: true))

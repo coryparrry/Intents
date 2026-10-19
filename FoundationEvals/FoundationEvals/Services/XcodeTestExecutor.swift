@@ -1143,11 +1143,7 @@ actor XcodeTestExecutor {
             throw XcodeTestExecutorError.connectionCheck("A reusable integration is required.")
         }
         guard let integration = definition.integration,
-              !integration.id.isEmpty, !integration.version.isEmpty,
-              integration.digest.count == 64,
-              integration.digest.unicodeScalars.allSatisfy({
-                  CharacterSet(charactersIn: "0123456789abcdef").contains($0)
-              }),
+              integration.isBoundDeclaration,
               definition.target.bundleIdentifier.contains(".") else {
             throw XcodeTestExecutorError.connectionCheck("Select an app and a valid integration declaration before checking the connection.")
         }

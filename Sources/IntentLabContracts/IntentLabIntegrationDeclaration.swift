@@ -189,24 +189,29 @@ public struct IntentLabIntegrationDeclaration: Codable {
         }
     }
 
+    private static let noOpOperations = ["", "none", "noop", "readOnly"]
+
+    private static func allows(operationID: String, declared: [String]) -> Bool {
+        declared.contains(operationID)
+            || (noOpOperations.contains(operationID)
+                && declared.contains(where: noOpOperations.contains))
+    }
+
     /// Old read-only declarations did not include cleanupOperations. They may
     /// continue to request a no-op, but never an undeclared mutating operation.
     public func allowsCleanupOperation(
         _ operationID: String,
         requiresMutationCleanup: Bool = false
     ) -> Bool {
-        let noOps = ["", "none", "noop", "readOnly"]
         if requiresMutationCleanup {
-            guard !noOps.contains(operationID), let cleanupOperations else { return false }
+            guard !Self.noOpOperations.contains(operationID), let cleanupOperations else { return false }
             return cleanupOperations.contains(operationID)
         }
-        return (cleanupOperations ?? noOps).contains(operationID)
+        return Self.allows(operationID: operationID, declared: cleanupOperations ?? Self.noOpOperations)
     }
 
     public func allowsPreparationOperation(_ operationID: String) -> Bool {
-        let noOps = ["", "none", "noop", "readOnly"]
-        return preparationOperations.contains(operationID)
-            || (noOps.contains(operationID) && preparationOperations.contains(where: noOps.contains))
+        Self.allows(operationID: operationID, declared: preparationOperations)
     }
 
     /// Returns the one app-declared control that exactly matches the frozen local

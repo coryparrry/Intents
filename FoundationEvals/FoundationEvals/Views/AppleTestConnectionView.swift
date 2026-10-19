@@ -128,7 +128,7 @@ struct AppleTestConnectionView: View {
                     connectionField(
                         number: 3, title: "Check installed support",
                         detail: coordinator.verifiedIntegrationSummary
-                            ?? (coordinator.draft.integration == nil
+                            ?? (!(coordinator.draft.integration?.isBoundDeclaration ?? false)
                                 ? "Choose the installed integration declaration under Add or update test support first."
                                 : "Build the selected app and UI tests, then read the compiled integration receipt. This check does not run an app action.")
                     ) {
@@ -140,7 +140,7 @@ struct AppleTestConnectionView: View {
                         }
                         .disabled(!coordinator.projectTrusted
                                   || coordinator.configuration.destinationIdentifier.isEmpty
-                                  || coordinator.draft.integration == nil
+                                  || !(coordinator.draft.integration?.isBoundDeclaration ?? false)
                                   || coordinator.isVerifyingIntegration)
                     }
                 }

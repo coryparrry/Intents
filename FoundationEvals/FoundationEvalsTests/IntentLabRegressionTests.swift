@@ -4,6 +4,34 @@ import Darwin
 @testable import FoundationEvals
 
 struct IntentLabRegressionTests {
+    @Test func integrationIdentityRequiresBoundLowercaseSHA256Digest() {
+        let digest = String(repeating: "a", count: 64)
+        let valid = ScenarioIntegrationIdentity(id: "integration", version: "1", digest: digest)
+        #expect(valid.isBoundDeclaration)
+        #expect(!ScenarioIntegrationIdentity(id: "", version: "1", digest: digest).isBoundDeclaration)
+        #expect(!ScenarioIntegrationIdentity(id: "integration", version: "", digest: digest).isBoundDeclaration)
+        #expect(!ScenarioIntegrationIdentity(id: "pending-integration", version: "1", digest: "").isBoundDeclaration)
+        #expect(!ScenarioIntegrationIdentity(
+            id: "integration", version: "1", digest: String(repeating: "A", count: 64)
+        ).isBoundDeclaration)
+        #expect(!ScenarioIntegrationIdentity(
+            id: "integration", version: "1", digest: String(repeating: "a", count: 63)
+        ).isBoundDeclaration)
+    }
+
+    @MainActor
+    @Test func reusableCheckKeepsPendingIntegrationUnboundUntilSelected() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        let coordinator = ScenarioCoordinator(supportDirectory: root, evaluationStore: store)
+
+        coordinator.startReusableCheck()
+
+        #expect(coordinator.draft.integration?.id == "pending-integration")
+        #expect(coordinator.draft.integration?.isBoundDeclaration == false)
+    }
+
     @Test func failedCapturesSkipVerboseDiagnosticsAndKeepSelectedResultBundle() throws {
         let configuration = XcodeTestConfiguration(
             containerPath: "/tmp/Fixture.xcodeproj", isWorkspace: false, scheme: "Fixture",
