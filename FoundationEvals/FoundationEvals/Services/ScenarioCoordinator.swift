@@ -1312,30 +1312,41 @@ final class ScenarioCoordinator {
             guard let journal = try await persistence.loadJournals().first(where: { $0.id == invocationID }) else {
                 throw ScenarioPersistenceError.acceptanceNotReady
             }
+            var acceptanceDeferredUntilRecovery = false
             if pending.evidenceValidationPassed {
                 if journal.evidenceAccepted != true {
+                    // A staged pending save implies the device run completed before cancellation.
                     let interruptedBeforeValidation = journal.phase == .running
                         || (journal.phase == .recoveryRequired
-                            && journal.recoveryReason == "The desktop stopped before device-side termination and fixture readiness were established.")
-                    guard interruptedBeforeValidation else {
+                            && [
+                                ScenarioExecutionRecoveryPolicy.desktopStoppedBeforeDeviceReadinessReason,
+                                ScenarioExecutionRecoveryPolicy.requestedCancellationRecoveryReason
+                            ].contains(journal.recoveryReason ?? ""))
+                    if interruptedBeforeValidation {
+                        try await executor.finishEvidenceValidation(
+                            journal: journal, accepted: true,
+                            deviceReady: pending.deviceReadinessProven
+                        )
+                    } else {
+                        acceptanceDeferredUntilRecovery = true
+                    }
+                }
+                if !acceptanceDeferredUntilRecovery {
+                    guard let validated = try await persistence.loadJournals()
+                        .first(where: { $0.id == invocationID }) else {
                         throw ScenarioPersistenceError.acceptanceNotReady
                     }
-                    try await executor.finishEvidenceValidation(
-                        journal: journal, accepted: true,
-                        deviceReady: pending.deviceReadinessProven
-                    )
-                }
-                guard let validated = try await persistence.loadJournals()
-                    .first(where: { $0.id == invocationID }) else {
-                    throw ScenarioPersistenceError.acceptanceNotReady
-                }
-                for index in saved.indices {
-                    saved[index] = try await persistence.acceptRun(saved[index], journal: validated)
+                    for index in saved.indices {
+                        saved[index] = try await persistence.acceptRun(saved[index], journal: validated)
+                    }
                 }
             } else {
                 let interruptedBeforeValidation = journal.phase == .running
                     || (journal.phase == .recoveryRequired
-                        && journal.recoveryReason == "The desktop stopped before device-side termination and fixture readiness were established.")
+                        && [
+                            ScenarioExecutionRecoveryPolicy.desktopStoppedBeforeDeviceReadinessReason,
+                            ScenarioExecutionRecoveryPolicy.requestedCancellationRecoveryReason
+                        ].contains(journal.recoveryReason ?? ""))
                 if interruptedBeforeValidation {
                     try await executor.finishEvidenceValidation(
                         journal: journal, accepted: false,
@@ -1350,7 +1361,9 @@ final class ScenarioCoordinator {
             selectedRunID = saved.first?.id
             recoveryJournals = try await executor.currentRecoveryJournals()
             journals = try await persistence.loadJournals()
-            notice = "Captured device evidence was saved without rerunning the app."
+            notice = acceptanceDeferredUntilRecovery
+                ? "Captured device evidence was saved, but it can't count toward release checks until device recovery is confirmed."
+                : "Captured device evidence was saved without rerunning the app."
             return saved
         } catch {
             notice = error.localizedDescription

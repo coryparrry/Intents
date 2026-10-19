@@ -556,6 +556,90 @@ struct ScenarioAcceptanceTests {
     }
 
     @MainActor
+    @Test func ordinaryCoordinatorRetryAcceptsCompletedRunAfterCancellation() async throws {
+        let support = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: support) }
+        let root = support.appending(path: "IntentLab", directoryHint: .isDirectory)
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let (_, run, acceptedJournal) = try fixture()
+        var journal = acceptedJournal
+        journal.phase = .recoveryRequired
+        journal.recoveryReason = ScenarioExecutionRecoveryPolicy.requestedCancellationRecoveryReason
+        journal.evidenceAccepted = false
+        try await persistence.saveJournal(journal)
+        try await persistence.savePendingOrdinarySave(.init(
+            invocationID: run.id, runs: [run], artifactRootPath: support.path,
+            ledger: ledger(for: run), evidenceValidationPassed: true,
+            deviceReadinessProven: true
+        ))
+        _ = try await persistence.saveRun(run, artifactRoot: support)
+
+        let coordinator = ScenarioCoordinator(
+            supportDirectory: support,
+            evaluationStore: EvaluationStore(supportDirectory: support),
+            executionAdmission: ScenarioExecutionAdmission()
+        )
+        await coordinator.load()
+        let saved = try #require(
+            await coordinator.retryPendingOrdinarySave(invocationID: run.id),
+            "Save retry failed: \(coordinator.notice ?? "unknown reason")"
+        )
+        #expect(saved.first?.acceptanceStatus == .accepted)
+        #expect(coordinator.pendingOrdinarySaves.isEmpty)
+        #expect(coordinator.recoveryJournals.isEmpty)
+        #expect(try await persistence.loadPendingOrdinarySave(invocationID: run.id) == nil)
+        let durableJournal = try #require(await persistence.loadJournals().first { $0.id == run.id })
+        #expect(durableJournal.phase == .stopped)
+        #expect(durableJournal.evidenceAccepted == true)
+    }
+
+    @MainActor
+    @Test func ordinaryCoordinatorRetrySavesButDefersUnrelatedRecoveryEvidence() async throws {
+        let support = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: support) }
+        let root = support.appending(path: "IntentLab", directoryHint: .isDirectory)
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let (_, run, acceptedJournal) = try fixture()
+        var journal = acceptedJournal
+        journal.phase = .recoveryRequired
+        journal.recoveryReason = "A different device recovery is required."
+        journal.evidenceAccepted = false
+        try await persistence.saveJournal(journal)
+        try await persistence.savePendingOrdinarySave(.init(
+            invocationID: run.id, runs: [run], artifactRootPath: support.path,
+            ledger: ledger(for: run), evidenceValidationPassed: true,
+            deviceReadinessProven: true
+        ))
+        _ = try await persistence.saveRun(run, artifactRoot: support)
+
+        let coordinator = ScenarioCoordinator(
+            supportDirectory: support,
+            evaluationStore: EvaluationStore(supportDirectory: support),
+            executionAdmission: ScenarioExecutionAdmission()
+        )
+        await coordinator.load()
+        let saved = try #require(
+            await coordinator.retryPendingOrdinarySave(invocationID: run.id),
+            "Save retry failed: \(coordinator.notice ?? "unknown reason")"
+        )
+        #expect(saved.first?.acceptanceStatus == .pending)
+        #expect(coordinator.pendingOrdinarySaves.isEmpty)
+        #expect(coordinator.recoveryJournals.map(\.id) == [run.id])
+        let currentJournal = try #require(coordinator.journals.first { $0.id == run.id })
+        #expect(currentJournal.phase == .recoveryRequired)
+        #expect(currentJournal.recoveryReason == journal.recoveryReason)
+        #expect(currentJournal.evidenceAccepted == journal.evidenceAccepted)
+        #expect(coordinator.notice ==
+            "Captured device evidence was saved, but it can't count toward release checks until device recovery is confirmed.")
+        #expect(try await persistence.loadPendingOrdinarySave(invocationID: run.id) == nil)
+        #expect(try await persistence.loadRuns().first?.acceptanceStatus == .pending)
+        let durableJournal = try #require(await persistence.loadJournals().first { $0.id == run.id })
+        #expect(durableJournal.phase == .recoveryRequired)
+        #expect(durableJournal.recoveryReason == journal.recoveryReason)
+        #expect(durableJournal.evidenceAccepted == journal.evidenceAccepted)
+    }
+
+    @MainActor
     @Test func diagnosticSaveRetryReleasesReadyDeviceWithoutAcceptingEvidence() async throws {
         let support = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: support) }

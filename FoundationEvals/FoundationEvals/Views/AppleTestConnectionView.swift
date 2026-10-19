@@ -414,17 +414,41 @@ struct AppleTestConnectionView: View {
     }
 
     @ViewBuilder private var recoveryControls: some View {
-        if !coordinator.recoveryJournals.isEmpty {
-            Divider()
-            Label("Device recovery required", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(WorkspaceStyle.warning)
-            Text("Automatic clearing is intentionally disabled until the device proves that this invocation stopped and the fixture reset. You can clear it after verifying both conditions.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Button("I verified termination and fixture readiness") {
-                Task { await coordinator.clearDeviceQuarantine(fixtureReadinessProven: true) }
+        if !coordinator.recoveryJournals.isEmpty || !coordinator.pendingOrdinarySaves.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                if !coordinator.recoveryJournals.isEmpty {
+                    Label("Device recovery required", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(WorkspaceStyle.warning)
+                    Text("Automatic clearing is intentionally disabled until the device proves that this invocation stopped and the fixture reset. You can clear it after verifying both conditions.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("I verified termination and fixture readiness") {
+                        Task { await coordinator.clearDeviceQuarantine(fixtureReadinessProven: true) }
+                    }
+                }
+
+                if !coordinator.pendingOrdinarySaves.isEmpty {
+                    Divider()
+                    Label("Captured evidence waiting to be saved", systemImage: "exclamationmark.triangle")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(WorkspaceStyle.warning)
+                    ForEach(coordinator.pendingOrdinarySaves, id: \.invocationID) { pending in
+                        HStack {
+                            Text(String(pending.invocationID.uuidString.prefix(8)))
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Save captured evidence") {
+                                Task { await coordinator.retryPendingOrdinarySave(invocationID: pending.invocationID) }
+                            }
+                            .accessibilityIdentifier("intentLab.savePendingEvidence")
+                            .disabled(coordinator.isRunning)
+                        }
+                    }
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

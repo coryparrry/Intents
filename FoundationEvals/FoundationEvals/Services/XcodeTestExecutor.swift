@@ -592,7 +592,7 @@ actor XcodeTestExecutor {
             removeInvocationTestRuns(derivedDataPath: journal.derivedDataPath)
             if journal.phase != .recoveryRequired {
                 journal.phase = .recoveryRequired
-                journal.recoveryReason = "The desktop stopped before device-side termination and fixture readiness were established."
+                journal.recoveryReason = ScenarioExecutionRecoveryPolicy.desktopStoppedBeforeDeviceReadinessReason
                 journal.updatedAt = Date()
                 try await persistence.saveJournal(journal)
             }
@@ -3107,7 +3107,7 @@ actor XcodeTestExecutor {
         let destination = journal.invocation.destinationIdentifier
         cancelledInvocationIDs.insert(invocationID)
         journal.phase = .recoveryRequired
-        journal.recoveryReason = "Cancellation was requested; confirm device-side termination and fixture readiness."
+        journal.recoveryReason = ScenarioExecutionRecoveryPolicy.requestedCancellationRecoveryReason
         journal.evidenceAccepted = false
         journal.updatedAt = Date()
         if inFlightJournal?.id == invocationID { inFlightJournal = journal }

@@ -11,6 +11,11 @@ enum ScenarioRecoveryFailure: String, Codable, Sendable {
 }
 
 enum ScenarioExecutionRecoveryPolicy {
+    static let desktopStoppedBeforeDeviceReadinessReason =
+        "The desktop stopped before device-side termination and fixture readiness were established."
+    static let requestedCancellationRecoveryReason =
+        "Cancellation was requested; confirm device-side termination and fixture readiness."
+
     static func canReevaluateFeature(captured: ScenarioMeasurementImplementation?, current: ScenarioMeasurementImplementation?) -> Bool {
         captured == nil || captured == current
     }
@@ -19,7 +24,7 @@ enum ScenarioExecutionRecoveryPolicy {
         guard validationPassed == true, hasBoundJournal(run: run, journals: [journal]) else { return false }
         if journal.phase == .running || journal.phase == .stopped { return true }
         return journal.phase == .recoveryRequired && [
-            "The desktop stopped before device-side termination and fixture readiness were established.",
+            desktopStoppedBeforeDeviceReadinessReason,
             "Device execution or fixture readiness has not been proven after evidence capture."
         ].contains(journal.recoveryReason ?? "")
     }
