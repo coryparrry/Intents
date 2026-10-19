@@ -381,18 +381,22 @@ struct ScenarioAcceptanceTests {
             byteCount: bytes.count,
             sha256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         ))
+        let (storedLedger, retryLedger) = ledgerVariants(for: run)
         let pending = ScenarioPendingNativeSave(
             planID: plan.id, coordinateID: coordinate.id, run: run,
-            artifactRootPath: evidence.path, ledger: ledger(for: run),
+            artifactRootPath: evidence.path, ledger: storedLedger,
             evidenceValidationPassed: true, deviceReadinessProven: true
         )
         try await persistence.savePendingNativeSave(pending)
+        var retriedPending = pending
+        retriedPending.ledger = retryLedger
+        try await persistence.savePendingNativeSave(retriedPending)
         try FileManager.default.removeItem(at: evidence)
         let relaunched = ScenarioPersistence(rootDirectory: root)
         let stage = try #require(await relaunched.loadPendingNativeSave(
             planID: plan.id, coordinateID: coordinate.id
         ))
-        let saved = try await relaunched.commitPendingNativeSave(stage)
+        let saved = try await relaunched.commitPendingNativeSave(retriedPending)
         #expect(saved.laneResults[0].artifacts.count == 1)
         #expect(try Data(contentsOf: root.appending(
             path: "PendingNativeSaves/\(plan.id.uuidString)-\(coordinate.id.uuidString)/capture.json"
@@ -425,6 +429,45 @@ struct ScenarioAcceptanceTests {
         }
         try original.write(to: path, options: .atomic)
         #expect(try await relaunched.commitPendingNativeSave(stage).id == run.id)
+    }
+
+    @Test func ordinaryPendingSaveCommitComparesLedgerSetsByValue() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let (_, run, _) = try fixture()
+        let (storedLedger, retryLedger) = ledgerVariants(for: run)
+        let pending = ScenarioPendingOrdinarySave(
+            invocationID: run.id, runs: [run], artifactRootPath: root.path,
+            ledger: storedLedger, evidenceValidationPassed: true, deviceReadinessProven: true
+        )
+        var retry = pending
+        retry.ledger = retryLedger
+        #expect(pending.ledger == retry.ledger)
+
+        try await persistence.savePendingOrdinarySave(pending)
+        let saved = try await persistence.commitPendingOrdinarySave(retry)
+        #expect(saved.map(\.id) == [run.id])
+    }
+
+    @Test func ordinaryPendingSaveRetryComparesLedgerSetsByValue() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        let (_, run, _) = try fixture()
+        let (storedLedger, retryLedger) = ledgerVariants(for: run)
+        let pending = ScenarioPendingOrdinarySave(
+            invocationID: run.id, runs: [run], artifactRootPath: root.path,
+            ledger: storedLedger, evidenceValidationPassed: true, deviceReadinessProven: true
+        )
+        var retry = pending
+        retry.ledger = retryLedger
+        #expect(pending.ledger == retry.ledger)
+
+        try await persistence.savePendingOrdinarySave(pending)
+        try await persistence.savePendingOrdinarySave(retry)
+        let saved = try await persistence.commitPendingOrdinarySave(retry)
+        #expect(saved.map(\.id) == [run.id])
     }
 
     @Test func ordinaryPendingSaveRetriesLedgerAndReceiptFaultsWithoutAnotherAction() async throws {
@@ -797,6 +840,30 @@ struct ScenarioAcceptanceTests {
         ledger.importedNonces.insert(run.invocation.nonce)
         ledger.importedArtifactIDs.formUnion(run.laneResults.flatMap(\.artifacts).map(\.id))
         return ledger
+    }
+
+    private func ledgerVariants(for run: ScenarioRun) -> (ScenarioImportLedger, ScenarioImportLedger) {
+        let invocationIDs = [run.invocation.id] + (0..<64).map { _ in UUID() }
+        let nonces = [run.invocation.nonce] + (0..<64).map { "nonce-\($0)" }
+        let artifactIDs = run.laneResults.flatMap(\.artifacts).map(\.id) + (0..<64).map { _ in UUID() }
+
+        var first = ScenarioImportLedger()
+        first.importedInvocationIDs.reserveCapacity(invocationIDs.count)
+        first.importedNonces.reserveCapacity(nonces.count)
+        first.importedArtifactIDs.reserveCapacity(artifactIDs.count)
+        for id in invocationIDs { first.importedInvocationIDs.insert(id) }
+        for nonce in nonces { first.importedNonces.insert(nonce) }
+        for id in artifactIDs { first.importedArtifactIDs.insert(id) }
+
+        var second = ScenarioImportLedger()
+        second.importedInvocationIDs.reserveCapacity(invocationIDs.count * 2)
+        second.importedNonces.reserveCapacity(nonces.count * 2)
+        second.importedArtifactIDs.reserveCapacity(artifactIDs.count * 2)
+        for id in invocationIDs.reversed() { second.importedInvocationIDs.insert(id) }
+        for nonce in nonces.reversed() { second.importedNonces.insert(nonce) }
+        for id in artifactIDs.reversed() { second.importedArtifactIDs.insert(id) }
+
+        return (first, second)
     }
 
     private func temporaryDirectory() -> URL {

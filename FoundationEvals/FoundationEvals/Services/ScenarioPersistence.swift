@@ -19,7 +19,7 @@ private struct ScenarioAcceptanceReceipt: Codable {
     var scope: ScenarioNativeExecutionScope?
 }
 
-struct ScenarioPendingNativeSave: Codable, Sendable {
+struct ScenarioPendingNativeSave: Codable, Equatable, Sendable {
     var planID: UUID
     var coordinateID: UUID
     var run: ScenarioRun
@@ -31,7 +31,7 @@ struct ScenarioPendingNativeSave: Codable, Sendable {
     var deviceReadinessProven: Bool? = nil
 }
 
-struct ScenarioPendingOrdinarySave: Codable, Sendable {
+struct ScenarioPendingOrdinarySave: Codable, Equatable, Sendable {
     var invocationID: UUID
     var runs: [ScenarioRun]
     var artifactRootPath: String
@@ -309,13 +309,20 @@ actor ScenarioPersistence {
         let data = try Self.encoder.encode(pending)
         let legacy = pendingNativeURL(planID: pending.planID, coordinateID: pending.coordinateID)
         if fileManager.fileExists(atPath: legacy.path) {
-            guard try Data(contentsOf: legacy) == data else {
+            let existing = try Self.decoder.decode(ScenarioPendingNativeSave.self, from: Data(contentsOf: legacy))
+            let persistedPending = try Self.decoder.decode(ScenarioPendingNativeSave.self, from: data)
+            guard existing == persistedPending else {
                 throw ScenarioPersistenceError.conflictingPendingSave
             }
             return
         }
         if fileManager.fileExists(atPath: destination.path) {
-            guard try Data(contentsOf: destination.appending(path: "pending.json")) == data else {
+            let existing = try Self.decoder.decode(
+                ScenarioPendingNativeSave.self,
+                from: Data(contentsOf: destination.appending(path: "pending.json"))
+            )
+            let persistedPending = try Self.decoder.decode(ScenarioPendingNativeSave.self, from: data)
+            guard existing == persistedPending else {
                 throw ScenarioPersistenceError.conflictingPendingSave
             }
             return
@@ -358,8 +365,9 @@ actor ScenarioPersistence {
 
     /// Save from retained bytes; a retry must never trust a changed raw run.
     func commitPendingNativeSave(_ pending: ScenarioPendingNativeSave) throws -> ScenarioRun {
+        let persistedPending = try Self.persistedValue(pending)
         guard let staged = try loadPendingNativeSave(planID: pending.planID, coordinateID: pending.coordinateID),
-              try Self.encoder.encode(staged) == Self.encoder.encode(pending) else {
+              staged == persistedPending else {
             throw ScenarioPersistenceError.invalidRun("pending native child")
         }
         let stage = pendingNativeStageURL(planID: pending.planID, coordinateID: pending.coordinateID)
@@ -401,7 +409,12 @@ actor ScenarioPersistence {
         let url = pendingOrdinaryURL(pending.invocationID)
         let data = try Self.encoder.encode(pending)
         if fileManager.fileExists(atPath: url.path) {
-            guard try Data(contentsOf: url.appending(path: "pending.json")) == data else {
+            let existing = try Self.decoder.decode(
+                ScenarioPendingOrdinarySave.self,
+                from: Data(contentsOf: url.appending(path: "pending.json"))
+            )
+            let persistedPending = try Self.decoder.decode(ScenarioPendingOrdinarySave.self, from: data)
+            guard existing == persistedPending else {
                 throw ScenarioPersistenceError.conflictingPendingSave
             }
             return
@@ -464,8 +477,9 @@ actor ScenarioPersistence {
 
     /// Save captured bytes and ledger membership without executing XCTest again.
     func commitPendingOrdinarySave(_ pending: ScenarioPendingOrdinarySave) throws -> [ScenarioRun] {
+        let persistedPending = try Self.persistedValue(pending)
         guard let staged = try loadPendingOrdinarySave(invocationID: pending.invocationID),
-              try Self.encoder.encode(staged) == Self.encoder.encode(pending) else {
+              staged == persistedPending else {
             throw ScenarioPersistenceError.invalidRun("pending ordinary evidence")
         }
         var savedRuns: [ScenarioRun] = []
@@ -595,7 +609,9 @@ actor ScenarioPersistence {
             return
         }
         if fileManager.fileExists(atPath: url.path) {
-            guard try Data(contentsOf: url) == data else { throw ScenarioPersistenceError.conflictingDefinition }
+            let existing = try Self.decoder.decode(ScenarioDefinition.self, from: Data(contentsOf: url))
+            let persistedDefinition = try Self.decoder.decode(ScenarioDefinition.self, from: data)
+            guard existing == persistedDefinition else { throw ScenarioPersistenceError.conflictingDefinition }
             return
         }
         try data.write(to: url, options: .withoutOverwriting)
@@ -1064,4 +1080,8 @@ actor ScenarioPersistence {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }()
+
+    private static func persistedValue<Value: Codable>(_ value: Value) throws -> Value {
+        try decoder.decode(Value.self, from: encoder.encode(value))
+    }
 }
