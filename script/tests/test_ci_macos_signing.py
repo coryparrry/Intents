@@ -321,6 +321,7 @@ os._exit(7)
     def test_exited_leader_still_owns_and_stops_its_live_same_group_descendant(self):
         self._run_exited_leader_scenario()
 
+    @unittest.skipUnless(sys.platform == "darwin", "The libc waitid fallback uses Darwin constants and siginfo_t.")
     def test_ctypes_waitid_fallback_observes_exit_without_reaping_leader(self):
         with mock.patch.object(signing.os, "waitid", None, create=True):
             self._run_exited_leader_scenario()
