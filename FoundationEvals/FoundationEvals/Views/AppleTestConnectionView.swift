@@ -415,6 +415,7 @@ struct AppleTestConnectionView: View {
 
     @ViewBuilder private var recoveryControls: some View {
         if !coordinator.recoveryJournals.isEmpty || !coordinator.pendingOrdinarySaves.isEmpty {
+            Divider()
             VStack(alignment: .leading, spacing: 8) {
                 if !coordinator.recoveryJournals.isEmpty {
                     Label("Device recovery required", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
@@ -429,7 +430,7 @@ struct AppleTestConnectionView: View {
                 }
 
                 if !coordinator.pendingOrdinarySaves.isEmpty {
-                    Divider()
+                    if !coordinator.recoveryJournals.isEmpty { Divider() }
                     Label("Captured evidence waiting to be saved", systemImage: "exclamationmark.triangle")
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(WorkspaceStyle.warning)
