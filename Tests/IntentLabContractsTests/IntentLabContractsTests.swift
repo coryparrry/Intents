@@ -94,16 +94,23 @@ final class IntentLabContractsTests: XCTestCase {
         """.utf8)
         var declaration = try JSONDecoder.intentLab.decode(IntentLabIntegrationDeclaration.self, from: data)
         XCTAssertTrue(declaration.allowsCleanupOperation("none"))
+        XCTAssertEqual(declaration.resolvedCleanupOperation("none"), "none")
         XCTAssertFalse(declaration.allowsCleanupOperation("delete-records"))
         XCTAssertFalse(declaration.allowsCleanupOperation("none", requiresMutationCleanup: true))
+        XCTAssertNil(declaration.resolvedCleanupOperation("none", requiresMutationCleanup: true))
         declaration.cleanupOperations = [""]
         XCTAssertTrue(declaration.allowsCleanupOperation("none"))
+        XCTAssertEqual(declaration.resolvedCleanupOperation("none"), "")
         XCTAssertFalse(declaration.allowsCleanupOperation("none", requiresMutationCleanup: true))
         declaration.cleanupOperations = ["reset"]
         XCTAssertFalse(declaration.allowsCleanupOperation("none"))
+        XCTAssertNil(declaration.resolvedCleanupOperation("none"))
         XCTAssertTrue(declaration.allowsCleanupOperation("reset"))
+        XCTAssertEqual(declaration.resolvedCleanupOperation("reset"), "reset")
         XCTAssertTrue(declaration.allowsCleanupOperation("reset", requiresMutationCleanup: true))
+        XCTAssertEqual(declaration.resolvedCleanupOperation("reset", requiresMutationCleanup: true), "reset")
         XCTAssertFalse(declaration.allowsCleanupOperation("resetNotes", requiresMutationCleanup: true))
+        XCTAssertNil(declaration.resolvedCleanupOperation("resetNotes", requiresMutationCleanup: true))
         declaration.cleanupOperations = ["restore-synthetic-records"]
         XCTAssertTrue(declaration.allowsCleanupOperation("restore-synthetic-records"))
         XCTAssertTrue(declaration.allowsCleanupOperation("restore-synthetic-records", requiresMutationCleanup: true))
@@ -119,11 +126,18 @@ final class IntentLabContractsTests: XCTestCase {
         var declaration = try JSONDecoder.intentLab.decode(IntentLabIntegrationDeclaration.self, from: data)
         XCTAssertTrue(declaration.allowsPreparationOperation("none"))
         XCTAssertTrue(declaration.allowsPreparationOperation(""))
+        XCTAssertEqual(declaration.resolvedPreparationOperation("none"), "")
+        declaration.preparationOperations = ["", "reset"]
+        XCTAssertEqual(declaration.resolvedPreparationOperation("none"), "")
         declaration.preparationOperations = ["none"]
         XCTAssertTrue(declaration.allowsPreparationOperation(""))
+        XCTAssertEqual(declaration.resolvedPreparationOperation("none"), "none")
+        XCTAssertEqual(declaration.resolvedPreparationOperation(""), "none")
         declaration.preparationOperations = ["resetNotes"]
         XCTAssertFalse(declaration.allowsPreparationOperation("none"))
+        XCTAssertNil(declaration.resolvedPreparationOperation("none"))
         XCTAssertTrue(declaration.allowsPreparationOperation("resetNotes"))
+        XCTAssertEqual(declaration.resolvedPreparationOperation("resetNotes"), "resetNotes")
         XCTAssertFalse(declaration.allowsPreparationOperation("reset"))
         XCTAssertFalse(declaration.allowsPreparationOperation("noop"))
     }

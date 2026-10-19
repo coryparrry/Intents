@@ -191,27 +191,42 @@ public struct IntentLabIntegrationDeclaration: Codable {
 
     private static let noOpOperations = ["", "none", "noop", "readOnly"]
 
-    private static func allows(operationID: String, declared: [String]) -> Bool {
-        declared.contains(operationID)
-            || (noOpOperations.contains(operationID)
-                && declared.contains(where: noOpOperations.contains))
+    private static func resolve(_ operationID: String, declared: [String]) -> String? {
+        if declared.contains(operationID) { return operationID }
+        guard noOpOperations.contains(operationID) else { return nil }
+        return declared.first(where: noOpOperations.contains)
     }
 
     /// Old read-only declarations did not include cleanupOperations. They may
     /// continue to request a no-op, but never an undeclared mutating operation.
+    public func resolvedCleanupOperation(
+        _ operationID: String,
+        requiresMutationCleanup: Bool = false
+    ) -> String? {
+        if requiresMutationCleanup {
+            guard !Self.noOpOperations.contains(operationID), let cleanupOperations,
+                  cleanupOperations.contains(operationID) else { return nil }
+            return operationID
+        }
+        guard let cleanupOperations else {
+            return Self.noOpOperations.contains(operationID) ? operationID : nil
+        }
+        return Self.resolve(operationID, declared: cleanupOperations)
+    }
+
     public func allowsCleanupOperation(
         _ operationID: String,
         requiresMutationCleanup: Bool = false
     ) -> Bool {
-        if requiresMutationCleanup {
-            guard !Self.noOpOperations.contains(operationID), let cleanupOperations else { return false }
-            return cleanupOperations.contains(operationID)
-        }
-        return Self.allows(operationID: operationID, declared: cleanupOperations ?? Self.noOpOperations)
+        resolvedCleanupOperation(operationID, requiresMutationCleanup: requiresMutationCleanup) != nil
+    }
+
+    public func resolvedPreparationOperation(_ operationID: String) -> String? {
+        Self.resolve(operationID, declared: preparationOperations)
     }
 
     public func allowsPreparationOperation(_ operationID: String) -> Bool {
-        Self.allows(operationID: operationID, declared: preparationOperations)
+        resolvedPreparationOperation(operationID) != nil
     }
 
     /// Returns the one app-declared control that exactly matches the frozen local
