@@ -45,7 +45,23 @@ public actor AutomationDeviceLeaseManager {
         }
         var stagingName: String { "." + URL(fileURLWithPath: path).lastPathComponent + ".payload.tmp" }
         var stagingURL: URL { URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent(stagingName) }
-        /// Recovery observes only. It never creates directories, removes or rewrites a serialized path.
+        /// Recovery rewrites only the exact recorded frozen derivative, after runner absence is proven.
+        func restoreClean() throws {
+            try validate()
+            let file = try AutomationDurableFile(url: URL(fileURLWithPath: path), maximumBytes: 4_194_304, existingParentOnly: true)
+            guard file.url.path == path else { throw AutomationContractError.invalidIdentity }
+            let staged = try AutomationDurableFile(url: stagingURL, maximumBytes: 4_194_304, existingParentOnly: true)
+            guard try staged.read() == nil else { throw AutomationContractError.conflictingOperation }
+            guard let data = try file.read() else { return }
+            let digest = AutomationArtifactRegistry.digest(data)
+            if digest == cleanDigest { return }
+            guard digest == frozenDigest,
+                  let payload = try? AutomationAppleHostPayloadFile(data: data, url: URL(fileURLWithPath: path), scope: scope),
+                  payload.recoveryReference == self else {
+                throw AutomationContractError.conflictingOperation
+            }
+            try payload.clean(scope: scope)
+        }
         func verifyClean() throws {
             try validate()
             let file = try AutomationDurableFile(url: URL(fileURLWithPath: path), maximumBytes: 4_194_304, existingParentOnly: true)
@@ -298,7 +314,7 @@ public actor AutomationDeviceLeaseManager {
                   state.generations[record.target.leaseKey] == record.generation else {
                 throw AutomationContractError.unknownLease
             }
-            try campaign.privatePayload?.verifyClean()
+            try campaign.privatePayload?.restoreClean()
             state.campaigns.removeValue(forKey: record.target.leaseKey)
         }
     }
@@ -321,7 +337,7 @@ public actor AutomationDeviceLeaseManager {
                   state.generations[record.target.leaseKey] == record.generation else {
                 throw AutomationContractError.unknownLease
             }
-            try campaign.privatePayload?.verifyClean()
+            try campaign.privatePayload?.restoreClean()
             state.campaigns.removeValue(forKey: record.target.leaseKey)
         }
     }

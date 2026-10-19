@@ -470,7 +470,7 @@ enum XcodeTestExecutorError: LocalizedError, Sendable {
     case buildFailed(Int32, String)
     case productMissing(String)
     case resourceMismatch(String)
-    case evidenceMissing
+    case evidenceMissing(testFailure: String?)
     case cancelled
     case timedOut
     case connectionCheck(String)
@@ -485,7 +485,12 @@ enum XcodeTestExecutorError: LocalizedError, Sendable {
         case .buildFailed(let code, let log): "The UI-test bundle failed to build (exit \(code)). \(log)"
         case .productMissing(let message): "The built product could not be verified: \(message)"
         case .resourceMismatch(let message): "The generated test resources are invalid: \(message)"
-        case .evidenceMissing: "The result bundle contains no IntentLabEvidence JSON attachment."
+        case .evidenceMissing(let testFailure):
+            if let testFailure, !testFailure.isEmpty {
+                "The UI test failed before recording IntentLabEvidence: \(testFailure)"
+            } else {
+                "The result bundle contains no IntentLabEvidence JSON attachment."
+            }
         case .cancelled: "The scenario execution was cancelled. Its final device-side outcome is not assumed."
         case .timedOut: "The scenario execution exceeded its deadline. Late evidence remains bound to this timed-out invocation."
         case .connectionCheck(let message): "The integration connection check failed: \(message)"
@@ -3040,7 +3045,13 @@ actor XcodeTestExecutor {
                 try await persistence.saveJournal(journal)
             }
             let testCount = resultBundleTestCount(configuration: configuration, resultBundle: resultBundle)
-            guard !evidenceAttachments.isEmpty else { throw XcodeTestExecutorError.evidenceMissing }
+            let testFailureMessages = resultBundleFailureMessages(configuration: configuration, resultBundle: resultBundle)
+            guard !evidenceAttachments.isEmpty else {
+                let testFailure = testFailureMessages.first(where: {
+                    !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }).map { String($0.prefix(500)) }
+                throw XcodeTestExecutorError.evidenceMissing(testFailure: testFailure)
+            }
             guard !cancelledInvocationIDs.contains(invocationID) else {
                 throw XcodeTestExecutorError.cancelled
             }
@@ -3053,7 +3064,7 @@ actor XcodeTestExecutor {
                 evidenceAttachments: evidenceAttachments,
                 reportedTestCount: testCount,
                 processExitCode: testExit,
-                testFailureMessages: resultBundleFailureMessages(configuration: configuration, resultBundle: resultBundle),
+                testFailureMessages: testFailureMessages,
                 measurementImplementation: measurement
             )
         } catch {
@@ -3377,7 +3388,7 @@ actor XcodeTestExecutor {
             .cancellation
         case XcodeTestExecutorError.timedOut:
             .timeout
-        case XcodeTestExecutorError.evidenceMissing:
+        case XcodeTestExecutorError.evidenceMissing(_):
             .incompleteResultBundle
         case XcodeTestExecutorError.resourceMismatch,
              XcodeTestExecutorError.productMissing:

@@ -161,8 +161,10 @@ public actor AutomationOwnedCommand {
         let grace = ContinuousClock.now.advanced(by: .seconds(2))
         while child.isRunning && ContinuousClock.now < grace { try? await Task.sleep(for: .milliseconds(50)) }
         if child.isRunning {
-            guard let identity, presenceReader(identity) == .matching else { return false }
-            _ = kill(child.processIdentifier, SIGKILL)
+            guard let identity else { return false }
+            let observed = presenceReader(identity)
+            guard observed == .matching, presenceReader(identity) == .matching else { return false }
+            _ = kill(identity.pid, SIGKILL)
         }
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while !terminated(child) && ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(50)) }

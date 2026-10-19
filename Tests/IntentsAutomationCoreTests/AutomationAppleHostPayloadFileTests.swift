@@ -12,7 +12,7 @@ final class AutomationAppleHostPayloadFileTests: XCTestCase {
         let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0), url = root.appendingPathComponent("host.xctestrun")
         return (try .init(data: data, url: url, scope: scope), url, data)
     }
-    func testDurablePendingPayloadFencesReleaseAndReloadedRecoveryUntilExactSanitation() async throws {
+    func testDurablePendingPayloadFencesReleaseAndRecoveryRestoresExactPayload() async throws {
         for absent in [false, true] {
             let (file, url, data) = try fixture(), storeURL = url.deletingLastPathComponent().appendingPathComponent("leases.json")
             let target = TargetIdentity(id: "device", kind: .simulator), manager = try AutomationDeviceLeaseManager(storeURL: storeURL)
@@ -29,14 +29,16 @@ final class AutomationAppleHostPayloadFileTests: XCTestCase {
             try store.transaction { state in state.campaigns[target.leaseKey]?.owner.startIdentity = "exited-owner-fixture" }
             let reopened = try AutomationDeviceLeaseManager(storeURL: storeURL), records = try await reopened.recoveryRecords()
             let record = try XCTUnwrap(records.first); XCTAssertEqual(record.privatePayload, file.recoveryReference)
-            do { try await reopened.reconcile(record, commandsDrained: true, ownedRunnerTerminated: true); XCTFail("Recovery released unsanitized bytes") }
-            catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
-            XCTAssertEqual(try Data(contentsOf: url), data)
+            if absent { try FileManager.default.removeItem(at: url) }
+            try await reopened.reconcile(record, commandsDrained: true, ownedRunnerTerminated: true)
+            if absent {
+                XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+            } else {
+                XCTAssertEqual(AutomationArtifactRegistry.digest(try Data(contentsOf: url)), file.recoveryReference.cleanDigest)
+            }
             var forged = record; forged.privatePayload = nil
             do { try await reopened.reconcile(forged, commandsDrained: true, ownedRunnerTerminated: true); XCTFail("Caller omitted durable pending payload") }
             catch { XCTAssertEqual(error as? AutomationContractError, .unknownLease) }
-            if absent { try FileManager.default.removeItem(at: url) } else { try file.clean(scope: scope) }
-            try await reopened.reconcile(record, commandsDrained: true, ownedRunnerTerminated: true)
             let next = try await reopened.acquire(runID: "next", target: target, control: .system)
             XCTAssertEqual(next.generation, lease.generation + 1)
         }
@@ -57,6 +59,85 @@ final class AutomationAppleHostPayloadFileTests: XCTestCase {
         do { try await reopened.reconcile(record, commandsDrained: true, ownedRunnerTerminated: true); XCTFail("Recovery overlooked orphan stage") } catch {}
         XCTAssertEqual(try Data(contentsOf: orphan), partial); XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
         let retained = try await reopened.recoveryRecords(); XCTAssertEqual(retained, records)
+    }
+    func testReconcileRestoresExactFrozenPayloadAfterOwnerIsAbsent() async throws {
+        let (file, url, data) = try fixture(), storeURL = url.deletingLastPathComponent().appendingPathComponent("leases.json")
+        let target = TargetIdentity(id: "device", kind: .simulator), manager = try AutomationDeviceLeaseManager(storeURL: storeURL)
+        let lease = try await manager.acquire(runID: scope.runId, target: target, control: .system)
+        try await manager.recordPrivatePayload(file, lease: lease)
+        try file.write(data)
+        let store = try AutomationLeaseStore(url: storeURL)
+        try store.transaction { $0.campaigns[target.leaseKey]?.owner = .init(pid: Int32.max, startIdentity: "exited-owner") }
+        let reopened = try AutomationDeviceLeaseManager(storeURL: storeURL)
+        let records = try await reopened.recoveryRecords()
+        let record = try XCTUnwrap(records.first)
+        XCTAssertEqual(record.owner.presence(), .absent)
+
+        try await reopened.reconcile(record, commandsDrained: true, ownedRunnerTerminated: true)
+
+        let absent = try await reopened.campaignAbsent(target: target)
+        XCTAssertTrue(absent)
+        XCTAssertEqual(AutomationArtifactRegistry.digest(try Data(contentsOf: url)), file.recoveryReference.cleanDigest)
+    }
+    func testCurrentProcessResetRestoresExactFrozenPayload() async throws {
+        let (file, url, data) = try fixture(), storeURL = url.deletingLastPathComponent().appendingPathComponent("leases.json")
+        let target = TargetIdentity(id: "device", kind: .simulator), manager = try AutomationDeviceLeaseManager(storeURL: storeURL)
+        let lease = try await manager.acquire(runID: scope.runId, target: target, control: .system)
+        try await manager.recordPrivatePayload(file, lease: lease)
+        try file.write(data)
+        let record = try await manager.currentRecord(lease)
+
+        try await manager.resetCurrentProcessCampaign(record)
+
+        let absent = try await manager.campaignAbsent(target: target)
+        XCTAssertTrue(absent)
+        XCTAssertEqual(AutomationArtifactRegistry.digest(try Data(contentsOf: url)), file.recoveryReference.cleanDigest)
+    }
+    func testRecoveryPreservesUnexpectedPayloadBytesAndCampaign() async throws {
+        let (file, url, _) = try fixture(), storeURL = url.deletingLastPathComponent().appendingPathComponent("leases.json")
+        let target = TargetIdentity(id: "device", kind: .simulator), manager = try AutomationDeviceLeaseManager(storeURL: storeURL)
+        let lease = try await manager.acquire(runID: scope.runId, target: target, control: .system)
+        try await manager.recordPrivatePayload(file, lease: lease)
+        let unexpected = Data("foreign payload bytes".utf8)
+        try unexpected.write(to: url)
+        let store = try AutomationLeaseStore(url: storeURL)
+        try store.transaction { $0.campaigns[target.leaseKey]?.owner = .init(pid: Int32.max, startIdentity: "exited-owner") }
+        let reopened = try AutomationDeviceLeaseManager(storeURL: storeURL)
+        let records = try await reopened.recoveryRecords()
+        let record = try XCTUnwrap(records.first)
+
+        do {
+            try await reopened.reconcile(record, commandsDrained: true, ownedRunnerTerminated: true)
+            XCTFail("Changed payload bytes were restored")
+        } catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
+
+        XCTAssertEqual(try Data(contentsOf: url), unexpected)
+        let retained = try await reopened.recoveryRecords()
+        XCTAssertEqual(retained, [record])
+    }
+    func testRecoveryPreservesFrozenPayloadAndOrphanStage() async throws {
+        let (file, url, data) = try fixture(), storeURL = url.deletingLastPathComponent().appendingPathComponent("leases.json")
+        let target = TargetIdentity(id: "device", kind: .simulator), manager = try AutomationDeviceLeaseManager(storeURL: storeURL)
+        let lease = try await manager.acquire(runID: scope.runId, target: target, control: .system)
+        try await manager.recordPrivatePayload(file, lease: lease)
+        try file.write(data)
+        let staged = Data(data.prefix(data.count / 2))
+        try staged.write(to: file.recoveryReference.stagingURL)
+        let store = try AutomationLeaseStore(url: storeURL)
+        try store.transaction { $0.campaigns[target.leaseKey]?.owner = .init(pid: Int32.max, startIdentity: "exited-owner") }
+        let reopened = try AutomationDeviceLeaseManager(storeURL: storeURL)
+        let records = try await reopened.recoveryRecords()
+        let record = try XCTUnwrap(records.first)
+
+        do {
+            try await reopened.reconcile(record, commandsDrained: true, ownedRunnerTerminated: true)
+            XCTFail("Orphan stage was ignored")
+        } catch { XCTAssertEqual(error as? AutomationContractError, .conflictingOperation) }
+
+        XCTAssertEqual(try Data(contentsOf: url), data)
+        XCTAssertEqual(try Data(contentsOf: file.recoveryReference.stagingURL), staged)
+        let retained = try await reopened.recoveryRecords()
+        XCTAssertEqual(retained, [record])
     }
     func testRecoveryRefusesChangedLinkedAndMissingParentWithoutMutatingThem() async throws {
         let (file, url, data) = try fixture(); try file.write(data)

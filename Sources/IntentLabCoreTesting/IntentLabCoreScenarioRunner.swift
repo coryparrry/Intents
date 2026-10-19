@@ -303,7 +303,7 @@ public enum IntentLabScenarioEngine {
                   let requiredCapabilities = invocation.requiredCapabilities,
                   Set(loaded.capabilities).isSubset(of: integration.supportedCapabilities),
                   loaded.targetBundleIdentifier == scenario.target.bundleIdentifier,
-                  loaded.preparationOperations.contains(scenario.fixture.preparationOperation),
+                  loaded.allowsPreparationOperation(scenario.fixture.preparationOperation),
                   loaded.allowsCleanupOperation(
                     scenario.fixture.cleanupOperation,
                     requiresMutationCleanup: scenario.safety.mutationPolicy == .syntheticMutation

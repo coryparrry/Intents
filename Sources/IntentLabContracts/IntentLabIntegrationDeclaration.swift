@@ -203,6 +203,12 @@ public struct IntentLabIntegrationDeclaration: Codable {
         return (cleanupOperations ?? noOps).contains(operationID)
     }
 
+    public func allowsPreparationOperation(_ operationID: String) -> Bool {
+        let noOps = ["", "none", "noop", "readOnly"]
+        return preparationOperations.contains(operationID)
+            || (noOps.contains(operationID) && preparationOperations.contains(where: noOps.contains))
+    }
+
     /// Returns the one app-declared control that exactly matches the frozen local
     /// feature contract. A changed interface digest requires renewed negotiation.
     public func localFeatureControl(

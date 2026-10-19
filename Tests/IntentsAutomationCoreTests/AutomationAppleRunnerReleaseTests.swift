@@ -110,18 +110,21 @@ extension AutomationAppleRouteDriverTests {
         XCTAssertTrue(retry.runnerTerminated); XCTAssertTrue(retry.privatePayloadCleaned)
         try await h.leases.release(h.lease, commandsDrained: retry.commandsDrained, ownedRunnerTerminated: retry.runnerTerminated)
     }
-    func testRunnerIgnoringTerminationRetainsOwnershipUntilItIsGone() async throws {
+    func testRunnerIgnoringTerminationIsEscalatedToKill() async throws {
         let h = try await fixture(liveHost: true)
         let runner = try AutomationLiveRunnerFixture.launch(installedExecutable(h), ignoringTerminate: true, in: self)
-        let driver = try await adopt(h, runner)
+        let witness = ReleasePresenceWitness()
+        let driver = try await adopt(h, runner, presence: { witness.read($0) })
         let started = ContinuousClock.now
         let proof = await driver.release(scope: h.scope, lease: h.lease)
         XCTAssertGreaterThanOrEqual(ContinuousClock.now - started, .seconds(2))
-        try await assertOwnershipRetained(h, proof, runner)
-        try await AutomationLiveRunnerFixture.forceStop(runner)
-        let retry = await driver.release(scope: h.scope, lease: h.lease)
-        XCTAssertTrue(retry.runnerTerminated); XCTAssertTrue(retry.privatePayloadCleaned)
-        try await h.leases.release(h.lease, commandsDrained: retry.commandsDrained, ownedRunnerTerminated: retry.runnerTerminated)
+        XCTAssertTrue(proof.commandsDrained)
+        XCTAssertTrue(proof.runnerTerminated, witness.summary)
+        XCTAssertTrue(proof.privatePayloadCleaned, witness.summary)
+        let readings = witness.readings
+        XCTAssertTrue(readings.dropFirst(2).contains(.matching), "Runner should remain matching after SIGTERM: " + witness.summary)
+        XCTAssertTrue([.absent, .replaced].contains(runner.identity.presence()))
+        try await h.leases.release(h.lease, commandsDrained: proof.commandsDrained, ownedRunnerTerminated: proof.runnerTerminated)
     }
     func testRunnerWhoseInstalledProductDriftedIsNeverSignalled() async throws {
         let h = try await fixture(liveHost: true), runner = try AutomationLiveRunnerFixture.launch(installedExecutable(h), in: self)

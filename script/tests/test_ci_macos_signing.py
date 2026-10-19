@@ -281,7 +281,7 @@ class OwnedGroupTests(unittest.TestCase):
                 self.fail("Tiny child process did not become ready")
             time.sleep(0.01)
 
-    def test_exited_leader_still_owns_and_stops_its_live_same_group_descendant(self):
+    def _run_exited_leader_scenario(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             heartbeat, ready = root / "heartbeat", root / "ready"
@@ -317,6 +317,13 @@ os._exit(7)
                     except (ProcessLookupError, PermissionError):
                         pass
                     child.wait(timeout=5)
+
+    def test_exited_leader_still_owns_and_stops_its_live_same_group_descendant(self):
+        self._run_exited_leader_scenario()
+
+    def test_ctypes_waitid_fallback_observes_exit_without_reaping_leader(self):
+        with mock.patch.object(signing.os, "waitid", None, create=True):
+            self._run_exited_leader_scenario()
 
     def test_grace_allows_nested_separate_session_child_cleanup(self):
         with tempfile.TemporaryDirectory() as directory:

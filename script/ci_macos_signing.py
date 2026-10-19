@@ -4,6 +4,8 @@
 import argparse
 import base64
 import binascii
+import ctypes
+import errno
 import os
 from pathlib import Path
 import re
@@ -99,10 +101,51 @@ def wait_for_exit(child):
     # Observe exit without reaping: the leader reserves its process-group ID
     # until cleanup has sent its final signal to all same-group descendants.
     while True:
-        exited = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        waitid = getattr(os, "waitid", None)
+        if waitid is None:
+            exited = _darwin_waitid(child.pid)
+            exited_code = 1
+        else:
+            exited = waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            exited_code = os.CLD_EXITED
         if exited is not None and exited.si_pid == child.pid:
-            return exited.si_status if exited.si_code == os.CLD_EXITED else -exited.si_status
+            return exited.si_status if exited.si_code == exited_code else -exited.si_status
         time.sleep(0.1)
+
+
+class _DarwinSigval(ctypes.Union):
+    _fields_ = [("sival_int", ctypes.c_int), ("sival_ptr", ctypes.c_void_p)]
+
+
+class _DarwinSiginfo(ctypes.Structure):
+    _fields_ = [
+        ("si_signo", ctypes.c_int),
+        ("si_errno", ctypes.c_int),
+        ("si_code", ctypes.c_int),
+        ("si_pid", ctypes.c_int),
+        ("si_uid", ctypes.c_uint),
+        ("si_status", ctypes.c_int),
+        ("si_addr", ctypes.c_void_p),
+        ("si_value", _DarwinSigval),
+        ("si_band", ctypes.c_long),
+        ("__pad", ctypes.c_ulong * 7),
+    ]
+
+
+def _darwin_waitid(pid):
+    libc = ctypes.CDLL(None, use_errno=True)
+    waitid = libc.waitid
+    waitid.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.POINTER(_DarwinSiginfo), ctypes.c_int]
+    waitid.restype = ctypes.c_int
+    while True:
+        info = _DarwinSiginfo()
+        ctypes.set_errno(0)
+        result = waitid(1, pid, ctypes.byref(info), 0x04 | 0x01 | 0x20)
+        if result == 0:
+            return info if info.si_pid else None
+        error = ctypes.get_errno()
+        if error != errno.EINTR:
+            raise OSError(error, os.strerror(error))
 
 
 def stop_child(child, grace_seconds=20):

@@ -104,6 +104,22 @@ final class IntentLabContractsTests: XCTestCase {
         XCTAssertThrowsError(try declaration.validate())
     }
 
+    func testPreparationOperationAllowsDeclaredNoOpAliasesOnly() throws {
+        let data = Data("""
+        {"schemaVersion":1,"id":"example-integration","version":"1","targetBundleIdentifier":"com.example.App","projectIdentity":"App.xcodeproj","targetIdentity":"AppUITests","supportedHarnessProtocols":["intent-lab-v2"],"actions":[],"resultProjections":[],"preparationOperations":[""],"observers":[],"isolation":{"kind":"readOnly"},"capabilities":[]}
+        """.utf8)
+        var declaration = try JSONDecoder.intentLab.decode(IntentLabIntegrationDeclaration.self, from: data)
+        XCTAssertTrue(declaration.allowsPreparationOperation("none"))
+        XCTAssertTrue(declaration.allowsPreparationOperation(""))
+        declaration.preparationOperations = ["none"]
+        XCTAssertTrue(declaration.allowsPreparationOperation(""))
+        declaration.preparationOperations = ["resetNotes"]
+        XCTAssertFalse(declaration.allowsPreparationOperation("none"))
+        XCTAssertTrue(declaration.allowsPreparationOperation("resetNotes"))
+        XCTAssertFalse(declaration.allowsPreparationOperation("reset"))
+        XCTAssertFalse(declaration.allowsPreparationOperation("noop"))
+    }
+
     private enum LifecycleTestError: Error {
         case actionFailed
         case cleanupFailed
