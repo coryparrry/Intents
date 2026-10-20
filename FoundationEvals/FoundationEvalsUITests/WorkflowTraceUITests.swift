@@ -287,11 +287,23 @@ final class WorkflowTraceUITests: XCTestCase {
             let wasSidebarVisible = app.buttons["Hide Sidebar"].exists
             let sidebar = app.buttons[wasSidebarVisible ? "Hide Sidebar" : "Show Sidebar"]
             sidebar.click()
+            var previousFrames: [CGRect] = []
+            var stableSince = ContinuousClock.now
             let resized = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                app.buttons[wasSidebarVisible ? "Show Sidebar" : "Hide Sidebar"].exists
-                    && list.frame.width != originalWidth
+                let frames = [list.frame, details.frame]
+                guard app.buttons[wasSidebarVisible ? "Show Sidebar" : "Hide Sidebar"].exists,
+                      frames[0].width != originalWidth else {
+                    previousFrames = []
+                    return false
+                }
+                guard frames == previousFrames else {
+                    previousFrames = frames
+                    stableSince = .now
+                    return false
+                }
+                return stableSince.duration(to: .now) >= .milliseconds(250)
             }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [resized], timeout: 5), .completed,
+            XCTAssertEqual(XCTWaiter.wait(for: [resized], timeout: 10), .completed,
                            "Toggling the sidebar must finish resizing the trace viewport")
             XCTAssertNotEqual(list.frame.width, originalWidth)
             XCTAssertLessThanOrEqual(list.frame.maxX, details.frame.minX + 2)
