@@ -24,7 +24,9 @@ struct EvaluationJudgeCheckSource: Sendable {
 }
 
 actor EvaluationReassessmentService {
-    private let client = EvaluationCompatibleJudgeClient()
+    private let client: EvaluationCompatibleJudgeClient
+
+    init(client: EvaluationCompatibleJudgeClient = .init()) { self.client = client }
 
     func reassess(
         run: EvaluationRun,
@@ -109,6 +111,7 @@ actor EvaluationReassessmentService {
                     suite: semanticSuite,
                     images: images,
                     toolEvidence: evidence(from: saved),
+                    subjectContext: try EvaluationJudgeSubjectContext.resolved(saved.judgeSubjectContext, evaluationCase: evaluationCase),
                     resolved: resolved
                 )
                 identity = judged.identity
@@ -244,7 +247,9 @@ actor EvaluationReassessmentService {
                         response: sample.response, evaluationCase: evaluationCase,
                         effectivePrompt: sample.effectivePrompt ?? sample.prompt,
                         suite: semanticSuite, images: source.images,
-                        toolEvidence: evidence(from: sample), resolved: resolved
+                        toolEvidence: evidence(from: sample),
+                        subjectContext: try EvaluationJudgeSubjectContext.resolved(sample.judgeSubjectContext, evaluationCase: evaluationCase),
+                        resolved: resolved
                     )
                     let remapped = judged.judgment.checks.map { check in
                         var result = check

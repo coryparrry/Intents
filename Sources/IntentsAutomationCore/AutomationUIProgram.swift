@@ -37,8 +37,9 @@ public struct AutomationUIProgram: Codable, Equatable, Sendable {
                   bindings.allSatisfy({ Self.identifier($0.key) && $0.value.utf16.count <= 32768 }) else {
                 throw AutomationContractError.invalidPlan("Malformed direct XCUITest program")
             }
-            let supported: [UIHostStep.Kind] = [.launch, .tap, .typeText, .clearAndType, .swipe, .waitFor, .assert, .screenshot, .readProperty]
+            let supported: [UIHostStep.Kind] = [.launch, .tap, .typeText, .clearAndType, .swipe, .waitFor, .assert, .screenshot, .readProperty, .readHierarchy]
             for step in steps {
+                if step.kind == .readHierarchy { try step.validateHierarchyRead() }
                 guard Self.identifier(step.id), supported.contains(step.kind), step.operation == nil,
                       step.inputBindings == nil, step.setupChecks == nil,
                       (step.text?.utf16.count ?? 0) <= 32768,

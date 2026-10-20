@@ -18,6 +18,32 @@ struct AutomationNativeApplicationListing: Codable, Equatable, Sendable {
     let truncated: Bool
 }
 extension AppAutomationStore {
+    var firstChecksUnavailableReason: String? {
+        guard candidate?.kind == .sourceTarget, preparationDestination == .physical else { return nil }
+        return "Automatic checks are unavailable on physical devices. Choose iOS Simulator, or use Siri recognised-text submission on this device."
+    }
+    var selectedWorkflowUnavailableReason: String? {
+        workflowUnavailableReason(route: workflowRoute, destination: preparationDestination)
+    }
+    func workflowUnavailableReason(route: String, destination: AutomationNativePreparationDestination) -> String? {
+        if candidate?.kind == .installedProduct {
+            return "Choose and prepare this app’s Xcode project to run a workflow. Packaged apps support inspection only."
+        }
+        guard candidate?.kind == .sourceTarget else { return nil }
+        if destination == .physical, route != "siri" {
+            return "UI workflows, system actions and new-record checks are unavailable on physical devices. Choose iOS Simulator, or select Siri recognised-text submission before preparing this device."
+        }
+        if destination != .physical, route == "siri" {
+            return "Siri recognised-text submission requires a physical iPhone or iPad."
+        }
+        if destination == .macOS, route == "fresh" {
+            return "New-record workflows are unavailable on Mac. Choose iOS Simulator."
+        }
+        if destination != .simulator, servedJavaScriptProfile != nil || automaticMetroRecipe != nil {
+            return "This JavaScript server recipe requires iOS Simulator."
+        }
+        return nil
+    }
     var isInstalledMacUI: Bool { candidate?.kind == .installedProduct && candidate?.app?.platform == "macos" }
     var isMacWorkflowUnavailable: Bool {
         isInstalledMacUI || (candidate?.kind == .sourceTarget && preparationDestination == .macOS && isFreshRecordWorkflow)

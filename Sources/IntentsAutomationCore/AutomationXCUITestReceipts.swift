@@ -82,8 +82,11 @@ public enum AutomationXCUITestReceiptImporter {
             let step = uiPlan.steps[receipt.stepIndex]
             guard receipt.segmentID == step.segmentID, receipt.stepID == step.id, receipt.kind == step.kind,
                   !receipt.completed || receipt.error == nil else { throw AutomationContractError.missingEvidence("UI receipt operation mismatch") }
-            if receipt.completed, [.invokeIntent, .query, .readProperty, .waitFor, .assert].contains(step.kind), receipt.value == nil {
+            if receipt.completed, [.invokeIntent, .query, .readProperty, .readHierarchy, .waitFor, .assert].contains(step.kind), receipt.value == nil {
                 throw AutomationContractError.missingEvidence("Completed operation is missing its result")
+            }
+            if step.kind == .readHierarchy, let value = receipt.value {
+                try UIHostHierarchyReadback.validate(value)
             }
             if receipt.completed || receipt.error != nil {
                 guard terminal.updateValue(receipt, forKey: receipt.stepIndex) == nil else { throw AutomationContractError.missingEvidence("Duplicate terminal UI receipt") }

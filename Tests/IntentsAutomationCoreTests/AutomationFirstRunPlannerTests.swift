@@ -43,7 +43,14 @@ final class AutomationFirstRunPlannerTests: XCTestCase {
         let proposal = try AutomationFirstRunPlanner.compile(catalog: catalog(), appName: "Example", approval: approval, capabilities: capabilities, includeActions: false, includeUI: true, localeIdentifier: "en_GB")
         let plan = try XCTUnwrap(proposal.plans.first)
         XCTAssertEqual(plan.execution.kind, .observeOnly); XCTAssertTrue(plan.requirements.isEmpty)
-        XCTAssertEqual(plan.execution.uiProgram?.operations.map(\.kind), [.locate])
+        XCTAssertEqual(plan.execution.uiProgram?.operations, [])
+        XCTAssertEqual(plan.execution.uiProgram?.steps?.map(\.kind), [.readHierarchy])
+        XCTAssertNil(plan.execution.uiProgram?.steps?.first?.query)
+        XCTAssertEqual(plan.provenance["ui.readback"], "bounded-hierarchy-v1")
+        var approved = approval; approved.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+        let lowered = try AutomationXCUITestPlan.assemble(plan: plan, approval: approved, attemptID: "initial", leaseGeneration: 1)
+        XCTAssertEqual(lowered.steps.map(\.kind), [.launch, .readHierarchy, .screenshot])
+        XCTAssertEqual(plan.budget.subjectOperations, lowered.steps.count)
         XCTAssertEqual(plan.budget.controllerCalls, 0)
         XCTAssertEqual(AutomationAssessment.assess(plan: plan, attemptID: "attempt", subjectDispatched: true, subjectCompleted: true, observations: []).summary, .executedUnassessed)
     }
@@ -57,12 +64,26 @@ final class AutomationFirstRunPlannerTests: XCTestCase {
         XCTAssertEqual(proposal.plans[1].execution.inputs["text"], .omission)
         XCTAssertTrue(proposal.gaps.contains { $0.contains("Missing") && $0.contains("record") })
     }
+    func testInitialReadbackReservesItsScreenshotInTheCampaignBudget() throws {
+        var limited = approval; limited.maximumActions = 2
+        let unavailable = try AutomationFirstRunPlanner.compile(catalog: catalog(), appName: "Example", approval: limited,
+            capabilities: capabilities, includeActions: false, includeUI: true, localeIdentifier: "en_GB")
+        XCTAssertTrue(unavailable.plans.isEmpty)
+        XCTAssertTrue(unavailable.gaps.contains { $0.contains("three approved operations") })
+        limited.maximumActions = 3
+        let available = try AutomationFirstRunPlanner.compile(catalog: catalog(), appName: "Example", approval: limited,
+            capabilities: capabilities, includeActions: false, includeUI: true, localeIdentifier: "en_GB")
+        let plan = try XCTUnwrap(available.plans.first)
+        limited.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+        let wire = try AutomationXCUITestPlan.assemble(plan: plan, approval: limited, attemptID: "initial", leaseGeneration: 1)
+        XCTAssertEqual(wire.steps.count, 3)
+    }
     func testCampaignIsDeterministicAndLimitedToTwentyIncludingUI() throws {
         let actions = (0..<30).reversed().map { action("Action\($0)") }
         let proposal = try AutomationFirstRunPlanner.compile(catalog: catalog(actions), appName: "Example", approval: approval, capabilities: capabilities, includeActions: true, includeUI: true, localeIdentifier: "en_GB")
-        XCTAssertEqual(proposal.plans.count, 19)
-        XCTAssertEqual(proposal.plans.dropFirst().map(\.execution.operation), actions.map(\.id).sorted().prefix(18).map { $0 })
-        XCTAssertEqual(2 + proposal.plans.dropFirst().count, 20, "Activation and readback consume the same shared operation budget as actions")
+        XCTAssertEqual(proposal.plans.count, 18)
+        XCTAssertEqual(proposal.plans.dropFirst().map(\.execution.operation), actions.map(\.id).sorted().prefix(17).map { $0 })
+        XCTAssertEqual(3 + proposal.plans.dropFirst().count, 20, "Activation, hierarchy readback and screenshot consume the same shared operation budget as actions")
         XCTAssertTrue(proposal.gaps.contains { $0.contains("20") })
     }
     func testUnsupportedDeclaredActionDoesNotDiscardIndependentObservation() throws {
@@ -173,17 +194,18 @@ final class AutomationFirstRunPlannerTests: XCTestCase {
         let forged = try evidence(entityCatalog, inputs: ["Record": ["task": .init(value: .entity(typeID: "Task", value: "invented"), origin: .verifiedQuery, evidence: "Claimed query")]])
         XCTAssertTrue(try compile(entityCatalog, evidence: forged).plans.isEmpty)
     }
-    func testScopedApprovalLimitIncludesInitialActivationAndRead() throws {
+    func testScopedApprovalLimitIncludesInitialActivationReadbackAndScreenshot() throws {
         let catalog = catalog((0..<5).map { action("Action\($0)") })
         var approval = approval; approval.maximumActions = 3
         let proposal = try compile(catalog, approval: approval, includeUI: true)
-        XCTAssertEqual(proposal.plans.count, 2)
+        XCTAssertEqual(proposal.plans.count, 1)
+        XCTAssertEqual(proposal.plans.first?.execution.kind, .observeOnly)
         XCTAssertTrue(proposal.gaps.contains { $0.contains("3 approved operations") })
         approval.maximumActions = 1
         let minimal = try compile(catalog, approval: approval, includeUI: true)
         XCTAssertEqual(minimal.plans.count, 1)
         XCTAssertEqual(minimal.plans.first?.execution.kind, .systemIntent)
-        XCTAssertTrue(minimal.gaps.contains { $0.contains("activation and readback") })
+        XCTAssertTrue(minimal.gaps.contains { $0.contains("activation, hierarchy readback and screenshot") })
     }
     private func context(_ catalog: ApplicationSurfaceCatalog) throws -> AutomationRecipeContext {
         .init(app: app, target: target, environmentID: approval.environmentID,
@@ -210,7 +232,7 @@ final class AutomationFirstRunPlannerTests: XCTestCase {
         let proposal = try compile(catalog, evidence: supplied, approval: approval, includeUI: true)
         XCTAssertEqual(proposal.plans, [saved], "Saved assertion contracts stay immutable and duplicate digests run once")
         XCTAssertEqual(proposal.plans.first?.requirements, saved.requirements)
-        XCTAssertTrue(proposal.gaps.contains { $0.contains("activation and readback") })
+        XCTAssertTrue(proposal.gaps.contains { $0.contains("activation, hierarchy readback and screenshot") })
     }
     func testSavedHostCaseIsDeduplicatedAndHostDriftRetainsGap() throws {
         let catalog = catalog([action("Record")])
@@ -253,6 +275,66 @@ final class AutomationFirstRunPlannerTests: XCTestCase {
         }
     }
     #if os(macOS)
+    func testSavedMacUIAndDurableReadCountsBothExecutionPhasesAtBudgetBoundary() throws {
+        let profile = try XCTUnwrap(AutomationDurableStateProfile.registered.first { $0.id == "duplicate-tasks-json.v2" })
+        XCTAssertEqual(profile.properties["owner"], "text")
+        XCTAssertEqual(profile.properties["completed"], "bool")
+        var app = AppIdentity(logicalID: "saved-mac", bundleID: profile.bundleID, platform: "macos",
+            productDigest: String(repeating: "a", count: 64))
+        app.canonicalBundlePath = "/fixture/Product.app"; app.sourceManifestDigest = String(repeating: "b", count: 64)
+        let target = TargetIdentity(id: "host-macos-local", kind: .nativeMac, loginSession: "first-run-durable-budget")
+        let catalog = ApplicationSurfaceCatalog(app: app, systemActions: [], systemDiscoveryComplete: false,
+            uiDiscoveryComplete: false, gaps: [])
+        let catalogDigest = try AutomationRecipeContext.catalogDigest(catalog)
+        let reader = AutomationDurableStateReader(profileID: profile.id, catalogDigest: catalogDigest,
+            hostProductDigest: String(repeating: "c", count: 64), hostXctestrunDigest: String(repeating: "d", count: 64),
+            app: app, target: target, environmentID: "owned", sourceManifestPath: "/fixture/source-manifest.json",
+            sourceFiles: Dictionary(uniqueKeysWithValues: profile.sourceDigests.filter { $0.key.hasSuffix(".swift") }
+                .map { ("/fixture/source/" + $0.key, $0.value) }), declaration: profile.schema())
+        var subject = AutomationSegment(id: "initial-view", kind: .observeOnly, phase: .subject,
+            operation: "Read the app hierarchy", effects: [.observe, .navigate], lifecycle: .persistedStateAcrossSegments)
+        subject.uiProgram = .init(steps: [.init(id: "hierarchy", kind: .readHierarchy)])
+        var observer = AutomationSegment(id: "saved-state", kind: .systemQuery, phase: .observe,
+            operation: "Read saved records", lifecycle: .persistedStateAcrossSegments)
+        observer.hostProgram = .init(operations: ["selected-records", "protected-records"].map { id in
+            .init(id: id, kind: .query, typeID: profile.entityTypeID, queryIDs: ["selected"], properties: profile.properties)
+        })
+        let requirement = AutomationRequirement(observationID: observer.id, expected: .bool(true), proof: .appState,
+            justification: "Previously approved saved-state requirement", checkID: "saved.completed", entityProperty: .init(operationID: "selected-records",
+                selection: .init(typeID: profile.entityTypeID, matchingProperties: ["owner": .text("Work")]), property: "completed"))
+        var saved = AutomationCase(id: "saved-mac-durable", app: app, target: target, environmentID: "owned",
+            execution: subject, observations: [observer], requirements: [requirement])
+        saved.provenance = ["catalog": catalogDigest, "ui.locale": "en_GB", "ui.backend": "xcuitest",
+            "firstRun.hostDigest": reader.hostProductDigest, "ui.preparedCatalogDigest": catalogDigest,
+            "apple.macHostProductDigest": reader.hostProductDigest, "apple.macXctestrunDigest": reader.hostXctestrunDigest]
+        saved = try reader.applying(to: saved)
+        let context = AutomationRecipeContext(app: app, target: target, environmentID: "owned", catalogDigest: catalogDigest,
+            hostDigest: reader.hostProductDigest, localeIdentifier: "en_GB")
+        var evidence = AutomationFirstRunInputEvidence(app: app, target: target, environmentID: "owned", catalogDigest: catalogDigest,
+            inputs: [:], savedCases: [try AutomationFrozenCase(plan: saved)], runtimeContext: context)
+        var approval = RunApproval(runID: "review", app: app, target: target, environmentID: "owned",
+            effects: [.observe, .navigate], maximumActions: 4, disposable: true)
+        var savedApproval = approval; savedApproval.maximumActions = 5
+        savedApproval.approvedCaseDigest = try AutomationFrozenCase.planDigest(saved)
+        // Admission must succeed before this fixture can test campaign counting.
+        try PlanValidator.validate(saved, approval: savedApproval, capabilities: .init(), purpose: .review)
+        let limited = try AutomationFirstRunPlanner.compile(catalog: catalog, appName: "Example", approval: approval,
+            capabilities: .init(), includeActions: true, includeUI: true, localeIdentifier: "en_GB", inputEvidence: evidence)
+        XCTAssertTrue(limited.plans.isEmpty, limited.gaps.joined(separator: "\n"))
+        XCTAssertTrue(limited.gaps.contains { $0.contains("need 5 operations") }, limited.gaps.joined(separator: "\n"))
+        approval.maximumActions = 5
+        // Duplicated saved selections must consume the combined cost only once.
+        evidence.savedCases.append(try AutomationFrozenCase(plan: saved))
+        let exact = try AutomationFirstRunPlanner.compile(catalog: catalog, appName: "Example", approval: approval,
+            capabilities: .init(), includeActions: true, includeUI: true, localeIdentifier: "en_GB", inputEvidence: evidence)
+        XCTAssertEqual(exact.plans, [saved], exact.gaps.joined(separator: "\n"))
+        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(saved)
+        let hosted = try AutomationXCUITestPlan.assemble(plan: saved, approval: approval, attemptID: "budget", leaseGeneration: 1)
+        XCTAssertEqual(hosted.steps.map(\.kind), [.launch, .readHierarchy, .screenshot])
+        XCTAssertFalse(hosted.steps.contains { $0.segmentID == observer.id })
+        XCTAssertEqual(try AutomationXCUITestPlan.durableObservationSuffix(plan: saved).first?.hostProgram?.operations.count, 2)
+    }
+
     func testRealEntityChoicesCompileFreshLookupAndRespectItsReadbackBudget() throws {
         var catalog = catalog([action("Record", parameters: [.init(name: "task", family: "entity", optional: false, typeID: "Task")])])
         catalog.entities = [.init(typeID: "Task", title: "Task", queryIdentifier: "TaskQuery", properties: ["title": "text"], propertyTitles: [:])]

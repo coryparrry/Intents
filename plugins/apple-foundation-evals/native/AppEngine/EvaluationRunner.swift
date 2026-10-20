@@ -243,6 +243,7 @@ actor EvaluationRunner {
             modelHistoryProjection: evaluationCase.conversation.modelHistoryProjection
         )
         var effectivePrompt: String?
+        var judgeSubjectContext: EvaluationJudgeSubjectContext?
         var generationStarted: ContinuousClock.Instant?
         var finalTurnStarted: ContinuousClock.Instant?
         var activePhase = "preparation"
@@ -460,6 +461,7 @@ actor EvaluationRunner {
                 projection: evaluationCase.conversation.modelHistoryProjection
             )
             conversationTrace.modelFacingHistoryEntryCountBeforeFinal = modelFacingHistory.count
+            judgeSubjectContext = EvaluationJudgeSubjectContext.capture(modelFacingHistory, instructions: suite.instructions)
             let historyEstimate = try await EvaluationInputTokenCounter.historyEstimate(
                 modelFacingHistory,
                 using: promptTokenCounter
@@ -475,6 +477,7 @@ actor EvaluationRunner {
                 tools: tools,
                 historyTokenCount: historyEstimate.count,
                 historyImageTokenCountAvailable: historyEstimate.imageTokenCountAvailable,
+                judgeSubjectContext: judgeSubjectContext,
                 tokenCounter: promptTokenCounter
             )
             imageInputTokenCountAvailable = imageInputTokenCountAvailable
@@ -570,6 +573,7 @@ actor EvaluationRunner {
                 scoringSuite.instructions = [suite.instructions, suite.features.profile.afterToolInstructions]
                     .filter { !$0.isEmpty }.joined(separator: "\n\n")
             }
+            judgeSubjectContext?.subjectInstructions = scoringSuite.instructions
             let scoringStarted = ContinuousClock.now
             let scoringSpanID = workflow.begin(kind: .scoring, title: "Score response", parentID: rootSpanID,
                 metadata: ["scoringMode": suite.scoringMode.rawValue])
@@ -585,6 +589,7 @@ actor EvaluationRunner {
                 contextSize: contextSize,
                 modelName: modelName,
                 toolEvidence: toolEvidence,
+                subjectContext: judgeSubjectContext,
                 tokenCounter: promptTokenCounter,
                 workflowRecorder: workflow
             )
@@ -635,7 +640,8 @@ actor EvaluationRunner {
                 judgeCost: scoring.cost,
                 fieldAssertionResults: assertionResults.isEmpty ? nil : assertionResults,
                 imageInputTokenCountAvailable: imageInputTokenCountAvailable,
-                workflowTrace: workflow.snapshot()
+                workflowTrace: workflow.snapshot(),
+                judgeSubjectContext: judgeSubjectContext
             )
         } catch {
             let failedAt = ContinuousClock.now
@@ -724,7 +730,8 @@ actor EvaluationRunner {
                 featureTrace: featureTrace,
                 refusal: refusalTrace,
                 imageInputTokenCountAvailable: imageInputTokenCountAvailable,
-                workflowTrace: workflow.snapshot()
+                workflowTrace: workflow.snapshot(),
+                judgeSubjectContext: judgeSubjectContext
             )
         }
     }

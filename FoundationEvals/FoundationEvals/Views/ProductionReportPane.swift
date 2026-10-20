@@ -63,5 +63,5 @@ struct ProductionReportPane: View {
         }
     }
     private func rate(_ value: Double?) -> String { value.map { String(format: "%.1f%%", $0*100) } ?? "Unscored" }
-    private func gateName(_ value: Int) -> String { switch value { case 0: "Pass"; case 10: "Quality gate failed"; case 20: "Incomplete evidence"; default: "Execution gate failed" } }
+    private func gateName(_ value: Int) -> String { switch value { case 0: "Release policy satisfied"; case 10: "Quality gate failed"; case 20: "Incomplete evidence"; default: "Execution gate failed" } }
 }

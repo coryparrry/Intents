@@ -13,7 +13,8 @@ struct SelectedAssessmentCoverageTests {
         suite.judgeConfiguration = .init(mode: .connection, connectionID: connection.id,
             externalEvidenceApprovedAt: Date(), includeReferenceAttachments: false,
             approvedConnectionID: connection.id, approvedIncludeReferenceAttachments: false,
-            approvedConnectionDigest: connection.disclosureDigest)
+            approvedConnectionDigest: connection.disclosureDigest,
+            approvedEvidencePolicyVersion: EvaluationJudgeConfiguration.currentEvidencePolicyVersion)
         let original = run(suite: suite)
         let originalResults = try CanonicalJSON.data(for: original.results)
         let reassessment = try await EvaluationReassessmentService().reassess(

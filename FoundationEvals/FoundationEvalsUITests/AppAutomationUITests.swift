@@ -27,7 +27,7 @@ final class AppAutomationUITests: XCTestCase {
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
             "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
         app.launch(); defer { app.terminate() }
-        app.activate(); app.typeKey("3", modifierFlags: .command)
+        app.activate(); app.typeKey("2", modifierFlags: .command)
         let reset = app.buttons["automationResetDeviceOwnership"]
         XCTAssertTrue(reset.waitForExistence(timeout: 15)); XCTAssertTrue(reset.isEnabled)
         try app.windows.firstMatch.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/private/tmp/foundation-evals-ui-tests/phase0-recovery-controls.png"))
@@ -61,7 +61,7 @@ final class AppAutomationUITests: XCTestCase {
             "--automation-select-path", project.path, "--automation-xcode-settings-suite", suite,
             "--evaluation-window-width", "1300", "--evaluation-window-height", "950"]
         app.launch(); defer { app.terminate() }
-        app.activate(); app.typeKey("3", modifierFlags: .command)
+        app.activate(); app.typeKey("2", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         let destination = app.popUpButtons["automation.preparation.destination"]
         let saved = app.textFields["automation.xcode.default"]
@@ -85,7 +85,7 @@ final class AppAutomationUITests: XCTestCase {
         let screenshots = URL(fileURLWithPath: "/private/tmp/foundation-evals-ui-tests")
         try FileManager.default.createDirectory(at: screenshots, withIntermediateDirectories: true)
         try screenshot.pngRepresentation.write(to: screenshots.appendingPathComponent("phase1-xcode-selection.png"))
-        app.terminate(); app.launch(); app.activate(); app.typeKey("3", modifierFlags: .command)
+        app.terminate(); app.launch(); app.activate(); app.typeKey("2", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         XCTAssertEqual(saved.value as? String, "/Applications/Simulator Xcode.app")
         XCTAssertEqual(override.value as? String, "")
@@ -114,7 +114,7 @@ final class AppAutomationUITests: XCTestCase {
                                 "--automation-select-path", project.path,
                                 "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
         app.launch(); defer { app.terminate() }
-        app.activate(); app.typeKey("3", modifierFlags: .command)
+        app.activate(); app.typeKey("2", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         let destination = app.popUpButtons["automation.preparation.destination"]
         let route = app.popUpButtons["automation.workflow.route"]
@@ -160,7 +160,7 @@ final class AppAutomationUITests: XCTestCase {
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
             "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
         app.launchArguments += ["--automation-select-path", project.path]
-        app.launch(); defer { app.terminate() }; app.activate(); app.typeKey("3", modifierFlags: .command)
+        app.launch(); defer { app.terminate() }; app.activate(); app.typeKey("2", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "physical")
         XCTAssertTrue(app.popUpButtons["iPhone or iPad"].waitForExistence(timeout: 5))
@@ -191,7 +191,7 @@ final class AppAutomationUITests: XCTestCase {
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
                                 "--evaluation-window-width", "1200", "--evaluation-window-height", "780"]
         app.launch(); defer { app.terminate() }
-        app.activate(); app.typeKey("3", modifierFlags: .command)
+        app.activate(); app.typeKey("2", modifierFlags: .command)
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
         let choose = app.buttons["Choose app…"]
@@ -234,7 +234,7 @@ final class AppAutomationUITests: XCTestCase {
         let app = XCUIApplication()
         fixture.configure(app, storage: storage)
         app.launch(); defer { app.terminate() }
-        app.typeKey("3", modifierFlags: .command)
+        app.typeKey("2", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         selectAutomationMenu(app.popUpButtons["App"], item: "AutomationFixture")
         selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "simulator")
@@ -314,7 +314,7 @@ final class AppAutomationUITests: XCTestCase {
                                 "--evaluation-window-width", "1300", "--evaluation-window-height", "900"]
         app.launchArguments += ["--automation-select-path", bundle.path]
         app.launch(); defer { app.terminate() }
-        app.typeKey("3", modifierFlags: .command)
+        app.typeKey("2", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         let goal = app.textFields["What should the app do?"]
         XCTAssertTrue(goal.waitForExistence(timeout: 10)); goal.click(); goal.typeText("Open tasks")
@@ -357,10 +357,10 @@ final class AppAutomationUITests: XCTestCase {
                                 "--evaluation-window-width", "1300", "--evaluation-window-height", "850"]
         app.launchArguments += ["--automation-select-path", project.path]
         app.launch(); defer { app.terminate() }
-        app.typeKey("3", modifierFlags: .command)
+        app.typeKey("2", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         XCTAssertFalse(app.buttons["Run action…"].exists, "Source selection does not imply a prepared or executable action")
-        app.typeKey("1", modifierFlags: .command); app.typeKey("3", modifierFlags: .command)
+        app.typeKey("1", modifierFlags: .command); app.typeKey("2", modifierFlags: .command)
         XCTAssertTrue(app.staticTexts["Selected app"].waitForExistence(timeout: 5), "Root-owned intake persists across sidebar navigation")
         let screenshot = app.windows.firstMatch.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot); attachment.name = "App automation selected source"; attachment.lifetime = .keepAlways; add(attachment)

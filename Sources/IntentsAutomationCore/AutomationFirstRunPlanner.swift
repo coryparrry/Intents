@@ -41,7 +41,7 @@ public enum AutomationFirstRunPlanner {
                       includeUI || (plan.setup + [plan.execution] + plan.observations + plan.cleanup).allSatisfy({ $0.uiProgram == nil }) else {
                     throw AutomationContractError.missingEvidence("Its required routes are not included in this campaign")
                 }
-                let cost = operationCount(plan)
+                let cost = try operationCount(plan, approval: approval)
                 guard cost <= operationLimit - plannedOperations else {
                     throw AutomationContractError.missingEvidence("Its setup, subject and readback need " + String(cost) + " operations. " + limitGap(operationLimit))
                 }
@@ -55,20 +55,20 @@ public enum AutomationFirstRunPlanner {
         }
         if includeUI && approval.target.kind != .nativeMac {
             guard approval.effects.contains(.navigate), !appName.isEmpty, appName.utf16.count <= 1024 else { throw AutomationContractError.invalidIdentity }
-            if operationLimit - plannedOperations < 2 {
-                gaps.append("The initial view needs two approved operations: activation and readback.")
+            if operationLimit - plannedOperations < 3 {
+                gaps.append("The initial view needs three approved operations: activation, hierarchy readback and screenshot.")
             } else {
             var segment = AutomationSegment(id: "initial-view", kind: .observeOnly, phase: .subject,
                 operation: "Read the selected app's initial view", effects: [.observe, .navigate], lifecycle: .persistedStateAcrossSegments)
-            segment.uiProgram = .init(operations: [.init(id: "app-label", kind: .locate, locator: .init(.label, appName))])
-            var budget = AutomationBudget(); budget.subjectOperations = 1; budget.attempts = 1; budget.controllerCalls = 0; budget.uiActions = 1
+            segment.uiProgram = .init(steps: [.init(id: "initial-hierarchy", kind: .readHierarchy)])
+            var budget = AutomationBudget(); budget.subjectOperations = 3; budget.attempts = 1; budget.controllerCalls = 0; budget.uiActions = 1
             var plan = AutomationCase(id: "first-view", app: approval.app, target: approval.target, environmentID: approval.environmentID, execution: segment, budget: budget)
-            plan.provenance = ["ui.locale": localeIdentifier, "expectation": "Initial accessibility observation only; no business correctness rule", "firstRun": "automatic observation"]
+            plan.provenance = ["ui.locale": localeIdentifier, "expectation": "Initial accessibility observation only; no business correctness rule", "firstRun": "automatic observation", "ui.readback": "bounded-hierarchy-v1"]
             plan.provenance["catalog"] = try AutomationRecipeContext.catalogDigest(catalog)
             try PlanValidator.validate(plan, approval: approval, capabilities: capabilities, purpose: .review)
-            // The shared authority counts activation and the initial read.
+            // Count every lowered host step, including the retained screenshot.
             let digest = try AutomationFrozenCase.planDigest(plan)
-            if plannedDigests.insert(digest).inserted { plans.append(plan); plannedOperations += 2 }
+            if plannedDigests.insert(digest).inserted { plans.append(plan); plannedOperations += 3 }
             }
         }
         let actions = catalog.systemActions.sorted { $0.id < $1.id }
@@ -90,7 +90,7 @@ public enum AutomationFirstRunPlanner {
                         var plan = try compileAction(catalog: catalog, action: action, inputs: variant,
                             evidence: trustedEvidence, declaredEffects: declaration, approval: approval,
                             capabilities: capabilities, localeIdentifier: localeIdentifier)
-                        let cost = operationCount(plan)
+                        let cost = try operationCount(plan, approval: approval)
                         guard cost <= operationLimit - plannedOperations else {
                             gaps.append(action.title + ": setup, invocation and independent readback need " + String(cost) + " operations. " + limitGap(operationLimit))
                             break
@@ -170,8 +170,21 @@ public enum AutomationFirstRunPlanner {
             declaredEffects: declaredEffects, approval: approval, capabilities: capabilities, purpose: .review)
     }
 
-    private static func operationCount(_ plan: AutomationCase) -> Int {
-        (plan.setup + [plan.execution] + plan.observations + plan.cleanup).reduce(0) { total, segment in
+    private static func operationCount(_ plan: AutomationCase, approval: RunApproval) throws -> Int {
+        if (plan.setup + [plan.execution] + plan.observations + plan.cleanup).contains(where: { $0.uiProgram != nil }) {
+            var counted = plan
+            counted.budget.uiActions = 300; counted.budget.subjectOperations = 300
+            var reviewed = approval; reviewed.maximumActions = 300
+            reviewed.approvedCaseDigest = try AutomationFrozenCase.planDigest(counted)
+            let hosted = try AutomationXCUITestPlan.assemble(plan: counted, approval: reviewed,
+                attemptID: "first-run-budget", leaseGeneration: 1).steps.count
+            // Storage observers run after the host drains and are deliberately
+            // excluded from its steps. They still consume campaign operations.
+            let durable = try AutomationXCUITestPlan.durableObservationSuffix(plan: counted)
+                .reduce(0) { $0 + ($1.hostProgram?.operations.count ?? 0) }
+            return hosted + durable
+        }
+        return (plan.setup + [plan.execution] + plan.observations + plan.cleanup).reduce(0) { total, segment in
             total + (segment.hostProgram?.operations.count ?? uiOperationCount(segment))
         }
     }

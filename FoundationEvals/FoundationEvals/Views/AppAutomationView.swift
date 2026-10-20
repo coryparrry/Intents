@@ -33,6 +33,10 @@ struct AppAutomationView: View {
                 AutomationSelectionHistoryControls(model: model)
                 AutomationSourceRecipeControls(model: model)
                 AutomationRecoveryControls(model: model)
+                if model.candidate?.kind != .sourceTarget, let reason = model.selectedWorkflowUnavailableReason {
+                    Text(reason).font(.callout).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("automation.workflow.unavailableReason")
+                }
                 if let intake = model.intake {
                     GroupBox("Selected app") {
                         VStack(alignment: .leading, spacing: 12) {
@@ -40,6 +44,12 @@ struct AppAutomationView: View {
                                 ForEach(intake.candidates) { Text($0.name + ($0.workspacePath.map { " · " + URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "")).tag($0.id) }
                             }.onChange(of: model.candidateID) { model.candidateSelectionChanged() }
                             if model.candidate?.kind == .sourceTarget {
+                                Picker("What to test", selection: $model.workflowRoute) {
+                                    Text("App workflow").tag("ui").accessibilityIdentifier("ui")
+                                    Text("System action").tag("system").accessibilityIdentifier("system")
+                                    Text("Action on a new test record").tag("fresh").accessibilityIdentifier("fresh")
+                                    if model.preparationDestination == .physical { Text("Siri recognised-text submission").tag("siri").accessibilityIdentifier("siri") }
+                                }.accessibilityLabel("What to test").accessibilityIdentifier("automation.workflow.route").onChange(of: model.workflowRoute) { model.workflowSelectionChanged() }
                                 DisclosureGroup("Build settings") {
                                     Picker("Configuration", selection: Binding(
                                         get: { model.configuration },
@@ -58,14 +68,6 @@ struct AppAutomationView: View {
                             }
                             if model.isInstalledMacUI {
                                 Text("Selected Mac app · current login session").font(.callout).foregroundStyle(.secondary)
-                            }
-                            if model.candidate?.kind == .sourceTarget {
-                                Picker("What to test", selection: $model.workflowRoute) {
-                                    Text("App workflow").tag("ui").accessibilityIdentifier("ui")
-                                    Text("System action").tag("system").accessibilityIdentifier("system")
-                                    Text("Action on a new test record").tag("fresh").accessibilityIdentifier("fresh")
-                                    if model.preparationDestination == .physical { Text("Siri recognised-text submission").tag("siri").accessibilityIdentifier("siri") }
-                                }.accessibilityLabel("What to test").accessibilityIdentifier("automation.workflow.route").onChange(of: model.workflowRoute) { model.workflowSelectionChanged() }
                             }
                             ForEach(intake.gaps, id: \.self) { Text($0).font(.callout).foregroundStyle(.secondary) }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(10).disabled(model.busy)

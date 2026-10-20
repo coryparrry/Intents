@@ -87,6 +87,7 @@ struct EvaluationSuiteDefinition: Codable, Equatable, Sendable {
         definitionJudge.approvedConnectionID = nil
         definitionJudge.approvedIncludeReferenceAttachments = nil
         definitionJudge.approvedConnectionDigest = nil
+        definitionJudge.approvedEvidencePolicyVersion = nil
         judgeConfiguration = definitionJudge
         releasePolicy = suite.releasePolicy
     }
@@ -111,6 +112,7 @@ struct EvaluationSuiteDefinition: Codable, Equatable, Sendable {
         appliedJudge.approvedConnectionID = suite.judgeConfiguration.approvedConnectionID
         appliedJudge.approvedIncludeReferenceAttachments = suite.judgeConfiguration.approvedIncludeReferenceAttachments
         appliedJudge.approvedConnectionDigest = suite.judgeConfiguration.approvedConnectionDigest
+        appliedJudge.approvedEvidencePolicyVersion = suite.judgeConfiguration.approvedEvidencePolicyVersion
         result.judgeConfiguration = appliedJudge
         result.releasePolicy = releasePolicy
         return result
@@ -145,12 +147,15 @@ struct EvaluationJudgeConfiguration: Codable, Equatable, Sendable {
     var approvedConnectionID: UUID?
     var approvedIncludeReferenceAttachments: Bool?
     var approvedConnectionDigest: String?
+    var approvedEvidencePolicyVersion: String? = nil
+    static let currentEvidencePolicyVersion = "observed-conversation-v1"
     var usesExternalConnection: Bool { mode == .connection }
     func hasCurrentExternalEvidenceApproval(for connection: EvaluationJudgeConnection) -> Bool {
         externalEvidenceApprovedAt != nil
             && approvedConnectionID == connectionID
             && approvedIncludeReferenceAttachments == includeReferenceAttachments
             && approvedConnectionDigest == connection.disclosureDigest
+            && approvedEvidencePolicyVersion == Self.currentEvidencePolicyVersion
     }
 }
 

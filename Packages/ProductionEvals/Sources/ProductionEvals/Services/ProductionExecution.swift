@@ -29,6 +29,8 @@ public struct ProductionBatchRunner: Sendable {
                     var accumulatedCost = current.attempts[slot]?.reportedCost ?? 0
                     var unknownCost = current.attempts[slot].map { $0.hasUnknownCost ?? true } ?? false
                     var response: ProductionResponse
+                    var interrupted = false
+                    var cancelled = false
                     if current.attempts[slot] != nil && job.configuration.replaySafety == .sideEffects {
                         response = .init(requestID: request.requestID, outcome: .needsEvidence,
                                          explanation: "The previous action was interrupted. Verify its app state and reconcile this request before retrying.")
@@ -51,13 +53,20 @@ public struct ProductionBatchRunner: Sendable {
                             }
                             do {
                                 let frozenRequest = request
-                                response = try await withDeadline(seconds: min(job.configuration.timeoutSeconds, remaining)) { try await execute(frozenRequest) }
+                                response = try await ProductionRequestDeadline.run(seconds: min(job.configuration.timeoutSeconds, remaining)) { try await execute(frozenRequest) }
                                 try storage.validateResponse(response, requestID: request.requestID)
                             } catch {
-                                if error is CancellationError, job.configuration.replaySafety != .sideEffects { throw error }
+                                cancelled = error is CancellationError
+                                interrupted = cancelled || error is ProductionRequestDeadline.Exceeded
+                                // A timed-out executor may still be running. Do
+                                // not automatically retry it or dispatch more
+                                // work from this job until explicit resumption.
+                                if interrupted { try storage.setControl(jobID: job.id, paused: true) }
                                 response = .init(requestID: request.requestID, outcome: job.configuration.replaySafety == .sideEffects ? .needsEvidence : .error,
-                                                 explanation: String(describing: error).prefix(8_000).description,
-                                                 latencyMilliseconds: Date().timeIntervalSince(started) * 1000, retryable: error is ProductionTransientFailure)
+                                                 explanation: (cancelled
+                                                    ? "The request was cancelled. Its operation may still be running. The job is paused; inspect its evidence before resuming."
+                                                    : error.localizedDescription).prefix(8_000).description,
+                                                 latencyMilliseconds: Date().timeIntervalSince(started) * 1000, retryable: !interrupted && error is ProductionTransientFailure)
                             }
                             if let cost = response.cost { accumulatedCost += cost } else { unknownCost = true }
                             try storage.checkpointCost(job, index: claimed.index, token: token, slot: slot, attempt: attempt,
@@ -80,6 +89,8 @@ public struct ProductionBatchRunner: Sendable {
                         chunk.records[slot] = record
                     }
                     committed += 1; worker.lastSeen = Date(); try storage.register(worker)
+                    if cancelled { throw CancellationError() }
+                    if interrupted { break }
                 }
                 try storage.updateChunk(job, index: claimed.index, token: token) { $0.lease = nil }
             } catch {
@@ -88,14 +99,6 @@ public struct ProductionBatchRunner: Sendable {
             }
         }
         return committed
-    }
-    private func withDeadline<T: Sendable>(seconds: Double, operation: @escaping @Sendable () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { try await operation() }
-            group.addTask { try await Task.sleep(for: .seconds(seconds)); throw ProductionTransientFailure("Request deadline exceeded.") }
-            defer { group.cancelAll() }
-            guard let result = try await group.next() else { throw CancellationError() }; return result
-        }
     }
 }
 

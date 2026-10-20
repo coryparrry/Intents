@@ -509,6 +509,7 @@ struct ScenarioIndependentAssessmentTests {
         configuration.approvedConnectionID = connection.id
         configuration.approvedIncludeReferenceAttachments = configuration.includeReferenceAttachments
         configuration.approvedConnectionDigest = connection.disclosureDigest
+        configuration.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         let resolved = try store.resolvedScenarioJudge(connectionID: connection.id, configuration: configuration)
         #expect(resolved.connection.id == connection.id)
         configuration.connectionID = UUID()

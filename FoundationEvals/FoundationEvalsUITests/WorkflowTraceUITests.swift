@@ -419,7 +419,7 @@ final class WorkflowTraceUITests: XCTestCase {
                 XCTAssertTrue(search.waitForExistence(timeout: 3))
             }
 
-            app.typeKey("1", modifierFlags: .command)
+            app.typeKey("3", modifierFlags: .command)
             for title in ["Cases", "Review", "Compare", "Setup", "History"] {
                 XCTAssertTrue(app.radioButtons[title].isHittable)
                 assertWithinWindow(app.radioButtons[title], window: window)

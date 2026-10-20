@@ -17,6 +17,8 @@ The dataset and execution configuration are frozen for the job. Later suite edit
 
 The app's native worker can retain conversations, structured output, configured tools, supported providers, rubric scoring, and traces. The standalone CLI's native worker supports on-device text with exact/contains scoring or collection. Command workers execute a developer-owned trusted executable. See the [full production guide](https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md) for each backend's setup.
 
+If a request reaches its deadline or is cancelled, the worker records the interrupted attempt and pauses the job. An executor may still be running if it ignores cancellation. Inspect its completion and any side effects before resuming. A late response cannot replace the saved interrupted result, and resuming continues with remaining requests without replaying that attempt.
+
 ## Review original outputs
 
 Include `capturedOutput` and optional `feedback` in JSONL, then choose **Review captured outputs** in Datasets. These outputs are not regenerated. Use **Review** to assign and label results. Disagreement remains uncertain until adjudicated. Reconcile interrupted actions only after verifying their saved state and outstanding cost.

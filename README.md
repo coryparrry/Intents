@@ -64,7 +64,7 @@ Xcode is needed to build from source or use Intent Lab. It is not needed for a n
 
 ## Run your first evaluation
 
-1. In **Overview**, create a suite. Open **Cases** and add prompts with an expected response or reference answer where appropriate.
+1. In **Model evaluations**, create a suite. Open **Cases** and add prompts with an expected response or reference answer where appropriate.
 2. Use **Setup → Instructions** for shared instructions and text, JSON, CSV, PDF, or image reference files.
 3. Use **Setup → Scoring** to choose a method and number of repetitions.
 4. Click **Run**. Open the saved run's **Workflow trace** or **Report** to inspect its response, score, explanation, timing, token usage, and tool activity.

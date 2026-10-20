@@ -25,7 +25,7 @@ run `brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
 
 ## Create a small evaluation
 
-1. In **Overview**, select **New Suite**.
+1. In **Model evaluations**, select **New Suite**.
 2. Enter a suite name. Select **Blank suite** for your own cases, or select a starter pack for editable examples.
 3. Select **Create suite**.
 4. Open the suite's **Cases** page. Select the first case. Enter a case name and prompt.
@@ -37,7 +37,7 @@ run `brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
 10. Make sure that the run destination shows **This Mac · built-in evaluator**.
 11. Select **Run** in the toolbar. Wait until the response count is complete.
 12. Open **Results**, or select the new run under **Runs** in the sidebar.
-13. Select **Report** to read each response and score. The run opens on **Workflow trace** by default.
+13. The run opens on **Report**, where you can read each response and score. Select **Workflow trace** to inspect the recorded execution steps.
 
 If **Run** is disabled, open **Run Details** from the destination menu. You can also point to **Run** to read the reason.
 
@@ -49,7 +49,13 @@ For practice, use the prompt `Reply with only the capital of France` and the req
 - **Collect only** can leave samples without scores. JSON field checks can still give a pass or failure.
 - A repetition makes another response to the same case. A small number of repetitions cannot establish statistical certainty.
 - A run keeps its suite definition, model, environment, responses, and available traces. Later suite edits do not change that run.
-- Overview can show **Changed** after you edit a suite. Run the suite again before you use its status as a current result.
+- Model evaluations can show **Changed** after you edit a suite. Run the suite again before you use its status as a current result.
+
+## Test App Intents and Siri
+
+Open **App Intents & Siri** for the shared app testing workspace. **App automation & Siri** prepares an app and checks its exposed actions, UI, or Siri behavior on supported targets. The app explains target restrictions before preparation. **Intent Lab · Beta** verifies requirements through Apple test connections; when the lab is unavailable, its tab explains why.
+
+Model suites belong to the selected project. App automation uses a shared workspace across projects. In **Model evaluations**, the contextual **Model tools** links open the current suite's review, resumable batch jobs, and the current suite's saved traces.
 
 Read [Projects and suites](Projects-and-suites.md) for imports and references. Read [Runs and results](Runs-and-results.md) for traces, comparisons, and baselines.
 

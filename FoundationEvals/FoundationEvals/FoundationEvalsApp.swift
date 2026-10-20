@@ -15,16 +15,18 @@ struct FoundationEvalsApp: App {
     // Debug builds must retain the exact executable being tested.
     #if !DEBUG
     private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: !ProductionNativeWorkerCommand.isRequested, updaterDelegate: nil, userDriverDelegate: nil
+        startingUpdater: !FoundationEvalsApp.launchesProductionWorker && !FoundationEvalsApp.launchIsolation.isHostedTest,
+        updaterDelegate: nil, userDriverDelegate: nil
     )
     #endif
     private let appControl: EvaluationAppControl
     private let mcpRuntime: FoundationEvalsMCPRuntime
 
     init() {
-        let telemetry = TelemetryController(configuration: Self.telemetryConfiguration)
+        let telemetry = TelemetryController(defaults: Self.launchDefaults, configuration: Self.telemetryConfiguration,
+            discardPendingCrashes: { if Self.acceptanceStorageDirectory == nil && !Self.launchesProductionWorker { TelemetryPendingCrashReports.current?.discard() } })
         let storeDirectory: URL?
-        do { storeDirectory = ProductionNativeWorkerCommand.isRequested ? try ProductionNativeWorkerCommand.prepareScratch() : Self.acceptanceStorageDirectory }
+        do { storeDirectory = Self.launchesProductionWorker ? try ProductionNativeWorkerCommand.prepareScratch() : Self.acceptanceStorageDirectory }
         catch { FileHandle.standardError.write(Data(("Native eval worker: \(error.localizedDescription)\n").utf8)); ProductionNativeWorkerCommand.finish(30) }
         let store = EvaluationStore(supportDirectory: storeDirectory, telemetry: telemetry)
         let control = EvaluationAppControl(store: store)
@@ -41,8 +43,10 @@ struct FoundationEvalsApp: App {
                 start: { configuration in try await runtime.start(configuration) },
                 stop: { await runtime.stop() }
             ),
+            userDefaults: Self.launchDefaults,
             credentialStore: Self.launchCredentialStore,
-            existingCredentialOnly: ProductionNativeWorkerCommand.isRequested || Self.readOnlyMCPCredentialRequest,
+            existingCredentialOnly: Self.launchesProductionWorker || Self.readOnlyMCPCredentialRequest || Self.launchIsolation.isHostedTest,
+            configurationDirectory: Self.launchIsolation.isHostedTest ? storeDirectory?.appending(path: "Codex") : nil,
             telemetry: telemetry
         )
         runtime.settingsController = settings
@@ -53,29 +57,26 @@ struct FoundationEvalsApp: App {
         _automationStore = State(initialValue: automationStore)
         _mcpSettings = State(initialValue: settings)
         mcpRuntime = runtime
-        if !ProductionNativeWorkerCommand.isRequested {
+        if !Self.launchesProductionWorker && !Self.launchIsolation.isHostedTest {
             // MCP remains usable even when every workspace window is closed.
             Task { await control.intentLabFeatureGate.monitor() }
         }
-        if ProductionNativeWorkerCommand.isRequested {
+        if Self.launchesProductionWorker {
             NSApplication.shared.setActivationPolicy(.prohibited)
             Task { await ProductionNativeWorkerCommand.run(store: store) }
         }
     }
 
     private static var telemetryConfiguration: TelemetryConfiguration? {
-        if ProductionNativeWorkerCommand.isRequested { return nil }
-        #if DEBUG
-        // Hosted tests must not inherit a developer's saved telemetry consent.
-        let environment = ProcessInfo.processInfo.environment
-        if environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil || acceptanceStorageDirectory != nil {
-            return nil
-        }
-        #endif
+        if Self.launchesProductionWorker || acceptanceStorageDirectory != nil { return nil }
         return .bundled
     }
 
     private static var launchCredentialStore: MCPCredentialStore {
+        if launchIsolation.isHostedTest {
+            return .init(load: { nil }, save: { _ in throw MCPSettingsAccessError.configurationReadOnly },
+                remove: { throw MCPSettingsAccessError.configurationReadOnly })
+        }
         #if DEBUG
         return MCPDebugLaunchConfiguration.credentialStore(
             arguments: ProcessInfo.processInfo.arguments, environment: ProcessInfo.processInfo.environment,
@@ -105,23 +106,28 @@ struct FoundationEvalsApp: App {
         #endif
     }
 
-    private static var acceptanceStorageDirectory: URL? {
+    private static let launchIsolation: AppLaunchIsolation = {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        if let index = arguments.firstIndex(of: "--evaluation-storage-name"),
-           arguments.indices.contains(index + 1),
-           let id = UUID(uuidString: arguments[index + 1]) {
-            return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appending(path: "FoundationEvalsUITests", directoryHint: .isDirectory)
-                .appending(path: id.uuidString, directoryHint: .isDirectory)
-        }
-        if let index = arguments.firstIndex(of: "--evaluation-storage"),
-           arguments.indices.contains(index + 1), arguments[index + 1].hasPrefix("/") {
-            return URL(filePath: arguments[index + 1], directoryHint: .isDirectory)
-        }
+        #else
+        let arguments: [String] = []
         #endif
-        return nil
+        return .resolve(arguments: arguments, environment: ProcessInfo.processInfo.environment,
+            applicationSupport: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0],
+            temporaryDirectory: FileManager.default.temporaryDirectory)
+    }()
+
+    private static var launchesProductionWorker: Bool {
+        launchIsolation.shouldLaunchProductionWorker(requested: ProductionNativeWorkerCommand.isRequested)
     }
+
+    private static var acceptanceStorageDirectory: URL? { launchIsolation.storageDirectory }
+
+    private static let launchDefaults: UserDefaults = {
+        guard acceptanceStorageDirectory != nil else { return .standard }
+        // No consent or connector migrations may touch the developer's defaults.
+        return UserDefaults(suiteName: "Intents.IsolatedLaunch.\(UUID().uuidString)")!
+    }()
 
     private static func sizeVerificationWindow() async {
         #if DEBUG
@@ -148,7 +154,8 @@ struct FoundationEvalsApp: App {
                 .task { await Self.sizeVerificationWindow() }
                 .task(id: mcpSettings.installationState) {
                     appDelegate.runtime = mcpRuntime
-                    guard !ProductionNativeWorkerCommand.isRequested, !ProcessInfo.processInfo.arguments.contains("--disable-mcp-autostart") else { return }
+                    guard !Self.launchesProductionWorker, !Self.launchIsolation.isHostedTest,
+                          !ProcessInfo.processInfo.arguments.contains("--disable-mcp-autostart") else { return }
                     if Self.useExistingMCPCredential {
                         await mcpSettings.startServer()
                         return
@@ -172,23 +179,20 @@ struct FoundationEvalsApp: App {
             #endif
 
             CommandMenu("Evaluation") {
-                Button("Show Suite Editor") {
-                    store.selection = .suite
+                Button("Show Model Evaluations") {
+                    store.selection = .overview
                     openWindow(id: "evaluation-main", value: "main")
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
-                if appControl.intentLabFeatureGate.isEnabled {
-                    Button("Show Intent Lab") {
-                        guard appControl.intentLabFeatureGate.isEnabled else { return }
-                        store.selection = .intentLab
-                        openWindow(id: "evaluation-main", value: "main")
-                    }
-                    .keyboardShortcut("2", modifiers: [.command])
-                }
-
-                Button("Show App Automation") {
+                Button("Show App Intents & Siri") {
                     store.selection = .appAutomation
+                    openWindow(id: "evaluation-main", value: "main")
+                }
+                .keyboardShortcut("2", modifiers: [.command])
+
+                Button("Show Suite Editor") {
+                    store.selection = .suite
                     openWindow(id: "evaluation-main", value: "main")
                 }
                 .keyboardShortcut("3", modifiers: [.command])

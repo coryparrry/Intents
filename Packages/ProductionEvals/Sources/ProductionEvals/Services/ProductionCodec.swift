@@ -63,6 +63,25 @@ public enum ProductionCodec {
 /// File-system transactions coordinate app and CLI processes. Storage must support flock and atomic rename.
 public final class ProductionStorage: @unchecked Sendable {
     public let root: URL
+    private let claimProgressLock = NSLock()
+    private var completedClaimPrefixes: [String: Int] = [:]
+
+    // Completed chunks with no live lease cannot be edited through this API.
+    // Cache only that immutable prefix, never pending/leased/worker-specific
+    // work. New storage instances rebuild the prefix from validated chunks;
+    // reports independently validate the saved evidence on every read.
+    func claimStartIndex(_ job: ProductionJob) -> Int {
+        claimProgressLock.withLock { completedClaimPrefixes[job.revision] ?? 0 }
+    }
+
+    func advanceClaimPrefix(_ job: ProductionJob, completedIndex: Int) {
+        claimProgressLock.withLock {
+            if (completedClaimPrefixes[job.revision] ?? 0) == completedIndex {
+                completedClaimPrefixes[job.revision] = completedIndex + 1
+            }
+        }
+    }
+
     public init(root: URL) throws {
         self.root = root.standardizedFileURL
         try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true,

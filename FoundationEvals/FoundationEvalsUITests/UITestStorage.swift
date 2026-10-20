@@ -26,6 +26,15 @@ enum UITestStorage {
     }
 
     @MainActor
+    static func openIntentLab(in app: XCUIApplication) throws {
+        app.activate()
+        app.typeKey("2", modifierFlags: .command)
+        let tab = app.radioButtons["Intent Lab · Beta"]
+        try waitFor(tab, in: app, timeout: 5)
+        tab.click()
+    }
+
+    @MainActor
     static func openSuiteEditor(
         in app: XCUIApplication,
         file: StaticString = #filePath,

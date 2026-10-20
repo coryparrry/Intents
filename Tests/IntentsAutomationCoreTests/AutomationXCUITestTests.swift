@@ -111,6 +111,44 @@ final class AutomationXCUITestTests: XCTestCase, @unchecked Sendable {
         let receipts = try AutomationXCUITestReceiptImporter.importReceipts(data, uiPlan: wire, plan: plan)
         XCTAssertEqual(receipts.last?.observations.first?.value, .object(["visible-text": .text("New task")]))
     }
+    func testInitialHierarchyReadbackRequiresExactBoundedResultWithoutAnAppNameLocator() throws {
+        let (fixturePlan, _, _) = try fixture()
+        let catalog = ApplicationSurfaceCatalog(app: fixturePlan.app, systemActions: [], systemDiscoveryComplete: false, uiDiscoveryComplete: false, gaps: [])
+        var approval = RunApproval(runID: "initial-run", app: fixturePlan.app, target: fixturePlan.target,
+            environmentID: fixturePlan.environmentID, effects: [.observe, .navigate], maximumActions: 30, disposable: true)
+        let proposal = try AutomationFirstRunPlanner.compile(catalog: catalog, appName: "Product name absent from screen",
+            approval: approval, capabilities: .init(), includeActions: false, includeUI: true, localeIdentifier: "en_GB")
+        let plan = try XCTUnwrap(proposal.plans.first)
+        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(plan)
+        let wire = try AutomationXCUITestPlan.assemble(plan: plan, approval: approval, attemptID: "initial", leaseGeneration: 1)
+        XCTAssertEqual(wire.steps.map(\.kind), [.launch, .readHierarchy, .screenshot])
+        XCTAssertTrue(wire.steps.allSatisfy { $0.query == nil })
+        let hierarchy = try UIHostHierarchyReadback.capture("Window\n  Text: Welcome\n  Button: Sign in")
+        func encoded(_ value: UIHostValue?) throws -> [Data] {
+            try wire.steps.enumerated().map { index, step in
+                try JSONEncoder().encode(UIHostStepReceipt(plan: wire, index: index, dispatched: true,
+                    completed: true, value: step.kind == .readHierarchy ? value : nil))
+            }
+        }
+        let receipts = try AutomationXCUITestReceiptImporter.importReceipts(encoded(hierarchy), uiPlan: wire, plan: plan)
+        XCTAssertEqual(receipts.first?.verifiedOutputs?["initial-hierarchy"], .object([
+            "hierarchy": .text("Window\n  Text: Welcome\n  Button: Sign in"), "truncated": .bool(false)]))
+        XCTAssertTrue(receipts.first?.observations.isEmpty == true, "Initial readback does not invent a business assertion")
+        XCTAssertTrue(plan.requirements.isEmpty)
+        XCTAssertEqual(AutomationAssessment.assess(plan: plan, attemptID: "initial", subjectDispatched: true,
+            subjectCompleted: true, observations: []).summary, .executedUnassessed)
+        XCTAssertThrowsError(try AutomationXCUITestReceiptImporter.importReceipts(encoded(nil), uiPlan: wire, plan: plan))
+        XCTAssertThrowsError(try AutomationXCUITestReceiptImporter.importReceipts(encoded(.init(kind: "text", value: "Passed")), uiPlan: wire, plan: plan))
+        var malformed = hierarchy; malformed.properties?["truncated"] = .init(kind: "text", value: "false")
+        XCTAssertThrowsError(try AutomationXCUITestReceiptImporter.importReceipts(encoded(malformed), uiPlan: wire, plan: plan))
+        var foreign = try encoded(hierarchy)
+        var receipt = try JSONDecoder().decode(UIHostStepReceipt.self, from: foreign[1])
+        receipt.attemptID = "other-attempt"; foreign[1] = try JSONEncoder().encode(receipt)
+        XCTAssertThrowsError(try AutomationXCUITestReceiptImporter.importReceipts(foreign, uiPlan: wire, plan: plan))
+        var underBudget = plan; underBudget.budget.subjectOperations = 2
+        approval.approvedCaseDigest = try AutomationFrozenCase.planDigest(underBudget)
+        XCTAssertThrowsError(try AutomationXCUITestPlan.assemble(plan: underBudget, approval: approval, attemptID: "initial", leaseGeneration: 1))
+    }
     func testFinalVerificationFailureKeepsKnownSubjectReceipts() throws {
         let (plan, _, wire) = try fixture()
         let receipts = try AutomationXCUITestReceiptImporter.importReceipts(receiptData(wire), uiPlan: wire, plan: plan)

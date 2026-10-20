@@ -1,3 +1,4 @@
+import { renderCatalogRecovery, exportRecoveryRecord, forgetRemovedRecoveryRecord, setCatalogRecoveryLayout } from "./catalog-recovery.js";
 import { createWorkspaceScope, resetSuiteEvidence, mutateSuiteDraft } from "./workspace-state.js";
 import { mountUI, unmountUI, libraryDialog } from "./react/workspace.tsx";
 import { createAppTransport } from "./vendor/transport.js";
@@ -41,6 +42,7 @@ import {
   renderNativeReport,
 } from "./native-results.js";
 
+let resumeRecoveryAutosave;
 const transport = createAppTransport(),
   $ = (id) => document.getElementById(id);
 const state = {
@@ -650,6 +652,28 @@ function renderLegacyMain() {
   main.scrollTop = scroll;
 }
 function render() {
+  const recovering = !!state.catalogRecovery;
+  setCatalogRecoveryLayout(document, recovering);
+  for (const id of ['workspace-sidebar', 'toolbar-actions', 'toolbar-context']) $(id).hidden = recovering;
+  if (recovering) {
+    $('view-tabs').hidden = true;
+    $('workspace-status').textContent = 'Catalog recovery';
+    const main = $('main'); unmountUI(main); main.className = 'legacy-view';
+    const onPage = async (kind, cursor) => {
+      try { await acceptResult({ structuredContent: await call('eval_catalog_recovery', { kind, cursor }) }); }
+      catch (error) { fail(error); }
+    };
+    main.replaceChildren(renderCatalogRecovery({ node, button, data: state.catalogRecovery, onPage,
+      onRetry: async () => acceptResult({ structuredContent: await call('eval_open_workspace') }),
+      onExport: async (kind, record) => { const exported = await exportRecoveryRecord(call, kind, record); await download(exported.filename, exported.text); },
+      onRemove: async (kind, record) => {
+        await call('eval_catalog_remove', { kind, recordId: record.id, recordRevision: record.recordRevision, confirm: true });
+        if (forgetRemovedRecoveryRecord(state, kind, record.id)) resetSuiteEvidence(state);
+        await onPage(kind, '0');
+      }
+    }));
+    return;
+  }
   renderSidebar();
   renderToolbar();
   renderMain();
@@ -662,6 +686,9 @@ async function refresh() {
     call("eval_list_runs"),
   ]);
   if (!workspaceScope.current(request)) { schedulePoll(); return; }
+  const recovery = [projects, suites, runs].find((result) => result.page === 'catalogRecovery');
+  if (recovery) { await acceptResult({ structuredContent: recovery }); return; }
+  state.catalogRecovery = null;
   state.projects = projects.projects;
   state.allSuites = suites.suites;
   state.allRuns = runs.runs;
@@ -697,7 +724,7 @@ async function refresh() {
   schedulePoll();
 }
 const statusPoller = createStatusPoller({
-  active, refresh, error: fail, disposed: () => state.disposed,
+  active: () => !state.catalogRecovery && active(), refresh, error: fail, disposed: () => state.disposed,
 });
 function schedulePoll() {
   statusPoller.schedule();
@@ -1437,7 +1464,15 @@ async function acceptResult(payload) {
   const data = payload?.structuredContent ?? payload?.result?.structuredContent;
   if (!data || state.disposed) return;
   initialResult = true;
+  if (data.page === 'catalogRecovery') {
+    if (!state.catalogRecovery) resumeRecoveryAutosave = autosave.pause();
+    state.catalogRecovery = data;
+    render();
+    return;
+  }
   if (data.page === "workspace") {
+    state.catalogRecovery = null;
+    resumeRecoveryAutosave?.(); resumeRecoveryAutosave = null;
     state.projects = data.projects || [];
     state.projectId ||= data.defaultProjectId || state.projects[0]?.id;
     state.allSuites = data.suites || [];

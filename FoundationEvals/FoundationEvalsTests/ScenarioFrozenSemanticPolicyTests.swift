@@ -62,6 +62,7 @@ struct ScenarioFrozenSemanticPolicyTests {
         value.externalEvidenceApprovedAt = Date()
         value.approvedConnectionID = judge.connection.id
         value.approvedConnectionDigest = judge.connection.disclosureDigest
+        value.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         value.approvedIncludeReferenceAttachments = true
         return value
     }

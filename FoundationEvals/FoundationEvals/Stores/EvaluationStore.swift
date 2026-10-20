@@ -988,11 +988,11 @@ final class EvaluationStore {
               let connection = judgeConnections.first(where: { $0.id == id }) else { return nil }
         let images = draftSuite.attachments.count { $0.kind == .image }
         let sentImages = draftSuite.judgeConfiguration.includeReferenceAttachments ? images : 0
-        return "Intents will send each case's instructions, effective input, candidate response, verified reference, bounded tool evidence"
+        return "Intents will send each case's instructions, effective input, observed model-facing conversation (including retained prompts, responses, reasoning and tool content), candidate response, verified reference, bounded tool evidence"
             + (sentImages > 0 ? ", and \(sentImages) reference image\(sentImages == 1 ? "" : "s")" : "")
             + " to \(connection.name) at \(connection.baseURL)."
             + (images > 0 && sentImages == 0 ? " Reference images remain local." : "")
-            + " No application tools, other runs, secrets, or telemetry are sent."
+            + " No unrelated runs, application tool access, or telemetry are sent."
     }
 
     func approveExternalJudgeDisclosure() {
@@ -1004,6 +1004,7 @@ final class EvaluationStore {
         draftSuite.judgeConfiguration.approvedIncludeReferenceAttachments =
             draftSuite.judgeConfiguration.includeReferenceAttachments
         draftSuite.judgeConfiguration.approvedConnectionDigest = connection.disclosureDigest
+        draftSuite.judgeConfiguration.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         _ = saveSuite()
     }
 

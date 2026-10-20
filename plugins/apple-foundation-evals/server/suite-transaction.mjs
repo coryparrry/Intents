@@ -8,8 +8,12 @@ import { MAX_OUTPUT_BYTES } from './validation.mjs';
 
 // These lock files are permanent: unlinking one could create two independent locks.
 // The kernel releases the lock on process death; no PID/mtime stale-lock guessing.
-export async function saveSuiteTransaction(store, saved, expectedRevision, { operation = 'save', projectId } = {}) {
-  const lockPath = join(store.root, '.suite-locks', `${id(saved.id)}.lock`);
+export async function saveSuiteTransaction(store, saved, expectedRevision, { operation = 'save', projectId, expectedRecordRevision, kind = 'suites' } = {}) {
+  store.path(kind, saved.id);
+  // Preserve existing suite lock inodes; all writes/deletes of another record
+  // share its kind-qualified lock, including recovery revision checks.
+  const lockName = `${kind === 'suites' ? '' : kind + '-'}${id(saved.id)}.lock`;
+  const lockPath = join(store.root, '.suite-locks', lockName);
   const handle = await open(lockPath, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
   try { if (!(await handle.stat()).isFile()) throw new Error('Invalid suite transaction lock'); }
   finally { await handle.close(); }
@@ -44,6 +48,6 @@ export async function saveSuiteTransaction(store, saved, expectedRevision, { ope
       if (code !== 0 || result.error) reject(new Error(result.error || 'Suite save transaction failed'));
       else accept(result.suite);
     });
-    child.stdin.end(JSON.stringify({ root: store.root, saved, expectedRevision, operation, projectId }));
+    child.stdin.end(JSON.stringify({ root: store.root, saved, expectedRevision, operation, projectId, expectedRecordRevision, kind }));
   });
 }

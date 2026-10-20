@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { Store, processAlive } from './store.mjs';
+import { Store, processAlive, CatalogLimitError } from './store.mjs';
 import { id, only, object, suite, nativeResult } from './validation.mjs';
 import { TOOLS, UI_URI, UI_MIME, UI_META } from './catalog.mjs';
 import { nativeBinary } from '../scripts/launch.mjs';
@@ -11,6 +11,8 @@ import { initProjects, saveSuite, workspaceDispatch, health, overview } from './
 import { isAppSuite, portableSuite, revision, applyAssessment, sampleEnvelope, validateAppEvidence, importedTimestamp } from './app-format.mjs';
 import { imageInputs, REFERENCE_LIMITS } from './references.mjs';
 import { validateSchema } from './app-schema.mjs';
+import { recoveryResponse, recoveryDispatch } from './catalog-recovery.mjs';
+import { MAX_OUTPUT_BYTES } from './validation.mjs';
 
 const pluginURL = new URL('../', import.meta.url);
 const UNCHECKED = { available: null, reason: 'Check model availability' };
@@ -49,7 +51,7 @@ export class EvaluationApp {
   }
   async init() {
     await this.store.init();
-    const saved = await this.store.list('suites');
+    const saved = await this.store.recordNames('suites');
     if (!saved.length) {
       const starter = JSON.parse(await readFile(new URL('samples/starter-suite.json', pluginURL), 'utf8'));
       await this.store.saveSuite(suite(starter, randomUUID));
@@ -64,7 +66,7 @@ export class EvaluationApp {
         await this.store.write('runs', { ...fullRun, status: 'failed', finishedAt: new Date().toISOString(), durationMs: Date.now() - Date.parse(fullRun.startedAt), error: 'Evaluation interrupted before completion' });
       }
     }
-    for (const experiment of await this.store.list('experiments')) {
+    for await (const experiment of this.store.scan('experiments')) {
       const interrupted = experiment.status === 'running' && !processAlive(experiment.ownerPid);
       if (!interrupted && !['failed', 'cancelled'].includes(experiment.status)) continue;
       const staged = [];
@@ -108,11 +110,17 @@ export class EvaluationApp {
       validateCall(name, args);
       if (pendingPreview?.cancelled) throw new Error('Preview cancelled');
       return await this.dispatch(name, args);
+    } catch (error) {
+      if (error instanceof CatalogLimitError) return recoveryResponse(this, error.kind, error.message);
+      throw error;
     } finally { if (pendingPreview) this.pendingPreviews.delete(args.previewId); release(); }
   }
   async dispatch(name, args) {
     switch (name) {
-      case 'eval_open_workspace': return { page: 'workspace', projects: await this.store.list('projects'), defaultProjectId: this.defaultProjectId, limits: { ...REFERENCE_LIMITS, maxRequestBytes: 68157440 }, suites: await this.store.list('suites'), runs: await this.runs(), model: this.model, experiments: await this.store.list('experiments', ({ ownerPid, ...record }) => ({ ...record, revision: revision(record) })), overview: await overview(this, this.defaultProjectId) };
+      case 'eval_open_workspace': { const workspace = { page: 'workspace', projects: await this.store.list('projects'), defaultProjectId: this.defaultProjectId, limits: { ...REFERENCE_LIMITS, maxRequestBytes: 68157440 }, suites: await this.store.list('suites'), runs: await this.runs(), model: this.model, experiments: await this.store.list('experiments', ({ ownerPid, ...record }) => ({ ...record, revision: revision(record) })), overview: await overview(this, this.defaultProjectId) };
+        if (Buffer.byteLength(JSON.stringify(workspace)) > MAX_OUTPUT_BYTES) return recoveryResponse(this, 'suites', 'The combined workspace exceeds its 32 MiB response limit. Export or remove records before reopening.');
+        return workspace;
+      }
       case 'eval_open_trace': {
         only(args.file, ['name', 'resourceUri']);
         for (const key of ['name', 'resourceUri']) if (typeof args.file[key] !== 'string' || !args.file[key].trim() || args.file[key].length > (key === 'name' ? 1024 : 4096)) throw new Error(`Invalid file ${key}`);
@@ -142,7 +150,7 @@ export class EvaluationApp {
         return { deleted: true, runId };
       }
       case 'eval_compare_runs': return this.compare(args.runIds);
-      default: { const result = await workspaceDispatch(this, name, args) ?? await workflowDispatch(this, name, args); if (result === undefined) throw new Error('Unknown tool'); return result; }
+      default: { const result = await recoveryDispatch(this, name, args) ?? await workspaceDispatch(this, name, args) ?? await workflowDispatch(this, name, args); if (result === undefined) throw new Error('Unknown tool'); return result; }
     }
   }
   async readPublicRun(runId) {
@@ -155,8 +163,8 @@ export class EvaluationApp {
   }
   async runs(projectId = null) {
     await this.recover();
-    const experiments = new Map((await this.store.list('experiments')).map((item) => [item.id, item]));
-    const suites = new Map((await this.store.list('suites')).map((item) => [item.id, item]));
+    const experiments = new Map((await this.store.list('experiments', ({ id, status, experiment }) => ({ id, status, experiment: { runIDs: experiment?.runIDs } }))).map((item) => [item.id, item]));
+    const suites = new Map((await this.store.list('suites', (saved) => ({ id: saved.id, revision: saved.revision || revision(saved) }))).map((item) => [item.id, item]));
     return (await this.store.list('runs', (run) => { const experiment = run.experimentId ? experiments.get(run.experimentId) : null; return run.experimentId && (experiment?.status !== 'completed' || !experiment.experiment?.runIDs?.some((key) => key.toLowerCase() === run.id)) ? null : { ...summary(run), health: health(run, suites.get(run.suiteId)) }; })).filter(Boolean).filter((run) => !projectId || run.projectId === projectId).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
   }
   async preview(source, prompt, previewId) {

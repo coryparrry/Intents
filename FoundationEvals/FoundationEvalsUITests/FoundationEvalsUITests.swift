@@ -9,9 +9,9 @@ final class FoundationEvalsUITests: XCTestCase {
     func testDebugAppDoesNotOfferSelfUpdates() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
+        let storage = try uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -35,13 +35,13 @@ final class FoundationEvalsUITests: XCTestCase {
     func testIntentLabResultsAndRunControlsFitMinimumWindow() throws {
         let app = verificationApplication() // Fixed 1000 × 700 content size.
         let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
+        let storage = try uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
         let results = app.radioButtons["Results"]
         XCTAssertTrue(results.waitForExistence(timeout: 5))
         results.click()
@@ -61,13 +61,13 @@ final class FoundationEvalsUITests: XCTestCase {
     func testDuplicateParameterDraftsRemoveOneAtATime() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
+        let storage = try uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
         app.activate()
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
         app.radioButtons["Create test"].click()
         let window = app.windows.firstMatch
         let editor = app.scrollViews["Intent Lab scenario scroll"]
@@ -123,9 +123,9 @@ final class FoundationEvalsUITests: XCTestCase {
     func testRunCommandsMatchInvalidSuiteControls() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
+        let storage = try uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -161,11 +161,11 @@ final class FoundationEvalsUITests: XCTestCase {
     func testSuiteEditorShowsPrimaryRunControls() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
+        let storage = try uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
         app.launchArguments += [
             "--disable-mcp-autostart",
-            "--evaluation-storage-name", storageName
+            "--evaluation-storage", storage.path
         ]
         app.launch()
         defer { app.terminate() }
@@ -248,9 +248,9 @@ final class FoundationEvalsUITests: XCTestCase {
     func testCaseSelectionSurvivesSetupNavigation() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
+        let storage = try uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -284,9 +284,9 @@ final class FoundationEvalsUITests: XCTestCase {
     func testSameNamedCasesHaveDistinctAccessibilityLabels() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
+        let storage = try uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -313,9 +313,9 @@ final class FoundationEvalsUITests: XCTestCase {
     func testCaseSearchKeepsEditorAndScoringSelectionAligned() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = uiTestStorage(name: storageName)
+        let storage = try uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -393,10 +393,8 @@ final class FoundationEvalsUITests: XCTestCase {
         return app
     }
 
-    private func uiTestStorage(name: String) -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: "Library/Application Support/FoundationEvalsUITests", directoryHint: .isDirectory)
-            .appending(path: name, directoryHint: .isDirectory)
+    private func uiTestStorage(name: String) throws -> URL {
+        try UITestStorage.makeDirectory(prefix: name)
     }
 
 }

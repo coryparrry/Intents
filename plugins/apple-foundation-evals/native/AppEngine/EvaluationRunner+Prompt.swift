@@ -223,6 +223,7 @@ extension EvaluationRunner {
         tools: [any Tool],
         historyTokenCount: Int = 0,
         historyImageTokenCountAvailable: Bool = true,
+        judgeSubjectContext: EvaluationJudgeSubjectContext? = nil,
         tokenCounter: any EvaluationPromptInputTokenCounting = EvaluationSystemPromptInputTokenCounter()
     ) async throws -> (
         prompt: Prompt,
@@ -309,12 +310,15 @@ extension EvaluationRunner {
                 judgeAdmissionSuite.instructions = [suite.instructions, suite.features.profile.afterToolInstructions]
                     .filter { !$0.isEmpty }.joined(separator: "\n\n")
             }
+            var admissionContext = judgeSubjectContext
+            admissionContext?.subjectInstructions = judgeAdmissionSuite.instructions
             let minimumJudgeText = Self.judgePrompt(
                 response: "",
                 evaluationCase: evaluationCase,
                 effectivePrompt: effectiveText,
                 suite: judgeAdmissionSuite,
-                toolEvidence: nil
+                toolEvidence: nil,
+                subjectContext: admissionContext
             )
             let minimumJudgePrompt = Self.prompt(text: minimumJudgeText, images: images)
             let judgeInstructionTokens = try await tokenCounter.tokenCount(for: Instructions(Self.judgeInstructions))

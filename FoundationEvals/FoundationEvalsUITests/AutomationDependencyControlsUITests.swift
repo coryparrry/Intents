@@ -20,7 +20,7 @@ final class AutomationDependencyControlsUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         app.activate()
-        app.typeKey("3", modifierFlags: .command)
+        app.typeKey("2", modifierFlags: .command)
         try select(first, in: app)
 
         let dependencies = app.checkBoxes["Copy installed native dependencies"].firstMatch

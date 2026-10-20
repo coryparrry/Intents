@@ -802,6 +802,7 @@ private struct ScenarioSavedAssessmentControls: View {
         configuration.approvedConnectionID = connection.id
         configuration.approvedIncludeReferenceAttachments = true
         configuration.approvedConnectionDigest = connection.disclosureDigest
+        configuration.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         return configuration
     }
 

@@ -12,10 +12,11 @@ struct AutomationNativeFirstRunReview: Sendable, Identifiable {
 
 extension AppAutomationStore {
     var canReviewFirstChecks: Bool {
-        permitsExecutionAdmission && canSelectApplicationFromCommand && candidate != nil && (candidate?.kind == .installedProduct ||
+        firstChecksUnavailableReason == nil && permitsExecutionAdmission && canSelectApplicationFromCommand && candidate != nil && (candidate?.kind == .installedProduct ||
             (prepared?.host.app.logicalID == candidateID && prepared?.host.app.configuration == configuration && prepared?.host.target == sourcePreparationTarget))
     }
     func reviewFirstChecks() throws -> AutomationNativeFirstRunReview {
+        if let reason = firstChecksUnavailableReason { throw AutomationContractError.missingEvidence(reason) }
         guard canReviewFirstChecks, let candidate else { throw AutomationContractError.missingEvidence("Prepare the selected app first") }
         if isInstalledMacUI {
             let gaps = ["Native Mac first checks require an associated UI host. No checks will run on this Mac."]

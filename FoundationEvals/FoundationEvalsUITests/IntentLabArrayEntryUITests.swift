@@ -11,7 +11,7 @@ final class IntentLabArrayEntryUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         app.activate()
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
         app.radioButtons["Create test"].click()
         let inputs = app.disclosureTriangles.matching(NSPredicate(format: "label BEGINSWITH %@", "Inputs ·")).firstMatch
         for _ in 0..<12 where !inputs.isHittable { app.scrollViews.element(boundBy: app.scrollViews.count - 1).swipeUp() }

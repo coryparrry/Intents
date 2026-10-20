@@ -13,7 +13,7 @@ final class MacPreparationUITests: XCTestCase {
         let app = XCUIApplication()
         fixture.configure(app, storage: storage)
         app.launch(); defer { app.terminate() }
-        app.typeKey("3", modifierFlags: .command)
+        app.typeKey("2", modifierFlags: .command)
         waitForAutomationSelection(in: app)
         selectAutomationMenu(app.popUpButtons["App"], item: "AutomationFixtureMac")
         selectAutomationMenu(app.popUpButtons["automation.preparation.destination"], item: "macOS")

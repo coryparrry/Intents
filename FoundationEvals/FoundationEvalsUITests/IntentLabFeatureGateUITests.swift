@@ -1,7 +1,7 @@
 import XCTest
 
 final class IntentLabFeatureGateUITests: XCTestCase {
-    @MainActor func testDisabledReleaseHidesIntentLabAndKeepsAutomation() throws {
+    @MainActor func testDisabledReleaseExplainsIntentLabAndKeepsAutomation() throws {
         continueAfterFailure = false
         let storage = try UITestStorage.makeDirectory(prefix: "intent-lab-flag-off")
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -11,18 +11,17 @@ final class IntentLabFeatureGateUITests: XCTestCase {
         defer { app.terminate() }
         try UITestStorage.openSuiteEditor(in: app)
         app.menuBars.menuBarItems["Evaluation"].click()
-        XCTAssertFalse(app.menuItems["Show Intent Lab"].exists)
-        XCTAssertTrue(app.menuItems["Show App Automation"].exists)
+        XCTAssertTrue(app.menuItems["Show Model Evaluations"].exists)
+        XCTAssertTrue(app.menuItems["Show App Intents & Siri"].exists)
         app.typeKey(.escape, modifierFlags: [])
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
+        XCTAssertTrue(app.staticTexts["Intent Lab unavailable"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.radioButtons["Connect app"].exists)
-        XCTAssertTrue(app.buttons["Run evaluation"].isHittable,
-                      "The disabled shortcut must leave the ordinary suite editor usable")
         let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        screenshot.name = "Intent Lab hidden with flag off"
+        screenshot.name = "Intent Lab unavailable explanation with flag off"
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        app.typeKey("3", modifierFlags: .command)
+        app.typeKey("2", modifierFlags: .command)
         XCTAssertTrue(app.buttons["Choose app…"].waitForExistence(timeout: 5))
     }
 
@@ -36,10 +35,7 @@ final class IntentLabFeatureGateUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         try UITestStorage.openSuiteEditor(in: app)
-        app.menuBars.menuBarItems["Evaluation"].click()
-        XCTAssertTrue(app.menuItems["Show Intent Lab"].exists)
-        app.typeKey(.escape, modifierFlags: [])
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
         XCTAssertTrue(app.radioButtons["Connect app"].waitForExistence(timeout: 5))
         let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         screenshot.name = "Intent Lab enabled by explicit test decision"

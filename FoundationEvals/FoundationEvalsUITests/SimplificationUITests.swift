@@ -26,7 +26,7 @@ final class SimplificationUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         app.activate()
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
         let results = app.radioButtons["Results"]
         XCTAssertTrue(results.waitForExistence(timeout: 10), app.debugDescription)
         results.click()

@@ -1390,7 +1390,8 @@ struct EvaluationDevelopmentWorkflowTests {
             mode: .connection, connectionID: connectionID,
             externalEvidenceApprovedAt: approvedAt, includeReferenceAttachments: false,
             approvedConnectionID: connectionID, approvedIncludeReferenceAttachments: false,
-            approvedConnectionDigest: connection.disclosureDigest
+            approvedConnectionDigest: connection.disclosureDigest,
+            approvedEvidencePolicyVersion: EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         )
         suite.modelConfiguration.coreAISettings.resourcesPath = "/Users/machine-a/Models"
         suite.modelConfiguration.coreAISettings.resourcesBookmark = Data([1, 2, 3])
@@ -2560,7 +2561,8 @@ struct EvaluationDevelopmentWorkflowTests {
             mode: .connection, connectionID: connection.id,
             externalEvidenceApprovedAt: Date(), includeReferenceAttachments: false,
             approvedConnectionID: connection.id, approvedIncludeReferenceAttachments: false,
-            approvedConnectionDigest: connection.disclosureDigest
+            approvedConnectionDigest: connection.disclosureDigest,
+            approvedEvidencePolicyVersion: EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         )
 
         let assessment = try await EvaluationReassessmentService().reassess(
@@ -2591,7 +2593,8 @@ struct EvaluationDevelopmentWorkflowTests {
             mode: .connection, connectionID: connection.id,
             externalEvidenceApprovedAt: Date(), includeReferenceAttachments: false,
             approvedConnectionID: connection.id, approvedIncludeReferenceAttachments: false,
-            approvedConnectionDigest: connection.disclosureDigest
+            approvedConnectionDigest: connection.disclosureDigest,
+            approvedEvidencePolicyVersion: EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         )
 
         let assessment = try await EvaluationReassessmentService().reassess(
@@ -2624,7 +2627,8 @@ struct EvaluationDevelopmentWorkflowTests {
             includeReferenceAttachments: false,
             approvedConnectionID: connection.id,
             approvedIncludeReferenceAttachments: false,
-            approvedConnectionDigest: connection.disclosureDigest
+            approvedConnectionDigest: connection.disclosureDigest,
+            approvedEvidencePolicyVersion: EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         )
 
         let assessment = try await EvaluationReassessmentService().reassess(
@@ -2652,7 +2656,8 @@ struct EvaluationDevelopmentWorkflowTests {
             mode: .connection, connectionID: connection.id,
             externalEvidenceApprovedAt: Date(), includeReferenceAttachments: false,
             approvedConnectionID: connection.id, approvedIncludeReferenceAttachments: false,
-            approvedConnectionDigest: connection.disclosureDigest
+            approvedConnectionDigest: connection.disclosureDigest,
+            approvedEvidencePolicyVersion: EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         )
 
         let assessment = try await EvaluationReassessmentService().reassess(
@@ -2738,7 +2743,8 @@ struct EvaluationDevelopmentWorkflowTests {
             includeReferenceAttachments: false,
             approvedConnectionID: connection.id,
             approvedIncludeReferenceAttachments: false,
-            approvedConnectionDigest: connection.disclosureDigest
+            approvedConnectionDigest: connection.disclosureDigest,
+            approvedEvidencePolicyVersion: EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         )
 
         let result = await Task { () -> Result<EvaluationAssessment, Error> in

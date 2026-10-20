@@ -22,7 +22,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
 
         let picker = app.popUpButtons["Run destination"]
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
@@ -39,7 +39,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         app.activate()
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 5))
 
@@ -90,7 +90,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         app.activate()
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
         app.radioButtons["Create test"].click()
         let name = app.textFields["Test name"]
         let original = name.value as? String
@@ -119,7 +119,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         defer { app.terminate() }
         app.activate()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
         app.radioButtons["Create test"].click()
         app.buttons["New test"].click()
         let discardDraft = app.sheets.buttons["Discard draft and continue"].firstMatch
@@ -154,7 +154,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         app.activate()
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
         // A fresh workspace opens the legacy sample. Create the stable check
         // whose run choices must survive cancelling project approval.
         app.radioButtons["Create test"].click()
@@ -208,7 +208,7 @@ final class IntentLabGuidanceUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         app.activate()
-        app.typeKey("2", modifierFlags: .command)
+        try UITestStorage.openIntentLab(in: app)
         let chooseProject = app.buttons["Choose Project…"]
         XCTAssertTrue(chooseProject.waitForExistence(timeout: 5))
         chooseProject.click()

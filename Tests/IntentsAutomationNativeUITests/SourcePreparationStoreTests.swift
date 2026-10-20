@@ -441,8 +441,26 @@ import XCTest
         model.preparationSelectionChanged(); XCTAssertFalse(model.canPrepare)
         model.physicalDeviceID = "00008140-001049013EF3401C"; model.preparationSelectionChanged()
         XCTAssertTrue(model.canPrepare); XCTAssertFalse(model.needsSimulatorInventory)
+        XCTAssertNotNil(model.firstChecksUnavailableReason, "Explain the unsupported route before a physical build")
+        XCTAssertNotNil(model.selectedWorkflowUnavailableReason)
+        XCTAssertFalse(model.canReviewFirstChecks)
+        XCTAssertThrowsError(try model.reviewFirstChecks()) { error in
+            XCTAssertTrue(String(describing: error).contains("Automatic checks are unavailable on physical devices"))
+        }
+        model.runFirstChecks(.init(id: "unreviewed", requests: [], gaps: [], appName: "Subject", targetName: "Device"))
+        XCTAssertFalse(model.busy)
+        XCTAssertTrue(model.firstRunReports.isEmpty)
+        XCTAssertTrue(model.message?.contains("Automatic checks are unavailable on physical devices") == true)
         await model.prepareAndWait(); XCTAssertEqual(model.prepared?.host.target.kind, .physical)
+        for route in ["ui", "system", "fresh"] {
+            model.workflowRoute = route
+            XCTAssertNotNil(model.selectedWorkflowUnavailableReason)
+            XCTAssertFalse(model.canRun)
+            XCTAssertFalse(model.canReviewFirstChecks)
+            XCTAssertThrowsError(try model.reviewFirstChecks())
+        }
         model.workflowRoute = "siri"; model.siriRequest = "Open the approved fixture"
+        XCTAssertNil(model.selectedWorkflowUnavailableReason)
         model.effectChoice = "navigation"; model.effectsConfirmed = true; model.disposable = true; model.installApproved = true
         XCTAssertEqual(model.siriCapabilities.records["siri.recognizedText.api"]?.state, .available)
         model.siriCapabilities.records["siri.recognizedText.api"]?.state = .unknown

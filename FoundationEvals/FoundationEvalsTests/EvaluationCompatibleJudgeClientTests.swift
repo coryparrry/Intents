@@ -29,7 +29,8 @@ struct EvaluationCompatibleJudgeClientTests {
             includeReferenceAttachments: false,
             approvedConnectionID: connection.id,
             approvedIncludeReferenceAttachments: false,
-            approvedConnectionDigest: connection.disclosureDigest
+            approvedConnectionDigest: connection.disclosureDigest,
+            approvedEvidencePolicyVersion: EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         )
         let result = try await client.judge(
             response: "Blue light is scattered.",
@@ -234,7 +235,8 @@ struct EvaluationCompatibleJudgeClientTests {
             mode: .connection, connectionID: connection.id,
             externalEvidenceApprovedAt: Date(), includeReferenceAttachments: false,
             approvedConnectionID: connection.id, approvedIncludeReferenceAttachments: false,
-            approvedConnectionDigest: connection.disclosureDigest
+            approvedConnectionDigest: connection.disclosureDigest,
+            approvedEvidencePolicyVersion: EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         )
         do {
             _ = try await EvaluationCompatibleJudgeClient().judge(
@@ -492,6 +494,7 @@ struct EvaluationCompatibleJudgeClientTests {
         suite.judgeConfiguration.approvedConnectionID = connection.id
         suite.judgeConfiguration.approvedIncludeReferenceAttachments = true
         suite.judgeConfiguration.approvedConnectionDigest = connection.disclosureDigest
+        suite.judgeConfiguration.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         let image = ImageEvaluationInput(label: "image", url: URL(filePath: "/tmp/not-read.png"))
         await #expect(throws: EvaluationCompatibleJudgeError.self) {
             try await EvaluationCompatibleJudgeClient().judge(
@@ -547,6 +550,7 @@ struct EvaluationCompatibleJudgeClientTests {
             baseURL: "http://127.0.0.1:11434/v1", modelID: "judge"
         )
         configuration.approvedConnectionDigest = connection.disclosureDigest
+        configuration.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         #expect(configuration.hasCurrentExternalEvidenceApproval(for: connection))
 
         configuration.connectionID = UUID()
@@ -571,7 +575,8 @@ struct EvaluationCompatibleJudgeClientTests {
             includeReferenceAttachments: false,
             approvedConnectionID: connection.id,
             approvedIncludeReferenceAttachments: false,
-            approvedConnectionDigest: connection.disclosureDigest
+            approvedConnectionDigest: connection.disclosureDigest,
+            approvedEvidencePolicyVersion: EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         )
         return suite
     }
