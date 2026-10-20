@@ -11,7 +11,7 @@ test('recovery UI shows counts and pagination and requires record review before 
   const removed = [], pages = [], exported = [];
   const record = { id: 'record', name: 'Saved suite', byteCount: 42, recordRevision: 'revision', canRemove: true };
   const panel = renderCatalogRecovery({ node, button: (text, onclick, cls, disabled) => Object.assign(node('button', text, cls), { onclick, disabled }),
-    data: { message: 'Size limit reached', catalogRecovery: { kind: 'suites', totalRecords: 30, records: [record], nextCursor: '25' } },
+    canDownload: true, data: { message: 'Size limit reached', catalogRecovery: { kind: 'suites', totalRecords: 30, records: [record], nextCursor: '25' } },
     onPage: (...args) => pages.push(args), onRetry: () => {}, onExport: (...args) => exported.push(args), onRemove: (...args) => removed.push(args) });
   assert.equal(panel.attributes['aria-label'], 'Catalog recovery');
   assert.ok(find(panel, (item) => item.text === 'suites: 30 saved records. Showing 1 on this page.').length);
@@ -65,4 +65,24 @@ test('recovery uses the full content grid and hides irrelevant navigation, then 
   setCatalogRecoveryLayout(document, true); setCatalogRecoveryLayout(document, false);
   assert.equal(document.body.classList.contains('sidebar-hidden'), true);
   assert.equal(dom.window.getComputedStyle(shell).gridTemplateColumns, 'minmax(0,1fr)');
+});
+
+test('hosts without downloads show actionable MCP chunk export guidance without offering or fetching a download', () => {
+  const exported = [], record = { id: 'saved-record', name: 'Saved suite', byteCount: 42, recordRevision: 'exact-revision', canRemove: true };
+  const options = { node, button: (text, onclick, cls, disabled) => Object.assign(node('button', text, cls), { onclick, disabled }),
+    data: { message: 'Size limit reached', catalogRecovery: { kind: 'suites', totalRecords: 1, records: [record], nextCursor: null } },
+    onPage() {}, onRetry() {}, onRemove() {}, onExport: (...args) => exported.push(args) };
+  for (const canDownload of [undefined, false]) {
+    const panel = renderCatalogRecovery({ ...options, canDownload });
+    assert.equal(find(panel, (item) => item.text === 'Export exact saved JSON').length, 0);
+    assert.ok(find(panel, (item) => item.text?.includes('This host does not support file downloads.')).length);
+    const instructions = find(panel, (item) => item.text?.startsWith('Start eval_catalog_export_chunk'))[0].text;
+    assert.ok(instructions.includes(JSON.stringify({ kind: 'suites', recordId: record.id, recordRevision: record.recordRevision, offset: 0, bytes: 262144 })));
+    assert.match(instructions, /nextOffset until it is null/);
+    assert.equal(find(panel, (item) => item.text === 'Remove this saved record')[0].disabled, true);
+  }
+  assert.deepEqual(exported, []);
+  const supported = renderCatalogRecovery({ ...options, canDownload: true });
+  assert.equal(find(supported, (item) => item.text === 'Export exact saved JSON').length, 1);
+  assert.equal(find(supported, (item) => item.text?.includes('This host does not support file downloads.')).length, 0);
 });

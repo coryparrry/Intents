@@ -45,12 +45,30 @@ struct EvaluationJudgeSubjectContext: Codable, Equatable, Sendable {
     }
 
     func validated() throws -> Self {
+        try admittingInstructionVariants([subjectInstructions])
+    }
+
+    /// Validate every reachable profile state before generation, retaining the
+    /// largest encoded context for admission. JSON escaping, rather than String
+    /// length, determines the evidence bound. This does not alter frozen history.
+    func admittingInstructionVariants(_ instructions: [String?]) throws -> Self {
         guard formatVersion == 1 else { throw ContextError.unavailable("The saved conversation evidence format is unsupported.") }
         if let unavailableReason { throw ContextError.unavailable(unavailableReason) }
-        guard try JSONEncoder().encode(self).count <= Self.maximumBytes else {
-            throw ContextError.unavailable("The saved conversation evidence exceeds its capture limit.")
+        var largest = self
+        var largestBytes = 0
+        for instructions in instructions.isEmpty ? [subjectInstructions] : instructions {
+            var candidate = self
+            candidate.subjectInstructions = instructions
+            let byteCount = try JSONEncoder().encode(candidate).count
+            guard byteCount <= Self.maximumBytes else {
+                throw ContextError.unavailable("The saved conversation evidence exceeds its capture limit.")
+            }
+            if byteCount >= largestBytes {
+                largest = candidate
+                largestBytes = byteCount
+            }
         }
-        return self
+        return largest
     }
 
     /// Old single-turn runs remain usable. Configured multi-turn inputs cannot stand

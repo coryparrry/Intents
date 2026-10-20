@@ -282,6 +282,11 @@ actor EvaluationRunner {
             let restoreSpanID = workflow.begin(kind: .preparation, title: "Restore conversation", parentID: sessionPreparationSpanID,
                 metadata: ["operation": "restoreHistory"])
             let restoredHistory = try EvaluationConversationRuntime.restoredHistory(from: evaluationCase.conversation)
+            // DynamicProfile starts after-tool from the original restored history,
+            // even if later retention or projection removes those tool outputs.
+            let profileStartedAfterTool = restoredHistory.contains { entry in
+                if case .toolOutput = entry { true } else { false }
+            }
             workflow.finish(restoreSpanID, metadata: ["historyEntries": String(restoredHistory.count)])
             restoredBuiltinToolCallIDs = Set(
                 EvaluationBuiltinToolTrace.tools(from: restoredHistory, names: builtinToolNames).map(\.id)
@@ -353,6 +358,7 @@ actor EvaluationRunner {
                         tools: tools,
                         historyTokenCount: historyEstimate.count,
                         historyImageTokenCountAvailable: historyEstimate.imageTokenCountAvailable,
+                        profileHasTransitioned: (await profileRecorder.transitioned) || profileStartedAfterTool,
                         tokenCounter: promptTokenCounter
                     )
                     setupEffectivePrompt = setupPrepared.text
@@ -478,6 +484,7 @@ actor EvaluationRunner {
                 historyTokenCount: historyEstimate.count,
                 historyImageTokenCountAvailable: historyEstimate.imageTokenCountAvailable,
                 judgeSubjectContext: judgeSubjectContext,
+                profileHasTransitioned: (await profileRecorder.transitioned) || profileStartedAfterTool,
                 tokenCounter: promptTokenCounter
             )
             imageInputTokenCountAvailable = imageInputTokenCountAvailable
@@ -573,7 +580,13 @@ actor EvaluationRunner {
                 scoringSuite.instructions = [suite.instructions, suite.features.profile.afterToolInstructions]
                     .filter { !$0.isEmpty }.joined(separator: "\n\n")
             }
-            judgeSubjectContext?.subjectInstructions = scoringSuite.instructions
+            if suite.needsModelJudge {
+                // Admission already checked this reachable profile state. Keep
+                // the saved context identical to the context passed to scoring.
+                judgeSubjectContext = try judgeSubjectContext?.admittingInstructionVariants([scoringSuite.instructions])
+            } else {
+                judgeSubjectContext?.subjectInstructions = scoringSuite.instructions
+            }
             let scoringStarted = ContinuousClock.now
             let scoringSpanID = workflow.begin(kind: .scoring, title: "Score response", parentID: rootSpanID,
                 metadata: ["scoringMode": suite.scoringMode.rawValue])

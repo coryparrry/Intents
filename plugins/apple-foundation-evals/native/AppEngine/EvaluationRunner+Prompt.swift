@@ -224,6 +224,7 @@ extension EvaluationRunner {
         historyTokenCount: Int = 0,
         historyImageTokenCountAvailable: Bool = true,
         judgeSubjectContext: EvaluationJudgeSubjectContext? = nil,
+        profileHasTransitioned: Bool = false,
         tokenCounter: any EvaluationPromptInputTokenCounting = EvaluationSystemPromptInputTokenCounter()
     ) async throws -> (
         prompt: Prompt,
@@ -231,6 +232,8 @@ extension EvaluationRunner {
         tokenCount: Int,
         imageInputTokenCountAvailable: Bool
     ) {
+        let afterToolProfileIsReachable = suite.features.profile.enabled
+            && (profileHasTransitioned || !tools.isEmpty)
         let instructionTokens = suite.instructions.isEmpty
             ? 0
             : try await tokenCounter.tokenCount(for: Instructions(suite.instructions))
@@ -243,7 +246,7 @@ extension EvaluationRunner {
                 representNilExplicitlyInGeneratedContent:
                     suite.features.outputRepresentNilExplicitlyInGeneratedContent
             ))
-        let profileTokens = suite.features.profile.enabled ? try await tokenCounter.tokenCount(
+        let profileTokens = afterToolProfileIsReachable ? try await tokenCounter.tokenCount(
             for: Instructions(suite.features.profile.afterToolInstructions)) : 0
         let allocation = suite.modelConfiguration.contextAllocation(
             contextSize: contextSize,
@@ -301,17 +304,29 @@ extension EvaluationRunner {
                 budget: inputCeiling
             )
         }
+        var admissionContext = judgeSubjectContext
+        if suite.needsModelJudge {
+            // A tool can activate the second profile during the scored request,
+            // or it may already be active after a setup turn. Admit reachable states
+            // before invoking the subject, including when its judge is external.
+            var instructions: [String?] = [suite.instructions]
+            if afterToolProfileIsReachable {
+                instructions.append([suite.instructions, suite.features.profile.afterToolInstructions]
+                    .filter { !$0.isEmpty }.joined(separator: "\n\n"))
+            }
+            admissionContext = try judgeSubjectContext?.admittingInstructionVariants(instructions)
+        }
         if suite.needsModelJudge {
             var judgeAdmissionSuite = suite
             judgeAdmissionSuite.criteria = suite.rubricCriteria
                 .filter { EvaluationExactCriterion.expectedText(in: $0) == nil }
                 .joined(separator: "\n")
-            if suite.features.profile.enabled {
+            if let instructions = admissionContext?.subjectInstructions {
+                judgeAdmissionSuite.instructions = instructions
+            } else if afterToolProfileIsReachable {
                 judgeAdmissionSuite.instructions = [suite.instructions, suite.features.profile.afterToolInstructions]
                     .filter { !$0.isEmpty }.joined(separator: "\n\n")
             }
-            var admissionContext = judgeSubjectContext
-            admissionContext?.subjectInstructions = judgeAdmissionSuite.instructions
             let minimumJudgeText = Self.judgePrompt(
                 response: "",
                 evaluationCase: evaluationCase,

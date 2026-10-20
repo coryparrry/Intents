@@ -663,7 +663,7 @@ function render() {
       try { await acceptResult({ structuredContent: await call('eval_catalog_recovery', { kind, cursor }) }); }
       catch (error) { fail(error); }
     };
-    main.replaceChildren(renderCatalogRecovery({ node, button, data: state.catalogRecovery, onPage,
+    main.replaceChildren(renderCatalogRecovery({ node, button, data: state.catalogRecovery, canDownload: !!state.hostCapabilities.downloadFile, onPage,
       onRetry: async () => acceptResult({ structuredContent: await call('eval_open_workspace') }),
       onExport: async (kind, record) => { const exported = await exportRecoveryRecord(call, kind, record); await download(exported.filename, exported.text); },
       onRemove: async (kind, record) => {
@@ -1593,6 +1593,7 @@ if (parent !== window) {
       applyHostContext(response.hostContext, document);
       state.connected = true;
       state.hostCapabilities = response.hostCapabilities || {};
+      if (state.catalogRecovery) render();
       transport.notify("ui/notifications/initialized");
       setTimeout(() => {
         if (!initialResult && !state.disposed)

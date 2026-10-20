@@ -1,5 +1,5 @@
 // Recovery shows bounded metadata only; complete records remain on disk.
-export function renderCatalogRecovery({ node, button, data, onPage, onRetry, onExport, onRemove }) {
+export function renderCatalogRecovery({ node, button, data, canDownload = false, onPage, onRetry, onExport, onRemove }) {
   const panel = node('section', null, 'page catalog-recovery-page');
   panel.setAttribute('aria-label', 'Catalog recovery');
   panel.append(node('h1', 'Recover a large workspace'), node('p', data.message),
@@ -16,7 +16,11 @@ export function renderCatalogRecovery({ node, button, data, onPage, onRetry, onE
   for (const record of page.records) {
     const row = node('article', null, 'catalog-recovery-record');
     row.append(node('h2', record.name), node('p', `${record.id} · ${record.byteCount.toLocaleString()} bytes${record.status ? ` · ${record.status}` : ''}`));
-    row.append(button('Export exact saved JSON', () => onExport(page.kind, record)));
+    if (canDownload) row.append(button('Export exact saved JSON', () => onExport(page.kind, record)));
+    else {
+      row.append(node('p', 'This host does not support file downloads. Ask your agent to export this record with eval_catalog_export_chunk, decode each base64 chunk and join the bytes, and save the JSON before removing evidence.'));
+      row.append(node('p', `Start eval_catalog_export_chunk with ${JSON.stringify({ kind: page.kind, recordId: record.id, recordRevision: record.recordRevision, offset: 0, bytes: 262144 })}. Continue with each nextOffset until it is null.`));
+    }
     if (record.canRemove) {
       const label = node('label'), check = node('input'); check.type = 'checkbox';
       const remove = button('Remove this saved record', () => onRemove(page.kind, record), 'secondary', true);

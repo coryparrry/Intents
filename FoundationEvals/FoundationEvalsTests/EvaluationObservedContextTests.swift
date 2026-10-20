@@ -110,6 +110,116 @@ struct EvaluationObservedContextTests {
         }
     }
 
+    @Test func profileInstructionAdmissionUsesEncodedBytesAndAcceptsExactLimit() throws {
+        let context = EvaluationJudgeSubjectContext(entries: [.init(role: "assistant", content: "Observed history")], subjectInstructions: "")
+        let selected = try context.admittingInstructionVariants(["AAAA", "\n\n\n"])
+        #expect(selected.subjectInstructions == "\n\n\n")
+        #expect(selected.entries == context.entries)
+        // The active profile may already be the expanded one after a setup tool.
+        let active = try selected.admittingInstructionVariants(["AAAA", "\n\n\n"])
+        #expect(active == selected)
+
+        var boundary = EvaluationJudgeSubjectContext(entries: [.init(role: "assistant", content: "")], subjectInstructions: "")
+        let overhead = try JSONEncoder().encode(boundary).count
+        boundary.entries[0].content = String(repeating: "x", count: EvaluationJudgeSubjectContext.maximumBytes - overhead)
+        #expect(try JSONEncoder().encode(boundary).count == EvaluationJudgeSubjectContext.maximumBytes)
+        #expect(try boundary.admittingInstructionVariants([""]) == boundary)
+        #expect(throws: EvaluationJudgeSubjectContext.ContextError.self) {
+            try boundary.admittingInstructionVariants(["", "\n"])
+        }
+    }
+
+    @Test(arguments: [EvaluationJudgeMode.sameModel, .connection])
+    func profileGrowthOverEvidenceLimitStopsBeforeSubjectExecutor(mode: EvaluationJudgeMode) async throws {
+        var suite = fixture().0
+        suite.judgeConfiguration.mode = mode
+        suite.instructions = "Base instructions"
+        suite.modelConfiguration.provider = .customHTTP
+        suite.modelConfiguration.customProviderSettings.contextSize = 262_144
+        suite.modelConfiguration.customProviderSettings.tokenizerEndpoint = "http://127.0.0.1:19096/tokenize"
+        suite.modelConfiguration.customProviderSettings.supportsToolCalling = true
+        suite.modelConfiguration.customProviderSettings.supportsGuidedGeneration = true
+        suite.features.profile.enabled = true
+        suite.features.profile.afterToolInstructions = String(repeating: "p", count: EvaluationProfileConfiguration.maximumInstructionsBytes)
+        suite.features.tools = [.init(name: "context_fixture", description: "Profile transition fixture", fixtureResponse: "ok")]
+        let history = turn(String(repeating: "🧪", count: 130_200), "Observed acknowledgement")
+        suite.cases[0].conversation.restoredTranscriptJSON = String(decoding: try JSONEncoder().encode(Transcript(entries: history)), as: UTF8.self)
+        #expect(suite.cases[0].conversation.validationIssue == nil)
+        #expect(suite.features.validationIssue == nil)
+        #expect(suite.modelConfiguration.customProviderSettings.validationIssue == nil)
+        let context = EvaluationJudgeSubjectContext.capture(history, instructions: suite.instructions)
+        #expect(context.unavailableReason == nil)
+        #expect(try JSONEncoder().encode(context).count <= EvaluationJudgeSubjectContext.maximumBytes)
+        var expanded = context
+        expanded.subjectInstructions = [suite.instructions, suite.features.profile.afterToolInstructions].joined(separator: "\n\n")
+        #expect(try JSONEncoder().encode(expanded).count > EvaluationJudgeSubjectContext.maximumBytes)
+
+        // Exact provider token counting can admit large Unicode inputs. Evidence
+        // byte admission must therefore work independently of token estimates.
+        let counter = EvaluationDeferredPromptInputTokenCounter()
+        let tools: [any Tool] = try EvaluationCustomTool.makeTools(definitions: suite.features.tools,
+            recorder: EvaluationCustomToolRecorder(maximumCalls: 1), tokenCounter: EvaluationPortablePromptInputTokenCounter())
+        var withoutTransition = suite
+        withoutTransition.features.profile.afterToolInstructions = ""
+        _ = try await EvaluationRunner().preparedPrompt(for: suite.cases[0], suite: withoutTransition, images: [],
+            contextSize: 262_144, tools: tools, judgeSubjectContext: context, tokenCounter: counter)
+        await #expect(throws: EvaluationJudgeSubjectContext.ContextError.self) {
+            _ = try await EvaluationRunner().preparedPrompt(for: suite.cases[0], suite: suite, images: [],
+                contextSize: 262_144, tools: tools, judgeSubjectContext: context, tokenCounter: counter)
+        }
+        // Merely enabling a profile cannot make its after-tool state reachable.
+        // This valid no-tool profile must admit the same near-limit base history.
+        var noTools = suite
+        noTools.features.tools = []
+        noTools.features.profile.requireToolFirst = false
+        #expect(noTools.features.validationIssue == nil)
+        _ = try await EvaluationRunner().preparedPrompt(for: noTools.cases[0], suite: noTools, images: [],
+            contextSize: 262_144, tools: [], judgeSubjectContext: context, tokenCounter: counter)
+        // An already activated setup profile still requires expanded admission,
+        // even when its current tool set has become empty.
+        await #expect(throws: EvaluationJudgeSubjectContext.ContextError.self) {
+            _ = try await EvaluationRunner().preparedPrompt(for: noTools.cases[0], suite: noTools, images: [],
+                contextSize: 262_144, tools: [], judgeSubjectContext: context,
+                profileHasTransitioned: true, tokenCounter: counter)
+        }
+        // Restored tool output activates the second profile before any new tool
+        // can run. Its admission must not depend on lazy onActivate scheduling.
+        let restoredToolHistory = [history[0],
+            .toolCalls(Transcript.ToolCalls([Transcript.ToolCall(id: "restored-call", toolName: "context_fixture",
+                arguments: GeneratedContent(properties: [:]))])),
+            .toolOutput(Transcript.ToolOutput(id: "restored-call", toolName: "context_fixture",
+                segments: [.text(Transcript.TextSegment(content: "ok"))])),
+            history[1]]
+        noTools.cases[0].conversation.restoredTranscriptJSON = String(
+            decoding: try JSONEncoder().encode(Transcript(entries: restoredToolHistory)), as: UTF8.self)
+        #expect(noTools.cases[0].conversation.validationIssue == nil)
+        let restoredRun = await EvaluationRunner().run(id: UUID(), suiteRevision: "restored-profile-byte-limit", startedAt: Date(), suite: noTools,
+            images: [], model: AdmissionMustNotExecuteModel(), contextSize: 262_144, modelName: "Must not execute", admissionError: nil,
+            externalJudge: nil, liveResponse: { _ in }, progress: { _, _, _ in })
+        let restoredResult = try #require(restoredRun.results.first)
+        #expect(restoredResult.status == .error)
+        #expect(restoredResult.response.isEmpty)
+        #expect(restoredResult.errorMessage?.contains("capture limit") == true)
+        let run = await EvaluationRunner().run(id: UUID(), suiteRevision: "profile-byte-limit", startedAt: Date(), suite: suite,
+            images: [], model: AdmissionMustNotExecuteModel(), contextSize: 262_144, modelName: "Must not execute", admissionError: nil,
+            externalJudge: nil, liveResponse: { _ in }, progress: { _, _, _ in })
+        let result = try #require(run.results.first)
+        #expect(result.status == .error)
+        #expect(result.response.isEmpty)
+        #expect(result.errorMessage?.contains("capture limit") == true)
+        #expect(result.judgeDurationMilliseconds == nil)
+
+        // A byte bound for unused semantic evidence must not block collection or
+        // an entirely deterministic rubric.
+        for criteria in ["", "exact: \"483\""] {
+            var deterministic = suite
+            deterministic.criteria = criteria
+            deterministic.scoringMode = criteria.isEmpty ? .review : .modelJudge
+            _ = try await EvaluationRunner().preparedPrompt(for: suite.cases[0], suite: deterministic, images: [],
+                contextSize: 262_144, tools: tools, judgeSubjectContext: context, tokenCounter: counter)
+        }
+    }
+
     @Test func initialScoringAndReloadedReassessmentUseIdenticalObservedContext() async throws {
         var (suite, connection) = fixture()
         suite.cases[0].conversation.setupTurns = [.init(prompt: "Remember the request")]
@@ -328,4 +438,24 @@ private struct ObservedContextExecutor: LanguageModelExecutor {
         }
         await channel.send(.response(action: .appendText(content, tokenCount: 8)))
     }
+}
+
+
+private struct AdmissionMustNotExecuteModel: LanguageModel {
+    typealias Executor = AdmissionMustNotExecuteExecutor
+    var capabilities: LanguageModelCapabilities { LanguageModelCapabilities([.guidedGeneration, .toolCalling]) }
+    var executorConfiguration: Bool { false }
+}
+
+private struct AdmissionMustNotExecuteExecutor: LanguageModelExecutor {
+    typealias Model = AdmissionMustNotExecuteModel
+    typealias Configuration = Bool
+    init(configuration: Bool) throws {}
+    func prewarm(model: Model, transcript: Transcript) {}
+    func respond(to request: LanguageModelExecutorGenerationRequest, model: Model,
+                 streamingInto channel: LanguageModelExecutorGenerationChannel) async throws {
+        Issue.record("Profile evidence byte admission invoked the subject executor")
+        throw UnexpectedExecution()
+    }
+    private struct UnexpectedExecution: Error {}
 }
