@@ -1,5 +1,92 @@
 # Changelog
 
+## [1.5.0](https://github.com/coryparrry/Intents/compare/v1.4.0...v1.5.0) (2026-10-20)
+
+
+### Features
+
+* **automation:** add a native workspace for owned app workflows and saved attempts ([f8de88e](https://github.com/coryparrry/Intents/commit/f8de88e13738fec413cbfa8ea59605d15503de0e))
+* **automation:** add controlled Siri state-check preparation with live qualification gates ([f8de88e](https://github.com/coryparrry/Intents/commit/f8de88e13738fec413cbfa8ea59605d15503de0e))
+* **automation:** provide a shared cli and reproducible simulator checks ([87f431c](https://github.com/coryparrry/Intents/commit/87f431c7ede5319b72b1e0e681bfeb6674ab0bf7))
+* **distribution:** install Intents through Homebrew with release updates ([4a5ac5b](https://github.com/coryparrry/Intents/commit/4a5ac5b8114df7cd6df6ffbdb5496ede69df3871))
+
+
+### Bug Fixes
+
+* **automation:** await fixture services and registration within approved execution budgets ([07a2cac](https://github.com/coryparrry/Intents/commit/07a2cac4afee50669aa823d1886cee272b0fbb4b))
+* **automation:** compare saved failures against changed source with unchanged checks ([6e7aaa9](https://github.com/coryparrry/Intents/commit/6e7aaa96bc76d8098995446dde707cb24822d86f))
+* **automation:** enable reviewed workflows for prepared mac source apps ([6e7aaa9](https://github.com/coryparrry/Intents/commit/6e7aaa96bc76d8098995446dde707cb24822d86f))
+* **automation:** explain when a stopped attempt may have dispatched its action ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **automation:** force-stop a simulator test runner that ignores termination during release ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **automation:** honor explicitly selected Xcode during preparation ([07a2cac](https://github.com/coryparrry/Intents/commit/07a2cac4afee50669aa823d1886cee272b0fbb4b))
+* **automation:** preserve prepared capabilities, recovery, and source capture ([07a2cac](https://github.com/coryparrry/Intents/commit/07a2cac4afee50669aa823d1886cee272b0fbb4b))
+* **automation:** recover device ownership after a cancelled App automation run instead of blocking evaluations and Intent Lab ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **automation:** restore device ownership recovery and reliable app selection ([c9972a3](https://github.com/coryparrry/Intents/commit/c9972a3e698be8ed68f904a8af57a8379667437f))
+* **automation:** restore typed intent runs across xcode and host updates ([f205bc9](https://github.com/coryparrry/Intents/commit/f205bc9ba6ea1dea4251f438546bdd012365dcd6))
+* **automation:** retain terminal intent errors and restore workspace preparation ([b29669d](https://github.com/coryparrry/Intents/commit/b29669de15781f7032b82845881bb0b11cebff80))
+* **ci:** enforce selected checks and reduce Mac runner contention ([a782b20](https://github.com/coryparrry/Intents/commit/a782b20b0e4d38578bcd6c18d5f2155858069ce9))
+* **ci:** keep live simulator and Mac acceptance outside automatic checks ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **ci:** stabilize regression fixtures and consolidate CI validation jobs ([73dc8ba](https://github.com/coryparrry/Intents/commit/73dc8ba4f3b456f6103e6859c62f209d2c78a0bc))
+* **ci:** stabilize simulator readiness and process reuse checks ([07a2cac](https://github.com/coryparrry/Intents/commit/07a2cac4afee50669aa823d1886cee272b0fbb4b))
+* **ci:** support macOS Python versions without os.waitid in the signing helper ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **ci:** wait for fixture registration inside simulator test hosts ([99f2944](https://github.com/coryparrry/Intents/commit/99f294462de90bb7fd2db3ae250c443bb8063f5a))
+* confirm runner termination before releasing automation resources ([f03d364](https://github.com/coryparrry/Intents/commit/f03d36497fab8f6b489872bc8fd40fd5dc944fd7))
+* **diagnostics:** classify scenario setup failures correctly ([4a7b0fc](https://github.com/coryparrry/Intents/commit/4a7b0fc2ae6429cafa6efd8527d448d1ea1b5608))
+* **diagnostics:** report consented native crashes without private content ([4a7b0fc](https://github.com/coryparrry/Intents/commit/4a7b0fc2ae6429cafa6efd8527d448d1ea1b5608))
+* **evaluations:** preserve completed outputs and recover failed runner connections ([b29669d](https://github.com/coryparrry/Intents/commit/b29669de15781f7032b82845881bb0b11cebff80))
+* **evaluations:** preserve concurrent suite edits and comparable evidence ([07a2cac](https://github.com/coryparrry/Intents/commit/07a2cac4afee50669aa823d1886cee272b0fbb4b))
+* **intent-lab:** accept equivalent no-op preparation and cleanup operations declared by integrations ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **intent-lab:** disable the support check until an integration declaration is bound ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **intent-lab:** let captured evidence be saved from Connect app without rerunning the test ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **intent-lab:** save passing Intent Lab results instead of rejecting them as inconsistent pending evidence ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **intent-lab:** show the UI test failure when a run records no evidence ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **intents:** align generated setup and saved checks with executable evidence contracts ([b29669d](https://github.com/coryparrry/Intents/commit/b29669de15781f7032b82845881bb0b11cebff80))
+* **intents:** keep Intent Lab unavailable until its release flag is enabled ([6a1cade](https://github.com/coryparrry/Intents/commit/6a1cade078c3627fcd060d66257fd567cf22bd36))
+* **plugin:** recover status polling and report captured evidence accurately ([b29669d](https://github.com/coryparrry/Intents/commit/b29669de15781f7032b82845881bb0b11cebff80))
+* **release:** keep release PRs current and include missing changelog categories ([c5fcc17](https://github.com/coryparrry/Intents/commit/c5fcc170f89882f015641f848373b322b436f453))
+* **review:** keep review editing controls reachable ([07a2cac](https://github.com/coryparrry/Intents/commit/07a2cac4afee50669aa823d1886cee272b0fbb4b))
+* run mixed ui and app intent workflows in the prepared test host ([f03d364](https://github.com/coryparrry/Intents/commit/f03d36497fab8f6b489872bc8fd40fd5dc944fd7))
+* **sdk:** support pinned external developer and intent test consumers ([b29669d](https://github.com/coryparrry/Intents/commit/b29669de15781f7032b82845881bb0b11cebff80))
+* **telemetry:** restore session and completed-feature analytics ([4a7b0fc](https://github.com/coryparrry/Intents/commit/4a7b0fc2ae6429cafa6efd8527d448d1ea1b5608))
+* **telemetry:** retain active usage and screen counts through diagnostics changes ([4a7b0fc](https://github.com/coryparrry/Intents/commit/4a7b0fc2ae6429cafa6efd8527d448d1ea1b5608))
+* **ui:** highlight the latest saved scored run in suite sparklines ([0265653](https://github.com/coryparrry/Intents/commit/0265653283c3bd4e174609f5339d4f237e7b8cf4))
+* **ui:** keep recent runs ordered across suites after restart ([0265653](https://github.com/coryparrry/Intents/commit/0265653283c3bd4e174609f5339d4f237e7b8cf4))
+* **ui:** restore workspace navigation, tab transitions, and clear saved-run results ([0265653](https://github.com/coryparrry/Intents/commit/0265653283c3bd4e174609f5339d4f237e7b8cf4))
+* **ui:** retain recent saved runs, separate suite trends, and preserve completed case failures ([0265653](https://github.com/coryparrry/Intents/commit/0265653283c3bd4e174609f5339d4f237e7b8cf4))
+* wait for simulator readiness before controller release checks ([f03d364](https://github.com/coryparrry/Intents/commit/f03d36497fab8f6b489872bc8fd40fd5dc944fd7))
+* **workflows:** cancel and join active operations during shutdown ([b29669d](https://github.com/coryparrry/Intents/commit/b29669de15781f7032b82845881bb0b11cebff80))
+
+
+### Performance
+
+* **ci:** reuse builds and bound CI runner demand ([07a2cac](https://github.com/coryparrry/Intents/commit/07a2cac4afee50669aa823d1886cee272b0fbb4b))
+
+
+### Documentation
+
+* **release:** explain changelog coverage and maintenance release versions ([c5fcc17](https://github.com/coryparrry/Intents/commit/c5fcc170f89882f015641f848373b322b436f453))
+* **site:** clarify downloads and first evaluation ([#73](https://github.com/coryparrry/Intents/issues/73)) ([caada4a](https://github.com/coryparrry/Intents/commit/caada4a65de0ea1ea2ca570680bb89c71bcdf1a3))
+
+
+### Refactoring
+
+* **automation:** consolidate production workflows on deterministic execution ([07a2cac](https://github.com/coryparrry/Intents/commit/07a2cac4afee50669aa823d1886cee272b0fbb4b))
+* remove dead execution paths and obsolete tests ([#137](https://github.com/coryparrry/Intents/issues/137)) ([88663bc](https://github.com/coryparrry/Intents/commit/88663bc1119e1f45cdf399fdb751d622c79c420f))
+
+
+### Tests
+
+* **automation:** cover qualification evidence verifier ([#76](https://github.com/coryparrry/Intents/issues/76)) ([d1712d7](https://github.com/coryparrry/Intents/commit/d1712d78a78c2ff7abb4982fa31de4781993ecc6))
+* **automation:** measure cancellation responsiveness from host exit ([bb43343](https://github.com/coryparrry/Intents/commit/bb43343a37ccd924329300c15657cefbfd859959))
+* **intent-lab:** cover executor kill escalation after journal failure and connection deadline ([#104](https://github.com/coryparrry/Intents/issues/104)) ([b17cb76](https://github.com/coryparrry/Intents/commit/b17cb767d336db7e8537ffbfc8ddbae4b8d297ab))
+* **mcp:** cover parse validation for attachment, start-run, list-runs and project release tools ([#81](https://github.com/coryparrry/Intents/issues/81)) ([e6a1e29](https://github.com/coryparrry/Intents/commit/e6a1e299424025a04797ba89ff9aa04f26bed510))
+* retain meaningful behavioral coverage ([0239141](https://github.com/coryparrry/Intents/commit/0239141f9076779093298391b8677f1770ed511b))
+
+
+### Continuous Integration
+
+* **release:** require curated release notes without restarting code checks ([07a2cac](https://github.com/coryparrry/Intents/commit/07a2cac4afee50669aa823d1886cee272b0fbb4b))
+
 ## [1.4.0](https://github.com/coryparrry/Intents/compare/v1.3.0...v1.4.0) (2026-10-03)
 
 
