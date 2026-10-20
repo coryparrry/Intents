@@ -36,7 +36,7 @@ run `brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
 9. Open **Setup → Model**. Make sure that the selected model is ready.
 10. Make sure that the run destination shows **This Mac · built-in evaluator**.
 11. Select **Run** in the toolbar. Wait until the response count is complete.
-12. Open **Results**, or select the new run under **Runs** in the sidebar.
+12. Select the new saved run in the sidebar.
 13. The run opens on **Report**, where you can read each response and score. Select **Workflow trace** to inspect the recorded execution steps.
 
 If **Run** is disabled, open **Run Details** from the destination menu. You can also point to **Run** to read the reason.
