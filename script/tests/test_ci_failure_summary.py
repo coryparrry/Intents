@@ -76,7 +76,7 @@ class FailureSummaryTests(unittest.TestCase):
         self.assertIn("cancellation is the recorded blocker", report)
         self.assertIn("Cancelled jobs: Build", report)
         self.assertIn("Skipped jobs: Tests", report)
-        report = self.render(FakeAPI(jobs=[failed_job(name="Portable regression tests")]))
+        report = self.render(FakeAPI(jobs=[failed_job(name="Compile app and tests")]))
         self.assertIn("underlying cause is unknown", report)
         self.assertNotIn("Original failed jobs:", report)
         self.assertIn("unknown or infrastructure", self.render(FakeAPI()))
@@ -84,8 +84,7 @@ class FailureSummaryTests(unittest.TestCase):
         self.assertIn("terminal checks succeeded", self.render(FakeAPI(), {"gate": "success"}))
 
     def test_all_exact_workflow_gate_names_remain_aggregate_failures(self):
-        names = ["Workflow and script checks", "Portable regression tests", "Compile app and tests",
-                 "Automation e2e (simulator)", "Native core tests", "Clean Intent Lab SDK consumer"]
+        names = ["Compile app and tests"]
         api = FakeAPI(jobs=[failed_job(index, name) for index, name in enumerate(names, 1)])
         report = self.render(api)
         self.assertEqual(summary.GATES, {name.casefold() for name in names})
@@ -93,16 +92,25 @@ class FailureSummaryTests(unittest.TestCase):
         self.assertNotIn("Original failed jobs:", report)
         self.assertFalse(any(path.endswith("/logs") for path in api.paths))
 
-    def test_shared_mac_failure_is_the_original_cause_of_proxy_gate_failures(self):
-        api = FakeAPI(jobs=[failed_job(23, "Mac regression tests"),
-            failed_job(24, "Native core tests"), failed_job(25, "Clean Intent Lab SDK consumer")],
-            logs={23: "error: synthetic readiness fixture never became ready"})
-        report = self.render(api)
-        self.assertIn("**Mac regression tests**", report)
-        self.assertIn("synthetic readiness fixture never became ready", report)
-        self.assertIn("Failed aggregate gates: Native core tests, Clean Intent Lab SDK consumer", report)
-        self.assertNotIn("/jobs/24/logs", api.paths)
-        self.assertNotIn("/jobs/25/logs", api.paths)
+    def test_real_quality_and_regression_workers_are_original_failures(self):
+        for name in ("Workflow and script checks", "Portable regression tests"):
+            with self.subTest(name=name):
+                api = FakeAPI(jobs=[failed_job(23, name), failed_job(24, "Compile app and tests")],
+                              logs={23: "error: selected worker failed its real test"})
+                report = self.render(api)
+                self.assertIn("Original failed jobs:", report)
+                self.assertIn(f"**{name}**", report)
+                self.assertIn("selected worker failed its real test", report)
+                self.assertIn("Failed aggregate gates: Compile app and tests", report)
+                self.assertIn("/repos/owner/repo/actions/jobs/23/logs", api.paths)
+                self.assertNotIn("/repos/owner/repo/actions/jobs/24/logs", api.paths)
+
+    def test_selection_gate_failure_is_reported_before_its_job_concludes(self):
+        report = self.render(FakeAPI(jobs=[{"name": "Portable regression tests", "conclusion": "success"}]),
+                             {"changes": "success", "swift-tests": "success", "selection-gate": "failure"})
+        self.assertIn("selection gate failed", report)
+        self.assertIn("Require every selected CI check", report)
+        self.assertNotIn("terminal checks succeeded", report)
 
     def test_partial_api_failure_preserves_known_original_job(self):
         api = FakeAPI(jobs=[failed_job()], logs={23: RuntimeError("GitHub request returned HTTP 403")},
@@ -232,6 +240,24 @@ class FailureSummaryTests(unittest.TestCase):
                     "GITHUB_RUN_ATTEMPT": "2", "GITHUB_STEP_SUMMARY": str(path),
                     "CI_NEEDS_JSON": '{"gate":{"result":"cancelled"}}'})
             self.assertIn("cancellation", path.read_text())
+
+    def test_cli_includes_own_gate_outcome_when_all_workers_succeeded(self):
+        for outcome in ("failure", "skipped", "", "unexpected", "success", "cancelled"):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "summary.md"
+                with patch.object(summary, "GitHubAPI", return_value=FakeAPI()):
+                    summary.main({"GITHUB_REPOSITORY": "owner/repo", "GITHUB_RUN_ID": "99",
+                        "GITHUB_RUN_ATTEMPT": "2", "GITHUB_STEP_SUMMARY": str(path),
+                        "CI_NEEDS_JSON": '{"changes":{"result":"success"},"swift-tests":{"result":"success"}}',
+                        "CI_GATE_RESULT": outcome})
+                report = path.read_text()
+                if outcome == "success":
+                    self.assertIn("terminal checks succeeded", report)
+                elif outcome == "cancelled":
+                    self.assertIn("cancellation", report)
+                else:
+                    self.assertIn("selection gate failed", report)
+                    self.assertNotIn("terminal checks succeeded", report)
 
     def test_ignored_range_retains_late_assertion_with_bounded_reads(self):
         assertion = b"/project/Tests.swift:118: error: XCTAssertTrue failed - late failure"
