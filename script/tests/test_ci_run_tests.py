@@ -67,6 +67,25 @@ class SelectionTests(unittest.TestCase):
             runner.run_tests("swift", ["RemovedTests"])
         self.assertEqual(run.call_count, 1)
 
+    def test_swift_discovery_and_execution_bound_case_concurrency_and_preserve_environment(self):
+        catalog = "Module.MetricScorerTests/exactMatch()\n"
+        for selection in (["MetricScorerTests"], ["*"]):
+            with (
+                self.subTest(selection=selection),
+                patch.dict(os.environ, {
+                    "CI_FIXTURE_VALUE": "preserved",
+                    "SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH": "128",
+                }),
+                patch.object(runner.subprocess, "run",
+                    return_value=subprocess.CompletedProcess([], 0, catalog)) as run,
+            ):
+                runner.run_tests("swift", selection)
+                for call in run.call_args_list:
+                    environment = call.kwargs["env"]
+                    self.assertEqual(environment["CI_FIXTURE_VALUE"], "preserved")
+                    self.assertEqual(environment["SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH"], "4")
+                self.assertEqual(os.environ["SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH"], "128")
+
     def test_full_swift_selection_runs_all_including_new_suites(self):
         with patch.object(runner.subprocess, "run") as run:
             runner.run_tests("swift", ["*"])

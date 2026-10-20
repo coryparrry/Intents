@@ -27,10 +27,12 @@ prevent a green required check when selected product checks did not pass.
   the gates link to that shared worker and its unchanged evidence artifact names.
   Portable tests do not generate unused coverage instrumentation; no coverage
   report or threshold previously consumed it.
-- Native core Swift Testing cases use a maximum concurrency of four. The maintained
+- Native core and portable Swift Testing cases use a maximum concurrency of four. The maintained
   app scheme sets `SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH=4`, and the
   generated core scheme preserves it in the built test descriptor. The workflow
-  does not override that value through `TEST_RUNNER_`. This experimental control
+  does not override that value through `TEST_RUNNER_`. The portable runner sets
+  the same limit explicitly for `swift test`; the Xcode scheme cannot configure
+  a separate SwiftPM process. This experimental control
   bounds case scheduling, not the subprocesses each case can launch; revalidate
   it when upgrading Xcode. Repository timeout/cancellation fixtures block on a
   FIFO instead of spinning a CPU, and verify stop reasons and child reaping
@@ -43,6 +45,15 @@ prevent a green required check when selected product checks did not pass.
   three-minute default allowance, preserving explicit fixture allowances up to
   ten minutes. The test step has a 16-minute limit inside the 20-minute job so
   failures can still export and upload diagnostics.
+- UI fixtures open the suite editor through its menu command and verify its
+  controls before testing navigation. They do not depend on a preceding test's
+  restored window. Timeline assertions wait for the selected accessibility value
+  and completed sidebar resize before checking the original geometry bounds.
+- The synthetic readiness cancellation test announces its child PID and blocks
+  on a FIFO until cancellation. It verifies that the executor sees a launched
+  child before cancelling, joins cleanup on every path, and retains a two-minute
+  deadlock bound. Scheduling delays cannot make a fixed-duration sleep expire
+  before the test observes it.
 - Fresh external SDK consumers run for SDK/installer changes and full runs.
   They still build the installer's immutable remote revision and verify a receipt
   for both public products. Unrelated app changes do not rebuild that SDK.

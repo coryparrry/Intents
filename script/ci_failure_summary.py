@@ -14,7 +14,7 @@ from pathlib import Path
 
 GATES = {name.casefold() for name in (
     "Workflow and script checks", "Portable regression tests", "Compile app and tests",
-    "Automation e2e (simulator)",
+    "Automation e2e (simulator)", "Native core tests", "Clean Intent Lab SDK consumer",
 )}
 LOG_LIMIT = 1024 * 1024
 REQUEST_TIMEOUT = 30

@@ -170,20 +170,13 @@ final class FoundationEvalsUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
 
-        // XCTest launches with LSLaunchDoNotBringFrontmost and can create only the menu bar.
-        // Exercise the user-facing editor command; normal launch is checked separately in the app.
-        app.activate()
-        app.menuBars.menuBarItems["Evaluation"].click()
-        app.menuItems["Show Suite Editor"].click()
-        app.activate()
+        try UITestStorage.openSuiteEditor(in: app)
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "The editor command must present the main window")
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
 
         app.typeKey("w", modifierFlags: .command)
         XCTAssertTrue(app.windows.firstMatch.waitForNonExistence(timeout: 2))
-        app.menuBars.menuBarItems["Evaluation"].click()
-        app.menuItems["Show Suite Editor"].click()
-        app.activate()
+        try UITestStorage.openSuiteEditor(in: app)
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "The editor command must recover a closed main window")
         XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Add Case"].exists)

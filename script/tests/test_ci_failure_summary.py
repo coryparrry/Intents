@@ -83,15 +83,26 @@ class FailureSummaryTests(unittest.TestCase):
         self.assertIn("cancellation", self.render(FakeAPI(), {"gate": "cancelled"}))
         self.assertIn("terminal checks succeeded", self.render(FakeAPI(), {"gate": "success"}))
 
-    def test_all_four_exact_workflow_gate_names_remain_aggregate_failures(self):
+    def test_all_exact_workflow_gate_names_remain_aggregate_failures(self):
         names = ["Workflow and script checks", "Portable regression tests", "Compile app and tests",
-                 "Automation e2e (simulator)"]
+                 "Automation e2e (simulator)", "Native core tests", "Clean Intent Lab SDK consumer"]
         api = FakeAPI(jobs=[failed_job(index, name) for index, name in enumerate(names, 1)])
         report = self.render(api)
         self.assertEqual(summary.GATES, {name.casefold() for name in names})
         self.assertIn("Failed aggregate gates", report)
         self.assertNotIn("Original failed jobs:", report)
         self.assertFalse(any(path.endswith("/logs") for path in api.paths))
+
+    def test_shared_mac_failure_is_the_original_cause_of_proxy_gate_failures(self):
+        api = FakeAPI(jobs=[failed_job(23, "Mac regression tests"),
+            failed_job(24, "Native core tests"), failed_job(25, "Clean Intent Lab SDK consumer")],
+            logs={23: "error: synthetic readiness fixture never became ready"})
+        report = self.render(api)
+        self.assertIn("**Mac regression tests**", report)
+        self.assertIn("synthetic readiness fixture never became ready", report)
+        self.assertIn("Failed aggregate gates: Native core tests, Clean Intent Lab SDK consumer", report)
+        self.assertNotIn("/jobs/24/logs", api.paths)
+        self.assertNotIn("/jobs/25/logs", api.paths)
 
     def test_partial_api_failure_preserves_known_original_job(self):
         api = FakeAPI(jobs=[failed_job()], logs={23: RuntimeError("GitHub request returned HTTP 403")},
