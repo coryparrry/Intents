@@ -254,6 +254,20 @@ public actor AutomationAppleRouteDriver: AutomationResolvedRouteDriver {
                     try? await Task.sleep(for: .milliseconds(50))
                     observed = presence(runner)
                 }
+                if observed == .matching {
+                    let confirmed = presence(runner)
+                    if confirmed == .matching {
+                        _ = kill(runner.pid, SIGKILL)
+                        let killDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+                        observed = presence(runner)
+                        while ![.absent, .replaced].contains(observed), ContinuousClock.now < killDeadline {
+                            try? await Task.sleep(for: .milliseconds(50))
+                            observed = presence(runner)
+                        }
+                    } else {
+                        observed = confirmed
+                    }
+                }
                 runnerStopped = [.absent, .replaced].contains(observed)
             case .absent, .replaced: break
             case .unknown: runnerStopped = false

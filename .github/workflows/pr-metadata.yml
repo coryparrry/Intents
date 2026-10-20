@@ -27,9 +27,6 @@ jobs:
       contents: read
       actions: read
     uses: ./.github/workflows/ci.yml
-    secrets:
-      CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}
-      CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}
 
   retarget-production:
     name: Retargeted production fixtures

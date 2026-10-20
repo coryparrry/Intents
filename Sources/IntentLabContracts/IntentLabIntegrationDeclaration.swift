@@ -189,18 +189,44 @@ public struct IntentLabIntegrationDeclaration: Codable {
         }
     }
 
+    private static let noOpOperations = ["", "none", "noop", "readOnly"]
+
+    private static func resolve(_ operationID: String, declared: [String]) -> String? {
+        if declared.contains(operationID) { return operationID }
+        guard noOpOperations.contains(operationID) else { return nil }
+        return declared.first(where: noOpOperations.contains)
+    }
+
     /// Old read-only declarations did not include cleanupOperations. They may
     /// continue to request a no-op, but never an undeclared mutating operation.
+    public func resolvedCleanupOperation(
+        _ operationID: String,
+        requiresMutationCleanup: Bool = false
+    ) -> String? {
+        if requiresMutationCleanup {
+            guard !Self.noOpOperations.contains(operationID), let cleanupOperations,
+                  cleanupOperations.contains(operationID) else { return nil }
+            return operationID
+        }
+        guard let cleanupOperations else {
+            return Self.noOpOperations.contains(operationID) ? operationID : nil
+        }
+        return Self.resolve(operationID, declared: cleanupOperations)
+    }
+
     public func allowsCleanupOperation(
         _ operationID: String,
         requiresMutationCleanup: Bool = false
     ) -> Bool {
-        let noOps = ["", "none", "noop", "readOnly"]
-        if requiresMutationCleanup {
-            guard !noOps.contains(operationID), let cleanupOperations else { return false }
-            return cleanupOperations.contains(operationID)
-        }
-        return (cleanupOperations ?? noOps).contains(operationID)
+        resolvedCleanupOperation(operationID, requiresMutationCleanup: requiresMutationCleanup) != nil
+    }
+
+    public func resolvedPreparationOperation(_ operationID: String) -> String? {
+        Self.resolve(operationID, declared: preparationOperations)
+    }
+
+    public func allowsPreparationOperation(_ operationID: String) -> Bool {
+        resolvedPreparationOperation(operationID) != nil
     }
 
     /// Returns the one app-declared control that exactly matches the frozen local

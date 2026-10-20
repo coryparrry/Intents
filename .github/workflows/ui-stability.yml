@@ -16,8 +16,5 @@ concurrency:
 jobs:
   qualification:
     uses: ./.github/workflows/ci.yml
-    secrets:
-      CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}
-      CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}
     with:
       stability: true

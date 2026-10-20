@@ -128,7 +128,9 @@ struct AppleTestConnectionView: View {
                     connectionField(
                         number: 3, title: "Check installed support",
                         detail: coordinator.verifiedIntegrationSummary
-                            ?? "Build the selected app and UI tests, then read the compiled integration receipt. This check does not run an app action."
+                            ?? (!(coordinator.draft.integration?.isBoundDeclaration ?? false)
+                                ? "Choose the installed integration declaration under Add or update test support first."
+                                : "Build the selected app and UI tests, then read the compiled integration receipt. This check does not run an app action.")
                     ) {
                         Button(
                             coordinator.isVerifyingIntegration ? "Checking…" : "Build and check support",
@@ -138,6 +140,7 @@ struct AppleTestConnectionView: View {
                         }
                         .disabled(!coordinator.projectTrusted
                                   || coordinator.configuration.destinationIdentifier.isEmpty
+                                  || !(coordinator.draft.integration?.isBoundDeclaration ?? false)
                                   || coordinator.isVerifyingIntegration)
                     }
                 }
@@ -411,17 +414,42 @@ struct AppleTestConnectionView: View {
     }
 
     @ViewBuilder private var recoveryControls: some View {
-        if !coordinator.recoveryJournals.isEmpty {
+        if !coordinator.recoveryJournals.isEmpty || !coordinator.pendingOrdinarySaves.isEmpty {
             Divider()
-            Label("Device recovery required", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(WorkspaceStyle.warning)
-            Text("Automatic clearing is intentionally disabled until the device proves that this invocation stopped and the fixture reset. You can clear it after verifying both conditions.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Button("I verified termination and fixture readiness") {
-                Task { await coordinator.clearDeviceQuarantine(fixtureReadinessProven: true) }
+            VStack(alignment: .leading, spacing: 8) {
+                if !coordinator.recoveryJournals.isEmpty {
+                    Label("Device recovery required", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(WorkspaceStyle.warning)
+                    Text("Automatic clearing is intentionally disabled until the device proves that this invocation stopped and the fixture reset. You can clear it after verifying both conditions.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("I verified termination and fixture readiness") {
+                        Task { await coordinator.clearDeviceQuarantine(fixtureReadinessProven: true) }
+                    }
+                }
+
+                if !coordinator.pendingOrdinarySaves.isEmpty {
+                    if !coordinator.recoveryJournals.isEmpty { Divider() }
+                    Label("Captured evidence waiting to be saved", systemImage: "exclamationmark.triangle")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(WorkspaceStyle.warning)
+                    ForEach(coordinator.pendingOrdinarySaves, id: \.invocationID) { pending in
+                        HStack {
+                            Text(String(pending.invocationID.uuidString.prefix(8)))
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Save captured evidence") {
+                                Task { await coordinator.retryPendingOrdinarySave(invocationID: pending.invocationID) }
+                            }
+                            .accessibilityIdentifier("intentLab.savePendingEvidence")
+                            .disabled(coordinator.isRunning)
+                        }
+                    }
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

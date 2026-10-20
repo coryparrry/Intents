@@ -27,7 +27,7 @@ enum TelemetryFailure: String, Codable, Sendable {
             case .preflight, .activeExecution, .connectionCheck: .validation
             case .deviceUnavailable: .deviceUnavailable
             case .buildFailed, .processLaunch: .build
-            case .productMissing, .resourceMismatch, .evidenceMissing: .evidence
+            case .productMissing, .resourceMismatch, .evidenceMissing(_): .evidence
             }
         }
         if error is ScenarioEvidenceImportError { return .evidence }

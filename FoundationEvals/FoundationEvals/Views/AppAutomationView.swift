@@ -25,7 +25,9 @@ struct AppAutomationView: View {
                     Button("Choose app…") { chooseApp() }.disabled(model.busy)
                 }
                 if let unresolved = model.retainedUnresolvedNormalReport {
-                    Text("Attempt " + unresolved.attemptID + " has unresolved device ownership. Further execution remains blocked.")
+                    Text(unresolved.resourcesReleased
+                        ? "Attempt \(unresolved.attemptID) was stopped after its action may have been dispatched, so Intents can't tell whether it ran. Check the app's state, then use Reset device ownership to continue."
+                        : "Attempt \(unresolved.attemptID) has unresolved device ownership. Further execution remains blocked.")
                         .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 AutomationSelectionHistoryControls(model: model)

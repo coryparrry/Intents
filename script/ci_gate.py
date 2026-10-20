@@ -5,9 +5,9 @@ import os
 import sys
 
 
-FLAGS = ("native", "ui", "automation_e2e", "sdk_consumer", "input_conversion", "regression")
+FLAGS = ("native", "ui", "sdk_consumer", "input_conversion", "regression")
 ARRAYS = ("native_tests", "swift_suites", "macos_tests")
-WORKERS = ("changes", "swift-tests", "native-build", "ui-tests", "picker-stability", "automation-e2e-scenarios")
+WORKERS = ("changes", "swift-tests", "native-build", "ui-tests", "picker-stability")
 RESULTS = {"success", "failure", "cancelled", "skipped"}
 JSON_LIMIT = 256 * 1024
 
@@ -52,8 +52,7 @@ def evaluate(needs, selection, stability_requested):
             errors.append("Selected native core or UI tests require selection native=true")
 
     expected = {"changes": "success", "swift-tests": "success"}
-    for worker, flag in (("native-build", "native"), ("ui-tests", "ui"),
-                         ("automation-e2e-scenarios", "automation_e2e")):
+    for worker, flag in (("native-build", "native"), ("ui-tests", "ui")):
         if flag in flags:
             expected[worker] = "success" if flags[flag] else "skipped"
     if "ui" in flags and stability_requested in ("true", "false"):

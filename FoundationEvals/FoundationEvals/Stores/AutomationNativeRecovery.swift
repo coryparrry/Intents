@@ -153,7 +153,7 @@ extension AppAutomationStore {
             }
             let remaining = try await leases.recoveryRecords()
             finishOwnershipReset()
-            recoveryItems = remaining.map { .init(record: $0) }
+            recoveryItems = remaining.filter { !$0.runID.hasPrefix("intent-lab-") }.map { .init(record: $0) }
             message = "Device ownership reset. Review the workflow before running again."
         } catch { recoveryError = errorText(error) }
     }

@@ -75,6 +75,13 @@ struct ScenarioIntegrationIdentity: Codable, Equatable, Sendable {
     var version: String
     /// SHA-256 of the exact developer-owned declaration file bytes, not a package version.
     var digest: String
+
+    var isBoundDeclaration: Bool {
+        !id.isEmpty && !version.isEmpty && digest.count == 64
+            && digest.unicodeScalars.allSatisfy {
+                CharacterSet(charactersIn: "0123456789abcdef").contains($0)
+            }
+    }
 }
 
 /// A v3 check binds a logical feature interface. A feature run belongs to

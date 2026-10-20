@@ -297,19 +297,27 @@ public enum IntentLabScenarioEngine {
         var declaration: IntentLabIntegrationDeclaration?
         var localFeatureControl: IntentLabIntegrationDeclaration.FeatureControl?
         var localFeatureParameters: [String: IntentLabValue] = [:]
+        var preparationOperationID = scenario.fixture.preparationOperation
+        var cleanupOperationID = scenario.fixture.cleanupOperation
         if scenario.schemaVersion == 2 {
             let (_, identity, loaded) = try loadDeclaration(testCase: testCase)
             guard scenario.integration == identity, invocation.integration == identity,
                   let requiredCapabilities = invocation.requiredCapabilities,
                   Set(loaded.capabilities).isSubset(of: integration.supportedCapabilities),
-                  loaded.targetBundleIdentifier == scenario.target.bundleIdentifier,
-                  loaded.preparationOperations.contains(scenario.fixture.preparationOperation),
-                  loaded.allowsCleanupOperation(
+                  loaded.targetBundleIdentifier == scenario.target.bundleIdentifier else {
+                throw IntentLabDeclarationError.mismatchedIdentity
+            }
+            guard let resolvedPreparation = loaded.resolvedPreparationOperation(
+                    scenario.fixture.preparationOperation
+                  ),
+                  let resolvedCleanup = loaded.resolvedCleanupOperation(
                     scenario.fixture.cleanupOperation,
                     requiresMutationCleanup: scenario.safety.mutationPolicy == .syntheticMutation
                   ) else {
                 throw IntentLabDeclarationError.mismatchedIdentity
             }
+            preparationOperationID = resolvedPreparation
+            cleanupOperationID = resolvedCleanup
             if runsFeature {
                 guard let featureBinding = scenario.featureBinding,
                       let featureRequirement = scenario.actionRequirements?.first(where: {
@@ -419,7 +427,7 @@ public enum IntentLabScenarioEngine {
                 let application = try integration.prepare(
                     bundleIdentifier: scenario.target.bundleIdentifier,
                     context: context,
-                    operationID: scenario.fixture.preparationOperation
+                    operationID: preparationOperationID
                 )
                 defer { application.terminate() }
                 let baseline = try integration.observe(
@@ -502,7 +510,7 @@ public enum IntentLabScenarioEngine {
                 try integration.cleanup(
                     bundleIdentifier: scenario.target.bundleIdentifier,
                     context: context,
-                    operationID: scenario.fixture.cleanupOperation
+                    operationID: cleanupOperationID
                 )
             })
 
@@ -566,7 +574,7 @@ public enum IntentLabScenarioEngine {
                 let application = try integration.prepare(
                     bundleIdentifier: scenario.target.bundleIdentifier,
                     context: context,
-                    operationID: scenario.fixture.preparationOperation
+                    operationID: preparationOperationID
                 )
                 defer { application.terminate() }
                 let baseline = try integration.observe(
@@ -629,7 +637,7 @@ public enum IntentLabScenarioEngine {
                 try integration.cleanup(
                     bundleIdentifier: scenario.target.bundleIdentifier,
                     context: context,
-                    operationID: scenario.fixture.cleanupOperation
+                    operationID: cleanupOperationID
                 )
             })
             if case .failure(let error) = directAttempt.action,
@@ -709,7 +717,7 @@ public enum IntentLabScenarioEngine {
                         let application = try integration.prepare(
                             bundleIdentifier: scenario.target.bundleIdentifier,
                             context: context,
-                            operationID: scenario.fixture.preparationOperation
+                            operationID: preparationOperationID
                         )
                         defer {
                             // Preserve the Siri result before cleanup resets the fixture.
@@ -756,7 +764,7 @@ public enum IntentLabScenarioEngine {
                     try integration.cleanup(
                         bundleIdentifier: scenario.target.bundleIdentifier,
                         context: context,
-                        operationID: scenario.fixture.cleanupOperation
+                        operationID: cleanupOperationID
                     )
                 })
                 let screenshot = attemptScreenshot ?? EvidenceAttachmentWriter.attachScreenshot(to: testCase)

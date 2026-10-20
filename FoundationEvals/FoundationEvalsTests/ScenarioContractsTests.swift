@@ -29,10 +29,7 @@ struct ScenarioContractsTests {
         let configuration = configurationDraft
         let definition = try scenario(), logURL = root.appending(path: "bounded-cancel.log")
         let clock = ContinuousClock()
-        enum Completion: Sendable { case finished(ContinuousClock.Instant), deadline }
-        let (completions, completed) = AsyncStream.makeStream(of: Completion.self)
         let task = Task {
-            defer { completed.yield(.finished(clock.now)); completed.finish() }
             return try await executor.runJournaledConnectionTest(
                 definition: definition, configuration: configuration,
                 methodName: "testIntentLabReadiness", derivedData: root.appending(path: "DerivedData"),
@@ -58,6 +55,16 @@ struct ScenarioContractsTests {
                 _ = await task.result
                 return
             }
+            enum Completion: Sendable { case exited(ContinuousClock.Instant), deadline }
+            let (completions, completed) = AsyncStream.makeStream(of: Completion.self)
+            // Observe the host itself: journal persistence and task scheduling
+            // after its exit are not part of the cancellation drain deadline.
+            let hostExit = DispatchSource.makeProcessSource(
+                identifier: pid, eventMask: .exit, queue: .global(qos: .userInitiated)
+            )
+            hostExit.setEventHandler { completed.yield(.exited(clock.now)); completed.finish() }
+            hostExit.resume()
+            defer { hostExit.cancel() }
             let cancellationDeadline = clock.now.advanced(by: .seconds(10))
             let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
             timer.setEventHandler { completed.yield(.deadline); completed.finish() }
@@ -71,8 +78,8 @@ struct ScenarioContractsTests {
                 return
             }
             let drainedPromptly: Bool
-            if case .some(.finished(let finishedAt)) = await completions.first(where: { _ in true }) {
-                drainedPromptly = finishedAt < cancellationDeadline
+            if case .some(.exited(let exitedAt)) = await completions.first(where: { _ in true }) {
+                drainedPromptly = exitedAt < cancellationDeadline
             } else { drainedPromptly = false }
             #expect(drainedPromptly, "Cancellation must drain the host before its 90-second command deadline.")
             // Cancel the test task on regression so its stream wait and owned host still drain.

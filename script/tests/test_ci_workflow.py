@@ -21,9 +21,9 @@ class WorkflowContractTests(unittest.TestCase):
         jobs = re.findall(r"(?m)^  ([\w-]+):$", WORKFLOW.split("jobs:\n", 1)[1])
         self.assertEqual(set(jobs), {
             "changes", "swift-tests", "native-build", "ui-tests", "picker-stability",
-            "automation-e2e-scenarios", "build",
+            "build",
         })
-        self.assertEqual(len(jobs), 7)
+        self.assertEqual(len(jobs), 6)
         for identifier, name in (("changes", "Workflow and script checks"),
                                  ("swift-tests", "Portable regression tests"),
                                  ("build", "Compile app and tests")):
@@ -32,15 +32,15 @@ class WorkflowContractTests(unittest.TestCase):
         # than duplicating its shard names in this job-count assertion.
         from script import ci_routes
         plan = ci_routes.coverage(None)
-        for selection in ("native", "ui", "automation_e2e", "input_conversion", "sdk_consumer"):
+        for selection in ("native", "ui", "input_conversion", "sdk_consumer"):
             self.assertTrue(plan[selection], selection)
         self.assertIn("matrix:\n        include: ${{ fromJSON(needs.changes.outputs.ui_matrix) }}", job("ui-tests"))
         self.assertEqual(len(plan["ui_matrix"]), 3)
         expanded = len(jobs) - 1 + len(plan["ui_matrix"])
-        self.assertEqual(expanded, 9)
+        self.assertEqual(expanded, 8)
         opt_in = [name for name in jobs if "inputs.stability == true" in job(name).split("    steps:", 1)[0]]
         self.assertEqual(opt_in, ["picker-stability"])
-        self.assertEqual(expanded - len(opt_in), 8)
+        self.assertEqual(expanded - len(opt_in), 7)
 
     def test_terminal_gate_receives_complete_workflow_state(self):
         workflow = job("build")
@@ -49,7 +49,6 @@ class WorkflowContractTests(unittest.TestCase):
         dependencies = re.search(r"needs: \[([^]]+)\]", header)[1].split(", ")
         self.assertEqual(set(dependencies), {
             "changes", "swift-tests", "native-build", "ui-tests", "picker-stability",
-            "automation-e2e-scenarios",
         })
         self.assertIn("contents: read", header)
         self.assertIn("actions: read", header)
@@ -83,24 +82,21 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn(check, workflow)
         self.assertIn("CI_TEST_SELECTION: ${{ steps.route.outputs.python_tests }}", workflow)
         self.assertIn("python3 script/ci_run_tests.py python", workflow)
-        for output in ("native", "ui", "automation_e2e", "input_conversion", "sdk_consumer",
+        for output in ("native", "ui", "input_conversion", "sdk_consumer",
                        "native_tests", "regression", "swift_suites", "python_tests", "macos_tests", "ui_matrix"):
             self.assertIn(output + ": ${{ steps.route.outputs." + output + " }}", workflow)
 
     def test_expensive_independent_jobs_wait_for_fast_checks(self):
-        for name in ("native-build", "automation-e2e-scenarios"):
+        for name in ("native-build",):
             header = job(name).split("    steps:", 1)[0]
             self.assertIn("needs: changes", header)
             self.assertNotIn("always()", header)
         self.assertNotIn("\n  macos-script-tests:", WORKFLOW)
         self.assertIn("CI_TEST_SELECTION: ${{ needs.changes.outputs.macos_tests }}", job("swift-tests"))
 
-    def test_reusable_callers_forward_signing_and_allow_failure_log_reads(self):
+    def test_reusable_callers_need_no_signing_secrets_and_allow_failure_log_reads(self):
         workflow_call = WORKFLOW.split("  workflow_call:\n", 1)[1].split("\npermissions:", 1)[0]
-        for secret in ("CI_MAC_CERTIFICATE_P12_BASE64", "CI_MAC_CERTIFICATE_PASSWORD"):
-            declaration = re.search(r"(?m)^      " + secret + r":\n((?:        .*\n)+)", workflow_call)
-            self.assertIsNotNone(declaration, secret)
-            self.assertIn("required: false", declaration[1])
+        self.assertNotIn("secrets:", workflow_call)
         workflows = Path(__file__).resolve().parents[2] / ".github/workflows"
         for filename, identifier in (("ui-stability.yml", "qualification"), ("pr-metadata.yml", "retarget")):
             source = (workflows / filename).read_text()
@@ -111,9 +107,7 @@ class WorkflowContractTests(unittest.TestCase):
                 permissions = caller if "    permissions:\n" in caller else source.split("jobs:\n", 1)[0]
                 self.assertIn("actions: read", permissions)
                 self.assertIn("contents: read", permissions)
-                self.assertNotIn("secrets: inherit", caller)
-                for secret in ("CI_MAC_CERTIFICATE_P12_BASE64", "CI_MAC_CERTIFICATE_PASSWORD"):
-                    self.assertIn(secret + ": ${{ secrets." + secret + " }}", caller)
+                self.assertNotIn("secrets:", caller)
 
     def test_external_consumer_requires_exact_remote_revision_and_both_products(self):
         script = job("swift-tests").split("      - name: Verify external consumer build receipt\n", 1)[1].split("        run: |\n", 1)[1].split("      - name:", 1)[0]
@@ -275,46 +269,14 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("--iterations", job("ui-tests"))
         self.assertIn("if: ${{ inputs.stability == true && needs.changes.outputs.ui == 'true' }}", job("picker-stability"))
 
-    def test_simulator_cache_is_saved_only_after_successful_compilation(self):
-        workflow = job("automation-e2e-scenarios")
-        self.assertIn("uses: actions/cache/restore@", workflow)
-        self.assertIn("--record-build-cache", workflow)
-        self.assertIn("steps.contract.outputs.cli_built == 'true'", workflow)
-        self.assertIn("steps.cli-cache.outputs.cache-hit != 'true'", workflow)
-        self.assertIn("uses: actions/cache/save@", workflow)
-        self.assertIn("key: ${{ steps.cli-cache.outputs.cache-primary-key }}", workflow)
-
-    def test_simulator_runs_every_scenario_with_one_setup_and_cache_writer(self):
-        workflow = job("automation-e2e-scenarios")
-        self.assertIn("needs: changes", workflow)
-        self.assertNotIn("matrix", workflow)
-        self.assertIn("--scenario-group all", workflow)
-        self.assertIn("name: automation-e2e", workflow)
-        condition = re.search(r"Save successfully compiled automation CLI\n        if: (.+)", workflow)[1]
-        self.assertIn("!cancelled()", condition)
-        self.assertIn("steps.contract.outputs.cli_built == 'true'", condition)
-        self.assertNotIn("success()", condition)
-
-    def test_simulator_and_mac_acceptance_do_not_suppress_each_other(self):
-        workflow = job("automation-e2e-scenarios")
-        simulator = workflow.index("      - name: Reproduce prepared-app automation\n")
-        mac = workflow.index("      - name: Reproduce Mac automation and saved fix comparison\n")
-        self.assertLess(simulator, mac)
-        mac_step = workflow[mac:].split("\n      - name:", 1)[0]
-        self.assertIn("if: ${{ !cancelled() }}", mac_step)
-        self.assertIn("--scenario-group all", workflow[:mac])
-
-    def test_mac_acceptance_uses_temporary_development_signing(self):
-        workflow = job("automation-e2e-scenarios")
-        mac = workflow.split("      - name: Reproduce Mac automation and saved fix comparison\n", 1)[1].split("      - name:", 1)[0]
-        self.assertIn("CI_MAC_CERTIFICATE_P12_BASE64: ${{ secrets.CI_MAC_CERTIFICATE_P12_BASE64 }}", mac)
-        self.assertIn("CI_MAC_CERTIFICATE_PASSWORD: ${{ secrets.CI_MAC_CERTIFICATE_PASSWORD }}", mac)
-        self.assertIn("CI_MAC_SIGNING_TEAM: ${{ vars.CI_MAC_SIGNING_TEAM }}", mac)
-        self.assertIn("python3 script/ci_macos_signing.py -- /bin/bash -e <<'SIGNED_MAC_CHECK'", mac)
-        self.assertIn('--signing-team "$INTENTS_CI_SIGNING_TEAM" --signing-identity "$INTENTS_CI_SIGNING_IDENTITY"', mac)
-        self.assertNotIn("continue-on-error", mac)
-        self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_P12_BASE64"), 1)
-        self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_PASSWORD"), 1)
+    def test_live_simulator_and_signed_mac_acceptance_are_manual_only(self):
+        self.assertNotIn("automation-e2e-scenarios", WORKFLOW)
+        self.assertNotIn("automation_e2e", WORKFLOW)
+        for command in ("script/automation_e2e.py", "script/automation_mac_e2e.py",
+                        "simctl", "-downloadPlatform", "script/ci_macos_signing.py"):
+            self.assertNotIn(command, WORKFLOW)
+        self.assertIn("Run affected UI tests once", job("ui-tests"))
+        self.assertIn("Run core tests without rebuilding", job("swift-tests"))
 
     def test_scripts_run_all_selected_modules_in_one_job(self):
         workflow = job("changes")
@@ -327,7 +289,7 @@ class WorkflowContractTests(unittest.TestCase):
         # A status function overrides implicit success(), preserving failed-run evidence.
         # Unlike always(), !cancelled() lets superseding PR runs release their runners.
         for name in ("Upload core results", "Export UI test attachments", "Upload UI results",
-                     "Upload stability results", "Upload automation evidence",
+                     "Upload stability results",
                      "Upload input conversion diagnostic evidence", "Upload external consumer build evidence"):
             with self.subTest(step=name):
                 condition = re.search(re.escape(name) + r"\n        if: (.+)", WORKFLOW)[1]

@@ -176,7 +176,7 @@ import Testing
         #expect(TelemetryFailure.classify(XcodeTestExecutorError.buildFailed(1, secret)) == .build)
         #expect(TelemetryFailure.classify(XcodeTestExecutorError.connectionCheck(secret)) == .validation)
         #expect(TelemetryFailure.classify(XcodeTestExecutorError.deviceUnavailable(secret)) == .deviceUnavailable)
-        #expect(TelemetryFailure.classify(XcodeTestExecutorError.evidenceMissing) == .evidence)
+        #expect(TelemetryFailure.classify(XcodeTestExecutorError.evidenceMissing(testFailure: nil)) == .evidence)
         #expect(TelemetryFailure.classify(XcodeTestExecutorError.cancelled) == .cancelled)
         #expect(TelemetryFailure.classify(XcodeTestExecutorError.timedOut) == .timeout)
     }
