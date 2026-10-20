@@ -9,12 +9,15 @@ final class IntentLabFeatureGateUITests: XCTestCase {
         app.launchArguments = ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
         app.launch()
         defer { app.terminate() }
+        try UITestStorage.openSuiteEditor(in: app)
         app.menuBars.menuBarItems["Evaluation"].click()
         XCTAssertFalse(app.menuItems["Show Intent Lab"].exists)
         XCTAssertTrue(app.menuItems["Show App Automation"].exists)
         app.typeKey(.escape, modifierFlags: [])
         app.typeKey("2", modifierFlags: .command)
         XCTAssertFalse(app.radioButtons["Connect app"].exists)
+        XCTAssertTrue(app.buttons["Run evaluation"].isHittable,
+                      "The disabled shortcut must leave the ordinary suite editor usable")
         let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         screenshot.name = "Intent Lab hidden with flag off"
         screenshot.lifetime = .keepAlways
@@ -32,6 +35,7 @@ final class IntentLabFeatureGateUITests: XCTestCase {
                                "--enable-intent-lab-for-testing"]
         app.launch()
         defer { app.terminate() }
+        try UITestStorage.openSuiteEditor(in: app)
         app.menuBars.menuBarItems["Evaluation"].click()
         XCTAssertTrue(app.menuItems["Show Intent Lab"].exists)
         app.typeKey(.escape, modifierFlags: [])

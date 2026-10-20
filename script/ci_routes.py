@@ -311,6 +311,9 @@ FULL_COVERAGE_PATHS = {
     ".github/workflows/ci.yml",
     ".github/workflows/ui-stability.yml",
     "script/ci_routes.py",
+    "script/ci_gate.py",
+    "script/tests/test_ci_gate.py",
+    "script/tests/test_ci_route_outputs.py",
     "script/ci_run_tests.py",
     "script/ci_native_cache.py",
     "script/tests/test_ci_routes.py",
@@ -737,7 +740,8 @@ def main():
         plan = coverage(paths)
     outputs = {key: str(plan[key]).lower() for key in ("native", "ui", "automation_e2e", "input_conversion", "sdk_consumer")}
     outputs["regression"] = str(
-        bool(plan["swift_suites"] or plan["macos_tests"] or plan["sdk_consumer"])
+        bool(plan["swift_suites"] or plan["macos_tests"] or plan["native_tests"]
+             or plan["sdk_consumer"] or plan["input_conversion"])
     ).lower()
     outputs.update(
         {

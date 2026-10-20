@@ -43,6 +43,12 @@ def run_tests(kind, selection, scratch_path=None, include_installer=False):
             "Swift selections must name test suites, or use a single wildcard for full coverage"
         )
     command = ["swift", "test"]
+    # Swift Testing schedules cases independently of SwiftPM's build job count.
+    # Match the native test scheme so process fixtures cannot flood the worker.
+    swift_environment = {
+        **os.environ,
+        "SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH": "4",
+    }
     if scratch_path:
         command.extend(["--scratch-path", scratch_path])
     skip_pattern = r"(?:^|\.)(?:" + "|".join(
@@ -51,7 +57,8 @@ def run_tests(kind, selection, scratch_path=None, include_installer=False):
     if names != ["*"]:
         # Fail on renamed/missing suites instead of accepting Swift's zero-test success.
         catalog = subprocess.run(
-            [*command, "list"], check=True, stdout=subprocess.PIPE, text=True
+            [*command, "list"], check=True, stdout=subprocess.PIPE, text=True,
+            env=swift_environment,
         ).stdout
         discovered = {line.strip() for line in catalog.splitlines() if "/" in line}
         available = {test.split("/", 1)[0].rsplit(".", 1)[-1] for test in discovered}
@@ -74,7 +81,7 @@ def run_tests(kind, selection, scratch_path=None, include_installer=False):
             return
         command.extend(["--filter", r"(?:^|\.)(?:" + "|".join(names) + r")/"])
     command.extend(["--skip", skip_pattern])
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, env=swift_environment)
 
 
 def main():

@@ -12,6 +12,11 @@ on:
         type: boolean
         default: false
   workflow_call:
+    secrets:
+      CI_MAC_CERTIFICATE_P12_BASE64:
+        required: false
+      CI_MAC_CERTIFICATE_PASSWORD:
+        required: false
     inputs:
       stability:
         type: boolean
@@ -26,9 +31,9 @@ concurrency:
 
 jobs:
   changes:
-    name: Route changed files
+    name: Workflow and script checks
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     outputs:
       native: ${{ steps.route.outputs.native }}
       ui: ${{ steps.route.outputs.ui }}
@@ -49,33 +54,21 @@ jobs:
       - name: Select coverage
         id: route
         run: python3 script/ci_routes.py
-
-  lint:
-    name: Workflow lint and static checks
-    needs: changes
-    if: ${{ always() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - name: Require successful routing
-        env:
-          ROUTING_RESULT: ${{ needs.changes.result }}
-        run: test "$ROUTING_RESULT" = success
       - name: Validate release notes
-        if: github.event_name == 'pull_request'
+        if: ${{ !cancelled() && steps.route.outcome == 'success' && github.event_name == 'pull_request' }}
         run: python3 script/release_notes.py validate-event
       - name: Validate workflows
+        if: ${{ !cancelled() && steps.route.outcome == 'success' }}
         # actionlint has not listed GitHub's hosted Xcode 27 preview label yet.
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color -ignore 'label "xcode-27" is unknown'
       - name: Check shell scripts
+        if: ${{ !cancelled() && steps.route.outcome == 'success' }}
         run: shellcheck script/*.sh
       - name: Check Python examples
+        if: ${{ !cancelled() && steps.route.outcome == 'success' }}
         run: python3 -m compileall -q examples
       - name: Check website
-        if: hashFiles('website/dist/app.js') != ''
+        if: ${{ !cancelled() && steps.route.outcome == 'success' && hashFiles('website/dist/app.js') != '' }}
         working-directory: website
         run: |
           node --check dist/app.js
@@ -83,46 +76,19 @@ jobs:
           node --check dist/demo-interactions.mjs
           node scripts/inline-styles.mjs --check
           node --test tests/*.test.mjs
-
-  script-tests:
-    name: Script tests
-    needs: changes
-    # Finish an empty selection successfully: a skipped ancestor can also skip
-    # Mac workers downstream of the always-running quality aggregate.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
       - name: Run selected script unit tests
+        if: ${{ !cancelled() && steps.route.outcome == 'success' }}
         env:
-          CI_TEST_SELECTION: ${{ needs.changes.outputs.python_tests }}
+          CI_TEST_SELECTION: ${{ steps.route.outputs.python_tests }}
         run: python3 script/ci_run_tests.py python
 
-  quality:
-    name: Workflow and script checks
-    needs: [changes, lint, script-tests]
-    if: ${{ always() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    steps:
-      - name: Require all selected checks
-        env:
-          ROUTING: ${{ needs.changes.result }}
-          LINT: ${{ needs.lint.result }}
-          TESTS: ${{ needs.script-tests.result }}
-        run: |
-          test "$ROUTING" = success
-          test "$LINT" = success
-          test "$TESTS" = success
-
   swift-tests:
-    name: Mac regression tests
-    needs: [changes, quality, native-build]
-    # A skipped native build must not suppress portable-only or SDK-only work.
-    if: ${{ always() && !cancelled() && needs.changes.result == 'success' && needs.quality.result == 'success' && (needs.changes.outputs.native_tests == '[]' || needs.native-build.result == 'success') && (needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.macos_tests != '[]' || needs.changes.outputs.native_tests != '[]' || needs.changes.outputs.sdk_consumer == 'true') }}
-    runs-on: xcode-27
+    name: Portable regression tests
+    needs: [changes, native-build]
+    # Keep the required name green on Ubuntu when no Apple checks are selected.
+    # A skipped native build must not suppress portable-only, SDK-only or input-only work.
+    if: ${{ always() && !cancelled() && needs.changes.result == 'success' && (needs.changes.outputs.native_tests == '[]' || needs.native-build.result == 'success') }}
+    runs-on: ${{ needs.changes.outputs.regression == 'true' && 'xcode-27' || 'ubuntu-24.04' }}
     timeout-minutes: 35
     env:
       INTENT_LAB_CONSUMER_PACKAGE_URL: https://github.com/coryparrry/Intents.git
@@ -180,11 +146,11 @@ jobs:
           CI_TEST_SELECTION: ${{ needs.changes.outputs.macos_tests }}
         run: python3 script/ci_run_tests.py python
       - name: Identify Swift toolchain
-        if: ${{ !cancelled() && steps.source.outcome == 'success' && (needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.sdk_consumer == 'true') }}
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && (needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.sdk_consumer == 'true' || needs.changes.outputs.input_conversion == 'true') }}
         id: toolchain
         run: echo "version=$(xcrun swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - name: Restore reusable Swift build
-        if: ${{ !cancelled() && steps.source.outcome == 'success' && steps.toolchain.outcome == 'success' && (needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.sdk_consumer == 'true') }}
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && steps.toolchain.outcome == 'success' && (needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.sdk_consumer == 'true' || needs.changes.outputs.input_conversion == 'true') }}
         id: swift-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -235,58 +201,47 @@ jobs:
           name: intentlab-external-consumer
           path: ${{ runner.temp }}/intentlab-consumer
           if-no-files-found: error
-
-  sdk-consumer:
-    name: Clean Intent Lab SDK consumer
-    needs: [changes, swift-tests]
-    if: ${{ always() && needs.changes.outputs.sdk_consumer == 'true' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    steps:
-      - name: Require fresh external SDK consumer verification
+      # This canary checks a String setter/readback in its authored Mac fixture.
+      # It neither executes a business subject nor grants codec execution authority.
+      - name: Run live input setter/readback canary
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && steps.toolchain.outcome == 'success' && steps.swift-cache.outcome == 'success' && needs.changes.outputs.input_conversion == 'true' }}
         env:
-          ROUTING: ${{ needs.changes.result }}
-          WORKER: ${{ needs.swift-tests.result }}
+          INTENTS_MAC_INPUT_PROBE_FIXTURE_LIVE: '1'
+          INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT: ${{ runner.temp }}/input-conversion
         run: |
-          echo "Execution: Mac regression tests; evidence: intentlab-external-consumer artifact."
-          echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          test "$ROUTING" = success
-          test "$WORKER" = success
-
-  regression:
-    name: Portable regression tests
-    needs: [changes, quality, swift-tests, sdk-consumer]
-    if: ${{ always() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    steps:
-      - name: Require all selected regressions
-        env:
-          ROUTING: ${{ needs.changes.result }}
-          QUALITY: ${{ needs.quality.result }}
-          SWIFT: ${{ needs.swift-tests.result }}
-          SDK: ${{ needs.sdk-consumer.result }}
-          SDK_SELECTED: ${{ needs.changes.outputs.sdk_consumer }}
-          SWIFT_SELECTION: ${{ needs.changes.outputs.swift_suites }}
-          MACOS_SELECTION: ${{ needs.changes.outputs.macos_tests }}
-          CORE_SELECTION: ${{ needs.changes.outputs.native_tests }}
-        run: |
-          test "$ROUTING" = success
-          test "$QUALITY" = success
-          if [[ "$SWIFT_SELECTION" == '[]' && "$MACOS_SELECTION" == '[]' && "$CORE_SELECTION" == '[]' && "$SDK_SELECTED" == false ]]; then
-            test "$SWIFT" = skipped
-          else
-            test "$SWIFT" = success
-          fi
-          case "$SDK_SELECTED" in
-            true) test "$SDK" = success ;;
-            false) test "$SDK" = skipped ;;
-            *) exit 1 ;;
-          esac
+          mkdir -p "$INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT"
+          DEVELOPER_DIR="$(xcode-select -p)"
+          export DEVELOPER_DIR
+          python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/portable-build"
+          set -o pipefail
+          swift test --jobs "$(sysctl -n hw.logicalcpu)" \
+            --scratch-path "$RUNNER_TEMP/portable-build" \
+            --filter 'AutomationMacInputProbeFixtureTests/testAuthoredInputProbeFixtureWhenRequested' \
+            2>&1 | tee "$INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT/test.log"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+          log = (Path(os.environ['INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT']) / 'test.log').read_text()
+          test = 'testAuthoredInputProbeFixtureWhenRequested'
+          assert re.search(r"Test Case .*" + test + r".* passed", log), 'Live input canary did not pass'
+          assert 'Authored String setter/readback calibration only;' in log, 'Live calibration did not execute'
+          PY
+          python3 script/ci_native_cache.py capture --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/portable-build"
+      - name: Upload input conversion diagnostic evidence
+        if: ${{ !cancelled() && needs.changes.outputs.input_conversion == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: input-conversion-mac
+          path: ${{ runner.temp }}/input-conversion
+          if-no-files-found: error
+      - name: Report empty Apple selection
+        if: ${{ needs.changes.outputs.regression == 'false' }}
+        run: echo "No Apple regression checks selected; validation completed on Ubuntu."
 
   native-build:
     name: Build native test bundles
-    needs: [changes, quality]
+    needs: changes
     if: ${{ needs.changes.outputs.native == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 25
@@ -340,42 +295,6 @@ jobs:
           compression-level: 1
           retention-days: 1
           if-no-files-found: error
-
-  summary:
-    name: CI failure summary
-    needs: [changes, quality, regression, build, automation-e2e, input-conversion]
-    if: ${{ always() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - name: Explain failed checks and link their evidence
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          CI_NEEDS_JSON: ${{ toJSON(needs) }}
-        run: python3 script/ci_failure_summary.py
-
-  native-tests:
-    name: Native core tests
-    needs: [changes, swift-tests]
-    if: ${{ always() && needs.changes.outputs.native_tests != '[]' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    steps:
-      - name: Require selected native core tests
-        env:
-          ROUTING: ${{ needs.changes.result }}
-          WORKER: ${{ needs.swift-tests.result }}
-        run: |
-          echo "Execution: Mac regression tests; evidence: native-core-results artifact."
-          echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          test "$ROUTING" = success
-          test "$WORKER" = success
 
   ui-tests:
     name: UI tests (${{ matrix.name }})
@@ -467,54 +386,9 @@ jobs:
             ${{ runner.temp }}/picker-tests.xcresult
             ${{ runner.temp }}/picker-tests.log
 
-  build:
-    # Retain the existing required-check name while covering every selected lane.
-    name: Compile app and tests
-    needs: [changes, quality, regression, native-build, sdk-consumer, native-tests, ui-tests, picker-stability, automation-e2e, input-conversion]
-    if: ${{ always() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    steps:
-      - name: Require every selected CI check
-        env:
-          ROUTING: ${{ needs.changes.result }}
-          QUALITY: ${{ needs.quality.result }}
-          REGRESSION: ${{ needs.regression.result }}
-          BUILD: ${{ needs.native-build.result }}
-          BUILD_SELECTED: ${{ needs.changes.outputs.native }}
-          SDK: ${{ needs.sdk-consumer.result }}
-          SDK_SELECTED: ${{ needs.changes.outputs.sdk_consumer }}
-          CORE: ${{ needs.native-tests.result }}
-          CORE_SELECTION: ${{ needs.changes.outputs.native_tests }}
-          UI: ${{ needs.ui-tests.result }}
-          UI_SELECTED: ${{ needs.changes.outputs.ui }}
-          STABILITY: ${{ needs.picker-stability.result }}
-          STABILITY_SELECTED: ${{ inputs.stability == true && needs.changes.outputs.ui == 'true' }}
-          AUTOMATION: ${{ needs.automation-e2e.result }}
-          INPUT_CONVERSION: ${{ needs.input-conversion.result }}
-          INPUT_CONVERSION_SELECTED: ${{ needs.changes.outputs.input_conversion }}
-        run: |
-          require_selected() {
-            case "$1" in
-              true) test "$2" = success ;;
-              false) test "$2" = skipped ;;
-              *) return 1 ;;
-            esac
-          }
-          test "$ROUTING" = success
-          test "$QUALITY" = success
-          test "$REGRESSION" = success
-          test "$AUTOMATION" = success
-          require_selected "$BUILD_SELECTED" "$BUILD"
-          require_selected "$SDK_SELECTED" "$SDK"
-          if [[ "$CORE_SELECTION" == '[]' ]]; then test "$CORE" = skipped; else test "$CORE" = success; fi
-          require_selected "$UI_SELECTED" "$UI"
-          require_selected "$STABILITY_SELECTED" "$STABILITY"
-          require_selected "$INPUT_CONVERSION_SELECTED" "$INPUT_CONVERSION"
-
   automation-e2e-scenarios:
     name: Simulator and Mac acceptance tests
-    needs: [changes, quality]
+    needs: changes
     if: ${{ needs.changes.outputs.automation_e2e == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 90
@@ -579,76 +453,32 @@ jobs:
           if-no-files-found: error
 
 
-  automation-e2e:
-    name: Automation e2e (simulator)
-    needs: [changes, automation-e2e-scenarios]
+  build:
+    # Preserve the required name while checking the actual workers once.
+    name: Compile app and tests
+    needs: [changes, swift-tests, native-build, ui-tests, picker-stability, automation-e2e-scenarios]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    steps:
-      - name: Require every selected simulator scenario group
-        env:
-          ROUTING: ${{ needs.changes.result }}
-          SELECTED: ${{ needs.changes.outputs.automation_e2e }}
-          SCENARIOS: ${{ needs.automation-e2e-scenarios.result }}
-        run: |
-          test "$ROUTING" = success
-          case "$SELECTED" in
-            true) test "$SCENARIOS" = success ;;
-            false) test "$SCENARIOS" = skipped ;;
-            *) exit 1 ;;
-          esac
-
-  input-conversion:
-    name: Input conversion diagnostic (Mac)
-    needs: [changes, quality]
-    if: ${{ needs.changes.outputs.input_conversion == 'true' }}
-    runs-on: xcode-27
-    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        id: source
         with:
           persist-credentials: false
-      - name: Identify Swift toolchain
-        id: toolchain
-        run: echo "version=$(xcrun swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - name: Restore reusable Swift build
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ runner.temp }}/input-conversion-build
-          key: ${{ runner.os }}-${{ runner.arch }}-input-conversion-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved', '**/Package.resolved') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-input-conversion-${{ steps.toolchain.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved', '**/Package.resolved') }}-
-      # This canary checks a String setter/readback in its authored Mac fixture.
-      # It neither executes a business subject nor grants codec execution authority.
-      - name: Run live input setter/readback canary
+      - name: Require every selected CI check
+        id: gate
         env:
-          INTENTS_MAC_INPUT_PROBE_FIXTURE_LIVE: '1'
-          INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT: ${{ runner.temp }}/input-conversion
-        run: |
-          mkdir -p "$INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT"
-          DEVELOPER_DIR="$(xcode-select -p)"
-          export DEVELOPER_DIR
-          python3 script/ci_native_cache.py restore --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/input-conversion-build"
-          set -o pipefail
-          swift test --jobs "$(sysctl -n hw.logicalcpu)" \
-            --scratch-path "$RUNNER_TEMP/input-conversion-build" \
-            --filter 'AutomationMacInputProbeFixtureTests/testAuthoredInputProbeFixtureWhenRequested' \
-            2>&1 | tee "$INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT/test.log"
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-          import re
-          log = (Path(os.environ['INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT']) / 'test.log').read_text()
-          test = 'testAuthoredInputProbeFixtureWhenRequested'
-          assert re.search(r"Test Case .*" + test + r".* passed", log), 'Live input canary did not pass'
-          assert 'Authored String setter/readback calibration only;' in log, 'Live calibration did not execute'
-          PY
-          python3 script/ci_native_cache.py capture --root "$GITHUB_WORKSPACE" --derived-data "$RUNNER_TEMP/input-conversion-build"
-      - name: Upload input conversion diagnostic evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: input-conversion-mac
-          path: ${{ runner.temp }}/input-conversion
-          if-no-files-found: error
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          CI_SELECTION_JSON: ${{ toJSON(needs.changes.outputs) }}
+          CI_STABILITY_REQUESTED: ${{ inputs.stability == true }}
+        run: python3 script/ci_gate.py
+      - name: Explain failed checks and link their evidence
+        if: ${{ always() && steps.source.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          CI_GATE_RESULT: ${{ steps.gate.outcome }}
+        run: python3 script/ci_failure_summary.py

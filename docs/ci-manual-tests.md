@@ -2,7 +2,7 @@
 
 Automatic CI excludes methods whose required fixture, profile, model assets, or activation is absent from that worker. These methods remain available for explicit qualification. Some could run on hosted machines after their prerequisites are provisioned; exclusion does not classify them as inherently impossible.
 
-Ordinary methods in the same suites remain selected. The SDK-selected worker still runs the installer integration, and the dedicated input-conversion job still runs its live calibration.
+Ordinary methods in the same suites remain selected. The SDK-selected worker still runs the installer integration, and the regression worker’s input-conversion step still runs its live calibration.
 
 ## Swift package methods
 
