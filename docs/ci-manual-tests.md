@@ -51,4 +51,16 @@ Follow the [app automation fixture setup](wiki/App-automation.md) before using t
 - `FoundationEvalsUITests/MacPreparationUITests/testSelectedToolchainPreparesMacCopyAndRunsApprovedWorkflows` — selected Xcode and staged Mac fixture.
 - `FoundationEvalsUITests/AppAutomationUITests/testPreparedPureEchoShowsUnassessedNativeEvidence` — owned simulator required.
 
-The ordinary simulator and Mac acceptance job provisions its own fixtures and runtime. All seven simulator scenarios, all 16 codec families, and the signed Mac automation and saved-fix comparison remain required there. The MacPreparation app UI fixture stays outside CI while its App Intents metadata admission fails with error 400; the separate Mac acceptance path remains enabled.
+## End-to-end automation
+
+Prepared simulator and signed Mac acceptance are excluded from GitHub CI, including
+PR, main, scheduled, and manually dispatched runs. The blocking simulator inventory
+and app-launch checks can stall locally as well. Core app UI and regression checks
+remain automatic; a passing CI run does not qualify live device automation.
+
+For an explicit qualification run, use the [simulator fixture instructions](wiki/App-automation.md)
+or [signed Mac workflow instructions](wiki/Mac-workflows.md). The standalone
+`script/automation_e2e.py` and `script/automation_mac_e2e.py` harnesses retain their
+scenario assertions, codec comparisons, and resource-release checks. They are
+not prerequisites for merging a PR. The MacPreparation app UI fixture also stays
+manual while its App Intents metadata admission fails with error 400.

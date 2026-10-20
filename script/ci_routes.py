@@ -486,7 +486,6 @@ def full_coverage(reason, root=ROOT, extra_classes=(), extra_groups=()):
         "full_coverage": True,
         "native": True,
         "ui": True,
-        "automation_e2e": True,
         "input_conversion": True,
         "sdk_consumer": True,
         "swift_suites": ["*"],
@@ -511,18 +510,11 @@ def coverage_plan(paths, root=ROOT):
             "Full coverage: unsupported event, malformed payload, or unavailable Git history.",
             root,
         )
-    native = ui = automation_e2e = input_conversion = sdk_consumer = False
+    native = ui = input_conversion = sdk_consumer = False
     ui_groups, ui_fallback = set(), False
     swift, python, macos, reasons = set(), set(), set(), set()
     for path in paths:
         sdk_consumer |= path in SDK_CONSUMER_PATHS or path.startswith(SDK_CONSUMER_PREFIXES) or production_package_runtime(path)
-        automation_e2e |= not path.startswith("Integration/AutomationHost/NativeMac/") and path.startswith((
-            "Sources/IntentsAutomationCore/", "Sources/IntentsAutomationTool/",
-            "Integration/AutomationHost/", "examples/AutomationFixture/",
-            "Tools/IntentsAutomationApplicationProbe/",
-        )) or path in {"script/automation_e2e.py", "script/ci_automation_build.py", "script/tests/test_automation_e2e.py",
-                      "script/automation_mac_e2e.py", "script/tests/test_automation_mac_e2e.py",
-                      "script/ci_macos_signing.py", "script/tests/test_ci_macos_signing.py"}
         input_conversion |= path.startswith((
             "Sources/IntentsAutomationCore/", "Integration/AutomationHost/",
         )) or path in {
@@ -589,9 +581,9 @@ def coverage_plan(paths, root=ROOT):
                 native = ui = True
                 ui_groups.update(groups)
             if path.startswith("Sources/IntentLabContracts/"):
-                automation_e2e = input_conversion = True
+                input_conversion = True
             if path == "Integration/AutomationCLIResources.swift":
-                automation_e2e = input_conversion = True
+                input_conversion = True
             reasons.add("Package source changes run portable contracts and only the owning app feature's UI.")
         elif path.startswith(APP):
             native = True
@@ -601,7 +593,7 @@ def coverage_plan(paths, root=ROOT):
                 "Stores/AutomationCommandHistory.swift", "Stores/AutomationCapsuleExportSelection.swift",
             }:
                 # These stores belong to IntentsAutomationNativeUI, not the CLI
-                # exercised by simulator and input-conversion canaries.
+                # exercised by the input-conversion canary.
                 swift.add("*")
             groups = app_ui_groups(relative)
             if groups is None:
@@ -661,7 +653,6 @@ def coverage_plan(paths, root=ROOT):
     return with_matrices({
         "native": native,
         "ui": ui,
-        "automation_e2e": automation_e2e,
         "input_conversion": input_conversion,
         "sdk_consumer": sdk_consumer,
         "swift_suites": ["*"] if "*" in swift else sorted(swift),
@@ -738,7 +729,7 @@ def main():
         plan["reasons"] = ["Full coverage: main push verifies the complete ordinary suite after affected PR checks."]
     else:
         plan = coverage(paths)
-    outputs = {key: str(plan[key]).lower() for key in ("native", "ui", "automation_e2e", "input_conversion", "sdk_consumer")}
+    outputs = {key: str(plan[key]).lower() for key in ("native", "ui", "input_conversion", "sdk_consumer")}
     outputs["regression"] = str(
         bool(plan["swift_suites"] or plan["macos_tests"] or plan["native_tests"]
              or plan["sdk_consumer"] or plan["input_conversion"])

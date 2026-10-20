@@ -25,8 +25,8 @@ python3 script/automation_mac_e2e.py --xcode /Applications/Xcode.app --jobs 2 \
 It stages a disposable fixture outside the repository, compares exact codec
 outputs, runs UI → intent → query, checks a wrong assertion, verifies another
 attempt can run, and exercises the Phase 6 source comparison. Raw logs and reports
-remain outside Git. The existing CI acceptance job runs this contract after its
-simulator checks and uploads both evidence directories.
+remain outside Git. This is an explicit manual qualification; GitHub CI runs
+core app UI and regression checks without invoking this live acceptance harness.
 
 Local implementation, regression tests, and independent review do not establish
 live Mac workflow acceptance. See the final validation status below.

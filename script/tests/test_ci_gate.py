@@ -21,7 +21,6 @@ def results(selected, stability="false"):
         "native-build": "success" if selected["native"] == "true" else "skipped",
         "ui-tests": "success" if selected["ui"] == "true" else "skipped",
         "picker-stability": "success" if selected["ui"] == "true" and stability == "true" else "skipped",
-        "automation-e2e-scenarios": "success" if selected["automation_e2e"] == "true" else "skipped",
     }.items()}
 
 
@@ -35,7 +34,6 @@ class GateTests(unittest.TestCase):
             "macos-only": selection(regression="true", macos_tests='["MacTests"]'),
             "native-build-only": selection(native="true"),
             "native-core-only": selection(native="true", regression="true", native_tests='["CoreTests"]'),
-            "automation-only": selection(automation_e2e="true"),
             "full": selection(**{key: "true" for key in ci_gate.FLAGS},
                               **{key: '["SelectedTests"]' for key in ci_gate.ARRAYS}),
         }

@@ -15,7 +15,7 @@ prevent a green required check when selected product checks did not pass.
   test file keeps its bundle compiled but selects ordinary UI coverage; live
   qualification remains a separate manual run.
 - Linux workflow validation and selected script tests finish before Mac workers
-  are allocated. A failure here blocks expensive builds and simulator setup.
+  are allocated. A failure here blocks expensive native builds.
 - Portable Swift, macOS script, native core, selected SDK consumers and the live
   input setter/readback canary share the `Portable regression tests` worker.
   Native test products are built once; core tests reuse that artifact while UI
@@ -70,11 +70,17 @@ SDK and input-conversion steps keep their explicitly provisioned checks. These
 exclusions remove skipped entries from automatic selection, preserving the
 ordinary methods in each suite and direct manual execution paths.
 
+Prepared simulator and signed Mac end-to-end acceptance are manual-only. They
+are excluded from PR, main, scheduled, and dispatched CI because simulator
+inventory and app-launch stalls repeatedly blocked otherwise passing checks.
+The standalone scripts retain their assertions and resource-release checks;
+see [manual qualifications](ci-manual-tests.md#end-to-end-automation).
+
 ## Required result
 
 The existing `Compile app and tests` check is retained because repository rules
 already require its name. It always runs and enforces the script,
-portable, external SDK, simulator and Mac acceptance, and selected Mac input diagnostic
+portable, native core/UI, external SDK, and selected Mac input diagnostic
 results. An expected skip passes only when the routing plan did not select that
 job. Failures, cancellations, missing results, and unexplained skips fail the
 gate, including for changes that do not require a native build. The same job
@@ -83,15 +89,17 @@ publishes the failure summary and evidence links even when its gate step fails.
 `Workflow and script checks` and `Portable regression tests` remain stable
 required check names, backed by the combined Linux checks and the actual
 regression worker. Branch rules and release-source validation keep the same
-three required names. The workflow has seven job definitions: a full ordinary
-run executes eight jobs because UI coverage expands to three shards. The
+three required names. The workflow has six job definitions: a full ordinary
+run executes seven jobs because UI coverage expands to three shards. The
 nightly-only picker job is displayed as skipped on ordinary runs. Previously,
-the workflow displayed 18 jobs and executed 17; it now displays nine and executes
-eight. This removes duplicate result gates, combines routing with fast checks,
-and folds the input canary into the existing regression worker.
+the workflow displayed 18 jobs and executed 17; it now displays eight and executes
+seven. This removes duplicate result gates, combines routing with fast checks,
+folds the input canary into the existing regression worker, and removes the
+live simulator/Mac acceptance worker.
 Job success is not evidence of coverage outside the selection printed by the
-routing job. Simulator acceptance does not establish physical-device behavior;
-the external SDK receipt establishes compilation, not runtime execution.
+routing job. Core UI checks do not establish live simulator/Mac automation or
+physical-device behavior; the external SDK receipt establishes compilation, not
+runtime execution.
 
 Release packaging resolves and validates its immutable source on Ubuntu and
 waits there for that exact source's successful main CI. Only then does it request
@@ -122,20 +130,11 @@ explicit aggregate gate. Its matching
 Xcode builds, Swift UI tests, or simulator App Intent execution. That elapsed
 time is not an equivalent native-validation target.
 
-Simulator and signed Mac acceptance share one worker. The Mac phase runs after
-the simulator scenarios and verifies automation plus saved-fix comparison.
-The historical simulator-only measurements below predate that Mac phase. A two-group hosted trial took 16m11s for
-its slower group, versus 16m05s for the preceding single-worker run, and delayed a
-UI shard by over six minutes. That split was removed. The subsequent layout
-allocated seven Mac workers instead of the original nine. Consolidating the
-input canary now reduces that to six; all seven scenarios still run. These
-allocation counts do not establish an elapsed-time improvement.
-
-Fixture preparation and exact-Xcode validation finish before simulator boot.
-Overlapping these phases failed hosted toolchain probes and stalled simulator
-cleanup, so setup remains sequential. Installation waits for full readiness, and
-cleanup releases only the device created by this run. All seven scenarios,
-16 codec families, negative assertions, and timeout/recovery checks remain.
+These simulator measurements are historical. The live simulator and signed Mac
+acceptance worker was removed after repeated inventory and app-launch stalls.
+The standalone harnesses remain available for explicit manual qualification.
+Automatic CI now allocates five Mac workers for full ordinary coverage; this
+count alone does not establish an elapsed-time improvement.
 
 The unused legacy skip guard and its five self-tests were removed; the invoked
 native runner still rejects missing, failed, and skipped selected UI tests. A
@@ -143,8 +142,6 @@ normally inactive fixture-generation method was also removed from the native
 suite. Persistence, rollback, and review UI tests remain. These removals clean up
 misleading test counts; they are not a material runtime speed improvement.
 
-The slow simulator contract remains selected when relevant and on full runs.
-Queue capacity, simulator boot/install, and cold Xcode compilation remain real
-costs. Compare queue delay, setup, execution, and cache hit/miss separately when
+Queue capacity and cold Xcode compilation remain real costs for automatic CI. Compare queue delay, setup, execution, and cache hit/miss separately when
 evaluating subsequent runs. A single warm run or an intentionally skipped job
 does not establish a general speedup.
