@@ -25,6 +25,25 @@ enum UITestStorage {
         return directory.appending(path: "foundation-evals-trace-\(name).png")
     }
 
+    @MainActor
+    static func openSuiteEditor(
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        // XCTest can launch a menu-only app. Use the normal window-opening command
+        // instead of depending on a window restored by a preceding test.
+        app.activate()
+        try requireNoAlert(in: app)
+        let evaluationMenu = app.menuBars.menuBarItems["Evaluation"]
+        try waitFor(evaluationMenu, in: app, timeout: 5, file: file, line: line)
+        evaluationMenu.click()
+        app.menuItems["Show Suite Editor"].click()
+        app.activate()
+        try waitFor(app.windows.firstMatch, in: app, timeout: 5, file: file, line: line)
+        try waitFor(app.buttons["Run evaluation"], in: app, timeout: 5, file: file, line: line)
+    }
+
     static func requireNoAlert(in app: XCUIApplication) throws {
         let alert = app.alerts.firstMatch.exists ? app.alerts.firstMatch : app.sheets.firstMatch
         guard !alert.exists else {

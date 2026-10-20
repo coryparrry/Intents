@@ -1,4 +1,4 @@
-"""Execute the CI aggregate gates against failed, cancelled, and skipped shards."""
+"""Verify consolidated workflow wiring and execute its evidence checks."""
 
 import os
 import json
@@ -16,100 +16,104 @@ def job(name):
     return re.search(r"(?ms)^  " + re.escape(name) + r":\n(.*?)(?=^  [\w-]+:|\Z)", WORKFLOW)[1]
 
 
-class FailureSummaryTests(unittest.TestCase):
-    def test_summary_runs_after_terminal_checks_with_read_only_log_access(self):
-        summary = job("summary")
-        self.assertIn("if: ${{ always() }}", summary)
-        self.assertIn("needs: [changes, quality, regression, build, automation-e2e, input-conversion]", summary)
-        self.assertIn("actions: read", summary)
-        self.assertIn("contents: read", summary)
-        self.assertNotIn("write", summary)
+class WorkflowContractTests(unittest.TestCase):
+    def test_required_checks_are_real_workers_and_one_terminal_gate(self):
+        jobs = re.findall(r"(?m)^  ([\w-]+):$", WORKFLOW.split("jobs:\n", 1)[1])
+        self.assertEqual(set(jobs), {
+            "changes", "swift-tests", "native-build", "ui-tests", "picker-stability",
+            "automation-e2e-scenarios", "build",
+        })
+        self.assertEqual(len(jobs), 7)
+        for identifier, name in (("changes", "Workflow and script checks"),
+                                 ("swift-tests", "Portable regression tests"),
+                                 ("build", "Compile app and tests")):
+            self.assertIn("    name: " + name + "\n", job(identifier))
+        # The matrix is produced by the route referenced by the workflow, rather
+        # than duplicating its shard names in this job-count assertion.
+        from script import ci_routes
+        plan = ci_routes.coverage(None)
+        for selection in ("native", "ui", "automation_e2e", "input_conversion", "sdk_consumer"):
+            self.assertTrue(plan[selection], selection)
+        self.assertIn("matrix:\n        include: ${{ fromJSON(needs.changes.outputs.ui_matrix) }}", job("ui-tests"))
+        self.assertEqual(len(plan["ui_matrix"]), 3)
+        expanded = len(jobs) - 1 + len(plan["ui_matrix"])
+        self.assertEqual(expanded, 9)
+        opt_in = [name for name in jobs if "inputs.stability == true" in job(name).split("    steps:", 1)[0]]
+        self.assertEqual(opt_in, ["picker-stability"])
+        self.assertEqual(expanded - len(opt_in), 8)
+
+    def test_terminal_gate_receives_complete_workflow_state(self):
+        workflow = job("build")
+        header = workflow.split("    steps:", 1)[0]
+        self.assertIn("if: ${{ always() }}", header)
+        dependencies = re.search(r"needs: \[([^]]+)\]", header)[1].split(", ")
+        self.assertEqual(set(dependencies), {
+            "changes", "swift-tests", "native-build", "ui-tests", "picker-stability",
+            "automation-e2e-scenarios",
+        })
+        self.assertIn("contents: read", header)
+        self.assertIn("actions: read", header)
+        self.assertNotIn("write", header)
+        self.assertIn("uses: actions/checkout@", workflow)
+        gate_step = workflow.split("        id: gate\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("CI_NEEDS_JSON: ${{ toJSON(needs) }}", gate_step)
+        self.assertIn("CI_SELECTION_JSON: ${{ toJSON(needs.changes.outputs) }}", gate_step)
+        self.assertIn("CI_STABILITY_REQUESTED: ${{ inputs.stability == true }}", gate_step)
+        self.assertIn("run: python3 script/ci_gate.py", gate_step)
+
+    def test_summary_runs_after_the_gate_with_read_only_log_access(self):
+        workflow = job("build")
+        gate_position = workflow.index("run: python3 script/ci_gate.py")
+        summary_position = workflow.index("run: python3 script/ci_failure_summary.py")
+        self.assertLess(gate_position, summary_position)
+        summary = workflow[gate_position:summary_position].split("      - name:", 1)[1]
+        self.assertIn("if: ${{ always() && steps.source.outcome == 'success' }}", summary)
+        self.assertIn("CI_GATE_RESULT: ${{ steps.gate.outcome }}", summary)
         self.assertIn("CI_NEEDS_JSON: ${{ toJSON(needs) }}", summary)
         self.assertIn("GITHUB_TOKEN: ${{ github.token }}", summary)
-        self.assertIn("run: python3 script/ci_failure_summary.py", summary)
 
+    def test_fast_checks_and_route_share_one_linux_checkout(self):
+        workflow = job("changes")
+        self.assertIn("runs-on: ubuntu-24.04", workflow)
+        self.assertEqual(workflow.count("uses: actions/checkout@"), 1)
+        self.assertIn("id: route", workflow)
+        self.assertIn("run: python3 script/ci_routes.py", workflow)
+        for check in ("script/release_notes.py validate-event", "actionlint@", "shellcheck script/*.sh",
+                      "python3 -m compileall -q examples", "node --test tests/*.test.mjs"):
+            self.assertIn(check, workflow)
+        self.assertIn("CI_TEST_SELECTION: ${{ steps.route.outputs.python_tests }}", workflow)
+        self.assertIn("python3 script/ci_run_tests.py python", workflow)
+        for output in ("native", "ui", "automation_e2e", "input_conversion", "sdk_consumer",
+                       "native_tests", "regression", "swift_suites", "python_tests", "macos_tests", "ui_matrix"):
+            self.assertIn(output + ": ${{ steps.route.outputs." + output + " }}", workflow)
 
-def gate(name, **environment):
-    script = job(name).split("        run: |\n", 1)[1]
-    return subprocess.run(
-        ["bash", "-e", "-c", textwrap.dedent(script)],
-        env={**os.environ, **environment}, capture_output=True,
-    ).returncode
-
-
-class GateTests(unittest.TestCase):
-    def test_quality_requires_selected_script_shards(self):
-        common = dict(ROUTING="success", LINT="success", SELECTED='["test"]')
-        self.assertEqual(gate("quality", **common, TESTS="success"), 0)
-        for result in ("skipped", "failure", "cancelled"):
-            self.assertNotEqual(gate("quality", **common, TESTS=result), 0)
-        self.assertEqual(gate("quality", ROUTING="success", LINT="success", SELECTED="[]", TESTS="success"), 0)
-        self.assertNotEqual(gate("quality", ROUTING="success", LINT="success", SELECTED="[]", TESTS="skipped"), 0)
-        self.assertNotEqual(gate("quality", ROUTING="failure", LINT="success", SELECTED="[]", TESTS="skipped"), 0)
-
-    def test_regression_requires_selected_tests_and_external_consumer(self):
-        common = dict(ROUTING="success", QUALITY="success", SWIFT="success", SDK="success", SDK_SELECTED="true", CORE_SELECTION="[]", SWIFT_SELECTION='["A"]', MACOS_SELECTION='["B"]')
-        self.assertEqual(gate("regression", **common), 0)
-        for field in ("SWIFT", "SDK", "QUALITY", "ROUTING"):
-            for result in ("failure", "cancelled", "skipped"):
-                self.assertNotEqual(gate("regression", **{**common, field: result}), 0)
-        for selection in ("SWIFT_SELECTION", "MACOS_SELECTION"):
-            self.assertEqual(gate("regression", **{**common, selection: "[]"}), 0)
-            self.assertNotEqual(gate("regression", **{**common, selection: "[]", "SWIFT": "skipped"}), 0)
-        self.assertNotEqual(gate("regression", **{**common, "SWIFT_SELECTION": "[]", "MACOS_SELECTION": "[]", "SWIFT": "skipped"}), 0)
-        for result in ("failure", "cancelled", "skipped", ""):
-            self.assertNotEqual(gate("regression", **{**common, "SWIFT_SELECTION": "[]", "MACOS_SELECTION": "[]", "CORE_SELECTION": '["FoundationEvalsTests"]', "SWIFT": result}), 0)
-        self.assertEqual(gate("regression", **{**common, "SWIFT_SELECTION": "[]", "MACOS_SELECTION": "[]", "CORE_SELECTION": "[]", "SDK_SELECTED": "false", "SDK": "skipped", "SWIFT": "skipped"}), 0)
-        self.assertEqual(gate("regression", **{**common, "SDK_SELECTED": "false", "SDK": "skipped"}), 0)
-        self.assertNotEqual(gate("regression", **{**common, "SDK_SELECTED": "false"}), 0)
-        self.assertNotEqual(gate("regression", **{**common, "SDK_SELECTED": ""}), 0)
-
-    def test_required_gate_rejects_failed_cancelled_or_skipped_selected_checks(self):
-        common = dict(ROUTING="success", QUALITY="success", REGRESSION="success", AUTOMATION="success", BUILD="success", BUILD_SELECTED="true", SDK="success", SDK_SELECTED="true", CORE="success", CORE_SELECTION='["FoundationEvalsTests"]', UI="success", UI_SELECTED="true", STABILITY="skipped", STABILITY_SELECTED="false", INPUT_CONVERSION="success", INPUT_CONVERSION_SELECTED="true")
-        self.assertEqual(gate("build", **common), 0)
-        # Pull requests have no inputs context. Comparing the optional input to
-        # true yields a boolean false instead of short-circuiting to an empty string.
-        stability = "${{ inputs.stability == true && needs.changes.outputs.ui == 'true' }}"
-        self.assertIn("STABILITY_SELECTED: " + stability, job("build"))
-        self.assertIn("if: " + stability, job("picker-stability"))
-        self.assertNotEqual(gate("build", **{**common, "STABILITY_SELECTED": ""}), 0)
-        self.assertEqual(gate("build", **{**common, "STABILITY_SELECTED": "true", "STABILITY": "success"}), 0)
-        for result in ("failure", "cancelled", "skipped", ""):
-            self.assertNotEqual(gate("build", **{**common, "STABILITY_SELECTED": "true", "STABILITY": result}), 0)
-        for field in ("ROUTING", "QUALITY", "REGRESSION", "AUTOMATION", "BUILD", "SDK", "CORE", "UI", "INPUT_CONVERSION"):
-            for result in ("failure", "cancelled", "skipped", ""):
-                with self.subTest(field=field, result=result):
-                    self.assertNotEqual(gate("build", **{**common, field: result}), 0)
-        for field in ("BUILD", "SDK", "UI", "INPUT_CONVERSION"):
-            self.assertEqual(gate("build", **{**common, field + "_SELECTED": "false", field: "skipped"}), 0)
-            self.assertNotEqual(gate("build", **{**common, field + "_SELECTED": "false"}), 0)
-            self.assertNotEqual(gate("build", **{**common, field + "_SELECTED": ""}), 0)
-        self.assertEqual(gate("build", **{**common, "CORE_SELECTION": "[]", "CORE": "skipped"}), 0)
-        self.assertNotEqual(gate("build", **{**common, "STABILITY_SELECTED": "true"}), 0)
-        self.assertEqual(gate("build", **{**common, "STABILITY_SELECTED": "true", "STABILITY": "success"}), 0)
-        # Docs-only changes still produce a required result; expected skips pass.
-        unselected = {**common, "CORE_SELECTION": "[]", "CORE": "skipped"}
-        for field in ("BUILD", "SDK", "UI", "INPUT_CONVERSION"):
-            unselected.update({field: "skipped", field + "_SELECTED": "false"})
-        self.assertEqual(gate("build", **unselected), 0)
-        self.assertNotEqual(gate("build", **{**unselected, "ROUTING": "failure"}), 0)
-
-    def test_required_gate_waits_for_acceptance_even_without_native_build(self):
-        workflow = job("build")
-        self.assertIn("if: ${{ always() }}", workflow)
-        dependencies = re.search(r"needs: \[([^]]+)\]", workflow)[1].split(", ")
-        for required in ("quality", "regression", "automation-e2e", "input-conversion", "native-build", "native-tests", "ui-tests", "sdk-consumer", "picker-stability"):
-            self.assertIn(required, dependencies)
-
-    def test_expensive_jobs_wait_for_fast_checks_and_share_macos_scripts(self):
-        for name in ("native-build", "automation-e2e-scenarios", "input-conversion"):
+    def test_expensive_independent_jobs_wait_for_fast_checks(self):
+        for name in ("native-build", "automation-e2e-scenarios"):
             header = job(name).split("    steps:", 1)[0]
-            self.assertIn("needs: [changes, quality]", header)
+            self.assertIn("needs: changes", header)
             self.assertNotIn("always()", header)
         self.assertNotIn("\n  macos-script-tests:", WORKFLOW)
         self.assertIn("CI_TEST_SELECTION: ${{ needs.changes.outputs.macos_tests }}", job("swift-tests"))
-        self.assertIn("needs.changes.outputs.swift_suites != '[]' || needs.changes.outputs.macos_tests != '[]'", job("swift-tests"))
-        self.assertIn("needs.changes.outputs.sdk_consumer == 'true'", job("swift-tests"))
+
+    def test_reusable_callers_forward_signing_and_allow_failure_log_reads(self):
+        workflow_call = WORKFLOW.split("  workflow_call:\n", 1)[1].split("\npermissions:", 1)[0]
+        for secret in ("CI_MAC_CERTIFICATE_P12_BASE64", "CI_MAC_CERTIFICATE_PASSWORD"):
+            declaration = re.search(r"(?m)^      " + secret + r":\n((?:        .*\n)+)", workflow_call)
+            self.assertIsNotNone(declaration, secret)
+            self.assertIn("required: false", declaration[1])
+        workflows = Path(__file__).resolve().parents[2] / ".github/workflows"
+        for filename, identifier in (("ui-stability.yml", "qualification"), ("pr-metadata.yml", "retarget")):
+            source = (workflows / filename).read_text()
+            caller = re.search(r"(?ms)^  " + identifier + r":\n(.*?)(?=^  [\w-]+:|\Z)", source)[1]
+            with self.subTest(workflow=filename):
+                self.assertIn("uses: ./.github/workflows/ci.yml", caller)
+                # Job permissions override the workflow's inherited permission map.
+                permissions = caller if "    permissions:\n" in caller else source.split("jobs:\n", 1)[0]
+                self.assertIn("actions: read", permissions)
+                self.assertIn("contents: read", permissions)
+                self.assertNotIn("secrets: inherit", caller)
+                for secret in ("CI_MAC_CERTIFICATE_P12_BASE64", "CI_MAC_CERTIFICATE_PASSWORD"):
+                    self.assertIn(secret + ": ${{ secrets." + secret + " }}", caller)
 
     def test_external_consumer_requires_exact_remote_revision_and_both_products(self):
         script = job("swift-tests").split("      - name: Verify external consumer build receipt\n", 1)[1].split("        run: |\n", 1)[1].split("      - name:", 1)[0]
@@ -154,23 +158,16 @@ class GateTests(unittest.TestCase):
             self.assertRegex(values["INTENT_LAB_CONSUMER_REVISION"], r"^[0-9a-f]{40}$")
             self.assertEqual(values["INTENT_LAB_CONSUMER_BUILD_RECEIPT"], str(Path(directory) / "intentlab-consumer/receipt.json"))
 
-    def test_regression_worker_survives_skipped_native_build_without_running_unselected_core(self):
+    def test_regression_worker_survives_skipped_native_build_and_avoids_empty_mac_allocation(self):
         worker = job("swift-tests")
         header = worker.split("    steps:", 1)[0]
-        self.assertIn("needs: [changes, quality, native-build]", header)
+        self.assertIn("needs: [changes, native-build]", header)
         self.assertIn("always() && !cancelled()", header)
-        self.assertIn("needs.changes.result == 'success' && needs.quality.result == 'success'", header)
+        self.assertIn("needs.changes.result == 'success'", header)
         self.assertIn("needs.changes.outputs.native_tests == '[]' || needs.native-build.result == 'success'", header)
-        self.assertIn("timeout-minutes: 35", header)
-        for name in ("native-tests", "sdk-consumer"):
-            aggregate = job(name)
-            self.assertIn("runs-on: ubuntu-24.04", aggregate)
-            self.assertIn("needs: [changes, swift-tests]", aggregate)
-            self.assertIn("always()", aggregate)
-            self.assertEqual(gate(name, ROUTING="success", WORKER="success"), 0)
-            for status in ("failure", "cancelled", "skipped", ""):
-                self.assertNotEqual(gate(name, ROUTING="success", WORKER=status), 0)
-                self.assertNotEqual(gate(name, ROUTING=status, WORKER="success"), 0)
+        self.assertIn("runs-on: ${{ needs.changes.outputs.regression == 'true' && 'xcode-27' || 'ubuntu-24.04' }}", header)
+        self.assertNotIn("&& needs.changes.outputs.regression", header.split("    runs-on:", 1)[0])
+        self.assertIn("needs.changes.outputs.native_tests != '[]'", worker.split("      - name: Run core tests without rebuilding", 1)[1].split("      - name:", 1)[0])
 
     def test_shared_swift_build_qualifies_fresh_consumers_once_with_scoped_opt_in(self):
         worker = job("swift-tests")
@@ -200,7 +197,7 @@ class GateTests(unittest.TestCase):
             "Install consumer project generator", "Read immutable installer package revision",
             "Run selected macOS script tests", "Identify Swift toolchain",
             "Restore reusable Swift build", "Run selected Swift suites and fresh SDK consumers once",
-            "Verify external consumer build receipt",
+            "Verify external consumer build receipt", "Run live input setter/readback canary",
         ):
             with self.subTest(step=name):
                 condition = re.search(re.escape(name) + r"\n        if: (.+)", worker)[1]
@@ -212,7 +209,43 @@ class GateTests(unittest.TestCase):
                 self.assertNotIn("always()", condition)
                 self.assertTrue("needs.changes.outputs.swift_suites" in condition
                                 or "needs.changes.outputs.sdk_consumer" in condition
-                                or "needs.changes.outputs.macos_tests" in condition)
+                                or "needs.changes.outputs.macos_tests" in condition
+                                or "needs.changes.outputs.input_conversion" in condition)
+
+    def test_input_canary_reuses_portable_build_and_requires_live_execution_evidence(self):
+        worker = job("swift-tests")
+        step = worker.split("      - name: Run live input setter/readback canary\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_LIVE: '1'", step)
+        self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT: ${{ runner.temp }}/input-conversion", step)
+        self.assertIn('--scratch-path "$RUNNER_TEMP/portable-build"', step)
+        self.assertIn("--filter 'AutomationMacInputProbeFixtureTests/testAuthoredInputProbeFixtureWhenRequested'", step)
+        for prerequisite in ("toolchain", "swift-cache"):
+            self.assertIn("steps." + prerequisite + ".outcome == 'success'", step)
+        self.assertNotIn("input-conversion-build", WORKFLOW)
+        validation = textwrap.dedent(step.split("python3 - <<'PY'\n", 1)[1].split("          PY", 1)[0])
+        with tempfile.TemporaryDirectory() as directory:
+            environment = {**os.environ, "INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT": directory}
+            passed = "Test Case '-[Fixture testAuthoredInputProbeFixtureWhenRequested]' passed\n"
+            executed = "Authored String setter/readback calibration only;\n"
+            for log, expected in ((passed + executed, 0), (passed, 1), (executed, 1), ("skipped", 1)):
+                with self.subTest(log=log):
+                    (Path(directory) / "test.log").write_text(log)
+                    result = subprocess.run(["python3", "-c", validation], env=environment, capture_output=True)
+                    self.assertEqual(result.returncode, expected, result.stderr.decode())
+
+    def test_swift_cache_identity_tracks_toolchain_and_package_inputs(self):
+        worker = job("swift-tests")
+        toolchain = worker.split("      - name: Identify Swift toolchain\n", 1)[1].split("      - name:", 1)[0]
+        cache = worker.split("      - name: Restore reusable Swift build\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("xcrun swift --version | shasum -a 256", toolchain)
+        self.assertIn("path: ${{ runner.temp }}/portable-build", cache)
+        self.assertIn("-swift-tests-", cache)
+        for line in cache.splitlines():
+            if "-swift-tests-" in line:
+                self.assertIn("${{ runner.os }}-${{ runner.arch }}", line)
+                self.assertIn("${{ steps.toolchain.outputs.version }}", line)
+                self.assertIn("hashFiles('Package.swift', 'Package.resolved', '**/Package.resolved')", line)
+        self.assertIn("${{ github.sha }}", cache)
 
     def test_continuation_respects_setup_and_keeps_receipt_evidence_after_test_failure(self):
         worker = job("swift-tests")
@@ -240,6 +273,7 @@ class GateTests(unittest.TestCase):
         self.assertIn("fail-fast: false", job("ui-tests"))
         self.assertNotIn("max-parallel:", job("ui-tests"))
         self.assertNotIn("--iterations", job("ui-tests"))
+        self.assertIn("if: ${{ inputs.stability == true && needs.changes.outputs.ui == 'true' }}", job("picker-stability"))
 
     def test_simulator_cache_is_saved_only_after_successful_compilation(self):
         workflow = job("automation-e2e-scenarios")
@@ -252,7 +286,7 @@ class GateTests(unittest.TestCase):
 
     def test_simulator_runs_every_scenario_with_one_setup_and_cache_writer(self):
         workflow = job("automation-e2e-scenarios")
-        self.assertIn("needs: [changes, quality]", workflow)
+        self.assertIn("needs: changes", workflow)
         self.assertNotIn("matrix", workflow)
         self.assertIn("--scenario-group all", workflow)
         self.assertIn("name: automation-e2e", workflow)
@@ -283,10 +317,10 @@ class GateTests(unittest.TestCase):
         self.assertEqual(WORKFLOW.count("secrets.CI_MAC_CERTIFICATE_PASSWORD"), 1)
 
     def test_scripts_run_all_selected_modules_in_one_job(self):
-        workflow = job("script-tests")
-        self.assertNotIn("matrix", workflow)
+        workflow = job("changes")
+        self.assertNotIn("\n      matrix:", workflow.split("    steps:", 1)[0])
         self.assertNotIn("    if:", workflow.split("    steps:", 1)[0])
-        self.assertIn("CI_TEST_SELECTION: ${{ needs.changes.outputs.python_tests }}", workflow)
+        self.assertIn("CI_TEST_SELECTION: ${{ steps.route.outputs.python_tests }}", workflow)
         self.assertIn("python3 script/ci_run_tests.py python", workflow)
 
     def test_evidence_is_retained_after_failure_without_blocking_cancellation(self):
@@ -299,20 +333,8 @@ class GateTests(unittest.TestCase):
                 condition = re.search(re.escape(name) + r"\n        if: (.+)", WORKFLOW)[1]
                 self.assertIn("!cancelled()", condition)
                 self.assertNotIn("always()", condition)
-        # Required gates still reject cancellation rather than treating it as success.
-        for name in ("quality", "regression", "build", "automation-e2e"):
-            self.assertIn("always()", job(name).split("    steps:", 1)[0])
-
-    def test_stable_simulator_gate_requires_all_selected_groups(self):
-        self.assertEqual(gate("automation-e2e", ROUTING="success", SELECTED="true", SCENARIOS="success"), 0)
-        for result in ("failure", "cancelled", "skipped", ""):
-            with self.subTest(result=result):
-                self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="true", SCENARIOS=result), 0)
-        self.assertNotEqual(gate("automation-e2e", ROUTING="failure", SELECTED="true", SCENARIOS="success"), 0)
-        self.assertEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="skipped"), 0)
-        self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="failure"), 0)
-        self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="false", SCENARIOS="success"), 0)
-        self.assertNotEqual(gate("automation-e2e", ROUTING="success", SELECTED="", SCENARIOS="skipped"), 0)
+        # The terminal gate evaluates cancellation even when its ancestors skip.
+        self.assertIn("always()", job("build").split("    steps:", 1)[0])
 
     def test_native_descriptors_refresh_without_removing_compiled_products(self):
         build = job("native-build")

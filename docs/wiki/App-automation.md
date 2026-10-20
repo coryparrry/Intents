@@ -67,7 +67,7 @@ Physical Siri failure search additionally requires a reviewed disposable record,
 
 ## Evidence boundaries
 
-The required Phase 3 checks run the CLI on an iOS simulator. They do not qualify iPhone, Siri or Mac subject execution, or Intent Lab. The fixture declares a Siri phrase for the later physical-device phase. Opt-in native UI tests use a staged copy of this same committed fixture and runtime settings, without private profiles. The live setter/readback diagnostic is Mac-only and runs in the separate **Input conversion diagnostic (Mac)** CI job. It checks an authored String parameter without invoking its business action. Simulator echo tests exercise conversion directly; the diagnostic never grants capabilities or gates execution.
+The required Phase 3 checks run the CLI on an iOS simulator. They do not qualify iPhone, Siri or Mac subject execution, or Intent Lab. The fixture declares a Siri phrase for the later physical-device phase. Opt-in native UI tests use a staged copy of this same committed fixture and runtime settings, without private profiles. The live setter/readback diagnostic is Mac-only and runs as an explicitly activated step in the **Portable regression tests** CI worker. It checks an authored String parameter without invoking its business action. Simulator echo tests exercise conversion directly; the diagnostic never grants capabilities or gates execution.
 
 ## Opt-in app UI checks
 

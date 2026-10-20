@@ -43,9 +43,7 @@ final class WorkflowTraceUITests: XCTestCase {
             app.typeKey("q", modifierFlags: .command)
             XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
             app.launch()
-            try UITestStorage.requireNoAlert(in: app)
-            app.menuBars.menuBarItems["Evaluation"].click()
-            app.menuItems["Show Suite Editor"].click()
+            try UITestStorage.openSuiteEditor(in: app)
             XCTAssertTrue(prompt.waitForExistence(timeout: 5))
             XCTAssertEqual(prompt.value as? String, text)
         }
@@ -67,9 +65,7 @@ final class WorkflowTraceUITests: XCTestCase {
             app.typeKey("q", modifierFlags: .command)
             XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
             app.launch()
-            try UITestStorage.requireNoAlert(in: app)
-            app.menuBars.menuBarItems["Evaluation"].click()
-            app.menuItems["Show Suite Editor"].click()
+            try UITestStorage.openSuiteEditor(in: app)
             XCTAssertTrue(name.waitForExistence(timeout: 5))
             XCTAssertEqual(name.value as? String, text)
         }
@@ -102,9 +98,7 @@ final class WorkflowTraceUITests: XCTestCase {
             try capture(app, name: "blank-suite-after-reset")
             app.terminate()
             app.launch()
-            try UITestStorage.requireNoAlert(in: app)
-            app.menuBars.menuBarItems["Evaluation"].click()
-            app.menuItems["Show Suite Editor"].click()
+            try UITestStorage.openSuiteEditor(in: app)
             XCTAssertTrue(app.textFields["Suite name"].waitForExistence(timeout: 5))
             XCTAssertEqual(app.textFields["Suite name"].value as? String, "Untitled Suite")
             XCTAssertFalse(app.buttons["Run evaluation"].isEnabled)
@@ -290,8 +284,27 @@ final class WorkflowTraceUITests: XCTestCase {
             assertTraceRowsInsideViewport(list, in: app)
             span(WorkflowTraceFixture.generationID, in: app).click()
             assertSelectedTitle("Generate response", in: app)
-            let sidebar = app.buttons["Hide Sidebar"].exists ? app.buttons["Hide Sidebar"] : app.buttons["Show Sidebar"]
+            let wasSidebarVisible = app.buttons["Hide Sidebar"].exists
+            let sidebar = app.buttons[wasSidebarVisible ? "Hide Sidebar" : "Show Sidebar"]
             sidebar.click()
+            var previousFrames: [CGRect] = []
+            var stableSince = ContinuousClock.now
+            let resized = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                let frames = [list.frame, details.frame]
+                guard app.buttons[wasSidebarVisible ? "Show Sidebar" : "Hide Sidebar"].exists,
+                      frames[0].width != originalWidth else {
+                    previousFrames = []
+                    return false
+                }
+                guard frames == previousFrames else {
+                    previousFrames = frames
+                    stableSince = .now
+                    return false
+                }
+                return stableSince.duration(to: .now) >= .milliseconds(250)
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [resized], timeout: 10), .completed,
+                           "Toggling the sidebar must finish resizing the trace viewport")
             XCTAssertNotEqual(list.frame.width, originalWidth)
             XCTAssertLessThanOrEqual(list.frame.maxX, details.frame.minX + 2)
             XCTAssertGreaterThanOrEqual(list.frame.minX, window.frame.minX)
@@ -507,12 +520,7 @@ final class WorkflowTraceUITests: XCTestCase {
         ]
         app.launch()
         defer { app.terminate() }
-        try UITestStorage.requireNoAlert(in: app)
-        app.activate()
-        try UITestStorage.requireNoAlert(in: app)
-        app.menuBars.menuBarItems["Evaluation"].click()
-        app.menuItems["Show Suite Editor"].click()
-        try UITestStorage.waitFor(app.windows.firstMatch, in: app, timeout: 5)
+        try UITestStorage.openSuiteEditor(in: app)
         let showSidebar = app.buttons["Show Sidebar"]
         if showSidebar.exists { showSidebar.click() }
         let savedRun = app.descendants(matching: .any)
@@ -587,11 +595,13 @@ final class WorkflowTraceUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let selectedTitle = app.staticTexts["Selected span title"]
+        // Resolve the current inspector by its expected value on every snapshot.
+        // Selection can replace this SwiftUI accessibility element after a scroll.
         let expected = NSPredicate(format: "label == %@ OR value == %@", title, title)
-        let changed = XCTNSPredicateExpectation(predicate: expected, object: selectedTitle)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [changed], timeout: 2), .completed,
+        let selectedTitle = app.staticTexts.matching(identifier: "Selected span title")
+            .matching(expected).firstMatch
+        XCTAssertTrue(
+            selectedTitle.waitForExistence(timeout: 5),
             app.debugDescription, file: file, line: line
         )
     }

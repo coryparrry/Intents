@@ -16,21 +16,25 @@ prevent a green required check when selected product checks did not pass.
   qualification remains a separate manual run.
 - Linux workflow validation and selected script tests finish before Mac workers
   are allocated. A failure here blocks expensive builds and simulator setup.
-- Portable Swift, macOS script, native core and selected SDK consumer checks
-  share one Mac regression worker. Native test products are built once; core
-  tests reuse that artifact while UI shards run independently from the same build.
+- Portable Swift, macOS script, native core, selected SDK consumers and the live
+  input setter/readback canary share the `Portable regression tests` worker.
+  Native test products are built once; core tests reuse that artifact while UI
+  shards run independently from the same build.
   Portable and installer tests share one root Swift build and one test selection.
   SDK consumers still build fresh temporary projects against the pinned remote
-  revision; their checkouts, build products and receipts are never cached. The
-  `Native core tests` and `Clean Intent Lab SDK consumer` checks are Ubuntu
-  result gates. Actual Apple test execution remains in `Mac regression tests`;
-  the gates link to that shared worker and its unchanged evidence artifact names.
+  revision; their checkouts, build products and receipts are never cached.
+  The input canary reuses the portable build directory, with its activation flag
+  scoped to that step. SDK and input evidence keep their existing artifact names.
+  When no Apple regression work is selected, this required check completes on
+  Ubuntu without allocating a Mac runner.
   Portable tests do not generate unused coverage instrumentation; no coverage
   report or threshold previously consumed it.
-- Native core Swift Testing cases use a maximum concurrency of four. The maintained
+- Native core and portable Swift Testing cases use a maximum concurrency of four. The maintained
   app scheme sets `SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH=4`, and the
   generated core scheme preserves it in the built test descriptor. The workflow
-  does not override that value through `TEST_RUNNER_`. This experimental control
+  does not override that value through `TEST_RUNNER_`. The portable runner sets
+  the same limit explicitly for `swift test`; the Xcode scheme cannot configure
+  a separate SwiftPM process. This experimental control
   bounds case scheduling, not the subprocesses each case can launch; revalidate
   it when upgrading Xcode. Repository timeout/cancellation fixtures block on a
   FIFO instead of spinning a CPU, and verify stop reasons and child reaping
@@ -43,6 +47,15 @@ prevent a green required check when selected product checks did not pass.
   three-minute default allowance, preserving explicit fixture allowances up to
   ten minutes. The test step has a 16-minute limit inside the 20-minute job so
   failures can still export and upload diagnostics.
+- UI fixtures open the suite editor through its menu command and verify its
+  controls before testing navigation. They do not depend on a preceding test's
+  restored window. Timeline assertions wait for the selected accessibility value
+  and completed sidebar resize before checking the original geometry bounds.
+- The synthetic readiness cancellation test announces its child PID and blocks
+  on a FIFO until cancellation. It verifies that the executor sees a launched
+  child before cancelling, joins cleanup on every path, and retains a two-minute
+  deadlock bound. Scheduling delays cannot make a fixed-duration sleep expire
+  before the test observes it.
 - Fresh external SDK consumers run for SDK/installer changes and full runs.
   They still build the installer's immutable remote revision and verify a receipt
   for both public products. Unrelated app changes do not rebuild that SDK.
@@ -53,21 +66,29 @@ Automatic runners exclude the [manual qualification methods](ci-manual-tests.md)
 whose fixtures, profiles, model assets or activation flags they do not provide.
 This includes 23 runtime opt-ins in ordinary Swift execution, the native model
 integration, and the native duplicate of the SDK installer integration. Dedicated
-SDK and input-conversion jobs keep their explicitly provisioned checks. These
+SDK and input-conversion steps keep their explicitly provisioned checks. These
 exclusions remove skipped entries from automatic selection, preserving the
 ordinary methods in each suite and direct manual execution paths.
 
 ## Required result
 
 The existing `Compile app and tests` check is retained because repository rules
-already require its name. It now always runs and also enforces the script,
+already require its name. It always runs and enforces the script,
 portable, external SDK, simulator and Mac acceptance, and selected Mac input diagnostic
 results. An expected skip passes only when the routing plan did not select that
 job. Failures, cancellations, missing results, and unexplained skips fail the
-gate, including for changes that do not require a native build.
+gate, including for changes that do not require a native build. The same job
+publishes the failure summary and evidence links even when its gate step fails.
 
 `Workflow and script checks` and `Portable regression tests` remain stable
-required check names. Branch rules do not need to change to adopt this workflow.
+required check names, backed by the combined Linux checks and the actual
+regression worker. Branch rules and release-source validation keep the same
+three required names. The workflow has seven job definitions: a full ordinary
+run executes eight jobs because UI coverage expands to three shards. The
+nightly-only picker job is displayed as skipped on ordinary runs. Previously,
+the workflow displayed 18 jobs and executed 17; it now displays nine and executes
+eight. This removes duplicate result gates, combines routing with fast checks,
+and folds the input canary into the existing regression worker.
 Job success is not evidence of coverage outside the selection printed by the
 routing job. Simulator acceptance does not establish physical-device behavior;
 the external SDK receipt establishes compilation, not runtime execution.
@@ -105,8 +126,10 @@ Simulator and signed Mac acceptance share one worker. The Mac phase runs after
 the simulator scenarios and verifies automation plus saved-fix comparison.
 The historical simulator-only measurements below predate that Mac phase. A two-group hosted trial took 16m11s for
 its slower group, versus 16m05s for the preceding single-worker run, and delayed a
-UI shard by over six minutes. That split was removed. Full runs allocate seven
-Mac workers instead of the original nine; all seven scenarios still run.
+UI shard by over six minutes. That split was removed. The subsequent layout
+allocated seven Mac workers instead of the original nine. Consolidating the
+input canary now reduces that to six; all seven scenarios still run. These
+allocation counts do not establish an elapsed-time improvement.
 
 Fixture preparation and exact-Xcode validation finish before simulator boot.
 Overlapping these phases failed hosted toolchain probes and stalled simulator

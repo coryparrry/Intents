@@ -12,10 +12,7 @@ import urllib.request
 from pathlib import Path
 
 
-GATES = {name.casefold() for name in (
-    "Workflow and script checks", "Portable regression tests", "Compile app and tests",
-    "Automation e2e (simulator)",
-)}
+GATES = {"Compile app and tests".casefold()}
 LOG_LIMIT = 1024 * 1024
 REQUEST_TIMEOUT = 30
 ERROR_LIMIT = 6
@@ -215,6 +212,8 @@ def summarize(api, repository, run_id, attempt, server_url="https://github.com",
     else:
         if cancelled or (needs and "cancelled" in needs.values()):
             lines.append("No original failed job was reported. The attempt contains cancelled work; cancellation is the recorded blocker.")
+        elif needs and needs.get("selection-gate") not in (None, "success"):
+            lines.append("No original failed job was reported. The selection gate failed: routing or worker results did not satisfy the required coverage. See the Require every selected CI check step for the exact violation.")
         elif warnings:
             lines.append("No original failed job could be identified. The cause is unknown because GitHub evidence is incomplete.")
         elif gates or (needs and "failure" in needs.values()):
@@ -249,6 +248,12 @@ def main(environ=None):
     api = GitHubAPI(env.get("GITHUB_API_URL", "https://api.github.com"), env.get("GITHUB_TOKEN", ""))
     needs = json.loads(env.get("CI_NEEDS_JSON", "{}"))
     results = {key: value.get("result") if isinstance(value, dict) else value for key, value in needs.items()}
+    if "CI_GATE_RESULT" in env:
+        # This report runs inside the aggregate job, before GitHub records that
+        # job's conclusion. Include the gate step so passed workers cannot hide
+        # invalid routing or a selected worker's unexpected skip.
+        gate_result = env["CI_GATE_RESULT"]
+        results["selection-gate"] = gate_result if gate_result in ("success", "cancelled") else "failure"
     report = summarize(api, repository, run_id, attempt, env.get("GITHUB_SERVER_URL", "https://github.com"), results)
     with Path(env["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as destination:
         destination.write(report)
