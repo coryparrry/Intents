@@ -20,7 +20,7 @@ extension AppAutomationStore {
         return FileManager.default.fileExists(atPath: root.appendingPathComponent("Project.swift").path)
     }
     func runSourceRecipe(_ recipe: AutomationSourceRecipe) {
-        guard !busy, sourceRecipeRoot == recipe.source else { return }
+        guard canSelectApplicationFromCommand, sourceRecipeRoot == recipe.source else { return }
         advanceSelection()
         message = nil; progress = recipe.kind == .swiftPMPackaging ? "Running the app packaging recipe in a private source copy…" : "Generating the project in a private source copy…"
         let support = support, developer = developerDirectory
@@ -30,6 +30,9 @@ extension AppAutomationStore {
                 let result = try await recipe.run(supportRoot: support, developerDirectory: developer)
                 try Task.checkCancellation()
                 progress = nil
+                // Ownership can change while importing, before selection is allowed.
+                // Reject here so the importer never awaits its own task after a refused select.
+                guard canSelectApplicationFromCommand else { throw AutomationContractError.targetBusy }
                 select(result.selection)
                 let selection = task
                 await withTaskCancellationHandler { await selection?.value } onCancel: { selection?.cancel() }
@@ -40,7 +43,7 @@ extension AppAutomationStore {
         }
     }
     func importRepository(_ address: String) {
-        guard !busy else { return }
+        guard canSelectApplicationFromCommand else { return }
         do { _ = try AutomationRepositoryCheckout.validatedURL(address) }
         catch { message = errorText(error); return }
         advanceSelection()
@@ -52,6 +55,7 @@ extension AppAutomationStore {
                 let checkout = try await AutomationRepositoryCheckout.fetch(address, supportRoot: support)
                 try Task.checkCancellation()
                 progress = nil
+                guard canSelectApplicationFromCommand else { throw AutomationContractError.targetBusy }
                 select(checkout.directory)
                 let selection = task
                 await withTaskCancellationHandler { await selection?.value } onCancel: { selection?.cancel() }
@@ -62,7 +66,7 @@ extension AppAutomationStore {
         }
     }
     func importIPA(_ url: URL) {
-        guard !busy else { return }
+        guard canSelectApplicationFromCommand else { return }
         advanceSelection()
         message = nil; progress = "Inspecting and extracting the app archive…"
         let access = url.startAccessingSecurityScopedResource(), support = support
@@ -74,6 +78,7 @@ extension AppAutomationStore {
                 let app = try await withTaskCancellationHandler { try await extraction.value } onCancel: { extraction.cancel() }
                 try Task.checkCancellation()
                 progress = nil
+                guard canSelectApplicationFromCommand else { throw AutomationContractError.targetBusy }
                 select(app, rememberHistory: false)
                 let selection = task
                 await withTaskCancellationHandler { await selection?.value } onCancel: { selection?.cancel() }

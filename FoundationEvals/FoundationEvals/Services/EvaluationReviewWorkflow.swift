@@ -9,7 +9,9 @@ enum EvaluationReviewError: LocalizedError {
 /// Pure workflow shared by native review and agent proposals. Never changes run scores.
 enum EvaluationReviewWorkflow {
     static func samples(runs: [EvaluationRun], suiteID: UUID) -> [EvaluationReviewSample] {
-        runs.filter { $0.suiteID == suiteID }.sorted { $0.startedAt > $1.startedAt }.flatMap { run in
+        runs.filter { $0.suiteID == suiteID }.sorted {
+            ($0.historySequence ?? 0, $0.startedAt) > ($1.historySequence ?? 0, $1.startedAt)
+        }.flatMap { run in
             run.results.compactMap { sample in
                 guard let digest = try? sourceDigest(run: run, sample: sample) else { return nil }
                 return EvaluationReviewSample(run: run, sample: sample, sourceDigest: digest)
@@ -150,8 +152,8 @@ enum EvaluationReviewWorkflow {
               sourceAttachments == currentAttachments else {
             throw EvaluationReviewError.invalid("The current instructions, model, features or attachments differ from this run. Restore its setup before creating a regression.")
         }
-        let expected = expected.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !expected.isEmpty, expected.count <= EvaluationStore.maximumFieldCharacters else {
+        guard !expected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              expected.count <= EvaluationStore.maximumFieldCharacters else {
             throw EvaluationReviewError.invalid("Supply the correct expected response or verified reference answer.")
         }
         guard suite.scoringMode != .review || !(original.fieldAssertions ?? []).isEmpty else {

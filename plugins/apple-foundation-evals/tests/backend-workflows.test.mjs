@@ -228,3 +228,29 @@ test('staged variants stay private until both writes commit and deleted variants
   const retained = await dispatch(app, 'eval_get_experiment', { experimentId: created.experiment.id }); assert.deepEqual(retained.missingRunIds, [completed.runs[0].id]); assert.equal(retained.runs.length, 1);
   await assert.rejects(dispatch(app, 'eval_decide_experiment', { experimentId: created.experiment.id, decision: 'adoptCandidate' }), /Both committed experiment runs/);
 });
+
+for (const includesSample of [true, false]) {
+  test(`assessment projection clears prior judge trace when selected ${includesSample ? 'sample has no trace' : 'assessment has no sample'}`, async (t) => {
+    const { app, suite } = await fixture(t);
+    const raw = rawRun(suite);
+    const originalTrace = { instructions: 'Original judge instructions', prompt: 'Original judge prompt', checks: [] };
+    raw.results[0].judgeTrace = originalTrace;
+    raw.assessments[0].samples[0].trace = originalTrace;
+    const next = { ...raw.assessments[0], id: randomUUID(), origin: 'reassessment', samples: includesSample
+      ? [{ id: randomUUID(), sampleID: raw.results[0].id, status: 'passed', score: 4 }] : [] };
+    raw.assessments.push(next);
+    const { run } = await app.call('eval_import_run', { run: raw });
+    assert.deepEqual(run.results[0].trace.judge, originalTrace);
+    const selected = await app.call('eval_select_assessment', { runId: run.id, assessmentId: next.id });
+    assert.equal(selected.run.results[0].passed, includesSample ? true : null);
+    assert.equal(selected.run.results[0].trace.judge, undefined);
+    assert.equal(selected.run.results[0].trace.assessment.id, next.id);
+    assert.deepEqual(selected.run.results[0].trace.appSample.judgeTrace, originalTrace);
+    assert.deepEqual(selected.run.appRun, { ...raw, selectedAssessmentID: next.id });
+    const reread = await app.call('eval_get_run', { runId: run.id });
+    const analyzed = await app.call('eval_analyze_cases', { runId: run.id });
+    assert.equal(reread.run.results[0].trace.judge, undefined);
+    assert.equal(analyzed.cases[0].trace.judge, undefined);
+    assert.deepEqual((await app.call('eval_export_run', { runId: run.id })).run.results, raw.results);
+  });
+}

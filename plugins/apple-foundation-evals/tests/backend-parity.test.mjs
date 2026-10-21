@@ -381,3 +381,33 @@ test('strict assertion and reference admission preserves valid native boundary c
   assert.equal(saved.features.tools[0].name, 'custom_reference');
   assert.equal(saved.attachments[0].text, 'Retained reference');
 });
+
+test('case analysis accepts native UUID casing and rejects duplicate UUID aliases', async (t) => {
+  const app = await fixture(t);
+  const { suite: saved } = await app.call('eval_save_suite', { suite: definition() });
+  const raw = appRun(saved);
+  const { run } = await app.call('eval_import_run', { run: raw });
+  const nativeCaseID = raw.results[0].caseID;
+  assert.equal(nativeCaseID, saved.cases[0].id.toUpperCase());
+  const analysis = await app.call('eval_analyze_cases', { runId: run.id, caseIds: [nativeCaseID] });
+  assert.equal(analysis.cases.length, 1);
+  assert.equal(analysis.cases[0].caseId, saved.cases[0].id);
+  assert.deepEqual(analysis.cases[0].appSample, raw.results[0]);
+  await assert.rejects(app.call('eval_analyze_cases', {
+    runId: run.id, caseIds: [nativeCaseID, saved.cases[0].id],
+  }), /unique strings/);
+});
+
+test('legacy case analysis preserves case-sensitive named case identities', async (t) => {
+  const app = await fixture(t);
+  const { suite: saved } = await app.call('eval_save_suite', { suite: { name: 'Case-sensitive legacy IDs',
+    cases: ['Mixed', 'mixed'].map((id) => ({ id, prompt: id, expected: '', scoring: 'none' })) } });
+  const { run } = await app.call('eval_import_run', { run: { id: randomUUID(), suiteId: saved.id, suite: saved,
+    status: 'completed', startedAt: '2026-10-21T00:00:00Z', finishedAt: '2026-10-21T00:00:01Z',
+    results: saved.cases.map((item) => ({ caseId: item.id, repetition: 1, prompt: item.prompt,
+      expected: item.expected, response: 'saved response', passed: null, score: null, durationMs: 1, trace: { transcript: [] } })) } });
+  for (const caseId of ['Mixed', 'mixed']) {
+    const analysis = await app.call('eval_analyze_cases', { runId: run.id, caseIds: [caseId] });
+    assert.deepEqual(analysis.cases.map((item) => item.caseId), [caseId]);
+  }
+});

@@ -77,7 +77,9 @@ export async function workspaceDispatch(app, name, args) {
     case 'eval_analyze_cases': {
       const run = await app.readPublicRun(id(args.runId, 'runId'));
       if (args.caseIds !== undefined && (!Array.isArray(args.caseIds) || args.caseIds.some((item) => typeof item !== 'string') || new Set(args.caseIds).size !== args.caseIds.length)) throw new Error('caseIds must be unique strings');
-      const ids = new Set(args.caseIds || run.results.map((item) => item.caseId));
+      const caseIds = args.caseIds?.map((key) => isAppSuite(run.suite) ? key.toLowerCase() : key);
+      if (caseIds && new Set(caseIds).size !== caseIds.length) throw new Error('caseIds must be unique strings');
+      const ids = new Set(caseIds || run.results.map((item) => item.caseId));
       if ([...ids].some((key) => !run.results.some((item) => item.caseId === key))) throw new Error('Unknown case in run');
       return { runId: run.id, health: health(run, await existing(app, 'suites', run.suiteId)), cases: run.results.filter((item) => ids.has(item.caseId)).map((result) => ({ ...result, appSample: result.appSample || result.trace?.appSample || null })), assessments: run.appRun?.assessments || [] };
     }

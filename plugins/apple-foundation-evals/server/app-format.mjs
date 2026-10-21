@@ -162,7 +162,9 @@ export function applyAssessment(run, results) {
   return results.map((result) => {
     const original = result.appSample || result.trace?.appSample || run.results.find((item) => item.caseID?.toLowerCase() === result.caseId.toLowerCase() && item.repetition === result.repetition);
     const sample = selected?.samples?.find((item) => item.sampleID?.toLowerCase() === original?.id?.toLowerCase());
-    return { ...result, passed: sample?.status === 'passed' ? true : ['failed', 'error'].includes(sample?.status) ? false : null, score: sample?.score ?? null, scoreScale: 'appRubric', assessmentId: selected?.id || run.selectedAssessmentID, assessmentSample: sample || null, trace: { ...result.trace, ...(selected ? { assessment: selected } : {}), ...(sample?.trace ? { judge: sample.trace } : {}) } };
+    const trace = { ...result.trace };
+    delete trace.judge; delete trace.assessment;
+    return { ...result, passed: sample?.status === 'passed' ? true : ['failed', 'error'].includes(sample?.status) ? false : null, score: sample?.score ?? null, scoreScale: 'appRubric', assessmentId: selected?.id || run.selectedAssessmentID, assessmentSample: sample || null, trace: { ...trace, ...(selected ? { assessment: selected } : {}), ...(sample?.trace ? { judge: sample.trace } : {}) } };
   });
 }
 

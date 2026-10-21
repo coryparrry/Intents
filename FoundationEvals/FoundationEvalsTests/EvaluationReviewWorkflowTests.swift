@@ -3,6 +3,40 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationReviewWorkflowTests {
+    @Test func reviewSamplesFollowSavedHistoryAfterClockRollback() throws {
+        let fixture = try ReviewFixture()
+        var first = fixture.run
+        first.historySequence = 10
+        first.startedAt = Date(timeIntervalSince1970: 200)
+        first.completedAt = Date(timeIntervalSince1970: 201)
+        var second = fixture.run
+        second.id = UUID()
+        second.historySequence = 11
+        second.startedAt = Date(timeIntervalSince1970: 100)
+        second.completedAt = Date(timeIntervalSince1970: 101)
+        let ordered = EvaluationReviewWorkflow.samples(runs: [first, second], suiteID: fixture.suite.id)
+        #expect(ordered.map { $0.run.id } == [second.id, first.id])
+        first.historySequence = nil
+        second.historySequence = nil
+        let legacy = EvaluationReviewWorkflow.samples(runs: [second, first], suiteID: fixture.suite.id)
+        #expect(legacy.map { $0.run.id } == [first.id, second.id])
+    }
+
+    @Test func regressionPreservesReferenceWhitespaceAndValidatesOriginalLength() throws {
+        let fixture = try ReviewFixture()
+        let annotation = fixture.annotation(verdict: .failed)
+        let expected = "  exact answer  \n"
+        let regression = try EvaluationReviewWorkflow.regression(annotation: annotation,
+            sample: fixture.sample, suite: fixture.suite, expected: expected)
+        #expect(regression.expected == expected)
+        for invalid in [" \t\r\n ", String(repeating: " ", count: EvaluationStore.maximumFieldCharacters) + "x"] {
+            #expect(throws: EvaluationReviewError.self) {
+                try EvaluationReviewWorkflow.regression(annotation: annotation,
+                    sample: fixture.sample, suite: fixture.suite, expected: invalid)
+            }
+        }
+    }
+
     @Test func legacyStateAndCaseDecodeWithoutReviewFields() throws {
         var value = try JSONSerialization.jsonObject(with: CanonicalJSON.data(for: EvaluationSuiteLocalState())) as! [String: Any]
         value.removeValue(forKey: "review")
