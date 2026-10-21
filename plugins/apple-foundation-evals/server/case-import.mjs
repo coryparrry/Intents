@@ -7,7 +7,12 @@ function csv(text) {
     else if (ch === '"') { if (cell || closed) throw new Error('Invalid CSV quoting'); quoted = true; }
     else if (ch === ',' || ch === '\n' || ch === '\r') {
       row.push(cell); cell = ''; closed = false;
-      if (ch !== ',') { if (ch === '\r' && text[i + 1] === '\n') i++; rows.push(row); row = []; if (rows.length > 101) throw new Error('Case import exceeds 100 rows'); }
+      if (ch !== ',') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        if (!rows.length || row.some((item) => item.trim())) rows.push(row);
+        row = [];
+        if (rows.length > 101) throw new Error('Case import exceeds 100 rows');
+      }
     } else { if (closed) throw new Error('Invalid CSV text after closing quote'); cell += ch; }
   }
   if (quoted) throw new Error('Unclosed CSV quote');
@@ -27,8 +32,8 @@ export function importCases({ format, text, mapping }, appFormat) {
   return rows.map((row, index) => {
     if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('Each imported row must be an object');
     if (format !== 'json') for (const value of Object.values(row)) if (value !== null && typeof value !== 'string') throw new Error('CSV/JSONL columns must be strings or null');
-    const prompt = row[columns.promptColumn]?.trim();
-    if (!prompt) throw new Error(`Imported row ${index + 1} has an empty prompt`);
+    const prompt = row[columns.promptColumn];
+    if (typeof prompt !== 'string' || !prompt.trim()) throw new Error(`Imported row ${index + 1} has an empty prompt`);
     if (mapping) for (const key of Object.values(mapping)) if (key && !(key in row)) throw new Error(`Missing mapped column ${key}`);
     const name = row[columns.nameColumn]?.trim() || `Imported case ${index + 1}`;
     const expected = row[columns.expectedColumn] ?? '';

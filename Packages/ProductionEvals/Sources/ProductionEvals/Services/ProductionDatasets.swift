@@ -4,7 +4,10 @@ extension ProductionStorage {
     public func importDataset(from file: URL, name: String, version: String, sampling: ProductionSampling = .curated,
                               productionData: Bool = false, redactionConfirmed: Bool = false) throws -> ProductionDataset {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 200,
-              !version.isEmpty, version.count <= 100, !productionData || redactionConfirmed else {
+              !version.isEmpty, version.count <= 100,
+              !name.utf8.contains(where: { $0 == 13 || $0 == 10 }),
+              !version.utf8.contains(where: { $0 == 13 || $0 == 10 }),
+              !productionData || redactionConfirmed else {
             throw ProductionFailure.invalid("Provide a dataset name/version and confirm redaction for production data.")
         }
         let directory = root.appendingPathComponent("Datasets/.import-\(UUID().uuidString)")

@@ -522,12 +522,17 @@ final class EvaluationStore {
         let directory = EvaluationWorkspacePersistence.suiteDirectory(
             supportDirectory: supportDirectory, projectID: selectedProjectID, suiteID: newSuite.id
         )
-        try EvaluationWorkspacePersistence.createSuiteDirectories(at: directory)
-        try CanonicalJSON.data(for: newSuite).write(to: directory.appending(path: "suite.json"), options: .atomic)
-        try updateProject(selectedProjectID) { project in
-            project.suites.append(record)
-            project.selectedSuiteID = newSuite.id
-            project.updatedAt = now
+        do {
+            try EvaluationWorkspacePersistence.createSuiteDirectories(at: directory)
+            try CanonicalJSON.data(for: newSuite).write(to: directory.appending(path: "suite.json"), options: .atomic)
+            try updateProject(selectedProjectID) { project in
+                project.suites.append(record)
+                project.selectedSuiteID = newSuite.id
+                project.updatedAt = now
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
         }
         try switchWorkspace(projectID: selectedProjectID, suiteID: newSuite.id)
         return newSuite.id

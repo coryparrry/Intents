@@ -37,6 +37,9 @@ struct BuiltinToolTraceIntegrityTests {
         }
     }
 
+    // Inspected SDK modules: 2.1.8 declares Entry.data; 2.0.68 does not.
+    // Runtime availability alone cannot hide missing SDK declarations.
+    #if canImport(FoundationModels, _version: 2.1.8)
     @Test func opaqueDataHistoryStaysUnscoredAndDoesNotInventToolOutput() throws {
         if #available(macOS 27.2, iOS 27.2, *) {
             let data = Transcript.Entry.data(.init(contentType: .data, content: Data([0xFF, 0x00, 0x80]),
@@ -52,6 +55,7 @@ struct BuiltinToolTraceIntegrityTests {
             #expect(trace.output?.contains("opaque-metadata") == false)
         }
     }
+    #endif
 
     private static func entries(arguments: GeneratedContent, output: String) -> [Transcript.Entry] {
         [.toolCalls(Transcript.ToolCalls([.init(id: "call", toolName: "builtin", arguments: arguments)])),
