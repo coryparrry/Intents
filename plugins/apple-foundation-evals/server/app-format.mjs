@@ -79,6 +79,7 @@ export function appSuite(value, generateId = randomUUID, { draft = false } = {})
     if (Buffer.byteLength(result.fixtureResponse) > 4096) throw new Error('Fixture response exceeds 4096 UTF-8 bytes');
     return result;
   });
+  if (!draft && toolNames.has('search_reference_files')) throw new Error('Custom tools must not use the reserved reference lookup name');
   const scoringMode = value.scoringMode || 'review';
   if (!draft && scoringMode === 'modelJudge' && !(value.criteria || '').trim()) throw new Error('AI rubric scoring requires criteria');
   const seen = new Set();
@@ -94,8 +95,12 @@ export function appSuite(value, generateId = randomUUID, { draft = false } = {})
     if (!draft && conversation.restoredTranscriptJSON?.trim()) { try { JSON.parse(conversation.restoredTranscriptJSON); } catch { throw new Error('Restored transcript must be valid JSON'); } }
     const result = { id: caseId, name: item.name ?? `Case ${index + 1}`, prompt: item.prompt, expected: item.expected || '', conversation, ...(item.fieldAssertions ? { fieldAssertions: item.fieldAssertions.map((entry) => ({ id: generateId(), expectedValue: '', ...entry })) } : {}) };
     if (!draft && ['exactMatch', 'containsExpected'].includes(scoringMode) && !result.expected.length) throw new Error('scored cases require non-empty expected text');
-    for (const assertion of draft ? [] : result.fieldAssertions || []) {
-      if (assertion.pointer && !assertion.pointer.startsWith('/')) throw new Error('Field assertion pointer must be a JSON pointer');
+    const assertions = result.fieldAssertions || [];
+    if (!draft && assertions.length > 32) throw new Error('Use at most 32 field assertions per case');
+    if (!draft && new Set(assertions.map((entry) => entry.id?.toLowerCase())).size !== assertions.length) throw new Error('Assertion IDs must be unique');
+    for (const assertion of draft ? [] : assertions) {
+      if (typeof assertion.pointer !== 'string' || assertion.pointer && !assertion.pointer.startsWith('/') || /~(?![01])/.test(assertion.pointer)) throw new Error('Field assertion pointer must be a JSON pointer with valid escapes');
+      if (assertion.operation === 'containsText' && !assertion.expectedValue.length) throw new Error('Text assertions require non-empty text');
       if (['equals', 'minimum', 'maximum'].includes(assertion.operation)) { let parsed; try { parsed = JSON.parse(assertion.expectedValue); } catch { throw new Error('Assertion expected value must be JSON'); } if (assertion.operation !== 'equals' && typeof parsed !== 'number') throw new Error('Numeric assertions require a number'); }
     }
     return result;
@@ -109,6 +114,7 @@ export function appSuite(value, generateId = randomUUID, { draft = false } = {})
     if (!item.storedFilename || !item.sha256 || !Number.isInteger(item.byteCount)) throw new Error('File references require storedFilename, byteCount and SHA-256 metadata');
     return { id: generateId(), ...clean(item) };
   });
+  if (!draft && modelConfiguration.referenceMode === 'lookupTool' && !attachments.some((item) => item.kind === 'text')) throw new Error('Reference lookup requires at least one text reference');
   if (attachments.filter((item) => item.kind === 'image').length > 4) throw new Error('A suite can have at most four image references');
   if (new Set(attachments.map((item) => item.id)).size !== attachments.length) throw new Error('Attachment IDs must be unique');
   const result = { id: value.id?.toLowerCase() || generateId(), name: value.name, version: value.version || 'v1', instructions: value.instructions ?? '', criteria: value.criteria ?? '', scoringMode, repetitions: value.repetitions ?? 1, modelConfiguration, features, cases, attachments, judgeConfiguration: { mode: 'sameModel', includeReferenceAttachments: true, ...clean(value.judgeConfiguration || {}) }, releasePolicy: { required: false, criticalCaseIDs: [], maximumErrorCount: 0, requireApprovedBaseline: false, maximumPassRateRegression: 0, ...clean(value.releasePolicy || {}) }, ...(value.projectId ? { projectId: value.projectId.toLowerCase() } : {}), ...(value.revision ? { revision: value.revision } : {}), ...(value.updatedAt ? { updatedAt: value.updatedAt } : {}) };

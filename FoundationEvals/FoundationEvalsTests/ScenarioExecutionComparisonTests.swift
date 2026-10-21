@@ -4,6 +4,99 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioExecutionComparisonTests {
+    @Test func fractionalFeatureTimestampsRemainComparableAfterSavedRecordReload() async throws {
+        let caseID = UUID()
+        let baseline = try snapshot(caseID: caseID, build: hash("a"), featureOutcome: .failed,
+            includeNative: false, timestamp: Date(timeIntervalSince1970: 1_000.125))
+        let candidate = try snapshot(caseID: caseID, build: hash("b"), featureOutcome: .passed,
+            baselineID: baseline.plan.id, includeNative: false,
+            timestamp: Date(timeIntervalSince1970: 1_005.875))
+        let policy = ScenarioComparisonPolicy(mode: .compareAppChanges, baselineRunID: baseline.plan.id)
+        #expect(ScenarioExecutionComparison.compare(baseline: baseline,
+            candidate: candidate, policy: policy).isDirectlyComparable)
+        let root = FileManager.default.temporaryDirectory.appending(path: "FeatureDates-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let persistence = ScenarioPersistence(rootDirectory: root)
+        for item in [baseline, candidate] {
+            try await persistence.savePlan(item.plan)
+            try await persistence.saveExecutionRecord(item.record)
+        }
+        let savedRecords = try await ScenarioPersistence(rootDirectory: root).loadExecutionRecords()
+        var restoredBaseline = baseline
+        var restoredCandidate = candidate
+        restoredBaseline.record = try #require(savedRecords.first { $0.id == baseline.record.id })
+        restoredCandidate.record = try #require(savedRecords.first { $0.id == candidate.record.id })
+        #expect(restoredBaseline.record.records[0].featureChild?.hasValidDigest == true)
+        #expect(restoredCandidate.record.records[0].featureChild?.hasValidDigest == true)
+        #expect(restoredBaseline.record.records[0].featureChild?.startedAt == baseline.record.records[0].featureChild?.startedAt)
+        #expect(restoredBaseline.record.records[0].featureChild?.completedAt == baseline.record.records[0].featureChild?.completedAt)
+        #expect(restoredCandidate.record.records[0].featureChild?.startedAt == candidate.record.records[0].featureChild?.startedAt)
+        #expect(restoredCandidate.record.records[0].featureChild?.completedAt == candidate.record.records[0].featureChild?.completedAt)
+        let restored = ScenarioExecutionComparison.compare(baseline: restoredBaseline,
+            candidate: restoredCandidate, policy: policy)
+        #expect(restored.isDirectlyComparable)
+        #expect(restored.summary.contains("Observed improvement"))
+    }
+
+    @Test func featureTimestampMetadataRejectsInvalidOrConflictingInstants() throws {
+        let item = try snapshot(caseID: UUID(), build: hash("a"), featureOutcome: .passed,
+            includeNative: false, timestamp: Date(timeIntervalSince1970: 1_000.125))
+        let child = try #require(item.record.records[0].featureChild)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let original = try #require(JSONSerialization.jsonObject(with: encoder.encode(child)) as? [String: Any])
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let restored = try decoder.decode(ScenarioFeatureChildEvidence.self, from: encoder.encode(child))
+        #expect(restored == child)
+        for key in ["startedAtReferenceBits", "completedAtReferenceBits"] {
+            for malformed in ["not-hex", "7ff0000000000000", "7ff8000000000000"] {
+                var changed = original
+                changed[key] = malformed
+                let data = try JSONSerialization.data(withJSONObject: changed)
+                #expect(throws: DecodingError.self) {
+                    _ = try decoder.decode(ScenarioFeatureChildEvidence.self, from: data)
+                }
+            }
+        }
+        var conflict = original
+        conflict["startedAt"] = "1970-01-01T00:00:00Z"
+        let conflictingData = try JSONSerialization.data(withJSONObject: conflict)
+        #expect(throws: DecodingError.self) {
+            _ = try decoder.decode(ScenarioFeatureChildEvidence.self, from: conflictingData)
+        }
+        var alteredFraction = original
+        alteredFraction["startedAtReferenceBits"] = String((child.startedAt.timeIntervalSinceReferenceDate + 0.25).bitPattern, radix: 16)
+        let altered = try decoder.decode(ScenarioFeatureChildEvidence.self,
+            from: JSONSerialization.data(withJSONObject: alteredFraction))
+        #expect(!altered.hasValidDigest)
+
+        // Old fractional ISO records lack the bits needed to recover their original seal.
+        // Keep their hash unchanged and reject them rather than guessing an instant.
+        var missingMetadata = original
+        missingMetadata.removeValue(forKey: "startedAtReferenceBits")
+        missingMetadata.removeValue(forKey: "completedAtReferenceBits")
+        let legacy = try decoder.decode(ScenarioFeatureChildEvidence.self,
+            from: JSONSerialization.data(withJSONObject: missingMetadata))
+        #expect(legacy.digest == child.digest)
+        #expect(!legacy.hasValidDigest)
+    }
+
+    @Test func legacyFeatureChildSealStillRequiresItsExactRecordedDates() throws {
+        let item = try snapshot(caseID: UUID(), build: hash("a"), featureOutcome: .passed,
+            includeNative: false)
+        var child = try #require(item.record.records[0].featureChild)
+        child.digest = ""
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        child.digest = sha(try encoder.encode(child))
+        #expect(child.hasValidDigest)
+        let oldSeal = child.digest
+        child.startedAt = child.startedAt.addingTimeInterval(0.125)
+        #expect(child.digest == oldSeal)
+        #expect(!child.hasValidDigest)
+    }
+
     @Test func reportIncludesProjectLocalFeatureNativeChild() throws {
         let caseID = UUID()
         var snapshot = try snapshot(caseID: caseID, build: hash("a"), featureOutcome: .passed)
@@ -445,9 +538,10 @@ struct ScenarioExecutionComparisonTests {
 
     private func snapshot(
         caseID: UUID, build: String, featureOutcome: ScenarioOutcome,
-        baselineID: UUID? = nil, includeNative: Bool = true
+        baselineID: UUID? = nil, includeNative: Bool = true,
+        timestamp: Date = Date(timeIntervalSince1970: 1_000)
     ) throws -> ScenarioExecutionComparison.Snapshot {
-        let now = Date(timeIntervalSince1970: 1_000)
+        let now = timestamp
         let feature = ScenarioPlannedCoordinate(id: UUID(), caseID: caseID, lane: .appFeature,
                                                 repetition: 1, required: true)
         let intent = ScenarioPlannedCoordinate(id: UUID(), caseID: caseID, lane: .intentIntegration,

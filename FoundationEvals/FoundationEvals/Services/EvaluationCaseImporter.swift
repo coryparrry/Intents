@@ -180,8 +180,8 @@ enum EvaluationCaseImporter {
         limit: Int,
         totalValidRowCount: inout Int
     ) {
-        let prompt = object[mapping.promptColumn]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !prompt.isEmpty else {
+        let prompt = object[mapping.promptColumn] ?? ""
+        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             issues.append(.init(line: line, message: "The mapped prompt value is empty."))
             return
         }
@@ -275,7 +275,7 @@ enum EvaluationCaseImporter {
                     fields.append(field)
                     field = ""
                 case "\n", "\r\n", "\r":
-                    fields.append(field.trimmingCharacters(in: CharacterSet(charactersIn: "\r")))
+                    fields.append(field)
                     let row = CSVRow(line: rowStart, fields: fields)
                     if try appendCSVRow(
                         row, to: &rows,
@@ -293,7 +293,7 @@ enum EvaluationCaseImporter {
         }
         guard !quoted else { throw EvaluationCaseImportError.unterminatedQuote(line: rowStart) }
         if !field.isEmpty || !fields.isEmpty {
-            fields.append(field.trimmingCharacters(in: CharacterSet(charactersIn: "\r")))
+            fields.append(field)
             _ = try appendCSVRow(
                 CSVRow(line: rowStart, fields: fields), to: &rows,
                 maximumDataRows: maximumDataRows, stopAfterRows: stopAfterRows

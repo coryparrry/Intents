@@ -346,3 +346,38 @@ test('suite import rejects public authorization overrides and object envelopes w
   assert.equal(legacy.features, undefined, 'Legacy imports must not be promoted into app-format suites');
   assert.equal(nativeCalls, 0);
 });
+
+for (const [name, configure, message] of [
+  ['invalid pointer escape', (source) => { source.cases[0].fieldAssertions = [{ pointer: '/field~2', operation: 'exists' }]; }, /JSON pointer/],
+  ['empty contains text', (source) => { source.cases[0].fieldAssertions = [{ pointer: '/field', operation: 'containsText', expectedValue: '' }]; }, /non-empty text/],
+  ['duplicate assertion IDs', (source) => { const id = randomUUID(); source.cases[0].fieldAssertions = [{ id, pointer: '/first', operation: 'exists' }, { id: id.toUpperCase(), pointer: '/second', operation: 'exists' }]; }, /Assertion IDs must be unique/],
+  ['too many assertions', (source) => { source.cases[0].fieldAssertions = Array.from({ length: 33 }, (_, index) => ({ pointer: `/${index}`, operation: 'exists' })); }, /32 field assertions/],
+  ['lookup without text reference', (source) => { source.modelConfiguration.referenceMode = 'lookupTool'; }, /text reference/],
+  ['reserved reference tool name', (source) => { source.features.tools = [{ name: 'search_reference_files', fixtureResponse: 'custom output' }]; }, /reserved reference/],
+]) test(`execution admission rejects ${name} before creating history or invoking native`, async (t) => {
+  let calls = 0;
+  const app = await fixture(t, async () => { calls++; throw new Error('Invalid suite reached native execution'); });
+  const source = definition(); configure(source);
+  // Editing may retain unfinished configuration; execution must use the native contract.
+  const { suite: saved } = await app.call('eval_save_suite', { suite: source });
+  await assert.rejects(app.call('eval_start_run', { suiteId: saved.id }), message);
+  assert.equal(calls, 0);
+  assert.equal((await app.store.list('runs')).length, 0);
+  assert.equal(app.active, null);
+  assert.equal(app.store.leases.size, 0);
+});
+
+test('strict assertion and reference admission preserves valid native boundary configurations', () => {
+  const source = definition();
+  source.cases[0].fieldAssertions = Array.from({ length: 32 }, (_, index) => ({
+    pointer: index === 0 ? '' : `/field~0~1/${index}`, operation: index === 0 ? 'containsText' : 'exists', expectedValue: ' ',
+  }));
+  source.modelConfiguration.referenceMode = 'lookupTool';
+  source.attachments = [{ name: 'Reference', kind: 'text', text: 'Retained reference' }];
+  source.features.tools = [{ name: 'custom_reference', fixtureResponse: 'custom output' }];
+  const saved = suite(source, randomUUID);
+  assert.equal(saved.cases[0].fieldAssertions.length, 32);
+  assert.equal(saved.cases[0].fieldAssertions[0].pointer, '');
+  assert.equal(saved.features.tools[0].name, 'custom_reference');
+  assert.equal(saved.attachments[0].text, 'Retained reference');
+});

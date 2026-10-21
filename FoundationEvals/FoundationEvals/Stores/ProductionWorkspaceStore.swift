@@ -178,9 +178,8 @@ final class ProductionWorkspaceStore {
                 try await Task.detached(priority: .utility) {
                     let current = try storage.loadJob(job.id)
                     guard current.revision == job.revision else { throw ProductionFailure.integrity("Frozen job changed before resume.") }
-                    try storage.setControl(jobID: job.id, paused: false)
                 }.value
-                try start(job: job, store: store, externalDisclosureApproved: externalDisclosureApproved)
+                try start(job: job, store: store, externalDisclosureApproved: externalDisclosureApproved, resuming: true)
             } catch { self.error = error.localizedDescription }
         }
     }
@@ -195,7 +194,7 @@ final class ProductionWorkspaceStore {
         catch { self.error = error.localizedDescription }
     }
     func interrupt(jobID: UUID) { if jobID == runningJobID { runTask?.cancel() } }
-    func start(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool) throws {
+    func start(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool, resuming: Bool = false) throws {
         guard !isClosing, let storage, runTask == nil else { throw EvaluationStoreError.runBusy }
         do {
             let kind = (try JSONSerialization.jsonObject(with: job.configuration.executionContext) as? [String: Any])?["kind"] as? String
@@ -225,7 +224,12 @@ final class ProductionWorkspaceStore {
                 defer { if let owner { store.endProductionExecution(owner) }; runningJobID = nil; runTask = nil }
                 do {
                     let task = Task.detached(priority: .utility) {
-                        try await ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker, execute: executor)
+                        // Admission must succeed before another worker can claim this job.
+                        if resuming {
+                            try Task.checkCancellation()
+                            try storage.setControl(jobID: job.id, paused: false)
+                        }
+                        return try await ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker, execute: executor)
                     }
                     _ = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
                 } catch is CancellationError { } catch { self.error = error.localizedDescription; executionErrors[job.id] = error.localizedDescription }

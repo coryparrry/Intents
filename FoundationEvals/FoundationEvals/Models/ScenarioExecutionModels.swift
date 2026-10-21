@@ -808,6 +808,9 @@ struct ScenarioFeatureChildEvidence: Codable, Equatable, Sendable {
         copy.digest = ""
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        // Keep the historical numeric-date seal; supplemental wire metadata
+        // restores those same exact instants after ISO8601 persistence.
+        encoder.userInfo[Self.omitExactTimestampMetadata] = true
         let data = try encoder.encode(copy)
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }

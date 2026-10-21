@@ -11,6 +11,7 @@ let portableProductionSources = [
     "Models/EvaluationScoringTypes.swift",
     "Models/ScenarioModels.swift",
     "Models/ScenarioExecutionModels.swift",
+    "Models/ScenarioFeatureChildEvidence+Codable.swift",
     "Models/ScenarioCollectionModels.swift",
     "Models/WorkflowTimelineInterval.swift",
     "Services/EvaluationFieldAssertions.swift",
