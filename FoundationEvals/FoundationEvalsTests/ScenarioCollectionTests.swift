@@ -3,6 +3,56 @@ import Testing
 @testable import FoundationEvals
 
 struct ScenarioCollectionTests {
+    @Test func collectionMembersNeedTheirOwnOptionalRouteReadiness() async throws {
+        let projectID = UUID()
+        let editorCase = try caseDefinition(projectID: projectID, name: "Direct only")
+        var member = try caseDefinition(projectID: projectID, name: "Optional Siri")
+        member.coverage.siri = .optional
+        member = try member.frozen()
+        let collection = try ScenarioCollection(projectID: projectID, name: "Mixed routes",
+            members: [ScenarioCollectionService.member(editorCase), ScenarioCollectionService.member(member)])
+        let manifest = try ScenarioCollectionService.freezeManifest(collection: collection,
+            definitions: [editorCase, member], scope: .full, appProductDigest: "app-build")
+        let optional = try #require(manifest.coordinates.first { $0.caseID == member.id && $0.lane == .siri })
+        #expect(!optional.required)
+        #expect(!manifest.coordinates.contains { $0.caseID == editorCase.id && $0.lane == .siri })
+
+        let root = FileManager.default.temporaryDirectory.appending(path: "MemberReadiness-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let executor = XcodeTestExecutor(workDirectory: root.appending(path: "Executor"),
+            persistence: ScenarioPersistence(rootDirectory: root),
+            destinationStatusReader: { _, _ in (true, "Fixture destination", .iOS) })
+        let configuration = XcodeTestConfiguration(containerPath: root.path, isWorkspace: false,
+            scheme: "Fixture", testTarget: "FixtureUITests", testBundleIdentifier: "dev.example.FixtureUITests",
+            destinationIdentifier: "fixture", generatedResourceDirectory: root.path)
+        let editorReadiness = await executor.routeReadiness(definition: editorCase,
+            configuration: configuration, projectTrusted: true)
+        let memberReadiness = await executor.routeReadiness(definition: member,
+            configuration: configuration, projectTrusted: true)
+        #expect(editorReadiness[.siri]?.detail == "This route is not included in the current requirement.")
+        #expect(memberReadiness[.siri]?.detail != editorReadiness[.siri]?.detail)
+        #expect(memberReadiness[.siri]?.checks.contains { $0.id == "nativeScope" && $0.state == .ready } == true)
+
+        // A checked Siri route is ready for the member that includes it. Reusing
+        // the editor's excluded-route snapshot would silently block this coordinate.
+        let receipt = ScenarioReadinessProbeReceipt(schemaVersion: 1, testName: "readiness",
+            testIdentifier: "Fixture/testReadiness()", testMethodStarted: true, createdAt: Date(),
+            targetBundleIdentifier: member.target.bundleIdentifier, testBundleIdentifier: "fixture.tests",
+            integration: nil, routes: [ScenarioLane.siri.rawValue: .init(status: .ready,
+                operationID: nil, supportType: "CoreTesting", context: "member-probe",
+                observations: ["intentlab.readiness.appState": .string("runningForeground")], detail: nil)])
+        let probe = ScenarioReadinessProbeEvidence(receipt: receipt, resultBundlePath: nil,
+            logPath: nil, issue: nil, expectedReadinessOperationID: nil)
+        let report = ScenarioPreflightReport(checks: [])
+        let stale = XcodeTestExecutor.readiness(lane: optional.lane, report: report, probe: probe,
+            included: editorCase.coverage[optional.lane] != .notApplicable)
+        let current = XcodeTestExecutor.readiness(lane: optional.lane, report: report, probe: probe,
+            included: member.coverage[optional.lane] != .notApplicable)
+        #expect(stale.state == .notYetVerified)
+        #expect(current.state == .ready)
+    }
+
     @Test func noFixtureBasicCollectionExplainsItsCurrentFormatBoundary() throws {
         var definition = try caseDefinition(projectID: UUID(), name: "Basic Direct")
         definition.fixture = .init(id: "", version: "", digest: "", isSynthetic: false,

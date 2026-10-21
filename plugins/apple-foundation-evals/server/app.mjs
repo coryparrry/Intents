@@ -208,17 +208,24 @@ export class EvaluationApp {
   }
   async status() {
     if (this.active || (await this.store.list('runs', ({ status, ownerPid }) => ({ status, ownerPid }))).some((run) => run.status === 'running' && processAlive(run.ownerPid))) return this.model.available === null ? { ...UNCHECKED, reason: 'An evaluation is active; check model availability after it finishes' } : this.model;
-    const lockId = randomUUID();
+    const lockId = randomUUID(); const controller = new AbortController();
+    this.transientController = controller;
+    if (this.closing) controller.abort();
     let locked = false;
     try {
+      if (controller.signal.aborted) throw new Error('Evaluation cancelled');
       await this.store.acquireRunLock(lockId);
       locked = true;
-      const binary = await this.resolveBinary({ dataDir: this.store.root, env: this.env });
-      const value = object(await this.invoke(binary, { operation: 'availability' }, { timeoutMs: 60000, lease: this.store.lease(lockId) }), 'availability');
+      if (controller.signal.aborted) throw new Error('Evaluation cancelled');
+      const binary = await this.resolveBinary({ dataDir: this.store.root, env: this.env, signal: controller.signal });
+      const value = object(await this.invoke(binary, { operation: 'availability' }, { timeoutMs: 60000, signal: controller.signal, lease: this.store.lease(lockId) }), 'availability');
       if (typeof value.available !== 'boolean') throw new Error('Native worker returned invalid availability');
       this.model = { available: value.available, ...(typeof value.reason === 'string' ? { reason: value.reason.slice(0, 4096) } : {}), ...(typeof value.model === 'string' ? { model: value.model.slice(0, 256) } : {}), ...(typeof value.osVersion === 'string' ? { osVersion: value.osVersion.slice(0, 256) } : {}), ...(value.capabilities && typeof value.capabilities === 'object' ? { capabilities: value.capabilities } : {}) };
     } catch (error) { this.model = { available: false, reason: error.message }; }
-    finally { if (locked) await this.store.releaseRunLock(lockId); }
+    finally {
+      try { if (locked) await this.store.releaseRunLock(lockId); }
+      finally { if (this.transientController === controller) this.transientController = null; }
+    }
     return this.model;
   }
   async start(suiteId, expectedRevision) {

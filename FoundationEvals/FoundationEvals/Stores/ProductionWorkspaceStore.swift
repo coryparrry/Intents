@@ -237,7 +237,8 @@ final class ProductionWorkspaceStore {
                       note: String, tags: String, verifiedOutput: String, verifiedCost: Double?) {
         guard let jobID = selectedJobID, let record = selectedRecord else { return }
         let response: ProductionResponse? = action == .reconcile ? .init(requestID: record.response.requestID, outcome: outcome,
-            output: verifiedOutput, explanation: note, latencyMilliseconds: record.response.latencyMilliseconds, cost: verifiedCost) : nil
+            output: verifiedOutput, explanation: note, latencyMilliseconds: record.response.latencyMilliseconds,
+            latencyAvailable: record.response.latencyAvailable, cost: verifiedCost) : nil
         let event = ProductionReviewEvent(requestID: record.response.requestID, reviewer: reviewer, action: action, assignee: action == .assign ? assignee : nil,
             outcome: action == .assign || action == .reconcile ? nil : outcome, note: note,
             tags: tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, reconciledResponse: response)
