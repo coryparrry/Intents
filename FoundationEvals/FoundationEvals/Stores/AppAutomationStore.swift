@@ -161,6 +161,9 @@ final class AppAutomationStore {
     var closingForOwnershipRecovery: Bool { closing }
     var report: AutomationAttemptReport? {
         didSet {
+            if canonicalEvidence?.report != report { canonicalEvidence = nil }
+            // A running attempt may reserve its directory before its report arrives.
+            if report == nil || reportDirectory?.lastPathComponent != report?.attemptID { reportDirectory = nil }
             if let report, !report.resourcesReleased || report.result.subjectDispatchUncertain {
                 retainedUnresolvedNormalReport = report
                 retainedUnresolvedNormalTarget = prepared?.host.target ?? sourcePreparationTarget

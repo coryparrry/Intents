@@ -40,9 +40,10 @@ actor EvaluationReassessmentService {
         var samples: [EvaluationSampleAssessment] = []
         var totalUsage = EvaluationUsage()
         var hasUsage = false
+        var usageComplete = true
         var totalCost = 0.0
         var costAvailability = EvaluationCostAvailability.known
-        var identity = resolved.map { requestedIdentity($0.connection) } ?? EvaluationJudgeIdentity(
+        var identity = (suite.scoringMode == .modelJudge ? resolved : nil).map { requestedIdentity($0.connection) } ?? EvaluationJudgeIdentity(
             mode: .sameModel,
             connectionID: nil,
             connectionName: "Deterministic checks",
@@ -68,6 +69,24 @@ actor EvaluationReassessmentService {
                     rationale: "The saved sample has no complete response or immutable case definition.",
                     trace: nil, errorCategory: "incompleteSavedEvidence",
                     errorMessage: "Reassessment did not rerun generation.", usage: nil, durationMilliseconds: nil
+                ))
+                continue
+            }
+            if suite.scoringMode != .modelJudge {
+                let metric = MetricScorer.evaluate(
+                    mode: suite.scoringMode, expected: evaluationCase.expected, response: saved.response
+                )
+                let assertions = EvaluationFieldAssertions.evaluate(
+                    response: saved.response, assertions: evaluationCase.fieldAssertions ?? []
+                )
+                let status = EvaluationFieldAssertions.gatedStatus(
+                    baseStatus: metric.status, results: assertions,
+                    allowAssertionsToScore: suite.scoringMode == .review
+                )
+                samples.append(.init(
+                    id: UUID(), sampleID: saved.id, status: status, score: nil,
+                    rationale: metric.rationale, trace: nil, errorCategory: nil, errorMessage: nil,
+                    usage: nil, durationMilliseconds: 0
                 ))
                 continue
             }
@@ -125,7 +144,12 @@ actor EvaluationReassessmentService {
                 var trace = judged.trace
                 trace.checks = judgment.checks
                 trace.judgedCriterionIndexes = semanticIndexes.map { $0 + 1 }
-                if let usage = judged.usage { totalUsage.add(usage); hasUsage = true }
+                if let usage = judged.usage {
+                    totalUsage.add(usage)
+                    hasUsage = true
+                } else {
+                    usageComplete = false
+                }
                 if let cost = judged.cost.usd {
                     totalCost += cost
                     // A later estimate cannot make an earlier unpriced request complete.
@@ -144,14 +168,19 @@ actor EvaluationReassessmentService {
                 ))
             } catch is CancellationError {
                 guard origin == .initialRun else { throw CancellationError() }
+                usageComplete = false
+                costAvailability = .unavailable
                 samples.append(cancelledInitialAssessment(for: saved))
                 break
             } catch let error as URLError where error.code == .cancelled {
                 guard origin == .initialRun else { throw CancellationError() }
+                usageComplete = false
+                costAvailability = .unavailable
                 samples.append(cancelledInitialAssessment(for: saved))
                 break
             } catch {
                 let errorCategory = EvaluationRunner.externalJudgeErrorCategory(error)
+                usageComplete = false
                 samples.append(.init(
                     id: UUID(), sampleID: saved.id, status: .unscored, score: nil,
                     rationale: "The independent judge did not produce valid evidence.",
@@ -176,7 +205,7 @@ actor EvaluationReassessmentService {
             id: UUID(), runID: run.id, createdAt: Date(), origin: origin,
             judge: assessmentIdentity, promptVersion: EvaluationRunner.judgePromptVersion,
             rubric: suite.criteria, passingScore: EvaluationSuite.judgePassingScore,
-            samples: samples, totalUsage: hasUsage ? totalUsage : nil,
+            samples: samples, totalUsage: hasUsage && usageComplete ? totalUsage : nil,
             durationMilliseconds: EvaluationAssessment.summedJudgeDurationMilliseconds(samples), cost: cost,
             supersedesAssessmentID: origin == .reassessment ? run.selectedAssessmentID : nil,
             observedJudgeIdentities: observedIdentities.isEmpty ? [assessmentIdentity] : observedIdentities,

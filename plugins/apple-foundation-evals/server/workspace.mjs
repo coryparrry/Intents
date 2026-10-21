@@ -121,5 +121,5 @@ async function importRun(app, args, { persist = true } = {}) {
     saved = { id: id(value.id, 'run id'), suiteId, projectId: await project(app, args.projectId || snapshot.projectId), suite: snapshot, suiteRevision: revision(snapshot), status, startedAt, finishedAt, durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)), model: value.environment?.model, results, appRun: value, importedAt: new Date().toISOString() };
   }
   if (persist && await existing(app, 'runs', saved.id)) throw new Error('A run with this id already exists; imports never overwrite evidence');
-  if (persist) await app.store.write('runs', saved); const { ownerPid, ...publicRun } = saved; return { run: publicRun };
+  if (persist) await app.store.write('runs', saved, { createOnly: true }); const { ownerPid, ...publicRun } = saved; return { run: publicRun };
 }

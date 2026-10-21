@@ -84,7 +84,9 @@ struct EvaluationJudgeSubjectContext: Codable, Equatable, Sendable {
 
     var evidenceText: String {
         // Array encoding retains entry boundaries and roles without interpreting content.
-        String(decoding: (try? JSONEncoder().encode(entries)) ?? Data(), as: UTF8.self)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return String(decoding: (try? encoder.encode(entries)) ?? Data(), as: UTF8.self)
     }
 
     private static func text(_ segments: [Transcript.Segment]) throws -> String {

@@ -21,7 +21,8 @@ try {
   catch (error) { if (!/not found$/.test(error.message)) throw error; }
   if (expectedRecordRevision !== undefined && (!oldBytes || createHash('sha256').update(oldBytes).digest('hex') !== expectedRecordRevision)) throw new Error('Record changed; refresh catalog recovery before removing it');
   if (expectedRevision !== undefined && expectedRevision !== (old?.revision || (old ? revision(old) : undefined))) throw new Error('Suite revision conflict: reload the current suite before saving');
-  if (operation === 'writeRecord') {
+  if (operation === 'writeRecord' || operation === 'createRecord') {
+    if (operation === 'createRecord' && old) throw new Error('Record already exists; imports never overwrite evidence');
     await store.writeUnlocked(kind, saved);
   } else if (operation === 'deleteRecord') {
     if (!old) throw new Error('Record not found');

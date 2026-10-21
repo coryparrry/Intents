@@ -32,6 +32,20 @@ struct EvaluationObservedContextTests {
         #expect(restored.judgeSubjectContext == snapshot)
     }
 
+    @Test func observedHistoryUsesStableKeyOrderAcrossReloads() throws {
+        let snapshot = EvaluationJudgeSubjectContext.capture(
+            turn("Remember order 483", "Confirmed 483"), instructions: "Retain this request"
+        )
+        let expected = #"[{"content":"Remember order 483","role":"user"},{"content":"Confirmed 483","role":"assistant"}]"#
+        for _ in 0..<32 {
+            let restored = try CanonicalJSON.decode(EvaluationJudgeSubjectContext.self,
+                from: CanonicalJSON.data(for: snapshot))
+            #expect(snapshot.evidenceText == expected)
+            #expect(restored.evidenceText == expected)
+            #expect(restored.entries == snapshot.entries)
+        }
+    }
+
     @Test func realSessionRunnerCapturesGeneratedSetupHistoryWithTracingDisabled() async throws {
         var suite = fixture().0
         suite.judgeConfiguration.mode = .sameModel
