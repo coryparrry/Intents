@@ -20,7 +20,6 @@ struct WorkspaceSidebar: View {
     @State private var runSearch = ""
 
     private var isBusy: Bool { store.isRunning || store.isReassessing || store.isProcessingFiles }
-    private var isAppTesting: Bool { store.selection == .appAutomation || store.selection == .intentLab }
     private var filteredRuns: [EvaluationRun] {
         let query = runSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         return query.isEmpty ? store.runs : store.runs.filter {
@@ -73,85 +72,75 @@ struct WorkspaceSidebar: View {
                     .tag(WorkspaceDestination.appAutomation)
             }
 
-            if !isAppTesting {
-                Section("Model tools") {
-                    Label { Text("Review current suite") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
-                        .accessibilityIdentifier("Sidebar evaluations")
-                        .tag(WorkspaceDestination.evaluations)
-                    Label { Text("Batch runs") } icon: { WorkspaceIcon(symbol: "play.rectangle", size: 18) }
-                        .accessibilityIdentifier("Sidebar batch runs")
-                        .tag(WorkspaceDestination.batchRuns)
-                    Label { Text("Traces for current suite") } icon: { WorkspaceIcon(symbol: "point.3.connected.trianglepath.dotted", size: 18) }
-                        .accessibilityIdentifier("Sidebar traces")
-                        .tag(WorkspaceDestination.traces)
-                }
+            Section("Model tools") {
+                Label { Text("Review current suite") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
+                    .accessibilityIdentifier("Sidebar evaluations")
+                    .tag(WorkspaceDestination.evaluations)
+                Label { Text("Batch runs") } icon: { WorkspaceIcon(symbol: "play.rectangle", size: 18) }
+                    .accessibilityIdentifier("Sidebar batch runs")
+                    .tag(WorkspaceDestination.batchRuns)
+                Label { Text("Traces for current suite") } icon: { WorkspaceIcon(symbol: "point.3.connected.trianglepath.dotted", size: 18) }
+                    .accessibilityIdentifier("Sidebar traces")
+                    .tag(WorkspaceDestination.traces)
+            }
 
-                Section("Suites") {
-                    ForEach(store.suiteRecords.filter { $0.archivedAt == nil }) { suite in
-                        Label(suite.id == store.selectedSuiteID ? store.draftSuite.name : suite.name, systemImage: "checklist")
-                            .lineLimit(1)
-                            .tag(WorkspaceDestination.suite(suite.id))
+            Section("Suites") {
+                ForEach(store.suiteRecords.filter { $0.archivedAt == nil }) { suite in
+                    Label(suite.id == store.selectedSuiteID ? store.draftSuite.name : suite.name, systemImage: "checklist")
+                        .lineLimit(1)
+                        .tag(WorkspaceDestination.suite(suite.id))
+                        .contextMenu {
+                            Button("Duplicate suite", systemImage: "plus.square.on.square") {
+                                perform { _ = try store.duplicateSuite(id: suite.id) }
+                            }
+                            .disabled(isBusy)
+                            Button("Archive suite", systemImage: "archivebox") {
+                                perform { try store.archiveSuite(id: suite.id) }
+                            }
+                            .disabled(isBusy)
+                        }
+                }
+            }
+
+            Section("Runs for \(store.draftSuite.name)") {
+                if store.runs.count > 5 || !runSearch.isEmpty {
+                    WorkspaceSearchField(prompt: "Filter runs", text: $runSearch)
+                        .selectionDisabled()
+                }
+                if filteredRuns.isEmpty {
+                    EmptyRunHistoryRow(isSearching: !runSearch.isEmpty)
+                } else {
+                    ForEach(filteredRuns) { run in
+                        RunSidebarRow(run: run)
+                            .tag(WorkspaceDestination.run(run.id))
                             .contextMenu {
-                                Button("Duplicate suite", systemImage: "plus.square.on.square") {
-                                    perform { _ = try store.duplicateSuite(id: suite.id) }
-                                }
-                                .disabled(isBusy)
-                                Button("Archive suite", systemImage: "archivebox") {
-                                    perform { try store.archiveSuite(id: suite.id) }
+                                Button("Delete run…", systemImage: "trash", role: .destructive) {
+                                    runToDelete = run
                                 }
                                 .disabled(isBusy)
                             }
-                    }
-                }
-
-                Section("Runs for \(store.draftSuite.name)") {
-                    if store.runs.count > 5 || !runSearch.isEmpty {
-                        WorkspaceSearchField(prompt: "Filter runs", text: $runSearch)
-                            .selectionDisabled()
-                    }
-                    if filteredRuns.isEmpty {
-                        EmptyRunHistoryRow(isSearching: !runSearch.isEmpty)
-                    } else {
-                        ForEach(filteredRuns) { run in
-                            RunSidebarRow(run: run)
-                                .tag(WorkspaceDestination.run(run.id))
-                                .contextMenu {
-                                    Button("Delete run…", systemImage: "trash", role: .destructive) {
-                                        runToDelete = run
-                                    }
-                                    .disabled(isBusy)
-                                }
-                        }
                     }
                 }
             }
         }
         .onChange(of: store.selectedSuiteID) { _, _ in runSearch = "" }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if isAppTesting {
-                Text("Shared app testing workspace")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .padding(.horizontal, 10).padding(.vertical, 8)
-            } else {
-                projectSwitcher
-                    .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 8)
-            }
+            projectSwitcher
+                .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 8)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !isAppTesting {
-                HStack(spacing: 8) {
-                    Button { isCreatingSuite = true } label: {
-                        Label("New Suite", systemImage: "plus")
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Create a new evaluation suite in this project")
-                    Spacer()
+            HStack(spacing: 8) {
+                Button { isCreatingSuite = true } label: {
+                    Label("New Suite", systemImage: "plus")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .disabled(isBusy)
+                .buttonStyle(.plain)
+                .help("Create a new evaluation suite in this project")
+                Spacer()
             }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .disabled(isBusy)
         }
         .sheet(isPresented: $isCreatingSuite) { NewSuiteView(store: store) }
         .sheet(isPresented: $isCreatingProject) { WorkspaceCreationView(store: store, isProject: true) }
