@@ -170,7 +170,7 @@ export async function workflowDispatch(app, name, args) {
         const adopted = await saveSuite(app, { suite: { ...source, instructions: record.experiment.candidate.instructions }, expectedRevision: source.revision });
         adoptedRevision = adopted.suite.revision;
       }
-      try { await app.store.write('experiments', updated); } catch (error) {
+      try { await app.store.write('experiments', updated, { expectedRevision: publicRecord(record).revision }); } catch (error) {
         if (adoptedRevision) {
           try { await app.store.restoreSuite(source, adoptedRevision); }
           catch (rollbackError) { throw new Error(`${error.message}; suite rollback was not applied: ${rollbackError.message}`, { cause: error }); }
@@ -187,7 +187,7 @@ export async function workflowDispatch(app, name, args) {
       if (!selected) throw new Error('Assessment not found in this run');
       const appRun = { ...run.appRun, selectedAssessmentID: selected.id };
       const saved = { ...run, appRun, results: applyAssessment(appRun, run.results) };
-      await app.store.write('runs', saved);
+      await app.store.write('runs', saved, { expectedRevision: publicRecord(run).revision });
       return { run: publicRecord(saved), health: health(saved, await optional(app, 'suites', saved.suiteId)) };
     }
     case 'eval_correct_judgment': {

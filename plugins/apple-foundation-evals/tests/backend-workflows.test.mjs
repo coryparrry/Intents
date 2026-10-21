@@ -254,3 +254,68 @@ for (const includesSample of [true, false]) {
     assert.deepEqual((await app.call('eval_export_run', { runId: run.id })).run.results, raw.results);
   });
 }
+
+test('concurrent experiment decisions atomically reject the second stale revision', async (t) => {
+  let source;
+  const { app, suite } = await fixture(t, async (_binary, request) => experiment(source, request.candidateInstructions));
+  source = suite;
+  const created = await app.call('eval_create_experiment', { suiteId: suite.id, name: 'Decision conflict', candidateInstructions: 'Just fruit' });
+  const other = new EvaluationApp({ dataDir: app.store.root });
+  await other.init(); t.after(() => other.shutdown());
+  let reads = 0, release;
+  const bothRead = new Promise((resolve) => { release = resolve; });
+  for (const session of [app, other]) {
+    const read = session.store.read.bind(session.store);
+    session.store.read = async (kind, key) => {
+      const value = await read(kind, key);
+      if (kind === 'experiments' && key === created.experiment.id && reads < 2) {
+        if (++reads === 2) release();
+        await bothRead;
+      }
+      return value;
+    };
+  }
+  const results = await Promise.allSettled([app, other].map((session, index) => session.call('eval_decide_experiment', {
+    experimentId: created.experiment.id, expectedRevision: created.experiment.revision,
+    decision: index === 0 ? 'keepCurrent' : 'collectMoreEvidence',
+  })));
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.match(results.find((result) => result.status === 'rejected').reason.message, /Revision conflict/);
+  assert.deepEqual((await app.call('eval_get_experiment', { experimentId: created.experiment.id })).experiment,
+    results.find((result) => result.status === 'fulfilled').value.experiment);
+});
+
+test('concurrent assessment selections atomically reject the second stale revision', async (t) => {
+  const { app, suite } = await fixture(t);
+  const raw = rawRun(suite);
+  const alternatives = ['passed', 'failed'].map((status, index) => ({
+    ...raw.assessments[0], id: randomUUID(),
+    samples: [{ ...raw.assessments[0].samples[0], status, score: index === 0 ? 4 : 1 }],
+  }));
+  raw.assessments.push(...alternatives);
+  const { run } = await app.call('eval_import_run', { run: raw });
+  const expectedRevision = (await app.call('eval_get_run', { runId: run.id })).run.revision;
+  const other = new EvaluationApp({ dataDir: app.store.root });
+  await other.init(); t.after(() => other.shutdown());
+  let reads = 0, release;
+  const bothRead = new Promise((resolve) => { release = resolve; });
+  for (const session of [app, other]) {
+    const read = session.store.read.bind(session.store);
+    session.store.read = async (kind, key) => {
+      const value = await read(kind, key);
+      if (kind === 'runs' && key === run.id && reads < 2) {
+        if (++reads === 2) release();
+        await bothRead;
+      }
+      return value;
+    };
+  }
+  const results = await Promise.allSettled([app, other].map((session, index) => session.call('eval_select_assessment', {
+    runId: run.id, expectedRevision, assessmentId: alternatives[index].id,
+  })));
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.match(results.find((result) => result.status === 'rejected').reason.message, /Revision conflict/);
+  assert.deepEqual((await app.store.read('runs', run.id)).appRun,
+    results.find((result) => result.status === 'fulfilled').value.run.appRun);
+  assert.deepEqual((await app.store.read('runs', run.id)).appRun.results, raw.results);
+});

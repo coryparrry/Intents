@@ -6,6 +6,42 @@ import Testing
 
 @MainActor
 struct AttachmentImportTests {
+    @Test(arguments: [false, true])
+    func filePickerRejectsExcessFilesBeforeReading(includesExisting: Bool) async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory.appending(path: "store"))
+        if includesExisting {
+            _ = try await upload(store, name: "existing.txt", type: "text/plain", data: Data("Reference".utf8))
+        }
+        let original = store.suite.attachments
+        let revision = store.suiteRevision
+        let count = EvaluationStore.maximumAttachments - original.count + 1
+        let missing = (0..<count).map { directory.appending(path: "missing-\($0).txt") }
+        try await importFilesAndWait(missing, into: store)
+        #expect(store.notice?.contains(ImportError.tooManyFiles.localizedDescription) == true)
+        #expect(store.suite.attachments == original)
+        #expect(store.suiteRevision == revision)
+    }
+
+    @Test(arguments: [false, true])
+    func filePickerRejectsExcessImagesBeforeReading(includesExisting: Bool) async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory.appending(path: "store"))
+        if includesExisting {
+            _ = try await upload(store, name: "existing.png", type: "image/png", data: try imageData())
+        }
+        let original = store.suite.attachments
+        let revision = store.suiteRevision
+        let count = EvaluationStore.maximumImages - original.count + 1
+        let missing = (0..<count).map { directory.appending(path: "missing-\($0).png") }
+        try await importFilesAndWait(missing, into: store)
+        #expect(store.notice?.contains(ImportError.tooManyImages.localizedDescription) == true)
+        #expect(store.suite.attachments == original)
+        #expect(store.suiteRevision == revision)
+    }
+
     @Test(arguments: ["txt", "json", "csv"])
     func utf8ReferencesPreserveContentAcrossRelaunch(ext: String) async throws {
         let directory = temporaryDirectory()

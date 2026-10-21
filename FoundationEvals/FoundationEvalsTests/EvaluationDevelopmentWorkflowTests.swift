@@ -791,10 +791,11 @@ struct EvaluationDevelopmentWorkflowTests {
             [.failed, .failed, .failed], [.passed, .passed, .passed],
             [.failed, .passed, .failed], [.passed, .failed, .passed]
         ])
-        let candidate = makeRun(cases: cases, statuses: [
+        var candidate = makeRun(cases: cases, statuses: [
             [.passed, .passed, .passed], [.failed, .failed, .failed],
             [.failed, .passed, .failed], [.passed, .failed, .passed]
         ])
+        candidate.suiteID = current.suiteID
         let summary = EvaluationExperimentAnalyzer.summarize(current: current, candidate: candidate)
         #expect(summary.distinctCaseCoverage == 4)
         #expect(summary.improvedCaseIDs.count == 1)
@@ -811,9 +812,10 @@ struct EvaluationDevelopmentWorkflowTests {
         let current = makeRun(cases: cases, statuses: Array(
             repeating: [.passed, .passed, .passed, .passed, .failed], count: 4
         ))
-        let candidate = makeRun(cases: cases, statuses: Array(
+        var candidate = makeRun(cases: cases, statuses: Array(
             repeating: [.passed, .error, .error, .error, .error], count: 4
         ))
+        candidate.suiteID = current.suiteID
 
         let errorDominated = EvaluationExperimentAnalyzer.summarize(current: current, candidate: candidate)
         #expect(errorDominated.suggestedDecision == .collectMoreEvidence)

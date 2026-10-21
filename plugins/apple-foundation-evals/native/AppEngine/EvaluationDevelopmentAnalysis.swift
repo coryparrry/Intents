@@ -8,13 +8,16 @@ enum EvaluationExperimentAnalyzer {
     ) -> EvaluationExperimentSummary {
         let currentResults = current.effectiveResults
         let candidateResults = candidate.effectiveResults
+        let comparison = EvaluationRunComparison(current: candidate, baseline: current)
+        let comparableCaseIDs = Set(comparison.caseComparisons.filter { $0.change != .notComparable }.map(\.caseID))
         let currentByCase = Dictionary(grouping: currentResults, by: \.caseID)
         let candidateByCase = Dictionary(grouping: candidateResults, by: \.caseID)
-        let common = Set(currentByCase.keys).intersection(candidateByCase.keys)
+        let common = Set(currentByCase.keys).intersection(candidateByCase.keys).intersection(comparableCaseIDs)
         let expectedCurrentCases = Set((current.plannedCases ?? []).map(\.id))
         let expectedCandidateCases = Set((candidate.plannedCases ?? []).map(\.id))
         let expectedCommon = expectedCurrentCases.intersection(expectedCandidateCases)
-        let completeCoverage = currentResults.count == current.plannedResultCount
+        let completeCoverage = comparison.compatibility == .compatible
+            && currentResults.count == current.plannedResultCount
             && candidateResults.count == candidate.plannedResultCount
             && currentResults.allSatisfy { !hasError($0)
                 && ($0.status == .passed || $0.status == .failed) }

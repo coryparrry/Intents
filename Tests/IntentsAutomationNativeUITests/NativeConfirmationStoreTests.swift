@@ -5,6 +5,43 @@ import XCTest
 @testable import IntentsAutomationCore
 
 extension InstalledUIStoreTests {
+    func testStaleRunConfirmationCannotInvalidateAReplacementRequest() async throws {
+        let (model, root, _) = try await fixture()
+        try selectPreparedSource(model: model, root: root)
+        await model.ownershipRecoveryTask?.value
+        let reviewed = try await model.prepareNativeConfirmation(.run)
+        let replacementID = UUID()
+        var replaced = false
+        var replacementError: (any Error)?
+        // Replace the request at the existing admission boundary, after the
+        // confirmation captured its pending ID and before verification returns.
+        model.executionCanStart = { [weak model] in
+            guard let model else { return false }
+            if !replaced {
+                replaced = true
+                do {
+                    _ = try model.cancelCommand(id: reviewed.id)
+                    _ = try model.requestCommand(id: replacementID, digest: reviewed.digest)
+                } catch { replacementError = error }
+            }
+            return true
+        }
+        do {
+            try await model.confirmNativeRequest(reviewed)
+            XCTFail("The replaced request was confirmed")
+        } catch {}
+        XCTAssertTrue(replaced)
+        XCTAssertNil(replacementError)
+        XCTAssertEqual(try model.commandStatus(id: reviewed.id).state, "cancelled")
+        XCTAssertEqual(model.pendingCommandStatus?.requestID, replacementID)
+        XCTAssertEqual(try model.commandStatus(id: replacementID).state, "awaitingApproval")
+        XCTAssertFalse(model.busy)
+        XCTAssertNil(model.task)
+        model.executionCanStart = nil
+        _ = try model.cancelCommand(id: replacementID)
+        await model.closeAndWait()
+    }
+
     func testVerifiedRemoteRequestAdmitsFreshIDBeforeAndAfterNativeHistoryFills() async throws {
         for nativeCount in [0, AutomationCommandHistory.retentionLimit] {
             let (model, root, _) = try await fixture()

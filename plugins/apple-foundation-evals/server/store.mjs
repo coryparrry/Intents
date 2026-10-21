@@ -63,10 +63,10 @@ export class Store {
     }
     return results;
   }
-  async write(kind, value, { createOnly = false } = {}) {
+  async write(kind, value, { createOnly = false, expectedRevision } = {}) {
     this.path(kind, value.id);
     if (Buffer.byteLength(JSON.stringify(value)) > MAX_OUTPUT_BYTES) throw new Error('Record exceeds local storage limit');
-    await saveSuiteTransaction(this, value, undefined, { operation: createOnly ? 'createRecord' : 'writeRecord', kind });
+    await saveSuiteTransaction(this, value, expectedRevision, { operation: createOnly ? 'createRecord' : 'writeRecord', kind });
   }
   // Only the kernel-locked transaction worker calls this mutation primitive.
   async writeUnlocked(kind, value) {

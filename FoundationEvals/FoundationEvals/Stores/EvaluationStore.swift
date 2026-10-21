@@ -2681,6 +2681,15 @@ final class EvaluationStore {
         return Task {
             defer { isProcessingFiles = false }
             do {
+                guard urls.count <= Self.maximumAttachments - suite.attachments.count else {
+                    throw ImportError.tooManyFiles
+                }
+                let imageCount = urls.count {
+                    UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) == true
+                }
+                guard imageCount <= Self.maximumImages - suite.attachments.count(where: { $0.kind == .image }) else {
+                    throw ImportError.tooManyImages
+                }
                 let inputs = try await Task.detached(priority: .userInitiated) {
                     try urls.map { url -> AttachmentInput in
                         guard url.isFileURL else { throw ImportError.notRegularLocalFile }

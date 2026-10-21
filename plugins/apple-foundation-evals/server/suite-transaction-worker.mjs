@@ -20,7 +20,11 @@ try {
   try { ({ value: old, bytes: oldBytes } = await store.readRecord(kind, saved.id)); }
   catch (error) { if (!/not found$/.test(error.message)) throw error; }
   if (expectedRecordRevision !== undefined && (!oldBytes || createHash('sha256').update(oldBytes).digest('hex') !== expectedRecordRevision)) throw new Error('Record changed; refresh catalog recovery before removing it');
-  if (expectedRevision !== undefined && expectedRevision !== (old?.revision || (old ? revision(old) : undefined))) throw new Error('Suite revision conflict: reload the current suite before saving');
+  if (expectedRevision !== undefined) {
+    const { ownerPid, ...publicRecord } = old || {};
+    const currentRevision = kind === 'suites' ? old?.revision || (old ? revision(old) : undefined) : old ? revision(publicRecord) : undefined;
+    if (expectedRevision !== currentRevision) throw new Error(kind === 'suites' ? 'Suite revision conflict: reload the current suite before saving' : 'Revision conflict: reload the current evidence before changing it');
+  }
   if (operation === 'writeRecord' || operation === 'createRecord') {
     if (operation === 'createRecord' && old) throw new Error('Record already exists; imports never overwrite evidence');
     await store.writeUnlocked(kind, saved);
