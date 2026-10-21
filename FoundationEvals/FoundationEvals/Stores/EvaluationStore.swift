@@ -2017,6 +2017,15 @@ final class EvaluationStore {
               FileManager.default.fileExists(atPath: root.appending(path: ".git").path) else {
             throw EvaluationStoreError.resourceConflict("Choose the root of a Git repository.")
         }
+        if let linked = selectedProject.repository {
+            let linkedRoot = URL(filePath: linked.rootPath, directoryHint: .isDirectory)
+                .standardizedFileURL.resolvingSymlinksInPath()
+            guard linkedRoot.path == root.resolvingSymlinksInPath().path else {
+                throw EvaluationStoreError.resourceConflict(
+                    "This project is already linked to another repository. Create a separate project to link a different repository."
+                )
+            }
+        }
         let repository = EvaluationRepositoryLink(rootPath: root.path)
         let filename = "\(Self.repositorySlug(suite.name))-\(suite.id.uuidString.lowercased()).json"
         let relativePath = repository.definitionsDirectory + "/" + filename

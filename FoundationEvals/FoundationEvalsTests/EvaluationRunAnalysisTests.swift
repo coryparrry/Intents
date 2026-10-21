@@ -3,6 +3,42 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationRunAnalysisTests {
+    @Test(arguments: [false, true])
+    func comparisonUsesCapturedAssessmentModeForOriginallyDeterministicRuns(implicitSelection: Bool) throws {
+        let item = EvaluationCase(name: "Case", prompt: "Prompt", expected: "Expected")
+        let suiteID = UUID()
+        let original = makeRun(suiteID: suiteID, cases: [item],
+            results: [sample(item, repetition: 1, status: .failed)])
+        var assessed = [original, makeRun(suiteID: suiteID, cases: [item],
+            results: [sample(item, repetition: 1, status: .passed)])]
+        let contract = try EvaluationScoringContract(scoringMode: .modelJudge,
+            rubricCriteria: ["Selected requirement"], judgePromptVersion: "selected-policy",
+            judgePassingScore: 3, cases: [item])
+        for index in assessed.indices {
+            let run = assessed[index]
+            let assessment = EvaluationAssessment(id: UUID(), runID: run.id, createdAt: Date(), origin: .reassessment,
+                judge: .init(mode: .sameModel, connectionID: nil, connectionName: "Judge", endpointKind: nil,
+                    baseURL: nil, requestedModelID: "judge", reportedModelID: "judge", provider: nil, providerOrder: []),
+                promptVersion: "selected-policy", rubric: "Selected requirement", passingScore: 3,
+                samples: [.init(id: UUID(), sampleID: run.results[0].id, status: run.results[0].status,
+                    score: index == 0 ? 1 : 4, rationale: nil, trace: nil, errorCategory: nil,
+                    errorMessage: nil, usage: nil, durationMilliseconds: 1)],
+                totalUsage: nil, durationMilliseconds: 1,
+                cost: .init(availability: .known, usd: 0, explanation: "Fixture"), supersedesAssessmentID: nil,
+                scoringContract: contract)
+            assessed[index].assessments = [assessment]
+            assessed[index].selectedAssessmentID = implicitSelection ? nil : assessment.id
+        }
+        let comparison = EvaluationRunComparison(current: assessed[1], baseline: assessed[0])
+        #expect(comparison.compatibility == .compatible)
+        #expect(comparison.improvedCaseCount == 1)
+        #expect(comparison.incompatibilityReasons.isEmpty)
+        #expect(EvaluationRunComparison(current: assessed[1], baseline: original).compatibility == .incompatible)
+        var mismatched = assessed[1]
+        mismatched.assessments?[0].scoringContract?.casesDigest = "changed-case-contract"
+        #expect(EvaluationRunComparison(current: mismatched, baseline: assessed[0]).compatibility == .incompatible)
+    }
+
     @Test func usageAdditionAndTotalsSaturateAtIntegerBounds() {
         var total = EvaluationUsage(
             inputTokens: Int.max,

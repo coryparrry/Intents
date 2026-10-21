@@ -82,6 +82,12 @@ struct EvaluationBuiltinToolTrace: Identifiable, Codable, Equatable, Sendable {
 private extension String {
     func boundedVisionEvidence(to maximumBytes: Int) -> String {
         guard utf8.count > maximumBytes else { return self }
-        return String(decoding: utf8.prefix(maximumBytes), as: UTF8.self)
+        var bytes = 0
+        return String(prefix { character in
+            let count = String(character).utf8.count
+            guard bytes + count <= maximumBytes else { return false }
+            bytes += count
+            return true
+        })
     }
 }

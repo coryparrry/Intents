@@ -149,6 +149,7 @@ final class AppAutomationStore {
     private let reproductionPreflightReader: (@Sendable (AutomationFrozenCase, String, URL) async throws -> (AutomationFrozenCase, AutomationAttemptReport))?
     var savedCases: [AutomationFrozenCase] = []
     var savedHistoryNotice: String?
+    @ObservationIgnored private var savedHistoryRefreshID: UUID?
     private(set) var retainedUnresolvedNormalReport: AutomationAttemptReport?
     private(set) var retainedUnresolvedNormalTarget: TargetIdentity?
     /// Actual destinations of finished requests whose reports or reservations remain unresolved.
@@ -1065,31 +1066,42 @@ final class AppAutomationStore {
         return try await cases.loadAttempt(id: attemptID, frozen: frozen)
     }
     func refreshSavedCases() async {
+        let requestID = UUID()
+        savedHistoryRefreshID = requestID
+        var cases: [AutomationFrozenCase]?
+        var searches: [AutomationUIFailureSearchRecord]?
+        var comparisons: [AutomationFixComparisonReport]?
+        var reproductions: [AutomationReproductionReport]?
         var notices: [String] = [], skipped = 0
         do {
-            if let savedCasesReader { savedCases = try await savedCasesReader() }
+            if let savedCasesReader { cases = try await savedCasesReader() }
             else {
                 let listing = try await AutomationCaseStore(root: support.appendingPathComponent("Cases")).definitionListing()
-                savedCases = listing.items; skipped += listing.skippedRetiredRecords
+                cases = listing.items; skipped += listing.skippedRetiredRecords
             }
         } catch { notices.append("Saved cases could not be verified.") }
         if FileManager.default.fileExists(atPath: support.appendingPathComponent("Cases/Searches").path) {
             do {
                 let listing = try await AutomationUIFailureSearchArchive(caseStoreRoot: support.appendingPathComponent("Cases")).recordListing()
-                savedSearches = listing.items; skipped += listing.skippedRetiredRecords
+                searches = listing.items; skipped += listing.skippedRetiredRecords
             } catch { notices.append("Saved searches could not be verified.") }
         }
         if FileManager.default.fileExists(atPath: support.appendingPathComponent("Cases/FixComparisons").path) {
-            do { savedComparisons = try await AutomationFixComparisonArchive(caseStoreRoot: support.appendingPathComponent("Cases")).records() }
+            do { comparisons = try await AutomationFixComparisonArchive(caseStoreRoot: support.appendingPathComponent("Cases")).records() }
             catch { notices.append("Saved comparisons could not be verified.") }
         }
         if FileManager.default.fileExists(atPath: support.appendingPathComponent("Cases/Reproductions").path) {
-            do { savedReproductions = try await AutomationReproductionArchive(caseStoreRoot: support.appendingPathComponent("Cases")).records() }
+            do { reproductions = try await AutomationReproductionArchive(caseStoreRoot: support.appendingPathComponent("Cases")).records() }
             catch { notices.append("Saved reproductions could not be verified.") }
         }
         if skipped > 0 {
             notices.append("\(skipped) saved records use the retired controller and are unavailable. Their files have been kept.")
         }
+        guard savedHistoryRefreshID == requestID else { return }
+        if let cases { savedCases = cases }
+        if let searches { savedSearches = searches }
+        if let comparisons { savedComparisons = comparisons }
+        if let reproductions { savedReproductions = reproductions }
         savedHistoryNotice = notices.isEmpty ? nil : notices.joined(separator: " ")
     }
     /// Read-only export snapshot. Capsule selection never changes execution approval or the viewed result.
