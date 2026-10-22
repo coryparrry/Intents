@@ -18,20 +18,8 @@ spec.loader.exec_module(runner)
 
 
 class NativeShardTests(unittest.TestCase):
-    def test_excluded_mac_suite_cannot_run_directly_or_through_a_broad_ui_target(self):
-        excluded = "FoundationEvalsUITests/MacPreparationUITests"
-        for selector in (excluded, excluded + "/testSelectedToolchainPreparesMacCopyAndRunsApprovedWorkflows"):
-            with self.subTest(selector=selector), patch.object(runner, "prepare_ui_xctestrun") as prepare:
-                with self.assertRaisesRegex(ValueError, "excluded from CI"):
-                    runner.test_command(Path("Products"), [selector], Path("ui.xcresult"))
-                prepare.assert_not_called()
-        with patch.object(runner, "prepare_ui_xctestrun", return_value=Path("full.xctestrun")):
-            command = runner.test_command(Path("Products"), ["FoundationEvalsUITests"], Path("ui.xcresult"))
-        self.assertIn("-skip-testing:" + excluded, command)
-        self.assertIn("-only-testing:FoundationEvalsUITests", command)
-
     def test_ui_shard_reuses_build_and_disables_shared_desktop_workers(self):
-        test = "FoundationEvalsUITests/AppAutomationUITests/testPreparationPickersUseStableIdentifiers"
+        test = "FoundationEvalsUITests/WorkspacePolishUITests/testSettingsTabsKeepTheirPrimaryControlsAccessible"
         with patch.object(runner, "prepare_ui_xctestrun", return_value=Path("full.xctestrun")) as prepare:
             command = runner.test_command(Path("Products"), [test, test], Path("ui.xcresult"))
         prepare.assert_called_once_with(Path("Products"))
@@ -42,9 +30,7 @@ class NativeShardTests(unittest.TestCase):
         self.assertEqual(command[command.index("-default-test-execution-time-allowance") + 1], "180")
         self.assertEqual(command[command.index("-maximum-test-execution-time-allowance") + 1], "600")
         self.assertNotIn("-test-iterations", command)
-        self.assertEqual({argument for argument in command if argument.startswith("-skip-testing:")}, {
-            "-skip-testing:FoundationEvalsUITests/MacPreparationUITests",
-        })
+        self.assertEqual({argument for argument in command if argument.startswith("-skip-testing:")}, set())
 
     def test_core_shard_keeps_parallel_execution_and_excludes_ui(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -57,19 +43,10 @@ class NativeShardTests(unittest.TestCase):
         self.assertEqual(command[command.index("-parallel-testing-enabled") + 1], "YES")
         self.assertEqual({argument for argument in command if argument.startswith("-skip-testing:")}, {
             "-skip-testing:FoundationEvalsTests/CoreAIModelLoaderTests/configuredResourcesLoadAndGenerate()",
-            "-skip-testing:FoundationEvalsTests/IntentLabProjectInstallerTests/generatedMacUITestTargetBuildsWithXcode()",
         })
 
-    def test_native_manual_signatures_exist_in_their_owning_test_sources(self):
-        for selector in runner.NATIVE_MANUAL_METHODS:
-            target, suite, method = selector.split("/")
-            self.assertEqual(target, "FoundationEvalsTests")
-            self.assertTrue(method.endswith("()"), "Swift Testing requires a complete function signature")
-            source = SCRIPT.parents[1] / "FoundationEvals/FoundationEvalsTests" / (suite + ".swift")
-            self.assertRegex(source.read_text(), r"\bfunc\s+" + re.escape(method.removesuffix("()")) + r"\s*\(")
-
     def test_manual_exclusions_keep_ordinary_suites_and_repository_process_checks(self):
-        selected = ["FoundationEvalsTests/CoreAIModelLoaderTests", "FoundationEvalsTests/IntentLabProjectInstallerTests",
+        selected = ["FoundationEvalsTests/CoreAIModelLoaderTests",
                     "FoundationEvalsTests/EvaluationRepositoryInspectorTests"]
         with tempfile.TemporaryDirectory() as temporary:
             products = Path(temporary)
@@ -80,6 +57,16 @@ class NativeShardTests(unittest.TestCase):
         self.assertFalse(any("hangingRepositoryInspectionStopsItsChild" in argument
                              for argument in command if argument.startswith("-skip-testing:")))
         self.assertTrue(all(argument.count("/") == 2 for argument in command if argument.startswith("-skip-testing:")))
+
+
+    def test_native_manual_signatures_exist_in_their_owning_test_sources(self):
+        for selector in runner.NATIVE_MANUAL_METHODS:
+            target, suite, method = selector.split("/")
+            self.assertEqual(target, "FoundationEvalsTests")
+            self.assertTrue(method.endswith("()"), "Swift Testing requires a complete function signature")
+            source = SCRIPT.parents[1] / "FoundationEvals/FoundationEvalsTests" / (suite + ".swift")
+            self.assertRegex(source.read_text(), r"\bfunc\s+" + re.escape(method.removesuffix("()")) + r"\s*\(")
+
 
     def test_missing_or_ambiguous_descriptors_fail(self):
         with tempfile.TemporaryDirectory() as temporary:

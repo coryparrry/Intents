@@ -60,9 +60,9 @@ public extension DeveloperRunnerIdentity {
         return .init(
             logicalAppID: appID,
             buildID: buildID,
-            sourceManifestDigest: bundle.object(forInfoDictionaryKey: "IntentLabSourceManifestDigest") as? String,
-            packageRevision: bundle.object(forInfoDictionaryKey: "IntentLabPackageRevision") as? String,
-            compiledProductNonce: bundle.object(forInfoDictionaryKey: "IntentLabBuildNonce") as? String
+            sourceManifestDigest: bundle.object(forInfoDictionaryKey: "DeveloperRunnerSourceManifestDigest") as? String,
+            packageRevision: bundle.object(forInfoDictionaryKey: "DeveloperRunnerPackageRevision") as? String,
+            compiledProductNonce: bundle.object(forInfoDictionaryKey: "DeveloperRunnerBuildNonce") as? String
         )
     }
 

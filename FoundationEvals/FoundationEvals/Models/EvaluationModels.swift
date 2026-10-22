@@ -293,8 +293,8 @@ struct EvaluationSampleTiming: Codable, Sendable {
 }
 
 /// Optional typed evidence returned by a developer-owned feature runner. Keeping this
-/// payload additive preserves older saved evaluations while allowing scenario reports
-/// to link the exact production value and metadata that an App Intent consumed.
+/// payload additive preserves older saved evaluations while allowing feature reports
+/// to retain the exact production value and metadata returned by an app feature.
 struct EvaluationStructuredFeatureEvidence: Codable, Sendable {
     var encodedValue: Data?
     var encodedValueTypeName: String?
@@ -592,11 +592,10 @@ struct EvaluationRunOperation: Codable, Sendable {
 
 enum SidebarSelection: Hashable {
     case overview
-    case intentLab
     case evaluations
     case batchRuns
     case traces
-    case appAutomation
+    case appIntentTesting
     case suite
     case run(UUID)
 }

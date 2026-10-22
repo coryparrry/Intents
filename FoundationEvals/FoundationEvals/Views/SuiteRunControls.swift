@@ -95,7 +95,7 @@ private struct SuiteRunDestinationButton: View {
                 }
                 Text(!textFeatures.isEmpty
                      ? "Calls your app’s text feature with each case. Model sessions and tools come from your app."
-                     : "This app exposes no text features for suites. Register a text feature in the app, or use an Intents scenario for a feature with business inputs.")
+                     : "This app exposes no text features for suites. Register a text feature in the app.")
                     .font(.caption).foregroundStyle(.secondary)
             } else if runners.selectedRunnerID != nil {
                 Text("This device is no longer available. Reconnect it or choose This Mac.")

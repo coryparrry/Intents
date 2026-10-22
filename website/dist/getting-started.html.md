@@ -10,7 +10,7 @@ Intents is a free, open-source Mac workbench for Apple Foundation Models. Start 
 
 ### Released download: Intents 1.4.0
 
-Published 4 October 2026. Intents was previously named Foundation Evals. The released app includes prompt suites, scoring, traces, saved comparisons, Review, Batch runs, Intent Lab (beta), JSON exports, and authenticated local MCP access.
+Published 4 October 2026. Intents was previously named Foundation Evals. The released app includes prompt suites, scoring, traces, saved comparisons, Review, Batch runs, JSON exports, and authenticated local MCP access.
 
 [Download the Apple silicon disk image](https://github.com/coryparrry/Intents/releases/download/v1.4.0/Intents-1.4.0-macOS-arm64.dmg) · [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.4.0)
 
@@ -18,7 +18,7 @@ Open `Intents-1.4.0-macOS-arm64.dmg`, drag Intents to Applications, eject the di
 
 ### Development source: Intents
 
-Build source to develop the app or try changes that have not shipped. Review, Batch runs, and Intent Lab (beta) are also available in the released 1.4.0 app. Check [published releases](https://github.com/coryparrry/Intents/releases) for any later download.
+Build source to develop the app or try changes that have not shipped. Review and Batch runs are also available in the released 1.4.0 app. Check [published releases](https://github.com/coryparrry/Intents/releases) for any later download.
 
 With Xcode 27 and its command-line tools selected, clone the repository and run the project’s build script:
 
@@ -32,7 +32,7 @@ The script builds and opens `dist/Intents.app`. Read the [source build instructi
 
 ## Check model readiness
 
-Requires macOS 27 or later. The default on-device provider needs an Apple Intelligence–capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Ordinary on-device suites do not need Xcode. Source builds and Intent Lab require Xcode 27.
+Requires macOS 27 or later. The default on-device provider needs an Apple Intelligence–capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Ordinary on-device suites do not need Xcode. Source builds and Mac App Intent tests require Xcode 27.
 
 Compatible Core AI models and custom HTTP providers have their own requirements. Remote providers and judges use their configured services. Optional Private Cloud Compute uses Apple’s service; tools can disclose the content needed for their calls. See [data and troubleshooting](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Data-and-troubleshooting.md).
 
@@ -54,12 +54,12 @@ Add a formatting failure, an ambiguous request, and a changed-preference case. U
 
 ## Testing your app’s actions
 
-[Intent Lab](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Intent-Lab.md) needs app-owned test support and a signed UI-test target. Siri scenarios supply recognized text to a paired physical iPhone; they do not test microphone recognition. A direct App Intent pass does not prove Siri routing or the app’s observed effect. Read the separate action receipts and state checks.
+[Mac App Intent tests in development source](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Mac-App-Intent-tests.md) reads a normally installed Mac app’s compiled metadata and accepts explicit JSON inputs and expected returned values. It needs Xcode 27+, macOS 27+, and a generated AppIntentsTesting UI-test runner signed by the same development team as the app. This is an unshipped source workflow. Live runner reliability remains unqualified; Siri is not verified.
 
 ## Help improve a failure case
 
 When [reporting an issue](https://github.com/coryparrry/Intents/issues), include your release or source commit, macOS and model, a minimal synthetic prompt, scoring rule, expected result, and actual response. Review exports for private content before attaching them. A reproducible case, documentation correction, or focused patch helps others test the same behavior. The source uses the [MIT licence](https://github.com/coryparrry/Intents/blob/main/LICENSE).
 
-Version facts checked 9 October 2026. The homepage’s HTML/CSS examples use a 17 September saved run and historical PR54 fixture, predating Review and Batch runs. They are browser recreations, not live model or Siri execution. Example scores are not model benchmarks.
+Version facts checked 9 October 2026. The homepage’s HTML/CSS examples use a recorded 17 September evaluation and an illustrative source-only Mac App Intent contract. They are browser recreations, not live model or App Intent execution. Example scores are not model benchmarks.
 
 [Return to the workbench showcase](/) · [Product overview in Markdown](/index.html.md)

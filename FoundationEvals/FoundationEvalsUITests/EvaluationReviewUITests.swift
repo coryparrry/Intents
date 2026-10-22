@@ -185,8 +185,10 @@ final class EvaluationReviewUITests: XCTestCase {
     }
     private func reviewStorage() throws -> URL {
         let storage = try UITestStorage.makeDirectory(prefix: "eval-review")
-        let fixtureURL = URL(filePath: #filePath).deletingLastPathComponent()
-            .appending(path: "Fixtures/Review/review-fixture.json")
+        let fixtureURL = try XCTUnwrap(
+            Bundle(for: Self.self).url(forResource: "review-fixture", withExtension: "json"),
+            "The UI test bundle must include its generic review-fixture.json resource."
+        )
         let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as! [String: Any]
         let suite = fixture["suite"] as! [String: Any]
         let run = fixture["run"] as! [String: Any]

@@ -1,85 +1,23 @@
 import Foundation
 import UniformTypeIdentifiers
-import IntentsAutomationCore
 
 @MainActor
 enum MCPStoreAuthority {
-    static func make(store: EvaluationStore, control: EvaluationAppControl? = nil, automationStore: AppAutomationStore? = nil) -> MCPAuthority {
+    static func make(store: EvaluationStore, control: EvaluationAppControl? = nil) -> MCPAuthority {
         let control = control ?? EvaluationAppControl(store: store)
         return MCPAuthority(
-            call: { call in await handle(call, store: store, control: control, automationStore: automationStore) },
+            call: { call in await handle(call, store: store, control: control) },
             readResource: { request in await read(request, store: store) }
         )
     }
 
-    private static func handle(_ call: MCPToolCall, store: EvaluationStore, control: EvaluationAppControl, automationStore: AppAutomationStore?) async -> MCPToolPayload {
+    private static func handle(_ call: MCPToolCall, store: EvaluationStore, control: EvaluationAppControl) async -> MCPToolPayload {
         do {
-            if !control.intentLabFeatureGate.isEnabled {
-                switch call {
-                case .listScenarioRuns, .getScenarioReport, .getScenarioExecutionReport:
-                    return .failure(code: "feature_disabled", message: "Intent Lab is unavailable.")
-                default: break
-                }
-            }
             switch call {
             case .actionCatalog(let request):
-                return MCPActionDiscovery.respond(request, intentLabEnabled: control.intentLabFeatureGate.isEnabled)
+                return MCPActionDiscovery.respond(request)
             case .control(let request):
                 return await control.mcp.execute(request)
-            case .listAutomationApplications:
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App selection is unavailable") }
-                return readPayload(["listing": try MCPJSONValue.encode(automationStore.listApplications())])
-            case .selectAutomationApplication(let arguments):
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App selection is unavailable") }
-                let listing = try automationStore.selectApplication(id: arguments.appID, snapshotDigest: arguments.snapshotDigest)
-                return mutation("committed", ["listing": try MCPJSONValue.encode(listing)])
-            case .previewAutomation:
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
-                return readPayload(["preview": try MCPJSONValue.encode(automationStore.previewCommand())])
-            case .requestAutomationRun(let arguments):
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
-                let status = try automationStore.requestCommand(id: arguments.requestID, digest: arguments.digest)
-                return mutation("committed", ["request": try MCPJSONValue.encode(status)])
-            case .previewAutomationReproduction:
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
-                return readPayload(["preview": try await MCPJSONValue.encode(automationStore.previewReproductionCommand())])
-            case .requestAutomationReproduction(let arguments):
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
-                let status = try await automationStore.requestReproductionCommand(id: arguments.requestID, digest: arguments.digest)
-                return mutation("committed", ["request": try MCPJSONValue.encode(status)])
-            case .previewAutomationFixComparison:
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
-                return readPayload(["preview": try await MCPJSONValue.encode(automationStore.previewComparisonCommand())])
-            case .requestAutomationFixComparison(let arguments):
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
-                let status = try await automationStore.requestComparisonCommand(id: arguments.requestID, digest: arguments.digest)
-                return mutation("committed", ["request": try MCPJSONValue.encode(status)])
-            case .getAutomationRequest(let arguments):
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
-                return readPayload(["request": try MCPJSONValue.encode(automationStore.commandStatus(id: arguments.requestID))])
-            case .cancelAutomationRequest(let arguments):
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation is unavailable") }
-                return mutation("committed", ["request": try MCPJSONValue.encode(automationStore.cancelCommand(id: arguments.requestID))])
-            case .listAutomationCases(let arguments):
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation storage is unavailable") }
-                let definitions = try await automationStore.readSavedCases()
-                let snapshot = AutomationArtifactRegistry.digest(Data(definitions.map(\.digest).joined(separator: "\n").utf8))
-                var offset = 0
-                if let cursor = arguments.cursor {
-                    let parts = cursor.split(separator: ":")
-                    guard parts.count == 2, String(parts[0]) == snapshot, let start = Int(parts[1]), start < definitions.count else { throw EvaluationStoreError.resourceConflict("Saved case population changed; restart pagination") }
-                    offset = start
-                }
-                let end = min(definitions.count, offset + (arguments.limit ?? 50))
-                return readPayload(["cases": .array(definitions[offset..<end].map { frozen in
-                    .object(["caseID": .string(frozen.plan.id), "revision": .integer(Int64(frozen.plan.revision)), "digest": .string(frozen.digest),
-                             "action": .string(frozen.plan.execution.operation), "bundleID": .string(frozen.plan.app.bundleID)])
-                }), "total": .integer(Int64(definitions.count)), "truncated": .bool(end < definitions.count), "nextCursor": end < definitions.count ? .string(snapshot + ":" + String(end)) : .null])
-            case .getAutomationAttempt(let arguments):
-                guard let automationStore else { throw EvaluationStoreError.resourceConflict("App automation storage is unavailable") }
-                let report = try await automationStore.readSavedAttempt(caseID: arguments.caseID, revision: arguments.revision, digest: arguments.digest, attemptID: arguments.attemptID)
-                return readPayload(["attemptID": .string(report.attemptID), "caseDigest": .string(arguments.digest), "result": try MCPJSONValue.encode(report.result),
-                    "resourcesReleased": .bool(report.resourcesReleased), "routes": .array(report.receipts.map { .object(["segmentID": .string($0.segmentID), "route": .string($0.route.rawValue), "dispatched": .bool($0.dispatched), "completed": .bool($0.completed)]) })])
             case .getState:
                 return try state(store)
             case .listProjects:
@@ -109,7 +47,7 @@ enum MCPStoreAuthority {
                         "run": try operationJSON(existing)
                     ])
                 }
-                try store.activateAutomationTarget(projectID: arguments.projectID, suiteID: arguments.suiteID)
+                try store.activateEvaluationTarget(projectID: arguments.projectID, suiteID: arguments.suiteID)
                 let revision = arguments.expectedRevision ?? store.suiteRevision
                 let operation = try store.startRun(id: arguments.runID, expectedRevision: revision)
                 return mutation("committed", [
@@ -119,168 +57,15 @@ enum MCPStoreAuthority {
                     "run": try operationJSON(operation)
                 ])
             case .releaseReport(let arguments):
-                try store.activateAutomationTarget(projectID: arguments.projectID, suiteID: arguments.suiteID)
+                try store.activateEvaluationTarget(projectID: arguments.projectID, suiteID: arguments.suiteID)
                 let report = store.releaseCheckReport(runID: arguments.runID)
                 return readPayload([
                     "report": try json(report),
                     "markdown": .string(EvaluationReleaseCheckEvaluator.markdown(report))
                 ])
             case .projectReleaseReport(let arguments):
-                var suiteReport = try store.projectReleaseCheckReport(projectID: arguments.projectID)
-                suiteReport.intentLabAvailable = control.intentLabFeatureGate.isEnabled
-                guard suiteReport.intentLabAvailable == true else {
-                    suiteReport.summary += " Intent Lab is unavailable; this report covers evaluation suites only. Saved Intent Lab evidence was not evaluated."
-                    return readPayload([
-                        "report": try json(suiteReport),
-                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(suiteReport))
-                    ])
-                }
-                let persistence = scenarioPersistence(store)
-                let allDefinitions: [ScenarioDefinition]
-                do {
-                    allDefinitions = try await persistence.loadDefinitions()
-                } catch {
-                    var incomplete = suiteReport
-                    incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " Intent Lab definition storage could not be verified: \(error.localizedDescription)"
-                    incomplete.scenarios = []
-                    return readPayload([
-                        "report": try json(incomplete),
-                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
-                    ])
-                }
-                let latestDefinitions = ScenarioDefinition.latestVersions(in: allDefinitions)
-                let unassigned = latestDefinitions.filter { $0.projectID == nil }
-                if !unassigned.isEmpty {
-                    var incomplete = suiteReport
-                    incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " \(unassigned.count) saved Intent Lab scenario(s) have no project assignment; assign or remove them before a project release check can pass."
-                    incomplete.scenarios = []
-                    return readPayload([
-                        "report": try json(incomplete),
-                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
-                    ])
-                }
-                let definitions = latestDefinitions
-                    .filter { $0.projectID == arguments.projectID }
-                let runs: [ScenarioRun]
-                let journals: [ScenarioExecutionJournal]
-                let plans: [ScenarioExecutionPlan]
-                let executions: [ScenarioExecutionRecord]
-                do {
-                    runs = try await persistence.loadRuns()
-                    journals = try await persistence.loadJournals()
-                    plans = try await persistence.loadPlans()
-                    executions = try await persistence.loadExecutionRecords()
-                    guard executions.allSatisfy({ execution in plans.contains { $0.id == execution.planID } }) else {
-                        throw ScenarioPersistenceError.invalidRun("A saved execution has no frozen plan.")
-                    }
-                } catch {
-                    var incomplete = suiteReport
-                    incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " Intent Lab run, execution, plan, or journal storage could not be verified: \(error.localizedDescription)"
-                    incomplete.scenarios = []
-                    return readPayload([
-                        "report": try json(incomplete),
-                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
-                    ])
-                }
-                let definitionIdentities = Set(allDefinitions.map {
-                    "\($0.id.uuidString):\($0.version):\($0.definitionDigest)"
-                })
-                let orphanedRuns = runs.filter {
-                    !definitionIdentities.contains("\($0.scenarioID.uuidString):\($0.scenarioVersion):\($0.scenarioDigest)")
-                }
-                if !orphanedRuns.isEmpty {
-                    var incomplete = suiteReport
-                    incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " \(orphanedRuns.count) saved Intent Lab run(s) have no matching definition; restore or remove their frozen definition before a project release check can pass."
-                    incomplete.scenarios = []
-                    return readPayload([
-                        "report": try json(incomplete),
-                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
-                    ])
-                }
-                let orphanedPlans = plans.filter {
-                    !definitionIdentities.contains("\($0.definitionID.uuidString):\($0.definitionVersion):\($0.definitionDigest)")
-                }
-                if !orphanedPlans.isEmpty {
-                    var incomplete = suiteReport
-                    incomplete.outcome = .incompleteOrIncompatibleEvidence
-                    incomplete.summary += " \(orphanedPlans.count) saved Intent Lab plan(s) have no matching definition; restore their frozen definition before a project release check can pass."
-                    incomplete.scenarios = []
-                    return readPayload([
-                        "report": try json(incomplete),
-                        "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(incomplete))
-                    ])
-                }
-                let savedEvidence = ScenarioSavedExecutionReportService(
-                    rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
-                )
-                var scenarioReports: [ScenarioReleaseCheckReport] = []
-                for definition in definitions {
-                    if definition.schemaVersion == ScenarioDefinition.stableSchemaVersion {
-                        // A v3 run is a population of separately bound child invocations.
-                        // Qualify the newest plan, including unfinished work; an older
-                        // passing child or execution must not stand in for that attempt.
-                        let plan = plans.first {
-                            $0.definitionID == definition.id && $0.definitionVersion == definition.version
-                                && $0.definitionDigest == definition.definitionDigest
-                                && $0.purpose == .fullRequirement
-                        }
-                        let execution = plan.flatMap { plan in executions.first { $0.planID == plan.id } }
-                        var report = ScenarioReleaseCheckReport(
-                            scenarioID: definition.id, runID: nil,
-                            outcome: .incompleteOrIncompatibleEvidence,
-                            summary: "The latest frozen check has no terminal coordinated execution.",
-                            failures: ["Finish the current check and save its complete coordinated evidence."],
-                            generatedAt: Date(), policyVersion: IntentEvidenceBundle.policyID,
-                            executionID: execution?.id
-                        )
-                        if let execution {
-                            do {
-                                if let qualified = try await savedEvidence.qualification(executionID: execution.id).report {
-                                    report = qualified
-                                }
-                            } catch {
-                                report.summary = "The latest coordinated execution could not be verified."
-                                report.failures = [error.localizedDescription]
-                            }
-                        }
-                        scenarioReports.append(report)
-                        continue
-                    }
-                    let run = runs.first {
-                        $0.scenarioID == definition.id
-                            && $0.scenarioVersion == definition.version
-                            && $0.scenarioDigest == definition.definitionDigest
-                    }
-                    let comparison = run.flatMap { candidate in
-                        runs.first(where: {
-                            $0.id != candidate.id
-                                && $0.scenarioID == candidate.scenarioID
-                                && $0.scenarioVersion == candidate.scenarioVersion
-                                && $0.scenarioDigest == candidate.scenarioDigest
-                                && $0.startedAt < candidate.startedAt
-                        }).map { ScenarioComparison.compare(baseline: $0, candidate: candidate) }
-                    }
-                    scenarioReports.append(ScenarioReleaseCheckEvaluator.report(
-                        definition: definition,
-                        run: run,
-                        comparison: comparison,
-                        journalAccepted: run.map {
-                            ScenarioReleaseCheckEvaluator.acceptedJournal(for: $0, in: journals)
-                        }
-                    ))
-                }
-                let report = EvaluationReleaseCheckEvaluator.integratingScenarios(
-                    suiteReport,
-                    scenarios: scenarioReports
-                )
-                return readPayload([
-                    "report": try json(report),
-                    "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(report))
-                ])
+                let report = try store.projectReleaseCheckReport(projectID: arguments.projectID)
+                return readPayload(["report": try json(report), "markdown": .string(EvaluationReleaseCheckEvaluator.projectMarkdown(report))])
             case .replaceSuite(let arguments):
                 let before = store.suiteRevision
                 let revision = try store.replaceSuite(
@@ -330,18 +115,6 @@ enum MCPStoreAuthority {
                 return try analyzeRun(arguments, store: store)
             case .listRuns(let arguments):
                 return try listRuns(arguments, store: store)
-            case .listScenarioRuns(let arguments):
-                return try await listScenarioRuns(arguments, store: store)
-            case .getScenarioReport(let arguments):
-                return try await getScenarioReport(arguments, store: store)
-            case .getScenarioExecutionReport(let arguments):
-                let root = store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
-                let decision = try await ScenarioSavedExecutionReportService(rootDirectory: root)
-                    .qualification(executionID: arguments.executionID)
-                return readPayload([
-                    "executionID": .string(arguments.executionID.uuidString),
-                    "qualification": try json(decision)
-                ])
             case .cancelRun(let arguments):
                 let previous = store.runStatus(id: arguments.runID)
                 let operation = try store.cancelRun(id: arguments.runID)
@@ -374,89 +147,6 @@ enum MCPStoreAuthority {
                 return .object(value)
             })
         ])
-    }
-
-    private static func listScenarioRuns(
-        _ arguments: MCPListScenarioRunsArguments,
-        store: EvaluationStore
-    ) async throws -> MCPToolPayload {
-        let persistence = scenarioPersistence(store)
-        let offset: Int
-        if let cursor = arguments.cursor {
-            guard let parsed = Int(cursor), parsed >= 0 else {
-                throw MCPStoreAuthorityError.invalidCursor
-            }
-            offset = parsed
-        } else {
-            offset = 0
-        }
-        let limit = arguments.limit ?? 20
-        guard (1...50).contains(limit) else {
-            return .failure(code: "invalid_request", message: "Limit must be between 1 and 50.")
-        }
-        let page = try await persistence.loadRunPage(
-            scenarioID: arguments.scenarioID,
-            offset: offset,
-            limit: limit
-        )
-        guard offset <= page.totalCount else { throw MCPStoreAuthorityError.invalidCursor }
-        return readPayload([
-            "runs": .array(try page.runs.map { run in
-                try json([
-                    "id": run.id.uuidString,
-                    "scenarioID": run.scenarioID.uuidString,
-                    "scenarioVersion": String(run.scenarioVersion),
-                    "scenarioDigest": run.scenarioDigest,
-                    "executionStatus": run.executionStatus.rawValue,
-                    "outcome": run.outcome.rawValue,
-                    "acceptanceStatus": run.acceptanceStatus?.rawValue ?? "legacy",
-                    "startedAt": run.startedAt.ISO8601Format(),
-                    "completedAt": run.completedAt.ISO8601Format(),
-                    "device": run.environment.deviceModel,
-                    "operatingSystem": run.environment.operatingSystem
-                ])
-            }),
-            "nextCursor": page.hasMore ? .string(String(offset + page.runs.count)) : .null
-        ])
-    }
-
-    private static func getScenarioReport(
-        _ arguments: MCPGetScenarioReportArguments,
-        store: EvaluationStore
-    ) async throws -> MCPToolPayload {
-        let persistence = scenarioPersistence(store)
-        guard let run = try await persistence.loadRuns().first(where: { $0.id == arguments.runID }) else {
-            throw EvaluationStoreError.resourceNotFound("Intent Lab scenario run")
-        }
-        let definition = try await persistence.loadDefinitions().first {
-            $0.id == run.scenarioID && $0.version == run.scenarioVersion && $0.definitionDigest == run.scenarioDigest
-        }
-        let baseline = try await persistence.loadRuns(scenarioID: run.scenarioID).first {
-            $0.id != run.id
-                && $0.scenarioVersion == run.scenarioVersion
-                && $0.scenarioDigest == run.scenarioDigest
-                && $0.startedAt < run.startedAt
-        }
-        let comparison = baseline.map { ScenarioComparison.compare(baseline: $0, candidate: run) }
-        let journals = try await persistence.loadJournals()
-        let release = definition.map {
-            ScenarioReleaseCheckEvaluator.report(
-                definition: $0, run: run, comparison: comparison,
-                journalAccepted: ScenarioReleaseCheckEvaluator.acceptedJournal(for: run, in: journals)
-            )
-        }
-        let sharingCopy = await persistence.redactedSharingCopy(of: run)
-        return readPayload([
-            "run": try json(sharingCopy),
-            "diagnostic": .string(ScenarioDiagnosticClassifier.message(for: run.laneResults)),
-            "releaseCheck": try release.map(json) ?? .null
-        ])
-    }
-
-    private static func scenarioPersistence(_ store: EvaluationStore) -> ScenarioPersistence {
-        ScenarioPersistence(
-            rootDirectory: store.overviewStorageDirectory.appending(path: "IntentLab", directoryHint: .isDirectory)
-        )
     }
 
     private static func read(_ request: MCPResourceRequest, store: EvaluationStore) async -> MCPResourcePayload {

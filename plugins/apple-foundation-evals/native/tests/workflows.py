@@ -38,7 +38,7 @@ missing=invoke({'operation':'release-check','projectID':uid(),'suite':suite})
 check(missing['report']['outcome']==20 and 'No completed run' in missing['report']['summary'])
 project=invoke({'operation':'project-release-check','projectID':uid(),'suites':[{'suiteID':suite['id'],'suiteName':suite['name'],'required':True,'report':missing['report']}]})
 check(project['report']['outcome']==20)
-check('Required suites' in project['markdown'] and 'Intent Lab' not in project['markdown'])
+check('Required suites' in project['markdown'] and 'App Intent tests' not in project['markdown'])
 
 if infer:
  requestedCurrent=uid();requestedCandidate=uid()

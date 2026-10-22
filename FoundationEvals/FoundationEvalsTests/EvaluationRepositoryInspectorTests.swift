@@ -24,9 +24,16 @@ struct EvaluationRepositoryInspectorTests {
         defer { inspection.cancel() }
         let pidFile = root.appending(path: "child.pid")
         let launchDeadline = ContinuousClock.now.advanced(by: .seconds(5))
-        while !FileManager.default.fileExists(atPath: pidFile.path), ContinuousClock.now < launchDeadline {
+        var launchedPID: Int32?
+        while ContinuousClock.now < launchDeadline {
+            if let text = try? String(contentsOf: pidFile, encoding: .utf8),
+               let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                launchedPID = pid
+                break
+            }
             try await Task.sleep(for: .milliseconds(10))
         }
+        let pid = try #require(launchedPID)
         if cancel { inspection.cancel() }
         let snapshot = await inspection.value
         // The one-minute test limit bounds completion; verify the actual stop reason.
@@ -36,7 +43,6 @@ struct EvaluationRepositoryInspectorTests {
             #expect(snapshot.error?.hasPrefix("Git rev-parse timedOut during ") == true)
         }
         #expect(snapshot.commit == nil && snapshot.isDirty == nil)
-        let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8)))
         #expect(Darwin.kill(pid, 0) == -1 && errno == ESRCH)
     }
 
@@ -63,6 +69,19 @@ struct EvaluationRepositoryInspectorTests {
         #expect(snapshot.commit == nil && snapshot.isDirty == nil)
         let pid = try #require(Int32(String(contentsOf: root.appending(path: "child.pid"), encoding: .utf8)))
         #expect(Darwin.kill(pid, 0) == -1 && errno == ESRCH)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func oversizedRepositoryOutputDoesNotBecomeProvenance() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executable = root.appending(path: "fixture-git")
+        try Data("#!/bin/sh\nprintf '%1100000s' ''\n".utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        let snapshot = await EvaluationRepositoryInspector.snapshot(rootPath: root.path, gitExecutable: executable)
+        #expect(snapshot.commit == nil && snapshot.isDirty == nil)
+        #expect(snapshot.error?.contains("output limit") == true)
     }
 
     @Test(.timeLimit(.minutes(1)))

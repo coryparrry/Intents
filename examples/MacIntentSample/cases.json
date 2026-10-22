@@ -1,0 +1,43 @@
+[
+  {
+    "actionIdentifier": "ReadSampleStatus",
+    "expectedValue": "ready"
+  },
+  {
+    "actionIdentifier": "FormatSampleInput",
+    "inputs": {
+      "text": "A \"quoted\" \\ value\nnext \\(notCode)",
+      "count": 7,
+      "enabled": true
+    },
+    "expectedValue": "A \"quoted\" \\ value\nnext \\(notCode):7:true"
+  },
+  {
+    "actionIdentifier": "ScaleSampleNumber",
+    "inputs": {
+      "number": 1.75
+    },
+    "expectedValue": 3.5
+  },
+  {
+    "actionIdentifier": "ReadSampleMode",
+    "inputs": {
+      "mode": "short"
+    },
+    "expectedValue": "short"
+  },
+  {
+    "actionIdentifier": "ReadSampleMode",
+    "inputs": {
+      "mode": "long"
+    },
+    "expectedValue": "long"
+  },
+  {
+    "actionIdentifier": "ReadSampleMode",
+    "expectedValue": "short"
+  },
+  {
+    "actionIdentifier": "ReadSampleStatus"
+  }
+]

@@ -7,8 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		FEA000000000000000000001 /* IntentsAutomationCore in Frameworks */ = {isa = PBXBuildFile; productRef = FEA000000000000000000002 /* IntentsAutomationCore */; };
-		FEA000000000000000000004 /* AutomationHost in Resources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000005 /* AutomationHost */; };
+		FEA000000000000000000001 /* MacIntentTesting in Frameworks */ = {isa = PBXBuildFile; productRef = FEA000000000000000000002 /* MacIntentTesting */; };
 		DA0000000000000000000020 /* DeveloperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000010 /* DeveloperProtocol.swift */; };
 		DA0000000000000000000021 /* DeveloperFeatureRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000011 /* DeveloperFeatureRegistry.swift */; };
 		DA0000000000000000000022 /* DeveloperRunnerHostEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000012 /* DeveloperRunnerHostEngine.swift */; };
@@ -40,7 +39,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		FEA000000000000000000005 /* AutomationHost */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AutomationHost; path = ../Integration/AutomationHost; sourceTree = SOURCE_ROOT; };
 		DA0000000000000000000010 /* DeveloperProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperProtocol.swift; sourceTree = "<group>"; };
 		DA0000000000000000000011 /* DeveloperFeatureRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperFeatureRegistry.swift; sourceTree = "<group>"; };
 		DA0000000000000000000012 /* DeveloperRunnerHostEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperRunnerHostEngine.swift; sourceTree = "<group>"; };
@@ -53,14 +51,145 @@
 		AFC28B5D3047331D0023273E /* FoundationEvalsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FoundationEvalsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		F15100000000000000000001 /* Retired app files */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Models/ScenarioCollectionModels.swift",
+				"Models/ScenarioExecutionModels.swift",
+				"Models/ScenarioModels.swift",
+				"Services/IntentEvidenceBundle.swift",
+				"Services/IntentEvidenceQualification.swift",
+				"Services/IntentLabFeatureGate.swift",
+				"Services/IntentLabProjectInstaller.swift",
+				"Services/MCPIntentInstallation.swift",
+				"Services/OpenStepProjectDocument.swift",
+				"Services/ScenarioAssessmentStore.swift",
+				"Services/ScenarioCollectionService.swift",
+				"Services/ScenarioCollectionStore.swift",
+				"Services/ScenarioComparison.swift",
+				"Services/ScenarioCoordinator.swift",
+				"Services/ScenarioExecutionComparison.swift",
+				"Services/ScenarioExecutionRecovery.swift",
+				"Services/ScenarioExpectationAuthoring.swift",
+				"Services/ScenarioFeatureEvidence.swift",
+				"Services/ScenarioFrozenSemanticPolicy.swift",
+				"Services/ScenarioIndependentAssessmentService.swift",
+				"Services/ScenarioPersistence+AutomationEvidence.swift",
+				"Services/ScenarioPersistence.swift",
+				"Services/ScenarioPhysicalRunnerLease.swift",
+				"Services/ScenarioResponseAssessmentService.swift",
+				"Services/ScenarioRunnerReceiptImporter.swift",
+				"Services/ScenarioSavedExecutionReportService.swift",
+				"Services/ScenarioSuggestionService.swift",
+				"Services/ScenarioValidation.swift",
+				"Services/XCTestEvidenceImporter.swift",
+				"Services/XCTestRunInvocationTransport.swift",
+				"Services/XcodeConnectionDiscovery.swift",
+				"Services/XcodeTestExecutor.swift",
+				"Stores/AppAutomationStore.swift",
+				"Stores/AutomationCapsuleExportSelection.swift",
+				"Stores/AutomationCommandHistory.swift",
+				"Stores/AutomationNativeApplicationSelection.swift",
+				"Stores/AutomationNativeConfirmation.swift",
+				"Stores/AutomationNativeEntitySelection.swift",
+				"Stores/AutomationNativeFirstRun.swift",
+				"Stores/AutomationNativeFirstRunInputs.swift",
+				"Stores/AutomationNativeImports.swift",
+				"Stores/AutomationNativeLocalConfirmation.swift",
+				"Stores/AutomationNativePairedFeatures.swift",
+				"Stores/AutomationNativePreparation.swift",
+				"Stores/AutomationNativePreparationRestoration.swift",
+				"Stores/AutomationNativePreparedEvidence.swift",
+				"Stores/AutomationNativeRecordSetupProposal.swift",
+				"Stores/AutomationNativeRecovery.swift",
+				"Stores/AutomationNativeRunPlanning.swift",
+				"Stores/AutomationNativeSavedAttemptSelection.swift",
+				"Stores/AutomationNativeSiriFailureSearch.swift",
+				"Stores/AutomationNativeSiriPlanning.swift",
+				"Stores/AutomationNativeUIFixComparison.swift",
+				"Stores/AutomationNativeUIFixComparisonCommand.swift",
+				"Stores/AutomationNativeUIReproduction.swift",
+				"Views/AppAutomationCapsuleView.swift",
+				"Views/AppAutomationDateInput.swift",
+				"Views/AppAutomationView.swift",
+				"Views/AppleTestConnectionView.swift",
+				"Views/AutomationFirstRunControls.swift",
+				"Views/AutomationPairedFeatureControls.swift",
+				"Views/AutomationRecoveryControls.swift",
+				"Views/AutomationSavedSearchesSection.swift",
+				"Views/AutomationSiriControls.swift",
+				"Views/AutomationSiriSearchControls.swift",
+				"Views/AutomationSourcePreparationControls.swift",
+				"Views/AutomationSourceRecipeControls.swift",
+				"Views/IntentLabHelp.swift",
+				"Views/IntentLabSetupInstallerView.swift",
+				"Views/IntentLabView.swift",
+				"Views/NativeAutomationEvidenceView.swift",
+				"Views/ScenarioCollectionView.swift",
+				"Views/ScenarioEditorView.swift",
+				"Views/ScenarioGuidedCheckEditor.swift",
+				"Views/ScenarioReportView.swift",
+				"Views/ScenarioReusableChecksView.swift",
+			);
+			target = AFC28B45304733170023273E;
+		};
+		F15100000000000000000002 /* Retired unit files */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"AppAutomationSelectionViewTests.swift",
+				"AutomationExecutionAdmissionTests.swift",
+				"AutomationMCPTests.swift",
+				"ExecutorSimplificationTests.swift",
+				"Fixtures/LegacyV1/evidence.json",
+				"Fixtures/LegacyV1/invocation.json",
+				"Fixtures/LegacyV1/journal.json",
+				"Fixtures/LegacyV1/scenario.json",
+				"IntentEvidenceBundleTests.swift",
+				"IntentLabArrayInputTests.swift",
+				"IntentLabFeatureGateTests.swift",
+				"IntentLabProjectInstallerTests.swift",
+				"IntentLabRegressionTests.swift",
+				"MCPIntentLabFeatureGateTests.swift",
+				"ScenarioAcceptanceTests.swift",
+				"ScenarioActionParityTests.swift",
+				"ScenarioAutomationEvidenceTests.swift",
+				"ScenarioCollectionTests.swift",
+				"ScenarioContractsTests.swift",
+				"ScenarioExecutionComparisonTests.swift",
+				"ScenarioExecutionPlanTests.swift",
+				"ScenarioExpectationAuthoringTests.swift",
+				"ScenarioFeatureEvidenceTests.swift",
+				"ScenarioFrozenSemanticPolicyTests.swift",
+				"ScenarioIndependentAssessmentTests.swift",
+				"ScenarioNoMutationTests.swift",
+				"ScenarioPhysicalFailureTests.swift",
+				"ScenarioPhysicalLeaseTests.swift",
+				"ScenarioSavedExecutionReportTests.swift",
+				"ScenarioSubjectFeatureAdapterTests.swift",
+				"ScenarioV3HarnessBridgeTests.swift",
+				"XcodeBundleLayoutTests.swift",
+				"XcodeRouteReadinessTests.swift",
+				"XcodeSyntheticReadinessTests.swift",
+			);
+			target = AFC28B523047331D0023273E;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AFC28B48304733170023273E /* FoundationEvals */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F15100000000000000000001 /* Retired app files */,
+			);
 			path = FoundationEvals;
 			sourceTree = "<group>";
 		};
 		AFC28B563047331D0023273E /* FoundationEvalsTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F15100000000000000000002 /* Retired unit files */,
+			);
 			path = FoundationEvalsTests;
 			sourceTree = "<group>";
 		};
@@ -80,7 +209,7 @@
 		AFC28B43304733170023273E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				FEA000000000000000000001 /* IntentsAutomationCore in Frameworks */,
+				FEA000000000000000000001 /* MacIntentTesting in Frameworks */,
 				AFC28B70304B00010023273E /* CoreAILM in Frameworks */,
 				FE0000000000000000000001 /* Sparkle in Frameworks */,
 				FE0000000000000000000011 /* PostHog in Frameworks */,
@@ -156,7 +285,7 @@
 			);
 			name = FoundationEvals;
 			packageProductDependencies = (
-				FEA000000000000000000002 /* IntentsAutomationCore */,
+				FEA000000000000000000002 /* MacIntentTesting */,
 				FE0000000000000000000012 /* PostHog */,
 				FE0000000000000000000002 /* Sparkle */,
 				AFC28B72304B00010023273E /* CoreAILM */,
@@ -263,7 +392,6 @@
 		AFC28B44304733170023273E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
-				FEA000000000000000000004 /* AutomationHost in Resources */,
 			);
 		};
 		AFC28B513047331D0023273E /* Resources */ = {
@@ -666,10 +794,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		FEA000000000000000000002 /* IntentsAutomationCore */ = {
+		FEA000000000000000000002 /* MacIntentTesting */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = FEA000000000000000000003 /* XCLocalSwiftPackageReference ".." */;
-			productName = IntentsAutomationCore;
+			productName = MacIntentTesting;
 		};
 		AFC28B6D304A00010023273E /* Hummingbird */ = {
 			isa = XCSwiftPackageProductDependency;

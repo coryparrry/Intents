@@ -32,9 +32,9 @@ Intents is a native macOS workbench for testing Apple's Foundation Models. Creat
 | **Production batches** | Immutable datasets, resumable jobs, unattended workers, captured-output review, cohort gates and audited evidence. [Production guide](docs/PRODUCTION_EVALS_GUIDE.md). |
 | **Saved comparisons** | Run history, baseline comparisons, and JSON reports. |
 | **Models and tools** | Apple's on-device model, compatible Core AI models, custom HTTP providers, and configurable tools. |
-| **Agent integration** | Authenticated controls for the shared workspace, evaluations, batches, review, developer runners, and Intent Lab. [MCP guide](docs/MCP_CONTROL_GUIDE.md). |
+| **Agent integration** | Authenticated controls for the shared workspace, evaluations, batches, review, and developer runners. [MCP guide](docs/MCP_CONTROL_GUIDE.md). |
 | **App feature runners** | A public Swift package for evaluating real app closures on a paired iPhone, iPad, or Mac. [Integration guide](docs/DEVELOPER_SWIFT_INTEGRATION.md). |
-| **Intent Lab** | Run frozen App Intent and recognised-text Siri scenarios from a developer-owned UI-test target, then inspect separately labelled evidence. [Setup guide](docs/wiki/Intent-Lab.md). |
+| **App Intent tests** | Inspect a built Mac app and run JSON input/result checks with Apple AppIntentsTesting, through the native UI or `intents-native-tests`. [Setup and qualification](docs/wiki/Mac-App-Intent-tests.md). |
 
 ## Install
 
@@ -60,7 +60,7 @@ update the tap automatically. To upgrade through Homebrew, run
 `brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
 The app also includes **Check for Updates**.
 
-Xcode is needed to build from source or use Intent Lab. It is not needed for a normal on-device suite.
+Xcode 27+ is needed to build from source or run Mac App Intent tests. It is not needed for a normal on-device suite.
 
 ## Run your first evaluation
 
@@ -99,9 +99,23 @@ saved run evidence, and the boundary with Apple's development-only Evaluations f
 
 For large batches, open **Batch runs** in the sidebar. Freeze the current suite or import JSONL, create a batch, and run it on a matching Mac. The [production guide](docs/PRODUCTION_EVALS_GUIDE.md) covers `intents-evals`, unattended native workers, target matrices, schedules and opt-in capture.
 
+## Test Mac App Intents
+
+Select a normally installed, registered Mac app in **App Intent tests**, or use
+`intents-native-tests catalog --app /path/to/MyApp.app` and `intents-native-tests run`
+with a JSON case manifest. The command builds a native macOS UI-test runner using
+Apple AppIntentsTesting. It needs Xcode 27+, macOS 27+, XcodeGen, and the same Apple
+development team for app and runner; your app needs no Intents SDK.
+
+The [command-line guide](docs/wiki/Mac-App-Intent-tests.md) covers explicit inputs,
+expected scalar results and execution-only smoke checks. The
+[Mac sample](examples/MacIntentSample/README.md) includes build/signing instructions
+and a seven-case manifest. Seven local native qualification cases passed; that
+sample result does not establish compatibility with every app or verify Siri.
+
 ## Connect an agent
 
-Intents includes an authenticated MCP server for projects and suites, references, runs, review suggestions, batch jobs, developer runners, and Intent Lab. Changes appear in the same native workspace. The standalone Apple Foundation Evals plugin uses a separate store.
+Intents includes an authenticated MCP server for projects and suites, references, runs, review suggestions, batch jobs, and developer runners. Changes appear in the same native workspace. The standalone Apple Foundation Evals plugin uses a separate store.
 
 To connect Codex:
 

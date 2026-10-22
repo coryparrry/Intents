@@ -1,6 +1,6 @@
 # Run feature checks in your own app
 
-[Home](Home.md) · [Runs and results](Runs-and-results.md) · [Intent Lab](Intent-Lab.md)
+[Home](Home.md) · [Runs and results](Runs-and-results.md) · [Mac App Intent tests](Mac-App-Intent-tests.md)
 
 A developer runner lets an Intents suite call a feature in your iPhone, iPad, or Mac app. Your app keeps control of its model, tools, data, and feature code. Intents sends each case input to the app. Then it saves and scores the declared response evidence.
 
@@ -41,7 +41,7 @@ If the device disconnects, read the error and connect again. If the feature vers
 
 Open the saved run's **Report** and **Workflow trace**. Read each response and the details of the app and device. You can compare this run with another run in **Compare**.
 
-An AI rubric for a remote feature needs an approved independent judge connection. A missing or failed assessment is not a pass. Use [Intent Lab](Intent-Lab.md) for a claim about App Intent invocation or Siri's result.
+An AI rubric for a remote feature needs an approved independent judge connection. A missing or failed assessment is not a pass. Use [Mac App Intent tests](Mac-App-Intent-tests.md) for native Mac App Intent checks. Those checks do not verify Siri.
 
 Use [Review and judge checks](Review-and-judge-checks.md) to label the saved
 feature outputs, create verified regression cases, and check a judge against

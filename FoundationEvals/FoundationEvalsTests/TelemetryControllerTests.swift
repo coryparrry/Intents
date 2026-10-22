@@ -7,8 +7,10 @@ import Testing
     private func defaults() -> UserDefaults { UserDefaults(suiteName: "TelemetryTests.\(UUID().uuidString)")! }
     private let configuration = TelemetryConfiguration(projectToken: "phc_test", host: "https://us.i.posthog.com")
 
+
+
     @Test(arguments: [false, true])
-    func automationCallbackClassifiesCancellationAndRejectsRevokedSpan(revoke: Bool) {
+    func cancellationSpanIsCountedOnceAndRevokedUploadsAreRejected(revoke: Bool) {
         let defaults = defaults()
         defaults.set(true, forKey: TelemetryController.diagnosticsConsentKey)
         var clients: [RecordingTelemetryClient] = []
@@ -17,19 +19,15 @@ import Testing
             clients.append(client)
             return client
         }
-        let completion = controller.beginAutomationRun()
-        if revoke {
-            controller.setDiagnosticsEnabled(false)
-            controller.setDiagnosticsEnabled(true)
-        }
-        completion(.failure(CancellationError()))
-        completion(.failure(CancellationError()))
+        let span = controller.begin(.evaluation)
+        if revoke { controller.setDiagnosticsEnabled(false); controller.setDiagnosticsEnabled(true) }
+        controller.end(span, failure: .cancelled)
+        controller.end(span, failure: .cancelled)
         let outcomes = controller.recentDiagnostics.filter {
-            $0.properties["operation"] == "automation_run" && $0.properties["outcome"] != nil
+            $0.properties["operation"] == "evaluation" && $0.properties["outcome"] != nil
         }
         #expect(outcomes.count == 1)
         #expect(outcomes.first?.properties["outcome"] == "cancelled")
-        #expect(outcomes.first?.properties["error_code"] == "cancelled")
         let uploads = clients.flatMap(\.events).filter { $0 == "foundation_evals_operation_finished" }
         #expect(uploads.count == (revoke ? 0 : 1))
     }
@@ -191,7 +189,7 @@ import Testing
             return sdk
         })
         defer { client.stopAndDiscard() }
-        client.capture(.operationFinished(.scenarioRun, UUID(), .failed, 125, .timeout))
+        client.capture(.operationFinished(.evaluation, UUID(), .failed, 125, .timeout))
         client.flush()
         let deadline = ContinuousClock.now.advanced(by: .seconds(10))
         while TelemetryRecordingProtocol.bodies().isEmpty && ContinuousClock.now < deadline {
@@ -204,7 +202,7 @@ import Testing
         let event = try #require(batch.first)
         #expect(event["event"] as? String == "foundation_evals_operation_finished")
         let properties = try #require(event["properties"] as? [String: Any])
-        #expect(properties["operation"] as? String == "scenario_run")
+        #expect(properties["operation"] as? String == "evaluation")
         #expect(properties["error_code"] as? String == "timeout")
         #expect(properties["duration_ms"] as? Int == 125)
         #expect(properties["$process_person_profile"] as? Bool == false)
@@ -282,7 +280,7 @@ import Testing
         defer { session.invalidateAndCancel() }
         var request = URLRequest(url: URL(string: "https://telemetry.invalid/batch")!)
         request.httpMethod = "POST"
-        let payload = Data(#"{"private":"secret","batch":[{"event":"foundation_evals_app_opened","properties":{"app_version":"1.0","prompt":"secret","os_major":27}},{"event":"foundation_evals_operation_finished","properties":{"operation":"scenario_run","outcome":"failed","error_code":"timeout"}},{"event":"$exception","properties":{"message":"secret"}}]}"#.utf8)
+        let payload = Data(#"{"private":"secret","batch":[{"event":"foundation_evals_app_opened","properties":{"app_version":"1.0","prompt":"secret","os_major":27}},{"event":"foundation_evals_operation_finished","properties":{"operation":"evaluation","outcome":"failed","error_code":"timeout"}},{"event":"$exception","properties":{"message":"secret"}}]}"#.utf8)
         _ = try await session.upload(for: request, from: payload)
         let body = try #require(TelemetryRecordingProtocol.bodies().first)
         let forwarded = String(decoding: body, as: UTF8.self)
@@ -307,7 +305,7 @@ import Testing
         var request = URLRequest(url: URL(string: "https://telemetry.invalid/batch")!)
         request.httpMethod = "POST"
         let events: [[String: Any]] = [
-            ["event": "foundation_evals_diagnostic_issue", "properties": ["operation": "scenario_run", "error_code": "timeout", "_intents_consent_epoch": previousEpoch.uuidString]],
+            ["event": "foundation_evals_diagnostic_issue", "properties": ["operation": "evaluation", "error_code": "timeout", "_intents_consent_epoch": previousEpoch.uuidString]],
             ["event": "foundation_evals_app_opened", "properties": ["app_version": "1.0", "_intents_consent_epoch": currentEpoch.uuidString]]
         ]
         _ = try await session.upload(for: request, from: JSONSerialization.data(withJSONObject: ["batch": events]))

@@ -20,19 +20,13 @@ UI_TESTS = "FoundationEvals/FoundationEvalsUITests/"
 UI_TARGET = "FoundationEvalsUITests/"
 # These require staged fixtures and explicit live-run opt-in. Ordinary full
 # coverage excludes them, including when their source files change.
-OPT_IN_UI_SUITES = {"FreshRecordAutomationUITests", "MacPreparationUITests"}
-OPT_IN_UI_METHODS = {
-    "AppAutomationUITests": {"testPreparedPureEchoShowsUnassessedNativeEvidence"},
-}
+OPT_IN_UI_SUITES = set()
+OPT_IN_UI_METHODS = {}
 UI_TIMINGS = json.loads(Path(__file__).with_name("ci_ui_timings.json").read_text())
-SDK_CONSUMER_PATHS = {
-    APP + "Services/IntentLabProjectInstaller.swift",
-    APP + "Services/OpenStepProjectDocument.swift",
-    TESTS + "IntentLabProjectInstallerTests.swift",
-}
+SDK_CONSUMER_PATHS = set()
 SDK_CONSUMER_PREFIXES = (
-    "Sources/IntentLab", "Sources/FoundationEvalsDeveloper/",
-    "Tests/IntentLab", "Tests/FoundationEvalsDeveloperTests/",
+    "Sources/MacIntentTesting/", "Sources/FoundationEvalsDeveloper/",
+    "Tests/MacIntentTestingTests/", "Tests/FoundationEvalsDeveloperTests/",
 )
 PRODUCTION_PACKAGE = "Packages/ProductionEvals/"
 PRODUCTION_DEVELOPER_SUITES = {
@@ -41,45 +35,21 @@ PRODUCTION_DEVELOPER_SUITES = {
 STANDALONE_PLUGIN_METADATA = {
     ".github/workflows/plugin.yml", ".agents/plugins/marketplace.json",
 }
-# Keep the existing PR baseline, including the picker once, across independent desktops.
+# Keep ordinary UI coverage spread across independent desktops.
 UI_BASELINE = {
     "suite-editor": [UI_TARGET + "FoundationEvalsUITests"],
-    "intent-lab": [UI_TARGET + "IntentLabGuidanceUITests", UI_TARGET + "SimplificationUITests",
-                   UI_TARGET + "IntentLabFeatureGateUITests"],
     "runs": [UI_TARGET + "FoundationEvalsRunLifecycleUITests/testRunProgressCompletionAndHistoryRestoration"],
     "traces": [UI_TARGET + "WorkflowTraceUITests/testWorkspaceResetConfirmationAndPersistence"],
-    "automation": [
-        UI_TARGET + "AppAutomationUITests/" + method for method in (
-            "testUnpreparedPhysicalSiriFormKeepsSubmissionDisabled",
-            "testXcodeDefaultsFollowDestinationAndRestoreWithoutRunOverride",
-            "testEmptyAutomationAndPickerCancellationRemainReadOnly",
-            "testOwnershipResetConfirmationCanBeCancelledWithoutChangingTheReservation",
-            "testPreparationPickersUseStableIdentifiers",
-        )
-    ] + [UI_TARGET + "AutomationDependencyControlsUITests"],
 }
 # Feature ownership follows the view composition and store consumers. Shared
 # lifecycle, navigation, persistence and unknown app files retain the full baseline.
 UI_VIEW_GROUPS = {
-    **{"Views/" + name + ".swift": {"intent-lab"} for name in (
-        "IntentLabView", "IntentLabHelp", "IntentLabSetupInstallerView",
-        "ScenarioEditorView", "ScenarioGuidedCheckEditor", "ScenarioReportView",
-        "ScenarioCollectionView", "ScenarioReusableChecksView", "AppleTestConnectionView",
-    )},
     **{"Views/" + name + ".swift": {"suite-editor", "runs"} for name in (
         "SuiteCasesView", "SuiteEditorView", "SuiteEditorChrome", "SuiteRunControls",
         "FieldAssertionsEditor", "EvaluationSchemaEditor",
     )},
     **{"Views/" + name + ".swift": {"traces"} for name in (
         "WorkflowTraceView", "WorkflowSpanDetail", "WorkspaceTracesView",
-    )},
-    **{"Views/" + name + ".swift": {"automation"} for name in (
-        "AppAutomationView", "AppAutomationCapsuleView", "AppAutomationDateInput",
-        "AutomationSourceRecipeControls", "AutomationSiriControls",
-        "AutomationSiriSearchControls", "AutomationRecoveryControls",
-        "AutomationFirstRunControls", "AutomationPairedFeatureControls",
-        "AutomationSavedSearchesSection", "AutomationSourcePreparationControls",
-        "NativeAutomationEvidenceView",
     )},
 }
 # These views share feature-specific state, rather than the whole workspace.
@@ -129,21 +99,15 @@ UI_APP_GROUPS = {
     "Models/EvaluationTranscriptTrace.swift": {"traces", "review"},
     "Models/EvaluationRunAnalysis.swift": {"runs", "traces"},
     "Models/DevelopmentWorkflowModels.swift": {"runs"},
-    **{"Models/" + name + ".swift": {"intent-lab"} for name in (
-        "ScenarioModels", "ScenarioExecutionModels", "ScenarioCollectionModels",
-    )},
     **{path: {"review"} for path in (
         "Models/EvaluationReviewModels.swift", "Models/EvaluationJudgeCalibration.swift",
         "Stores/EvaluationStore+Review.swift", "Stores/EvaluationReviewDraftStore.swift",
         "Services/EvaluationReviewWorkflow.swift",
     )},
     "Stores/DeveloperRunnerStore.swift": {"runs", "suite-editor"},
-    "Services/ScenarioCoordinator.swift": {"intent-lab"},
-    "Services/ScenarioPersistence.swift": {"intent-lab"},
     "Services/MetricScorer.swift": {"runs"},
     "MCP/Installer/MCPSettingsController.swift": {"settings"},
     "Services/TelemetryController.swift": {"settings"},
-    "Services/IntentLabFeatureGate.swift": {"intent-lab"},
     "Views/Components/RunToolbarProgress.swift": {"runs"},
     "Views/Components/SolidTimelineBar.swift": {"traces"},
     # Batch workspace has native tests but no dedicated authored UI test class.
@@ -160,9 +124,6 @@ UI_FEATURE_TESTS = {
         "testCaseSelectionSurvivesSetupNavigation", "testSameNamedCasesHaveDistinctAccessibilityLabels",
         "testCaseSearchKeepsEditorAndScoringSelectionAligned",
     )],
-    "intent-lab": UI_BASELINE["intent-lab"] + [UI_TARGET + "FoundationEvalsUITests/" + method for method in (
-        "testIntentLabResultsAndRunControlsFitMinimumWindow", "testDuplicateParameterDraftsRemoveOneAtATime",
-    )],
     "settings": [UI_TARGET + "WorkspacePolishUITests/testSettingsTabsKeepTheirPrimaryControlsAccessible"],
     "imports": [UI_TARGET + "WorkspacePolishUITests/testImportIssuesKeepCancelAndImportVisible"],
     "review": [UI_TARGET + "EvaluationReviewUITests"],
@@ -175,20 +136,14 @@ def app_ui_groups(relative):
         return UI_APP_GROUPS[relative]
     if relative == "Services/EvaluationRunner.swift" or relative.startswith("Services/EvaluationRunner+"):
         return {"runs"}
-    if relative.startswith(("Stores/AppAutomation", "Stores/AutomationNative")) or relative in {
-        "Stores/AutomationCommandHistory.swift", "Stores/AutomationCapsuleExportSelection.swift",
-    }:
-        return {"automation"}
     # Service-only changes still receive native unit tests, without unrelated UI.
     if relative.startswith(("Services/", "MCP/", "Support/Telemetry")):
         return set()
     return None
 
 UI_FEATURE_CLASSES = {
-    "intent-lab": {"IntentLabArrayEntryUITests", "IntentLabFeatureGateUITests"},
     "runs": {"FoundationEvalsRunLifecycleUITests"},
     "traces": {"WorkflowTraceUITests"},
-    "automation": {"AppAutomationUITests"},
     "review": {"EvaluationReviewUITests"},
 }
 NATIVE_UI_HELPERS = {
@@ -199,56 +154,13 @@ NATIVE_UI_HELPERS = {
 
 
 # Include shared dependencies, not just the file named after a suite.
-PHYSICAL_SCENARIO_SUITES = {
-    "ScenarioPhysicalLeaseTests",
-    "ScenarioPhysicalFailureTests",
-}
-SCENARIO_EXECUTION_SUITES = {"ScenarioContractsTests"} | PHYSICAL_SCENARIO_SUITES
 SWIFT_DEPENDENCIES = {
-    "Services/IntentLabFeatureGate.swift": {"IntentLabFeatureGateTests"},
     "MCP/Installer/CodexMCPInstaller.swift": {"CodexMCPInstallerTests"},
     "Models/EvaluationFieldAssertion.swift": {"EvaluationFieldAssertionTests"},
     "Models/EvaluationScoringTypes.swift": {
         "EvaluationFieldAssertionTests",
         "MetricScorerTests",
     },
-    "Models/ScenarioModels.swift": {
-        "ScenarioContractsTests", "ScenarioActionParityTests", "ScenarioV3HarnessBridgeTests",
-        *PHYSICAL_SCENARIO_SUITES, "ScenarioAutomationEvidenceTests", "XcodeBundleLayoutTests",
-    },
-    "Models/ScenarioExecutionModels.swift": {
-        "ScenarioExecutionPlanTests", "ScenarioExecutionComparisonTests",
-    },
-    "Models/ScenarioCollectionModels.swift": {"ScenarioCollectionTests"},
-    "Services/ScenarioComparison.swift": {"ScenarioContractsTests"},
-    "Services/ScenarioExecutionComparison.swift": {"ScenarioExecutionComparisonTests"},
-    "Services/ScenarioExecutionRecovery.swift": {"ScenarioContractsTests"},
-    "Services/ScenarioExpectationAuthoring.swift": {
-        "ScenarioExpectationAuthoringTests", "ScenarioV3HarnessBridgeTests",
-    },
-    "Services/ScenarioCollectionService.swift": {"ScenarioCollectionTests"},
-    "Services/ScenarioCollectionStore.swift": {"ScenarioCollectionTests"},
-    "Services/IntentEvidenceBundle.swift": {"IntentEvidenceBundleTests"},
-    "Services/IntentEvidenceQualification.swift": {
-        "IntentEvidenceBundleTests", "ScenarioActionParityTests",
-    },
-    "Services/ScenarioPersistence.swift": SCENARIO_EXECUTION_SUITES | {"ScenarioAutomationEvidenceTests"},
-    "Services/ScenarioValidation.swift": {
-        "ScenarioContractsTests", "ScenarioNoMutationTests", "ScenarioV3HarnessBridgeTests",
-    },
-    "Services/IntentLabProjectInstaller.swift": {"IntentLabProjectInstallerTests"},
-    "Services/OpenStepProjectDocument.swift": {"IntentLabProjectInstallerTests"},
-    "Services/XCTestEvidenceImporter.swift": {
-        "ScenarioContractsTests", "ScenarioV3HarnessBridgeTests", *PHYSICAL_SCENARIO_SUITES,
-    },
-    "Services/XCTestRunInvocationTransport.swift": SCENARIO_EXECUTION_SUITES,
-    "Services/XcodeConnectionDiscovery.swift": SCENARIO_EXECUTION_SUITES,
-    "Services/XcodeTestExecutor.swift": {
-        "ScenarioContractsTests", "ExecutorSimplificationTests", "XcodeBundleLayoutTests", "XcodeSyntheticReadinessTests", *PHYSICAL_SCENARIO_SUITES,
-    },
-    "Services/ScenarioPersistence+AutomationEvidence.swift": {"ScenarioAutomationEvidenceTests"},
-    "Services/ScenarioPhysicalRunnerLease.swift": PHYSICAL_SCENARIO_SUITES,
-    "Services/ScenarioRunnerReceiptImporter.swift": PHYSICAL_SCENARIO_SUITES,
     "Services/EvaluationFieldAssertions.swift": {"EvaluationFieldAssertionTests"},
     "Services/MetricScorer.swift": {"MetricScorerTests"},
     "Models/WorkflowTimelineInterval.swift": {
@@ -263,7 +175,7 @@ SWIFT_DEPENDENCIES = {
 SWIFT_SUITES = set().union(*SWIFT_DEPENDENCIES.values())
 MACOS_TESTS = {
     "script.tests.test_update_signature",
-    "script.tests.test_fixture_shortcut_routing",
+    "script.tests.test_foundation_evals_cli",
 }
 RELEASE_VALIDATION = {
     "script.tests.test_release_validation",
@@ -271,10 +183,11 @@ RELEASE_VALIDATION = {
     "script.tests.test_release_dispatch",
 }
 PYTHON_DEPENDENCIES = {
+    "script/verify_mcp_app_control.py": {"script.tests.test_verify_mcp_app_control"},
+    "script/foundation-evals": {"script.tests.test_foundation_evals_cli"},
     "script/upload_posthog_symbols.sh": {"script.tests.test_upload_posthog_symbols"},
     "script/update_homebrew.py": {"script.tests.test_update_homebrew"},
     ".github/workflows/update-homebrew.yml": {"script.tests.test_update_homebrew"},
-    "script/check_fixture_shortcut_metadata.py": {"script.tests.test_fixture_shortcut_metadata"},
     "script/release_pr.py": {"script.tests.test_release_pr"},
     "script/release_notes.py": {"script.tests.test_release_notes"},
     ".github/workflows/pr-metadata.yml": {"script.tests.test_release_notes", "script.tests.test_ci_workflow"},
@@ -286,10 +199,7 @@ PYTHON_DEPENDENCIES = {
     "script/release.sh": RELEASE_VALIDATION,
     "script/verify_installer.sh": RELEASE_VALIDATION,
     "script/ci_core_scheme.py": {"script.tests.test_ci_core_scheme"},
-    "script/automation_e2e.py": {"script.tests.test_automation_e2e", "script.tests.test_ci_automation_build"},
-    "script/automation_mac_e2e.py": {"script.tests.test_automation_mac_e2e"},
     "script/ci_macos_signing.py": {"script.tests.test_ci_macos_signing"},
-    "script/ci_automation_build.py": {"script.tests.test_ci_automation_build", "script.tests.test_automation_e2e"},
     **{path: {module} for path, module in NATIVE_UI_HELPERS.items()},
     "release-please-config.json": {
         "script.tests.test_release_notes",
@@ -376,19 +286,11 @@ def package_test_suites(path, root):
 
 
 def package_ui_groups(path):
-    if path.startswith((
-        "Sources/IntentsAutomationCore/", "Sources/IntentsAutomationTool/",
-        "Integration/AutomationHost/", "Tools/IntentsAutomationApplicationProbe/",
-        "examples/AutomationFixture/",
-    )) or path == "Integration/AutomationCLIResources.swift":
-        return {"automation"}
-    if path.startswith("Sources/IntentLabContracts/"):
-        return {"intent-lab", "automation"}
-    if path.startswith(("Sources/IntentLabTesting/", "Sources/IntentLabCoreTesting/", "Sources/IntentLabSiriBridge/")):
-        return {"intent-lab"}
+    if path.startswith("Sources/MacIntentTesting/"):
+        return set()
     if path.startswith("Sources/FoundationEvalsDeveloper/"):
         return {"suite-editor", "runs"}
-    if path.startswith(("Sources/IntentsEvidenceCLI/", "Sources/ProductionEvalsCLI/")):
+    if path.startswith("Sources/ProductionEvalsCLI/"):
         return set()
     return None
 
@@ -486,7 +388,7 @@ def full_coverage(reason, root=ROOT, extra_classes=(), extra_groups=()):
         "full_coverage": True,
         "native": True,
         "ui": True,
-        "input_conversion": True,
+        "input_conversion": False,
         "sdk_consumer": True,
         "swift_suites": ["*"],
         "python_tests": sorted(python_test_inventory(root)),
@@ -515,18 +417,15 @@ def coverage_plan(paths, root=ROOT):
     swift, python, macos, reasons = set(), set(), set(), set()
     for path in paths:
         sdk_consumer |= path in SDK_CONSUMER_PATHS or path.startswith(SDK_CONSUMER_PREFIXES) or production_package_runtime(path)
-        input_conversion |= path.startswith((
-            "Sources/IntentsAutomationCore/", "Integration/AutomationHost/",
-        )) or path in {
-            "Tests/IntentsAutomationCoreTests/AutomationMacInputProbeFixtureTests.swift",
-        }
+
         if path in FULL_COVERAGE_PATHS:
             return full_coverage(
                 f"Full coverage: {path} changes CI, dependencies, or the release candidate.",
                 root, extra_classes, affected_groups,
             )
         if path in PYTHON_DEPENDENCIES:
-            python.update(PYTHON_DEPENDENCIES[path])
+            python.update(PYTHON_DEPENDENCIES[path] - MACOS_TESTS)
+            macos.update(PYTHON_DEPENDENCIES[path] & MACOS_TESTS)
             if path in {"script/release.sh", "script/verify_installer.sh"}:
                 macos.update(MACOS_TESTS)
             if path == "script/ci_core_scheme.py":
@@ -574,27 +473,22 @@ def coverage_plan(paths, root=ROOT):
         elif path.startswith("Tests/"):
             swift.update(package_test_suites(path, root))
             reasons.add("Package test changes select declared suites; helper and fixture changes select the full package.")
+        elif path.startswith("Sources/MacIntentTestingCLI/"):
+            swift.add("NativeTestsCLITests")
+            reasons.add("Native intent CLI changes build the command and run its parser/manifest contracts.")
         elif package_ui_groups(path) is not None:
             groups = package_ui_groups(path)
             swift.add("*")
+            if path.startswith("Sources/MacIntentTesting/"):
+                native = True
             if groups:
                 native = ui = True
                 ui_groups.update(groups)
-            if path.startswith("Sources/IntentLabContracts/"):
-                input_conversion = True
-            if path == "Integration/AutomationCLIResources.swift":
-                input_conversion = True
             reasons.add("Package source changes run portable contracts and only the owning app feature's UI.")
         elif path.startswith(APP):
             native = True
             relative = path.removeprefix(APP)
             swift.update(SWIFT_DEPENDENCIES.get(relative, set()))
-            if relative.startswith(("Stores/AppAutomation", "Stores/AutomationNative")) or relative in {
-                "Stores/AutomationCommandHistory.swift", "Stores/AutomationCapsuleExportSelection.swift",
-            }:
-                # These stores belong to IntentsAutomationNativeUI, not the CLI
-                # exercised by the input-conversion canary.
-                swift.add("*")
             groups = app_ui_groups(relative)
             if groups is None:
                 ui = ui_fallback = True

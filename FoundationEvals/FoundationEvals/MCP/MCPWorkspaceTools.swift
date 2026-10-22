@@ -40,7 +40,7 @@ enum MCPWorkspaceTools {
         "Show a workspace section and optionally a batch pane or saved run.",
         [
           "section": s.choices([
-            "overview", "intentLab", "evaluations", "batchRuns", "traces", "suite", "run",
+            "overview", "appIntentTesting", "evaluations", "batchRuns", "traces", "suite", "run",
           ]), "pane": s.choices(["datasets", "jobs", "review", "reports", "workers"]),
           "jobID": s.uuid, "runID": s.uuid,
         ], required: ["section"]),

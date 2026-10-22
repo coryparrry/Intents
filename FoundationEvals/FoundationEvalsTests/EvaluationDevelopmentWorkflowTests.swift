@@ -2466,7 +2466,7 @@ struct EvaluationDevelopmentWorkflowTests {
         store.draftSuite.releasePolicy.required = true
         #expect(store.saveSuite())
         let original = store.selectedSuiteID
-        let second = try store.createSuite(name: "Automation target")
+        let second = try store.createSuite(name: "Evaluation target")
         try store.switchSuite(id: original)
         let authority = MCPStoreAuthority.make(store: store)
         let catalog = await authority.call(.listProjects).structuredContent

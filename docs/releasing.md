@@ -115,7 +115,7 @@ The reusable **Build DMG and publish release** workflow also has a manual recove
 
 Published releases are rejected and existing tags are never moved. Uploads do not overwrite existing assets. A partial upload can leave assets on the draft; inspect and remove only those failed-attempt assets deliberately before retrying. **Release verification** remains available to recheck an existing published installer without changing it.
 
-Hosted CI uses GitHub's `xcode-27` macOS 27 runner. It runs selected core tests and, for UI-impacting changes, builds the app and executes the selected UI regressions from the retained test bundles. Prepared simulator and signed Mac acceptance are manual qualifications outside GitHub CI. The SDK consumer gate independently builds fresh external projects against the installer's exact published package revision.
+Hosted CI uses GitHub's `xcode-27` macOS 27 runner. It runs selected core tests and, for UI-impacting changes, builds the app and executes the selected UI regressions from the retained test bundles. Native App Intent runtime qualification remains manual and requires the setup in [Mac App Intent tests](wiki/Mac-App-Intent-tests.md). Passing source CI does not establish a successful invocation.
 
 Assess a release using the executed jobs and retained evidence for its immutable source commit. Selected UI fixtures do not establish live model generation, live simulator/Mac automation, physical-device behavior, or Siri routing; those need their own native acceptance evidence.
 

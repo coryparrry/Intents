@@ -2,15 +2,15 @@
 
 > Test Apple Foundation Models before you ship: a free, open-source native Mac workbench for repeatable cases, responses, traces, and saved comparisons.
 
-Made by Cory Parry; MIT licensed. Intents was previously Foundation Evals. As checked 9 October 2026, the released download is Intents v1.4.0 (4 October 2026), including Review, Batch runs, and Intent Lab (beta). Development source may include unshipped changes.
+Made by Cory Parry; MIT licensed. Intents was previously Foundation Evals. As checked 9 October 2026, the released download is Intents v1.4.0 (4 October 2026), including Review and Batch runs. Development source may include unshipped changes.
 
-macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Xcode 27 is needed for source builds and Intent Lab, not ordinary suites. Remote providers and judges use their configured services. Siri uses recognized text on a paired physical iPhone, not microphone audio. Direct App Intent success does not prove Siri routing or observed app effects. The released app uses authenticated local MCP. Website examples are historical browser recreations, not model benchmarks.
+macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Xcode 27 is needed for source builds and Mac App Intent tests, not ordinary suites. Remote providers and judges use their configured services. The released app uses authenticated local MCP. Website examples are historical browser recreations, not model benchmarks.
 
 ## Product and first use
 
 - [Product overview](https://intents-workbench.coryparry.chatgpt.site/index.html.md): Release/source distinction, requirements, limitations, and historical example provenance.
 - [Getting started](https://intents-workbench.coryparry.chatgpt.site/getting-started.html.md): Choose a build, create a small evaluation, and inspect evidence.
-- [Interactive showcase](https://intents-workbench.coryparry.chatgpt.site/): Browser recreations of a 17 September run and historical PR54 fixture; predates Review and Batch runs.
+- [Interactive showcase](https://intents-workbench.coryparry.chatgpt.site/): Browser recreations of a recorded 17 September evaluation and a source-only Mac App Intent JSON example.
 
 ## Released download
 
@@ -24,7 +24,7 @@ macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple
 - [User guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Home.md): Workflows and evidence boundaries.
 - [Review guide](https://github.com/coryparrry/Intents/blob/main/docs/EVAL_REVIEW_GUIDE.md): Human verdicts, regression cases, and held-out judge checks.
 - [Batch guide](https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md): Frozen datasets, resumable jobs, and release reports.
-- [Intent Lab](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Intent-Lab.md): App-owned support, signing, and distinct direct/Siri evidence.
+- [Mac App Intent tests (development source)](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Mac-App-Intent-tests.md): Best-effort compiled metadata catalog, explicit JSON inputs and expected results, and a generated AppIntentsTesting runner. Requires a normally installed Mac app, Xcode 27+, macOS 27+, and matching signing teams. Live reliability remains unqualified; no Siri verification.
 - [Swift integration](https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md): Registered feature closures on paired apps.
 - [MCP guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Codex-and-MCP.md): Current authenticated local integration.
 - [MIT licence](https://github.com/coryparrry/Intents/blob/main/LICENSE): Source terms.

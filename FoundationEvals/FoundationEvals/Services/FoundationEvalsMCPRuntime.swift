@@ -19,7 +19,6 @@ struct MCPRuntimeServerConfiguration: Sendable {
 final class FoundationEvalsMCPRuntime {
     typealias ServerFactory = @MainActor @Sendable (MCPRuntimeServerConfiguration) -> any MCPServerLifecycle
 
-    private let automationStore: AppAutomationStore?
     private let store: EvaluationStore
     private let control: EvaluationAppControl
     private let serverFactory: ServerFactory
@@ -31,7 +30,6 @@ final class FoundationEvalsMCPRuntime {
     init(
         store: EvaluationStore,
         control: EvaluationAppControl? = nil,
-        automationStore: AppAutomationStore? = nil,
         serverFactory: @escaping ServerFactory = { configuration in
             MCPServer(
                 port: configuration.port,
@@ -44,9 +42,7 @@ final class FoundationEvalsMCPRuntime {
     ) {
         self.store = store
         self.control = control ?? EvaluationAppControl(store: store)
-        self.automationStore = automationStore
         self.serverFactory = serverFactory
-        if let automationStore { self.control.bindAutomationExecution(automationStore) }
     }
 
     func start(_ configuration: CodexMCPConfiguration) async throws {
@@ -56,7 +52,7 @@ final class FoundationEvalsMCPRuntime {
         serverGeneration = generation
         let server = serverFactory(MCPRuntimeServerConfiguration(
             port: configuration.port,
-            authority: MCPStoreAuthority.make(store: store, control: control, automationStore: automationStore),
+            authority: MCPStoreAuthority.make(store: store, control: control),
             credential: configuration.credential,
             onRequest: { [weak self] date in
                 await self?.settingsController?.recordConnection(at: date)
@@ -95,9 +91,8 @@ final class FoundationEvalsMCPRuntime {
         store.beginClosing()
         control.mcp.beginClosing()
         await stop()
-        await automationStore?.closeAndWait()
         await control.runners.closeAndWait()
-        await control.scenarios.closeAndWait()
+        await control.appIntentTesting.closeAndWait()
         await control.production.closeAndWait()
         await store.closeAndWait()
         await control.mcp.closeAndWait()

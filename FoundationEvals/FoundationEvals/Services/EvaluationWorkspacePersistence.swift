@@ -1,6 +1,6 @@
 import CryptoKit
 import Foundation
-import IntentsAutomationCore
+import Darwin
 
 struct EvaluationWorkspaceBootstrap {
     var catalog: EvaluationWorkspaceCatalog
@@ -400,33 +400,69 @@ enum EvaluationRepositoryInspector {
     private static func runGit(
         _ operation: GitOperation, rootPath: String, executable: URL, timeout: Duration
     ) async throws -> String {
-        // Repository provenance must not hold a run or app shutdown indefinitely.
-        // Avoid a repository's optional fsmonitor process and retain bounded logs.
-        let command = AutomationOwnedCommand()
-        let result: AutomationOwnedCommand.Result
-        do {
-            result = try await command.run(
-                executable: try AutomationPath.canonical(executable),
-                arguments: ["--no-pager", "-c", "core.fsmonitor=false", "-C", rootPath] + operation.arguments,
-                directory: URL(filePath: rootPath),
-                environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": NSHomeDirectory(),
-                              "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"],
-                timeout: timeout
-            )
-        } catch AutomationRPCError.timedOut {
-            let phase = await command.retainedLogs().failurePhase?.rawValue ?? "beforeExecution"
-            throw EvaluationRepositoryInspectionError.git("Git \(operation.rawValue) timedOut during \(phase).")
+        try Task.checkCancellation()
+        let directory = FileManager.default.temporaryDirectory.appending(path: "EvaluationGit-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stdoutURL = directory.appending(path: "stdout")
+        let stderrURL = directory.appending(path: "stderr")
+        FileManager.default.createFile(atPath: stdoutURL.path, contents: nil)
+        FileManager.default.createFile(atPath: stderrURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: stdoutURL)
+        let errors = try FileHandle(forWritingTo: stderrURL)
+        defer { try? output.close(); try? errors.close() }
+        let process = Process()
+        process.executableURL = executable.resolvingSymlinksInPath()
+        process.arguments = ["--no-pager", "-c", "core.fsmonitor=false", "-C", rootPath] + operation.arguments
+        process.currentDirectoryURL = URL(filePath: rootPath)
+        process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": NSHomeDirectory(),
+                               "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = errors
+        try process.run()
+        // Always reap the owned child, including cancellation and oversized output.
+        defer {
+            if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
         }
-        guard result.directChildReaped, result.pipesDrained, result.callbacksDrained,
-              !result.logsTruncated else {
-            throw EvaluationRepositoryInspectionError.git("Git inspection did not return complete bounded output.")
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        let outputLimit = 1_048_576
+        func checkOutputBounds() throws {
+            for url in [stdoutURL, stderrURL] {
+                let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                guard let size = attributes[.size] as? NSNumber, size.int64Value <= Int64(outputLimit) else {
+                    throw EvaluationRepositoryInspectionError.git("Git inspection exceeded its output limit.")
+                }
+            }
         }
-        guard result.exitStatus == 0 else {
-            let message = String(decoding: result.stderr.prefix(8_192), as: UTF8.self)
+        func readBounded(_ url: URL) throws -> Data {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            let data = try handle.read(upToCount: outputLimit + 1) ?? Data()
+            guard data.count <= outputLimit else {
+                throw EvaluationRepositoryInspectionError.git("Git inspection exceeded its output limit.")
+            }
+            return data
+        }
+        while process.isRunning {
+            try Task.checkCancellation()
+            try checkOutputBounds()
+            guard ContinuousClock.now < deadline else {
+                throw EvaluationRepositoryInspectionError.git("Git \(operation.rawValue) timedOut during execution.")
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try Task.checkCancellation()
+        try checkOutputBounds()
+        guard process.terminationStatus == 0 else {
+            let data = try readBounded(stderrURL)
+            let message = String(decoding: data.prefix(8_192), as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             throw EvaluationRepositoryInspectionError.git(message.isEmpty ? "Git inspection failed." : message)
         }
-        return String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .newlines)
+        return String(decoding: try readBounded(stdoutURL), as: UTF8.self)
+            .trimmingCharacters(in: .newlines)
     }
 }
 

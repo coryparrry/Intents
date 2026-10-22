@@ -16,11 +16,7 @@ except ModuleNotFoundError:
     from script.ci_ui_xctestrun import prepare_ui_xctestrun
     from script.ci_test_policy import NATIVE_MANUAL_METHODS
 
-# Retained for manual reproduction, excluded from CI until metadata admission works.
-CI_EXCLUDED_UI_TESTS = {
-    "FoundationEvalsUITests/MacPreparationUITests":
-        "App Intents metadata admission fails after Mac app launch (error 400).",
-}
+CI_EXCLUDED_UI_TESTS = {}
 
 
 def test_command(products, selection, result, iterations=1):
@@ -31,7 +27,7 @@ def test_command(products, selection, result, iterations=1):
         raise ValueError("Invalid native test identifier")
     if any(test == excluded or test.startswith(excluded + "/")
            for test in selection for excluded in CI_EXCLUDED_UI_TESTS):
-        raise ValueError("Selected UI suite is excluded from CI: MacPreparationUITests")
+        raise ValueError("Selected UI suite is excluded from CI")
     if type(iterations) is not int or iterations < 1:
         raise ValueError("Test iterations must be positive")
     ui = any(test.startswith("FoundationEvalsUITests") for test in selection)

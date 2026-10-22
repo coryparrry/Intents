@@ -15,11 +15,6 @@ SETTINGS_TESTS = {
     "TelemetryPayloadFilterTests", "TelemetryDiagnosticsTests",
 }
 DEPENDENCIES = {
-    **{f"Views/{name}.swift": {"AppAutomationSelectionViewTests"} for name in (
-        "AppAutomationView", "AutomationFirstRunControls", "AutomationSourcePreparationControls",
-        "AutomationSourceRecipeControls",
-    )},
-    "Views/ScenarioEditorView.swift": {"WorkspacePresentationTests", "IntentLabArrayInputTests"},
     "Views/MCPSettingsView.swift": {"MCPDebugLaunchConfigurationTests"},
     "Views/JudgeConnectionsSettingsView.swift": {"JudgeCredentialBindingTests"},
     "Views/TelemetrySettingsView.swift": SETTINGS_TESTS - {

@@ -18,7 +18,7 @@ The app-format suite supports same-model rubric, exact/contains/review scoring,
 conversations and history, structured output/field checks, fixture and strict
 loopback HTTP tools, session profiles, streaming, prewarming and transcript
 capture. Use returned schemas and limits. Remote providers, external judge,
-Intent Lab and companion-device execution are outside this plugin's scope.
+Native App Intent invocation and companion-device execution are outside this plugin's scope.
 Legacy flat suites retain their existing per-case scoring semantics.
 
 Start `eval_start_run`, inspect `eval_get_run`, and cancel if requested. Use real

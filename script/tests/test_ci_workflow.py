@@ -2,6 +2,7 @@
 
 import os
 import json
+import plistlib
 from pathlib import Path
 import re
 import subprocess
@@ -32,7 +33,7 @@ class WorkflowContractTests(unittest.TestCase):
         # than duplicating its shard names in this job-count assertion.
         from script import ci_routes
         plan = ci_routes.coverage(None)
-        for selection in ("native", "ui", "input_conversion", "sdk_consumer"):
+        for selection in ("native", "ui", "sdk_consumer"):
             self.assertTrue(plan[selection], selection)
         self.assertIn("matrix:\n        include: ${{ fromJSON(needs.changes.outputs.ui_matrix) }}", job("ui-tests"))
         self.assertEqual(len(plan["ui_matrix"]), 3)
@@ -109,48 +110,6 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertIn("contents: read", permissions)
                 self.assertNotIn("secrets:", caller)
 
-    def test_external_consumer_requires_exact_remote_revision_and_both_products(self):
-        script = job("swift-tests").split("      - name: Verify external consumer build receipt\n", 1)[1].split("        run: |\n", 1)[1].split("      - name:", 1)[0]
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "receipt.json"
-            environment = {
-                **os.environ,
-                "INTENT_LAB_CONSUMER_BUILD_RECEIPT": str(path),
-                "INTENT_LAB_CONSUMER_PACKAGE_URL": "https://github.com/coryparrry/Intents.git",
-                "INTENT_LAB_CONSUMER_REVISION": "a" * 40,
-            }
-            receipt = {
-                "schemaVersion": 1,
-                "packageURL": environment["INTENT_LAB_CONSUMER_PACKAGE_URL"],
-                "revision": environment["INTENT_LAB_CONSUMER_REVISION"],
-                "check": "generatedMacUITestTargetBuildsWithXcode",
-                "signing": "disabled",
-                "runtime": "not-executed",
-                "products": ["IntentLabTesting", "FoundationEvalsDeveloper"],
-            }
-            def status():
-                return subprocess.run(["bash", "-e", "-c", textwrap.dedent(script)], env=environment, capture_output=True).returncode
-            self.assertNotEqual(status(), 0, "A skipped test must not satisfy the consumer gate")
-            path.write_text(json.dumps(receipt))
-            self.assertEqual(status(), 0)
-            for field, invalid in (
-                ("revision", "b" * 40), ("packageURL", "/tmp/local-package"),
-                ("products", ["IntentLabTesting"]), ("runtime", "executed"),
-            ):
-                with self.subTest(field=field):
-                    path.write_text(json.dumps({**receipt, field: invalid}))
-                    self.assertNotEqual(status(), 0)
-
-    def test_external_consumer_reads_the_actual_installer_pin(self):
-        script = job("swift-tests").split("      - name: Read immutable installer package revision\n", 1)[1].split("        run: |\n", 1)[1].split("      - name:", 1)[0]
-        with tempfile.TemporaryDirectory() as directory:
-            environment_file = Path(directory) / "environment"
-            subprocess.run(["bash", "-e", "-c", textwrap.dedent(script)],
-                           cwd=Path(__file__).resolve().parents[2], check=True,
-                           env={**os.environ, "GITHUB_ENV": str(environment_file), "RUNNER_TEMP": directory})
-            values = dict(line.split("=", 1) for line in environment_file.read_text().splitlines())
-            self.assertRegex(values["INTENT_LAB_CONSUMER_REVISION"], r"^[0-9a-f]{40}$")
-            self.assertEqual(values["INTENT_LAB_CONSUMER_BUILD_RECEIPT"], str(Path(directory) / "intentlab-consumer/receipt.json"))
 
     def test_regression_worker_survives_skipped_native_build_and_avoids_empty_mac_allocation(self):
         worker = job("swift-tests")
@@ -163,19 +122,6 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("&& needs.changes.outputs.regression", header.split("    runs-on:", 1)[0])
         self.assertIn("needs.changes.outputs.native_tests != '[]'", worker.split("      - name: Run core tests without rebuilding", 1)[1].split("      - name:", 1)[0])
 
-    def test_shared_swift_build_qualifies_fresh_consumers_once_with_scoped_opt_in(self):
-        worker = job("swift-tests")
-        step = worker.split("      - name: Run selected Swift suites and fresh SDK consumers once\n", 1)[1].split("      - name:", 1)[0]
-        self.assertEqual(worker.count("python3 script/ci_run_tests.py swift"), 1)
-        self.assertIn("--scratch-path \"$RUNNER_TEMP/portable-build\"", step)
-        self.assertIn('if [[ "$SDK_SELECTED" == true ]]; then args+=(--include-installer); fi', step)
-        self.assertIn("INTENT_LAB_RUN_MAC_INSTALLER_BUILD_TEST: ${{ needs.changes.outputs.sdk_consumer == 'true' && '1' || '0' }}", step)
-        self.assertEqual(worker.count("INTENT_LAB_RUN_MAC_INSTALLER_BUILD_TEST"), 1)
-        self.assertNotIn("INTENT_LAB_RUN_MAC_INSTALLER_BUILD_TEST", worker.split("    steps:", 1)[0])
-        self.assertNotIn("intentlab-consumer-build", worker)
-        self.assertNotIn("path: ${{ runner.temp }}/intentlab-consumer", worker.split("      - name: Run selected Swift suites", 1)[0])
-        self.assertIn("needs.changes.outputs.native_tests != '[]'", worker.split("      - name: Run core tests without rebuilding", 1)[1].split("      - name:", 1)[0])
-        self.assertIn('python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products"', worker)
 
     def test_case_concurrency_uses_the_built_scheme_without_runtime_override(self):
         worker = job("swift-tests")
@@ -188,10 +134,8 @@ class WorkflowContractTests(unittest.TestCase):
         worker = job("swift-tests")
         self.assertNotIn("continue-on-error:", worker)
         for name in (
-            "Install consumer project generator", "Read immutable installer package revision",
             "Run selected macOS script tests", "Identify Swift toolchain",
-            "Restore reusable Swift build", "Run selected Swift suites and fresh SDK consumers once",
-            "Verify external consumer build receipt", "Run live input setter/readback canary",
+            "Restore reusable Swift build", "Run selected Swift suites",
         ):
             with self.subTest(step=name):
                 condition = re.search(re.escape(name) + r"\n        if: (.+)", worker)[1]
@@ -206,26 +150,6 @@ class WorkflowContractTests(unittest.TestCase):
                                 or "needs.changes.outputs.macos_tests" in condition
                                 or "needs.changes.outputs.input_conversion" in condition)
 
-    def test_input_canary_reuses_portable_build_and_requires_live_execution_evidence(self):
-        worker = job("swift-tests")
-        step = worker.split("      - name: Run live input setter/readback canary\n", 1)[1].split("      - name:", 1)[0]
-        self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_LIVE: '1'", step)
-        self.assertIn("INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT: ${{ runner.temp }}/input-conversion", step)
-        self.assertIn('--scratch-path "$RUNNER_TEMP/portable-build"', step)
-        self.assertIn("--filter 'AutomationMacInputProbeFixtureTests/testAuthoredInputProbeFixtureWhenRequested'", step)
-        for prerequisite in ("toolchain", "swift-cache"):
-            self.assertIn("steps." + prerequisite + ".outcome == 'success'", step)
-        self.assertNotIn("input-conversion-build", WORKFLOW)
-        validation = textwrap.dedent(step.split("python3 - <<'PY'\n", 1)[1].split("          PY", 1)[0])
-        with tempfile.TemporaryDirectory() as directory:
-            environment = {**os.environ, "INTENTS_MAC_INPUT_PROBE_FIXTURE_ROOT": directory}
-            passed = "Test Case '-[Fixture testAuthoredInputProbeFixtureWhenRequested]' passed\n"
-            executed = "Authored String setter/readback calibration only;\n"
-            for log, expected in ((passed + executed, 0), (passed, 1), (executed, 1), ("skipped", 1)):
-                with self.subTest(log=log):
-                    (Path(directory) / "test.log").write_text(log)
-                    result = subprocess.run(["python3", "-c", validation], env=environment, capture_output=True)
-                    self.assertEqual(result.returncode, expected, result.stderr.decode())
 
     def test_swift_cache_identity_tracks_toolchain_and_package_inputs(self):
         worker = job("swift-tests")
@@ -241,22 +165,6 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertIn("hashFiles('Package.swift', 'Package.resolved', '**/Package.resolved')", line)
         self.assertIn("${{ github.sha }}", cache)
 
-    def test_continuation_respects_setup_and_keeps_receipt_evidence_after_test_failure(self):
-        worker = job("swift-tests")
-        conditions = {
-            name: re.search(re.escape(name) + r"\n        if: (.+)", worker)[1]
-            for name in ("Restore reusable Swift build", "Run selected Swift suites and fresh SDK consumers once",
-                         "Verify external consumer build receipt")
-        }
-        self.assertIn("steps.toolchain.outcome == 'success'", conditions["Restore reusable Swift build"])
-        run = conditions["Run selected Swift suites and fresh SDK consumers once"]
-        for prerequisite in ("toolchain", "swift-cache", "consumer-generator", "consumer-pin"):
-            self.assertIn("steps." + prerequisite + ".outcome == 'success'", run)
-        self.assertIn("needs.changes.outputs.sdk_consumer != 'true' ||", run)
-        receipt = conditions["Verify external consumer build receipt"]
-        self.assertIn("steps.consumer-pin.outcome == 'success'", receipt)
-        self.assertIn("steps.swift-regressions.outcome != 'skipped'", receipt)
-        self.assertNotIn("steps.swift-regressions.outcome == 'success'", receipt)
 
     def test_ui_consumers_only_depend_on_the_shared_build(self):
         for name in ("ui-tests", "picker-stability"):
@@ -269,14 +177,6 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("--iterations", job("ui-tests"))
         self.assertIn("if: ${{ inputs.stability == true && needs.changes.outputs.ui == 'true' }}", job("picker-stability"))
 
-    def test_live_simulator_and_signed_mac_acceptance_are_manual_only(self):
-        self.assertNotIn("automation-e2e-scenarios", WORKFLOW)
-        self.assertNotIn("automation_e2e", WORKFLOW)
-        for command in ("script/automation_e2e.py", "script/automation_mac_e2e.py",
-                        "simctl", "-downloadPlatform", "script/ci_macos_signing.py"):
-            self.assertNotIn(command, WORKFLOW)
-        self.assertIn("Run affected UI tests once", job("ui-tests"))
-        self.assertIn("Run core tests without rebuilding", job("swift-tests"))
 
     def test_scripts_run_all_selected_modules_in_one_job(self):
         workflow = job("changes")
@@ -289,14 +189,34 @@ class WorkflowContractTests(unittest.TestCase):
         # A status function overrides implicit success(), preserving failed-run evidence.
         # Unlike always(), !cancelled() lets superseding PR runs release their runners.
         for name in ("Upload core results", "Export UI test attachments", "Upload UI results",
-                     "Upload stability results",
-                     "Upload input conversion diagnostic evidence", "Upload external consumer build evidence"):
+                     "Upload stability results"):
             with self.subTest(step=name):
                 condition = re.search(re.escape(name) + r"\n        if: (.+)", WORKFLOW)[1]
                 self.assertIn("!cancelled()", condition)
                 self.assertNotIn("always()", condition)
         # The terminal gate evaluates cancellation even when its ancestors skip.
         self.assertIn("always()", job("build").split("    steps:", 1)[0])
+
+    def test_ui_runner_identity_uses_the_sdk_bundle_expression(self):
+        path = Path(__file__).resolve().parents[2] / "FoundationEvals/FoundationEvalsUITests/FoundationEvalsUITests.entitlements"
+        entitlements = plistlib.loads(path.read_bytes())
+        self.assertEqual(entitlements["com.apple.application-identifier"],
+                         "$(AppIdentifierPrefix)$(CFBundleIdentifier)")
+        self.assertIs(entitlements["com.apple.security.app-sandbox"], True)
+        self.assertEqual(entitlements["com.apple.security.temporary-exception.files.absolute-path.read-write"],
+                         ["/private/tmp/foundation-evals-ui-tests/"])
+
+    def test_native_build_signs_local_test_products_without_development_secrets(self):
+        build = job("native-build")
+        command = build.split("          xcodebuild build-for-testing", 1)[1].split("          descriptors=", 1)[0]
+        self.assertIn("CODE_SIGNING_ALLOWED=YES", command)
+        self.assertIn("CODE_SIGN_IDENTITY=-", command)
+        self.assertIn("CODE_SIGN_STYLE=Manual", command)
+        self.assertNotIn("CODE_SIGNING_ALLOWED=NO", command)
+        self.assertNotIn("secrets.", command)
+        # Never restore unsigned runner artifacts from the previous cache contract.
+        self.assertNotIn("native-v1-", build)
+        self.assertEqual(build.count("native-v2-"), 3)
 
     def test_native_descriptors_refresh_without_removing_compiled_products(self):
         build = job("native-build")

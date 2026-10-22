@@ -308,17 +308,11 @@ enum EvaluationReleaseCheckEvaluator {
     }
 
     static func projectMarkdown(_ report: EvaluationProjectReleaseCheckReport) -> String {
-        let scope = report.intentLabAvailable == false ? "Evaluation suite release check" : "Project release check"
+        let scope = "Project release check"
         let heading = report.outcome == .passed ? "\(scope) passed" : "\(scope) did not pass"
         let suites = report.suites.map { item in
             "- \(item.suiteName) (`\(item.suiteID.uuidString)`): \(item.report.outcome.rawValue) — \(item.report.summary)"
         }.joined(separator: "\n")
-        let scenarios = (report.scenarios ?? []).map { item in
-            "- `\(item.scenarioID.uuidString)`: \(item.outcome.rawValue) — \(item.summary)"
-        }.joined(separator: "\n")
-        let scenarioSummary = report.intentLabAvailable == false
-            ? "- Intent Lab is unavailable. Saved scenario evidence was not evaluated."
-            : (scenarios.isEmpty ? "- None configured" : scenarios)
         return """
         # \(heading)
 
@@ -330,34 +324,10 @@ enum EvaluationReleaseCheckEvaluator {
         ## Required suites
 
         \(suites.isEmpty ? "- None configured" : suites)
-
-        ## Required Intent Lab scenarios
-
-        \(scenarioSummary)
         """
     }
 
-    static func integratingScenarios(
-        _ report: EvaluationProjectReleaseCheckReport,
-        scenarios: [ScenarioReleaseCheckReport]
-    ) -> EvaluationProjectReleaseCheckReport {
-        var combined = report
-        combined.scenarios = scenarios
-        if scenarios.contains(where: { $0.outcome == .incompleteOrIncompatibleEvidence }) {
-            combined.outcome = .incompleteOrIncompatibleEvidence
-        } else if scenarios.contains(where: { $0.outcome == .failed }),
-                  combined.outcome == .passed {
-            combined.outcome = .regression
-        }
-        if !scenarios.isEmpty {
-            let failed = scenarios.count { $0.outcome != .passed }
-            combined.summary += failed == 0
-                ? " All \(scenarios.count) required Intent Lab scenarios passed."
-                : " \(failed) of \(scenarios.count) required Intent Lab scenarios did not pass."
-        }
-        combined.generatedAt = Date()
-        return combined
-    }
+
 
     static func projectReport(
         projectID: UUID,

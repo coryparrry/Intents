@@ -1,15 +1,15 @@
 # Control Intents through MCP
 
-Intents' authenticated localhost connector now uses the same workspace, batch store, developer runners and Intent Lab coordinator as the native UI. Follow the [connector setup guide](wiki/Codex-and-MCP.md) first. The connector must already be enabled and authenticated. The standalone Apple Foundation Evals plugin remains a separate product/store.
+Intents' authenticated localhost connector now uses the same workspace, batch store, developer runners as the native UI. Follow the [connector setup guide](wiki/Codex-and-MCP.md) first. The connector must already be enabled and authenticated. The standalone Apple Foundation Evals plugin remains a separate product/store.
 
 ## Discover and inspect
 
-The default catalog advertises **24 tools**: 20 common workspace/evaluation/batch controls and four discovery/invocation tools. Read `eval_get_state` and `eval_workspace_state` first. All 110 original operations remain available, plus the on-demand `eval_production_baseline_approve` action and 12 app automation actions (123 total).
+The default catalog advertises **24 tools**: 20 common workspace/evaluation/batch controls and four discovery/invocation tools. Read `eval_get_state` and `eval_workspace_state` first. Discover advanced operations from the running app rather than relying on a fixed total.
 
-For advanced work, search by task using `eval_find_actions` with `query`, optional `domain` and `limit` (default 5, maximum 10). Domains are `workspace`, `evaluations`, `production`, `reviews`, `judges`, `runners` and `intentLab`. Search returns short summaries and `nextOffset`; load one exact schema using `eval_describe_action`. Use the returned `invokeWith` entry point with the action name and its exact arguments:
+For advanced work, search by task using `eval_find_actions` with `query`, optional `domain` and `limit` (default 5, maximum 10). Domains are `workspace`, `evaluations`, `production`, `reviews`, `judges`, `runners`. Search returns short summaries and `nextOffset`; load one exact schema using `eval_describe_action`. Use the returned `invokeWith` entry point with the action name and its exact arguments:
 
 ```json
-{"name":"eval_read_action","arguments":{"action":"eval_intent_state","arguments":{}}}
+{"name":"eval_read_action","arguments":{"action":"eval_workspace_state","arguments":{}}}
 ```
 
 A mutation uses `eval_apply_action` with the original operation ID, revision and confirmation fields inside its nested `arguments`. Read invocation rejects mutations before execution. Both entry points delegate to the original typed parser and authority, so retries and approvals are unchanged.
@@ -36,21 +36,19 @@ Existing `eval_start_run/get_run/cancel_run/list_runs/analyze_run`, trace resour
 6. Pause/cancel/resume through `job_control` using both the frozen job revision and returned mutable `controlRevision`. Cancelling retains evidence. Uncertain side effects require assigned, verified reconciliation. Review actions require operator authorization; do not label an agent's proposed judgment as a human review.
 7. Save schedules using their current revision, or `absent` for a new ID. `schedule_tick` creates due jobs once; execution is explicit while the app/worker is running. Worker provenance appears in `production_state`. Evidence exports are stored under app-owned `MCPExports`; list/read exact relative paths, without arbitrary filesystem access.
 
-The native app runs jobs on this Mac. Configured command workers still use the documented CLI; MCP does not launch arbitrary executables. Counts, cohort gates and source confidence describe retained evidence, not proof of real production traffic or physical Siri coverage.
+The native app runs jobs on this Mac. Configured command workers still use the documented CLI; MCP does not launch arbitrary executables. Counts, cohort gates and source confidence describe retained evidence, not proof of real production traffic or real-world app behavior.
 
-## Developer runners and Intent Lab
+## Developer runners
 
-Discover runners, select an advertised runner/feature without inference, pair, trust only after comparing the physical code, dispatch a suite and cancel/poll its saved run. Trust secrets and pairing codes are omitted from state.
-
-`eval_intent_state/get/select/connect/draft/new/save` control the shared authored requirement and target. Read discovered IDs rather than inventing app/test products. Full draft replacement retains selected target/integration identity and clears stale editor errors. Build approval authorizes the selected project's build scripts; installed integration verification and route readiness remain separate.
-
-The installation tools inspect existing target IDs, preview the same Basic/Siri templates as the UI, and apply an exact reviewed session preview. Apply rechecks prior bytes/path safety, verifies the result and selects that project/workspace. It clears build trust/readiness. Previews are session-bound and bounded to fit durable receipts; after restart, preview again before approving a new apply.
-
-Execution includes a complete requirement, a partial `diagnostic` with `lanesJSON`, saved reruns, collections and failed-batch reruns. Collections, approved variations/suggestions, saved-evidence assessment, persistence recovery, quarantine release and evidence exports retain the existing coordinator's safety and readiness guards. Physical device/Siri qualification requires actual device evidence.
+Discover runners, select an advertised runner/feature, pair, compare the physical
+code before trusting, dispatch a suite, and cancel or poll its saved run. State
+omits trust secrets and pairing codes. This path runs developer-registered
+Foundation Model features. See [Mac App Intent tests](wiki/Mac-App-Intent-tests.md)
+for the separate native AppIntentsTesting workflow.
 
 ## Verification
 
-`script/verify_mcp_app_control.py` exercises an already-running isolated app with `MCP_AUTHORIZATION` set to its existing credential. It sends credentials only to a localhost `/mcp` endpoint, never logs them, discovers only needed advanced schemas, measures default catalog bytes, validates read/write denial and processes 100 distinct synthetic original outputs and checks retries, revisions, export bytes, scheduling and approval denial. `--native` separately performs one real on-device response. It does not use real production data, external judges or physical Siri.
+`script/verify_mcp_app_control.py` exercises an already-running isolated app with `MCP_AUTHORIZATION` set to its existing credential. It sends credentials only to a localhost `/mcp` endpoint, never logs them, discovers only needed advanced schemas, measures default catalog bytes, validates read/write denial and processes 100 distinct synthetic original outputs and checks retries, revisions, export bytes, scheduling and approval denial. `--native` separately performs one real on-device response. It does not use real production data, external judges or App Intent runtime qualification.
 
 Approve a completed baseline with `eval_production_baseline_approve` after reading its report. Supply the job revision, evidence revision, review note, confirmation and operation ID. Changed results, reviews or controls invalidate approval. This action is discovered on demand; the default catalog remains 24 tools.
 

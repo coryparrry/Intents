@@ -5,41 +5,8 @@ import SwiftUI
 
 @MainActor
 struct WorkspacePresentationTests {
-    @Test func primitiveExpectedBindingsPreserveDefaultsUpdatesAndSetterEffects() {
-        checkExpectedBinding(default: false, initial: .boolean(true), changed: true,
-                             get: { if case .boolean(let item) = $0 { item } else { nil } },
-                             wrap: ScenarioValue.boolean)
-        checkExpectedBinding(default: Int64(0), initial: .integer(-4), changed: 17,
-                             get: { if case .integer(let item) = $0 { item } else { nil } },
-                             wrap: ScenarioValue.integer)
-        checkExpectedBinding(default: Double(0), initial: .number(1.25), changed: -2.5,
-                             get: { if case .number(let item) = $0 { item } else { nil } },
-                             wrap: ScenarioValue.number)
-    }
 
-    private func checkExpectedBinding<Value: Equatable>(
-        default defaultValue: Value, initial: ScenarioValue, changed: Value,
-        get: @escaping (ScenarioValue) -> Value?, wrap: @escaping (Value) -> ScenarioValue
-    ) {
-        var stored: ScenarioValue?
-        var writes = 0
-        let source = Binding<ScenarioValue?>(get: { stored }, set: { stored = $0; writes += 1 })
-        let binding = ScenarioExpectedValueBinding.scalar(source, default: defaultValue, get: get, wrap: wrap)
-        #expect(binding.wrappedValue == defaultValue)
-        #expect(stored == nil)
-        stored = .string("Different type")
-        #expect(binding.wrappedValue == defaultValue)
-        #expect(writes == 0)
-        stored = initial
-        #expect(binding.wrappedValue == (get(initial) ?? defaultValue))
-        binding.wrappedValue = changed
-        #expect(stored == wrap(changed))
-        #expect(writes == 1)
-        #expect(binding.wrappedValue == changed)
-        stored = nil
-        #expect(binding.wrappedValue == defaultValue)
-        #expect(writes == 1)
-    }
+
 
     @Test func appFeatureFooterUsesPersistedRunnerIdentity() {
         var run = fixture()

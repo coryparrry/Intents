@@ -14,26 +14,12 @@ struct MCPControlReceipt: Codable, Sendable {
   private var activeMutation: UUID?
   private var tasks: [UUID: Task<Void, Never>] = [:]
   private var isClosing = false
-  var deviceOperationID: UUID?
-  var installations: [UUID: MCPIntentInstallationPreview] = [:]
   init(control: EvaluationAppControl) {
     self.control = control
     directory = control.store.overviewStorageDirectory.appendingPathComponent("MCPControl")
   }
   func execute(_ call: MCPControlCall) async -> MCPToolPayload {
     do {
-      // Revocation must never prevent an operator from stopping an existing run.
-      if !control.intentLabFeatureGate.isEnabled, call.name == "eval_intent_cancel" {
-        await control.scenarios.cancel()
-        return Self.committed()
-      }
-      guard control.intentLabFeatureGate.isEnabled || !call.name.hasPrefix("eval_intent_") else {
-        return .failure(code: "feature_disabled", message: "Intent Lab is unavailable.")
-      }
-      if !control.intentLabFeatureGate.isEnabled,
-        call.name == "eval_workspace_navigate", call.optionalText("section") == "intentLab" {
-        return .failure(code: "feature_disabled", message: "Intent Lab is unavailable.")
-      }
       guard !isClosing else {
         throw EvaluationStoreError.resourceConflict("App control is closing.")
       }
@@ -41,11 +27,9 @@ struct MCPControlReceipt: Codable, Sendable {
       else { throw MCPToolInputError.unknownTool }
       if call.name == "eval_control_capabilities" {
         return Self.read([
-          "tools": .array(MCPControlTools.definitions.filter {
-            MCPActionDiscovery.isAvailable($0.name, intentLabEnabled: control.intentLabFeatureGate.isEnabled)
-          }.map { .string($0.name) }),
+          "tools": .array(MCPControlTools.definitions.map { .string($0.name) }),
           "boundary": .string(
-            "Authenticated app control; original suite tools remain available. Operator confirmations, pairing, readiness, disclosure and execution leases remain required."
+            "Authenticated app control; original suite tools remain available. Operator confirmations, runner pairing and disclosure remain required."
           ),
         ])
       }
@@ -169,49 +153,14 @@ struct MCPControlReceipt: Codable, Sendable {
       completeOperation(id, payload: payload)
     }
   }
-  func dispatch(
-    _ call: MCPControlCall, body: @escaping @MainActor () async throws -> MCPToolPayload
-  ) throws -> MCPToolPayload {
-    guard !isClosing else {
-      throw EvaluationStoreError.resourceConflict("App control is closing.")
-    }
-    guard deviceOperationID == nil else { throw EvaluationStoreError.runBusy }
-    let id = try call.id("operationID")
-    deviceOperationID = id
-    tasks[id] = Task {
-      defer {
-        tasks[id] = nil
-        deviceOperationID = nil
-      }
-      let result: MCPToolPayload
-      do {
-        if !control.intentLabFeatureGate.isEnabled && call.name.hasPrefix("eval_intent_") {
-          result = .failure(code: "feature_disabled", message: "Intent Lab is unavailable.")
-        } else {
-          result = try await body()
-        }
-      } catch { result = Self.failure(error) }
-      do {
-        guard var receipt = try load(id) else { return }
-        receipt.phase = result.isError ? "failed" : "completed"
-        receipt.content = result.structuredContent
-        receipt.isError = result.isError
-        try save(receipt)
-      } catch {
-        control.scenarios.notice =
-          "MCP operation finished but its receipt could not be saved: \(error.localizedDescription)"
-      }
-    }
-    return Self.committed([
-      "operationID": .string(id.uuidString), "execution": .string("dispatched"),
-    ])
-  }
+
+
   private func route(_ call: MCPControlCall) async throws -> MCPToolPayload {
     if call.name.hasPrefix("eval_production_") {
       return try await MCPProductionControl.execute(call, control: control)
     }
-    if call.name.hasPrefix("eval_intent_") || call.name.hasPrefix("eval_runner_") {
-      return try await MCPDeviceControl.execute(call, control: control, service: self)
+    if call.name.hasPrefix("eval_runner_") {
+      return try await MCPDeviceControl.execute(call, control: control)
     }
     return try await MCPWorkspaceControl.execute(call, control: control)
   }

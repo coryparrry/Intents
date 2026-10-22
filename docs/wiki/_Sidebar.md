@@ -8,7 +8,6 @@
 - [Production batches](Production-batches.md)
 - [Models, scoring, and tools](Models-scoring-and-tools.md)
 - [App feature runners](App-feature-runners.md)
-- [Intent Lab](Intent-Lab.md)
-- [Offline Intent Lab evidence](Intent-Evidence.md)
+- [Mac App Intent tests](Mac-App-Intent-tests.md)
 - [Codex and MCP](Codex-and-MCP.md)
 - [Data and troubleshooting](Data-and-troubleshooting.md)
