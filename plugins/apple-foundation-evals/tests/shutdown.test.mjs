@@ -135,3 +135,23 @@ test('stdio EOF drains accepted tools including a final unterminated input line'
   assert.equal(final?.result.isError, undefined);
   assert.equal(final?.result.structuredContent.page, 'workspace');
 });
+
+for (const mode of ['EOF', 'SIGTERM']) {
+  test(`stdio ${mode} cancels an active model availability check before exit`, { timeout: 12000 }, async t => {
+    const client = await server(t);
+    const availability = client.call('eval_model_status');
+    const { pid } = await marker(client.started); client.setNativePid(pid);
+    assert.equal(processAlive(pid), true);
+    if (mode === 'EOF') client.child.stdin.end(); else client.child.kill('SIGTERM');
+    const exit = await bounded(client.closed, 'availability cancellation and server exit');
+    assert.equal(exit.code, 0, client.errors());
+    assert.equal(exit.nativeAlive, false, 'Server exit must wait for availability worker termination');
+    assert.equal(processAlive(pid), false);
+    const result = await bounded(availability, 'availability terminal response');
+    assert.equal(result.result.structuredContent.available, false);
+    assert.match(result.result.structuredContent.reason, /cancel/i);
+    const store = new Store(client.dataDir); await store.init();
+    await bounded(store.acquireRunLock('availability-shutdown'), 'released availability lease');
+    await store.releaseRunLock('availability-shutdown');
+  });
+}

@@ -13,10 +13,13 @@ actor WorkspaceOverviewLoader {
                 let suite = try CanonicalJSON.decode(
                     EvaluationSuite.self, from: Data(contentsOf: root.appending(path: "suite.json"))
                 )
+                guard suite.id == record.id else { throw EvaluationWorkspaceError.missingSuite }
                 let draftURL = root.appending(path: "suite-draft.json")
                 let draft = try optional(Draft.self, at: draftURL)?.suite
                 let local = try optional(EvaluationSuiteLocalState.self, at: root.appending(path: "state.json"))
                     ?? EvaluationSuiteLocalState()
+                let pending = try optional(PendingRuns.self, at: root.appending(path: "pending-completed-runs.json"))
+                let pendingRunIDs = Set(pending?.runs.map(\.id) ?? [])
                 let urls = try FileManager.default.contentsOfDirectory(
                     at: root.appending(path: "Runs"), includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
                 ).filter { $0.pathExtension == "json" }
@@ -29,7 +32,9 @@ actor WorkspaceOverviewLoader {
                           run.projectID == nil || run.projectID == project.id else {
                         continue
                     }
-                    runs.append(run)
+                    // A failed multi-run save may have published only part of
+                    // its history. Admit those records after the retry commits.
+                    if !pendingRunIDs.contains(run.id) { runs.append(run) }
                 }
                 let revision = try EvaluationStore.revision(for: suite)
                 summary = SuiteOverviewSummary(record: record, suite: suite, currentRevision: revision,
@@ -62,4 +67,5 @@ actor WorkspaceOverviewLoader {
     }
 
     private struct Draft: Decodable { var suite: EvaluationSuite }
+    private struct PendingRuns: Decodable { var runs: [EvaluationRun] }
 }

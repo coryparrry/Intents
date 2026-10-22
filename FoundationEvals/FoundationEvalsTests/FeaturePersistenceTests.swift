@@ -65,9 +65,14 @@ struct FeaturePersistenceTests {
         let inputLimit = suite.modelConfiguration.contextAllocation(contextSize: upper, includesModelJudge: true)
         // The subject still fits. Only the additional judge contract should reject the run.
         #expect(profileTokens + 100 < inputLimit.effectiveInputLimit)
+        // No callable tools and no prior activation leave this profile unreachable.
+        _ = try await runner.preparedPrompt(for: suite.cases[0], suite: suite, images: [],
+                                            contextSize: upper, tools: [], tokenCounter: tokenCounter)
+        // A setup or restored tool output can already have activated the profile.
         await #expect(throws: (any Error).self) {
             try await runner.preparedPrompt(for: suite.cases[0], suite: suite, images: [],
-                                             contextSize: upper, tools: [], tokenCounter: tokenCounter)
+                                             contextSize: upper, tools: [], profileHasTransitioned: true,
+                                             tokenCounter: tokenCounter)
         }
     }
 

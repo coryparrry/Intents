@@ -2514,6 +2514,20 @@ final class ScenarioCoordinator {
         do {
             try verify(plan: plan, definition: definition, connection: connection,
                        configuration: runConfiguration)
+            // Collection members may differ from the editor's current draft.
+            // Admit optional routes using this member's checked products and requirements.
+            var executionReadiness = await executor.routeReadiness(
+                definition: definition, configuration: runConfiguration,
+                projectTrusted: trusted, featureBackend: plan.profile.featureBackend
+            )
+            if plan.profile.featureBackend == .connectedRunner {
+                Self.applyConnectedFeatureReadiness(
+                    to: &executionReadiness, definition: definition,
+                    appDigest: connection.appProduct.sha256,
+                    runnerCheck: { _ = try selectedSubjectRunner(for: definition, appDigest: $0,
+                        frozenRunnerID: plan.runnerID) }
+                )
+            }
             try await persistence.saveDefinition(definition)
             try await persistence.savePlan(plan)
             if !definitions.contains(where: { $0.id == definition.id && $0.version == definition.version }) {
@@ -2531,9 +2545,9 @@ final class ScenarioCoordinator {
                 executionStage = "Running \(coordinate.lane.rawValue) attempt \(coordinate.repetition) of \(plan.coordinates.count)"
                 guard let index = records.firstIndex(where: { $0.id == coordinate.id }) else { continue }
                 if plan.purpose == .fullRequirement, !coordinate.required,
-                   routeReadiness[coordinate.lane]?.state != .ready {
+                   executionReadiness[coordinate.lane]?.state != .ready {
                     records[index].state = .blocked
-                    records[index].detail = routeReadiness[coordinate.lane]?.detail
+                    records[index].detail = executionReadiness[coordinate.lane]?.detail
                         ?? "Optional route readiness has not been verified."
                     try await checkpoint(plan: plan, records: records)
                     continue

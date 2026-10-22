@@ -19,6 +19,8 @@ struct EvaluationJudgeAttemptTrace: Codable, Sendable {
     var validationError: String? = nil
     /// Older traces remain readable; no policy is invented for historical data.
     var requestConfiguration: EvaluationJudgeRequestConfiguration? = nil
+    var usage: EvaluationUsage? = nil
+    var cost: EvaluationCost? = nil
 }
 
 /// The same immutable value drives the wire request and the saved audit trail.

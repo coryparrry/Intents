@@ -297,6 +297,7 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         if let finalLine = buffer.finish() {
             try await consume(finalLine)
         }
+        try Task.checkCancellation()
 
         guard responseEventCount > 0 else {
             throw EvaluationHTTPProviderError.missingOutputEvent

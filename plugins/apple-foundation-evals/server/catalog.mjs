@@ -2,6 +2,7 @@ export const UI_URI = 'ui://apple-foundation-evals/workspace';
 export const UI_MIME = 'text/html;profile=mcp-app';
 export const UI_META = { ui: { csp: { connectDomains: [], resourceDomains: [] } }, 'openai/ui': { preferredDisplayMode: 'fullscreen', availableDisplayModes: ['inline', 'fullscreen'] } };
 import { SUITE_SCHEMA, DRAFT_SUITE_SCHEMA, FIELD_SCHEMA, text, obj, uuid, draftSchema } from './app-schema.mjs';
+import { RECOVERY_KINDS } from './catalog-recovery.mjs';
 import { WORKFLOW_TOOLS } from './workflow-tools.mjs';
 export { SUITE_SCHEMA };
 const referenceFiles = { type: 'array', maxItems: 20, items: obj({ attachmentId: uuid, name: text(1024, 1), mimeType: text(128, 1), base64: text(13333336, 1) }, ['name', 'mimeType', 'base64']) };
@@ -37,6 +38,9 @@ export const TOOLS = [
   define('eval_export_run', 'Export run', 'Export raw application evidence when present, otherwise the plugin trace.', obj({ runId: uuid }, ['runId'])),
   define('eval_analyze_cases', 'Analyze case evidence', 'Read real subject, conversation, tool, workflow, judge, timing and assertion evidence by case.', obj({ runId: uuid, caseIds: { type: 'array', items: text(128, 1), maxItems: 100, uniqueItems: true } }, ['runId'])),
 
+  define('eval_catalog_recovery', 'Inspect catalog recovery', 'Read an explicit bounded page of saved record identities when full catalog responses exceed their limit. Follow nextCursor; records are never silently omitted.', obj({ kind: { type: 'string', enum: RECOVERY_KINDS }, cursor: text(4, 1), limit: { type: 'integer', minimum: 1, maximum: 50 } }, ['kind'])),
+  define('eval_catalog_export_chunk', 'Export saved record chunk', 'Read exact saved JSON bytes in bounded base64 chunks without deleting evidence. Use recordRevision from catalog recovery; follow nextOffset until null.', obj({ kind: { type: 'string', enum: RECOVERY_KINDS }, recordId: uuid, recordRevision: text(64, 64), offset: { type: 'integer', minimum: 0, maximum: 33554432 }, bytes: { type: 'integer', minimum: 1, maximum: 262144 } }, ['kind', 'recordId', 'recordRevision'])),
+  define('eval_catalog_remove', 'Remove reviewed saved record', 'Permanently remove an explicitly confirmed saved record after export. Requires current recordRevision and no active native operation. Uncommitted paired-run records and experiments with dependent runs cannot be removed; export and reopen to recover interrupted evidence.', obj({ kind: { type: 'string', enum: RECOVERY_KINDS.filter((kind) => kind !== 'projects') }, recordId: uuid, recordRevision: text(64, 64), confirm: { type: 'boolean' } }, ['kind', 'recordId', 'recordRevision', 'confirm']), false, true),
   ...WORKFLOW_TOOLS,
 ];
 export const SERVER_INFO = { name: 'apple-foundation-evals', title: 'Apple Foundation Evals', version: '0.5.0', icons: [icon] };

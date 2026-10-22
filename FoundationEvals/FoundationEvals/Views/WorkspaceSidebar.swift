@@ -13,7 +13,6 @@ private enum WorkspaceDestination: Hashable {
 
 struct WorkspaceSidebar: View {
     @Bindable var store: EvaluationStore
-    var intentLabEnabled = false
     @State private var isManagingWorkspace = false
     @State private var isCreatingSuite = false
     @State private var isCreatingProject = false
@@ -34,7 +33,7 @@ struct WorkspaceSidebar: View {
             get: {
                 switch store.selection {
                 case .overview: .overview
-                case .intentLab: .intentLab
+                case .intentLab: .appAutomation
                 case .evaluations: .evaluations
                 case .batchRuns: .batchRuns
                 case .traces: .traces
@@ -48,9 +47,7 @@ struct WorkspaceSidebar: View {
                 do {
                     switch selection {
                     case .overview: store.selection = .overview
-                    case .intentLab:
-                        guard intentLabEnabled else { return }
-                        store.selection = .intentLab
+                    case .intentLab: store.selection = .intentLab
                     case .evaluations: store.selection = .evaluations
                     case .batchRuns: store.selection = .batchRuns
                     case .traces: store.selection = .traces
@@ -69,34 +66,22 @@ struct WorkspaceSidebar: View {
     var body: some View {
         SidebarNavigationList(selection: destination) {
             Section {
-                Label("Overview", systemImage: "square.grid.2x2")
+                Label("Model evaluations", systemImage: "square.grid.2x2")
                     .tag(WorkspaceDestination.overview)
-                if intentLabEnabled {
-                    Label {
-                        HStack(spacing: 6) {
-                            Text("Intent Lab")
-                            Text("Beta")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1)
-                                .background(.fill.tertiary, in: .capsule)
-                        }
-                    } icon: { Image(systemName: WorkspaceIcon.systemName(for: "intent-lab")) }
-                        .accessibilityElement(children: .combine)
-                        .tag(WorkspaceDestination.intentLab)
-                }
-                Label { Text("Evaluations") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
+                Label("App Intents & Siri", systemImage: "app.badge.checkmark")
+                    .tag(WorkspaceDestination.appAutomation)
+            }
+
+            Section("Model tools") {
+                Label { Text("Review current suite") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
                     .accessibilityIdentifier("Sidebar evaluations")
                     .tag(WorkspaceDestination.evaluations)
                 Label { Text("Batch runs") } icon: { WorkspaceIcon(symbol: "play.rectangle", size: 18) }
                     .accessibilityIdentifier("Sidebar batch runs")
                     .tag(WorkspaceDestination.batchRuns)
-                Label { Text("Traces") } icon: { WorkspaceIcon(symbol: "point.3.connected.trianglepath.dotted", size: 18) }
+                Label { Text("Traces for current suite") } icon: { WorkspaceIcon(symbol: "point.3.connected.trianglepath.dotted", size: 18) }
                     .accessibilityIdentifier("Sidebar traces")
                     .tag(WorkspaceDestination.traces)
-                Label { Text("App automation") } icon: { WorkspaceIcon(symbol: "play", size: 18) }
-                    .tag(WorkspaceDestination.appAutomation)
             }
 
             Section("Suites") {

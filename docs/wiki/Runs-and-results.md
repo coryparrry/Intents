@@ -61,7 +61,7 @@ For an AI-assessed run, the selected assessment is part of the approval. The pan
 
 Use **Setup → Scoring → Release requirements** to set limits for errors, pass-rate changes, latency, and critical cases. You can also require an approved baseline. A release report applies these saved limits. It does not replace a review of unclear evidence.
 
-If you edit a suite after its latest run, run it again. Then use the new result for Overview's current status.
+If you edit a suite after its latest run, run it again. Then use the new result for the current status in **Model evaluations**.
 
 ## Delete evidence
 

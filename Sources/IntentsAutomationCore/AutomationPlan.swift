@@ -24,7 +24,7 @@ public struct AutomationSegment: Codable, Equatable, Sendable {
             throw AutomationContractError.invalidPlan("Observation-only segments cannot navigate controls or write inputs")
         }
         if let steps = program.steps {
-            guard steps.allSatisfy({ [.waitFor, .assert, .screenshot, .readProperty].contains($0.kind) }) else {
+            guard steps.allSatisfy({ [.waitFor, .assert, .screenshot, .readProperty, .readHierarchy].contains($0.kind) }) else {
                 throw AutomationContractError.invalidPlan("Observation-only segments cannot mutate direct UI steps")
             }
         }

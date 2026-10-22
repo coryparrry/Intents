@@ -71,6 +71,26 @@ struct CustomToolTests {
         #expect(traces.map(\.outcome) == [.succeeded, .rejected])
     }
 
+    @Test(arguments: [false, true])
+    func cancellationAfterOutputCannotBeRecordedAsSuccess(cancelInTokenCounter: Bool) async throws {
+        let recorder = EvaluationCustomToolRecorder(maximumCalls: 1)
+        let tool = try EvaluationCustomTool(definition: .init(name: "cancel_after_output",
+            description: "Returns observed output before cancellation.", mode: .localHTTP,
+            endpoint: "http://127.0.0.1:19090/run"), recorder: recorder,
+            httpClient: CancellingOutputHTTPClient(cancel: !cancelInTokenCounter),
+            tokenCounter: CancellingOutputTokenCounter(cancel: cancelInTokenCounter))
+        let result = await Task {
+            try await tool.call(arguments: GeneratedContent(kind: .structure(properties: [:], orderedKeys: [])))
+        }.result
+        switch result {
+        case .success: Issue.record("A cancelled custom tool call returned success.")
+        case .failure(let error): #expect(error is CancellationError)
+        }
+        let trace = try #require(await recorder.snapshot().first)
+        #expect(trace.outcome == .cancelled)
+        #expect(trace.output == "Observed output")
+    }
+
     @Test func invalidDefinitionsExplainIdentifierIDAndEndpointFailures() {
         let duplicateFieldID = UUID()
         let duplicateToolID = UUID()
@@ -302,6 +322,22 @@ struct CustomToolTests {
             description: "A deterministic fixture.",
             fixtureResponse: "ok"
         )
+    }
+}
+
+private struct CancellingOutputHTTPClient: EvaluationCustomToolHTTPClient {
+    let cancel: Bool
+    func post(body: Data, to endpoint: URL) async throws -> String {
+        if cancel { withUnsafeCurrentTask { $0?.cancel() } }
+        return "Observed output"
+    }
+}
+
+private struct CancellingOutputTokenCounter: EvaluationCustomToolTokenCounting {
+    let cancel: Bool
+    func tokenCount(for text: String) async throws -> Int {
+        if cancel, text == "Observed output" { withUnsafeCurrentTask { $0?.cancel() } }
+        return 1
     }
 }
 

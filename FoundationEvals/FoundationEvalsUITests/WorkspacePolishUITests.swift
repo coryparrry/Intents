@@ -51,7 +51,7 @@ final class WorkspacePolishUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         app.activate()
-        app.typeKey("1", modifierFlags: .command)
+        app.typeKey("3", modifierFlags: .command)
         let importCases = app.buttons["Import Cases"]
         XCTAssertTrue(importCases.waitForExistence(timeout: 5))
         XCTAssertTrue(importCases.isHittable)

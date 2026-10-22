@@ -26,6 +26,40 @@ public struct UIHostValue: Codable, Equatable, Sendable {
         self.properties = properties; self.items = items; self.timeZone = timeZone
     }
 }
+
+/// Initial accessibility readback is bounded evidence, not a screen expectation.
+public enum UIHostHierarchyReadback {
+    public static let maximumUTF16Count = 32_768
+
+    public static func capture(_ hierarchy: String) throws -> UIHostValue {
+        guard !hierarchy.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw UIHostError.unavailableProperty }
+        var bounded = "", count = 0, truncated = false
+        for scalar in hierarchy.unicodeScalars {
+            let width = scalar.value > 0xffff ? 2 : 1
+            guard count + width <= maximumUTF16Count else { truncated = true; break }
+            bounded.unicodeScalars.append(scalar); count += width
+        }
+        let result = UIHostValue(kind: "object", properties: [
+            "hierarchy": .init(kind: "text", value: bounded),
+            "truncated": .init(kind: "bool", boolValue: truncated),
+        ])
+        try validate(result)
+        return result
+    }
+
+    public static func validate(_ value: UIHostValue) throws {
+        guard let fields = value.properties, Set(fields.keys) == ["hierarchy", "truncated"],
+              let hierarchy = fields["hierarchy"]?.value, let truncated = fields["truncated"]?.boolValue,
+              value == UIHostValue(kind: "object", properties: fields),
+              fields["hierarchy"] == UIHostValue(kind: "text", value: hierarchy),
+              fields["truncated"] == UIHostValue(kind: "bool", boolValue: truncated),
+              !hierarchy.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              hierarchy.utf16.count <= maximumUTF16Count,
+              !truncated || hierarchy.utf16.count >= maximumUTF16Count - 1 else {
+            throw UIHostError.unavailableProperty
+        }
+    }
+}
 public struct UIHostQuery: Codable, Equatable, Sendable {
     public var identifier: String?
     public var label: String?
@@ -90,7 +124,7 @@ public struct UIHostCheck: Codable, Equatable, Sendable {
     }
 }
 public struct UIHostStep: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable { case launch, tap, typeText, clearAndType, swipe, waitFor, assert, screenshot, invokeIntent, query, readProperty, checkFreshness }
+    public enum Kind: String, Codable, Sendable { case launch, tap, typeText, clearAndType, swipe, waitFor, assert, screenshot, invokeIntent, query, readProperty, readHierarchy, checkFreshness }
     public var id: String
     public var segmentID: String
     public var kind: Kind
@@ -114,6 +148,11 @@ public struct UIHostStep: Codable, Equatable, Sendable {
         self.binding = binding; self.property = property; self.equals = equals; self.direction = direction
         self.timeout = timeout; self.arguments = arguments; self.environment = environment
         self.operation = operation; self.inputBindings = inputBindings
+    }
+    public func validateHierarchyRead() throws {
+        guard query == nil, text == nil, binding == nil, property == nil, equals == nil,
+              direction == nil, arguments == nil, environment == nil, operation == nil,
+              inputBindings?.isEmpty != false, setupChecks?.isEmpty != false else { throw UIHostError.invalidPlan }
     }
 }
 public struct UIHostPlan: Codable, Equatable, Sendable {
@@ -157,6 +196,7 @@ public struct UIHostPlan: Codable, Equatable, Sendable {
               [productDigest, planDigest].allSatisfy({ $0.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil }),
               Set(steps.map { $0.segmentID + "/" + $0.id }).count == steps.count else { throw UIHostError.invalidPlan }
         for step in steps {
+            if step.kind == .readHierarchy { try step.validateHierarchyRead() }
             guard !step.id.isEmpty, !step.segmentID.isEmpty, (step.text?.utf16.count ?? 0) <= 32768,
                   (step.timeout ?? 10) > 0, (step.timeout ?? 10) <= 120,
                   (step.query?.index ?? 0) >= 0 else { throw UIHostError.invalidPlan }

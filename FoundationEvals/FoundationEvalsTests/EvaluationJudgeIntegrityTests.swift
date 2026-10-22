@@ -208,6 +208,7 @@ extension EvaluationCompatibleJudgeClientTests {
         suite.judgeConfiguration.externalEvidenceApprovedAt = Date()
         suite.judgeConfiguration.approvedIncludeReferenceAttachments = suite.judgeConfiguration.includeReferenceAttachments
         suite.judgeConfiguration.approvedConnectionDigest = connection.disclosureDigest
+        suite.judgeConfiguration.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         return (suite, connection)
     }
     @MainActor
@@ -216,5 +217,59 @@ extension EvaluationCompatibleJudgeClientTests {
         let item = try #require(suite.cases.first)
         return try await client.judge(response: "Correct fact", evaluationCase: item, effectivePrompt: item.prompt,
             suite: suite, images: [], toolEvidence: nil, resolved: .init(connection: connection, apiKey: "fixture-secret"))
+    }
+}
+
+
+extension EvaluationCompatibleJudgeClientTests {
+    @MainActor
+    @Test(arguments: [0, 1, 2])
+    func successfulRepairAccountsForEveryReceivedAttempt(unknown: Int) async throws {
+        var firstUsage: [String: Any] = ["prompt_tokens": 10, "completion_tokens": 5]
+        if unknown == 0 { firstUsage["cost"] = 0.1 }
+        let first = try Self.integrityJSON(content: "{broken verdict", usage: unknown == 2 ? nil : firstUsage)
+        let second = try Self.integrityJSON(content: Self.integrityVerdict,
+            usage: ["prompt_tokens": 20, "completion_tokens": 7, "cost": 0.2])
+        let fixture = JudgeIntegrityTransport([first, second])
+        let client = EvaluationCompatibleJudgeClient(transport: { try await fixture.send($0) })
+        let (suite, connection) = Self.integritySuite(policy: .portable)
+        let result = try await Self.integrityJudge(client, suite: suite, connection: connection)
+        #expect(await fixture.bodies().count == 2)
+        #expect(result.trace.attempts?.count == 2)
+        #expect(result.trace.attempts?[0].validationError != nil)
+        #expect(result.trace.attempts?[1].cost?.usd == 0.2)
+        if unknown == 0 {
+            #expect(result.cost.availability == .known)
+            #expect(abs((result.cost.usd ?? 0) - 0.3) < 1e-12)
+        } else {
+            #expect(result.cost.availability == .unavailable)
+            #expect(result.cost.usd == nil)
+        }
+        if unknown == 2 { #expect(result.usage == nil) }
+        else {
+            #expect(result.usage?.inputTokens == 30)
+            #expect(result.usage?.outputTokens == 12)
+        }
+        let restored = try CanonicalJSON.decode(EvaluationJudgeTrace.self, from: CanonicalJSON.data(for: result.trace))
+        #expect(restored.attempts?[1].usage?.inputTokens == 20)
+        #expect(restored.attempts?[1].cost?.usd == 0.2)
+    }
+
+    @MainActor
+    @Test func successfulRepairSumsConfiguredPriceEstimates() async throws {
+        let fixture = JudgeIntegrityTransport([
+            try Self.integrityJSON(content: "{broken", usage: ["prompt_tokens": 10, "completion_tokens": 5]),
+            try Self.integrityJSON(content: Self.integrityVerdict, usage: ["prompt_tokens": 20, "completion_tokens": 7])
+        ])
+        let client = EvaluationCompatibleJudgeClient(transport: { try await fixture.send($0) })
+        var (suite, connection) = Self.integritySuite(policy: .portable)
+        connection.inputUSDPerMillionTokens = 1
+        connection.outputUSDPerMillionTokens = 2
+        suite.judgeConfiguration.approvedConnectionDigest = connection.disclosureDigest
+        let result = try await Self.integrityJudge(client, suite: suite, connection: connection)
+        #expect(result.cost.availability == .estimated)
+        #expect(abs((result.cost.usd ?? 0) - 0.000054) < 1e-12)
+        #expect(result.usage?.inputTokens == 30)
+        #expect(result.usage?.outputTokens == 12)
     }
 }

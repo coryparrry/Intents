@@ -2,6 +2,7 @@ import { mkdir, lstat, readFile, writeFile, rename, unlink } from 'node:fs/promi
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { id } from './validation.mjs';
 export const REFERENCE_LIMITS = { maxImageBytes: 10000000, maxTextFileBytes: 5000000, maxAttachments: 20, maxImages: 4, maximumExtractedTextCharacters: 16000 };
 const storedName = /^[a-f0-9]{64}\.(pdf|txt|md|csv|json|png|jpg|heic|heif|tiff|gif|webp)$/;
 const MAX_FILE_BYTES = REFERENCE_LIMITS.maxImageBytes;
@@ -59,8 +60,34 @@ export async function exportReferences(app, suite) {
 export async function importReferences(app, suite, files) {
   if (!Array.isArray(files) || files.length > 20) throw new Error('referenceFiles must be an array of at most 20 files');
   const attachments = [...(suite.attachments || [])];
-  for (const file of files) {
-    const extracted = await addReferenceFile(app, file); const index = attachments.findIndex((item) => item.id === file.attachmentId || item.name === file.name);
+  const identities = attachments.filter((item) => item.id).map((item) => id(item.id, 'attachment ID'));
+  if (new Set(identities).size !== identities.length) throw new Error('Suite attachment IDs must be unique');
+  const matched = new Set();
+  // Resolve every identity before extraction writes reference bytes. A filename
+  // can bridge legacy bundles only when it identifies exactly one attachment.
+  const targets = files.map((file) => {
+    let index;
+    if (file.attachmentId !== undefined) {
+      const attachmentID = id(file.attachmentId, 'attachmentId');
+      index = attachments.findIndex((item) => item.id?.toLowerCase() === attachmentID);
+      if (index === -1) throw new Error('Reference attachment ID is not present in the imported suite');
+    } else {
+      const candidates = attachments.map((item, index) => ({ item, index })).filter(({ item }) => item.name === file.name);
+      if (candidates.length > 1) throw new Error('Legacy reference filename is ambiguous; include attachmentId');
+      index = candidates[0]?.index ?? -1;
+    }
+    if (index !== -1) {
+      const original = attachments[index], incoming = binaryFile(file);
+      if (original.sha256 && original.sha256 !== incoming.sha256 || original.byteCount !== undefined && original.byteCount !== incoming.bytes.length) throw new Error('Imported reference bytes do not match the suite attachment');
+    }
+    const identity = index === -1 ? `new:${file.name}` : `existing:${index}`;
+    if (matched.has(identity)) throw new Error('Reference files must identify distinct attachments');
+    matched.add(identity);
+    return index;
+  });
+  for (const [position, file] of files.entries()) {
+    const extracted = await addReferenceFile(app, file);
+    const index = targets[position];
     if (index === -1) attachments.push(extracted.attachment);
     else {
       const original = attachments[index];

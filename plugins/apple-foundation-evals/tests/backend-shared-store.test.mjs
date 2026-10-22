@@ -198,3 +198,31 @@ test('failed adoption rollback preserves a second session acknowledged save', as
   resume.resolve(); await rejected;
   assert.deepEqual(await app.store.read('suites', suite.id), acknowledged);
 });
+
+test('concurrent run imports never overwrite evidence with an already committed identity', async (t) => {
+  const { root, app, suite } = await fixture(t);
+  const other = new EvaluationApp({ dataDir: root }); await other.init(); t.after(() => other.shutdown());
+  const runId = randomUUID();
+  let missingReads = 0, releaseReads;
+  const bothMissing = new Promise((resolve) => { releaseReads = resolve; });
+  for (const session of [app, other]) {
+    const read = session.store.read.bind(session.store);
+    session.store.read = async (kind, key) => {
+      try { return await read(kind, key); }
+      catch (error) {
+        if (kind === 'runs' && key === runId && /not found$/.test(error.message)) {
+          if (++missingReads === 2) releaseReads();
+          await bothMissing;
+        }
+        throw error;
+      }
+    };
+  }
+  const imports = await Promise.allSettled([app, other].map((session, index) => session.call('eval_import_run', { run: {
+    id: runId, suite, suiteId: suite.id, status: 'completed', startedAt: '2026-10-15T12:00:00Z', finishedAt: '2026-10-15T12:00:01Z',
+    results: [{ caseId: 'case-one', repetition: 1, prompt: 'fruit', expected: 'apple', response: `evidence-${index}`, passed: false, score: 0, durationMs: 1, trace: { transcript: [] } }],
+  } })));
+  assert.equal(imports.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.match(imports.find((result) => result.status === 'rejected').reason.message, /already exists/);
+  assert.deepEqual(await app.store.read('runs', runId), imports.find((result) => result.status === 'fulfilled').value.run);
+});

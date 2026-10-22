@@ -178,3 +178,20 @@ to local runs would require an explicitly paired local companion, per-user
 request authorization, cancellation and offline handling. Local transcripts and
 reference files should stay on the Mac unless their owner explicitly chooses
 to share them. This release adds no cloud endpoint or evidence upload.
+
+## Large catalog recovery
+
+Full catalog/workspace responses remain limited to 32 MiB. If saved suites or
+other evidence exceed that response limit, the server still starts and opens an
+explicit recovery view. No record is removed or silently left out of a normal
+workspace response. Recovery lists bounded pages of record identities, sizes and
+SHA-256 revisions; follow **Next page** to inspect the complete catalog.
+
+Export needed records before confirming removal. Recovery exports exact saved
+JSON bytes through `eval_catalog_export_chunk` (at most 256 KiB per chunk), and
+`eval_catalog_remove` requires both confirmation and the current record revision.
+Running records and experiments with dependent runs cannot be removed. Project
+records remain available for export and are retained while owning evidence.
+Use **Reopen workspace** after reducing catalog size to resume normal editing.
+MCP-only hosts can use `eval_catalog_recovery` and its advertised export/cleanup
+tools directly. Existing portable suite and run export tools remain available.

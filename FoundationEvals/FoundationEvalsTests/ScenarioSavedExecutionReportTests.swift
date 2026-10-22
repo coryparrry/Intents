@@ -94,6 +94,7 @@ struct ScenarioSavedExecutionReportTests {
         configuration.externalEvidenceApprovedAt = Date()
         configuration.approvedConnectionID = judge.connection.id
         configuration.approvedConnectionDigest = judge.connection.disclosureDigest
+        configuration.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         configuration.approvedIncludeReferenceAttachments = configuration.includeReferenceAttachments
         let semantic = try #require(definition.assertions.first { $0.kind == .semanticRubric })
         let policy = try ScenarioFrozenSemanticPolicy.make(

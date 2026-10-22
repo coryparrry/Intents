@@ -6,11 +6,11 @@ import { importCases } from './case-import.mjs';
 import { SPOTLIGHT_DEFAULTS } from './app-defaults.mjs';
 const DEFAULT_PROJECT_ID = '00000000-0000-4000-8000-000000000001';
 export async function initProjects(app) {
-  if (!(await app.store.list('projects')).length) await app.store.write('projects', { id: DEFAULT_PROJECT_ID, name: 'My evaluations', description: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-  const projects = await app.store.list('projects');
+  if (!(await app.store.recordNames('projects')).length) await app.store.write('projects', { id: DEFAULT_PROJECT_ID, name: 'My evaluations', description: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  const projects = await app.store.list('projects', ({ id }) => ({ id }));
   app.defaultProjectId = projects.find((item) => item.id === DEFAULT_PROJECT_ID)?.id || projects[0].id;
-  for (const saved of await app.store.list('suites')) if (!saved.projectId || !saved.revision) await app.store.migrateSuite(saved.id, app.defaultProjectId);
-  for (const run of await app.store.list('runs')) if (!run.projectId && run.status !== 'running') await app.store.write('runs', { ...run, projectId: run.suite?.projectId || app.defaultProjectId, suiteRevision: run.suiteRevision || (run.suite ? revision(run.suite) : undefined) });
+  for await (const saved of app.store.scan('suites')) if (!saved.projectId || !saved.revision) await app.store.migrateSuite(saved.id, app.defaultProjectId);
+  for await (const run of app.store.scan('runs')) if (!run.projectId && run.status !== 'running') await app.store.write('runs', { ...run, projectId: run.suite?.projectId || app.defaultProjectId, suiteRevision: run.suiteRevision || (run.suite ? revision(run.suite) : undefined) });
 }
 async function project(app, value) { const projectId = id(value || app.defaultProjectId, 'projectId'); await app.store.read('projects', projectId); return projectId; }
 async function existing(app, kind, key) {
@@ -35,9 +35,9 @@ export function health(run, saved) {
 }
 export async function overview(app, projectId) {
   const owner = await project(app, projectId);
-  const suites = (await app.store.list('suites')).filter((item) => item.projectId === owner);
+  const suites = (await app.store.list('suites', ({ id, name, revision, projectId, cases }) => ({ id, name, revision, projectId, caseCount: cases.length }))).filter((item) => item.projectId === owner);
   const summaries = await app.runs(owner);
-  return { project: await app.store.read('projects', owner), suiteCount: suites.length, runCount: summaries.length, activeRuns: summaries.filter((run) => run.status === 'running').length, currentSuites: summaries.filter((run) => run.status === 'completed' && !run.health.staleEvidence).reduce((set, run) => set.add(run.suiteId), new Set()).size, staleRuns: summaries.filter((run) => run.health.staleEvidence).length, suites: suites.map((item) => ({ id: item.id, name: item.name, revision: item.revision, caseCount: item.cases.length, latestRun: summaries.find((run) => run.suiteId === item.id) || null })), runs: summaries };
+  return { project: await app.store.read('projects', owner), suiteCount: suites.length, runCount: summaries.length, activeRuns: summaries.filter((run) => run.status === 'running').length, currentSuites: summaries.filter((run) => run.status === 'completed' && !run.health.staleEvidence).reduce((set, run) => set.add(run.suiteId), new Set()).size, staleRuns: summaries.filter((run) => run.health.staleEvidence).length, suites: suites.map((item) => ({ id: item.id, name: item.name, revision: item.revision, caseCount: item.caseCount, latestRun: summaries.find((run) => run.suiteId === item.id) || null })), runs: summaries };
 }
 export async function workspaceDispatch(app, name, args) {
   switch (name) {
@@ -77,7 +77,9 @@ export async function workspaceDispatch(app, name, args) {
     case 'eval_analyze_cases': {
       const run = await app.readPublicRun(id(args.runId, 'runId'));
       if (args.caseIds !== undefined && (!Array.isArray(args.caseIds) || args.caseIds.some((item) => typeof item !== 'string') || new Set(args.caseIds).size !== args.caseIds.length)) throw new Error('caseIds must be unique strings');
-      const ids = new Set(args.caseIds || run.results.map((item) => item.caseId));
+      const caseIds = args.caseIds?.map((key) => isAppSuite(run.suite) ? key.toLowerCase() : key);
+      if (caseIds && new Set(caseIds).size !== caseIds.length) throw new Error('caseIds must be unique strings');
+      const ids = new Set(caseIds || run.results.map((item) => item.caseId));
       if ([...ids].some((key) => !run.results.some((item) => item.caseId === key))) throw new Error('Unknown case in run');
       return { runId: run.id, health: health(run, await existing(app, 'suites', run.suiteId)), cases: run.results.filter((item) => ids.has(item.caseId)).map((result) => ({ ...result, appSample: result.appSample || result.trace?.appSample || null })), assessments: run.appRun?.assessments || [] };
     }
@@ -121,5 +123,5 @@ async function importRun(app, args, { persist = true } = {}) {
     saved = { id: id(value.id, 'run id'), suiteId, projectId: await project(app, args.projectId || snapshot.projectId), suite: snapshot, suiteRevision: revision(snapshot), status, startedAt, finishedAt, durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)), model: value.environment?.model, results, appRun: value, importedAt: new Date().toISOString() };
   }
   if (persist && await existing(app, 'runs', saved.id)) throw new Error('A run with this id already exists; imports never overwrite evidence');
-  if (persist) await app.store.write('runs', saved); const { ownerPid, ...publicRun } = saved; return { run: publicRun };
+  if (persist) await app.store.write('runs', saved, { createOnly: true }); const { ownerPid, ...publicRun } = saved; return { run: publicRun };
 }

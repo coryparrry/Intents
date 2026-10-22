@@ -26,6 +26,10 @@ struct AutomationSourcePreparationControls: View {
             Picker("Prepare for", selection: $model.preparationDestination) {
                 ForEach(AutomationNativePreparationDestination.allCases) { Text($0.title).tag($0).accessibilityIdentifier($0.rawValue) }
             }.accessibilityLabel("Prepare for").accessibilityIdentifier("automation.preparation.destination")
+            if let reason = model.selectedWorkflowUnavailableReason {
+                Text(reason).font(.callout).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("automation.preparation.workflowUnavailableReason")
+            }
             LabeledContent {
                 TextField("Default Xcode for this destination", text: $model.selectedXcodePath,
                           prompt: Text("/Applications/Xcode.app"))

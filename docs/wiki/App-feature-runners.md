@@ -26,7 +26,7 @@ For an iPhone or iPad, add local-network use and `_fnd-evals._tcp` Bonjour servi
 1. Put the Mac and device on a local network that permits discovery.
 2. Open the runner screen in the development app.
 3. Select **Start pairing**. Keep the displayed code visible.
-4. In Intents Overview, select **Devices & Apps…**. You can also open **Manage Devices & Apps…** from a suite's destination menu.
+4. In **Model evaluations**, select **Devices & Apps…**. You can also open **Manage Devices & Apps…** from a suite's destination menu.
 5. If discovery is off, select **Find devices**.
 6. Select **Connect** for the nearby app.
 7. Enter the code that the app shows. Select **Pair device**.

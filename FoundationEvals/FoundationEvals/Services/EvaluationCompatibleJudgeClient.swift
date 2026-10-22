@@ -1,4 +1,6 @@
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 import Security
 
 struct EvaluationResolvedJudgeConnection: Sendable {
@@ -147,6 +149,7 @@ actor EvaluationCompatibleJudgeClient {
         suite: EvaluationSuite,
         images: [ImageEvaluationInput],
         toolEvidence: String?,
+        subjectContext: EvaluationJudgeSubjectContext? = nil,
         resolved: EvaluationResolvedJudgeConnection
     ) async throws -> EvaluationCompatibleJudgeResult {
         let connection = resolved.connection
@@ -162,14 +165,19 @@ actor EvaluationCompatibleJudgeClient {
         guard suite.judgeConfiguration.hasCurrentExternalEvidenceApproval(for: connection) else {
             throw EvaluationCompatibleJudgeError.disclosureNotApproved
         }
+        let context = try EvaluationJudgeSubjectContext.resolved(subjectContext, evaluationCase: evaluationCase)
         let criteria = suite.rubricCriteria
         guard (1...4).contains(criteria.count) else { throw EvaluationJudgeValidationError.invalidCriteria }
         let configuration = Self.requestConfiguration(for: connection, criteriaCount: criteria.count)
         let started = ContinuousClock.now
         let prompt = EvaluationRunner.judgePrompt(response: response, evaluationCase: evaluationCase,
-            effectivePrompt: effectivePrompt, suite: suite, toolEvidence: toolEvidence)
+            effectivePrompt: effectivePrompt, suite: suite, toolEvidence: toolEvidence, subjectContext: context)
         var attempts: [EvaluationJudgeAttemptTrace] = []
         var lastError: Error?
+        var totalUsage = EvaluationUsage()
+        var usageComplete = true
+        var totalCost = 0.0
+        var costAvailability = EvaluationCostAvailability.known
         // Only rejected model-authored verdicts get one bounded repair.
         for attempt in 1...2 {
             try Task.checkCancellation()
@@ -185,6 +193,14 @@ actor EvaluationCompatibleJudgeClient {
                 // Capture before parsing: malformed JSON is evidence, not a
                 // reason to discard the provider's actual answer.
                 attempts[attempt - 1].rawResponse = envelope.rawContent
+                attempts[attempt - 1].usage = envelope.usage
+                let attemptCost = cost(connection: connection, response: envelope)
+                attempts[attempt - 1].cost = attemptCost
+                if let usage = envelope.usage { totalUsage.add(usage) } else { usageComplete = false }
+                if let amount = attemptCost.usd, amount.isFinite, (totalCost + amount).isFinite {
+                    totalCost += amount
+                    if attemptCost.availability == .estimated, costAvailability == .known { costAvailability = .estimated }
+                } else { costAvailability = .unavailable }
                 let payload = Self.jsonPayload(from: envelope.rawContent)
                 let decoded = try JSONDecoder().decode(CompatibleVerdict.self, from: Data(payload.utf8))
                 let verdict = EvaluationJudgeVerdict(checks: decoded.requirements.map {
@@ -197,8 +213,15 @@ actor EvaluationCompatibleJudgeClient {
                     prompt: attemptPrompt, rawResponse: envelope.rawContent, checks: judgment.checks,
                     validationError: nil, attempts: attempts, judgedCriterionIndexes: Array(1...criteria.count))
                 return EvaluationCompatibleJudgeResult(judgment: judgment, trace: trace,
-                    identity: identity(connection: connection, response: envelope), usage: envelope.usage,
-                    durationMilliseconds: milliseconds(since: started), cost: cost(connection: connection, response: envelope))
+                    identity: identity(connection: connection, response: envelope), usage: usageComplete ? totalUsage : nil,
+                    durationMilliseconds: milliseconds(since: started),
+                    cost: EvaluationCost(availability: costAvailability,
+                        usd: costAvailability == .unavailable ? nil : totalCost,
+                        explanation: costAvailability == .unavailable
+                            ? "At least one judge attempt cost was unavailable."
+                            : costAvailability == .estimated
+                                ? "Summed across judge attempts using configured token prices where needed."
+                                : "Summed reported cost across all judge attempts."))
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as URLError where error.code == .cancelled {
@@ -282,7 +305,12 @@ actor EvaluationCompatibleJudgeClient {
             guard data.count <= EvaluationStore.maximumImageBytes else {
                 throw EvaluationCompatibleJudgeError.capabilityMismatch("An image exceeds the evaluation attachment limit.")
             }
-            let type = image.url.pathExtension.lowercased() == "png" ? "image/png" : "image/jpeg"
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  CGImageSourceGetCount(source) > 0,
+                  let identifier = CGImageSourceGetType(source),
+                  let type = UTType(identifier as String)?.preferredMIMEType else {
+                throw EvaluationCompatibleJudgeError.capabilityMismatch("The image bytes do not identify a readable image media type.")
+            }
             parts.append(.image("data:\(type);base64,\(data.base64EncodedString())"))
         }
         return .parts(parts)

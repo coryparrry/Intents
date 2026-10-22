@@ -68,6 +68,8 @@ For an AI rubric, **Setup → Scoring** can use the subject model or an independ
 
 An external judge receives the evidence that it needs to score a response. The app shows a disclosure and asks for approval before this transfer. Read that disclosure before you approve it. Intents keeps judge keys in the macOS Keychain.
 
+Judging includes the frozen model-facing conversation before the scored response, including retained setup responses and restored history. This evidence is saved even when optional transcript tracing is off. The updated transfer policy requires fresh approval for external judging. Older multi-turn samples without this evidence remain readable, but must be run again before a new judgment can use their context. Unsupported or oversized history produces an unavailable judgment instead of a score based on incomplete context.
+
 ## Validate an external judge
 
 Use [Review and judge checks](Review-and-judge-checks.md) to label saved successes and failures, keep Development and Held-out examples separate, and replay a configured judge. Check false acceptance, false rejection, and unavailable examples before using judgments in a release decision. Evidence-transfer approval still applies.

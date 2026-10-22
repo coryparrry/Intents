@@ -51,9 +51,6 @@ struct ContentView: View {
             Task { await scenarioCoordinator.refreshAutomationEvidence() }
         }
         .onChange(of: store.telemetry?.isEnabled) { _, _ in recordScreen() }
-        .onChange(of: appControl.intentLabFeatureGate.isEnabled, initial: true) { _, enabled in
-            if !enabled, store.selection == .intentLab { store.selection = .overview }
-        }
         .onChange(of: store.selection, initial: true) { _, _ in recordScreen() }
         .onChange(of: windowActivity, initial: true) { _, activity in
             if activity == .key { recordScreen() }
@@ -85,7 +82,7 @@ struct ContentView: View {
 
     private var workspaceNavigation: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            WorkspaceSidebar(store: store, intentLabEnabled: appControl.intentLabFeatureGate.isEnabled)
+            WorkspaceSidebar(store: store)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
             VStack(spacing: 0) {
@@ -114,13 +111,9 @@ struct ContentView: View {
         switch store.selection {
         case .overview:
             WorkspaceOverviewView(store: store)
-        case .intentLab:
-            if appControl.intentLabFeatureGate.isEnabled {
-                IntentLabView(coordinator: scenarioCoordinator, store: store, projects: store.projects)
-            } else {
-                ContentUnavailableView("Intent Lab unavailable", systemImage: "lock",
-                    description: Text(IntentLabFeatureGate.unavailableMessage))
-            }
+        case .intentLab, .appAutomation:
+            AppTestingWorkspaceView(store: store, automationStore: automationStore,
+                coordinator: scenarioCoordinator, intentLabEnabled: appControl.intentLabFeatureGate.isEnabled)
         case .evaluations:
             SuiteEditorView(store: store, initialPage: .review)
                 .disclosureGroupStyle(FullWidthDisclosureStyle())
@@ -128,8 +121,6 @@ struct ContentView: View {
             ProductionWorkspaceView(model: productionWorkspace, store: store)
         case .traces:
             WorkspaceTracesView(store: store)
-        case .appAutomation:
-            AppAutomationView(model: automationStore)
         case .suite:
             SuiteEditorView(store: store)
                 .disclosureGroupStyle(FullWidthDisclosureStyle())

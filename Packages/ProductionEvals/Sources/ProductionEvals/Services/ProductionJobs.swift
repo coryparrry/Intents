@@ -141,17 +141,21 @@ extension ProductionStorage {
         try transaction {
             var settings = try control(job)
             guard !settings.paused, !settings.cancelled else { return nil }
-            for index in 0..<chunkCount(job) {
+            for index in claimStartIndex(job)..<chunkCount(job) {
                 var value = try chunk(job, index: index)
                 guard value.lease == nil || value.lease!.expiresAt <= now else { continue }
+                if value.records.count == slots(job, chunk: index).count {
+                    advanceClaimPrefix(job, completedIndex: index)
+                    continue
+                }
                 let available = slots(job, chunk: index).contains { slot in
                     job.configuration.targets[targetIndex(job, slot: slot)].matches(worker)
                     && value.records[slot] == nil
                 }
                 guard available else { continue }
-            if let start = settings.startedAt, now.timeIntervalSince(start) > job.configuration.maximumElapsedSeconds {
-                throw ProductionFailure.budget("Job elapsed-time budget was exhausted; evidence was retained.")
-            }
+                if let start = settings.startedAt, now.timeIntervalSince(start) > job.configuration.maximumElapsedSeconds {
+                    throw ProductionFailure.budget("Job elapsed-time budget was exhausted; evidence was retained.")
+                }
 
                 if settings.startedAt == nil {
                     settings.startedAt = now

@@ -147,7 +147,8 @@ actor EvaluationExperimentRunner {
             assessment.samples = assessments.flatMap(\.samples)
             assessment.durationMilliseconds = EvaluationAssessment.summedJudgeDurationMilliseconds(assessment.samples)
             let usage = assessments.compactMap(\.totalUsage)
-            assessment.totalUsage = usage.isEmpty ? nil : usage.reduce(into: EvaluationUsage()) { $0.add($1) }
+            assessment.totalUsage = usage.count == assessments.count
+                ? usage.reduce(into: EvaluationUsage()) { $0.add($1) } : nil
             assessment.cost = combinedCost(assessments.map(\.cost))
             let rawIdentities = assessments.flatMap { $0.observedJudgeIdentities ?? [$0.judge] }
             let modelIdentities = rawIdentities.filter { $0.requestedModelID != "none" }

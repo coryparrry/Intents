@@ -522,12 +522,17 @@ final class EvaluationStore {
         let directory = EvaluationWorkspacePersistence.suiteDirectory(
             supportDirectory: supportDirectory, projectID: selectedProjectID, suiteID: newSuite.id
         )
-        try EvaluationWorkspacePersistence.createSuiteDirectories(at: directory)
-        try CanonicalJSON.data(for: newSuite).write(to: directory.appending(path: "suite.json"), options: .atomic)
-        try updateProject(selectedProjectID) { project in
-            project.suites.append(record)
-            project.selectedSuiteID = newSuite.id
-            project.updatedAt = now
+        do {
+            try EvaluationWorkspacePersistence.createSuiteDirectories(at: directory)
+            try CanonicalJSON.data(for: newSuite).write(to: directory.appending(path: "suite.json"), options: .atomic)
+            try updateProject(selectedProjectID) { project in
+                project.suites.append(record)
+                project.selectedSuiteID = newSuite.id
+                project.updatedAt = now
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
         }
         try switchWorkspace(projectID: selectedProjectID, suiteID: newSuite.id)
         return newSuite.id
@@ -988,11 +993,11 @@ final class EvaluationStore {
               let connection = judgeConnections.first(where: { $0.id == id }) else { return nil }
         let images = draftSuite.attachments.count { $0.kind == .image }
         let sentImages = draftSuite.judgeConfiguration.includeReferenceAttachments ? images : 0
-        return "Intents will send each case's instructions, effective input, candidate response, verified reference, bounded tool evidence"
+        return "Intents will send each case's instructions, effective input, observed model-facing conversation (including retained prompts, responses, reasoning and tool content), candidate response, verified reference, bounded tool evidence"
             + (sentImages > 0 ? ", and \(sentImages) reference image\(sentImages == 1 ? "" : "s")" : "")
             + " to \(connection.name) at \(connection.baseURL)."
             + (images > 0 && sentImages == 0 ? " Reference images remain local." : "")
-            + " No application tools, other runs, secrets, or telemetry are sent."
+            + " No unrelated runs, application tool access, or telemetry are sent."
     }
 
     func approveExternalJudgeDisclosure() {
@@ -1004,6 +1009,7 @@ final class EvaluationStore {
         draftSuite.judgeConfiguration.approvedIncludeReferenceAttachments =
             draftSuite.judgeConfiguration.includeReferenceAttachments
         draftSuite.judgeConfiguration.approvedConnectionDigest = connection.disclosureDigest
+        draftSuite.judgeConfiguration.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         _ = saveSuite()
     }
 
@@ -2016,6 +2022,15 @@ final class EvaluationStore {
               FileManager.default.fileExists(atPath: root.appending(path: ".git").path) else {
             throw EvaluationStoreError.resourceConflict("Choose the root of a Git repository.")
         }
+        if let linked = selectedProject.repository {
+            let linkedRoot = URL(filePath: linked.rootPath, directoryHint: .isDirectory)
+                .standardizedFileURL.resolvingSymlinksInPath()
+            guard linkedRoot.path == root.resolvingSymlinksInPath().path else {
+                throw EvaluationStoreError.resourceConflict(
+                    "This project is already linked to another repository. Create a separate project to link a different repository."
+                )
+            }
+        }
         let repository = EvaluationRepositoryLink(rootPath: root.path)
         let filename = "\(Self.repositorySlug(suite.name))-\(suite.id.uuidString.lowercased()).json"
         let relativePath = repository.definitionsDirectory + "/" + filename
@@ -2680,6 +2695,15 @@ final class EvaluationStore {
         return Task {
             defer { isProcessingFiles = false }
             do {
+                guard urls.count <= Self.maximumAttachments - suite.attachments.count else {
+                    throw ImportError.tooManyFiles
+                }
+                let imageCount = urls.count {
+                    UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) == true
+                }
+                guard imageCount <= Self.maximumImages - suite.attachments.count(where: { $0.kind == .image }) else {
+                    throw ImportError.tooManyImages
+                }
                 let inputs = try await Task.detached(priority: .userInitiated) {
                     try urls.map { url -> AttachmentInput in
                         guard url.isFileURL else { throw ImportError.notRegularLocalFile }

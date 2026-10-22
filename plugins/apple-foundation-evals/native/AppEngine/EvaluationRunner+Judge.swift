@@ -18,7 +18,7 @@ extension EvaluationRunner {
         var cost: EvaluationCost? = nil
     }
 
-    static let judgePromptVersion = "rubric-v8-compatible-request-policy"
+    static let judgePromptVersion = "rubric-v9-observed-conversation"
 
     static let judgeInstructions = """
         Evaluate the candidate response against each numbered rubric requirement.
@@ -50,6 +50,7 @@ extension EvaluationRunner {
         contextSize: Int,
         modelName: String,
         toolEvidence: String?,
+        subjectContext: EvaluationJudgeSubjectContext? = nil,
         tokenCounter: any EvaluationPromptInputTokenCounting,
         workflowRecorder: EvaluationWorkflowRecorder? = nil
     ) async -> JudgeOutcome {
@@ -77,7 +78,15 @@ extension EvaluationRunner {
                     endpointKind: nil, baseURL: nil, requestedModelID: "none", reportedModelID: "none", provider: "local", providerOrder: []),
                 cost: EvaluationCost(availability: .known, usd: 0, explanation: "No model judge request was needed."))
         }
+        let context: EvaluationJudgeSubjectContext
+        do {
+            context = try EvaluationJudgeSubjectContext.resolved(subjectContext, evaluationCase: evaluationCase)
+        } catch {
+            return JudgeOutcome(status: .unscored, rationale: error.localizedDescription,
+                errorCategory: "incompleteSavedEvidence", errorMessage: error.localizedDescription)
+        }
         var semanticSuite = suite
+        if let instructions = context.subjectInstructions { semanticSuite.instructions = instructions }
         semanticSuite.criteria = semanticIndexes.map { criteria[$0] }.joined(separator: "\n")
         let semanticCriteria = semanticSuite.rubricCriteria
 
@@ -90,7 +99,7 @@ extension EvaluationRunner {
         let interval = signposter.beginInterval("Judge request", id: signpostID)
         defer { signposter.endInterval("Judge request", interval) }
         let basePrompt = Self.judgePrompt(response: response, evaluationCase: evaluationCase, effectivePrompt: effectivePrompt,
-            suite: semanticSuite, toolEvidence: toolEvidence)
+            suite: semanticSuite, toolEvidence: toolEvidence, subjectContext: context)
         var judgeTrace = EvaluationJudgeTrace(instructions: Self.judgeInstructions, prompt: basePrompt,
             checks: objectiveChecks, judgedCriterionIndexes: semanticIndexes.map { $0 + 1 })
         var attempts: [EvaluationJudgeAttemptTrace] = []
@@ -138,6 +147,9 @@ extension EvaluationRunner {
                 if let text = Self.reasoningText(from: verdict.transcriptEntries) { reasoning.append(text) }
                 judgeTrace.rawResponse = verdict.rawContent.jsonString
                 attempts[attempts.count - 1].rawResponse = verdict.rawContent.jsonString
+                attempts[attempts.count - 1].usage = Self.usage(from: verdict.usage)
+                attempts[attempts.count - 1].cost = EvaluationCost(availability: .unavailable, usd: nil,
+                    explanation: "Apple's model runtime does not report monetary cost.")
                 judgeTrace.attempts = attempts
                 do {
                     let semanticJudgment = try EvaluationJudge.validate(
@@ -204,7 +216,8 @@ extension EvaluationRunner {
     }
 
     static func judgePrompt(response: String, evaluationCase: EvaluationCase, effectivePrompt: String,
-                            suite: EvaluationSuite, toolEvidence: String?) -> String {
+                            suite: EvaluationSuite, toolEvidence: String?,
+                            subjectContext: EvaluationJudgeSubjectContext? = nil) -> String {
         let reference = evaluationCase.expected
         let numberedCriteria = suite.rubricCriteria.enumerated().map { "\($0.offset + 1). \($0.element)" }
         return """
@@ -221,7 +234,8 @@ extension EvaluationRunner {
             A score of 1 or 2 must be justified by a specific numbered rubric requirement. \
             The subject input is not an additional requirement.
 
-            subjectInstructions: \(String(reflecting: suite.instructions))
+            subjectInstructions: \(String(reflecting: subjectContext?.subjectInstructions ?? suite.instructions))
+            observedModelFacingHistory: \(String(reflecting: subjectContext?.evidenceText ?? "[]"))
             effectiveSubjectInput: \(String(reflecting: effectivePrompt))
             verifiedReference: \(String(reflecting: reference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : reference))
             subjectToolEvidence: \(String(reflecting: toolEvidence))

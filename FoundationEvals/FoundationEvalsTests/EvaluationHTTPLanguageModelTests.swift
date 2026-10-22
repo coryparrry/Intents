@@ -374,6 +374,33 @@ struct EvaluationHTTPLanguageModelTests {
         #expect(updates.allSatisfy { $0.caseID == caseID && $0.repetition == 1 })
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func cancellationFromFinalEOFObserverPropagatesThroughExecutor() async throws {
+        let fixture = try RunningCustomModelFixture(streamDelay: 0)
+        defer { fixture.stop() }
+        var configuration = EvaluationCustomProviderConfiguration()
+        configuration.endpoint = "http://127.0.0.1:\(fixture.port)/text-eof"
+        let model = EvaluationHTTPLanguageModel(configuration: configuration,
+            liveResponseObserver: EvaluationHTTPLiveResponseObserver { update in
+                if update.content == "First last." {
+                    withUnsafeCurrentTask { $0?.cancel() }
+                }
+            })
+        let executor = try EvaluationHTTPLanguageModelExecutor(configuration: model.executorConfiguration)
+        let channel = LanguageModelExecutorGenerationChannel()
+        let drain = Task { for try await _ in channel {} }
+        defer { drain.cancel() }
+        let response = await Task {
+            try await executor.respond(to: LanguageModelExecutorGenerationRequest(id: UUID(), transcript: Transcript(),
+                enabledTools: [], generationOptions: GenerationOptions(), contextOptions: ContextOptions(),
+                metadata: ["evalCaseID": UUID().uuidString, "repetition": 1]), model: model, streamingInto: channel)
+        }.result
+        switch response {
+        case .success: Issue.record("Cancellation from the final EOF observer returned a completed execution.")
+        case .failure(let error): #expect(error is CancellationError)
+        }
+    }
+
     @Test(.timeLimit(.minutes(1)), arguments: [6, 7])
     func providerTokenizerEnforcesTheConfiguredSubjectInputLimit(maximumInputTokens: Int) async throws {
         let requestLog = FileManager.default.temporaryDirectory

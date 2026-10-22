@@ -153,6 +153,10 @@ final class UIStepTests: XCTestCase {
             let actual = try property(step.property, locator: step.query, app: app)
             guard actual == step.equals else { throw UIHostError.assertionFailed }; return actual
         case .readProperty: return try property(step.property, locator: step.query, app: app)
+        case .readHierarchy:
+            try step.validateHierarchyRead()
+            guard app.state != .notRunning else { throw UIHostError.unavailableProperty }
+            return try UIHostHierarchyReadback.capture(app.debugDescription)
         case .screenshot:
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = "intents-ui-screenshot-" + step.id; attachment.lifetime = .keepAlways; add(attachment)

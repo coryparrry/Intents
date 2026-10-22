@@ -267,10 +267,12 @@ struct EvaluationCustomTool: Tool {
                 }
             }
             observedOutput = output
+            try Task.checkCancellation()
             guard output.utf8.count <= EvaluationCustomToolDefinition.maximumOutputBytes else {
                 throw EvaluationCustomToolError.outputTooLarge
             }
             let outputTokenCount = try await tokenCounter.tokenCount(for: output)
+            try Task.checkCancellation()
             guard outputTokenCount <= Self.maximumOutputTokens else {
                 throw EvaluationCustomToolError.outputTokenLimitExceeded(
                     actual: outputTokenCount,

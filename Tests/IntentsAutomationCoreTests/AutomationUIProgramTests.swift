@@ -2,6 +2,40 @@ import XCTest
 @testable import IntentsAutomationCore
 
 final class AutomationUIProgramTests: XCTestCase, @unchecked Sendable {
+    func testHierarchyReadbackIsBoundedWithoutSplittingUnicodeScalars() throws {
+        let short = try UIHostHierarchyReadback.capture("Window: Sign in\nButton: Continue")
+        XCTAssertEqual(short.properties?["hierarchy"]?.value, "Window: Sign in\nButton: Continue")
+        XCTAssertEqual(short.properties?["truncated"]?.boolValue, false)
+        try UIHostHierarchyReadback.validate(short)
+        let description = String(repeating: "a", count: 32_767) + "💫"
+        let bounded = try UIHostHierarchyReadback.capture(description)
+        XCTAssertEqual(bounded.properties?["hierarchy"]?.value?.utf16.count, 32_767)
+        XCTAssertEqual(bounded.properties?["truncated"]?.boolValue, true)
+        XCTAssertFalse(bounded.properties?["hierarchy"]?.value?.contains("�") == true)
+        try UIHostHierarchyReadback.validate(bounded)
+        let exact = try UIHostHierarchyReadback.capture(String(repeating: "💫", count: 16_384))
+        XCTAssertEqual(exact.properties?["hierarchy"]?.value?.utf16.count, 32_768)
+        XCTAssertEqual(exact.properties?["truncated"]?.boolValue, false)
+        XCTAssertThrowsError(try UIHostHierarchyReadback.capture(" \n"))
+        var oversized = short
+        oversized.properties?["hierarchy"]?.value = String(repeating: "x", count: 32_769)
+        XCTAssertThrowsError(try UIHostHierarchyReadback.validate(oversized))
+    }
+
+    func testDirectHierarchyReadbackCannotCarryQueriesOrMutationInputs() throws {
+        let step = UIHostStep(id: "initial-hierarchy", kind: .readHierarchy)
+        try AutomationUIProgram(steps: [step]).validate(phase: .subject)
+        try AutomationUIProgram(steps: [step]).validate(phase: .observe)
+        var invalid = step; invalid.query = .init(label: "Invented app name")
+        XCTAssertThrowsError(try AutomationUIProgram(steps: [invalid]).validate(phase: .subject))
+        invalid = step; invalid.text = "Enter data"
+        XCTAssertThrowsError(try AutomationUIProgram(steps: [invalid]).validate(phase: .subject))
+        invalid = step; invalid.environment = ["FIXTURE": "write"]
+        XCTAssertThrowsError(try AutomationUIProgram(steps: [invalid]).validate(phase: .subject))
+        invalid = step; invalid.equals = .init(kind: "bool", boolValue: true)
+        XCTAssertThrowsError(try AutomationUIProgram(steps: [invalid]).validate(phase: .subject))
+    }
+
     func testRoleLocatorOnlyAllowsOrdinaryTextFillWithoutReadingSensitiveLabels() throws {
         for role in ["textbox", "searchbox"] {
             let program = AutomationUIProgram(operations: [.init(id: "fill", kind: .fillBinding, locator: .init(.role, role), binding: "query")], bindings: ["query": "public"])

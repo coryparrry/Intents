@@ -152,7 +152,11 @@ enum EvaluationConversationRuntime {
         projection: EvaluationModelHistoryProjection?
     ) -> [Transcript.Entry] {
         guard let projection else { return storedHistory }
-        return projectedHistory(storedHistory, using: projection)
+        // The session applies its transform after appending the new prompt. An
+        // unfinished restored prompt must not survive a reset/retention transform
+        // merely because evidence was captured just before that append.
+        let nextPrompt = Transcript.Entry.prompt(Transcript.Prompt(segments: []))
+        return Array(projectedHistory(storedHistory + [nextPrompt], using: projection).dropLast())
     }
 
     static func completeTurns(in history: [Transcript.Entry]) -> [[Transcript.Entry]] {

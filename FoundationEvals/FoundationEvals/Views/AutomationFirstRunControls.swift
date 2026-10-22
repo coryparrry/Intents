@@ -11,6 +11,10 @@ struct AutomationFirstRunControls: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Start with a read-only observation of your app. Include discovered actions and provide the inputs they need.")
                     .font(.callout).foregroundStyle(.secondary)
+                if let reason = model.firstChecksUnavailableReason {
+                    Text(reason).font(.callout).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("automation.firstChecks.unavailableReason")
+                }
                 if model.prepared != nil, model.catalog?.systemActions.isEmpty == false {
                     Toggle("Include discovered app actions", isOn: $model.firstRunIncludesActions)
                         .onChange(of: model.firstRunIncludesActions) { model.firstRunEffectsConfirmed = false }

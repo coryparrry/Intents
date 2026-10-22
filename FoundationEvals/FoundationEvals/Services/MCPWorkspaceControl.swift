@@ -44,7 +44,8 @@ import Foundation
       configuration.approvedConnectionID == current.approvedConnectionID,
       configuration.approvedIncludeReferenceAttachments
         == current.approvedIncludeReferenceAttachments,
-      configuration.approvedConnectionDigest == current.approvedConnectionDigest
+      configuration.approvedConnectionDigest == current.approvedConnectionDigest,
+      configuration.approvedEvidencePolicyVersion == current.approvedEvidencePolicyVersion
     else {
       throw EvaluationStoreError.resourceConflict(
         "Disclosure approvals are server-owned. Use eval_judge_disclosure_approve with explicit operator confirmation."
@@ -234,7 +235,7 @@ import Foundation
         )
       }
       store.approveExternalJudgeDisclosure()
-      guard store.suite.judgeConfiguration.approvedConnectionDigest == connection.disclosureDigest
+      guard store.suite.judgeConfiguration.hasCurrentExternalEvidenceApproval(for: connection)
       else { throw EvaluationStoreError.persistence("Disclosure approval was not saved.") }
     case "eval_reassess_run":
       guard !store.hasActiveExecution, !store.isReassessing,

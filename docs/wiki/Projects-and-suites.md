@@ -8,9 +8,9 @@ A **project** groups suites for one app or area of work. A **suite** contains sh
 
 Use the **Project** menu at the top of the sidebar to change projects. This menu also has **New project…** and **Manage projects…**. The manager can create, rename, duplicate, and archive projects and suites.
 
-Select **New Suite** in Overview or at the bottom of the sidebar. To duplicate or archive an existing suite, open its sidebar context menu.
+Select **New Suite** in **Model evaluations** or at the bottom of the sidebar. To duplicate or archive an existing suite, open its sidebar context menu.
 
-Overview shows each active suite's latest check against its current definition. Search for a suite by name, or show only suites that need attention. Select a suite to open it. Select its play button to run it. Select **Refresh** to reload saved results.
+**Model evaluations** shows each active suite's latest check against its current definition. Search for a suite by name, or show only suites that need attention. Select a suite to open it. Select its play button to run it. Select **Refresh** to reload saved results.
 
 The sidebar **Runs** list belongs to the selected suite. Its filter accepts a suite name or version. The run context menu can delete a saved run. This deletes its results and trace from this Mac. The app cannot undo the deletion.
 

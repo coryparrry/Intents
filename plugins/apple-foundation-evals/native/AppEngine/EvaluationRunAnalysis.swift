@@ -384,9 +384,10 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
             return try? EvaluationScoringContract(run: run)
         }
         guard assessment.runID == run.id else { return nil }
-        let semantic = run.scoringMode == .modelJudge
+        let scoringMode = assessment.scoringContract?.scoringMode ?? run.scoringMode
+        let semantic = scoringMode == .modelJudge
         let derived = try? EvaluationScoringContract(
-            scoringMode: run.scoringMode,
+            scoringMode: scoringMode,
             rubricCriteria: semantic ? normalizedRubric(assessment.rubric) : [],
             judgePromptVersion: semantic ? assessment.promptVersion : nil,
             judgePassingScore: semantic ? assessment.passingScore : nil,

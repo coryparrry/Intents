@@ -72,10 +72,14 @@ extension AppAutomationStore {
         case .run:
             let preview: AutomationNativeCommandPreview
             do { preview = try await verifiedPreviewCommand() }
-            catch { invalidatePendingCommand(); throw error }
+            catch {
+                if pendingCommand == review.id { invalidatePendingCommand() }
+                throw error
+            }
             guard canRun, preview.digest == review.digest, pendingCommandStatus?.requestID == review.id,
                   pendingCommandStatus?.state == "awaitingApproval" else {
-                invalidatePendingCommand(); throw AutomationContractError.conflictingOperation
+                if pendingCommand == review.id { invalidatePendingCommand() }
+                throw AutomationContractError.conflictingOperation
             }
             run()
         case .reproduction:
