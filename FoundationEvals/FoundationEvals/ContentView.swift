@@ -4,22 +4,16 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var store: EvaluationStore
     @State private var productionWorkspace: ProductionWorkspaceStore
-    @State private var appliedAutomationLaunchSelection = false
-    @State private var automationStore: AppAutomationStore
     @State private var appControl: EvaluationAppControl
-    @State private var scenarioCoordinator: ScenarioCoordinator
     @Environment(DeveloperRunnerStore.self) private var runners
     @Environment(\.controlActiveState) private var windowActivity
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
-    init(store: EvaluationStore, control: EvaluationAppControl? = nil, automationStore: AppAutomationStore? = nil) {
+    init(store: EvaluationStore, control: EvaluationAppControl? = nil) {
         self.store = store
         let control = control ?? EvaluationAppControl(store: store)
         _appControl = State(initialValue: control)
         _productionWorkspace = State(initialValue: control.production)
-        _scenarioCoordinator = State(initialValue: control.scenarios)
-        let automationStore = automationStore ?? AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"), telemetry: store.telemetry)
-        _automationStore = State(initialValue: automationStore)
     }
 
     var body: some View {
@@ -31,25 +25,6 @@ struct ContentView: View {
         .frame(minWidth: 1_000, minHeight: 700)
         .toolbar(removing: .title)
         .background { SuiteAutosaveObserver(store: store) }
-        .task {
-            // App and MCP composition bind before exposure. Standalone views
-            // bind their retained dependencies here, outside view construction.
-            appControl.bindAutomationExecution(automationStore)
-            await automationStore.migrateEvidenceHistory()
-            #if DEBUG
-            if !appliedAutomationLaunchSelection {
-                appliedAutomationLaunchSelection = true
-                let arguments = ProcessInfo.processInfo.arguments
-                if let index = arguments.firstIndex(of: "--automation-select-path"), arguments.indices.contains(index + 1) {
-                    automationStore.select(URL(fileURLWithPath: arguments[index + 1]))
-                }
-            }
-            #endif
-            await scenarioCoordinator.refreshAutomationEvidence()
-        }
-        .onChange(of: automationStore.evidenceImportRevision) { _, _ in
-            Task { await scenarioCoordinator.refreshAutomationEvidence() }
-        }
         .onChange(of: store.telemetry?.isEnabled) { _, _ in recordScreen() }
         .onChange(of: store.selection, initial: true) { _, _ in recordScreen() }
         .onChange(of: windowActivity, initial: true) { _, activity in
@@ -111,9 +86,6 @@ struct ContentView: View {
         switch store.selection {
         case .overview:
             WorkspaceOverviewView(store: store)
-        case .intentLab, .appAutomation:
-            AppTestingWorkspaceView(store: store, automationStore: automationStore,
-                coordinator: scenarioCoordinator, intentLabEnabled: appControl.intentLabFeatureGate.isEnabled)
         case .evaluations:
             SuiteEditorView(store: store, initialPage: .review)
                 .disclosureGroupStyle(FullWidthDisclosureStyle())
@@ -121,6 +93,8 @@ struct ContentView: View {
             ProductionWorkspaceView(model: productionWorkspace, store: store)
         case .traces:
             WorkspaceTracesView(store: store)
+        case .appIntentTesting:
+            MacIntentTestingView(model: appControl.appIntentTesting)
         case .suite:
             SuiteEditorView(store: store)
                 .disclosureGroupStyle(FullWidthDisclosureStyle())

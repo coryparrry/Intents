@@ -9,7 +9,6 @@ struct FoundationEvalsApp: App {
     @NSApplicationDelegateAdaptor(FoundationEvalsAppDelegate.self) private var appDelegate
     @State private var store: EvaluationStore
     @State private var runnerStore: DeveloperRunnerStore
-    @State private var automationStore: AppAutomationStore
     @State private var telemetry: TelemetryController
     @State private var mcpSettings: MCPSettingsController
     // Debug builds must retain the exact executable being tested.
@@ -31,13 +30,7 @@ struct FoundationEvalsApp: App {
         let store = EvaluationStore(supportDirectory: storeDirectory, telemetry: telemetry)
         let control = EvaluationAppControl(store: store)
         appControl = control
-        let nativeEvidence = ScenarioPersistence(rootDirectory: store.overviewStorageDirectory.appendingPathComponent("IntentLab"))
-        let automationStore = AppAutomationStore(supportDirectory: store.overviewStorageDirectory.appendingPathComponent("Automation"), telemetry: telemetry,
-            evidenceImporter: { plan, report, source, exposure in
-                try await nativeEvidence.importAutomationEvidence(plan: plan, report: report, sourceRoot: source, exposure: exposure)
-            })
-        control.bindAutomationExecution(automationStore)
-        let runtime = FoundationEvalsMCPRuntime(store: store, control: control, automationStore: automationStore)
+        let runtime = FoundationEvalsMCPRuntime(store: store, control: control)
         let settings = MCPSettingsController(
             serverControl: MCPServerControl(
                 start: { configuration in try await runtime.start(configuration) },
@@ -54,13 +47,8 @@ struct FoundationEvalsApp: App {
         telemetry.appBecameActive()
         _store = State(initialValue: store)
         _runnerStore = State(initialValue: control.runners)
-        _automationStore = State(initialValue: automationStore)
         _mcpSettings = State(initialValue: settings)
         mcpRuntime = runtime
-        if !Self.launchesProductionWorker && !Self.launchIsolation.isHostedTest {
-            // MCP remains usable even when every workspace window is closed.
-            Task { await control.intentLabFeatureGate.monitor() }
-        }
         if Self.launchesProductionWorker {
             NSApplication.shared.setActivationPolicy(.prohibited)
             Task { await ProductionNativeWorkerCommand.run(store: store) }
@@ -149,7 +137,7 @@ struct FoundationEvalsApp: App {
 
     var body: some Scene {
         WindowGroup(id: "evaluation-main", for: String.self) { _ in
-            ContentView(store: store, control: appControl, automationStore: automationStore)
+            ContentView(store: store, control: appControl)
                 .environment(runnerStore)
                 .task { await Self.sizeVerificationWindow() }
                 .task(id: mcpSettings.installationState) {
@@ -185,17 +173,11 @@ struct FoundationEvalsApp: App {
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
-                Button("Show App Intents & Siri") {
-                    store.selection = .appAutomation
+                Button("Show App Intent Testing") {
+                    store.selection = .appIntentTesting
                     openWindow(id: "evaluation-main", value: "main")
                 }
                 .keyboardShortcut("2", modifiers: [.command])
-
-                Button("Show Suite Editor") {
-                    store.selection = .suite
-                    openWindow(id: "evaluation-main", value: "main")
-                }
-                .keyboardShortcut("3", modifiers: [.command])
 
                 Button("Add Test Case") {
                     store.selection = .suite

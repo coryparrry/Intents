@@ -1,0 +1,83 @@
+import XCTest
+
+final class MacIntentTestingUITests: XCTestCase {
+    @MainActor
+    func testMacIntentTestingShowsInstalledAppAndExplicitCaseControls() throws {
+        continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "mac-intent-testing")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let fixture = try makeCatalogFixture(in: storage)
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.appending(path: "Workspace").path,
+                                "--evaluation-window-width", "1000", "--evaluation-window-height", "700"]
+        app.launch()
+        defer { app.terminate() }
+        app.activate()
+        app.menuBars.menuBarItems["Evaluation"].click()
+        XCTAssertFalse(app.menuItems["Show Intent Lab"].exists)
+        XCTAssertFalse(app.menuItems["Show App Automation"].exists)
+        app.menuItems["Show App Intent Testing"].click()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Choose built macOS app…"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.outlines.staticTexts["Intent Lab"].exists)
+        XCTAssertFalse(app.outlines.staticTexts["App automation"].exists)
+        let installationText = "Install and launch the app normally"
+        let installationCopy = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@",
+                                           installationText, installationText)
+        XCTAssertTrue(app.staticTexts.matching(installationCopy).firstMatch.exists)
+
+        // Read compiled metadata from a synthetic bundle. This does not install,
+        // launch, sign, or dispatch the fixture through the native test runner.
+        app.buttons["Choose built macOS app…"].click()
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let path = app.sheets.textFields.firstMatch
+        XCTAssertTrue(path.waitForExistence(timeout: 5))
+        path.typeText(fixture.path)
+        app.typeKey(.return, modifierFlags: [])
+        let open = app.sheets.buttons["Open"].firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        open.click()
+
+        let inputs = app.textViews["Inputs JSON"]
+        XCTAssertTrue(inputs.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(inputs.value as? String, "{}")
+        XCTAssertFalse(app.textViews["Expected value JSON"].exists)
+        let compare = app.switches["Compare returned value"]
+        if !compare.exists {
+            let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+            screenshot.name = "Missing compare control"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+        }
+        XCTAssertTrue(compare.exists, app.debugDescription)
+        compare.click()
+        XCTAssertTrue(app.textViews["Expected value JSON"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.textViews["Expected value JSON"].value as? String, "null")
+        XCTAssertTrue(app.textFields["Developer directory"].exists)
+        XCTAssertTrue(app.textFields["Signing identity"].exists)
+        XCTAssertTrue(app.textFields["Team identifier"].exists)
+        XCTAssertTrue(app.buttons["Run native test"].exists)
+        XCTAssertFalse(app.buttons["Cancel"].isEnabled)
+        let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        attachment.name = "Mac App Intent testing explicit case controls"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private func makeCatalogFixture(in directory: URL) throws -> URL {
+        let app = directory.appending(path: "CatalogFixture.app")
+        let contents = app.appending(path: "Contents")
+        try FileManager.default.createDirectory(at: contents.appending(path: "MacOS"), withIntermediateDirectories: true)
+        let metadata = contents.appending(path: "Resources/Metadata.appintents")
+        try FileManager.default.createDirectory(at: metadata, withIntermediateDirectories: true)
+        let info: [String: Any] = ["CFBundleIdentifier": "example.MacIntentUITestFixture", "CFBundlePackageType": "APPL",
+                                   "CFBundleExecutable": "CatalogFixture"]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: contents.appending(path: "Info.plist"))
+        try Data("catalog-only fixture".utf8).write(to: contents.appending(path: "MacOS/CatalogFixture"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: contents.appending(path: "MacOS/CatalogFixture").path)
+        try Data(#"{"version":1,"actions":{"EchoIntent":{"identifier":"EchoIntent","title":{"key":"Echo"},"parameters":[]}}}"#.utf8)
+            .write(to: metadata.appending(path: "extract.actionsdata"))
+        return app
+    }
+}

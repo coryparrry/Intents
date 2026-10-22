@@ -1,9 +1,7 @@
 # Intents showcase
 
 A static, responsive Intents showcase with historical browser examples and a
-practical getting-started guide. The report, workflow trace, and Intent Lab
-examples use native icon assets, labels, and recorded outputs; they do not
-represent every control in current development source.
+practical getting-started guide. The report and workflow trace use recorded evaluation outputs. The Mac App Intent example is an illustrative JSON contract for unshipped development source; it does not run an intent.
 
 All commands below run from the `website/` directory. From the repository root, enter it first:
 
@@ -48,11 +46,9 @@ source synchronization and publication.
   Expanded-scale bar placement follows the native view. Some inspector end
   times are rounded from the recorded start plus duration; displayed timings
   are not intended as performance benchmarks.
-- Intent Lab: historical evidence from the real **PR54 physical read-only check**
-  test fixture. The static demo predates suite Review and Batch runs; it does not
-  show their current controls. These examples are not live model execution, Siri
-  calls, or device connections. Use the [current user guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Home.md)
-  for the merged workflows.
+- Mac App Intent example: authored JSON inputs and expected returned value for
+  unshipped Mac-only development source. No browser invocation, Siri check, or
+  successful runtime qualification is implied.
 - Reference direction: [Inspora](https://www.inspora.design/?category=Web), including
   its glassmorphism animation example: restrained depth, controlled transitions,
   clear typographic hierarchy. No third-party artwork was copied.
@@ -102,7 +98,7 @@ layout read.
   A plain local static server may still require `/getting-started.html`.
 - Download facts were verified on 9 October 2026. Recheck published release
   assets before publishing or updating version copy.
-  Review, Batch runs, and Intent Lab are also available in the v1.4.0 release.
+  Review and Batch runs are also available in the v1.4.0 release.
 - `.openai/hosting.json` disables the homepage fallback for nonexistent URLs,
   so missing pages return HTTP 404 instead of duplicate homepage content.
 - Alternate and canonical links are in the HTML head. Sites serves the text

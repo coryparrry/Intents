@@ -253,7 +253,7 @@ struct EvaluationStoreRunLifecycleTests {
         featureSuite.modelConfiguration.provider = .customHTTP
         featureSuite.modelConfiguration.customProviderSettings.endpoint = "unused-desktop-endpoint"
         #expect(store.validationIssue(for: featureSuite, includeModelReadiness: false) != nil)
-        let revision = try store.ensureScenarioFeatureSuite(projectID: store.selectedProjectID, suite: featureSuite)
+        let revision = try store.ensureFeatureSuite(projectID: store.selectedProjectID, suite: featureSuite)
         let run = try await store.runFeatureAdapterSnapshot(
             id: UUID(), projectID: store.selectedProjectID, suite: featureSuite,
             expectedRevision: revision,
@@ -303,7 +303,7 @@ struct EvaluationStoreRunLifecycleTests {
 
     @MainActor
     @Test(.timeLimit(.minutes(1)))
-    func scenarioFeatureSuiteRegistrationPreservesSelectionAndRejectsChangedContract() throws {
+    func appFeatureSuiteRegistrationPreservesSelectionAndRejectsChangedContract() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = EvaluationStore(supportDirectory: directory)
@@ -311,26 +311,26 @@ struct EvaluationStoreRunLifecycleTests {
         let visibleSuiteID = store.selectedSuiteID
         let visibleDraft = store.draftSuite
         let visibleSelection = store.selection
-        var scenarioSuite = EvaluationSuite()
-        scenarioSuite.name = "Scenario feature"
-        scenarioSuite.scoringMode = .exactMatch
-        scenarioSuite.cases = [EvaluationCase(name: "Frozen", prompt: "request", expected: "RESULT")]
+        var featureSuite = EvaluationSuite()
+        featureSuite.name = "App feature"
+        featureSuite.scoringMode = .exactMatch
+        featureSuite.cases = [EvaluationCase(name: "Frozen", prompt: "request", expected: "RESULT")]
 
-        let revision = try store.ensureScenarioFeatureSuite(projectID: projectID, suite: scenarioSuite)
-        #expect(revision == (try EvaluationStore.revision(for: scenarioSuite)))
-        #expect(try store.ensureScenarioFeatureSuite(projectID: projectID, suite: scenarioSuite) == revision)
+        let revision = try store.ensureFeatureSuite(projectID: projectID, suite: featureSuite)
+        #expect(revision == (try EvaluationStore.revision(for: featureSuite)))
+        #expect(try store.ensureFeatureSuite(projectID: projectID, suite: featureSuite) == revision)
         #expect(store.selectedProjectID == projectID)
         #expect(store.selectedSuiteID == visibleSuiteID)
         #expect(store.draftSuite == visibleDraft)
         #expect(store.selection == visibleSelection)
 
-        scenarioSuite.cases[0].expected = "CHANGED"
+        featureSuite.cases[0].expected = "CHANGED"
         #expect(throws: EvaluationStoreError.self) {
-            try store.ensureScenarioFeatureSuite(projectID: projectID, suite: scenarioSuite)
+            try store.ensureFeatureSuite(projectID: projectID, suite: featureSuite)
         }
         let reloaded = EvaluationStore(supportDirectory: directory)
         #expect(reloaded.projects.first { $0.id == projectID }?.suites.contains {
-            $0.id == scenarioSuite.id
+            $0.id == featureSuite.id
         } == true)
         #expect(reloaded.selectedSuiteID == visibleSuiteID)
     }

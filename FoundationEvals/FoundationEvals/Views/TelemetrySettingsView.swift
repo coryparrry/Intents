@@ -7,10 +7,6 @@ struct TelemetrySettingsView: View {
 
     var body: some View {
         Form {
-            Section("Feature availability") {
-                Text("The app checks PostHog for feature availability independently of optional statistics. These checks use one shared release identifier and send no app content or installation identifier. Intent Lab stays unavailable if the check fails.")
-                    .foregroundStyle(.secondary)
-            }
             Section("Usage statistics") {
                 Toggle("Share usage statistics", isOn: Binding(
                     get: { telemetry.isEnabled }, set: { telemetry.setEnabled($0) }

@@ -260,11 +260,7 @@ import Foundation
     case "eval_workspace_navigate":
       switch try call.text("section") {
       case "overview": store.selection = .overview
-      case "intentLab":
-        guard control.intentLabFeatureGate.isEnabled else {
-          return .failure(code: "feature_disabled", message: "Intent Lab is unavailable.")
-        }
-        store.selection = .intentLab
+      case "appIntentTesting": store.selection = .appIntentTesting
       case "evaluations": store.selection = .evaluations
       case "traces": store.selection = .traces
       case "suite": store.selection = .suite

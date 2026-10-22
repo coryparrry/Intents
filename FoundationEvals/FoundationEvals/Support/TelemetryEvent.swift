@@ -1,5 +1,4 @@
 import Foundation
-import IntentsAutomationCore
 
 /// Only fixed categories and generated correlation IDs may enter diagnostics.
 /// Never accept an error description, document name, URL, or model response.
@@ -7,9 +6,7 @@ enum TelemetryOperation: String, Codable, Sendable {
     case workspaceLoad = "workspace_load", suiteSave = "suite_save"
     case evaluation, runSave = "run_save", runCheckpoint = "run_checkpoint"
     case modelLoad = "model_load", cloudMetadata = "cloud_metadata"
-    case scenarioLoad = "scenario_load", scenarioRun = "scenario_run", scenarioAssessment = "scenario_assessment"
     case mcpStart = "mcp_start", mcpInstall = "mcp_install", mcpStop = "mcp_stop"
-    case automationRun = "automation_run"
 }
 
 enum TelemetryFailure: String, Codable, Sendable {
@@ -19,18 +16,6 @@ enum TelemetryFailure: String, Codable, Sendable {
 
     static func classify(_ error: any Error) -> Self {
         if error is CancellationError { return .cancelled }
-        if error is ScenarioValidationError { return .validation }
-        if let error = error as? XcodeTestExecutorError {
-            return switch error {
-            case .cancelled: .cancelled
-            case .timedOut: .timeout
-            case .preflight, .activeExecution, .connectionCheck: .validation
-            case .deviceUnavailable: .deviceUnavailable
-            case .buildFailed, .processLaunch: .build
-            case .productMissing, .resourceMismatch, .evidenceMissing(_): .evidence
-            }
-        }
-        if error is ScenarioEvidenceImportError { return .evidence }
         if let error = error as? EvaluationStoreError {
             switch error {
             case .persistence: return .storage
@@ -52,21 +37,6 @@ enum TelemetryFailure: String, Codable, Sendable {
             }
         }
         return .unexpected
-    }
-
-    static func automationFailure(_ report: AutomationAttemptReport) -> Self? {
-        if report.executionSucceeded { return nil }
-        return switch report.result.summary {
-        case .cancelled: .cancelled
-        case .timedOut: .timeout
-        case .permissionRequired: .permission
-        case .modelUnavailable: .modelUnavailable
-        case .capabilityUnavailable, .inputUnavailable, .invalidFixture: .validation
-        case .disconnected: .deviceUnavailable
-        case .assertionFailed: .testFailure
-        case .infrastructureFailed: .unexpected
-        default: .evidence
-        }
     }
 
     static func evaluationFailure(results: [EvaluationSampleResult], cancelled: Bool) -> Self? {
@@ -103,17 +73,16 @@ struct TelemetrySpan: Sendable {
 }
 
 enum TelemetryScreen: String, Sendable, CaseIterable {
-    case overview, evaluations, batchRuns = "batch_runs", traces, intentLab = "intent_lab", appAutomation = "app_automation", suite, run
+    case overview, evaluations, batchRuns = "batch_runs", traces, appIntentTesting = "app_intent_testing", suite, run
     case mcpSettings = "mcp_settings", judgeSettings = "judge_settings", privacySettings = "privacy_settings"
 
     init(selection: SidebarSelection) {
         switch selection {
         case .overview: self = .overview
-        case .intentLab: self = .intentLab
         case .evaluations: self = .evaluations
         case .batchRuns: self = .batchRuns
         case .traces: self = .traces
-        case .appAutomation: self = .appAutomation
+        case .appIntentTesting: self = .appIntentTesting
         case .suite: self = .suite
         case .run: self = .run
         }
@@ -121,14 +90,12 @@ enum TelemetryScreen: String, Sendable, CaseIterable {
 }
 
 enum TelemetryFeature: String, Sendable, CaseIterable {
-    case evaluation, scenarioRun = "scenario_run", automationRun = "automation_run"
+    case evaluation
     case suiteSaved = "suite_saved", mcpStarted = "mcp_started", mcpInstalled = "mcp_installed"
 
     init?(operation: TelemetryOperation) {
         switch operation {
         case .evaluation: self = .evaluation
-        case .scenarioRun: self = .scenarioRun
-        case .automationRun: self = .automationRun
         case .suiteSave: self = .suiteSaved
         case .mcpStart: self = .mcpStarted
         case .mcpInstall: self = .mcpInstalled

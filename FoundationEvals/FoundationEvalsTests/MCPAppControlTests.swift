@@ -4,11 +4,11 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct MCPAppControlTests {
-  private func fixture(intentLabFeatureGate: IntentLabFeatureGate? = nil) throws -> (EvaluationAppControl, URL) {
+  private func fixture() throws -> (EvaluationAppControl, URL) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "mcp-control-\(UUID())")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return (EvaluationAppControl(store: EvaluationStore(supportDirectory: root), intentLabFeatureGate: intentLabFeatureGate), root)
+    return (EvaluationAppControl(store: EvaluationStore(supportDirectory: root)), root)
   }
   private func call(_ name: String, _ fields: [String: MCPJSONValue], control: EvaluationAppControl)
     async throws -> MCPToolPayload
@@ -107,7 +107,7 @@ import Testing
     #expect(Set(definitions.map(\.name)).count == definitions.count)
     for name in [
       "eval_project_create", "eval_production_upload_begin", "eval_production_job_start",
-      "eval_intent_run", "eval_runner_trust",
+      "eval_runner_trust",
     ] { #expect(definitions.contains(where: { $0.name == name })) }
     #expect(throws: MCPToolInputError.self) {
       try MCPToolCatalog.parse(
@@ -185,9 +185,7 @@ import Testing
       ).isError)
   }
   @Test func confirmationsAndNavigationShareAppState() async throws {
-    let gate = IntentLabFeatureGate(load: { true })
-    await gate.refresh()
-    let (control, root) = try fixture(intentLabFeatureGate: gate)
+    let (control, root) = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     var fields = try workspace(control)
     fields["projectID"] = .string(control.store.selectedProjectID.uuidString)
@@ -199,23 +197,10 @@ import Testing
     #expect(!(try await call("eval_workspace_navigate", navigate, control: control)).isError)
     #expect(control.store.selection == .batchRuns)
     #expect(control.production.pane == .workers)
-    let intent = try await call("eval_intent_state", [:], control: control)
-    #expect(!intent.isError)
-    let revision = try #require(intent.structuredContent.objectValue?["intentRevision"])
-    let failure = try await call(
-      "eval_intent_build",
-      [
-        "operationID": .string(UUID().uuidString), "expectedIntentRevision": revision,
-        "confirm": .bool(false),
-      ], control: control)
-    // Dispatch acknowledgement is followed by a failed durable receipt; no build was authorized.
-    #expect(!failure.isError)
-    let id = try #require(failure.structuredContent.objectValue?["operationID"])
-    for _ in 0..<100 { await Task.yield() }
-    let status = try await call("eval_operation_status", ["operationID": id], control: control)
-    #expect(
-      status.structuredContent.objectValue?["receipt"]?.objectValue?["phase"] == .string("failed"))
-    #expect(!control.scenarios.projectTrusted)
+    navigate = try workspace(control)
+    navigate["section"] = .string("appIntentTesting")
+    #expect(!(try await call("eval_workspace_navigate", navigate, control: control)).isError)
+    #expect(control.store.selection == .appIntentTesting)
   }
   @Test func fullConfigurationCannotManufactureDisclosureApproval() async throws {
     let (control, root) = try fixture()
@@ -232,27 +217,8 @@ import Testing
     #expect(try await call("eval_suite_configure", fields, control: control).isError)
     #expect(control.store.suite.judgeConfiguration.externalEvidenceApprovedAt == nil)
   }
-  @Test func completeDraftReplacementClearsStaleEditorErrors() async throws {
-    let gate = IntentLabFeatureGate(load: { true })
-    await gate.refresh()
-    let (control, root) = try fixture(intentLabFeatureGate: gate)
-    defer { try? FileManager.default.removeItem(at: root) }
-    _ = try await call("eval_intent_state", [:], control: control)
-    control.scenarios.invalidParameterDraftIndices = [0]
-    control.scenarios.parameterArrayDraftTexts = [0: "[invalid"]
-    let state = try await call("eval_intent_state", [:], control: control)
-    let revision = try #require(state.structuredContent.objectValue?["intentRevision"])
-    let text = String(decoding: try JSONEncoder().encode(control.scenarios.draft), as: UTF8.self)
-    let output = try await call(
-      "eval_intent_draft",
-      [
-        "operationID": .string(UUID().uuidString), "expectedIntentRevision": revision,
-        "draftJSON": .string(text),
-      ], control: control)
-    #expect(!output.isError)
-    #expect(control.scenarios.invalidParameterDraftIndices.isEmpty)
-    #expect(control.scenarios.parameterArrayDraftTexts.isEmpty)
-  }
+
+
   @Test func exportsUseRelativePathsThroughAliasesAndRejectSymlinks() async throws {
     let root = URL(fileURLWithPath: "/tmp/mcp-export-\(UUID())", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

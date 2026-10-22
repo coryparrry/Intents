@@ -1,0 +1,21 @@
+name: MacIntentSample
+options:
+  deploymentTarget:
+    macOS: '27.0'
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    GENERATE_INFOPLIST_FILE: YES
+    PRODUCT_BUNDLE_IDENTIFIER: com.example.IntentsMacSample
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: Apple Development
+targets:
+  MacIntentSample:
+    type: application
+    platform: macOS
+    sources: [App]
+schemes:
+  MacIntentSample:
+    build:
+      targets:
+        MacIntentSample: all

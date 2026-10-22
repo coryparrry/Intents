@@ -69,3 +69,6 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 /Verification/Automation/Fixtures/Xcode272Metadata/provenance.json
 /Verification/Automation/Fixtures/DuplicateTasks/Metadata/provenance.json
 /Verification/Automation/Fixtures/IntentFileDeclarations/xcresult-export-attachments-schema.json
+
+# Local rewrite verification artifacts and caches.
+/.validation/

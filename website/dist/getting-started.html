@@ -42,18 +42,18 @@
 <p>Intents is a free, open-source Mac workbench for Apple Foundation Models. Start with one prompt, a concrete expectation, and a saved response. Then add cases that expose failures.</p>
 <h2 id="choose-a-build">Choose a build</h2>
 <div class="build-choice"><h3>Released download: Intents 1.4.0</h3>
-<p>Published 4 October 2026. Intents was previously named Foundation Evals. The released app includes prompt suites, scoring, traces, saved comparisons, Review, Batch runs, Intent Lab (beta), JSON exports, and authenticated local MCP access.</p>
+<p>Published 4 October 2026. Intents was previously named Foundation Evals. The released app includes prompt suites, scoring, traces, saved comparisons, Review, Batch runs, JSON exports, and authenticated local MCP access.</p>
 <p><a href="https://github.com/coryparrry/Intents/releases/download/v1.4.0/Intents-1.4.0-macOS-arm64.dmg" data-download-location="getting_started">Download the Apple silicon disk image</a> · <a href="https://github.com/coryparrry/Intents/releases/tag/v1.4.0">Release notes and checksums</a></p>
 <p>Open <code>Intents-1.4.0-macOS-arm64.dmg</code>, drag Intents to Applications, eject the disk image, and open the app. Follow the <a href="https://github.com/coryparrry/Intents/blob/v1.4.0/README.md#run-your-first-evaluation">v1.4.0 instructions</a> for this interface.</p></div>
 <div class="build-choice"><h3>Development source: Intents</h3>
-<p>Build source to develop the app or try changes that have not shipped. Review, Batch runs, and Intent Lab (beta) are also available in the released 1.4.0 app. Check <a href="https://github.com/coryparrry/Intents/releases">published releases</a> for any later download.</p>
+<p>Build source to develop the app or try changes that have not shipped. Review and Batch runs are also available in the released 1.4.0 app. Check <a href="https://github.com/coryparrry/Intents/releases">published releases</a> for any later download.</p>
 <p>With Xcode 27 and its command-line tools selected, clone the repository and run the project’s build script:</p>
 <pre><code>git clone https://github.com/coryparrry/Intents.git
 cd Intents
 ./script/build_and_run.sh</code></pre>
 <p>The script builds and opens <code>dist/Intents.app</code>. Read the <a href="https://github.com/coryparrry/Intents#build-from-source">source build instructions</a> and <a href="https://github.com/coryparrry/Intents/blob/main/docs/wiki/Home.md">current user guide</a>.</p></div>
 <h2 id="requirements">Check model readiness</h2>
-<p>Requires macOS 27 or later. The default on-device provider needs an Apple Intelligence–capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Ordinary on-device suites do not need Xcode. Source builds and Intent Lab require Xcode 27.</p>
+<p>Requires macOS 27 or later. The default on-device provider needs an Apple Intelligence–capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Ordinary on-device suites do not need Xcode. Source builds and Mac App Intent tests require Xcode 27.</p>
 <p>Compatible Core AI models and custom HTTP providers have their own requirements. Remote providers and judges use their configured services. Optional Private Cloud Compute uses Apple’s service; tools can disclose the content needed for their calls. See <a href="https://github.com/coryparrry/Intents/blob/main/docs/wiki/Data-and-troubleshooting.md">data and troubleshooting</a>.</p>
 <h2 id="first-evaluation">Run your first case</h2>
 <p>In the released app, create a suite in <strong>Overview</strong>, then open <strong>Cases</strong> and <strong>Setup → Scoring</strong>.</p>
@@ -64,10 +64,10 @@ cd Intents
 <p>Inspect the actual answer alongside the score. A pass means the response met your chosen scoring rule. Traces help explain measured stages and tool activity. Change one instruction, rerun the same cases, and compare the saved runs.</p>
 <p>Add a formatting failure, an ambiguous request, and a changed-preference case. Use repetitions to inspect variation. Small examples are not model benchmarks and do not establish statistical certainty. In the released app, <a href="https://github.com/coryparrry/Intents/blob/main/docs/EVAL_REVIEW_GUIDE.md">Review</a> records human verdicts and verified regression cases; <a href="https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md">Batch runs</a> retains frozen datasets and resumable jobs.</p>
 <h2 id="app-intents">Testing your app’s actions</h2>
-<p><a href="https://github.com/coryparrry/Intents/blob/main/docs/wiki/Intent-Lab.md">Intent Lab</a> needs app-owned test support and a signed UI-test target. Siri scenarios supply recognized text to a paired physical iPhone; they do not test microphone recognition. A direct App Intent pass does not prove Siri routing or the app’s observed effect. Read the separate action receipts and state checks.</p>
+<p><a href="https://github.com/coryparrry/Intents/blob/main/docs/wiki/Mac-App-Intent-tests.md">Mac App Intent tests in development source</a> reads a built Mac app’s compiled metadata and accepts explicit JSON inputs and expected returned values. The generated AppIntentsTesting UI-test runner needs Xcode 27+, macOS 27+, a normally installed and registered app, and matching development-team signatures. This is an unshipped source workflow; live runner reliability is not qualified and Siri is not verified.</p>
 <h2 id="contribute">Help improve a failure case</h2>
 <p>When <a href="https://github.com/coryparrry/Intents/issues">reporting an issue</a>, include your release or source commit, macOS and model, a minimal synthetic prompt, scoring rule, expected result, and actual response. Review exports for private content before attaching them. A reproducible case, documentation correction, or focused patch helps others test the same behavior. The source uses the <a href="https://github.com/coryparrry/Intents/blob/main/LICENSE">MIT licence</a>.</p>
-<p class="guide-note">Version facts checked 9 October 2026. The homepage’s HTML/CSS examples use a 17 September saved run and historical PR54 fixture, predating Review and Batch runs. They are browser recreations, not live model or Siri execution. Example scores are not model benchmarks.</p>
+<p class="guide-note">Version facts checked 9 October 2026. The homepage’s HTML/CSS examples use a recorded 17 September evaluation and an illustrative source-only Mac App Intent contract. They are browser recreations, not live model or App Intent execution. Example scores are not model benchmarks.</p>
 <p><a href="/">Return to the workbench showcase</a> · <a href="/index.html.md">Product overview in Markdown</a></p>
 <p><a href="/privacy.html">Website privacy</a></p>
 </main></body></html>

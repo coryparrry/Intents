@@ -38,8 +38,7 @@ struct WorkspaceIcon: View {
     /// Maps the app's internal names onto SF Symbols.
     static func systemName(for symbol: String) -> String {
         switch symbol {
-        case "intent-lab": "testtube.2"
-        case "app-automation", "play": "macwindow.and.cursorarrow"
+        case "play": "macwindow.and.cursorarrow"
         case "square.stack.3d.up.fill": "square.stack.3d.up"
         case "wrench.and.screwdriver.fill": "wrench.and.screwdriver"
         case "checkmark.seal.fill": "checkmark.seal"

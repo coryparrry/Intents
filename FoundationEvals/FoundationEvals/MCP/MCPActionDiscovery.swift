@@ -16,7 +16,7 @@ enum MCPActionDiscovery {
     "eval_production_results", "eval_operation_status",
   ]
   static let domains = [
-    "workspace", "evaluations", "production", "reviews", "judges", "runners", "intentLab",
+    "workspace", "evaluations", "production", "reviews", "judges", "runners",
   ]
   static let definitions: [MCPToolDefinition] = {
     let s = MCPControlSchema.self
@@ -94,7 +94,6 @@ enum MCPActionDiscovery {
   static func domain(_ name: String) -> String {
     if name.hasPrefix("eval_production_") { return "production" }
     if name.hasPrefix("eval_runner_") { return "runners" }
-    if name.hasPrefix("eval_intent_") || name.contains("scenario") { return "intentLab" }
     if name.hasPrefix("eval_judge_") || name.contains("calibration") { return "judges" }
     if name.contains("review") || name.contains("baseline") || name.contains("experiment")
       || name.contains("regression_promote")
@@ -110,8 +109,8 @@ enum MCPActionDiscovery {
     return "evaluations"
   }
 
-  static func metrics(intentLabEnabled: Bool = true) throws -> MCPJSONValue {
-    let actions = availableDefinitions(intentLabEnabled: intentLabEnabled)
+  static func metrics() throws -> MCPJSONValue {
+    let actions = availableDefinitions()
     let compact = try MCPJSONValue.encode(MCPToolCatalog.definitions).jsonText().utf8.count
     let full = try MCPJSONValue.encode(actions).jsonText().utf8.count
     return .object([
@@ -121,16 +120,12 @@ enum MCPActionDiscovery {
     ])
   }
 
-  static func availableDefinitions(intentLabEnabled: Bool) -> [MCPToolDefinition] {
-    MCPToolCatalog.allDefinitions.filter { isAvailable($0.name, intentLabEnabled: intentLabEnabled) }
+  static func availableDefinitions() -> [MCPToolDefinition] {
+    MCPToolCatalog.allDefinitions
   }
 
-  static func isAvailable(_ name: String, intentLabEnabled: Bool) -> Bool {
-    intentLabEnabled || domain(name) != "intentLab" || name == "eval_intent_cancel"
-  }
-
-  static func respond(_ call: MCPActionCatalogCall, intentLabEnabled: Bool = true) -> MCPToolPayload {
-    let definitions = availableDefinitions(intentLabEnabled: intentLabEnabled)
+  static func respond(_ call: MCPActionCatalogCall) -> MCPToolPayload {
+    let definitions = availableDefinitions()
     do {
       switch call {
       case .describe(let name):
@@ -171,7 +166,7 @@ enum MCPActionDiscovery {
             "actions": .array(page), "total": .integer(Int64(matches.count)),
             "nextOffset": offset + page.count < matches.count
               ? .integer(Int64(offset + page.count)) : .null,
-            "catalog": try metrics(intentLabEnabled: intentLabEnabled),
+            "catalog": try metrics(),
           ]))
       }
     } catch {

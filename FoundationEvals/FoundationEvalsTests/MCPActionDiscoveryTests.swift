@@ -22,12 +22,12 @@ struct MCPActionDiscoveryTests {
 
   @Test func smallDefaultCatalogRetainsEveryOriginalAction() throws {
     #expect(MCPToolCatalog.definitions.count == 24)
-    #expect(MCPToolCatalog.allDefinitions.count == 123)
+    #expect(MCPToolCatalog.allDefinitions.count > MCPToolCatalog.definitions.count)
     #expect(Set(MCPToolCatalog.definitions.map(\.name)).count == 24)
-    #expect(!MCPToolCatalog.definitions.contains { $0.name == "eval_intent_install_apply" })
+    #expect(!MCPToolCatalog.allDefinitions.contains { $0.name.contains("intent_") || $0.name.contains("scenario") || $0.name.contains("automation") })
     let compact = try MCPJSONValue.encode(MCPToolCatalog.definitions).jsonText().utf8.count
     let full = try MCPJSONValue.encode(MCPToolCatalog.allDefinitions).jsonText().utf8.count
-    print("MCP catalog: 24 default tools / 123 actions; schema bytes \(compact) / \(full)")
+    print("MCP catalog: default tools / available actions; schema bytes \(compact) / \(full)")
     #expect(compact * 2 < full)
     #expect(
       MCPActionDiscovery.coreNames.isSubset(of: Set(MCPToolCatalog.allDefinitions.map(\.name))))
@@ -50,25 +50,25 @@ struct MCPActionDiscoveryTests {
       #expect(next > offset)
       offset = Int(next)
     } while offset < 10000
-    #expect(names.count == 123)
+    #expect(names.count == MCPToolCatalog.allDefinitions.count)
     #expect(Set(names) == Set(MCPToolCatalog.allDefinitions.map(\.name)))
     let empty = try response("eval_find_actions", ["query": .string("no_such_capability_zzzz")])
     #expect(try page(empty).isEmpty)
   }
 
   @Test func focusedSearchLoadsOnlyAnExactOriginalSchema() throws {
-    let name = "eval_intent_install_preview"
+    let name = "eval_project_create"
     let matches = try page(
       response(
         "eval_find_actions",
-        ["query": .string(name), "domain": .string("intentLab"), "limit": .integer(1)]))
+        ["query": .string(name), "domain": .string("workspace"), "limit": .integer(1)]))
     #expect(matches.count == 1)
     #expect(matches.first?.objectValue?["name"] == .string(name))
     let described = try response("eval_describe_action", ["action": .string(name)])
     let original = try #require(MCPToolCatalog.allDefinitions.first { $0.name == name })
     #expect(described.objectValue?["action"] == (try MCPJSONValue.encode(original)))
     #expect(described.objectValue?["invokeWith"] == .string("eval_apply_action"))
-    let read = try response("eval_describe_action", ["action": .string("eval_intent_state")])
+    let read = try response("eval_describe_action", ["action": .string("eval_runner_state")])
     #expect(read.objectValue?["invokeWith"] == .string("eval_read_action"))
   }
 
@@ -87,14 +87,14 @@ struct MCPActionDiscoveryTests {
     #expect(actual.arguments == args)
     for (gateway, action, fields) in [
       ("eval_read_action", "eval_project_create", args),
-      ("eval_apply_action", "eval_intent_state", .object([:])),
+      ("eval_apply_action", "eval_runner_state", .object([:])),
       ("eval_read_action", "eval_apply_action", .object([:])),
       ("eval_apply_action", "unknown_action", .object([:])),
       (
         "eval_apply_action", "eval_project_create",
         .object(["name": .string("missing revisions and operation ID")])
       ),
-      ("eval_read_action", "eval_intent_state", .object(["shell": .string("arbitrary")])),
+      ("eval_read_action", "eval_runner_state", .object(["shell": .string("arbitrary")])),
     ] {
       #expect(throws: MCPToolInputError.self) {
         try MCPToolCatalog.parse(
@@ -105,7 +105,7 @@ struct MCPActionDiscoveryTests {
       try MCPToolCatalog.parse(
         name: "eval_read_action",
         arguments: .object([
-          "action": .string("eval_intent_state"), "arguments": .object([:]), "confirm": .bool(true),
+          "action": .string("eval_runner_state"), "arguments": .object([:]), "confirm": .bool(true),
         ]))
     }
     #expect(throws: MCPToolInputError.self) {

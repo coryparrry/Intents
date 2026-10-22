@@ -9,9 +9,9 @@ final class FoundationEvalsUITests: XCTestCase {
     func testDebugAppDoesNotOfferSelfUpdates() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = try uiTestStorage(name: storageName)
+        let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -31,101 +31,15 @@ final class FoundationEvalsUITests: XCTestCase {
         app.typeKey(.escape, modifierFlags: [])
     }
 
-    @MainActor
-    func testIntentLabResultsAndRunControlsFitMinimumWindow() throws {
-        let app = verificationApplication() // Fixed 1000 × 700 content size.
-        let storageName = UUID().uuidString
-        let storage = try uiTestStorage(name: storageName)
-        defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
-        app.launch()
-        defer { app.terminate() }
-        app.activate()
-        try UITestStorage.openIntentLab(in: app)
-        let results = app.radioButtons["Results"]
-        XCTAssertTrue(results.waitForExistence(timeout: 5))
-        results.click()
-        let emptyState = app.staticTexts["No results yet"]
-        XCTAssertTrue(emptyState.waitForExistence(timeout: 3))
-        let title = app.staticTexts["Intent Lab page title"]
-        let headerOffset = title.frame.minY - app.windows.firstMatch.frame.minY
-        XCTAssertGreaterThan(headerOffset, 45, "The page header must remain below the toolbar")
-        XCTAssertLessThan(headerOffset, 120, "Results must keep the page header at the top")
-        XCTAssertLessThan(emptyState.frame.minY - title.frame.minY, 180,
-                          "The empty state must sit directly beneath page navigation")
-        app.radioButtons["Create test"].click()
-        XCTAssertTrue(app.buttons["Run test"].isHittable)
-    }
 
-    @MainActor
-    func testDuplicateParameterDraftsRemoveOneAtATime() throws {
-        let app = verificationApplication()
-        let storageName = UUID().uuidString
-        let storage = try uiTestStorage(name: storageName)
-        defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path, "--enable-intent-lab-for-testing"]
-        app.launch()
-        defer { app.terminate() }
-        app.activate()
-        try UITestStorage.openIntentLab(in: app)
-        app.radioButtons["Create test"].click()
-        let window = app.windows.firstMatch
-        let editor = app.scrollViews["Intent Lab scenario scroll"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        func reveal(_ element: XCUIElement) {
-            XCTAssertTrue(element.waitForExistence(timeout: 3))
-            for _ in 0..<12 {
-                let viewport = editor.frame.intersection(window.frame)
-                if element.isHittable && viewport.contains(element.frame) { return }
-                // macOS swipes can jump past a control; wheel steps can recover in either direction.
-                let delta: CGFloat = element.frame.minY < viewport.minY ? 180 : -180
-                editor.scroll(byDeltaX: 0, deltaY: delta)
-            }
-            let viewport = editor.frame.intersection(window.frame)
-            XCTAssertTrue(element.isHittable && viewport.contains(element.frame),
-                          "Parameter control \(element.frame) must be visible inside editor \(viewport) before clicking")
-        }
-        let inputs = app.disclosureTriangles.matching(NSPredicate(format: "label BEGINSWITH %@", "Inputs ·")).firstMatch
-        reveal(inputs)
-        inputs.click()
-
-        let names = app.textFields.matching(identifier: "Parameter name")
-        XCTAssertEqual(names.count, 1)
-        let addButton = app.buttons["Add parameter"]
-        for expectedCount in 2...3 {
-            reveal(addButton)
-            addButton.click()
-            XCTAssertTrue(names.element(boundBy: expectedCount - 1).waitForExistence(timeout: 3))
-            XCTAssertEqual(names.count, expectedCount)
-        }
-
-        let remove = app.buttons.matching(identifier: "Remove parameter")
-        XCTAssertEqual(remove.count, 3)
-        let thirdRemove = remove.element(boundBy: 2)
-        reveal(thirdRemove)
-        thirdRemove.click()
-        let removed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in names.count == 2 }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 3), .completed)
-        XCTAssertEqual(names.count, 2)
-
-        let screenshot = app.windows.firstMatch.screenshot()
-        let attachment = XCTAttachment(screenshot: screenshot)
-        attachment.name = "Intent Lab parameter rows after removal"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        try screenshot.pngRepresentation.write(
-            to: FileManager.default.temporaryDirectory.appending(path: "foundation-evals-parameter-rows.png"),
-            options: .atomic
-        )
-    }
 
     @MainActor
     func testRunCommandsMatchInvalidSuiteControls() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = try uiTestStorage(name: storageName)
+        let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -161,11 +75,11 @@ final class FoundationEvalsUITests: XCTestCase {
     func testSuiteEditorShowsPrimaryRunControls() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = try uiTestStorage(name: storageName)
+        let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
         app.launchArguments += [
             "--disable-mcp-autostart",
-            "--evaluation-storage", storage.path
+            "--evaluation-storage-name", storageName
         ]
         app.launch()
         defer { app.terminate() }
@@ -248,9 +162,9 @@ final class FoundationEvalsUITests: XCTestCase {
     func testCaseSelectionSurvivesSetupNavigation() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = try uiTestStorage(name: storageName)
+        let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -284,9 +198,9 @@ final class FoundationEvalsUITests: XCTestCase {
     func testSameNamedCasesHaveDistinctAccessibilityLabels() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = try uiTestStorage(name: storageName)
+        let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -313,9 +227,9 @@ final class FoundationEvalsUITests: XCTestCase {
     func testCaseSearchKeepsEditorAndScoringSelectionAligned() throws {
         let app = verificationApplication()
         let storageName = UUID().uuidString
-        let storage = try uiTestStorage(name: storageName)
+        let storage = uiTestStorage(name: storageName)
         defer { try? FileManager.default.removeItem(at: storage) }
-        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage-name", storageName]
         app.launch()
         defer { app.terminate() }
         app.activate()
@@ -387,81 +301,16 @@ final class FoundationEvalsUITests: XCTestCase {
     }
 
     @MainActor
-    func testSidebarRemainsStableAcrossModelAndAppTesting() throws {
-        continueAfterFailure = false
-        let storage = try UITestStorage.makeDirectory(prefix: "stable-sidebar")
-        defer { try? FileManager.default.removeItem(at: storage) }
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--disable-mcp-autostart", "--evaluation-storage", storage.path,
-            "--evaluation-window-width", "1000", "--evaluation-window-height", "700",
-            "--enable-intent-lab-for-testing"
-        ]
-        app.launch()
-        defer { app.terminate() }
-        try UITestStorage.openSuiteEditor(in: app)
-        app.typeKey("1", modifierFlags: .command)
-        let controls = [
-            "Choose project", "Sidebar evaluations", "Sidebar batch runs",
-            "Sidebar traces", "New Suite"
-        ]
-        var baseline: [String: CGRect] = [:]
-        for identifier in controls {
-            let control = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
-            XCTAssertTrue(control.waitForExistence(timeout: 5), identifier)
-            XCTAssertTrue(control.isHittable, identifier)
-            baseline[identifier] = control.frame
-        }
-        capture(app, name: "Stable sidebar - Model evaluations")
-
-        app.typeKey("2", modifierFlags: .command)
-        XCTAssertTrue(app.buttons["Choose app…"].waitForExistence(timeout: 5))
-        assertSidebar(app, baseline: baseline)
-        capture(app, name: "Stable sidebar - App Intents and Siri")
-
-        let lab = app.radioButtons["Intent Lab · Beta"]
-        XCTAssertTrue(lab.waitForExistence(timeout: 5))
-        lab.click()
-        XCTAssertTrue(app.radioButtons["Connect app"].waitForExistence(timeout: 5))
-        assertSidebar(app, baseline: baseline)
-        capture(app, name: "Stable sidebar - Intent Lab")
-
-        app.typeKey("1", modifierFlags: .command)
-        assertSidebar(app, baseline: baseline)
-    }
-
-    @MainActor
-    private func assertSidebar(_ app: XCUIApplication, baseline: [String: CGRect],
-                               file: StaticString = #filePath, line: UInt = #line) {
-        for (identifier, frame) in baseline {
-            let control = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
-            XCTAssertTrue(control.exists, identifier, file: file, line: line)
-            XCTAssertTrue(control.isHittable, identifier, file: file, line: line)
-            XCTAssertEqual(control.frame.minX, frame.minX, accuracy: 2, identifier, file: file, line: line)
-            XCTAssertEqual(control.frame.minY, frame.minY, accuracy: 2, identifier, file: file, line: line)
-            XCTAssertEqual(control.frame.width, frame.width, accuracy: 2, identifier, file: file, line: line)
-            XCTAssertEqual(control.frame.height, frame.height, accuracy: 2, identifier, file: file, line: line)
-        }
-        XCTAssertFalse(app.staticTexts["Shared app testing workspace"].exists, file: file, line: line)
-    }
-
-    @MainActor
-    private func capture(_ app: XCUIApplication, name: String) {
-        let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
-
-    @MainActor
     private func verificationApplication() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["--evaluation-window-width", "1000", "--evaluation-window-height", "700"]
         return app
     }
 
-    private func uiTestStorage(name: String) throws -> URL {
-        try UITestStorage.makeDirectory(prefix: name)
+    private func uiTestStorage(name: String) -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Application Support/FoundationEvalsUITests", directoryHint: .isDirectory)
+            .appending(path: name, directoryHint: .isDirectory)
     }
 
 }

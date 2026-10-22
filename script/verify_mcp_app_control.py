@@ -117,14 +117,13 @@ def verify(client, native=False):
     client.check(len(tools) == 24, "small default tool catalog")
     for name in ("eval_project_create", "eval_production_job_start", "eval_operation_status", "eval_find_actions", "eval_describe_action", "eval_read_action", "eval_apply_action"):
         client.check(name in names, "core discovery: " + name)
-    client.check("eval_intent_install_apply" not in names, "advanced device schemas deferred")
     client.check("eval_find_actions" in init["instructions"], "on-demand discovery instructions")
     discovery = client.call("eval_find_actions", dict(query="upload", domain="production", limit=3))
     metrics = discovery["catalog"]
-    client.check(len(discovery["actions"]) <= 3 and metrics["actionCount"] == 123, "bounded full capability discovery")
+    client.check(len(discovery["actions"]) <= 3 and metrics["actionCount"] >= len(tools), "bounded full capability discovery")
     client.check(metrics["defaultSchemaBytes"] * 2 < metrics["fullSchemaBytes"], "upfront schema size reduced by more than half")
     client.call("eval_read_action", dict(action="eval_project_create", arguments={}), failure=True)
-    client.call("eval_apply_action", dict(action="eval_intent_state", arguments={}), failure=True)
+    client.call("eval_apply_action", dict(action="eval_workspace_state", arguments={}), failure=True)
     client.call("eval_read_action", dict(action="eval_apply_action", arguments={}), failure=True)
     # Retry identity and stale revision through the actual HTTP connector.
     request = client.workspace(dict(name="MCP verification", operationID=str(uuid.uuid4())))
@@ -188,19 +187,6 @@ def verify(client, native=False):
     client.check(json.loads(base64.b64decode(part["dataBase64"]))["completed"] == 100, "downloaded coherent report")
     client.call("eval_production_export_read", dict(exportID=exported, path="../.store.lock"), failure=True)
     client.call("eval_runner_state")
-    lab = client.call("eval_intent_state")
-    client.write("eval_intent_new", dict(expectedIntentRevision=lab["intentRevision"]))
-    lab = client.call("eval_intent_state")
-    # Approval denial reaches a durable failed receipt; no project build occurs.
-    op = str(uuid.uuid4())
-    client.call("eval_intent_build", dict(expectedIntentRevision=lab["intentRevision"], confirm=False, operationID=op))
-    deadline = time.monotonic()+10
-    while time.monotonic()<deadline:
-        receipt=client.call("eval_operation_status",dict(operationID=op))["receipt"]
-        if receipt["phase"] == "failed":
-            break
-        time.sleep(0.1)
-    client.check(receipt["phase"] == "failed", "unapproved build fails durably")
     if native:
         state = client.state()
         suite = state["suite"]

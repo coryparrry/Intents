@@ -72,30 +72,30 @@ function renderSpans() {
   document.querySelector('#trace-inspector').innerHTML = `<h4>${icon(selected.icon)}${esc(selected.name)}</h4><div class="inspector-status"><span>Succeeded</span><b>${selected.duration}</b></div><div class="inspector-tabs"><span class="active">Details</span><span>Input / Output</span><span>Transcript</span></div><h5>TIMING</h5><dl>${timing.map(([label,value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl><p>Elapsed time measured by the app on a monotonic clock. Nested durations overlap and must not be added together.</p><h5>SUBJECT SESSION USAGE</h5><dl><div><dt>Input</dt><dd>729</dd></div><div><dt>Cached input</dt><dd>0</dd></div><div><dt>Output</dt><dd>409</dd></div><div><dt>Reasoning</dt><dd>0</dd></div></dl><p>Framework-reported usage. Includes recorded setup turns in the subject session. AI judge usage is separate.</p><dl><div><dt>AI judge tokens</dt><dd>2,514</dd></div></dl><h5>METADATA</h5><dl><div><dt>Model</dt><dd>On-device · AFM 3 Core Advanced</dd></div><div><dt>Case</dt><dd>Latest preference wins</dd></div></dl>`;
 }
 
-function labMarkup() {
-  return `<div class="native-lab-header"><span class="native-icon-box">${icon('workflow')}</span><div><h3>Intent Lab</h3><p>Describe an action and the result you expect.</p></div></div><div class="lab-native-content"><div class="lab-create-heading"><div><h4>Create a test</h4><p>Describe the request and the result you expect.</p></div><span>Saved tests</span></div><section class="native-panel lab-native-card"><h4>${icon('list-checks')}What should happen?</h4><p>Describe success, then add result checks to verify it.</p><dl class="lab-native-form"><div><dt>Test name</dt><dd>PR54 physical read-only check</dd></div><div><dt>Request</dt><dd>Open the packing note in Intent Lab Fixture</dd></div><div><dt>Expected result</dt><dd>Open packing-001 without changing the note store.</dd></div><div><dt>App action</dt><dd>OpenNoteIntent</dd></div></dl><details class="native-disclosure"><summary>App and language details</summary><p>Intent Lab Fixture · OpenNoteIntent<br>This preview shows a saved test definition from the native app.</p></details></section><section class="native-panel lab-native-card"><h4>${icon('list-checks')}What should this test check?</h4><p>Choose the parts to include. Required parts decide whether this test passes.</p>${[['App action','Run the action directly, without Siri.','Required'],['Siri','Send the request text to Siri on your iPhone.','Not included'],['App evaluation','Reuse a saved evaluation linked in advanced settings.','Not included']].map(([label,detail,choice]) => `<div class="lab-check-row"><div><strong>${label}</strong><span>${detail}</span></div><span class="native-select">${choice}${icon('chevrons-up-down')}</span></div>`).join('')}<p class="lab-footnote">Checks that the action runs and its returned value matches. Changes inside the app are not verified.</p><details class="native-disclosure"><summary>Verification options</summary><p>Choose additional checks inside Intents when the test needs to verify changes in the app. Optional parts are recorded separately.</p></details></section><p class="native-lab-quiet-note">Historical fixture preview. Use Intents 1.4.0 to connect an app and run your own checks.</p></div>`;
+function macIntentMarkup() {
+  return `<div class="native-mac-intent-header"><span class="native-icon-box">${icon('workflow')}</span><div><h3>Mac App Intent tests</h3><p>Development source · illustrative JSON check</p></div></div><div class="mac-intent-native-content"><section class="native-panel mac-intent-native-card"><h4>${icon('list-checks')}Choose a compiled action</h4><p>The catalog comes from the installed Mac app’s compiled metadata. Discovery is best effort.</p><dl class="mac-intent-native-form"><div><dt>Mac app</dt><dd>Example.app · installed and registered</dd></div><div><dt>Action</dt><dd>EchoIntent</dd></div><div><dt>Inputs JSON</dt><dd><code>{"message":"Hello"}</code></dd></div><div><dt>Expected JSON</dt><dd><code>"Hello"</code></dd></div></dl></section><section class="native-panel mac-intent-native-card"><h4>${icon('list-checks')}Native runner requirements</h4><p>Apple AppIntentsTesting runs in a generated macOS UI-test target. The subject app and runner must share an Apple development team.</p><details class="native-disclosure"><summary>Setup and evidence limits</summary><p>Requires Xcode 27+, macOS 27+, a normally installed and registered Mac app, and matching signing teams. Unsupported metadata or parameter types may be unavailable. Live runner reliability remains unqualified. This workflow does not verify Siri.</p></details></section><p class="native-mac-intent-quiet-note">Illustrative source contract, not a recorded invocation or a feature of the published 1.4.0 download.</p></div>`;
 }
 
 function setView(next, moveFocus = false) {
-  if (!['report','trace','lab'].includes(next)) return;
+  if (!['report','trace','mac-intent'].includes(next)) return;
   const isInitialRender = !screen.hasChildNodes();
   viewMotion.clear();
   view = next;
-  screen.innerHTML = view === 'report' ? reportMarkup() : view === 'trace' ? traceMarkup() : labMarkup();
+  screen.innerHTML = view === 'report' ? reportMarkup() : view === 'trace' ? traceMarkup() : macIntentMarkup();
   if (view === 'report') renderResults();
   if (view === 'trace') renderSpans();
-  document.querySelector('#native-view-tabs').innerHTML = view === 'lab'
-    ? '<span>Connect app</span><span class="active">Create test</span><span>Results</span>'
+  document.querySelector('#native-view-tabs').innerHTML = view === 'mac-intent'
+    ? '<span>Mac app</span><span class="active">JSON check</span><span>Result</span>'
     : `<button data-view="report" class="${view === 'report' ? 'active' : ''}" aria-pressed="${view === 'report'}">Report</button><button data-view="trace" class="${view === 'trace' ? 'active' : ''}" aria-pressed="${view === 'trace'}">Workflow trace</button>`;
   document.querySelectorAll('.demo-switcher [data-view]').forEach(button => {
     button.classList.toggle('selected', button.dataset.view === view);
     button.setAttribute('aria-pressed', button.dataset.view === view);
   });
-  document.querySelector('.native-nav button').classList.toggle('active',view === 'lab');
-  document.querySelector('.sidebar-run[data-view]').classList.toggle('active',view !== 'lab');
-  const caption = view === 'report' ? '17 September recorded run. Select a result or its trace.' : view === 'trace' ? '17 September recorded trace. Select a measured span.' : 'Historical PR54 fixture. Expand its saved example details.';
+  document.querySelector('.native-nav button').classList.toggle('active',view === 'mac-intent');
+  document.querySelector('.sidebar-run[data-view]').classList.toggle('active',view !== 'mac-intent');
+  const caption = view === 'report' ? '17 September recorded run. Select a result or its trace.' : view === 'trace' ? '17 September recorded trace. Select a measured span.' : 'Unshipped source example. Inspect the JSON contract and runner requirements.';
   document.querySelector('.demo-caption span').textContent = caption;
-  announcement.textContent = `${view === 'report' ? 'Evaluation report' : view === 'trace' ? 'Workflow trace' : 'Intent Lab'} example selected.`;
+  announcement.textContent = `${view === 'report' ? 'Evaluation report' : view === 'trace' ? 'Workflow trace' : 'Mac App Intent tests'} example selected.`;
   if (!isInitialRender) screen.scrollTop = 0;
   if (moveFocus) document.querySelector(`.demo-switcher [data-view="${view}"]`).focus({preventScroll:true});
   if (!motionDisabled() && window.gsap) {
@@ -176,7 +176,7 @@ screen.addEventListener('keydown', event => {
   if (next) { event.preventDefault(); next.click(); }
 });
 
-for (const [id,next] of [['explore-trace','trace'],['explore-lab','lab']]) {
+for (const [id,next] of [['explore-trace','trace'],['explore-mac-intents','mac-intent']]) {
   document.querySelector(`#${id}`).addEventListener('click',() => {
     setView(next,true);
     document.querySelector('#workbench').scrollIntoView({behavior:motionDisabled() ? 'instant' : 'smooth',block:'start'});

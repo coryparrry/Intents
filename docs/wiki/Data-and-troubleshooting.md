@@ -6,7 +6,7 @@
 
 Intents saves projects, suites, imported files, and run history under `~/Library/Application Support/FoundationEvals/`. The batch store is in the `ProductionEvals/` subdirectory. Suite human reviews, judge-check state, drafts, and batch audits are also local. The app does not encrypt these files itself. A run can include prompts, responses, references, tool arguments, tool outputs, transcripts, and traces.
 
-**Export Run as JSON** saves a copy of one run. Read the file before you share it. Intent Lab keeps artifacts and screenshots local by default. Its redacted sharing copy omits them.
+**Export Run as JSON** saves a copy of one run. Read the file before you share it.
 
 Deleting a run removes its saved results and trace. **Start from Scratch** can reset a suite, clear its runs and traces, or do both. The app cannot undo these actions. Before a reset, back up the Application Support data or export the evidence that you need.
 
@@ -55,19 +55,18 @@ Saved runs keep their old suite definitions. Run the current suite again. Then c
 2. Put the device and Intents on a local network that permits discovery.
 3. On iPhone or iPad, make sure that local-network permission and Bonjour settings are correct.
 
-### Intent Lab says Setup needed
+### A Mac App Intent check cannot run
 
-Read the connection messages and **Before you run** list. Make sure that the signed UI-test support, scheme, app, target, destination, and observation keys match. Make sure that the required parts have checks. A compiled support check does not run the scenario.
-
-### Siri says Not observed
-
-Make sure that you use a paired physical iPhone. Read the Siri language, shortcut, fixture reset, final-state observation, and device availability. A direct App Intent pass does not establish Siri success.
+Read the [Mac App Intent setup requirements](Mac-App-Intent-tests.md). Confirm the
+selected built app has compiled intent metadata, and that Xcode, macOS, signing
+team, JSON inputs, and expected results match the runner requirements. A catalog
+entry does not prove execution. Retain infrastructure diagnostics when a run fails.
 
 ### Codex does not connect
 
 Read [Connect Codex through MCP](Codex-and-MCP.md). Keep Intents open. Restart Codex after setup. A manual client must send the generated credential.
 
-Keep the saved run, the app or model version, and the Intent Lab report. If the JSON export helps reproduce a result, keep it. Treat absent evidence as absent.
+Keep the saved run, the app or model version, and the test report. If the JSON export helps reproduce a result, keep it. Treat absent evidence as absent.
 
 ### A review shows Source changed
 

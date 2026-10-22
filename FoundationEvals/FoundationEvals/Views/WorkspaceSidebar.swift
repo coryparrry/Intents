@@ -2,11 +2,10 @@ import SwiftUI
 
 private enum WorkspaceDestination: Hashable {
     case overview
-    case intentLab
     case evaluations
     case batchRuns
     case traces
-    case appAutomation
+    case appIntentTesting
     case suite(UUID)
     case run(UUID)
 }
@@ -33,11 +32,10 @@ struct WorkspaceSidebar: View {
             get: {
                 switch store.selection {
                 case .overview: .overview
-                case .intentLab: .appAutomation
                 case .evaluations: .evaluations
                 case .batchRuns: .batchRuns
                 case .traces: .traces
-                case .appAutomation: .appAutomation
+                case .appIntentTesting: .appIntentTesting
                 case .suite: .suite(store.selectedSuiteID)
                 case .run(let id): .run(id)
                 }
@@ -47,11 +45,10 @@ struct WorkspaceSidebar: View {
                 do {
                     switch selection {
                     case .overview: store.selection = .overview
-                    case .intentLab: store.selection = .intentLab
                     case .evaluations: store.selection = .evaluations
                     case .batchRuns: store.selection = .batchRuns
                     case .traces: store.selection = .traces
-                    case .appAutomation: store.selection = .appAutomation
+                    case .appIntentTesting: store.selection = .appIntentTesting
                     case .suite(let id):
                         guard !isBusy || id == store.selectedSuiteID else { return }
                         if id != store.selectedSuiteID { try store.switchSuite(id: id) }
@@ -66,22 +63,19 @@ struct WorkspaceSidebar: View {
     var body: some View {
         SidebarNavigationList(selection: destination) {
             Section {
-                Label("Model evaluations", systemImage: "square.grid.2x2")
+                Label("Overview", systemImage: "square.grid.2x2")
                     .tag(WorkspaceDestination.overview)
-                Label("App Intents & Siri", systemImage: "app.badge.checkmark")
-                    .tag(WorkspaceDestination.appAutomation)
-            }
-
-            Section("Model tools") {
-                Label { Text("Review current suite") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
+                Label { Text("Evaluations") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
                     .accessibilityIdentifier("Sidebar evaluations")
                     .tag(WorkspaceDestination.evaluations)
                 Label { Text("Batch runs") } icon: { WorkspaceIcon(symbol: "play.rectangle", size: 18) }
                     .accessibilityIdentifier("Sidebar batch runs")
                     .tag(WorkspaceDestination.batchRuns)
-                Label { Text("Traces for current suite") } icon: { WorkspaceIcon(symbol: "point.3.connected.trianglepath.dotted", size: 18) }
+                Label { Text("Traces") } icon: { WorkspaceIcon(symbol: "point.3.connected.trianglepath.dotted", size: 18) }
                     .accessibilityIdentifier("Sidebar traces")
                     .tag(WorkspaceDestination.traces)
+                Label { Text("App Intent Testing") } icon: { WorkspaceIcon(symbol: "play", size: 18) }
+                    .tag(WorkspaceDestination.appIntentTesting)
             }
 
             Section("Suites") {

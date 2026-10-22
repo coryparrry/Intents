@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-@testable import IntentsAutomationCore
 @testable import PostHog
 @testable import FoundationEvals
 
@@ -41,10 +40,10 @@ import Testing
         recorder.screen(.overview)
         recorder.appBecameActive()
         #expect(client.events.map(\.name) == ["foundation_evals_app_opened", "intents_first_use", "$screen"])
-        recorder.screen(.intentLab)
-        #expect(client.events.last?.properties["$screen_name"] as? String == "intent_lab")
+        recorder.screen(.appIntentTesting)
+        #expect(client.events.last?.properties["$screen_name"] as? String == "app_intent_testing")
         client.analyticsSessionID = UUID().uuidString
-        recorder.screen(.intentLab)
+        recorder.screen(.appIntentTesting)
         #expect(client.events.filter { $0.name == "foundation_evals_app_opened" }.count == 2)
         #expect(client.events.filter { $0.name == "$screen" }.count == 3)
         let (relaunched, newClient) = self.recorder(defaults: defaults)
@@ -57,27 +56,27 @@ import Testing
         recorder.screen(.overview)
         let oldSession = client.analyticsSessionID
         client.nextScreenSession = UUID().uuidString
-        recorder.screen(.intentLab)
+        recorder.screen(.appIntentTesting)
         #expect(client.analyticsSessionID != oldSession)
         #expect(client.events.filter { $0.name == "foundation_evals_app_opened" }.count == 2)
-        recorder.screen(.intentLab)
+        recorder.screen(.appIntentTesting)
         #expect(client.events.filter { $0.name == "$screen" }.count == 2)
     }
 
     @Test func successfulFeaturesWorkWithoutDiagnosticsAndFailuresDoNotCount() {
         let (recorder, client) = recorder()
-        for operation in [TelemetryOperation.evaluation, .scenarioRun, .automationRun, .suiteSave, .mcpStart, .mcpInstall] {
+        for operation in [TelemetryOperation.evaluation, .suiteSave, .mcpStart, .mcpInstall] {
             let success = recorder.begin(operation)
             recorder.end(success)
             recorder.end(success)
             recorder.end(recorder.begin(operation), failure: .timeout)
             recorder.end(recorder.begin(operation), failure: .cancelled)
         }
-        #expect(client.events.filter { $0.name == "intents_feature_used" }.count == 6)
+        #expect(client.events.filter { $0.name == "intents_feature_used" }.count == 4)
         #expect(client.events.allSatisfy { !$0.isDiagnostic })
         #expect(client.events.filter { $0.name == "intents_feature_used" }.allSatisfy { Set($0.properties.keys) == ["feature"] })
         recorder.end(recorder.begin(.workspaceLoad))
-        #expect(client.events.filter { $0.name == "intents_feature_used" }.count == 6)
+        #expect(client.events.filter { $0.name == "intents_feature_used" }.count == 4)
     }
 
     @Test(arguments: [true, false])
@@ -98,12 +97,12 @@ import Testing
         recorder.screen(.overview)
         #expect(clients[0].discardCount == 1)
         #expect(clients[1].events.isEmpty)
-        recorder.screen(.intentLab)
+        recorder.screen(.appIntentTesting)
         #expect(clients[1].events.map(\.name) == ["$screen"])
         let oldSpan = recorder.begin(.evaluation)
         recorder.setDiagnosticsEnabled(false)
         recorder.end(oldSpan)
-        recorder.screen(.intentLab)
+        recorder.screen(.appIntentTesting)
         #expect(clients[1].discardCount == 1)
         #expect(clients[2].events.isEmpty)
         #expect(Set(epochs).count == 3)
@@ -111,7 +110,7 @@ import Testing
         #expect(clients.flatMap(\.events).filter { $0.name == "intents_first_use" }.count == 1)
         if hasSDKSession {
             clients[2].analyticsSessionID = UUID().uuidString
-            recorder.screen(.intentLab)
+            recorder.screen(.appIntentTesting)
             #expect(clients[2].events.map(\.name) == ["foundation_evals_app_opened", "$screen"])
         }
     }
@@ -194,25 +193,12 @@ import Testing
         }
     }
 
-    @Test func automationOutcomeRequiresExecutionAndReleasedResources() {
-        let result = AttemptResult(summary: .passed, subjectDispatched: true, subjectCompleted: true, assessed: true, evidenceComplete: true, failedObservations: [], missingObservations: [])
-        var report = AutomationAttemptReport(attemptID: "test", result: result, receipts: [], resourcesReleased: true)
-        #expect(TelemetryFailure.automationFailure(report) == nil)
-        report.resourcesReleased = false
-        #expect(TelemetryFailure.automationFailure(report) == .evidence)
-        report.resourcesReleased = true
-        report.result.subjectCompleted = false
-        #expect(TelemetryFailure.automationFailure(report) == .evidence)
-        report.result.summary = .cancelled
-        #expect(TelemetryFailure.automationFailure(report) == .cancelled)
-        report.result.summary = .timedOut
-        #expect(TelemetryFailure.automationFailure(report) == .timeout)
-    }
+
 
     @Test func screenMappingNeverIncludesDocumentOrRunIdentifiers() {
         #expect(TelemetryScreen(selection: .run(UUID())) == .run)
         #expect(TelemetryScreen(selection: .suite) == .suite)
-        #expect(TelemetryScreen(selection: .appAutomation) == .appAutomation)
+        #expect(TelemetryScreen(selection: .appIntentTesting) == .appIntentTesting)
     }
 }
 

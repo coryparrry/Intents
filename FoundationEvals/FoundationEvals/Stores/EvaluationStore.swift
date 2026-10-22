@@ -543,51 +543,51 @@ final class EvaluationStore {
     /// Reusing an ID with changed requirements requires an explicit new suite
     /// revision and is never an implicit mutation during execution.
     @discardableResult
-    func ensureScenarioFeatureSuite(
+    func ensureFeatureSuite(
         projectID: UUID,
-        suite scenarioSuite: EvaluationSuite,
+        suite featureSuite: EvaluationSuite,
         executionOwnerID: UUID? = nil
     ) throws -> String {
         try requireIdle(ownerID: executionOwnerID)
         guard let projectIndex = workspace.projects.firstIndex(where: {
             $0.id == projectID && !$0.isArchived
         }) else { throw EvaluationWorkspaceError.missingProject }
-        if let issue = validationIssue(for: scenarioSuite, includeModelReadiness: false, includeSubjectModelConfiguration: false) {
+        if let issue = validationIssue(for: featureSuite, includeModelReadiness: false, includeSubjectModelConfiguration: false) {
             throw EvaluationStoreError.invalidSuite(issue)
         }
-        let revision = try Self.revision(for: scenarioSuite)
+        let revision = try Self.revision(for: featureSuite)
         let directory = EvaluationWorkspacePersistence.suiteDirectory(
-            supportDirectory: supportDirectory, projectID: projectID, suiteID: scenarioSuite.id
+            supportDirectory: supportDirectory, projectID: projectID, suiteID: featureSuite.id
         )
-        if let record = workspace.projects[projectIndex].suites.first(where: { $0.id == scenarioSuite.id }) {
+        if let record = workspace.projects[projectIndex].suites.first(where: { $0.id == featureSuite.id }) {
             guard !record.isArchived,
                   let saved = try? CanonicalJSON.decode(
                     EvaluationSuite.self,
                     from: Data(contentsOf: directory.appending(path: "suite.json"))
-                  ), saved.id == scenarioSuite.id,
+                  ), saved.id == featureSuite.id,
                   try Self.revision(for: saved) == revision else {
                 throw EvaluationStoreError.resourceConflict(
-                    "The scenario feature suite ID already has different saved requirements. Create a new revision for the next run."
+                    "The app feature suite ID already has different saved requirements. Create a new revision for the next run."
                 )
             }
             return revision
         }
         guard !FileManager.default.fileExists(atPath: directory.path) else {
             throw EvaluationStoreError.resourceConflict(
-                "An unregistered suite directory already uses this scenario feature suite ID."
+                "An unregistered suite directory already uses this app feature suite ID."
             )
         }
         let now = Date()
         var updatedWorkspace = workspace
         updatedWorkspace.projects[projectIndex].suites.append(EvaluationSuiteRecord(
-            id: scenarioSuite.id, name: scenarioSuite.name,
+            id: featureSuite.id, name: featureSuite.name,
             createdAt: now, updatedAt: now, archivedAt: nil,
             repositoryDefinitionPath: nil, lastRepositoryRevision: nil
         ))
         updatedWorkspace.projects[projectIndex].updatedAt = now
         do {
             try EvaluationWorkspacePersistence.createSuiteDirectories(at: directory)
-            try CanonicalJSON.data(for: scenarioSuite).write(
+            try CanonicalJSON.data(for: featureSuite).write(
                 to: directory.appending(path: "suite.json"), options: .atomic
             )
             try workspaceCatalogWriter(updatedWorkspace, supportDirectory)
@@ -595,7 +595,7 @@ final class EvaluationStore {
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw EvaluationStoreError.persistence(
-                "The scenario feature suite could not be registered: \(error.localizedDescription)"
+                "The app feature suite could not be registered: \(error.localizedDescription)"
             )
         }
         return revision
@@ -787,10 +787,10 @@ final class EvaluationStore {
         try switchWorkspace(projectID: selectedProjectID, suiteID: id)
     }
 
-    /// Resolves a stable automation target instead of assuming whichever suite
+    /// Resolves a stable evaluation target instead of assuming whichever suite
     /// happens to be visible when the request arrives. The native UI follows the
     /// selected target so progress and terminal evidence remain inspectable.
-    func activateAutomationTarget(projectID: UUID, suiteID: UUID) throws {
+    func activateEvaluationTarget(projectID: UUID, suiteID: UUID) throws {
         if projectID == selectedProjectID, suiteID == selectedSuiteID {
             guard workspace.projects.contains(where: { project in
                 project.id == projectID && !project.isArchived
@@ -1841,7 +1841,7 @@ final class EvaluationStore {
     /// that workspace in the UI. The adapter is supplied by the coordinator so
     /// new subject-input contracts do not have to use the legacy adapter's
     /// expected-answer field. The owner ID identifies this operation locally;
-    /// admission against a scenario-wide lease belongs to the coordinator.
+    /// the snapshot remains independent of the visible workspace selection.
     func runFeatureAdapterSnapshot(
         id: UUID,
         projectID: UUID,
@@ -2137,8 +2137,6 @@ final class EvaluationStore {
             mutation(&project.suites[index])
         }
     }
-
-
 
     var modelStatus: ModelStatus {
         modelStatus(for: draftSuite)
@@ -4255,7 +4253,7 @@ final class EvaluationStore {
         }
     }
 
-    /// Top-level scenario admission reads this synchronously on the main actor.
+    /// Execution controls read this synchronously on the main actor.
     /// It mirrors the active-execution portion of `requireIdle`, including the
     /// interval before a snapshot child has finished saving its evidence.
     var hasActiveExecution: Bool {
@@ -4267,9 +4265,6 @@ final class EvaluationStore {
             throw EvaluationStoreError.resourceConflict("The workspace is closing.")
         }
         try requireWorkspaceWritable()
-        if !ScenarioExecutionAdmission.shared.allows(ownerID) {
-            throw EvaluationStoreError.resourceConflict("Another coordinated execution owns the destination.")
-        }
         try retryUnsavedRun()
         if hasActiveExecution {
             throw EvaluationStoreError.runBusy
@@ -4511,24 +4506,6 @@ final class EvaluationStore {
             throw EvaluationStoreError.resourceConflict("The selected judge connection has no API key in Keychain.")
         }
         return EvaluationResolvedJudgeConnection(connection: connection, apiKey: apiKey)
-    }
-
-    /// Resolve a frozen scenario judge choice through the same credential and
-    /// disclosure gate used by suite reassessment. A missing selection is left
-    /// unscored by the scenario adapter; this method never chooses a fallback.
-    func resolvedScenarioJudge(
-        connectionID: UUID,
-        configuration: EvaluationJudgeConfiguration
-    ) throws -> EvaluationResolvedJudgeConnection {
-        guard configuration.mode == .connection,
-              configuration.connectionID == connectionID else {
-            throw EvaluationStoreError.invalidSuite("Choose an independent judge connection for this check.")
-        }
-        let resolved = try resolvedJudge(connectionID: connectionID)
-        guard configuration.hasCurrentExternalEvidenceApproval(for: resolved.connection) else {
-            throw EvaluationCompatibleJudgeError.disclosureNotApproved
-        }
-        return resolved
     }
 
     private func resolvedJudge(for suite: EvaluationSuite) throws -> EvaluationResolvedJudgeConnection? {

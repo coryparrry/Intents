@@ -13,7 +13,7 @@ Intents was previously **Foundation Evals**. As checked 9 October 2026, the curr
 - [Released interface instructions](https://github.com/coryparrry/Intents/blob/v1.4.0/README.md).
 - [Build development source](https://github.com/coryparrry/Intents#build-from-source).
 
-The released workflow includes prompt suites, scoring, traces, saved comparisons, JSON reports, authenticated local MCP access, **Review**, **Batch runs**, and **Intent Lab (beta)**. Build development source to develop the app or try unshipped changes.
+The released workflow includes prompt suites, scoring, traces, saved comparisons, JSON reports, authenticated local MCP access, **Review** and **Batch runs**. Build development source to develop the app or try unshipped changes.
 
 ## First use and development workflows
 
@@ -25,11 +25,11 @@ Try “Reply with only the capital of France” and expected text “Paris”. E
 - [Runs and comparisons](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Runs-and-results.md).
 - [Review guide](https://github.com/coryparrry/Intents/blob/main/docs/EVAL_REVIEW_GUIDE.md): Human verdicts on saved outputs, confirmed failure patterns, verified regression cases, and held-out judge checks. Review and calibration do not approve a release baseline.
 - [Batch guide](https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md): Frozen datasets, resumable jobs, captured-output review, and reports retaining missing results and policy scope.
-- [Intent Lab setup](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Intent-Lab.md): App-owned support and a signed Xcode UI-test target. Siri uses recognized text on a paired physical iPhone. It does not test microphone recognition. A direct App Intent pass does not prove Siri routing or the app’s observed effect.
+- [Mac App Intent tests (development source)](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Mac-App-Intent-tests.md): Best-effort compiled metadata catalog, explicit JSON inputs and expected results, and a generated AppIntentsTesting runner. Requires a normally installed Mac app, Xcode 27+, macOS 27+, and matching signing teams. Live reliability remains unqualified; no Siri verification.
 
 ## Requirements, data, and agent access
 
-macOS 27 or later. The default on-device model needs an Apple Intelligence-capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Source builds and Intent Lab need Xcode 27; ordinary on-device suites do not. Compatible Core AI models and custom HTTP providers have their own requirements. Remote providers and judges use their configured services. Optional Private Cloud Compute uses Apple’s service; tools receive the content needed for their calls.
+macOS 27 or later. The default on-device model needs an Apple Intelligence-capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Source builds and Mac App Intent tests need Xcode 27; ordinary on-device suites do not. Compatible Core AI models and custom HTTP providers have their own requirements. Remote providers and judges use their configured services. Optional Private Cloud Compute uses Apple’s service; tools receive the content needed for their calls.
 
 The built-in MCP server lets coding agents use the evaluation workspace. The released app uses authenticated local access. Follow the guide for your build. [Current MCP guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Codex-and-MCP.md). [Swift feature integration](https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md) supports registered feature closures on paired apps.
 
@@ -37,7 +37,7 @@ Suites and evidence live on the Mac. Exports can contain prompts, responses, ref
 
 ## Historical website examples
 
-The examples are HTML/CSS browser recreations, not native recordings or live execution. The Conversation behaviour report and Latest preference wins trace use a 17 September 2026 saved run, with 13 measured spans and an 18.39-second workflow. Intent Lab uses a historical PR54 fixture. These examples predate Review and Batch runs and do not demonstrate today’s complete UI. They do not call models, Siri, or devices. Example scores are not model benchmarks; timings are not performance guarantees.
+The examples are HTML/CSS browser recreations, not native recordings or live execution. The Conversation behaviour report and Latest preference wins trace use a 17 September 2026 saved run, with 13 measured spans and an 18.39-second workflow. The Mac App Intent JSON contract illustrates unshipped development source. The recorded evaluation predates Review and Batch runs and does not demonstrate today’s complete UI. They do not call models or invoke App Intents. Example scores are not model benchmarks; timings are not performance guarantees.
 
 ## Contribute
 

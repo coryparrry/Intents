@@ -612,7 +612,6 @@ struct EvaluationRunOperation: Codable, Sendable {
 @available(macOS 27.0, *)
 enum SidebarSelection: Hashable {
     case overview
-    case intentLab
     case suite
     case run(UUID)
 }

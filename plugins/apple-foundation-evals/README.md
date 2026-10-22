@@ -78,7 +78,7 @@ semantics. OS/model updates can change results; retain run evidence when
 comparing changes. Runs share a process lease, and cancellation preserves
 completed samples and uses a bounded forced-stop fallback.
 
-The standalone scope is local evals and traces. App Intents/Intent Lab,
+The standalone scope is local evals and traces. App Intent invocation,
 external model providers, external judge connections, and companion-device
 execution are excluded. Local HTTP tools use validated loopback endpoints.
 The macOS 26 legacy runner remains for old flat requests, while the complete

@@ -8,5 +8,7 @@
 	<array>
 		<string>/private/tmp/foundation-evals-ui-tests/</string>
 	</array>
+	<key>com.apple.application-identifier</key>
+	<string>$(AppIdentifierPrefix)$(CFBundleIdentifier)</string>
 </dict>
 </plist>

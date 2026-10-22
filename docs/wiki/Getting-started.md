@@ -6,7 +6,7 @@
 
 Intents requires **macOS 27 or later**. The default on-device model also requires a Mac that supports Apple Intelligence. Enable Apple Intelligence and download the model before you use this provider.
 
-Other providers have different requirements. See [Models, scoring, and tools](Models-scoring-and-tools.md). Intent Lab and source builds require Xcode. A normal on-device suite does not require Xcode.
+Other providers have different requirements. See [Models, scoring, and tools](Models-scoring-and-tools.md). Mac App Intent tests and source builds require Xcode 27+. A normal on-device suite does not require Xcode.
 
 1. Download `Intents.dmg` from the [latest release](https://github.com/coryparrry/Intents/releases/latest).
 2. Open the disk image.
