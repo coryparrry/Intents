@@ -181,6 +181,117 @@ struct EvaluationStorePersistenceRecoveryTests {
         #expect(finalReload.notice == nil)
     }
 
+    @Test(arguments: [false, true])
+    func pendingBatchDeletionIsRejectedUntilRunAndStateRecoveryCompletes(failState: Bool) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var blockedRunID: UUID?
+        var failStateWrite = false
+        let store = EvaluationStore(supportDirectory: directory,
+            suiteLocalStateWriter: { data, url in
+                if failStateWrite { throw CocoaError(.fileWriteNoPermission) }
+                try data.write(to: url, options: .atomic)
+            }, runWriter: { data, url in
+                if url.deletingPathExtension().lastPathComponent == blockedRunID?.uuidString {
+                    throw CocoaError(.fileWriteNoPermission)
+                }
+                try data.write(to: url, options: .atomic)
+            })
+        let unrelated = completedRun(for: store)
+        try store.saveCompletedRuns([unrelated])
+        let first = completedRun(for: store), second = completedRun(for: store)
+        let experimentID = try store.createInstructionExperiment(name: "Recovery", candidateInstructions: "Candidate")
+        blockedRunID = failState ? nil : second.id
+        failStateWrite = failState
+        #expect(throws: EvaluationStoreError.self) {
+            try store.saveCompletedRuns([first, second], experimentID: experimentID)
+        }
+        let root = suiteDirectory(store, in: directory)
+        let pendingURL = root.appending(path: "pending-completed-runs.json")
+        let firstURL = root.appending(path: "Runs/\(first.id.uuidString).json")
+        let pendingBytes = try Data(contentsOf: pendingURL)
+        let firstBytes = try Data(contentsOf: firstURL)
+        #expect(throws: EvaluationStoreError.self) { _ = try store.deleteRunDurably(id: first.id) }
+        #expect(try Data(contentsOf: firstURL) == firstBytes)
+        #expect(try Data(contentsOf: pendingURL) == pendingBytes)
+        #expect(try store.deleteRunDurably(id: unrelated.id))
+        #expect(store.hasUnsavedCompletedRun)
+        blockedRunID = nil
+        failStateWrite = false
+        store.retryPendingRunSave()
+        #expect(!store.hasUnsavedCompletedRun)
+        #expect(store.suiteLocalState.experiments.first(where: { $0.id == experimentID })?.runIDs == [first.id, second.id])
+        #expect(try store.deleteRunDurably(id: first.id))
+        let reopened = EvaluationStore(supportDirectory: directory)
+        #expect(reopened.run(with: first.id) == nil)
+        #expect(reopened.run(with: unrelated.id) == nil)
+        #expect(reopened.run(with: second.id) != nil)
+    }
+
+    @Test func deletionChecksAnUnselectedSuitesDurablePendingBatch() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var blockedRunID: UUID?
+        let store = EvaluationStore(supportDirectory: directory, runWriter: { data, url in
+            if url.deletingPathExtension().lastPathComponent == blockedRunID?.uuidString {
+                throw CocoaError(.fileWriteNoPermission)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        let sourceProjectID = store.selectedProjectID, sourceSuiteID = store.selectedSuiteID
+        let otherProjectID = try store.createProject(name: "Other")
+        try store.switchWorkspace(projectID: sourceProjectID, suiteID: sourceSuiteID)
+        let first = completedRun(for: store), second = completedRun(for: store)
+        blockedRunID = second.id
+        #expect(throws: EvaluationStoreError.self) { try store.saveCompletedRuns([first, second]) }
+        var catalog = store.workspace
+        catalog.selectedProjectID = otherProjectID
+        try EvaluationWorkspacePersistence.save(catalog, in: directory)
+        let other = EvaluationStore(supportDirectory: directory)
+        #expect(other.selectedProjectID == otherProjectID)
+        #expect(!other.hasUnsavedCompletedRun)
+        #expect(throws: EvaluationStoreError.self) { _ = try other.deleteRunDurably(id: first.id) }
+        blockedRunID = nil
+        store.retryPendingRunSave()
+        #expect(!store.hasUnsavedCompletedRun)
+        #expect(try other.deleteRunDurably(id: first.id))
+    }
+
+    @Test(arguments: ["active", "snapshot", "unreadable", "mismatched-summary"])
+    func retainedRecoveryCheckpointPreventsDeletionUntilRecoverySettles(kind: String) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let run = completedRun(for: store)
+        try store.saveCompletedRuns([run])
+        let root = suiteDirectory(store, in: directory)
+        let runURL = root.appending(path: "Runs/\(run.id.uuidString).json")
+        let recoveryURL = kind == "snapshot"
+            ? root.appending(path: "SnapshotRuns/\(run.id.uuidString).json")
+            : root.appending(path: "active-run.json")
+        struct Checkpoint: Encodable {
+            var summary: EvaluationActiveRun
+            var suite: EvaluationSuite
+            var completedRun: EvaluationRun
+        }
+        let checkpoint = Checkpoint(summary: EvaluationActiveRun(id: kind == "mismatched-summary" ? UUID() : run.id, suiteRevision: store.suiteRevision,
+            startedAt: run.startedAt, completedSamples: 0, totalSamples: 1, cancellationRequested: false),
+            suite: store.suite, completedRun: run)
+        let validCheckpoint = try CanonicalJSON.data(for: checkpoint)
+        let retainedBytes = kind == "unreadable" ? Data("{ unreadable checkpoint".utf8) : validCheckpoint
+        try FileManager.default.createDirectory(at: recoveryURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try retainedBytes.write(to: recoveryURL)
+        #expect(throws: EvaluationStoreError.self) { _ = try store.deleteRunDurably(id: run.id) }
+        #expect(FileManager.default.fileExists(atPath: runURL.path))
+        #expect(try Data(contentsOf: recoveryURL) == retainedBytes)
+        if kind == "unreadable" { try validCheckpoint.write(to: recoveryURL) }
+        let recovered = EvaluationStore(supportDirectory: directory)
+        #expect(!FileManager.default.fileExists(atPath: recoveryURL.path))
+        #expect(try recovered.deleteRunDurably(id: run.id))
+        let reopened = EvaluationStore(supportDirectory: directory)
+        #expect(reopened.run(with: run.id) == nil)
+    }
+
     private func temporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

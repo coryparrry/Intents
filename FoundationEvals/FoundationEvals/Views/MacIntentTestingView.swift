@@ -12,7 +12,7 @@ struct MacIntentTestingView: View {
             Form {
                 Section {
                     Text("App Intent Testing").font(.largeTitle.bold())
-                    Text("Run an action from a built macOS app using a generated native UI test. Install and launch the app normally before selecting it so LaunchServices registers this exact build.")
+                    Text("Run an action from a built macOS app using a generated native UI test. Install and launch the app normally once so LaunchServices registers it, then quit it before selecting and testing the build.")
                     Text("Compiled metadata discovery is best effort. Native macOS validation covers String, Bool, Int, Double and enum inputs, String and Double results, and execution-only smoke checks. A smoke check does not compare the returned value.")
                         .foregroundStyle(.secondary)
                     Button("Choose built macOS app…") { choosingApp = true }
@@ -71,6 +71,9 @@ struct MacIntentTestingView: View {
                 if let result = model.result {
                     Section(result.succeeded ? "Test passed" : "Test did not pass") {
                         Text(result.summary).textSelection(.enabled)
+                        if let identity = result.productIdentity {
+                            LabeledContent("Tested build", value: String(identity.sha256.prefix(16)))
+                        }
                         Button("Show log in Finder") { NSWorkspace.shared.activateFileViewerSelecting([result.logURL]) }
                         Text(result.logURL.path).font(.caption).textSelection(.enabled)
                         if let url = result.resultBundleURL {

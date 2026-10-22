@@ -89,6 +89,7 @@ export class Store {
     return saveSuiteTransaction(this, value, expectedRevision, { operation: 'restore' });
   }
   async migrateSuite(key, projectId) { return saveSuiteTransaction(this, { id: id(key) }, undefined, { operation: 'migrate', projectId: id(projectId) }); }
+  async migrateRun(key, projectId) { return saveSuiteTransaction(this, { id: id(key) }, undefined, { operation: 'migrateRun', kind: 'runs', projectId: id(projectId) }); }
   async delete(kind, key, expectedRevision, expectedRecordRevision) {
     if (kind === 'suites') { await saveSuiteTransaction(this, { id: id(key) }, expectedRevision, { operation: 'delete', expectedRecordRevision }); return; }
     this.path(kind, key);

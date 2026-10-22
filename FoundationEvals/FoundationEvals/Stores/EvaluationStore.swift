@@ -82,6 +82,7 @@ final class EvaluationStore {
     private(set) var pendingCompletedRunsLoadError: String?
     private var latestRunHistorySequence: UInt64 = 0
     private var workspacePersistenceBlocker: String?
+    private var suiteLocalStatePersistenceBlocker: String?
     /// Admission for snapshot feature runs. Their storage and UI selection are
     /// independent of the selected suite, so workspace navigation may continue.
     private var snapshotExecutionOwnerID: UUID?
@@ -256,6 +257,7 @@ final class EvaluationStore {
         selectedProjectID = initialProjectID
         selectedSuiteID = initialSuiteID
         suiteLocalState = loadedLocalState.state
+        suiteLocalStatePersistenceBlocker = loadedLocalState.persistenceBlocker
         judgeConnections = loadedJudgeConnections.connections
         suite = initialSuite
         draftSuite = loadedDraft.suite ?? initialSuite
@@ -425,6 +427,7 @@ final class EvaluationStore {
                 guard copiedSuite.id == sourceRecord.id else {
                     throw EvaluationWorkspaceError.missingSuite
                 }
+                copiedSuite = try suiteForDuplication(copiedSuite, projectID: source.id)
                 copiedSuite.id = UUID()
                 copiedSuite.name += " copy"
                 let target = EvaluationWorkspacePersistence.suiteDirectory(
@@ -616,8 +619,9 @@ final class EvaluationStore {
         guard copied.id == sourceRecord.id else {
             throw EvaluationWorkspaceError.missingSuite
         }
+        copied = try suiteForDuplication(copied, projectID: selectedProjectID)
         copied.id = UUID()
-        copied.name = sourceRecord.name + " copy"
+        copied.name += " copy"
         let target = EvaluationWorkspacePersistence.suiteDirectory(
             supportDirectory: supportDirectory, projectID: selectedProjectID, suiteID: copied.id
         )
@@ -642,6 +646,19 @@ final class EvaluationStore {
             throw error
         }
         return copied.id
+    }
+
+    private func suiteForDuplication(_ storedSuite: EvaluationSuite, projectID: UUID) throws -> EvaluationSuite {
+        guard projectID == selectedProjectID, storedSuite.id == selectedSuiteID,
+              isDraftSavePending || !pendingPromptEdits.isEmpty || draftSuite != suite else {
+            return storedSuite
+        }
+        guard saveSuite() else {
+            throw EvaluationStoreError.invalidSuite(
+                "Save a valid suite draft before duplicating it. \(notice ?? "The current draft could not be saved.")"
+            )
+        }
+        return suite
     }
 
     func renameSuite(id: UUID, name: String) throws {
@@ -698,6 +715,11 @@ final class EvaluationStore {
         if isRunning || activeRun != nil { throw EvaluationStoreError.runBusy }
         try requireNoReassessmentMutation()
         if isProcessingFiles || isImportingFiles { throw EvaluationStoreError.fileOperationBusy }
+        // Retry recovery before saving. A suite with unpreserved state may be
+        // left safely as long as its empty fallback never replaces that file.
+        if suiteLocalStatePersistenceBlocker != nil {
+            try? retrySuiteLocalStateRecoveryIfNeeded()
+        }
         guard let project = workspace.projects.first(where: { $0.id == projectID }),
               !project.isArchived else { throw EvaluationWorkspaceError.missingProject }
         guard project.suites.contains(where: { $0.id == suiteID && !$0.isArchived }) else {
@@ -705,7 +727,9 @@ final class EvaluationStore {
         }
         if projectID == selectedProjectID, suiteID == selectedSuiteID { return }
         try preserveCurrentDraftBeforeWorkspaceChange()
-        try persistSuiteLocalState()
+        if suiteLocalStatePersistenceBlocker == nil {
+            try persistSuiteLocalState()
+        }
         let previousWorkspace = workspace
         let previousProjectID = selectedProjectID
         let previousSuiteID = selectedSuiteID
@@ -713,6 +737,7 @@ final class EvaluationStore {
         let previousDraft = draftSuite
         let previousRuns = runs
         let previousLocalState = suiteLocalState
+        let previousLocalStatePersistenceBlocker = suiteLocalStatePersistenceBlocker
         let previousNotice = notice
         let previousSelection = selection
         let previousActiveRun = activeRun
@@ -749,6 +774,7 @@ final class EvaluationStore {
             draftSuite = previousDraft
             runs = previousRuns
             suiteLocalState = previousLocalState
+            suiteLocalStatePersistenceBlocker = previousLocalStatePersistenceBlocker
             notice = previousNotice
             selection = previousSelection
             activeRun = previousActiveRun
@@ -831,6 +857,7 @@ final class EvaluationStore {
         // durable decisions in memory before any of those operations can throw.
         let loadedLocalState = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(from: suiteStateURL)
         suiteLocalState = loadedLocalState.state
+        suiteLocalStatePersistenceBlocker = loadedLocalState.persistenceBlocker
         let loaded = EvaluationWorkspaceStatePersistence.loadSuite(from: suiteDirectory)
         guard var canonical = loaded.suite, canonical.id == selectedSuiteID else {
             throw EvaluationWorkspaceError.missingSuite
@@ -1013,13 +1040,17 @@ final class EvaluationStore {
         _ = saveSuite()
     }
 
-    func reassessRun(id: UUID, connectionID: UUID) {
-        guard !isRunning, !isReassessing, let runIndex = runs.firstIndex(where: { $0.id == id }) else { return }
+    func reassessRun(id: UUID, connectionID: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
+        guard !isRunning, !isReassessing, let runIndex = runs.firstIndex(where: { $0.id == id }) else {
+            completion?("The saved run is unavailable or another operation is active.")
+            return
+        }
         let run = runs[runIndex]
         isReassessing = true
         Task { [weak self] in
             guard let self else { return }
-            defer { isReassessing = false }
+            var completionError: String?
+            defer { completion?(completionError); isReassessing = false }
             do {
                 let resolved = try resolvedJudge(connectionID: connectionID)
                 let scoringSuite = suite
@@ -1038,7 +1069,10 @@ final class EvaluationStore {
                     scoringContract: context.scoringContract,
                     subjectEvidenceDigest: context.evidence.digest
                 )
-                guard let currentIndex = runs.firstIndex(where: { $0.id == id }) else { return }
+                guard let currentIndex = runs.firstIndex(where: { $0.id == id }) else {
+                    completionError = "The saved run was removed before reassessment could be saved."
+                    return
+                }
                 var candidate = runs[currentIndex]
                 candidate.assessments = (candidate.assessments ?? []) + [assessment]
                 candidate.selectedAssessmentID = assessment.id
@@ -1047,6 +1081,7 @@ final class EvaluationStore {
                 selection = .run(id)
             } catch {
                 notice = "Could not reassess the saved responses: \(error.localizedDescription)"
+                completionError = notice
             }
         }
     }
@@ -1173,13 +1208,17 @@ final class EvaluationStore {
         }
     }
 
-    func runJudgeChecks(connectionID: UUID) {
-        guard !isReassessing else { return }
+    func runJudgeChecks(connectionID: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
+        guard !isReassessing else {
+            completion?("Another reassessment or judge check is active.")
+            return
+        }
         isReassessing = true
         latestJudgeCheck = nil
         Task { [weak self] in
             guard let self else { return }
-            defer { isReassessing = false }
+            var completionError: String?
+            defer { completion?(completionError); isReassessing = false }
             do {
                 let resolved = try resolvedJudge(connectionID: connectionID)
                 let sources = suiteLocalState.reviewedJudgeExamples.map { example -> EvaluationJudgeCheckSource in
@@ -1218,6 +1257,7 @@ final class EvaluationStore {
                 )
             } catch {
                 notice = "Could not run judge checks: \(error.localizedDescription)"
+                completionError = notice
             }
         }
     }
@@ -1372,7 +1412,7 @@ final class EvaluationStore {
         }
     }
 
-    func runExperiment(id: UUID) {
+    func runExperiment(id: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
         do {
             try requireIdle()
             guard let experiment = suiteLocalState.experiments.first(where: { $0.id == id }) else {
@@ -1395,6 +1435,7 @@ final class EvaluationStore {
             runTask = Task { [weak self] in
                 guard let self else { return }
                 var createdRunIDs: [UUID] = []
+                var completionError: String?
                 do {
                     let repositorySnapshot: EvaluationRepositorySnapshot? = if let repositoryRoot {
                         await EvaluationRepositoryInspector.snapshot(rootPath: repositoryRoot)
@@ -1451,6 +1492,7 @@ final class EvaluationStore {
                     } else {
                         notice = pendingRunSaveMessage
                     }
+                    completionError = notice
                 } catch {
                     if pendingCompletedRuns == nil {
                         cleanupIncompleteRuns(
@@ -1460,12 +1502,15 @@ final class EvaluationStore {
                     } else {
                         notice = "The experiment finished, but its evidence could not be saved: \(error.localizedDescription). Restore storage access and retry saving."
                     }
+                    completionError = notice
                 }
+                completion?(completionError)
                 isRunning = false
                 runTask = nil
             }
         } catch {
             notice = error.localizedDescription
+            completion?(notice)
         }
     }
 
@@ -2457,9 +2502,41 @@ final class EvaluationStore {
     func deleteRunDurably(id: UUID) throws -> Bool {
         try requireWorkspaceWritable()
         if activeRun?.id == id { throw EvaluationStoreError.runBusy }
+        if pendingCompletedRuns?.runs.contains(where: { $0.id == id }) == true {
+            throw EvaluationStoreError.resourceConflict("Save the pending completed runs before deleting this run.")
+        }
         guard let location = persistedRunLocation(id: id)
             ?? persistedRunLocation(id: id, directoryName: "RunDeletions") else {
             return false
+        }
+        // Deletion can target another suite without selecting it. Its durable
+        // retry batch must not recreate a run after deletion reports success.
+        let pendingURL = location.runURL.deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "pending-completed-runs.json")
+        if FileManager.default.fileExists(atPath: pendingURL.path) {
+            let pending: PendingCompletedRuns
+            do {
+                pending = try CanonicalJSON.decode(PendingCompletedRuns.self, from: Data(contentsOf: pendingURL))
+            } catch {
+                throw EvaluationStoreError.persistence("Completed-run recovery data could not be checked before deletion: \(error.localizedDescription)")
+            }
+            if pending.runs.contains(where: { $0.id == id }) {
+                throw EvaluationStoreError.resourceConflict("Save the pending completed runs before deleting this run.")
+            }
+        }
+        let runSuiteDirectory = location.runURL.deletingLastPathComponent().deletingLastPathComponent()
+        let snapshotURL = runSuiteDirectory.appending(path: "SnapshotRuns/\(id.uuidString).json")
+        for recoveryURL in [runSuiteDirectory.appending(path: "active-run.json"), snapshotURL]
+            where FileManager.default.fileExists(atPath: recoveryURL.path) {
+            let checkpoint: ActiveRunRecord
+            do {
+                checkpoint = try CanonicalJSON.decode(ActiveRunRecord.self, from: Data(contentsOf: recoveryURL))
+            } catch {
+                throw EvaluationStoreError.persistence("Run recovery data could not be checked before deletion: \(error.localizedDescription)")
+            }
+            if checkpoint.summary.id == id || checkpoint.completedRun?.id == id || recoveryURL == snapshotURL {
+                throw EvaluationStoreError.resourceConflict("Restore storage access and reopen the app to settle this run's recovery record before deleting it.")
+            }
         }
         let deletionDirectory = location.runURL.deletingLastPathComponent().deletingLastPathComponent()
             .appending(path: "RunDeletions", directoryHint: .isDirectory)
@@ -4354,11 +4431,26 @@ final class EvaluationStore {
 
     private func persistSuiteLocalState() throws {
         try requireWorkspaceWritable()
+        if let suiteLocalStatePersistenceBlocker {
+            throw EvaluationStoreError.persistence(suiteLocalStatePersistenceBlocker)
+        }
         do {
             try suiteLocalStateWriter(CanonicalJSON.data(for: suiteLocalState), suiteStateURL)
         } catch {
             throw EvaluationStoreError.persistence(error.localizedDescription)
         }
+    }
+
+    private func retrySuiteLocalStateRecoveryIfNeeded() throws {
+        guard suiteLocalStatePersistenceBlocker != nil else { return }
+        let loaded = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(from: suiteStateURL)
+        if let blocker = loaded.persistenceBlocker {
+            notice = blocker
+            throw EvaluationStoreError.persistence(blocker)
+        }
+        suiteLocalState = loaded.state
+        suiteLocalStatePersistenceBlocker = nil
+        notice = loaded.notice
     }
 
     private func restoreDraftAfterFailedSave(

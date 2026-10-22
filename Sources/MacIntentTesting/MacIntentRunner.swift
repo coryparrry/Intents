@@ -4,20 +4,25 @@ import Darwin
 
 @MainActor
 public final class MacIntentRunner {
-    private var process: Process?
-    private var stopTask: Task<Void, Never>?
+    private let command = MacIntentOwnedCommand()
+    private var unresolvedHostBundleIDs: [String] = []
+    private var unresolvedSubject: NSRunningApplication?
     private var running = false
     private var cancelled = false
     public init() {}
 
     public func cancel() {
         cancelled = true
-        if let process { stop(process) }
+        command.cancel()
     }
 
     public func run(catalog: MacIntentCatalog, cases: [MacIntentTestCase],
                     configuration: MacIntentRunConfiguration) async throws -> MacIntentRunResult {
         guard !running else { throw MacIntentTestingError("A Mac intent test run is already active.") }
+        guard command.confirmReleased(), generatedHostsReleased(), unresolvedSubject?.isTerminated != false else {
+            throw MacIntentTestingError("An earlier test has unresolved command or generated test-host processes. Stop that test in Xcode and wait for its runners to exit before trying again.")
+        }
+        unresolvedSubject = nil
         guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
             throw MacIntentTestingError("Apple AppIntentsTesting execution requires macOS 27 or later.")
         }
@@ -36,9 +41,11 @@ public final class MacIntentRunner {
             FileManager.default.isExecutableFile(atPath: $0)
         }) else { throw MacIntentTestingError("XcodeGen is required. Install it with brew install xcodegen.") }
         let current = try MacIntentCatalog.load(appURL: catalog.appURL)
-        guard current.bundleIdentifier == catalog.bundleIdentifier, current.actions == catalog.actions else {
+        guard current.bundleIdentifier == catalog.bundleIdentifier, current.actions == catalog.actions,
+              let identity = catalog.productIdentity, current.productIdentity == identity else {
             throw MacIntentTestingError("The selected app changed. Reload its intent catalog before testing.")
         }
+        try Self.requireStoppedSubject(bundleIdentifier: current.bundleIdentifier)
         guard let registered = NSWorkspace.shared.urlForApplication(withBundleIdentifier: current.bundleIdentifier),
               Self.sameApplicationPath(registered, current.appURL) else {
             throw MacIntentTestingError("The selected app must be installed and registered as the active Mac application for \(current.bundleIdentifier). Move this build to Applications, open it normally, and select that installed copy. Another registered copy may be taking precedence.")
@@ -46,9 +53,10 @@ public final class MacIntentRunner {
         try Task.checkCancellation()
         let source = try MacIntentSource.tests(catalog: current, cases: cases)
         running = true; cancelled = false
-        defer { running = false; process = nil; stopTask?.cancel(); stopTask = nil }
+        defer { running = false }
         let fm = FileManager.default
         let identifier = UUID().uuidString.lowercased()
+        unresolvedHostBundleIDs = Self.generatedHostBundleIdentifiers(identifier)
         let directory = configuration.outputDirectory.appendingPathComponent("MacIntentRun-\(identifier)", isDirectory: true)
         try fm.createDirectory(at: directory.appendingPathComponent("Tests"), withIntermediateDirectories: true)
         try fm.createDirectory(at: directory.appendingPathComponent("Host"), withIntermediateDirectories: true)
@@ -69,6 +77,10 @@ public final class MacIntentRunner {
         var environment = ProcessInfo.processInfo.environment
         environment["DEVELOPER_DIR"] = configuration.developerDirectory.path
         var launchedSubject: NSRunningApplication?
+        var subjectLaunchDate: Date?
+        var codeIdentity: MacIntentCodeIdentity?
+        var subjectLifetime: MacIntentSubjectLifetime?
+        defer { subjectLifetime?.stopObserving() }
         let result: MacIntentRunResult
         do {
             let signatureURL = directory.appendingPathComponent("subject-signature.log")
@@ -86,24 +98,40 @@ public final class MacIntentRunner {
             guard signingStatus == 0, Self.signingTeam(in: String(decoding: signingData, as: UTF8.self)) == configuration.teamIdentifier else {
                 throw MacIntentTestingError("The selected app must be signed by the same development team as the test runner (\(configuration.teamIdentifier)). Select that app's team and signing identity; the subject app is never re-signed.")
             }
+            codeIdentity = try MacIntentCodeIdentity(appURL: current.appURL)
+            try identity.validate()
             guard try await execute(executable: URL(fileURLWithPath: xcodegen),
                                     arguments: ["generate", "--spec", "project.json"], directory: directory,
                                     environment: environment, log: log, timeout: 60) == 0 else {
                 throw MacIntentTestingError("The native test project could not be generated.")
             }
             try checkCancellation()
-            let wasRunning = NSRunningApplication.runningApplications(withBundleIdentifier: current.bundleIdentifier)
-                .contains { $0.bundleURL.map { Self.sameApplicationPath($0, current.appURL) } == true && !$0.isTerminated }
+            try identity.validate()
+            try Self.requireStoppedSubject(bundleIdentifier: current.bundleIdentifier)
             let opening = NSWorkspace.OpenConfiguration()
             opening.activates = false
+            opening.createsNewApplicationInstance = true
             let subject = try await NSWorkspace.shared.openApplication(at: current.appURL, configuration: opening)
-            if !wasRunning { launchedSubject = subject }
+            // The app was absent immediately before our explicit launch. Never
+            // close or adopt an app that was already running with user work.
+            launchedSubject = subject
+            subjectLaunchDate = subject.launchDate
+            try validateSubject(subject, launchedAt: subjectLaunchDate, identity: identity, code: codeIdentity)
+            guard let subjectLaunchDate else {
+                throw MacIntentTestingError("The test app's launch identity could not be observed.")
+            }
+            let lifetime = MacIntentSubjectLifetime(processIdentifier: subject.processIdentifier, launchedAt: subjectLaunchDate)
+            lifetime.startObserving(bundleIdentifier: current.bundleIdentifier)
+            subjectLifetime = lifetime
             try checkCancellation()
             let status = try await executeBuild(executable: xcodebuild,
                                            arguments: MacIntentSource.xcodebuildArguments(project: directory.appendingPathComponent("MacIntentRun.xcodeproj"),
                                                                                           result: resultURL, derivedData: directory.appendingPathComponent("DerivedData")),
                                            directory: directory, environment: environment, log: log, timeout: configuration.timeoutSeconds)
             try checkCancellation()
+            if !subject.isTerminated {
+                try validateSubject(subject, launchedAt: subjectLaunchDate, identity: identity, code: codeIdentity)
+            }
             if status == 0 {
                 let summaryURL = directory.appendingPathComponent("test-summary.json")
                 fm.createFile(atPath: summaryURL.path, contents: nil)
@@ -119,20 +147,55 @@ public final class MacIntentRunner {
                 guard summaryStatus == 0 else {
                     throw MacIntentTestingError("The result bundle summary could not be read (xcresulttool exit \(summaryStatus)). Native test success could not be verified.")
                 }
-                try MacIntentSummary.validate(Data(contentsOf: summaryURL), expectedCount: cases.count)
                 try checkCancellation()
+                await lifetime.deliverPendingObservations()
+                try checkCancellation()
+                try lifetime.validateCompletion(
+                    subjectTerminated: subject.isTerminated,
+                    hasOtherRunningCopy: NSRunningApplication.runningApplications(withBundleIdentifier: current.bundleIdentifier)
+                        .contains { !$0.isTerminated && $0.processIdentifier != subject.processIdentifier },
+                    summary: Data(contentsOf: summaryURL), expectedCount: cases.count,
+                    validateLiveSubject: {
+                        try self.validateSubject(subject, launchedAt: subjectLaunchDate, identity: identity, code: codeIdentity)
+                    },
+                    validateProduct: { try identity.validate() }
+                )
             }
             result = .init(succeeded: status == 0, resultBundleURL: fm.fileExists(atPath: resultURL.path) ? resultURL : nil,
                            logURL: logURL, summary: status == 0
                             ? "\(cases.count) native Mac intent test(s) passed. Cases without expected values verify execution only."
-                            : "Native Mac intent testing failed (xcodebuild exit \(status)). Inspect the result bundle and run.log; compiled metadata does not guarantee runtime availability.")
+                            : "Native Mac intent testing failed (xcodebuild exit \(status)). Inspect the result bundle and run.log; compiled metadata does not guarantee runtime availability.",
+                           productIdentity: identity, cases: cases)
         } catch {
             let message = cancelled || Task.isCancelled ? "Run cancelled." : error.localizedDescription
             log.write(Data(("\n" + message + "\n").utf8))
             result = .init(succeeded: false, resultBundleURL: fm.fileExists(atPath: resultURL.path) ? resultURL : nil,
-                           logURL: logURL, summary: message + " See run.log.")
+                           logURL: logURL, summary: message + " See run.log.", productIdentity: identity, cases: cases)
         }
         if let launchedSubject { await close(launchedSubject) }
+        if launchedSubject?.isTerminated == false { unresolvedSubject = launchedSubject }
+        if !(await waitForGeneratedHosts()) || unresolvedSubject != nil || command.hasUnresolvedResources {
+            return .init(succeeded: false, resultBundleURL: result.resultBundleURL, logURL: logURL,
+                summary: "Test resources have not all exited. Finish the generated test in Xcode before starting another run.", productIdentity: identity, cases: cases)
+        }
+        discardBuildIntermediates(in: directory, log: log)
+        do {
+            if let subjectLifetime {
+                try await subjectLifetime.finishObserving(
+                    afterProductValidation: { try identity.validate() },
+                    hasOtherRunningCopy: {
+                        NSRunningApplication.runningApplications(withBundleIdentifier: current.bundleIdentifier)
+                            .contains { !$0.isTerminated }
+                    }
+                )
+            } else {
+                try await Task.detached { try identity.validate() }.value
+            }
+        }
+        catch {
+            return .init(succeeded: false, resultBundleURL: result.resultBundleURL, logURL: logURL,
+                summary: error.localizedDescription, productIdentity: identity, cases: cases)
+        }
         return result
     }
 
@@ -158,19 +221,51 @@ public final class MacIntentRunner {
             try? await Task.sleep(for: .seconds(2))
         }.value
         if !app.isTerminated { app.forceTerminate() }
+        if !app.isTerminated {
+            await Task.detached { try? await Task.sleep(for: .milliseconds(250)) }.value
+        }
     }
 
-    private func stop(_ child: Process) {
-        guard child.isRunning, stopTask == nil else { return }
-        child.interrupt()
-        stopTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled, child.isRunning else { return }
-            child.terminate()
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled, child.isRunning else { return }
-            kill(child.processIdentifier, SIGKILL)
+    static func requireStoppedSubject(bundleIdentifier: String, isRunning: ((String) -> Bool)? = nil) throws {
+        let present = isRunning?(bundleIdentifier) ?? NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).contains { !$0.isTerminated }
+        guard !present else {
+            throw MacIntentTestingError("Quit the selected app before testing. An existing process may contain an older build or unsaved work; Intents will not restart it.")
         }
+    }
+
+    private func validateSubject(_ app: NSRunningApplication, launchedAt: Date?, identity: MacIntentProductIdentity,
+                                 code: MacIntentCodeIdentity?) throws {
+        guard !app.isTerminated, let launchedAt, app.launchDate == launchedAt,
+              app.bundleURL.map({ Self.sameApplicationPath($0, URL(fileURLWithPath: identity.bundlePath)) }) == true,
+              let code,
+              NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleIdentifier ?? "")
+                .allSatisfy({ $0.isTerminated || $0.processIdentifier == app.processIdentifier }) else {
+            throw MacIntentTestingError("The test app process changed or another copy started. Its result cannot be bound to the selected build.")
+        }
+        try code.validate(processIdentifier: app.processIdentifier)
+        try identity.validate()
+    }
+
+    private func generatedHostsReleased() -> Bool {
+        let released = unresolvedHostBundleIDs.allSatisfy { identifier in
+            NSRunningApplication.runningApplications(withBundleIdentifier: identifier).allSatisfy(\.isTerminated)
+        }
+        if released { unresolvedHostBundleIDs = [] }
+        return released
+    }
+
+    private func waitForGeneratedHosts() async -> Bool {
+        // Observe the complete settlement interval: a daemon may still be
+        // completing a runner launch just after xcodebuild has exited.
+        for _ in 0..<40 {
+            await Task.detached { try? await Task.sleep(for: .milliseconds(50)) }.value
+        }
+        return generatedHostsReleased()
+    }
+
+    static func generatedHostBundleIdentifiers(_ identifier: String) -> [String] {
+        let tests = "dev.intents.testing.tests.\(identifier)"
+        return ["dev.intents.testing.host.\(identifier)", tests, tests + ".xctrunner", tests + "-Runner"]
     }
 
     /// Keep rebuildable products until the owned build process has ended; the
@@ -178,46 +273,191 @@ public final class MacIntentRunner {
     func executeBuild(executable: URL, arguments: [String], directory: URL,
                       environment: [String: String], log: FileHandle, timeout: Double) async throws -> Int32 {
         defer {
-            let derivedData = directory.appendingPathComponent("DerivedData", isDirectory: true)
-            do {
-                if FileManager.default.fileExists(atPath: derivedData.path) {
-                    try FileManager.default.removeItem(at: derivedData)
-                }
-            } catch {
-                log.write(Data("\nCould not remove temporary DerivedData: \(error.localizedDescription)\n".utf8))
+            // Native runs settle generated hosts after this command returns.
+            // Standalone build commands have no generated host lifetime to await.
+            if unresolvedHostBundleIDs.isEmpty && !command.hasUnresolvedResources {
+                discardBuildIntermediates(in: directory, log: log)
             }
         }
         return try await execute(executable: executable, arguments: arguments, directory: directory,
                                  environment: environment, log: log, timeout: timeout)
     }
 
+    private func discardBuildIntermediates(in directory: URL, log: FileHandle) {
+        let derivedData = directory.appendingPathComponent("DerivedData", isDirectory: true)
+        do {
+            if FileManager.default.fileExists(atPath: derivedData.path) {
+                try FileManager.default.removeItem(at: derivedData)
+            }
+        } catch {
+            log.write(Data("\nCould not remove temporary DerivedData: \(error.localizedDescription)\n".utf8))
+        }
+    }
+
     func execute(executable: URL, arguments: [String], directory: URL,
                          environment: [String: String], log: FileHandle, timeout: Double,
                          standardOutput: FileHandle? = nil) async throws -> Int32 {
         try checkCancellation()
-        let child = Process()
-        child.executableURL = executable; child.arguments = arguments
-        child.currentDirectoryURL = directory; child.environment = environment
-        child.standardOutput = standardOutput ?? log; child.standardError = log
-        process = child
-        var timedOut = false
-        let deadline = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(timeout))
-            guard !Task.isCancelled, child.isRunning else { return }
-            timedOut = true
-            self.stop(child)
+        return try await command.execute(executable: executable, arguments: arguments, directory: directory,
+            environment: environment, log: log, timeout: timeout, standardOutput: standardOutput)
+    }
+}
+
+/// A final absence check cannot rule out a replacement that already exited.
+/// Retain launch/termination observations for the complete execution interval.
+@MainActor
+final class MacIntentSubjectLifetime {
+    struct ApplicationSnapshot: Sendable {
+        let bundleIdentifier: String?
+        let processIdentifier: Int32
+        let launchedAt: Date?
+    }
+
+    private struct Observation: Sendable {
+        var terminated = false
+        var replaced = false
+    }
+
+    /// NotificationCenter invokes this adapter synchronously on the posting
+    /// thread. The lock protects delivery from other threads and the cutoff.
+    private final class Ledger: @unchecked Sendable {
+        private let lock = NSLock()
+        private let processIdentifier: Int32
+        private let launchedAt: Date
+        private var observation = Observation()
+        private var sealed: Observation?
+
+        init(processIdentifier: Int32, launchedAt: Date) {
+            self.processIdentifier = processIdentifier
+            self.launchedAt = launchedAt
         }
-        defer { deadline.cancel(); stopTask?.cancel(); stopTask = nil; process = nil }
-        let status = try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                child.terminationHandler = { completed in continuation.resume(returning: completed.terminationStatus) }
-                do { try child.run() }
-                catch { child.terminationHandler = nil; continuation.resume(throwing: error) }
+
+        func record(processIdentifier: Int32, launchedAt: Date?, terminated: Bool) {
+            lock.withLock {
+                recordUnlocked(processIdentifier: processIdentifier, launchedAt: launchedAt, terminated: terminated)
             }
-        } onCancel: {
-            Task { @MainActor in self.cancel() }
         }
-        if timedOut { throw MacIntentTestingError("\(executable.lastPathComponent) exceeded its \(Int(timeout))-second timeout and was stopped.") }
-        return status
+
+        func record(_ notification: Notification, bundleIdentifier: String, terminated: Bool,
+                    snapshot: @Sendable (Notification) -> ApplicationSnapshot?) {
+            lock.withLock {
+                guard sealed == nil, let app = snapshot(notification),
+                      app.bundleIdentifier == bundleIdentifier else { return }
+                recordUnlocked(processIdentifier: app.processIdentifier, launchedAt: app.launchedAt, terminated: terminated)
+            }
+        }
+
+        private func recordUnlocked(processIdentifier: Int32, launchedAt: Date?, terminated: Bool) {
+            guard sealed == nil else { return }
+            if processIdentifier != self.processIdentifier || launchedAt != self.launchedAt {
+                observation.replaced = true
+            } else if terminated {
+                observation.terminated = true
+            }
+        }
+
+        func snapshot() -> Observation { lock.withLock { sealed ?? observation } }
+        func seal() -> Observation {
+            lock.withLock {
+                if sealed == nil { sealed = observation }
+                return sealed!
+            }
+        }
+    }
+
+    private let ledger: Ledger
+    private var observers: [NSObjectProtocol] = []
+    private var observationCenter: NotificationCenter?
+
+    init(processIdentifier: Int32, launchedAt: Date) {
+        ledger = Ledger(processIdentifier: processIdentifier, launchedAt: launchedAt)
+    }
+
+    func startObserving(bundleIdentifier: String, center: NotificationCenter? = nil,
+                        applicationSnapshot: (@Sendable (Notification) -> ApplicationSnapshot?)? = nil) {
+        let center = center ?? NSWorkspace.shared.notificationCenter
+        observationCenter = center
+        let snapshot = applicationSnapshot ?? Self.applicationSnapshot
+        let ledger = ledger
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: nil) { notification in
+                ledger.record(notification, bundleIdentifier: bundleIdentifier,
+                    terminated: name == NSWorkspace.didTerminateApplicationNotification, snapshot: snapshot)
+            })
+        }
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier) where !app.isTerminated {
+            observeLaunch(processIdentifier: app.processIdentifier, launchedAt: app.launchDate)
+        }
+    }
+
+    nonisolated private static func applicationSnapshot(_ notification: Notification) -> ApplicationSnapshot? {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return nil }
+        return .init(bundleIdentifier: app.bundleIdentifier, processIdentifier: app.processIdentifier, launchedAt: app.launchDate)
+    }
+
+    func stopObserving() {
+        for observer in observers { observationCenter?.removeObserver(observer) }
+        observers.removeAll()
+        observationCenter = nil
+    }
+
+    func observeLaunch(processIdentifier: Int32, launchedAt: Date?) {
+        ledger.record(processIdentifier: processIdentifier, launchedAt: launchedAt, terminated: false)
+    }
+
+    func observeTermination(processIdentifier: Int32, launchedAt: Date?) {
+        ledger.record(processIdentifier: processIdentifier, launchedAt: launchedAt, terminated: true)
+    }
+
+    func validateNoReplacement(hasOtherRunningCopy: Bool) throws {
+        try Self.validateNoReplacement(ledger.snapshot(), hasOtherRunningCopy: hasOtherRunningCopy)
+    }
+
+    private static func validateNoReplacement(_ observation: Observation, hasOtherRunningCopy: Bool) throws {
+        guard !observation.replaced, !hasOtherRunningCopy else {
+            throw MacIntentTestingError("Another copy of the test app ran during this test. Its result cannot be bound to the selected process.")
+        }
+    }
+
+    func deliverPendingObservations() async {
+        // isTerminated can update before the corresponding workspace event is
+        // delivered. Give already queued events a delivery turn before reading
+        // process state for the completion verdict; keep observing until cleanup.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+
+    func finishObserving(afterProductValidation: @escaping @Sendable () throws -> Void,
+                         hasOtherRunningCopy: @escaping @MainActor @Sendable () -> Bool) async throws {
+        // Keep the main run loop available to receive workspace events during
+        // expensive hashing. Then drain already queued main-queue delivery and
+        // seal a snapshot before removing observers. This is a local delivery
+        // cutoff, not proof that no application can launch in the future.
+        try await Task.detached { try afterProductValidation() }.value
+        let final: (Observation, Bool) = await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                let final = (self.ledger.seal(), hasOtherRunningCopy())
+                self.stopObserving()
+                continuation.resume(returning: final)
+            }
+        }
+        try Self.validateNoReplacement(final.0, hasOtherRunningCopy: final.1)
+    }
+
+    func validateCompletion(subjectTerminated: Bool, hasOtherRunningCopy: Bool,
+                            summary: Data, expectedCount: Int,
+                            validateLiveSubject: () throws -> Void,
+                            validateProduct: () throws -> Void) throws {
+        try MacIntentSummary.validate(summary, expectedCount: expectedCount)
+        try validateNoReplacement(hasOtherRunningCopy: hasOtherRunningCopy)
+        try validateProduct()
+        if subjectTerminated {
+            guard ledger.snapshot().terminated else {
+                throw MacIntentTestingError("The test app ended without an observed termination of its verified process. Native test success could not be bound to that process.")
+            }
+        } else {
+            try validateLiveSubject()
+        }
     }
 }

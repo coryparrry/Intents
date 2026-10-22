@@ -46,13 +46,15 @@ struct EvaluationFeatureResponse {
         if suite.features.streamResponse {
             let requestMetadata = metadata
             if let schema {
-                return try await collect(
+                let response = try await collect(
                     session.streamResponse(to: prompt, schema: schema, options: options,
                                            contextOptions: context, metadata: requestMetadata),
                     text: { $0.rawContent.jsonString },
                     finalText: { $0.jsonString },
                     onPartial: onPartial
                 )
+                try validateStructuredContent(response.content, suite: suite)
+                return response
             }
             return try await collect(
                 session.streamResponse(
@@ -67,6 +69,9 @@ struct EvaluationFeatureResponse {
         if let schema {
             let response = try await session.respond(to: prompt, schema: schema, options: options,
                                                      contextOptions: context, metadata: metadata)
+            try EvaluationSchemaValidator.validate(response.content, fields: suite.features.outputFields,
+                definitions: suite.features.outputSchemaDefinitions,
+                representNilExplicitlyInGeneratedContent: suite.features.outputRepresentNilExplicitlyInGeneratedContent)
             return Self(content: response.content.jsonString, usage: response.usage,
                         transcriptEntries: Array(response.transcriptEntries))
         }
@@ -74,6 +79,12 @@ struct EvaluationFeatureResponse {
                                                  contextOptions: context, metadata: metadata)
         return Self(content: response.content, usage: response.usage,
                     transcriptEntries: Array(response.transcriptEntries))
+    }
+
+    private static func validateStructuredContent(_ json: String, suite: EvaluationSuite) throws {
+        try EvaluationSchemaValidator.validate(GeneratedContent(json: json), fields: suite.features.outputFields,
+            definitions: suite.features.outputSchemaDefinitions,
+            representNilExplicitlyInGeneratedContent: suite.features.outputRepresentNilExplicitlyInGeneratedContent)
     }
 
     private static func collect<Content: Generable>(

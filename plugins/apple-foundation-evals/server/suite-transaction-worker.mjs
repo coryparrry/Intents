@@ -8,13 +8,17 @@ import { MAX_OUTPUT_BYTES } from './validation.mjs';
 // cannot leave a live lock owner indefinitely, and this worker owns every write.
 const timeout = setTimeout(() => process.exit(1), 8000);
 try {
-  process.stdin.setEncoding('utf8');
-  let input = '';
+  const inputChunks = [];
+  let inputBytes = 0;
   for await (const chunk of process.stdin) {
-    input += chunk.toString();
-    if (Buffer.byteLength(input) > MAX_OUTPUT_BYTES + 4096) throw new Error('Suite transaction input exceeds limit');
+    inputBytes += chunk.length;
+    if (inputBytes > MAX_OUTPUT_BYTES + 4096) throw new Error('Suite transaction input exceeds limit');
+    inputChunks.push(chunk);
   }
-  let { root, saved, expectedRevision, operation, projectId, expectedRecordRevision, kind = 'suites' } = JSON.parse(input);
+  // Count each byte once and decode once. Recounting a growing string can
+  // repeatedly flatten the full record for every pipe chunk.
+  let { root, saved, expectedRevision, operation, projectId, expectedRecordRevision, kind = 'suites' } = JSON.parse(Buffer.concat(inputChunks, inputBytes).toString('utf8'));
+  inputChunks.length = 0;
   const store = new Store(root);
   let old, oldBytes;
   try { ({ value: old, bytes: oldBytes } = await store.readRecord(kind, saved.id)); }
@@ -25,7 +29,15 @@ try {
     const currentRevision = kind === 'suites' ? old?.revision || (old ? revision(old) : undefined) : old ? revision(publicRecord) : undefined;
     if (expectedRevision !== currentRevision) throw new Error(kind === 'suites' ? 'Suite revision conflict: reload the current suite before saving' : 'Revision conflict: reload the current evidence before changing it');
   }
-  if (operation === 'writeRecord' || operation === 'createRecord') {
+  if (operation === 'migrateRun') {
+    if (kind !== 'runs') throw new Error('Run migration requires a run record');
+    // Catalog snapshots are hints only. Read current evidence under its lock;
+    // a deleted run stays deleted and acknowledged changes remain intact.
+    saved = old && old.status !== 'running' ? { ...old,
+      projectId: old.projectId || old.suite?.projectId || projectId,
+      suiteRevision: old.suiteRevision || (old.suite ? revision(old.suite) : undefined) } : null;
+    if (saved && !old.projectId) await store.writeUnlocked('runs', saved);
+  } else if (operation === 'writeRecord' || operation === 'createRecord') {
     if (operation === 'createRecord' && old) throw new Error('Record already exists; imports never overwrite evidence');
     await store.writeUnlocked(kind, saved);
   } else if (operation === 'deleteRecord') {

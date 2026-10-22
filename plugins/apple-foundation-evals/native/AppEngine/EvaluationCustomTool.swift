@@ -226,6 +226,12 @@ struct EvaluationCustomTool: Tool {
         var observedOutput: String?
 
         do {
+            guard argumentsJSON.utf8.count <= EvaluationCustomToolDefinition.maximumArgumentBytes else {
+                throw EvaluationCustomToolRejectedError.argumentsTooLarge
+            }
+            try EvaluationSchemaValidator.validate(arguments, fields: definition.parameters,
+                definitions: definition.schemaDefinitions,
+                representNilExplicitlyInGeneratedContent: definition.representNilExplicitlyInGeneratedContent)
             let requestArgumentsJSON: String
             if Self.containsImageReference(
                 fields: definition.parameters,
@@ -302,7 +308,7 @@ struct EvaluationCustomTool: Tool {
             let outcome: EvaluationCustomToolCallOutcome
             if EvaluationWorkflowRecorder.status(for: error) == .cancelled {
                 outcome = .cancelled
-            } else if error is EvaluationCustomToolRejectedError {
+            } else if error is EvaluationCustomToolRejectedError || error is EvaluationSchemaValidationError {
                 outcome = .rejected
             } else if let toolError = error as? EvaluationCustomToolError,
                       toolError.isPolicyRejection {

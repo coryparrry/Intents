@@ -84,6 +84,38 @@ struct EvaluationRepositoryInspectorTests {
         #expect(snapshot.error?.contains("output limit") == true)
     }
 
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func repeatedFastRepositoryExitsDoNotBlockCleanup(oversized: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+            .resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executable = root.appending(path: "fixture-git")
+        let commit = String(repeating: "a", count: 40)
+        let script = oversized ? "#!/bin/sh\nprintf '%1100000s' ''\n" : """
+        #!/bin/sh
+        case "$*" in
+          *"rev-parse HEAD") printf '%s\\n' '\(commit)' ;;
+          *) exit 0 ;;
+        esac
+        """
+        try Data(script.utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        // Repeated short-lived children exercise exit delivery while the async
+        // inspection resumes on different worker threads after its polling sleep.
+        for iteration in 0..<64 {
+            let snapshot = await EvaluationRepositoryInspector.snapshot(rootPath: root.path,
+                gitExecutable: executable)
+            if oversized {
+                #expect(snapshot.commit == nil && snapshot.isDirty == nil, "Iteration \(iteration)")
+                #expect(snapshot.error?.contains("output limit") == true, "Iteration \(iteration)")
+            } else {
+                #expect(snapshot.error == nil, "Iteration \(iteration)")
+                #expect(snapshot.commit == commit && snapshot.isDirty == false, "Iteration \(iteration)")
+            }
+        }
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func boundedInspectionPreservesCommitAndDirtyStatus() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

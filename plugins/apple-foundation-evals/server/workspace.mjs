@@ -10,7 +10,7 @@ export async function initProjects(app) {
   const projects = await app.store.list('projects', ({ id }) => ({ id }));
   app.defaultProjectId = projects.find((item) => item.id === DEFAULT_PROJECT_ID)?.id || projects[0].id;
   for await (const saved of app.store.scan('suites')) if (!saved.projectId || !saved.revision) await app.store.migrateSuite(saved.id, app.defaultProjectId);
-  for await (const run of app.store.scan('runs')) if (!run.projectId && run.status !== 'running') await app.store.write('runs', { ...run, projectId: run.suite?.projectId || app.defaultProjectId, suiteRevision: run.suiteRevision || (run.suite ? revision(run.suite) : undefined) });
+  for await (const run of app.store.scan('runs')) if (!run.projectId && run.status !== 'running') await app.store.migrateRun(run.id, app.defaultProjectId);
 }
 async function project(app, value) { const projectId = id(value || app.defaultProjectId, 'projectId'); await app.store.read('projects', projectId); return projectId; }
 async function existing(app, kind, key) {
@@ -86,6 +86,9 @@ export async function workspaceDispatch(app, name, args) {
     default: return undefined;
   }
 }
+function importedAppRunStatus(run) {
+  return run.cancelled ? 'cancelled' : run.terminationReason || run.results?.some((sample) => sample.status === 'error') ? 'failed' : 'completed';
+}
 async function importRun(app, args, { persist = true } = {}) {
   let value = object(parseImport(args, 'run'), 'run'); value = value.run || value;
   const evidence = value.appRun || value;
@@ -93,6 +96,12 @@ async function importRun(app, args, { persist = true } = {}) {
   if (Buffer.byteLength(JSON.stringify(value)) > MAX_OUTPUT_BYTES) throw new Error('Run import exceeds size limit');
   let saved;
   if (value.suite && value.status && value.results) {
+    if (value.appRun) {
+      if (id(value.id, 'run id') !== id(value.appRun.id, 'app run id')) throw new Error('Run identity does not match its app evidence');
+      // Outer cancellation/failure can conservatively downgrade a native
+      // result, but a completed envelope cannot promote stopped raw evidence.
+      if (value.status === 'completed' && importedAppRunStatus(value.appRun) !== 'completed') throw new Error('Completed run status does not match its app evidence');
+    }
     const snapshot = suite(value.suite, randomUUID);
     nativeResult({ ...value, status: value.status === 'completed' ? 'completed' : 'failed' }, snapshot, { allowAssessmentProjection: true });
     if (!['completed', 'failed', 'cancelled'].includes(value.status)) throw new Error('Only terminal runs can be imported');
@@ -115,7 +124,7 @@ async function importRun(app, args, { persist = true } = {}) {
     }
     let results = value.results?.map((sample) => { id(sample.id, 'sample id'); if (!['passed', 'failed', 'unscored', 'error'].includes(sample.status)) throw new Error('Invalid app sample status'); return sampleEnvelope(sample, snapshot.cases); });
     if (!results) throw new Error('App run requires sample results');
-    const status = value.cancelled ? 'cancelled' : value.terminationReason || results.some((result) => result.appSample.status === 'error') ? 'failed' : 'completed';
+    const status = importedAppRunStatus(value);
     nativeResult({ status: status === 'completed' ? 'completed' : 'failed', results }, snapshot);
     results = applyAssessment(value, results);
     const startedAt = importedTimestamp(value.startedAt, { apple: true });

@@ -39,8 +39,12 @@ public enum ProductionCodec {
         return UUID(uuid: (bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],
                            bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]))
     }
-    public static func write<T: Encodable>(_ value: T, to url: URL) throws {
-        try encode(value).write(to: url, options: .atomic)
+    public static func write<T: Encodable>(_ value: T, to url: URL, maximumBytes: Int? = nil) throws {
+        let data = try encode(value)
+        if let maximumBytes, data.count > maximumBytes {
+            throw ProductionFailure.invalid("Stored record exceeds its size limit.")
+        }
+        try data.write(to: url, options: .atomic)
         let handle = try FileHandle(forWritingTo: url); defer { try? handle.close() }; try handle.synchronize()
     }
     public static func fileSize(_ url: URL) throws -> Int {

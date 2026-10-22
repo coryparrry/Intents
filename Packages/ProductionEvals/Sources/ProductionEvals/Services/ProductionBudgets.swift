@@ -46,13 +46,13 @@ extension ProductionStorage {
                   chunk.attempts[slot]?.number == attempt else { throw ProductionFailure.staleLease }
             chunk.attempts[slot]?.reportedCost = accumulatedCost; chunk.attempts[slot]?.hasUnknownCost = unknown
             chunk.attempts[slot]?.pendingCost = cost; chunk.attempts[slot]?.pendingCostAttempt = attempt
-            try ProductionCodec.write(chunk, to: chunkURL(job, index))
+            try writeChunk(chunk, job: job, index: index)
             if job.configuration.maximumCost != nil {
                 let value = try auditedCostControl(job)
                 try ProductionCodec.write(value, to: jobDirectory(job.id).appendingPathComponent("control.json"))
             }
             chunk.attempts[slot]?.pendingCost = nil; chunk.attempts[slot]?.pendingCostAttempt = nil
-            try ProductionCodec.write(chunk, to: chunkURL(job, index))
+            try writeChunk(chunk, job: job, index: index)
         }
     }
 }

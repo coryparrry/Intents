@@ -226,3 +226,61 @@ test('concurrent run imports never overwrite evidence with an already committed 
   assert.match(imports.find((result) => result.status === 'rejected').reason.message, /already exists/);
   assert.deepEqual(await app.store.read('runs', runId), imports.find((result) => result.status === 'fulfilled').value.run);
 });
+
+
+async function legacyRun(t) {
+  const value = await fixture(t);
+  const run = { id: randomUUID(), suite: value.suite, suiteId: value.suite.id,
+    status: 'completed', startedAt: '2026-10-20T12:00:00.000Z',
+    finishedAt: '2026-10-20T12:00:01.000Z', results: [] };
+  await value.app.store.write('runs', run);
+  return { ...value, run };
+}
+async function delayedRunMigration(t, root, runId) {
+  const app = new EvaluationApp({ dataDir: root });
+  const arrived = deferred(), resume = deferred();
+  const migrate = app.store.migrateRun.bind(app.store);
+  app.store.migrateRun = async (key, projectId) => {
+    if (key === runId) { arrived.resolve(); await resume.promise; }
+    return migrate(key, projectId);
+  };
+  const startup = app.init();
+  t.after(async () => { resume.resolve(); await startup; await app.shutdown(); });
+  await arrived.promise;
+  return { app, startup, resume };
+}
+test('delayed run migration cannot recreate evidence another server deleted', async (t) => {
+  const { root, app, run } = await legacyRun(t);
+  const delayed = await delayedRunMigration(t, root, run.id);
+  const other = new EvaluationApp({ dataDir: root }); t.after(() => other.shutdown());
+  await other.init();
+  const result = await other.call('eval_delete_run', { runId: run.id });
+  assert.equal(result.deleted, true);
+  await assert.rejects(app.store.read('runs', run.id), /not found/);
+  delayed.resume.resolve(); await delayed.startup;
+  await assert.rejects(app.store.read('runs', run.id), /not found/);
+});
+test('delayed run migration preserves the newest acknowledged record and metadata', async (t) => {
+  const { root, app, run } = await legacyRun(t);
+  const delayed = await delayedRunMigration(t, root, run.id);
+  const other = new EvaluationApp({ dataDir: root }); t.after(() => other.shutdown());
+  await other.init();
+  const migrated = await other.store.read('runs', run.id);
+  const acknowledged = { ...migrated, model: 'Acknowledged newer evidence', suiteRevision: 'newer-revision' };
+  await other.store.write('runs', acknowledged);
+  delayed.resume.resolve(); await delayed.startup;
+  assert.deepEqual(await app.store.read('runs', run.id), acknowledged);
+  await delayed.app.init();
+  assert.deepEqual(await app.store.read('runs', run.id), acknowledged, 'run migration is idempotent');
+});
+test('run migration fills only missing metadata on the current record and skips live evidence', async (t) => {
+  const { app, run } = await legacyRun(t);
+  const edited = { ...run, model: 'Latest model', suiteRevision: 'retained-revision' };
+  await app.store.write('runs', edited);
+  await app.store.migrateRun(run.id, app.defaultProjectId);
+  assert.deepEqual(await app.store.read('runs', run.id), { ...edited, projectId: app.defaultProjectId });
+  const running = { ...run, status: 'running', ownerPid: process.pid };
+  await app.store.write('runs', running);
+  await app.store.migrateRun(run.id, app.defaultProjectId);
+  assert.deepEqual(await app.store.read('runs', run.id), running);
+});

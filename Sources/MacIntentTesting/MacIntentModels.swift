@@ -34,12 +34,14 @@ public struct MacIntentCatalog: Codable, Sendable {
     public let bundleIdentifier: String
     public let appURL: URL
     public let actions: [MacIntentAction]
-    public init(bundleIdentifier: String, appURL: URL, actions: [MacIntentAction]) {
+    public let productIdentity: MacIntentProductIdentity?
+    public init(bundleIdentifier: String, appURL: URL, actions: [MacIntentAction], productIdentity: MacIntentProductIdentity? = nil) {
         self.bundleIdentifier = bundleIdentifier; self.appURL = appURL; self.actions = actions
+        self.productIdentity = productIdentity
     }
 }
 
-public struct MacIntentTestCase: Identifiable, Codable, Sendable {
+public struct MacIntentTestCase: Identifiable, Codable, Sendable, Equatable {
     public var id: UUID
     public var actionIdentifier: String
     public var inputsJSON: String
@@ -69,4 +71,13 @@ public struct MacIntentRunResult: Sendable {
     public let resultBundleURL: URL?
     public let logURL: URL
     public let summary: String
+    public let productIdentity: MacIntentProductIdentity?
+    public let cases: [MacIntentTestCase]
+
+    public init(succeeded: Bool, resultBundleURL: URL?, logURL: URL, summary: String,
+                productIdentity: MacIntentProductIdentity? = nil, cases: [MacIntentTestCase] = []) {
+        self.succeeded = succeeded; self.resultBundleURL = resultBundleURL
+        self.logURL = logURL; self.summary = summary
+        self.productIdentity = productIdentity; self.cases = cases
+    }
 }

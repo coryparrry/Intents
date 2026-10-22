@@ -14,10 +14,13 @@ signed by the same development team; Intents never re-signs your subject app.
 `security find-identity -v -p codesigning` lists installed signing identities.
 
 Install the built `.app` normally, for example in `~/Applications`, register it
-with macOS, and open it normally. Select that installed copy. A bundle left only
+with macOS, and open it normally once. Quit the app, then select that installed copy. A bundle left only
 in an Xcode build directory can fail metadata admission, and another registered
 copy with the same bundle identifier can take precedence. The runner checks that
-the active registered app resolves to the selected path.
+the active registered app resolves to the selected path. It launches a fresh
+process and verifies its signed code against the selected build. If the app is
+already running, quit it yourself after saving your work. Reload the catalog
+after rebuilding or replacing the selected app.
 
 Intents reads compiled App Intents metadata to produce a best-effort catalog.
 Missing metadata or an unsupported declaration may leave an action unavailable.
@@ -77,6 +80,11 @@ saved `run.log`, generated tests, and `.xcresult` bundle. An infrastructure fail
 or missing evidence is not a passed action check. Success also requires the
 result bundle to confirm the exact authored test count, with no skipped tests or
 expected failures.
+
+Results retain the authored cases and a digest of the selected app's files.
+Changing a case clears the previous verdict. Cancellation waits for owned
+command processes to exit; if test resources remain, another run is blocked
+until their exit can be confirmed.
 
 The [Mac sample](../../examples/MacIntentSample/README.md) includes a build recipe
 and seven-case manifest for String, Bool, Int, Double, enum cases/defaults, and

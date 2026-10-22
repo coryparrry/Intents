@@ -33,7 +33,7 @@ extension ProductionStorage {
             var encodedOffset = offset.bigEndian
             try index.write(contentsOf: withUnsafeBytes(of: &encodedOffset) { Data($0) })
             var encoded = try ProductionCodec.encode(example)
-            guard encoded.count <= 262_144 else { throw ProductionFailure.invalid("Encoded example exceeds 256 KB.") }
+            guard encoded.count <= ProductionStorageLimits.encodedExampleBytes else { throw ProductionFailure.invalid("Encoded example exceeds 256 KB.") }
             encoded.append(10)
             try output.write(contentsOf: encoded); offset += UInt64(encoded.count)
             guard offset <= 1_000_000_000 else { throw ProductionFailure.invalid("Dataset exceeds the one GB storage limit.") }
@@ -108,9 +108,9 @@ public final class ProductionDatasetReader {
         while let next = try data.read(upToCount: 4_096), !next.isEmpty {
             if let newline = next.firstIndex(of: 10) { line.append(next.prefix(upTo: newline)); break }
             line.append(next)
-            guard line.count <= 262_144 else { throw ProductionFailure.integrity("Oversized indexed record.") }
+            guard line.count <= ProductionStorageLimits.encodedExampleBytes else { throw ProductionFailure.integrity("Oversized indexed record.") }
         }
-        guard !line.isEmpty, line.count <= 262_144 else { throw ProductionFailure.integrity("Missing/oversized indexed record.") }
+        guard !line.isEmpty, line.count <= ProductionStorageLimits.encodedExampleBytes else { throw ProductionFailure.integrity("Missing/oversized indexed record.") }
         let value = try ProductionCodec.decode(ProductionExample.self, line); try ProductionStorage.validate(value); return value
     }
 }
@@ -123,10 +123,10 @@ enum ProductionLineReader {
             pending.append(data)
             while let newline = pending.firstIndex(of: 10) {
                 let line = Data(pending.prefix(upTo: newline)); pending.removeSubrange(...newline)
-                guard line.count <= 262_144 else { throw ProductionFailure.invalid("JSONL record exceeds 256 KB.") }
+                guard line.count <= ProductionStorageLimits.encodedExampleBytes else { throw ProductionFailure.invalid("JSONL record exceeds 256 KB.") }
                 if !line.allSatisfy({ $0 == 13 || $0 == 32 || $0 == 9 }) { try consume(line) }
             }
-            guard pending.count <= 262_144 else { throw ProductionFailure.invalid("JSONL record exceeds 256 KB.") }
+            guard pending.count <= ProductionStorageLimits.encodedExampleBytes else { throw ProductionFailure.invalid("JSONL record exceeds 256 KB.") }
         }
         if !pending.isEmpty { try consume(pending) }
     }

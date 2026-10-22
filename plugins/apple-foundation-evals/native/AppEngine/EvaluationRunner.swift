@@ -244,6 +244,7 @@ actor EvaluationRunner {
         )
         var effectivePrompt: String?
         var judgeSubjectContext: EvaluationJudgeSubjectContext?
+        var judgeToolEvidence: EvaluationJudgeToolEvidence?
         var generationStarted: ContinuousClock.Instant?
         var finalTurnStarted: ContinuousClock.Instant?
         var activePhase = "preparation"
@@ -571,10 +572,9 @@ actor EvaluationRunner {
             let referenceEvidence = await recorder.evidenceText()
             let customEvidence = suite.features.tools.isEmpty ? nil : await customRecorder.evidenceText()
             let builtinEvidence = EvaluationBuiltinToolTrace.evidenceText(for: builtinToolCalls)
-            let evidenceParts = [referenceEvidence, customEvidence, builtinEvidence]
-                .compactMap { $0 }
-                .filter { !$0.isEmpty }
-            let toolEvidence = evidenceParts.isEmpty ? nil : evidenceParts.joined(separator: "\n\n")
+            judgeToolEvidence = EvaluationJudgeToolEvidence.capture(
+                reference: referenceEvidence, custom: customEvidence, builtin: builtinEvidence
+            )
             var scoringSuite = suite
             if await profileRecorder.transitioned {
                 scoringSuite.instructions = [suite.instructions, suite.features.profile.afterToolInstructions]
@@ -591,21 +591,28 @@ actor EvaluationRunner {
             let scoringSpanID = workflow.begin(kind: .scoring, title: "Score response", parentID: rootSpanID,
                 metadata: ["scoringMode": suite.scoringMode.rawValue])
             workflow.activeParentID = scoringSpanID
-            let scoring = await score(
-                response: response.content,
-                evaluationCase: evaluationCase,
-                effectivePrompt: prepared.text,
-                suite: scoringSuite,
-                runID: runID,
-                images: images,
-                model: model,
-                contextSize: contextSize,
-                modelName: modelName,
-                toolEvidence: toolEvidence,
-                subjectContext: judgeSubjectContext,
-                tokenCounter: promptTokenCounter,
-                workflowRecorder: workflow
-            )
+            let scoring: JudgeOutcome
+            do {
+                scoring = await score(
+                    response: response.content,
+                    evaluationCase: evaluationCase,
+                    effectivePrompt: prepared.text,
+                    suite: scoringSuite,
+                    runID: runID,
+                    images: images,
+                    model: model,
+                    contextSize: contextSize,
+                    modelName: modelName,
+                    toolEvidence: try judgeToolEvidence?.validatedText(),
+                    subjectContext: judgeSubjectContext,
+                    tokenCounter: promptTokenCounter,
+                    workflowRecorder: workflow
+                )
+            } catch {
+                scoring = JudgeOutcome(status: .unscored,
+                    rationale: "The subject response succeeded, but complete tool evidence could not be retained for judging.",
+                    errorCategory: "incompleteSavedEvidence", errorMessage: error.localizedDescription)
+            }
             timing.scoringMilliseconds = Self.milliseconds(since: scoringStarted)
             let assertionResults = EvaluationFieldAssertions.evaluate(
                 response: response.content,
@@ -654,7 +661,8 @@ actor EvaluationRunner {
                 fieldAssertionResults: assertionResults.isEmpty ? nil : assertionResults,
                 imageInputTokenCountAvailable: imageInputTokenCountAvailable,
                 workflowTrace: workflow.snapshot(),
-                judgeSubjectContext: judgeSubjectContext
+                judgeSubjectContext: judgeSubjectContext,
+                judgeToolEvidence: judgeToolEvidence
             )
         } catch {
             let failedAt = ContinuousClock.now
@@ -744,7 +752,8 @@ actor EvaluationRunner {
                 refusal: refusalTrace,
                 imageInputTokenCountAvailable: imageInputTokenCountAvailable,
                 workflowTrace: workflow.snapshot(),
-                judgeSubjectContext: judgeSubjectContext
+                judgeSubjectContext: judgeSubjectContext,
+                judgeToolEvidence: judgeToolEvidence
             )
         }
     }
@@ -774,6 +783,7 @@ actor EvaluationRunner {
         )
         var usage = EvaluationUsage()
         var hasUsage = false
+        var usageComplete = true
         var knownCost = 0.0
         var hasKnownCost = false
         var hasEstimatedCost = false
@@ -782,6 +792,10 @@ actor EvaluationRunner {
             if let judgeUsage = result.judgeUsage {
                 usage.add(judgeUsage)
                 hasUsage = true
+            } else if result.judgeDurationMilliseconds != nil {
+                // A judge ran without reporting usage. Subject failures and
+                // deterministic checks have no judge duration and add no usage.
+                usageComplete = false
             }
             if let cost = result.judgeCost, let usd = cost.usd {
                 knownCost += usd
@@ -817,7 +831,7 @@ actor EvaluationRunner {
             id: UUID(), runID: runID, createdAt: Date(), origin: .initialRun,
             judge: identity, promptVersion: EvaluationRunner.judgePromptVersion,
             rubric: suite.criteria, passingScore: EvaluationSuite.judgePassingScore,
-            samples: samples, totalUsage: hasUsage ? usage : nil,
+            samples: samples, totalUsage: hasUsage && usageComplete ? usage : nil,
             durationMilliseconds: EvaluationAssessment.summedJudgeDurationMilliseconds(samples),
             cost: cost, supersedesAssessmentID: nil,
             observedJudgeIdentities: observedIdentities.isEmpty ? [identity] : observedIdentities,

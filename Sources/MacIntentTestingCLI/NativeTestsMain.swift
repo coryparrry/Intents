@@ -1,5 +1,4 @@
 import Foundation
-import Dispatch
 import Darwin
 import MacIntentTesting
 
@@ -18,12 +17,9 @@ struct NativeTestsMain {
             let mapping = configuration.outputDirectory.appendingPathComponent("issued-cases-\(UUID().uuidString).json")
             try encoder().encode(issued).write(to: mapping, options: [.atomic])
             let runner = MacIntentRunner()
-            signal(SIGINT, SIG_IGN)
-            let interrupt = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-            interrupt.setEventHandler { Task { @MainActor in runner.cancel() } }
-            interrupt.resume()
-            defer { interrupt.cancel(); signal(SIGINT, SIG_DFL) }
-            let result = try await runner.run(catalog: catalog, cases: cases, configuration: configuration)
+            let result = try await NativeTestsSignals.whileRunning(cancel: { runner.cancel() }) {
+                try await runner.run(catalog: catalog, cases: cases, configuration: configuration)
+            }
             try emit(NativeTestsRunOutput(result: result, caseManifestURL: mapping, cases: issued))
             if !result.succeeded {
                 // A result bundle records a native execution attempt. Earlier

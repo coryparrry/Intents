@@ -92,26 +92,32 @@ extension ProductionStorage {
         }
     }
     public func register(_ worker: ProductionWorker) throws {
-        guard !worker.id.isEmpty, worker.id.count <= 200, !worker.name.isEmpty,
+        guard !worker.id.isEmpty, worker.id.count <= 200, !worker.name.isEmpty, worker.name.count <= 200,
               [worker.platform, worker.operatingSystem, worker.hardware, worker.locale, worker.model].allSatisfy({ !$0.isEmpty && $0.count <= 200 }) else {
             throw ProductionFailure.invalid("Worker provenance is incomplete.")
         }
         try transaction {
             let key = ProductionCodec.digest(Data(worker.id.utf8))
-            try ProductionCodec.write(worker, to: root.appendingPathComponent("Workers/\(key).json"))
+            try ProductionCodec.write(worker, to: root.appendingPathComponent("Workers/\(key).json"),
+                                      maximumBytes: ProductionStorageLimits.encodedWorkerBytes)
         }
     }
     public func workers() throws -> [ProductionWorker] {
         try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("Workers"), includingPropertiesForKeys: nil)
-            .map { try ProductionCodec.read(ProductionWorker.self, from: $0, maximumBytes: 20_000) }.sorted { $0.name < $1.name }
+            .map { try ProductionCodec.read(ProductionWorker.self, from: $0,
+                                           maximumBytes: ProductionStorageLimits.encodedWorkerBytes) }.sorted { $0.name < $1.name }
     }
     public func chunkCount(_ job: ProductionJob) -> Int { (job.plannedCount + job.configuration.chunkSize - 1) / job.configuration.chunkSize }
     func chunkURL(_ job: ProductionJob, _ index: Int) -> URL { jobDirectory(job.id).appendingPathComponent("Chunks/\(index).json") }
+    func writeChunk(_ chunk: ProductionChunk, job: ProductionJob, index: Int) throws {
+        try ProductionCodec.write(chunk, to: chunkURL(job, index), maximumBytes: ProductionStorageLimits.encodedChunkBytes)
+    }
     public func chunk(_ job: ProductionJob, index: Int) throws -> ProductionChunk {
         guard (0..<chunkCount(job)).contains(index) else { throw ProductionFailure.invalid("Chunk index is out of range.") }
         let url = chunkURL(job, index)
         let value = FileManager.default.fileExists(atPath: url.path)
-            ? try ProductionCodec.read(ProductionChunk.self, from: url, maximumBytes: 50_000_000) : ProductionChunk(index: index)
+            ? try ProductionCodec.read(ProductionChunk.self, from: url,
+                                       maximumBytes: ProductionStorageLimits.encodedChunkBytes) : ProductionChunk(index: index)
         let range = slots(job, chunk: index)
         guard value.index == index, value.records.count <= job.configuration.chunkSize,
               value.attempts.count <= job.configuration.chunkSize,
@@ -163,7 +169,7 @@ extension ProductionStorage {
                 }
                 value.lease = ProductionLease(token: UUID(), workerID: worker.id,
                     expiresAt: now.addingTimeInterval(max(300, job.configuration.timeoutSeconds * 3)))
-                try ProductionCodec.write(value, to: chunkURL(job, index)); return value
+                try writeChunk(value, job: job, index: index); return value
             }
             return nil
         }
@@ -175,12 +181,13 @@ extension ProductionStorage {
             guard value.lease?.token == token, let expiry = value.lease?.expiresAt, expiry > now else { throw ProductionFailure.staleLease }
             try update(&value)
             if value.lease != nil { value.lease?.expiresAt = now.addingTimeInterval(max(300, job.configuration.timeoutSeconds * 3)) }
-            try ProductionCodec.write(value, to: chunkURL(job, index))
+            try writeChunk(value, job: job, index: index)
         }
     }
     public func validateResponse(_ response: ProductionResponse, requestID: UUID) throws {
-        guard response.requestID == requestID, response.output.utf8.count <= 64_000,
-              (response.explanation?.utf8.count ?? 0) <= 8_000, (response.artifact?.count ?? 0) <= 262_144,
+        guard response.requestID == requestID, response.output.utf8.count <= ProductionStorageLimits.outputBytes,
+              (response.explanation?.utf8.count ?? 0) <= ProductionStorageLimits.explanationBytes,
+              (response.artifact?.count ?? 0) <= ProductionStorageLimits.artifactBytes,
               response.latencyMilliseconds.isFinite, response.latencyMilliseconds >= 0,
               response.cost == nil || (response.cost!.isFinite && response.cost! >= 0) else {
             throw ProductionFailure.invalid("Worker returned foreign, oversized or non-finite evidence.")
@@ -189,7 +196,7 @@ extension ProductionStorage {
     static func validate(_ config: ProductionJobConfiguration) throws {
         try ProductionCodec.validateDigest(config.scoringRevision)
         guard config.executionRevision == ProductionCodec.digest(config.executionContext), config.executionContext.count <= 64_000_000,
-              (1...100).contains(config.chunkSize), (1...20).contains(config.repetitions), (1...5).contains(config.maximumAttempts),
+              (1...ProductionStorageLimits.chunkRecords).contains(config.chunkSize), (1...20).contains(config.repetitions), (1...5).contains(config.maximumAttempts),
               (1...32).contains(config.targets.count), config.timeoutSeconds.isFinite, (0.1...3600).contains(config.timeoutSeconds),
               config.maximumElapsedSeconds.isFinite, (1...2_592_000).contains(config.maximumElapsedSeconds),
               config.maximumCost == nil || (config.maximumCost!.isFinite && config.maximumCost! > 0
