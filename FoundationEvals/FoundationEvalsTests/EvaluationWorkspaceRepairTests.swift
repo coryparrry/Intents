@@ -1,10 +1,170 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Testing
 @testable import FoundationEvals
 
 @MainActor
 struct EvaluationWorkspaceRepairTests {
+    @Test(arguments: [false, true])
+    func duplicationFlushesVisiblePromptEdits(duplicatesProject: Bool) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let caseID = store.draftSuite.cases[0].id
+        store.draftSuite.name = "Visible name"
+        store.editPrompt("Visible prompt before the autosave fires", for: caseID)
+        #expect(store.isDraftSavePending)
+
+        let copied = try duplicatedSuite(in: store, duplicatesProject: duplicatesProject)
+
+        #expect(copied.name == "Visible name copy")
+        #expect(copied.cases.first { $0.id == caseID }?.prompt == "Visible prompt before the autosave fires")
+        #expect(!store.isDraftSavePending)
+        #expect(store.suite.cases.first { $0.id == caseID }?.prompt == copied.cases.first { $0.id == caseID }?.prompt)
+    }
+
+    @Test(arguments: [false, true])
+    func duplicationRejectsAnInvalidVisibleDraftAndAllowsCorrection(duplicatesProject: Bool) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let caseID = store.draftSuite.cases[0].id
+        let originalPrompt = store.suite.cases[0].prompt
+        store.editPrompt("", for: caseID)
+
+        #expect(throws: EvaluationStoreError.self) {
+            _ = try duplicatedSuite(in: store, duplicatesProject: duplicatesProject)
+        }
+        #expect(store.projects.count == 1)
+        #expect(store.suiteRecords.count == 1)
+        #expect(store.suite.cases[0].prompt == originalPrompt)
+        #expect(store.promptText(for: caseID).isEmpty)
+
+        store.editPrompt("Corrected visible prompt", for: caseID)
+        let copied = try duplicatedSuite(in: store, duplicatesProject: duplicatesProject)
+        #expect(copied.cases.first { $0.id == caseID }?.prompt == "Corrected visible prompt")
+    }
+
+    @Test(arguments: [false, true])
+    func duplicationPreservesTheDraftAfterStorageFailureAndCanRetry(duplicatesProject: Bool) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var rejectsWrites = false
+        let store = EvaluationStore(supportDirectory: directory, workspaceCatalogWriter: { catalog, root in
+            if rejectsWrites { throw CocoaError(.fileWriteNoPermission) }
+            try EvaluationWorkspacePersistence.save(catalog, in: root)
+        })
+        let caseID = store.draftSuite.cases[0].id
+        let originalPrompt = store.suite.cases[0].prompt
+        store.editPrompt("Retain this draft across a failed save", for: caseID)
+        rejectsWrites = true
+
+        #expect(throws: EvaluationStoreError.self) {
+            _ = try duplicatedSuite(in: store, duplicatesProject: duplicatesProject)
+        }
+        #expect(store.projects.count == 1)
+        #expect(store.suiteRecords.count == 1)
+        #expect(store.suite.cases[0].prompt == originalPrompt)
+        #expect(store.promptText(for: caseID) == "Retain this draft across a failed save")
+
+        rejectsWrites = false
+        let copied = try duplicatedSuite(in: store, duplicatesProject: duplicatesProject)
+        #expect(copied.cases.first { $0.id == caseID }?.prompt == "Retain this draft across a failed save")
+    }
+
+    @Test func failedLocalStatePreservationBlocksReplacementAndRetriesAfterConflictRemoval() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let originalSuiteID = store.selectedSuiteID
+        let otherSuiteID = try store.createSuite(name: "Other suite")
+        try store.switchSuite(id: originalSuiteID)
+        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: store.selectedProjectID, suiteID: originalSuiteID)
+        let stateURL = suiteDirectory.appending(path: "state.json")
+        let original = Data("{ damaged state to preserve".utf8)
+        try original.write(to: stateURL, options: .atomic)
+        let digest = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
+        let backupURL = suiteDirectory.appending(path: "state-unreadable-\(digest).json")
+        let conflicting = Data("unrelated backup bytes".utf8)
+        try conflicting.write(to: backupURL, options: .atomic)
+
+        let reloaded = EvaluationStore(supportDirectory: directory)
+        #expect(reloaded.notice?.contains("could not be preserved") == true)
+        #expect(throws: EvaluationStoreError.self) {
+            try reloaded.commitReviewLocalState(EvaluationSuiteLocalState())
+        }
+        try reloaded.switchSuite(id: otherSuiteID)
+        #expect(reloaded.selectedSuiteID == otherSuiteID)
+        #expect(try Data(contentsOf: stateURL) == original)
+        #expect(try Data(contentsOf: backupURL) == conflicting)
+        try reloaded.switchSuite(id: originalSuiteID)
+        #expect(throws: EvaluationStoreError.self) {
+            try reloaded.commitReviewLocalState(EvaluationSuiteLocalState())
+        }
+        #expect(try Data(contentsOf: stateURL) == original)
+
+        try FileManager.default.removeItem(at: backupURL)
+        try reloaded.switchSuite(id: originalSuiteID)
+        #expect(reloaded.selectedSuiteID == originalSuiteID)
+        #expect(try Data(contentsOf: backupURL) == original)
+        try reloaded.commitReviewLocalState(EvaluationSuiteLocalState())
+        #expect(try CanonicalJSON.decode(EvaluationSuiteLocalState.self, from: Data(contentsOf: stateURL)).baselineApprovals.isEmpty)
+    }
+
+    @Test(.enabled(if: geteuid() != 0, "File read permissions require an unprivileged process."))
+    func unreadableLocalStateKeepsItsOriginalApprovalsWhenAccessReturns() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let originalSuiteID = store.selectedSuiteID
+        let otherSuiteID = try store.createSuite(name: "Other suite")
+        try store.switchSuite(id: originalSuiteID)
+        var localState = EvaluationSuiteLocalState()
+        let approvalID = UUID()
+        localState.baselineApprovals = [.init(id: approvalID, runID: UUID(), assessmentID: nil,
+            suiteRevision: store.suiteRevision, approvedAt: Date(), note: "Retain this approval", revokedAt: nil)]
+        try store.commitReviewLocalState(localState)
+        let stateURL = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: store.selectedProjectID, suiteID: originalSuiteID)
+            .appending(path: "state.json")
+        let original = try Data(contentsOf: stateURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: stateURL.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateURL.path) }
+
+        let reloaded = EvaluationStore(supportDirectory: directory)
+        #expect(reloaded.notice?.contains("could not be preserved") == true)
+        #expect(throws: EvaluationStoreError.self) {
+            try reloaded.commitReviewLocalState(EvaluationSuiteLocalState())
+        }
+        try reloaded.switchSuite(id: otherSuiteID)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateURL.path)
+        #expect(try Data(contentsOf: stateURL) == original)
+        try reloaded.switchSuite(id: originalSuiteID)
+        #expect(reloaded.suiteLocalState.baselineApprovals.map(\.id) == [approvalID])
+        try reloaded.switchSuite(id: otherSuiteID)
+        let retained = try CanonicalJSON.decode(EvaluationSuiteLocalState.self, from: Data(contentsOf: stateURL))
+        #expect(retained.baselineApprovals.map(\.id) == [approvalID])
+    }
+
+    private func duplicatedSuite(in store: EvaluationStore, duplicatesProject: Bool) throws -> EvaluationSuite {
+        let projectID: UUID
+        let suiteID: UUID
+        if duplicatesProject {
+            projectID = try store.duplicateProject(id: store.selectedProjectID)
+            let project = try #require(store.projects.first { $0.id == projectID })
+            suiteID = try #require(project.suites.first?.id)
+        } else {
+            projectID = store.selectedProjectID
+            suiteID = try store.duplicateSuite(id: store.selectedSuiteID)
+        }
+        let directory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: store.overviewStorageDirectory, projectID: projectID, suiteID: suiteID)
+        return try #require(EvaluationWorkspaceStatePersistence.loadSuite(from: directory).suite)
+    }
+
     @Test func corruptDestinationIsPreservedBeforeRecoveringAnUnmarkedWorkspace() throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }

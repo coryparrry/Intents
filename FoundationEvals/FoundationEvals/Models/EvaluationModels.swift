@@ -335,6 +335,7 @@ struct EvaluationSampleResult: Identifiable, Codable, Sendable {
     var workflowTrace: EvaluationWorkflowTrace? = nil
     var structuredFeatureEvidence: EvaluationStructuredFeatureEvidence? = nil
     var judgeSubjectContext: EvaluationJudgeSubjectContext? = nil
+    var judgeToolEvidence: EvaluationJudgeToolEvidence? = nil
 
     var hasCompleteSubjectEvidenceForJudging: Bool {
         errorCategory == nil

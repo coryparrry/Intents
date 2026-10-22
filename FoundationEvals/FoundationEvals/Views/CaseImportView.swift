@@ -85,7 +85,7 @@ struct CaseImportView: View {
             HStack {
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Import \(importCount) Cases") { importCases() }
+                Button("Import \(importCount) \(importCount == 1 ? "Case" : "Cases")") { importCases() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(fileSelection.preview?.canImport != true || importCount == 0)

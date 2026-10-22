@@ -129,7 +129,7 @@ actor EvaluationReassessmentService {
                     effectivePrompt: saved.effectivePrompt ?? saved.prompt,
                     suite: semanticSuite,
                     images: images,
-                    toolEvidence: evidence(from: saved),
+                    toolEvidence: try evidence(from: saved, run: run, suite: suite),
                     subjectContext: try EvaluationJudgeSubjectContext.resolved(saved.judgeSubjectContext, evaluationCase: evaluationCase),
                     resolved: resolved
                 )
@@ -276,7 +276,7 @@ actor EvaluationReassessmentService {
                         response: sample.response, evaluationCase: evaluationCase,
                         effectivePrompt: sample.effectivePrompt ?? sample.prompt,
                         suite: semanticSuite, images: source.images,
-                        toolEvidence: evidence(from: sample),
+                        toolEvidence: try evidence(from: sample, run: run, suite: suite),
                         subjectContext: try EvaluationJudgeSubjectContext.resolved(sample.judgeSubjectContext, evaluationCase: evaluationCase),
                         resolved: resolved
                     )
@@ -314,11 +314,23 @@ actor EvaluationReassessmentService {
         )
     }
 
-    private func evidence(from sample: EvaluationSampleResult) -> String? {
-        let traces = (sample.toolCalls ?? []).map {
-            "tool=\($0.toolName); outcome=\($0.outcome); matchedFiles=\($0.matchedFiles.count); outputCharacters=\($0.outputCharacterCount)"
+    private func evidence(from sample: EvaluationSampleResult, run: EvaluationRun, suite: EvaluationSuite) throws -> String? {
+        if let captured = sample.judgeToolEvidence { return try captured.validatedText() }
+        let configuration = run.execution?.configuration ?? run.suiteDefinition?.modelConfiguration ?? suite.modelConfiguration
+        let features = run.execution?.features ?? run.suiteDefinition?.features ?? suite.features
+        let usedTools = !(sample.toolCalls ?? []).isEmpty
+            || !(sample.featureTrace?.customToolCalls ?? []).isEmpty
+            || !(sample.featureTrace?.builtinToolCalls ?? []).isEmpty
+        let configuredTools = !(run.execution?.toolNames ?? []).isEmpty
+            || configuration.referenceMode == .lookupTool || !features.tools.isEmpty
+            || !configuration.customizationSettings.visionSettings.enabledToolNames.isEmpty
+            || !features.spotlightSearch.enabledToolNames.isEmpty
+        guard !usedTools && !configuredTools else {
+            throw EvaluationJudgeToolEvidence.EvidenceError.unavailable(
+                "This saved response has no frozen judge tool evidence. Tool summaries and optional transcripts cannot reproduce the original grounding evidence. Run the case again before reassessing it."
+            )
         }
-        return traces.isEmpty ? nil : traces.joined(separator: "\n")
+        return nil
     }
 
     private func gatedStatus(

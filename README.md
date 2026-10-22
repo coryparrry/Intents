@@ -106,6 +106,8 @@ Select a normally installed, registered Mac app in **App Intent tests**, or use
 with a JSON case manifest. The command builds a native macOS UI-test runner using
 Apple AppIntentsTesting. It needs Xcode 27+, macOS 27+, XcodeGen, and the same Apple
 development team for app and runner; your app needs no Intents SDK.
+Open the installed app once to register it, then quit it before testing. Each
+result records the selected build identity and authored cases.
 
 The [command-line guide](docs/wiki/Mac-App-Intent-tests.md) covers explicit inputs,
 expected scalar results and execution-only smoke checks. The

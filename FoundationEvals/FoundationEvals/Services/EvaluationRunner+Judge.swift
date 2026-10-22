@@ -273,7 +273,7 @@ extension EvaluationRunner {
             case .invalidResponse: return "judgeNetworkFailure"
             }
         }
-        if error is EvaluationJudgeSubjectContext.ContextError { return "incompleteSavedEvidence" }
+        if error is EvaluationJudgeSubjectContext.ContextError || error is EvaluationJudgeToolEvidence.EvidenceError { return "incompleteSavedEvidence" }
         if error is EvaluationJudgeValidationError { return "invalidJudgeOutput" }
         return "judgeFailure"
     }

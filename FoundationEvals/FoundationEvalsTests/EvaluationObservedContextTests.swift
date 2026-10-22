@@ -264,6 +264,134 @@ struct EvaluationObservedContextTests {
         #expect(!prompts[0].contains("Edited instructions"))
     }
 
+    @Test func realToolGenerationFreezesEvidenceWithTranscriptTracingDisabled() async throws {
+        var (suite, connection) = fixture()
+        suite.modelConfiguration.provider = .customHTTP
+        suite.modelConfiguration.customizationSettings.captureTranscript = false
+        suite.features.prewarm = false
+        suite.features.tools = [.init(name: "lookup_order", description: "Look up an order",
+            parameters: [.init(name: "order")], fixtureResponse: "Order 483 is ready; keep 484 unchanged.")]
+        let transport = ObservedContextTransport(responses: [try completion(), try completion(), try completion()])
+        let client = EvaluationCompatibleJudgeClient(transport: { try await transport.send($0) })
+        let resolved = EvaluationResolvedJudgeConnection(connection: connection, apiKey: nil)
+        let run = await EvaluationRunner(compatibleJudgeClient: client).run(
+            id: UUID(), suiteRevision: "fixture", startedAt: Date(), suite: suite, images: [],
+            model: ObservedToolModel(), contextSize: 131_072, modelName: "Tool fixture executor", admissionError: nil,
+            externalJudge: resolved, liveResponse: { _ in }, progress: { _, _, _ in })
+        let result = try #require(run.results.first)
+        #expect(result.status == .passed)
+        #expect(result.errorMessage == nil)
+        #expect(result.judgeErrorMessage == nil)
+        #expect(result.featureTrace?.transcript == nil)
+        #expect(result.judgeSubjectContext?.entries.isEmpty == true, "The tool runs during the final generation, after history capture")
+        let capture = try #require(result.judgeToolEvidence)
+        #expect(capture.text?.contains("Arguments:") == true)
+        #expect(capture.text?.contains("order") == true)
+        #expect(capture.text?.contains("Order 483 is ready; keep 484 unchanged.") == true)
+        try await verifyToolReplay(run: run, suite: suite, resolved: resolved, client: client, transport: transport)
+    }
+
+    @Test func allToolEvidenceSerializersSurviveReloadWithoutOptionalTraceCapture() async throws {
+        let (suite, connection) = fixture()
+        let reference = ReferenceToolRecorder(maximumCalls: 1)
+        try await reference.record(callIndex: 1, results: [], output: "Reference passage: cancel 483 only")
+        let custom = EvaluationCustomToolRecorder(maximumCalls: 1)
+        let toolID = UUID()
+        try await custom.beginCall(id: toolID, toolName: "lookup_order", argumentsJSON: "{\"order\":\"483\"}")
+        await custom.finishCall(id: toolID, output: "Custom output: keep 484", durationMilliseconds: 7, outcome: .succeeded)
+        let builtin = EvaluationBuiltinToolTrace.evidenceText(for: [
+            .init(id: "builtin-1", toolName: "search", argumentsJSON: "{\"query\":\"orders\"}", output: "Builtin output: 483")
+        ])
+        let capture = EvaluationJudgeToolEvidence.capture(reference: await reference.evidenceText(),
+            custom: await custom.evidenceText(), builtin: builtin)
+        let context = EvaluationJudgeSubjectContext.capture([], instructions: suite.instructions)
+        let transport = ObservedContextTransport(responses: [try completion(), try completion(), try completion()])
+        let client = EvaluationCompatibleJudgeClient(transport: { try await transport.send($0) })
+        let resolved = EvaluationResolvedJudgeConnection(connection: connection, apiKey: nil)
+        let outcome = await EvaluationRunner(compatibleJudgeClient: client).score(response: "483", evaluationCase: suite.cases[0],
+            effectivePrompt: "Which order?", suite: suite, runID: UUID(), images: [], model: SystemLanguageModel.default,
+            contextSize: 131_072, modelName: "No subject generation", externalJudge: resolved,
+            toolEvidence: try capture.validatedText(), subjectContext: context, tokenCounter: ObservedContextTokenCounter())
+        #expect(outcome.status == .passed)
+        var item = sample(suite: suite, context: context)
+        item.judgeToolEvidence = capture
+        var run = EvaluationRun(id: UUID(), suiteID: suite.id, suiteName: suite.name, suiteVersion: suite.version,
+            instructions: suite.instructions, criteria: suite.criteria, scoringMode: suite.scoringMode, repetitions: 1,
+            startedAt: Date(), completedAt: Date(), cancelled: false,
+            environment: .init(operatingSystem: "Fixture", locale: "en", model: "Fixture", modelContextSize: 131_072),
+            attachments: [], results: [item])
+        run.plannedCases = suite.cases
+        #expect(run.results[0].featureTrace == nil)
+        try await verifyToolReplay(run: run, suite: suite, resolved: resolved, client: client, transport: transport)
+        let prompt = try userPrompt(try #require(await transport.bodies().first))
+        for expected in ["Reference passage: cancel 483 only", "Custom output: keep 484", "Builtin output: 483"] {
+            #expect(prompt.contains(expected))
+        }
+    }
+
+    @Test func missingHistoricalToolEvidenceFailsClosedButCapturedAbsenceAndToolFreeLegacyReplay() async throws {
+        for kind in ["legacy-tools", "captured-empty", "legacy-no-tools", "future-format", "oversize"] {
+            var (suite, connection) = fixture()
+            if kind != "legacy-no-tools" { suite.features.tools = [.init(name: "lookup", description: "Lookup", fixtureResponse: "483")] }
+            var item = sample(suite: suite, context: .init())
+            if kind == "captured-empty" { item.judgeToolEvidence = .init(text: nil) }
+            if kind == "future-format" { item.judgeToolEvidence = .init(formatVersion: 99, text: "untrusted") }
+            if kind == "oversize" { item.judgeToolEvidence = .init(text: String(repeating: "é", count: EvaluationJudgeToolEvidence.maximumUTF8Bytes)) }
+            var run = EvaluationRun(id: UUID(), suiteID: suite.id, suiteName: suite.name, suiteVersion: suite.version,
+                instructions: suite.instructions, criteria: suite.criteria, scoringMode: suite.scoringMode, repetitions: 1,
+                startedAt: Date(), completedAt: Date(), cancelled: false,
+                environment: .init(operatingSystem: "Fixture", locale: "en", model: "Fixture", modelContextSize: 131_072),
+                attachments: [], results: [item])
+            run.plannedCases = suite.cases
+            let transport = ObservedContextTransport(responses: [try completion()])
+            let service = EvaluationReassessmentService(client: .init(transport: { try await transport.send($0) }))
+            let assessment = try await service.reassess(run: run, suite: suite, images: [], resolved: .init(connection: connection, apiKey: nil))
+            let supported = kind == "captured-empty" || kind == "legacy-no-tools"
+            #expect(assessment.samples.first?.status == (supported ? .passed : .unscored))
+            #expect(assessment.samples.first?.errorCategory == (supported ? nil : "incompleteSavedEvidence"))
+            #expect(await transport.bodies().count == (supported ? 1 : 0))
+        }
+    }
+
+    @Test func toolEvidenceBoundCountsUTF8BytesWithoutTruncation() throws {
+        var capture = EvaluationJudgeToolEvidence.capture(reference: nil, custom: nil, builtin: nil)
+        #expect(try capture.validatedText() == nil)
+        let item = sample(suite: fixture().0, context: .init())
+        var captured = item
+        captured.judgeToolEvidence = capture
+        let restored = try CanonicalJSON.decode(EvaluationSampleResult.self, from: CanonicalJSON.data(for: captured))
+        #expect(restored.judgeToolEvidence != nil)
+        #expect(restored.judgeToolEvidence?.text == nil)
+        capture.text = String(repeating: "é", count: EvaluationJudgeToolEvidence.maximumUTF8Bytes / 2)
+        #expect(try capture.validatedText() == capture.text)
+        capture.text?.append("é")
+        #expect(throws: EvaluationJudgeToolEvidence.EvidenceError.self) { try capture.validatedText() }
+        let refused = EvaluationJudgeToolEvidence.capture(reference: capture.text, custom: nil, builtin: nil)
+        #expect(refused.text == nil)
+        #expect(refused.unavailableReason != nil)
+        #expect(throws: EvaluationJudgeToolEvidence.EvidenceError.self) { try refused.validatedText() }
+    }
+
+    private func verifyToolReplay(run: EvaluationRun, suite: EvaluationSuite, resolved: EvaluationResolvedJudgeConnection,
+                                  client: EvaluationCompatibleJudgeClient, transport: ObservedContextTransport) async throws {
+        let restored = try CanonicalJSON.decode(EvaluationRun.self, from: CanonicalJSON.data(for: run))
+        let service = EvaluationReassessmentService(client: client)
+        let assessment = try await service.reassess(run: restored, suite: suite, images: [], resolved: resolved)
+        let item = try #require(restored.results.first)
+        let example = EvaluationReviewedJudgeExample(id: UUID(), sourceRunID: run.id, sourceAssessmentID: assessment.id,
+            sampleID: item.id, expectedStatus: .passed, reason: "Matches tool evidence", createdAt: Date())
+        let checked = try await service.checkJudge(sources: [
+            .init(example: example, run: restored, assessment: assessment, suite: suite, images: [], errorMessage: nil)
+        ], resolved: resolved)
+        #expect(assessment.samples.first?.status == .passed)
+        #expect(checked.passed)
+        let bodies = await transport.bodies()
+        #expect(bodies.count == 3)
+        let prompts = try bodies.map(userPrompt)
+        #expect(prompts[0] == prompts[1])
+        #expect(prompts[0] == prompts[2])
+    }
+
     @Test func unsupportedLegacyReassessmentRemainsReadableAndMakesNoRequest() async throws {
         var (suite, connection) = fixture()
         suite.cases[0].conversation.setupTurns = [.init(prompt: "Remember the order")]
@@ -472,4 +600,29 @@ private struct AdmissionMustNotExecuteExecutor: LanguageModelExecutor {
         throw UnexpectedExecution()
     }
     private struct UnexpectedExecution: Error {}
+}
+
+
+private struct ObservedToolModel: LanguageModel {
+    typealias Executor = ObservedToolExecutor
+    var capabilities: LanguageModelCapabilities { LanguageModelCapabilities([.guidedGeneration, .toolCalling]) }
+    var executorConfiguration: Bool { false }
+}
+private struct ObservedToolExecutor: LanguageModelExecutor {
+    typealias Model = ObservedToolModel
+    typealias Configuration = Bool
+    init(configuration: Bool) throws {}
+    func prewarm(model: Model, transcript: Transcript) {}
+    func respond(to request: LanguageModelExecutorGenerationRequest, model: Model,
+                 streamingInto channel: LanguageModelExecutorGenerationChannel) async throws {
+        let hasOutput = request.transcript.history.contains { entry in
+            if case .toolOutput = entry { true } else { false }
+        }
+        if hasOutput {
+            await channel.send(.response(action: .appendText("483", tokenCount: 1)))
+        } else {
+            await channel.send(.toolCalls(action: .toolCall(id: "order-call", name: "lookup_order",
+                action: .appendArguments("{\"order\":\"483\"}", tokenCount: 5))))
+        }
+    }
 }

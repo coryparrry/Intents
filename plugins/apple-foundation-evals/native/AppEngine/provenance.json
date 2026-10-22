@@ -15,21 +15,21 @@
     },
     {
       "source": "Stores/EvaluationStore.swift",
-      "sha256": "d8c5ca0f8d42987b3af7a9f4d674533d85036cf40a7b89a1caac39798c74e657",
+      "sha256": "2843aae1e16f165c8bde73bbef1ad9f201e94a0cab7589bb613b7cd5fa1f4698",
       "bundled": "AppEngineReferenceImporter.swift",
       "excerpt": "validation/limits or attachment preparation only; standalone boundary wrappers",
       "bundledSHA256": "b6ed2fe578a2f7a70b7b3a9a830ddac172600d11a0616c3c422f266c81e249eb"
     },
     {
       "source": "Stores/EvaluationStore.swift",
-      "sha256": "d8c5ca0f8d42987b3af7a9f4d674533d85036cf40a7b89a1caac39798c74e657",
+      "sha256": "2843aae1e16f165c8bde73bbef1ad9f201e94a0cab7589bb613b7cd5fa1f4698",
       "bundled": "AppEngineValidation.swift",
       "excerpt": "validation/limits or attachment preparation only; standalone boundary wrappers",
       "bundledSHA256": "39c46bca4e043b42c05567d8665b74941eefb98a312534fee85eaba7063681db"
     },
     {
       "source": "Stores/EvaluationStore.swift",
-      "sha256": "d8c5ca0f8d42987b3af7a9f4d674533d85036cf40a7b89a1caac39798c74e657",
+      "sha256": "2843aae1e16f165c8bde73bbef1ad9f201e94a0cab7589bb613b7cd5fa1f4698",
       "bundled": "AppEngineWorkflows.swift",
       "excerpt": "instruction experiment freezing, baseline/correction validation, and scoring-contract checks for public experiment summaries; standalone adapters around app workflow analyzers",
       "bundledSHA256": "a3fd29631a7fb355a5877a526bbbe6cef607b0e97f1f4a47bc04ec685512d1d3"
@@ -93,9 +93,9 @@
     },
     {
       "source": "Services/EvaluationCustomTool.swift",
-      "sha256": "a9cf951ed65a052b1e376437aeb49134877711f9e6f514d3208c36b8b98d3fec",
+      "sha256": "b1da4f3ba60ce054de5c69a9251cd0e45ea157425607b829a48befd81c063938",
       "bundled": "EvaluationCustomTool.swift",
-      "bundledSHA256": "289ef4b22e344bf7a63330aca19fd5ac073258883321f0cf4d697cc43e28523c",
+      "bundledSHA256": "4d378597acca557fe2a94b763ef3271b1e06cd4757aa986e4c32d6c6c65d8523",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
     },
     {
@@ -121,9 +121,9 @@
     },
     {
       "source": "Services/EvaluationExperimentRunner.swift",
-      "sha256": "1cd5d0c1685da5566a04720248e900c6bd05adad672c5c4e3ae494c578a123c7",
+      "sha256": "c0c98774b34355f00cb7bc0312ec28fd74cc3b351893888b97b1f577a9c6696e",
       "bundled": "EvaluationExperimentRunner.swift",
-      "bundledSHA256": "0b16243a0e09bab36c14b9eb22bd9acf2746942a9cc9bb09b172e9f330c47228",
+      "bundledSHA256": "ea305a3ebd0e691246a716ca8929804391aa6823a377cbaf5a2e820f5ff8c587",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present; optional caller run UUIDs defaulting to original random IDs"
     },
     {
@@ -135,9 +135,9 @@
     },
     {
       "source": "Services/EvaluationFeatureResponse.swift",
-      "sha256": "7eb1efda9abd7547b3f13f45bc5ff0443718bbde029feb6300e0238cb199c624",
+      "sha256": "8820506169dd146823ddb8c6bb6716f4f94609a26acac7fced8398344bb827d2",
       "bundled": "EvaluationFeatureResponse.swift",
-      "bundledSHA256": "d29e332c452e19e8b7aa253cba362bff0604b9c2a996fc517ef3008498072b94",
+      "bundledSHA256": "d540a7ec0f1c7ddc56d806720bcc01fc9a41eb596404f618077da7d90a813bc7",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
     },
     {
@@ -163,9 +163,9 @@
     },
     {
       "source": "Models/EvaluationJudgeTrace.swift",
-      "sha256": "d9ec6e8cdb4f8f5fc6fc632961b7d2cc7e2777c43e6679b846dd4ee4bbe57871",
+      "sha256": "412ad6f59060d2c151641d5f1fa0182fa4b01a10f1dba88c3bcb170892750767",
       "bundled": "EvaluationJudgeTrace.swift",
-      "bundledSHA256": "53cfac2435128defa2447741ba8f688cfe65572a57edad0470963e2aba05b480",
+      "bundledSHA256": "13ef71a6e9bb0d1271cf2c06c88f2801e0e4752b1e7da1617105e196ca8ebdc7",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
     },
     {
@@ -184,9 +184,9 @@
     },
     {
       "source": "Models/EvaluationModels.swift",
-      "sha256": "c943b9248c7c982b978dbef34d6016a5309d7073a2f4429c156634fd4dc736b8",
+      "sha256": "ff9718d6cf91a42ac40f329b01c3c002287c43f7bcc353f1fecc0e10f9aa9823",
       "bundled": "EvaluationModels.swift",
-      "bundledSHA256": "4eb7f87328e2facf867214c8f3010a012fbd7551a703e458b886fadce94cd8cf",
+      "bundledSHA256": "9604530b543b2b00dfb3f089e2e7f0dcd31f3333cae2592aaa4095dcc2e6ed35",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
     },
     {
@@ -205,7 +205,7 @@
     },
     {
       "source": "Services/EvaluationRunner+Judge.swift",
-      "sha256": "c1e248a92de95bf143fe82b32f9855f7d220e4882fcae7c16b99db21f72f4c81",
+      "sha256": "c4402a9b5614342e978f70509e5df1466f1f14874457147fd51842d9cfae55ce",
       "bundled": "EvaluationRunner+Judge.swift",
       "bundledSHA256": "0cb3ca68eba20fd0754648272bbf90104f81141c40090afe259dd4872b5b0b4d",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
@@ -226,9 +226,9 @@
     },
     {
       "source": "Services/EvaluationRunner.swift",
-      "sha256": "6e58cf9c3e386321c5a55ddcbc8d93116854d197ab66964427d19e9380f8ca1e",
+      "sha256": "05620af32c09bd6214ecf9960f78ef2bf6e1d99fc57a2213c511ad997310e94f",
       "bundled": "EvaluationRunner.swift",
-      "bundledSHA256": "c1771d715b949e04012c12bb00ef978e55064ac8dc4ffd4277efc75ceeabfa34",
+      "bundledSHA256": "cbe46a16b89fa9ab1aec149d63e01b10d54db7c16f4c1abced01c48505bb7e06",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present; custom HTTP input-limit admission remains outside the on-device-only standalone executor"
     },
     {
@@ -328,6 +328,13 @@
       "bundled": "EvaluationJudgeSubjectContext.swift",
       "bundledSHA256": "81e6684afbe58fb9f7e86b5b4756e29d0b20b118034c37c8f16172942117c5eb",
       "adaptation": "macOS 27 availability annotation; frozen observed semantic context is shared with the native app."
+    },
+    {
+      "source": "Services/EvaluationSchemaValidator.swift",
+      "bundled": "EvaluationSchemaValidator.swift",
+      "adaptation": "macOS 27 availability annotations; final structured output and tool argument schema validation",
+      "sha256": "a353029b8bc595ba9b0cfea43df0fbbb2d33413373eeda7985ee70d94092fa2d",
+      "bundledSHA256": "c6079739cc311d874eed847d91cac768834bd3b7ee8a076b95cd4d14d455755e"
     }
   ],
   "sourceCommit": "0b80e07b7e5b309ca3b66a1ae1af3e4ef3e9cf0e",

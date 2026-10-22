@@ -32,6 +32,8 @@ open "$MAC_INTENT_APP"
 Install and register the exact built copy; a DerivedData-only app can fail metadata
 admission. If another copy is registered under the same bundle identifier, select
 the installed copy that macOS resolves as active. The runner checks this path.
+After the first normal launch, quit the sample before running the tests. The
+runner starts a fresh process and verifies that it matches the selected build.
 
 ## Inspect and run
 

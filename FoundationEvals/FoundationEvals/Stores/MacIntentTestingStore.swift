@@ -4,18 +4,30 @@ import Observation
 
 @MainActor @Observable final class MacIntentTestingStore {
     private(set) var catalog: MacIntentCatalog?
-    var selectedActionID = ""
-    var inputsJSON = "{}"
-    var checksExpectedValue = false
-    var expectedValueJSON = "null"
-    var developerDirectory = "/Applications/Xcode.app/Contents/Developer"
-    var signingIdentity = ""
-    var teamIdentifier = ""
+    var selectedActionID = "" { didSet { if oldValue != selectedActionID { invalidateResult() } } }
+    var inputsJSON = "{}" { didSet { if oldValue != inputsJSON { invalidateResult() } } }
+    var checksExpectedValue = false { didSet { if oldValue != checksExpectedValue { invalidateResult() } } }
+    var expectedValueJSON = "null" { didSet { if oldValue != expectedValueJSON { invalidateResult() } } }
+    var developerDirectory = "/Applications/Xcode.app/Contents/Developer" { didSet { if oldValue != developerDirectory { invalidateResult() } } }
+    var signingIdentity = "" { didSet { if oldValue != signingIdentity { invalidateResult() } } }
+    var teamIdentifier = "" { didSet { if oldValue != teamIdentifier { invalidateResult() } } }
     private(set) var isRunning = false
     private(set) var result: MacIntentRunResult?
     private(set) var diagnostic: String?
     @ObservationIgnored private let runner = MacIntentRunner()
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private let runOverride: (@MainActor (MacIntentCatalog, [MacIntentTestCase], MacIntentRunConfiguration) async throws -> MacIntentRunResult)?
+    @ObservationIgnored private var draftRevision = 0
+
+    init(runOverride: (@MainActor (MacIntentCatalog, [MacIntentTestCase], MacIntentRunConfiguration) async throws -> MacIntentRunResult)? = nil) {
+        self.runOverride = runOverride
+    }
+
+    private func invalidateResult() {
+        draftRevision += 1
+        result = nil
+        diagnostic = nil
+    }
 
     var selectedAction: MacIntentAction? {
         catalog?.actions.first { $0.id == selectedActionID }
@@ -58,6 +70,8 @@ import Observation
 
     func start() {
         guard !isRunning, let catalog else { return }
+        result = nil
+        diagnostic = nil
         do {
             let test = try testCase()
             guard developerDirectory.hasPrefix("/"), !signingIdentity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -69,12 +83,16 @@ import Observation
             let configuration = MacIntentRunConfiguration(
                 developerDirectory: URL(filePath: developerDirectory, directoryHint: .isDirectory),
                 signingIdentity: signingIdentity, teamIdentifier: teamIdentifier, outputDirectory: output)
-            result = nil
-            diagnostic = nil
+            let revision = draftRevision
             isRunning = true
             task = Task {
                 defer { isRunning = false; task = nil }
-                do { result = try await runner.run(catalog: catalog, cases: [test], configuration: configuration) }
+                do {
+                    let completed: MacIntentRunResult
+                    if let runOverride { completed = try await runOverride(catalog, [test], configuration) }
+                    else { completed = try await runner.run(catalog: catalog, cases: [test], configuration: configuration) }
+                    if draftRevision == revision { result = completed }
+                }
                 catch { diagnostic = error.localizedDescription }
             }
         } catch { diagnostic = error.localizedDescription }
@@ -84,6 +102,8 @@ import Observation
         cancel()
         await task?.value
     }
+
+    func waitForRun() async { await task?.value }
 
     func cancel() {
         task?.cancel()

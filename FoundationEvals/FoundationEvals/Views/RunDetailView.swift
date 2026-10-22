@@ -730,7 +730,7 @@ private struct ReasoningTraceSection: View {
     }
 }
 
-private struct ResultCardHeader: View {
+struct ResultCardHeader: View {
     let result: EvaluationSampleResult
     let repetitions: Int
     let passingScore: Int
@@ -738,7 +738,7 @@ private struct ResultCardHeader: View {
     let judgedByModel: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             WorkspaceStatusMark(state: mark, size: 24)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -752,10 +752,12 @@ private struct ResultCardHeader: View {
                 Text(judgedByModel ? "Judged by \(scorerSummary)" : "Scored by \(scorerSummary)")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(scorerSummary)
                     .accessibilityIdentifier("Result scorer")
             }
-
-            Spacer()
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .trailing, spacing: 2) {
                 if let score = result.score {
@@ -766,6 +768,7 @@ private struct ResultCardHeader: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+            .fixedSize(horizontal: true, vertical: true)
         }
         .accessibilityElement(children: .combine)
     }

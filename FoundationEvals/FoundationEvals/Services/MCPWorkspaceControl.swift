@@ -1,6 +1,53 @@
 import Foundation
 
+@MainActor final class MCPWorkspaceCompletion {
+  private let stream: AsyncStream<MCPToolPayload>
+  private let continuation: AsyncStream<MCPToolPayload>.Continuation
+  private let capture: @MainActor (String?) -> MCPToolPayload
+  private var completed = false
+
+  init(capture: @escaping @MainActor (String?) -> MCPToolPayload) {
+    (stream, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
+    self.capture = capture
+  }
+
+  func complete(error: String?) {
+    guard !completed else { return }
+    completed = true
+    continuation.yield(capture(error))
+    continuation.finish()
+  }
+
+  func wait() async -> MCPToolPayload {
+    var iterator = stream.makeAsyncIterator()
+    guard let payload = await iterator.next(), !Task.isCancelled else {
+      return .failure(code: "cancelled", message: "App control stopped waiting during shutdown. Inspect saved execution evidence.")
+    }
+    return payload
+  }
+}
+
 @MainActor enum MCPWorkspaceControl {
+  static func workflowCompletion(for call: MCPControlCall, store: EvaluationStore) -> MCPWorkspaceCompletion {
+    let projectID = store.selectedProjectID
+    let suiteID = store.selectedSuiteID
+    return MCPWorkspaceCompletion { error in
+      guard store.selectedProjectID == projectID, store.selectedSuiteID == suiteID else {
+        return .failure(code: "needs_evidence", message: "Workspace changed before completion was captured. Inspect saved evidence.")
+      }
+      if let error { return .failure(code: "execution_failed", message: error) }
+      do {
+        if call.name == "eval_judge_checks_run" {
+          guard let report = store.latestJudgeCheck else {
+            return .failure(code: "execution_failed", message: "No calibration report was saved.")
+          }
+          return MCPControlService.committed(["report": try .encode(report)])
+        }
+        return try result(store, ["localState": try .encode(store.suiteLocalState)])
+      } catch { return MCPControlService.failure(error) }
+    }
+  }
+
   static func revision(_ store: EvaluationStore) throws -> String {
     let value = MCPJSONValue.object([
       "projects": try .encode(store.projects),
@@ -101,6 +148,8 @@ import Foundation
     ].contains(call.name) {
       try requireTarget(call, store: store)
     }
+    let completion = ["eval_experiment_run", "eval_judge_checks_run", "eval_reassess_run"].contains(call.name)
+      ? workflowCompletion(for: call, store: store) : nil
     switch call.name {
     case "eval_workspace_select":
       try store.switchWorkspace(projectID: call.id("projectID"), suiteID: call.id("suiteID"))
@@ -169,7 +218,7 @@ import Foundation
         throw EvaluationStoreError.runBusy
       }
       store.notice = nil
-      store.runExperiment(id: try call.id("experimentID"))
+      store.runExperiment(id: try call.id("experimentID"), completion: { completion?.complete(error: $0) })
       if let notice = store.notice { throw EvaluationStoreError.invalidSuite(notice) }
     case "eval_experiment_decide":
       try MCPControlService.confirm(call)
@@ -206,7 +255,7 @@ import Foundation
         store.judgeConnections.contains(where: { $0.id == (try? call.id("connectionID")) })
       else { throw EvaluationStoreError.runBusy }
       store.notice = nil
-      store.runJudgeChecks(connectionID: try call.id("connectionID"))
+      store.runJudgeChecks(connectionID: try call.id("connectionID"), completion: { completion?.complete(error: $0) })
       if let notice = store.notice { throw EvaluationStoreError.invalidSuite(notice) }
     case "eval_judge_connection_save":
       let connection = try call.value("connectionJSON", as: EvaluationJudgeConnection.self)
@@ -243,7 +292,8 @@ import Foundation
         store.judgeConnections.contains(where: { $0.id == (try? call.id("connectionID")) })
       else { throw EvaluationStoreError.resourceNotFound("Run or judge connection") }
       store.notice = nil
-      store.reassessRun(id: try call.id("runID"), connectionID: try call.id("connectionID"))
+      store.reassessRun(id: try call.id("runID"), connectionID: try call.id("connectionID"),
+        completion: { completion?.complete(error: $0) })
       if let notice = store.notice { throw EvaluationStoreError.invalidSuite(notice) }
     case "eval_assessment_select":
       try store.selectAssessment(runID: call.id("runID"), assessmentID: call.id("assessmentID"))
@@ -284,32 +334,10 @@ import Foundation
       }
     default: throw MCPToolInputError.unknownTool
     }
-    if ["eval_experiment_run", "eval_judge_checks_run", "eval_reassess_run"].contains(call.name) {
+    if let completion {
       let id = try call.id("operationID")
-      let projectID = store.selectedProjectID
-      let suiteID = store.selectedSuiteID
       try control.mcp.track(id) {
-        while store.isRunning || store.isReassessing {
-          if Task.isCancelled {
-            return .failure(code: "cancelled", message: "App control stopped waiting during shutdown. Inspect saved execution evidence.")
-          }
-          try? await Task.sleep(for: .milliseconds(100))
-        }
-        guard store.selectedProjectID == projectID, store.selectedSuiteID == suiteID else {
-          return .failure(
-            code: "needs_evidence",
-            message: "Workspace changed before completion was captured. Inspect saved evidence.")
-        }
-        if let notice = store.notice { return .failure(code: "execution_failed", message: notice) }
-        do {
-          if call.name == "eval_judge_checks_run" {
-            guard let report = store.latestJudgeCheck else {
-              return .failure(code: "execution_failed", message: "No calibration report was saved.")
-            }
-            return MCPControlService.committed(["report": try .encode(report)])
-          }
-          return try result(store, ["localState": try .encode(store.suiteLocalState)])
-        } catch { return MCPControlService.failure(error) }
+        await completion.wait()
       }
       return try result(
         store, ["operationID": .string(id.uuidString), "execution": .string("dispatched")])

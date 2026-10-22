@@ -25,7 +25,8 @@ export async function saveSuiteTransaction(store, saved, expectedRevision, { ope
   const child = spawn(executable, arguments_, { detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
   child.stdout.setEncoding('utf8');
   return new Promise((accept, reject) => {
-    let output = '', diagnostic = '', failed;
+    const outputChunks = [];
+    let outputBytes = 0, diagnostic = '', failed;
     const stop = (message) => {
       failed ||= new Error(message);
       try { process.kill(-child.pid, 'SIGKILL'); } catch { /* Already exited. */ }
@@ -34,8 +35,10 @@ export async function saveSuiteTransaction(store, saved, expectedRevision, { ope
     // is stopped before rejecting, so an expired writer cannot commit afterwards.
     const timeout = setTimeout(() => stop('Suite save transaction timed out'), 15000);
     child.stdout.on('data', (chunk) => {
-      output += chunk.toString();
-      if (Buffer.byteLength(output) > MAX_OUTPUT_BYTES + 1024) stop('Suite transaction output exceeds limit');
+      if (failed) return;
+      outputBytes += Buffer.byteLength(chunk);
+      if (outputBytes > MAX_OUTPUT_BYTES + 1024) { stop('Suite transaction output exceeds limit'); return; }
+      outputChunks.push(chunk);
     });
     child.stderr.on('data', (chunk) => { if (diagnostic.length < 4096) diagnostic += chunk.toString(); });
     child.stdin.on('error', () => {});
@@ -44,7 +47,7 @@ export async function saveSuiteTransaction(store, saved, expectedRevision, { ope
       clearTimeout(timeout);
       if (failed) { reject(failed); return; }
       let result;
-      try { result = JSON.parse(output); } catch { reject(new Error(`Suite save transaction failed${diagnostic.trim() ? `: ${diagnostic.trim()}` : ''}`)); return; }
+      try { result = JSON.parse(outputChunks.join('')); } catch { reject(new Error(`Suite save transaction failed${diagnostic.trim() ? `: ${diagnostic.trim()}` : ''}`)); return; }
       if (code !== 0 || result.error) reject(new Error(result.error || 'Suite save transaction failed'));
       else accept(result.suite);
     });

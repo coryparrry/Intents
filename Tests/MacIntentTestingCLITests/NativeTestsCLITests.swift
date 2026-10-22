@@ -1,8 +1,72 @@
 import Foundation
+import MacIntentTesting
 import Testing
 @testable import MacIntentTestingCLI
 
 struct NativeTestsCLITests {
+    @Test func runOutputPreservesTheFrozenTestedProductIdentity() throws {
+        let identity = try JSONDecoder().decode(MacIntentProductIdentity.self,
+            from: Data(#"{"bundlePath":"/Applications/Sample.app","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#.utf8))
+        let result = MacIntentRunResult(succeeded: true, resultBundleURL: nil,
+            logURL: URL(fileURLWithPath: "/tmp/run.log"), summary: "Passed", productIdentity: identity)
+        let output = NativeTestsRunOutput(result: result, caseManifestURL: URL(fileURLWithPath: "/tmp/cases.json"), cases: [])
+        let data = try JSONEncoder().encode(output)
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let encoded = try #require(json["productIdentity"] as? [String: String])
+        #expect(encoded["sha256"] == identity.sha256)
+        #expect(encoded["bundlePath"] == identity.bundlePath)
+    }
+
+    @Test func runOutputRetainsAuthoredInputsAndExpectationsAfterManifestReplacementAndDeletion() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manifestURL = directory.appendingPathComponent("cases.json")
+        let outputURL = directory.appendingPathComponent("run.json")
+        let originalManifest = #"""
+        [
+          {"actionIdentifier":"Echo","inputs":{"text":"original \"quoted\" text","flag":true,"count":42,"number":1.5},"expectedValue":"original result"},
+          {"actionIdentifier":"CheckFlag","inputs":{"enabled":false},"expectedValue":false},
+          {"actionIdentifier":"Smoke","inputs":{"name":"unchanged"}}
+        ]
+        """#
+        try Data(originalManifest.utf8).write(to: manifestURL)
+        let authored = try NativeTestsManifest.decode(Data(contentsOf: manifestURL))
+        let issued = authored.map(NativeTestsIssuedCase.init)
+        let result = MacIntentRunResult(succeeded: true, resultBundleURL: nil,
+            logURL: directory.appendingPathComponent("run.log"), summary: "Passed", cases: authored)
+        let output = NativeTestsRunOutput(result: result, caseManifestURL: manifestURL, cases: issued)
+        try JSONEncoder().encode(output).write(to: outputURL)
+
+        try Data(#"[{"actionIdentifier":"Replacement","inputs":{"text":"changed"},"expectedValue":99}]"#.utf8)
+            .write(to: manifestURL, options: .atomic)
+        #expect(try NativeTestsManifest.decode(Data(contentsOf: manifestURL))[0].actionIdentifier == "Replacement")
+        try FileManager.default.removeItem(at: manifestURL)
+        #expect(!FileManager.default.fileExists(atPath: manifestURL.path))
+
+        let json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: outputURL)) as? [String: Any])
+        let retained = try JSONDecoder().decode([MacIntentTestCase].self,
+            from: JSONSerialization.data(withJSONObject: try #require(json["authoredCases"])))
+        #expect(retained == authored)
+        #expect(retained.map(\.actionIdentifier) == ["Echo", "CheckFlag", "Smoke"])
+        let inputs = try #require(JSONSerialization.jsonObject(with: Data(retained[0].inputsJSON.utf8)) as? [String: Any])
+        #expect(inputs["text"] as? String == #"original "quoted" text"#)
+        #expect(inputs["flag"] as? Bool == true)
+        #expect(inputs["count"] as? Int == 42)
+        #expect(inputs["number"] as? Double == 1.5)
+        #expect(retained[0].expectedValueJSON == #""original result""#)
+        #expect(retained[1].expectedValueJSON == "false")
+        #expect(retained[2].expectedValueJSON == nil)
+        #expect(json["caseManifestURL"] as? String == manifestURL.absoluteString)
+        let labels = try #require(json["cases"] as? [[String: Any]])
+        #expect(labels.count == issued.count)
+        for (label, issuedCase) in zip(labels, issued) {
+            #expect(label["id"] as? String == issuedCase.id.uuidString)
+            #expect(label["actionIdentifier"] as? String == issuedCase.actionIdentifier)
+            #expect(label["testMethod"] as? String == issuedCase.testMethod)
+        }
+    }
+
     @Test func catalogRequiresOnlyAppAndSupportsSpacesInPaths() throws {
         let options = try NativeTestsOptions(["catalog", "--app", "/Applications/My App.app"])
         #expect(options.command == .catalog)

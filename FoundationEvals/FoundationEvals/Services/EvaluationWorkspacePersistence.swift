@@ -421,11 +421,6 @@ enum EvaluationRepositoryInspector {
         process.standardOutput = output
         process.standardError = errors
         try process.run()
-        // Always reap the owned child, including cancellation and oversized output.
-        defer {
-            if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
-            process.waitUntilExit()
-        }
         let deadline = ContinuousClock.now.advanced(by: timeout)
         let outputLimit = 1_048_576
         func checkOutputBounds() throws {
@@ -445,24 +440,44 @@ enum EvaluationRepositoryInspector {
             }
             return data
         }
-        while process.isRunning {
+        do {
+            while process.isRunning {
+                try Task.checkCancellation()
+                try checkOutputBounds()
+                guard ContinuousClock.now < deadline else {
+                    throw EvaluationRepositoryInspectionError.git("Git \(operation.rawValue) timedOut during execution.")
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
             try Task.checkCancellation()
             try checkOutputBounds()
-            guard ContinuousClock.now < deadline else {
-                throw EvaluationRepositoryInspectionError.git("Git \(operation.rawValue) timedOut during execution.")
+            guard process.terminationStatus == 0 else {
+                let data = try readBounded(stderrURL)
+                let message = String(decoding: data.prefix(8_192), as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                throw EvaluationRepositoryInspectionError.git(message.isEmpty ? "Git inspection failed." : message)
             }
-            try await Task.sleep(for: .milliseconds(20))
+            return String(decoding: try readBounded(stdoutURL), as: UTF8.self)
+                .trimmingCharacters(in: .newlines)
+        } catch {
+            await stopOwnedProcess(process)
+            throw error
         }
-        try Task.checkCancellation()
-        try checkOutputBounds()
-        guard process.terminationStatus == 0 else {
-            let data = try readBounded(stderrURL)
-            let message = String(decoding: data.prefix(8_192), as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            throw EvaluationRepositoryInspectionError.git(message.isEmpty ? "Git inspection failed." : message)
-        }
-        return String(decoding: try readBounded(stdoutURL), as: UTF8.self)
-            .trimmingCharacters(in: .newlines)
+    }
+
+    private static func stopOwnedProcess(_ process: Process) async {
+        guard process.isRunning else { return }
+        // Process observes and reaps its child itself. waitUntilExit can strand a
+        // resumed async task in a thread's run loop after the child already exited.
+        // A detached cleanup task also lets cancellation retain its original error
+        // without cancelling the bounded wait for the owned child to stop.
+        await Task.detached {
+            if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
+            let cleanupDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while process.isRunning && ContinuousClock.now < cleanupDeadline {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        }.value
     }
 }
 

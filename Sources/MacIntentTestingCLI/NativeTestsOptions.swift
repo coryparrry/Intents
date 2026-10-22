@@ -117,11 +117,16 @@ struct NativeTestsRunOutput: Encodable {
     let resultBundleURL: URL?
     let logURL: URL
     let summary: String
+    let productIdentity: MacIntentProductIdentity?
     let caseManifestURL: URL
     let cases: [NativeTestsIssuedCase]
+    /// Frozen authored inputs and expectations from the completed run.
+    let authoredCases: [MacIntentTestCase]
     init(result: MacIntentRunResult, caseManifestURL: URL, cases: [NativeTestsIssuedCase]) {
         succeeded = result.succeeded; resultBundleURL = result.resultBundleURL
         logURL = result.logURL; summary = result.summary
+        productIdentity = result.productIdentity
         self.caseManifestURL = caseManifestURL; self.cases = cases
+        authoredCases = result.cases
     }
 }

@@ -29,6 +29,53 @@ struct EvaluationExperimentRunnerFatalStopTests {
         #expect(outcome.candidate.stoppedEarly)
     }
 
+    @Test(arguments: [2, 3, 4], [false, true])
+    func fatalLaterPartMarksEveryIncompleteVariantStopped(
+        failurePosition: Int, candidateFirst: Bool
+    ) async throws {
+        let (suite, frozen) = makeExperiment()
+        var experiment = frozen
+        let first = candidateFirst ? experiment.candidate.id : experiment.current.id
+        let second = candidateFirst ? experiment.current.id : experiment.candidate.id
+        experiment.executionOrder = [first, second, second, first]
+        let recorder = PartCallRecorder()
+        let runner = EvaluationExperimentRunner { _, _, _, partSuite, _, _, _ in
+            let call = await recorder.nextCall()
+            return makeRun(
+                suite: partSuite,
+                response: "part-\(call)",
+                status: call == failurePosition ? .error : .passed,
+                terminationReason: call == failurePosition ? "serviceUnavailable" : nil
+            )
+        }
+
+        let outcome = try await runner.run(
+            suite: suite, experiment: experiment, images: [], externalJudge: nil,
+            progress: { _, _, _ in }
+        )
+
+        #expect(await recorder.count == failurePosition)
+        for (variantID, run) in [(experiment.current.id, outcome.current),
+                                 (experiment.candidate.id, outcome.candidate)] {
+            let positions = experiment.executionOrder.prefix(failurePosition).enumerated()
+                .filter { $0.element == variantID }.map { $0.offset + 1 }
+            #expect(run.results.map(\.response) == positions.map { "part-\($0)" })
+            #expect(run.plannedResultCount == 2)
+            if run.results.count < run.plannedResultCount {
+                #expect(run.terminationReason == "serviceUnavailable")
+                #expect(run.stoppedEarly)
+            } else if positions.contains(failurePosition) {
+                #expect(run.terminationReason == "serviceUnavailable")
+                #expect(!run.stoppedEarly)
+            } else {
+                // A fully successful variant stays complete when its peer fails.
+                #expect(run.terminationReason == nil)
+                #expect(!run.stoppedEarly)
+                #expect(run.results.allSatisfy { $0.status == .passed })
+            }
+        }
+    }
+
     @Test
     func nonfatalSampleFailureContinuesLaterPositionsAndPreservesOrder() async throws {
         let (suite, experiment) = makeExperiment()

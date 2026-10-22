@@ -50,6 +50,7 @@ actor EvaluationExperimentRunner {
         let startedAt = Date()
         var currentParts: [EvaluationRun] = []
         var candidateParts: [EvaluationRun] = []
+        var terminationReason: String?
 
         for (position, variantID) in experiment.executionOrder.enumerated() {
             try Task.checkCancellation()
@@ -83,6 +84,7 @@ actor EvaluationExperimentRunner {
             else { candidateParts.append(part) }
 
             if EvaluationRunner.stopsBatch(for: part.terminationReason) {
+                terminationReason = part.terminationReason
                 break
             }
         }
@@ -94,14 +96,16 @@ actor EvaluationExperimentRunner {
                 instructions: experiment.current.instructions,
                 suiteRevision: experiment.current.suiteRevision ?? experiment.suiteRevision,
                 startedAt: startedAt,
-                fallback: fallbackPart
+                fallback: fallbackPart,
+                interruptionReason: terminationReason
             ),
             candidate: try combined(
                 parts: candidateParts, id: candidateRunID, suite: suite,
                 instructions: experiment.candidate.instructions,
                 suiteRevision: experiment.candidate.suiteRevision ?? experiment.suiteRevision,
                 startedAt: startedAt,
-                fallback: fallbackPart
+                fallback: fallbackPart,
+                interruptionReason: terminationReason
             )
         )
     }
@@ -113,12 +117,12 @@ actor EvaluationExperimentRunner {
         instructions: String,
         suiteRevision: String,
         startedAt: Date,
-        fallback: EvaluationRun?
+        fallback: EvaluationRun?,
+        interruptionReason: String?
     ) throws -> EvaluationRun {
         guard var run = parts.first ?? fallback else {
             throw RunnerFailure.validation("The experiment produced no samples.")
         }
-        let fallbackTerminationReason = run.terminationReason
         run.id = id
         run.suiteID = suite.id
         run.suiteName = suite.name
@@ -132,9 +136,10 @@ actor EvaluationExperimentRunner {
         run.completedAt = Date()
         run.results = parts.flatMap(\.results)
         run.cancelled = false
-        run.terminationReason = parts.isEmpty
-            ? fallbackTerminationReason
-            : parts.compactMap(\.terminationReason).first
+        run.terminationReason = parts.compactMap(\.terminationReason).first
+        if run.terminationReason == nil, run.results.count < run.plannedResultCount {
+            run.terminationReason = interruptionReason ?? "incomplete"
+        }
         run.assessments = nil
         run.selectedAssessmentID = nil
         var variantSuite = suite

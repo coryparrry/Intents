@@ -21,7 +21,12 @@ extension MacIntentCatalog {
         guard let data = try? Data(contentsOf: metadata), data.count <= 16 * 1024 * 1024 else {
             throw MacIntentTestingError("The app has no readable compiled App Intents metadata (extract.actionsdata). Rebuild it with Xcode 27.")
         }
-        return try decode(data: data, bundleIdentifier: identifier, appURL: appURL)
+        let decoded = try decode(data: data, bundleIdentifier: identifier, appURL: appURL)
+        let identity = try MacIntentProductIdentity.capture(appURL)
+        guard try Data(contentsOf: metadata) == data else {
+            throw MacIntentTestingError("The app's metadata changed while its catalog was being read. Select the app again.")
+        }
+        return .init(bundleIdentifier: identifier, appURL: appURL, actions: decoded.actions, productIdentity: identity)
     }
 
     static func decode(data: Data, bundleIdentifier: String, appURL: URL) throws -> MacIntentCatalog {
