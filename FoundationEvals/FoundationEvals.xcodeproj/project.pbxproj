@@ -51,49 +51,6 @@
 		AFC28B5D3047331D0023273E /* FoundationEvalsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FoundationEvalsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		F15100000000000000000002 /* Retired unit files */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"AppAutomationSelectionViewTests.swift",
-				"AutomationExecutionAdmissionTests.swift",
-				"AutomationMCPTests.swift",
-				"ExecutorSimplificationTests.swift",
-				"Fixtures/LegacyV1/evidence.json",
-				"Fixtures/LegacyV1/invocation.json",
-				"Fixtures/LegacyV1/journal.json",
-				"Fixtures/LegacyV1/scenario.json",
-				"IntentEvidenceBundleTests.swift",
-				"IntentLabArrayInputTests.swift",
-				"IntentLabFeatureGateTests.swift",
-				"IntentLabProjectInstallerTests.swift",
-				"IntentLabRegressionTests.swift",
-				"MCPIntentLabFeatureGateTests.swift",
-				"ScenarioAcceptanceTests.swift",
-				"ScenarioActionParityTests.swift",
-				"ScenarioAutomationEvidenceTests.swift",
-				"ScenarioCollectionTests.swift",
-				"ScenarioContractsTests.swift",
-				"ScenarioExecutionComparisonTests.swift",
-				"ScenarioExecutionPlanTests.swift",
-				"ScenarioExpectationAuthoringTests.swift",
-				"ScenarioFeatureEvidenceTests.swift",
-				"ScenarioFrozenSemanticPolicyTests.swift",
-				"ScenarioIndependentAssessmentTests.swift",
-				"ScenarioNoMutationTests.swift",
-				"ScenarioPhysicalFailureTests.swift",
-				"ScenarioPhysicalLeaseTests.swift",
-				"ScenarioSavedExecutionReportTests.swift",
-				"ScenarioSubjectFeatureAdapterTests.swift",
-				"ScenarioV3HarnessBridgeTests.swift",
-				"XcodeBundleLayoutTests.swift",
-				"XcodeRouteReadinessTests.swift",
-				"XcodeSyntheticReadinessTests.swift",
-			);
-			target = AFC28B523047331D0023273E;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AFC28B48304733170023273E /* FoundationEvals */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -102,9 +59,6 @@
 		};
 		AFC28B563047331D0023273E /* FoundationEvalsTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				F15100000000000000000002 /* Retired unit files */,
-			);
 			path = FoundationEvalsTests;
 			sourceTree = "<group>";
 		};
