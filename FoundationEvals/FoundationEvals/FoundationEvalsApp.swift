@@ -179,6 +179,12 @@ struct FoundationEvalsApp: App {
                 }
                 .keyboardShortcut("2", modifiers: [.command])
 
+                Button("Show Suite Editor") {
+                    store.selection = .suite
+                    openWindow(id: "evaluation-main", value: "main")
+                }
+                .keyboardShortcut("3", modifiers: [.command])
+
                 Button("Add Test Case") {
                     store.selection = .suite
                     store.addCase()
