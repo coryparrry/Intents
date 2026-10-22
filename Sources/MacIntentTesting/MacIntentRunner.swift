@@ -99,7 +99,7 @@ public final class MacIntentRunner {
             let subject = try await NSWorkspace.shared.openApplication(at: current.appURL, configuration: opening)
             if !wasRunning { launchedSubject = subject }
             try checkCancellation()
-            let status = try await execute(executable: xcodebuild,
+            let status = try await executeBuild(executable: xcodebuild,
                                            arguments: MacIntentSource.xcodebuildArguments(project: directory.appendingPathComponent("MacIntentRun.xcodeproj"),
                                                                                           result: resultURL, derivedData: directory.appendingPathComponent("DerivedData")),
                                            directory: directory, environment: environment, log: log, timeout: configuration.timeoutSeconds)
@@ -171,6 +171,24 @@ public final class MacIntentRunner {
             guard !Task.isCancelled, child.isRunning else { return }
             kill(child.processIdentifier, SIGKILL)
         }
+    }
+
+    /// Keep rebuildable products until the owned build process has ended; the
+    /// generated project, log and result bundle remain available for inspection.
+    func executeBuild(executable: URL, arguments: [String], directory: URL,
+                      environment: [String: String], log: FileHandle, timeout: Double) async throws -> Int32 {
+        defer {
+            let derivedData = directory.appendingPathComponent("DerivedData", isDirectory: true)
+            do {
+                if FileManager.default.fileExists(atPath: derivedData.path) {
+                    try FileManager.default.removeItem(at: derivedData)
+                }
+            } catch {
+                log.write(Data("\nCould not remove temporary DerivedData: \(error.localizedDescription)\n".utf8))
+            }
+        }
+        return try await execute(executable: executable, arguments: arguments, directory: directory,
+                                 environment: environment, log: log, timeout: timeout)
     }
 
     func execute(executable: URL, arguments: [String], directory: URL,
