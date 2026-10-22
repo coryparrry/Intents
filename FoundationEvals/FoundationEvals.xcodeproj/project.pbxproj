@@ -52,59 +52,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		F15100000000000000000001 /* Retired app files */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"Models/ScenarioCollectionModels.swift",
-				"Models/ScenarioExecutionModels.swift",
-				"Models/ScenarioModels.swift",
-				"Stores/AppAutomationStore.swift",
-				"Stores/AutomationCapsuleExportSelection.swift",
-				"Stores/AutomationCommandHistory.swift",
-				"Stores/AutomationNativeApplicationSelection.swift",
-				"Stores/AutomationNativeConfirmation.swift",
-				"Stores/AutomationNativeEntitySelection.swift",
-				"Stores/AutomationNativeFirstRun.swift",
-				"Stores/AutomationNativeFirstRunInputs.swift",
-				"Stores/AutomationNativeImports.swift",
-				"Stores/AutomationNativeLocalConfirmation.swift",
-				"Stores/AutomationNativePairedFeatures.swift",
-				"Stores/AutomationNativePreparation.swift",
-				"Stores/AutomationNativePreparationRestoration.swift",
-				"Stores/AutomationNativePreparedEvidence.swift",
-				"Stores/AutomationNativeRecordSetupProposal.swift",
-				"Stores/AutomationNativeRecovery.swift",
-				"Stores/AutomationNativeRunPlanning.swift",
-				"Stores/AutomationNativeSavedAttemptSelection.swift",
-				"Stores/AutomationNativeSiriFailureSearch.swift",
-				"Stores/AutomationNativeSiriPlanning.swift",
-				"Stores/AutomationNativeUIFixComparison.swift",
-				"Stores/AutomationNativeUIFixComparisonCommand.swift",
-				"Stores/AutomationNativeUIReproduction.swift",
-				"Views/AppAutomationCapsuleView.swift",
-				"Views/AppAutomationDateInput.swift",
-				"Views/AppAutomationView.swift",
-				"Views/AppleTestConnectionView.swift",
-				"Views/AutomationFirstRunControls.swift",
-				"Views/AutomationPairedFeatureControls.swift",
-				"Views/AutomationRecoveryControls.swift",
-				"Views/AutomationSavedSearchesSection.swift",
-				"Views/AutomationSiriControls.swift",
-				"Views/AutomationSiriSearchControls.swift",
-				"Views/AutomationSourcePreparationControls.swift",
-				"Views/AutomationSourceRecipeControls.swift",
-				"Views/IntentLabHelp.swift",
-				"Views/IntentLabSetupInstallerView.swift",
-				"Views/IntentLabView.swift",
-				"Views/NativeAutomationEvidenceView.swift",
-				"Views/ScenarioCollectionView.swift",
-				"Views/ScenarioEditorView.swift",
-				"Views/ScenarioGuidedCheckEditor.swift",
-				"Views/ScenarioReportView.swift",
-				"Views/ScenarioReusableChecksView.swift",
-			);
-			target = AFC28B45304733170023273E;
-		};
 		F15100000000000000000002 /* Retired unit files */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -150,9 +97,6 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AFC28B48304733170023273E /* FoundationEvals */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				F15100000000000000000001 /* Retired app files */,
-			);
 			path = FoundationEvals;
 			sourceTree = "<group>";
 		};
