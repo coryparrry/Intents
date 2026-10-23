@@ -28,8 +28,9 @@ jobs:
     name: Validate release source and wait for CI
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # GitHub requires push access even to read an unpublished draft release.
     permissions:
-      contents: read
+      contents: write
       actions: read
     outputs:
       source_sha: ${{ steps.candidate.outputs.source_sha }}

@@ -13,6 +13,28 @@ def github_json(*args):
     return json.loads(result.stdout)
 
 
+def optional_github_api(endpoint):
+    """Only an explicit API 404 is absence; authentication/network errors still fail."""
+    result = subprocess.run(
+        ["gh", "api", endpoint, "--include"], capture_output=True, text=True
+    )
+    headers, separator, body = result.stdout.partition("\n\n")
+    status = re.match(r"HTTP/\S+ ([0-9]{3})(?:\s|$)", headers)
+    if not separator or not status:
+        result.check_returncode()
+        raise ValueError("GitHub did not return an HTTP response")
+    if result.returncode:
+        if status[1] == "404":
+            return None
+        result.check_returncode()
+    if status[1] != "200":
+        raise ValueError(f"Unexpected GitHub response: HTTP {status[1]}")
+    payload = json.loads(body)
+    if not isinstance(payload, dict):
+        raise ValueError("GitHub did not return an API object")
+    return payload
+
+
 def check_baseline():
     repository = os.environ["GITHUB_REPOSITORY"]
     # Read the same live main manifest that Release Please uses, even on reruns.
@@ -28,15 +50,23 @@ def check_baseline():
     ):
         raise ValueError("The release manifest must contain a stable semantic version")
     tag = f"v{version}"
-    release = github_json(
-        "release", "view", tag, "--repo", repository, "--json", "tagName,isDraft"
-    )
-    if release["tagName"] != tag or not isinstance(release["isDraft"], bool):
-        raise ValueError("The release response does not match the manifest baseline")
-    ready = not release["isDraft"]
+    release = optional_github_api(f"repos/{repository}/releases/tags/{tag}")
+    missing = release is None
+    if missing:
+        # A removed, unpublished candidate must not deadlock all future proposals.
+        # A surviving tag may already be distributed, so do not bypass that case.
+        if optional_github_api(f"repos/{repository}/git/ref/tags/{tag}") is not None:
+            raise ValueError(f"{tag} has a tag but no release; restore its release before generating another PR")
+        ready = True
+    else:
+        if release.get("tag_name") != tag or not isinstance(release.get("draft"), bool):
+            raise ValueError("The release response does not match the manifest baseline")
+        ready = not release["draft"]
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         output.write(f"ready={str(ready).lower()}\n")
-    if ready:
+    if missing:
+        print(f"{tag} has neither a release nor a tag; generating the next release PR from current main.")
+    elif ready:
         print(f"{tag} is published; release PR generation can proceed.")
     else:
         print(
