@@ -15,21 +15,21 @@
     },
     {
       "source": "Stores/EvaluationStore.swift",
-      "sha256": "7073807ce1c01b7105cf5c1bb895dc9c705c1abaea2377c4740c1c929b1027b7",
+      "sha256": "b6a07a40570bfa063a772375cecdf082346064cbc85cb49652db2af7b8a4afb3",
       "bundled": "AppEngineReferenceImporter.swift",
       "excerpt": "validation/limits or attachment preparation only; standalone boundary wrappers",
       "bundledSHA256": "b6ed2fe578a2f7a70b7b3a9a830ddac172600d11a0616c3c422f266c81e249eb"
     },
     {
       "source": "Stores/EvaluationStore.swift",
-      "sha256": "7073807ce1c01b7105cf5c1bb895dc9c705c1abaea2377c4740c1c929b1027b7",
+      "sha256": "b6a07a40570bfa063a772375cecdf082346064cbc85cb49652db2af7b8a4afb3",
       "bundled": "AppEngineValidation.swift",
       "excerpt": "validation/limits or attachment preparation only; standalone boundary wrappers",
       "bundledSHA256": "cfe3e857a7e1f66f94997c95b4dc624f0de54c6a893289e09f6829043b657405"
     },
     {
       "source": "Stores/EvaluationStore.swift",
-      "sha256": "7073807ce1c01b7105cf5c1bb895dc9c705c1abaea2377c4740c1c929b1027b7",
+      "sha256": "b6a07a40570bfa063a772375cecdf082346064cbc85cb49652db2af7b8a4afb3",
       "bundled": "AppEngineWorkflows.swift",
       "excerpt": "instruction experiment freezing, baseline/correction validation, and scoring-contract checks for public experiment summaries; standalone adapters around app workflow analyzers",
       "bundledSHA256": "a3fd29631a7fb355a5877a526bbbe6cef607b0e97f1f4a47bc04ec685512d1d3"

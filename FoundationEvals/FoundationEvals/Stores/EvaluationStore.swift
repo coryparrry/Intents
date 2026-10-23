@@ -892,6 +892,7 @@ final class EvaluationStore {
             runs.removeAll { pendingIDs.contains($0.id) }
         }
         totalSamples = recovery.pending?.summary.totalSamples ?? 0
+        try migrateLegacyReviewSourcesIfNeeded()
         let repositoryNotice = repositoryConflict
             ? "The repository suite changed while this suite has an autosaved local draft. Both versions were preserved; review them before saving."
             : nil
@@ -4492,6 +4493,12 @@ final class EvaluationStore {
         }
     }
 
+    private func migrateLegacyReviewSourcesIfNeeded() throws {
+        if let migrated = try EvaluationReviewWorkflow.migratingLegacySources(in: suiteLocalState, runs: runs) {
+            try commitReviewLocalState(migrated)
+        }
+    }
+
     private func retrySuiteLocalStateRecoveryIfNeeded() throws {
         guard suiteLocalStatePersistenceBlocker != nil else { return }
         let loaded = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(from: suiteStateURL)
@@ -4501,6 +4508,7 @@ final class EvaluationStore {
         }
         suiteLocalState = loaded.state
         suiteLocalStatePersistenceBlocker = nil
+        try migrateLegacyReviewSourcesIfNeeded()
         notice = loaded.notice
     }
 

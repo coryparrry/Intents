@@ -20,6 +20,10 @@ enum EvaluationReviewWorkflow {
     }
 
     static func sourceDigest(run: EvaluationRun, sample: EvaluationSampleResult) throws -> String {
+        try sourceDigest(run: run, sample: sample, bindLegacyInputs: true)
+    }
+
+    private static func sourceDigest(run: EvaluationRun, sample: EvaluationSampleResult, bindLegacyInputs: Bool) throws -> String {
         struct Source: Encodable {
             var runID: UUID
             var sample: EvaluationSampleResult
@@ -33,10 +37,59 @@ enum EvaluationReviewWorkflow {
         // Initial recorded evidence remains immutable; selected/reassessed judgments are excluded.
         // Omit the fallback for captured snapshots to preserve their existing review digests.
         return try digest(Source(runID: run.id, sample: sample, subjectEvidence: run.subjectEvidence,
-                                 legacySubjectEvidence: run.subjectEvidence == nil ? LegacySubjectEvidence(run: run) : nil,
+                                 legacySubjectEvidence: bindLegacyInputs && run.subjectEvidence == nil ? LegacySubjectEvidence(run: run) : nil,
                                  subjectContext: run.suiteDefinition.map(Context.init),
                                  environment: run.environment, execution: run.execution,
                                  developerExecution: run.developerExecution))
+    }
+
+    /// Rebind old labels once, after verifying every field their original digest covered.
+    /// Persist the returned state before exposing it; currentness never accepts a v1 fallback.
+    static func migratingLegacySources(in state: EvaluationSuiteLocalState, runs: [EvaluationRun]) throws -> EvaluationSuiteLocalState? {
+        let annotations = (state.review.annotations + state.review.proposals.map(\.annotation))
+            .filter { $0.sourceDigestVersion == nil }
+        guard !annotations.isEmpty else { return nil }
+        let needed = Set(annotations.map { "\($0.runID)/\($0.sampleID)" })
+        let runCounts = Dictionary(grouping: runs, by: \.id).mapValues(\.count)
+        var digests: [String: (old: String, current: String)] = [:]
+        for run in runs where run.subjectEvidence?.hasValidDigest != false && runCounts[run.id] == 1 {
+            let sampleCounts = Dictionary(grouping: run.results, by: \.id).mapValues(\.count)
+            for sample in run.results where sampleCounts[sample.id] == 1 {
+                let key = "\(run.id)/\(sample.id)"
+                guard needed.contains(key) else { continue }
+                digests[key] = (try sourceDigest(run: run, sample: sample, bindLegacyInputs: false),
+                                try sourceDigest(run: run, sample: sample))
+            }
+        }
+        var upgradedReferences: [EvaluationRegressionSource: String] = [:]
+        var changed = false
+        func upgraded(_ annotation: EvaluationReviewAnnotation) -> EvaluationReviewAnnotation {
+            guard annotation.sourceDigestVersion == nil,
+                  let pair = digests["\(annotation.runID)/\(annotation.sampleID)"] else { return annotation }
+            var value = annotation
+            value.sourceDigestVersion = EvaluationReviewAnnotation.currentSourceDigestVersion
+            changed = true
+            if annotation.sourceDigest == pair.old {
+                value.sourceDigest = pair.current
+                upgradedReferences[.init(reviewID: annotation.id, runID: annotation.runID,
+                    sampleID: annotation.sampleID, sourceDigest: annotation.sourceDigest)] = pair.current
+            }
+            return value
+        }
+        var candidate = state
+        candidate.review.annotations = state.review.annotations.map(upgraded)
+        for index in candidate.review.proposals.indices {
+            candidate.review.proposals[index].annotation = upgraded(candidate.review.proposals[index].annotation)
+        }
+        for index in candidate.reviewedJudgeExamples.indices {
+            let example = candidate.reviewedJudgeExamples[index]
+            if var source = example.reviewSource, source.runID == example.sourceRunID,
+               source.sampleID == example.sampleID, let current = upgradedReferences[source] {
+                source.sourceDigest = current
+                candidate.reviewedJudgeExamples[index].reviewSource = source
+            }
+        }
+        return changed ? candidate : nil
     }
 
     static func isCurrent(_ annotation: EvaluationReviewAnnotation, sample: EvaluationReviewSample) -> Bool {
@@ -50,6 +103,7 @@ enum EvaluationReviewWorkflow {
             throw EvaluationReviewError.invalid("Incomplete or failed captures need more evidence; they cannot receive a semantic pass or fail.")
         }
         var result = annotation
+        result.sourceDigestVersion = EvaluationReviewAnnotation.currentSourceDigestVersion
         result.note = annotation.note.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !result.note.isEmpty, result.note.count <= 4_000 else {
             throw EvaluationReviewError.invalid("Explain your review in 1–4,000 characters.")
