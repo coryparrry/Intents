@@ -113,6 +113,7 @@ actor EvaluationFeatureAdapterRunner {
                         evaluationCase: evaluationCase,
                         repetition: repetition,
                         response: output.response,
+                        responseWasCaptured: true,
                         status: EvaluationFieldAssertions.gatedStatus(
                             baseStatus: score.status,
                             results: assertionResults,
@@ -210,6 +211,7 @@ actor EvaluationFeatureAdapterRunner {
         evaluationCase: EvaluationCase,
         repetition: Int,
         response: String,
+        responseWasCaptured: Bool? = nil,
         status: EvaluationResultStatus,
         rationale: String?,
         usage: EvaluationUsage,
@@ -227,6 +229,7 @@ actor EvaluationFeatureAdapterRunner {
             effectivePrompt: evaluationCase.prompt,
             expected: evaluationCase.expected,
             response: response,
+            responseWasCaptured: responseWasCaptured,
             status: status,
             score: nil,
             rationale: rationale,

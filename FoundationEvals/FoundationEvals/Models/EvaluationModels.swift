@@ -310,6 +310,9 @@ struct EvaluationSampleResult: Identifiable, Codable, Sendable {
     var effectivePrompt: String?
     var expected: String
     var response: String
+    /// A completed subject generation may legitimately return empty text.
+    /// Nil preserves the encoding and evidence rules of legacy saved samples.
+    var responseWasCaptured: Bool? = nil
     var reasoningText: String? = nil
     var status: EvaluationResultStatus
     var score: Int?
@@ -340,7 +343,8 @@ struct EvaluationSampleResult: Identifiable, Codable, Sendable {
     var hasCompleteSubjectEvidenceForJudging: Bool {
         errorCategory == nil
             && errorMessage == nil
-            && !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (responseWasCaptured == true
+                || !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     func scorerSummary(scoringMode: ScoringMode) -> String {

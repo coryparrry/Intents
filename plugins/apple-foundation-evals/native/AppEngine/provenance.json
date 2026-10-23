@@ -184,9 +184,9 @@
     },
     {
       "source": "Models/EvaluationModels.swift",
-      "sha256": "ff9718d6cf91a42ac40f329b01c3c002287c43f7bcc353f1fecc0e10f9aa9823",
+      "sha256": "77d40a3547cf1033ce09cf7362746861418bcf88494ba079343a72c21795694a",
       "bundled": "EvaluationModels.swift",
-      "bundledSHA256": "9604530b543b2b00dfb3f089e2e7f0dcd31f3333cae2592aaa4095dcc2e6ed35",
+      "bundledSHA256": "f9041b13577c67d3c5c16ca7cf692e75af21db08a8039918504965198a4d2f20",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
     },
     {
@@ -226,9 +226,9 @@
     },
     {
       "source": "Services/EvaluationRunner.swift",
-      "sha256": "05620af32c09bd6214ecf9960f78ef2bf6e1d99fc57a2213c511ad997310e94f",
+      "sha256": "510730160608dff0f7129fa97467865d333f1c2b69a0aeed2f2791a0387a61ea",
       "bundled": "EvaluationRunner.swift",
-      "bundledSHA256": "cbe46a16b89fa9ab1aec149d63e01b10d54db7c16f4c1abced01c48505bb7e06",
+      "bundledSHA256": "bcd14e6c11e8c3bf4d0543c6f0771f3facb27ae9facb259a1d0d1fe80a56f66d",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present; custom HTTP input-limit admission remains outside the on-device-only standalone executor"
     },
     {
