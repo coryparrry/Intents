@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.5.1](https://github.com/coryparrry/Intents/compare/v1.5.0...v1.5.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* admit production resumes and plugin execution before dispatch ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* **app:** preserve evaluation evidence and enforce execution boundaries ([61e4f74](https://github.com/coryparrry/Intents/commit/61e4f74f1e9a8f6908b576b5c0b200ade1bac58b))
+* bind scoring and human corrections to the saved assessment evidence ([7ce1737](https://github.com/coryparrry/Intents/commit/7ce17378030c6a7ab65d8a8eeb3877971cb34918))
+* cancel availability workers and check each collection member ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* center navigation on model evaluations and App Intents testing ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* compare compatible experiments and retain unknown usage totals ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* enforce production job budgets, storage bounds and committed progress ([7ce1737](https://github.com/coryparrry/Intents/commit/7ce17378030c6a7ab65d8a8eeb3877971cb34918))
+* honor selected scoring policies and preserve bounded trace text ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* **intents:** replace legacy intent testing with native macOS checks ([61e13e3](https://github.com/coryparrry/Intents/commit/61e13e3199f2852ef7dcaed9208def1e8fc089eb))
+* isolate hosted test data and pause uncertain batch requests ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* judge model responses against their frozen conversation context ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* keep judge conversation prompts stable across reloads ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* keep saved history current and protect repository links ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* make app testing setup reflect supported targets and readbacks ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* migrate saved legacy reviews and stabilize recovery and window-reopen checks ([7ce1737](https://github.com/coryparrry/Intents/commit/7ce17378030c6a7ab65d8a8eeb3877971cb34918))
+* preserve blank captures, profile tool overrides and crash-session correlation ([7ce1737](https://github.com/coryparrry/Intents/commit/7ce17378030c6a7ab65d8a8eeb3877971cb34918))
+* preserve confirmation ownership and reject stale workflow writes ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* preserve import ownership and propagate response cancellation ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* preserve imported content and saved feature evidence timestamps ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* preserve saved evidence and honor reassessment scoring ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* preserve unfinished drafts and protect damaged evaluation workspaces ([7ce1737](https://github.com/coryparrry/Intents/commit/7ce17378030c6a7ab65d8a8eeb3877971cb34918))
+* prevent dataset metadata collisions and clean failed suite creation ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* recover oversized workspaces while preserving saved evidence ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* **release:** allow installer preflight to inspect draft releases ([a23d809](https://github.com/coryparrry/Intents/commit/a23d809f7db37dfef5ebb671f5302d0adcf812a4))
+* **release:** generate the next release proposal after a removed unpublished candidate ([a23d809](https://github.com/coryparrry/Intents/commit/a23d809f7db37dfef5ebb671f5302d0adcf812a4))
+* repair MCP lifecycle and standalone plugin recovery and shutdown ([7ce1737](https://github.com/coryparrry/Intents/commit/7ce17378030c6a7ab65d8a8eeb3877971cb34918))
+* retain exact review references and selected assessment evidence ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* retain imported prompts and count populated CSV cases ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+* retain interrupted evaluation results and enforce experiment ownership ([7ce1737](https://github.com/coryparrry/Intents/commit/7ce17378030c6a7ab65d8a8eeb3877971cb34918))
+* withhold unpublished workspace runs and preserve measurement evidence ([f9eaf9c](https://github.com/coryparrry/Intents/commit/f9eaf9caef93bb8fc9d0cf9ddd0d480137153bf6))
+
+
+### Refactoring
+
+* **intents:** remove retired app automation services ([d7fd88d](https://github.com/coryparrry/Intents/commit/d7fd88dafab31561950bf22716abe88ceaf5f1ef))
+* **intents:** remove retired app tests and fixtures ([62135a2](https://github.com/coryparrry/Intents/commit/62135a20c205138430b15d9ef400c264a4a6de50))
+* **intents:** remove retired automation adapters ([c0100da](https://github.com/coryparrry/Intents/commit/c0100dad9594b9571e5ba873afa46efdfb065899))
+* **intents:** remove retired automation contract tests ([847d843](https://github.com/coryparrry/Intents/commit/847d8434396c286342f3c8ce750a244aa6288e8f))
+* **intents:** remove retired automation core sources ([6c73f0b](https://github.com/coryparrry/Intents/commit/6c73f0b1c321a5659d8b3e3b8b4a1acceaeebfe5))
+* **intents:** remove retired automation models and views ([dfe71b9](https://github.com/coryparrry/Intents/commit/dfe71b98d8a6f9ac54aa1c94b29cb047f53240e8))
+* **intents:** remove retired automation platform tests ([e6e61cc](https://github.com/coryparrry/Intents/commit/e6e61cc60e2956faa4afe0d8d0bc94cacfe8b6f5))
+* **intents:** remove retired fixtures and recovery docs ([ee33bf3](https://github.com/coryparrry/Intents/commit/ee33bf360f6782bc15dadb48262c1bde4c82f597))
+
+
+### Maintenance
+
+* **deps-dev:** update standalone plugin Vite tooling to 8.3.4 ([92795be](https://github.com/coryparrry/Intents/commit/92795be2928394f04b5639e21a4fe1db70f98971))
+* record the reviewed native core integration boundary ([bd439aa](https://github.com/coryparrry/Intents/commit/bd439aac05a68a51d91443a4d3e311a1156e83d8))
+
 ## [1.5.0](https://github.com/coryparrry/Intents/compare/v1.4.0...v1.5.0) (2026-10-20)
 
 
