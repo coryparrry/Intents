@@ -497,9 +497,19 @@ struct EvaluationHTTPResponseAccumulator: Sendable {
         var content: String
     }
 
-    private var segments: [Segment] = []
+    private struct Entry: Sendable {
+        var id: String?
+        var segments: [Segment] = []
+    }
+
+    private var entries: [Entry] = []
 
     mutating func apply(_ mutation: EvaluationHTTPResponseMutation) -> String {
+        let existingEntry = mutation.entryID.flatMap { id in entries.firstIndex { $0.id == id } }
+            ?? (mutation.entryID == nil ? entries.indices.last : nil)
+        if existingEntry == nil { entries.append(.init(id: mutation.entryID)) }
+        let entryIndex = existingEntry ?? (entries.count - 1)
+        var segments = entries[entryIndex].segments
         let matchingIndex = mutation.segmentID.flatMap { id in
             segments.firstIndex { $0.id == id }
         }
@@ -523,7 +533,8 @@ struct EvaluationHTTPResponseAccumulator: Sendable {
                 segments.append(.init(id: mutation.segmentID, content: mutation.content))
             }
         }
-        return segments.map(\.content).joined()
+        entries[entryIndex].segments = segments
+        return entries.flatMap { $0.segments.map(\.content) }.joined()
     }
 }
 

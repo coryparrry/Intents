@@ -9,6 +9,7 @@ actor MCPServer {
     private let handler: MCPProtocolHandler
     private let onUnexpectedStop: (@Sendable (MCPServerError) async -> Void)?
     private var serviceTask: Task<Void, Never>?
+    private var stopping: (id: UUID, task: Task<Void, Never>)?
     private var generation: UUID?
 
     init(
@@ -34,7 +35,7 @@ actor MCPServer {
     }
 
     func start() async throws {
-        guard serviceTask == nil else { throw MCPServerError.alreadyRunning }
+        guard serviceTask == nil, stopping == nil else { throw MCPServerError.alreadyRunning }
 
         let startup = MCPServerStartupSignal()
         let adapter = MCPHummingbirdAdapter(handler: handler, maximumBodyBytes: maximumBodyBytes)
@@ -92,19 +93,31 @@ actor MCPServer {
             try await startup.wait()
         } catch {
             task.cancel()
-            serviceTask = nil
-            generation = nil
+            if generation == runGeneration {
+                serviceTask = nil
+                generation = nil
+            }
             await task.value
             throw error
         }
     }
 
     func stop() async {
-        guard let task = serviceTask else { return }
-        serviceTask = nil
-        generation = nil
-        task.cancel()
-        await task.value
+        let drain: (id: UUID, task: Task<Void, Never>)
+        if let stopping {
+            drain = stopping
+        } else {
+            guard let task = serviceTask else { return }
+            serviceTask = nil
+            generation = nil
+            // Keep teardown owned until the listener and its requests have drained.
+            drain = (UUID(), Task { task.cancel(); await task.value })
+            stopping = drain
+        }
+        await drain.task.value
+        // Any waiter may return first; it must release its completed drain,
+        // without clearing a later stop that another caller has already begun.
+        if stopping?.id == drain.id { stopping = nil }
     }
 
     private func didStop(

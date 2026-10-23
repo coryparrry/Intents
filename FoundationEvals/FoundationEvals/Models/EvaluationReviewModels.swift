@@ -21,6 +21,9 @@ struct EvaluationReviewAnnotation: Identifiable, Codable, Sendable {
     var note: String
     var tags: [String]
     var updatedAt: Date
+    static let currentSourceDigestVersion = 2
+    // Missing on old labels; each verified label is migrated independently.
+    var sourceDigestVersion: Int? = EvaluationReviewAnnotation.currentSourceDigestVersion
 }
 
 enum EvaluationReviewProposalStatus: String, Codable, Sendable { case pending, accepted, rejected }

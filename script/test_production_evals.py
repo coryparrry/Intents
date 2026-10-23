@@ -25,6 +25,39 @@ def call(command, *arguments, expected=0):
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
+def check_worker_limit_case(name, first_count, cost_cap=None, explicit_job=False):
+    counter = root / f'{name}-calls.jsonl'
+    program = root / f'{name}-worker.py'
+    program.write_text('#!/usr/bin/python3\nimport json,sys\n'
+                       'request=json.load(sys.stdin)\n'
+                       f'with open({str(counter)!r}, "a") as output:\n'
+                       ' output.write(json.dumps({"jobID":request["jobID"],"slot":request["slot"]})+"\\n")\n'
+                       'print(json.dumps({"requestID":request["requestID"],"outcome":"passed",'
+                       '"output":"fixture","latencyMilliseconds":0,"cost":1,"retryable":False}))\n')
+    program.chmod(0o700)
+
+    def dataset(label, count):
+        path = root / f'{name}-{label}.jsonl'
+        path.write_text(''.join(json.dumps({'id': str(i), 'prompt': 'fixture'}) + '\n' for i in range(count)))
+        return call('import', '--file', path, '--name', f'{name}-{label}', '--version', '1')['revision']
+
+    first_dataset, second_dataset = dataset('first', first_count), dataset('second', 2)
+    cap = ('--max-cost', cost_cap, '--cost-per-attempt', 1) if cost_cap is not None else ()
+    first = call('job', '--dataset', first_dataset, '--name', f'{name}-first', '--executor', program,
+                 '--safety', 'inference', *cap)
+    second = call('job', '--dataset', second_dataset, '--name', f'{name}-second', '--executor', program,
+                  '--safety', 'inference')
+    check(first['createdAt'] < second['createdAt'], f'{name}: fixture job order is deterministic')
+    selection = ('--job', first['id']) if explicit_job else ()
+    call('worker', '--worker-id', 'cli-fixture', '--executor', program, '--descriptor', descriptor,
+         '--limit', 2, *selection, expected=30 if explicit_job else 0)
+    completed = [len(call('results', '--job', job['id'])) for job in (first, second)]
+    expected = [1, 0] if explicit_job else [0, 2] if cost_cap is not None and cost_cap < 1 else [1, 1]
+    check(completed == expected, f'{name}: committed {completed}, expected {expected} under --limit 2')
+    calls = len(counter.read_text().splitlines()) if counter.exists() else 0
+    check(calls == sum(expected), f'{name}: executor calls {calls}, expected {sum(expected)}')
+
+
 try:
     data = root / 'examples.jsonl'
     data.write_text('\n'.join(json.dumps({'id': str(i), 'sourceID': str(i), 'prompt': 'input', 'expected': 'output', 'capturedOutput': 'original', 'metadata': {'locale': 'en_GB'}}) for i in range(6)) + '\n')
@@ -86,6 +119,10 @@ print(json.dumps({"requestID":r["requestID"],"outcome":"passed","output":"output
     uncertain = call('job', '--dataset', dataset['revision'], '--name', 'Timeout', '--executor', sleeper, '--timeout', 0.1, '--attempts', 1)
     call('worker', '--worker-id', 'cli-fixture', '--executor', sleeper, '--descriptor', descriptor, '--job', uncertain['id'], '--limit', 1)
     check(call('report', '--job', uncertain['id'], expected=20)['counts']['uncertain'] == 1, 'custom actions default to side-effect uncertainty')
+    check_worker_limit_case('healthy-cross-job-limit', first_count=1)
+    check_worker_limit_case('failure-before-progress', first_count=2, cost_cap=0.5)
+    check_worker_limit_case('explicit-job-error', first_count=2, cost_cap=1, explicit_job=True)
+    check_worker_limit_case('partial-budget-failure', first_count=2, cost_cap=1)
     print(f'CLI integration: {assertions} assertions passed; real custom worker processes, bounded resume, backend isolation, capture/review, export and timeout.')
 except Exception:
     print(f'Failure evidence retained in {root}', file=sys.stderr)

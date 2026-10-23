@@ -10,6 +10,12 @@ struct NativeProductionContext: Codable, Sendable {
             ? "On-device · \(suite.modelConfiguration.systemModel.variant.displayName)"
             : suite.modelConfiguration.provider.title
     }
+    func reportedCost(judgeCost: EvaluationCost?) -> Double? {
+        // Custom subject-model charges are not captured by the native runner.
+        // A known judge charge alone cannot establish the total attempt cost.
+        guard suite.modelConfiguration.provider != .customHTTP else { return nil }
+        return suite.judgeConfiguration.usesExternalConnection ? judgeCost?.usd : 0
+    }
     struct Image: Codable, Sendable { var label: String; var bytes: Data }
 }
 
@@ -53,7 +59,7 @@ actor NativeProductionExecutor {
         guard artifact.count <= 262_144 else { throw ProductionFailure.invalid("Trace exceeds the per-result evidence limit. Use a developer worker with a bounded trace.") }
         let outcome = ProductionOutcome(rawValue: result.status.rawValue) ?? .error
         // Paid/external judge costs remain unknown unless the provider supplies them.
-        let cost: Double? = context.suite.judgeConfiguration.usesExternalConnection ? result.judgeCost?.usd : 0
+        let cost = context.reportedCost(judgeCost: result.judgeCost)
         return .init(requestID: request.requestID, outcome: outcome, output: result.response,
                      explanation: result.errorMessage ?? result.judgeErrorMessage ?? result.rationale,
                      latencyMilliseconds: result.durationMilliseconds, cost: cost, artifact: artifact)

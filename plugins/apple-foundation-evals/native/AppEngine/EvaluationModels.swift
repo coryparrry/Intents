@@ -320,6 +320,9 @@ struct EvaluationSampleResult: Identifiable, Codable, Sendable {
     var effectivePrompt: String?
     var expected: String
     var response: String
+    /// A completed subject generation may legitimately return empty text.
+    /// Nil preserves the encoding and evidence rules of legacy saved samples.
+    var responseWasCaptured: Bool? = nil
     var reasoningText: String? = nil
     var status: EvaluationResultStatus
     var score: Int?
@@ -350,7 +353,8 @@ struct EvaluationSampleResult: Identifiable, Codable, Sendable {
     var hasCompleteSubjectEvidenceForJudging: Bool {
         errorCategory == nil
             && errorMessage == nil
-            && !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (responseWasCaptured == true
+                || !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     func scorerSummary(scoringMode: ScoringMode) -> String {
@@ -470,8 +474,19 @@ struct EvaluationRun: Identifiable, Codable, Sendable {
     var developerExecution: EvaluationDeveloperExecution? = nil
 
     var effectiveResults: [EvaluationSampleResult] {
-        let assessment = selectedAssessment
-        guard assessment != nil || selectedAssessmentID != nil else { return results }
+        let selected = selectedAssessment
+        guard selected != nil || selectedAssessmentID != nil else { return results }
+        let invalidReason: String?
+        if let selected, selected.runID != id {
+            invalidReason = "The selected assessment belongs to another run."
+        } else if let selected, assessments?.count(where: { $0.id == selected.id }) != 1 {
+            invalidReason = "The selected assessment ID is ambiguous."
+        } else if let selected, Set(selected.samples.map(\.sampleID)).count != selected.samples.count {
+            invalidReason = "The selected assessment contains duplicate sample scores."
+        } else {
+            invalidReason = nil
+        }
+        let assessment = invalidReason == nil ? selected : nil
         let samples = (assessment?.samples ?? []).reduce(into: [UUID: EvaluationSampleAssessment]()) {
             if $0[$1.sampleID] == nil { $0[$1.sampleID] = $1 }
         }
@@ -485,12 +500,13 @@ struct EvaluationRun: Identifiable, Codable, Sendable {
             guard let assessed = samples[original.id] else {
                 result.status = .unscored
                 result.score = nil
-                let message = assessment == nil
+                let message = invalidReason.map { "\($0) Original results are preserved separately." } ?? (assessment == nil
                     ? "The selected assessment is unavailable. Original results are preserved separately."
-                    : "This sample was not assessed by the selected assessment. Original results are preserved separately."
+                    : "This sample was not assessed by the selected assessment. Original results are preserved separately.")
                 result.rationale = message
                 result.judgeTrace = nil
-                result.judgeErrorCategory = assessment == nil ? "assessmentUnavailable" : "assessmentNotAttempted"
+                result.judgeErrorCategory = invalidReason != nil ? "assessmentInvalid"
+                    : assessment == nil ? "assessmentUnavailable" : "assessmentNotAttempted"
                 result.judgeErrorMessage = message
                 result.judgeUsage = nil
                 result.judgeDurationMilliseconds = nil

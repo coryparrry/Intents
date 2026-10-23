@@ -515,6 +515,7 @@ actor EvaluationRunner {
                     ))
                 }
             )
+            try Task.checkCancellation()
             builtinToolCalls = Self.mergingBuiltinToolCalls(
                 builtinToolCalls,
                 with: EvaluationBuiltinToolTrace.tools(
@@ -639,6 +640,7 @@ actor EvaluationRunner {
                 effectivePrompt: prepared.text,
                 expected: evaluationCase.expected,
                 response: response.content,
+                responseWasCaptured: true,
                 reasoningText: reasoningText,
                 status: finalStatus,
                 score: scoring.score,

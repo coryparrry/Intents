@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { EvaluationApp } from '../server/app.mjs';
 import { workflowDispatch } from '../server/workflows.mjs';
 import { WORKFLOW_TOOLS } from '../server/workflow-tools.mjs';
-import { portableSuite, revision } from '../server/app-format.mjs';
+import { portableSuite, revision, sampleEnvelope } from '../server/app-format.mjs';
 import { validateSchema } from '../server/app-schema.mjs';
 
 async function fixture(t, invoke = async () => { throw new Error('Unexpected native call'); }) {
@@ -318,4 +318,228 @@ test('concurrent assessment selections atomically reject the second stale revisi
   assert.deepEqual((await app.store.read('runs', run.id)).appRun,
     results.find((result) => result.status === 'fulfilled').value.run.appRun);
   assert.deepEqual((await app.store.read('runs', run.id)).appRun.results, raw.results);
+});
+
+for (const failure of ['secondVariant', 'commit']) {
+  test(`failed paired publication retains both completed payloads before cleanup: ${failure}`, async (t) => {
+    let source, payload;
+    const { app, suite } = await fixture(t, async (_binary, request) => {
+      if (request.operation === 'create-experiment') return experiment(source, request.candidateInstructions);
+      payload = { current: rawRun(source, source.instructions, request.currentRunID), candidate: rawRun(source, request.experiment.candidate.instructions, request.candidateRunID), summary: {} };
+      return payload;
+    }); source = suite;
+    const created = await dispatch(app, 'eval_create_experiment', { suiteId: suite.id, name: 'A/B', candidateInstructions: 'Just fruit' });
+    const write = app.store.write.bind(app.store), remove = app.store.delete.bind(app.store); let writes = 0;
+    app.store.write = async (kind, value) => {
+      if (failure === 'secondVariant' && kind === 'runs' && ++writes === 2 || failure === 'commit' && kind === 'experiments' && value.status === 'completed') throw new Error('publication fixture failure');
+      return write(kind, value);
+    };
+    let retainedBeforeCleanup = true;
+    app.store.delete = async (kind, key) => {
+      if (kind === 'runs') {
+        const checkpoint = await app.store.read('experiments', created.experiment.id);
+        retainedBeforeCleanup &&= checkpoint.status === 'failed' && checkpoint.partialRuns?.length === 2;
+      }
+      return remove(kind, key);
+    };
+    await dispatch(app, 'eval_run_experiment', { experimentId: created.experiment.id }); await app.active.promise;
+    const failed = await dispatch(app, 'eval_get_experiment', { experimentId: created.experiment.id });
+    assert.equal(failed.experiment.status, 'failed');
+    assert.deepEqual(failed.experiment.partialRuns, [payload.current, payload.candidate]);
+    assert.equal(retainedBeforeCleanup, true, 'Retain both outputs before deleting staged evidence');
+    assert.equal((await app.store.list('runs')).length, 0);
+    assert.equal(app.store.leases.size, 0);
+  });
+}
+
+test('fatal incomplete experiment remains retryable evidence and cannot adopt its candidate', async (t) => {
+  let source, payload;
+  const { app, suite } = await fixture(t, async (_binary, request) => {
+    if (request.operation === 'create-experiment') return experiment(source, request.candidateInstructions);
+    const current = rawRun(source, source.instructions, request.currentRunID);
+    const candidate = rawRun(source, request.experiment.candidate.instructions, request.candidateRunID);
+    current.terminationReason = candidate.terminationReason = 'quotaLimitReached';
+    candidate.results = []; candidate.assessments = []; delete candidate.selectedAssessmentID;
+    payload = { current, candidate, summary: {} }; return payload;
+  }); source = suite;
+  const created = await dispatch(app, 'eval_create_experiment', { suiteId: suite.id, name: 'A/B', candidateInstructions: 'Just fruit' });
+  await dispatch(app, 'eval_run_experiment', { experimentId: created.experiment.id }); await app.active.promise;
+  const failed = await dispatch(app, 'eval_get_experiment', { experimentId: created.experiment.id });
+  assert.equal(failed.experiment.status, 'failed');
+  assert.deepEqual(failed.experiment.partialRuns, [payload.current, payload.candidate]);
+  assert.deepEqual(failed.experiment.experiment.runIDs, []);
+  assert.equal((await app.runs()).length, 0);
+  await assert.rejects(dispatch(app, 'eval_decide_experiment', { experimentId: created.experiment.id, decision: 'adoptCandidate' }), /Both committed experiment runs/);
+  assert.equal((await app.store.read('suites', suite.id)).instructions, suite.instructions);
+});
+
+test('stale experiment start cannot replace a pair committed by another server', async (t) => {
+  let source, executions = 0;
+  const invoke = async (_binary, request) => {
+    if (request.operation === 'create-experiment') return experiment(source, request.candidateInstructions);
+    executions++;
+    return { current: rawRun(source, source.instructions, request.currentRunID), candidate: rawRun(source, request.experiment.candidate.instructions, request.candidateRunID), summary: {} };
+  };
+  const { app, suite } = await fixture(t, invoke); source = suite;
+  const other = new EvaluationApp({ dataDir: app.store.root, resolveBinary: async () => '/fixture', invoke });
+  await other.init(); t.after(() => other.shutdown());
+  const created = await dispatch(app, 'eval_create_experiment', { suiteId: suite.id, name: 'A/B', candidateInstructions: 'Just fruit' });
+  let arrive, resume;
+  const arrived = new Promise((accept) => { arrive = accept; });
+  const resumed = new Promise((accept) => { resume = accept; });
+  t.after(() => resume());
+  const read = other.store.read.bind(other.store); let delayed = false;
+  other.store.read = async (kind, key) => {
+    const snapshot = await read(kind, key);
+    if (!delayed && kind === 'experiments' && key === created.experiment.id) { delayed = true; arrive(); await resumed; }
+    return snapshot;
+  };
+  const stale = dispatch(other, 'eval_run_experiment', { experimentId: created.experiment.id });
+  const rejected = assert.rejects(stale, /experiment changed|new experiment/i);
+  await arrived;
+  await dispatch(app, 'eval_run_experiment', { experimentId: created.experiment.id }); await app.active.promise;
+  const committed = await app.store.read('experiments', created.experiment.id);
+  resume(); await rejected;
+  assert.deepEqual(await app.store.read('experiments', created.experiment.id), committed);
+  assert.equal(executions, 1);
+  assert.equal(other.store.leases.size, 0);
+});
+
+test('recovery cannot overwrite a retried experiment committed after its catalog snapshot', async (t) => {
+  let source;
+  const invoke = async (_binary, request) => request.operation === 'create-experiment'
+    ? experiment(source, request.candidateInstructions)
+    : { current: rawRun(source, source.instructions, request.currentRunID), candidate: rawRun(source, request.experiment.candidate.instructions, request.candidateRunID), summary: {} };
+  const { app, suite } = await fixture(t, invoke); source = suite;
+  const other = new EvaluationApp({ dataDir: app.store.root, resolveBinary: async () => '/fixture', invoke });
+  await other.init(); t.after(() => other.shutdown());
+  const created = await dispatch(app, 'eval_create_experiment', { suiteId: suite.id, name: 'A/B', candidateInstructions: 'Just fruit' });
+  await dispatch(app, 'eval_run_experiment', { experimentId: created.experiment.id }); await app.active.promise;
+  const previous = await app.store.read('experiments', created.experiment.id);
+  // Simulate an interrupted rollback with staged variants still on disk.
+  await app.store.write('experiments', { ...previous, status: 'failed', experiment: { ...previous.experiment, runIDs: [] } });
+  let arrive, resume;
+  const arrived = new Promise((accept) => { arrive = accept; });
+  const resumed = new Promise((accept) => { resume = accept; }); t.after(() => resume());
+  const scan = other.store.scan.bind(other.store); let delayed = false;
+  other.store.scan = async function* (kind) {
+    for await (const value of scan(kind)) yield value;
+    if (kind === 'experiments' && !delayed) { delayed = true; arrive(); await resumed; }
+  };
+  const recovering = other.recover(); await arrived;
+  await dispatch(app, 'eval_run_experiment', { experimentId: created.experiment.id }); await app.active.promise;
+  const committed = await app.store.read('experiments', created.experiment.id);
+  resume(); await recovering;
+  assert.deepEqual(await app.store.read('experiments', created.experiment.id), committed);
+  assert.equal((await app.runs()).length, 2);
+  assert.equal(other.store.leases.size, 0);
+});
+
+for (const recoveryRoute of ['read', 'retry']) {
+ test(`live server recovers failed finalization without losing completed payloads or stealing another instance: ${recoveryRoute}`, async (t) => {
+  let source, payload;
+  const invoke = async (_binary, request) => {
+    if (request.operation === 'create-experiment') return experiment(source, request.candidateInstructions);
+    payload = { current: rawRun(source, source.instructions, request.currentRunID), candidate: rawRun(source, request.experiment.candidate.instructions, request.candidateRunID), summary: {} };
+    return payload;
+  };
+  const { app, suite } = await fixture(t, invoke); source = suite;
+  const other = new EvaluationApp({ dataDir: app.store.root, resolveBinary: async () => '/fixture', invoke });
+  await other.init(); t.after(() => other.shutdown());
+  const created = await dispatch(app, 'eval_create_experiment', { suiteId: suite.id, name: 'A/B', candidateInstructions: 'Just fruit' });
+  const write = app.store.write.bind(app.store); let unavailable = true;
+  app.store.write = async (kind, value) => {
+    if (unavailable && (kind === 'runs' || kind === 'experiments' && value.status !== 'running')) throw new Error('temporarily unavailable publication');
+    return write(kind, value);
+  };
+  await dispatch(app, 'eval_run_experiment', { experimentId: created.experiment.id }); await app.active.promise;
+  const interrupted = await app.store.read('experiments', created.experiment.id);
+  assert.equal(interrupted.status, 'running'); assert.equal(app.active, null);
+  await other.recover();
+  assert.deepEqual(await app.store.read('experiments', created.experiment.id), interrupted, 'A different live instance must not claim recovery ownership');
+  await assert.rejects(dispatch(app, 'eval_get_experiment', { experimentId: created.experiment.id }), /temporarily unavailable publication/);
+  assert.equal(app.store.leases.size, 0);
+  unavailable = false;
+  const retainedPayloads = [payload.current, payload.candidate];
+  if (recoveryRoute === 'read') {
+    const recovered = await dispatch(app, 'eval_get_experiment', { experimentId: created.experiment.id });
+    assert.equal(recovered.experiment.status, 'failed');
+    assert.deepEqual(recovered.experiment.partialRuns, retainedPayloads);
+    assert.equal(app.store.leases.size, 0);
+  }
+  await dispatch(app, 'eval_run_experiment', { experimentId: created.experiment.id }); await app.active.promise;
+  const completed = await app.store.read('experiments', created.experiment.id);
+  assert.equal(completed.status, 'completed');
+  assert.deepEqual(completed.attemptHistory[0].partialRuns, retainedPayloads);
+ });
+}
+
+for (const persistentlyUnavailable of [false, true]) {
+ test(`failed app publication stays inspectable but cannot qualify for release (${persistentlyUnavailable ? 'recovered' : 'fallback'})`, async (t) => {
+  let source; const requests = []; const payloads = new Map();
+  const { app, suite } = await fixture(t, async (_binary, request) => {
+    requests.push(request);
+    if (request.operation === 'evaluate') {
+      const raw = rawRun(source, source.instructions, request.runID);
+      raw.assessments[0].samples[0].status = 'passed'; raw.assessments[0].samples[0].score = 4;
+      payloads.set(raw.id, raw); return { status: 'completed', results: raw.results.map(sampleEnvelope), appRun: raw };
+    }
+    if (request.operation === 'release-check') {
+      if (request.run) assert.deepEqual(request.run, payloads.get(request.run.id));
+      return { report: { suiteID: request.suite.id, projectID: request.projectID, outcome: request.run ? 0 : 20 }, markdown: 'Native release fixture' };
+    }
+    assert.equal(request.operation, 'project-release-check');
+    const required = request.suites.filter(item => item.required);
+    return { report: { outcome: required.some(item => item.report.outcome !== 0) ? 20 : 0, suites: required }, markdown: 'Native aggregate fixture' };
+  });
+  source = (await app.call('eval_save_suite', { suite: { ...suite, releasePolicy: { required: true } }, expectedRevision: suite.revision })).suite;
+  const healthy = (await app.call('eval_start_run', { suiteId: source.id })).run;
+  await app.active.promise;
+  assert.equal((await app.call('eval_release_report', { runId: healthy.id })).report.outcome, 0);
+  assert.equal((await app.call('eval_project_release_report', { projectId: source.projectId })).report.outcome, 0);
+  const write = app.store.write.bind(app.store); let failures = persistentlyUnavailable ? Infinity : 1;
+  app.store.write = async (kind, value) => {
+    if (kind === 'runs' && value.status !== 'running' && failures > 0) { failures--; throw new Error('temporary publication failure'); }
+    return write(kind, value);
+  };
+  const failed = (await app.call('eval_start_run', { suiteId: source.id })).run;
+  await app.active.promise; failures = 0;
+  const inspected = (await app.call('eval_get_run', { runId: failed.id })).run;
+  assert.equal(inspected.status, 'failed');
+  assert.deepEqual(inspected.appRun, payloads.get(failed.id));
+  assert.equal(inspected.health.currentAssessment, 'incomplete');
+  const individual = await app.call('eval_release_report', { runId: failed.id });
+  assert.equal(individual.report.outcome, 20);
+  assert.equal(individual.health.currentAssessment, 'incomplete');
+  assert.equal('run' in requests.at(-1), false, 'Do not pass retained output as completed release evidence');
+  const project = await app.call('eval_project_release_report', { projectId: source.projectId });
+  assert.equal(project.report.outcome, 20);
+  assert(project.report.suites.some(item => item.suiteID === source.id && item.required && item.report.outcome === 20));
+  const beforeBaseline = requests.length;
+  await assert.rejects(app.call('eval_release_report', { runId: healthy.id, baselineRunId: failed.id }), /Only completed.*baseline/);
+  await assert.rejects(app.call('eval_approve_baseline', { runId: failed.id }), /Only complete current/);
+  assert.equal(requests.length, beforeBaseline, 'Reject failed explicit baseline before native evaluation');
+  const healthyReport = await app.call('eval_release_report', { runId: healthy.id, baselineRunId: healthy.id });
+  assert.equal(healthyReport.report.outcome, 0);
+  assert.deepEqual(requests.at(-1).baseline, payloads.get(healthy.id));
+  assert.deepEqual((await app.store.read('runs', failed.id)).appRun, payloads.get(failed.id));
+ });
+}
+
+test('a failed approved baseline is withheld from release evaluation', async (t) => {
+  const requests = [];
+  const { app, suite } = await fixture(t, async (_binary, request) => {
+    requests.push(request);
+    return { report: { outcome: request.baseline ? 0 : 20 }, markdown: 'Baseline fixture' };
+  });
+  const { run } = await importRun(app, suite);
+  const baseline = await importRun(app, suite);
+  const failed = { ...await app.store.read('runs', baseline.run.id), status: 'failed' };
+  await app.store.write('runs', failed);
+  const approval = { id: randomUUID(), suiteId: suite.id, runID: baseline.run.id, approvedAt: new Date().toISOString() };
+  await app.store.write('baselines', approval);
+  await app.call('eval_release_report', { runId: run.id });
+  assert.equal('baseline' in requests.at(-1), false);
+  assert.deepEqual(requests.at(-1).approvedBaseline, approval);
+  assert.deepEqual((await app.store.read('runs', baseline.run.id)).appRun, baseline.raw);
 });

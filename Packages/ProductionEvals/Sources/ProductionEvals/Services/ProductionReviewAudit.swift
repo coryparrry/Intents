@@ -1,5 +1,9 @@
 import Foundation
 
+// A valid reconciled response may contain a 256 KiB artifact encoded as base64,
+// plus escaped output and explanation strings.
+private let maximumReviewBytes = 1_048_576
+
 extension ProductionStorage {
     func reviewURL(jobID: UUID, requestID: UUID) -> URL {
         root.appendingPathComponent("Reviews/\(jobID.uuidString)-\(requestID.uuidString).jsonl")
@@ -11,7 +15,7 @@ extension ProductionStorage {
         let url = reviewURL(jobID: jobID, requestID: requestID)
         var events: [ProductionReviewEvent] = []
         if FileManager.default.fileExists(atPath: url.path) {
-            try ProductionLineReader.forEach(url) { events.append(try ProductionCodec.decode(ProductionReviewEvent.self, $0)) }
+            try ProductionLineReader.forEach(url, maximumLineBytes: maximumReviewBytes) { events.append(try ProductionCodec.decode(ProductionReviewEvent.self, $0)) }
         }
         guard events.count <= 10_000, events.allSatisfy({ $0.requestID == requestID }) else {
             throw ProductionFailure.integrity("Invalid review audit history.")
@@ -24,7 +28,8 @@ extension ProductionStorage {
         for item in subsequent { latest[item.reviewer] = item }
         let outcomes = Set(latest.values.compactMap { $0.outcome?.rawValue })
         let conflict = outcomes.count > 1
-        let outcome = conflict ? ProductionOutcome.needsEvidence : latest.values.first?.outcome ?? adjudicated?.outcome
+        let adjudicatedOutcome = adjudicated?.action == .reconcile ? adjudicated?.reconciledResponse?.outcome : adjudicated?.outcome
+        let outcome = conflict ? ProductionOutcome.needsEvidence : latest.values.first?.outcome ?? adjudicatedOutcome
         return .init(assignee: assignee, outcome: outcome, disagreement: conflict,
                      response: events.last { $0.action == .reconcile }?.reconciledResponse, events: events)
     }
@@ -44,7 +49,8 @@ extension ProductionStorage {
                 }
             } else if event.action == .reconcile {
                 guard current.assignee == event.reviewer, record.response.outcome == .needsEvidence, current.response == nil,
-                      let response = event.reconciledResponse, ![.needsEvidence, .error, .unscored].contains(response.outcome) else {
+                      let response = event.reconciledResponse, ![.needsEvidence, .error, .unscored].contains(response.outcome),
+                      event.outcome == nil || event.outcome == response.outcome else {
                     throw ProductionFailure.invalid("Only the assigned reviewer can reconcile an uncertain action with verified pass/fail evidence.")
                 }
                 try validateResponse(response, requestID: event.requestID)
@@ -58,12 +64,15 @@ extension ProductionStorage {
                 }
             }
             guard current.events.count < 10_000 else { throw ProductionFailure.invalid("Review history limit reached; export it before continuing.") }
+            var recorded = event; recorded.createdAt = Date()
+            guard !current.events.contains(where: { $0.id == recorded.id }) else { throw ProductionFailure.invalid("Duplicate review event ID.") }
+            var data = try ProductionCodec.encode(recorded)
+            guard data.count <= maximumReviewBytes else { throw ProductionFailure.invalid("Encoded review exceeds its byte limit.") }
+            data.append(10)
             let url = reviewURL(jobID: jobID, requestID: event.requestID)
             if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
             let handle = try FileHandle(forWritingTo: url); defer { try? handle.close() }
-            var recorded = event; recorded.createdAt = Date()
-            guard !current.events.contains(where: { $0.id == recorded.id }) else { throw ProductionFailure.invalid("Duplicate review event ID.") }
-            try handle.seekToEnd(); var data = try ProductionCodec.encode(recorded); data.append(10)
+            try handle.seekToEnd()
             try handle.write(contentsOf: data); try handle.synchronize()
             if event.action == .reconcile, job.configuration.maximumCost != nil {
                 // Publish the audit first; a crash before ledger settlement is recovered from this audit.

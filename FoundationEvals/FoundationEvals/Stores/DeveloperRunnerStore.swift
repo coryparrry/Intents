@@ -289,6 +289,11 @@ final class DeveloperRunnerStore {
         case .success(let run):
             status?.completedSamples = run.results.count
             status?.detail = run.terminationReason
+            if run.cancelled {
+                status?.phase = .cancelled
+                status?.detail = run.terminationReason ?? "cancelled"
+                return
+            }
             switch run.terminationReason {
             case "cancelled", "developerRunner:cancelled": status?.phase = .cancelled
             case "developerRunner:deadlineExceeded": status?.phase = .timedOut

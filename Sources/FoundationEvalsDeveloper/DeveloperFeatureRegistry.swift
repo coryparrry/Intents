@@ -147,6 +147,11 @@ public actor DeveloperFeatureRegistry {
 
     func start(_ request: DeveloperFeatureExecutionRequest) -> Task<DeveloperFeatureExecutionResult, Never> {
         let startedAt = Date()
+        guard tasks[request.id] == nil else {
+            let result = failure(request, startedAt: startedAt, code: .invalidInput,
+                                 message: "An execution with this request ID is already active.")
+            return Task { result }
+        }
         guard let feature = features[request.featureID] else {
             let result = failure(request, startedAt: startedAt, code: .featureNotFound,
                                  message: "The runner does not expose feature \(request.featureID).")

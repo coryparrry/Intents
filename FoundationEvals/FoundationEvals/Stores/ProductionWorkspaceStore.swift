@@ -30,7 +30,9 @@ final class ProductionWorkspaceStore {
     @ObservationIgnored private var operationTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var refreshID = UUID()
-    init(root: URL) {
+    @ObservationIgnored private let capturedExecutor: ProductionExecutor
+    init(root: URL, capturedExecutor: @escaping ProductionExecutor = ProductionStorage.capturedResponse) {
+        self.capturedExecutor = capturedExecutor
         do { storage = try ProductionStorage(root: root.appendingPathComponent("ProductionEvals")) }
         catch { storage = nil; self.error = error.localizedDescription }
     }
@@ -40,6 +42,7 @@ final class ProductionWorkspaceStore {
         let token = UUID(); refreshID = token
         let selectedID = selectedJobID, page = offset
         isLoading = true
+        defer { if refreshID == token { isLoading = false } }
         do {
             let snapshot = try await Task.detached(priority: .utility) {
                 let datasets = try storage.datasets(), jobs = try storage.jobs(), workers = try storage.workers(), schedules = try storage.schedules()
@@ -47,18 +50,31 @@ final class ProductionWorkspaceStore {
                 let records = try selectedID.map { try storage.records(jobID: $0, offset: page, limit: 50) } ?? []
                 return (datasets,jobs,workers,schedules,report,records)
             }.value
-            guard refreshID == token else { return }
+            guard !isClosing, refreshID == token, selectedJobID == selectedID, offset == page else { return }
             (datasets,jobs,workers,schedules,report,records) = snapshot
             if let record = selectedRecord, let id = selectedJobID { review = try storage.review(jobID: id, requestID: record.response.requestID) }
-        } catch { if refreshID == token { self.error = error.localizedDescription } }
-        if refreshID == token { isLoading = false }
+        } catch {
+            if !isClosing, refreshID == token, selectedJobID == selectedID, offset == page {
+                self.error = error.localizedDescription
+            }
+        }
     }
-    func select(_ id: UUID) { guard !isClosing else { return }; selectedJobID = id; offset = 0; selectedRecord = nil; review = nil; report = nil; Task { await refresh() } }
-    func selectRecord(_ record: ProductionRecord) {
+    func select(_ id: UUID) {
         guard !isClosing else { return }
+        refreshID = UUID()
+        selectedJobID = id; offset = 0; records = []; selectedRecord = nil; selectedExample = nil; review = nil; report = nil
+        Task { await refresh() }
+    }
+    @discardableResult
+    func selectRecord(_ record: ProductionRecord) -> Task<Void, Never>? {
+        guard !isClosing, let job = selectedJob, let storage else { return nil }
+        guard (0..<job.plannedCount).contains(record.slot),
+              record.response.requestID == storage.requestID(job, slot: record.slot) else {
+            error = "This result belongs to another batch. Select a result from the current batch."
+            return nil
+        }
         selectedRecord = record; selectedExample = nil; review = nil
-        guard let job = selectedJob, let storage else { return }
-        Task {
+        return Task {
             do {
                 let value = try await Task.detached(priority: .utility) {
                     let reader = try ProductionDatasetReader(storage: storage, revision: job.datasetRevision)
@@ -67,14 +83,18 @@ final class ProductionWorkspaceStore {
                 }.value
                 guard !isClosing, selectedJobID == job.id, selectedRecord?.slot == record.slot else { return }
                 selectedExample = value.0; review = value.1
-            } catch { self.error = error.localizedDescription }
+            } catch {
+                guard !isClosing, selectedJobID == job.id, selectedRecord?.response.requestID == record.response.requestID else { return }
+                self.error = error.localizedDescription
+            }
         }
     }
 
+    @discardableResult
     func perform<T: Sendable>(_ operation: @escaping @Sendable (ProductionStorage) throws -> T,
-                              completed: @escaping @MainActor (T) -> Void = { _ in }) {
-        guard !isClosing, let storage else { return }
-        trackOperation {
+                              completed: @escaping @MainActor (T) -> Void = { _ in }) -> Task<Void, Never>? {
+        guard !isClosing, let storage else { return nil }
+        return trackOperation {
             do {
                 let result = try await Task.detached(priority: .utility) { try operation(storage) }.value
                 guard !self.isClosing else { return }
@@ -164,10 +184,20 @@ final class ProductionWorkspaceStore {
     func createCaptured(_ dataset: ProductionDataset) {
         perform({ try $0.createCapturedJob(name: dataset.name + " · captured review", datasetRevision: dataset.revision) }, completed: { self.select($0.id) })
     }
-    func setControl(paused: Bool? = nil, cancelled: Bool? = nil, completed: @escaping @MainActor () -> Void = {}) {
-        guard let id = selectedJobID else { return }
-        perform({ try $0.setControl(jobID: id, paused: paused, cancelled: cancelled) }, completed: { _ in completed() })
-        if id == runningJobID && (paused == true || cancelled == true) { runTask?.cancel() }
+    @discardableResult
+    func setControl(paused: Bool? = nil, cancelled: Bool? = nil, completed: @escaping @MainActor () -> Void = {}) -> Task<Void, Never>? {
+        guard let id = selectedJobID else { return nil }
+        return perform({ try $0.setControl(jobID: id, paused: paused, cancelled: cancelled) }, completed: { _ in
+            if paused == true || cancelled == true { self.interrupt(jobID: id) }
+            completed()
+        })
+    }
+    func setSchedulePaused(_ schedule: ProductionSchedule, paused: Bool) {
+        perform { storage in
+            let expectedRevision = try ProductionCodec.digest(ProductionCodec.encode(schedule))
+            var updated = schedule; updated.paused = paused
+            try storage.saveSchedule(updated, expectedRevision: expectedRevision)
+        }
     }
     @discardableResult
     func resume(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool) -> Task<Void, Never> {
@@ -196,20 +226,20 @@ final class ProductionWorkspaceStore {
     func interrupt(jobID: UUID) { if jobID == runningJobID { runTask?.cancel() } }
     func start(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool, resuming: Bool = false) throws {
         guard !isClosing, let storage, runTask == nil else { throw EvaluationStoreError.runBusy }
+        var owner: UUID?
         do {
             let kind = (try JSONSerialization.jsonObject(with: job.configuration.executionContext) as? [String: Any])?["kind"] as? String
             let executor: ProductionExecutor
-            let owner: UUID?
             let worker: ProductionWorker
             if kind == "captured-output-review-v1" {
-                owner = nil; executor = ProductionStorage.capturedResponse
+                owner = nil; executor = capturedExecutor
                 worker = .init(id: "captured-review", name: "Imported outputs", platform: "captured", operatingSystem: "source metadata", hardware: "source metadata", locale: "source metadata", model: "original output")
             } else if kind == "native-suite-v1" {
                 let context = try ProductionCodec.decode(NativeProductionContext.self, job.configuration.executionContext)
                 let admission = try store.beginProductionExecution(context, externalDisclosureApproved: externalDisclosureApproved)
                 owner = admission.0
-                do { let runner = try NativeProductionExecutor(context: context, executionRevision: job.configuration.executionRevision, judge: admission.1); executor = { try await runner.execute($0) } }
-                catch { store.endProductionExecution(admission.0); throw error }
+                let runner = try NativeProductionExecutor(context: context, executionRevision: job.configuration.executionRevision, judge: admission.1)
+                executor = { try await runner.execute($0) }
                 #if arch(arm64)
                 let hardware = "Apple silicon"
                 #else
@@ -218,10 +248,15 @@ final class ProductionWorkspaceStore {
                 worker = .init(id: localWorkerID, name: "This Mac", platform: "macOS", operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
                     hardware: hardware, locale: Locale.current.identifier, model: context.reportedModel)
             } else { throw ProductionFailure.unavailable("Run this job with its configured command worker. The worker instructions are in the production eval guide.") }
+            guard job.configuration.targets.contains(where: { $0.matches(worker) }) else {
+                throw ProductionFailure.unavailable("This Mac does not match any target in this batch. Use a matching worker or create a batch with matching targets.")
+            }
+            // Admission must succeed before reopening a paused job to local or polling workers.
             executionErrors[job.id] = nil
             runningJobID = job.id
+            let executionOwner = owner
             runTask = Task {
-                defer { if let owner { store.endProductionExecution(owner) }; runningJobID = nil; runTask = nil }
+                defer { if let executionOwner { store.endProductionExecution(executionOwner) }; runningJobID = nil; runTask = nil }
                 do {
                     let task = Task.detached(priority: .utility) {
                         // Admission must succeed before another worker can claim this job.
@@ -235,7 +270,10 @@ final class ProductionWorkspaceStore {
                 } catch is CancellationError { } catch { self.error = error.localizedDescription; executionErrors[job.id] = error.localizedDescription }
                 await refresh()
             }
-        } catch { throw error }
+        } catch {
+            if let owner { store.endProductionExecution(owner) }
+            throw error
+        }
     }
     func appendReview(action: ProductionReviewAction, reviewer: String, assignee: String, outcome: ProductionOutcome,
                       note: String, tags: String, verifiedOutput: String, verifiedCost: Double?) {

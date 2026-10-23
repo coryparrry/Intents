@@ -6,7 +6,9 @@ public struct ProductionBatchRunner: Sendable {
     public let storage: ProductionStorage
     public init(storage: ProductionStorage) { self.storage = storage }
     /// Returns the number of newly committed responses. Another worker may still own remaining chunks.
+    /// onCommit runs after each durable result, including progress before a later error.
     public func run(jobID: UUID, worker: ProductionWorker, maximumResponses: Int = .max,
+                    onCommit: (@Sendable () -> Void)? = nil,
                     execute: @escaping ProductionExecutor) async throws -> Int {
         let job = try storage.loadJob(jobID)
         let reader = try ProductionDatasetReader(storage: storage, revision: job.datasetRevision)
@@ -21,20 +23,26 @@ public struct ProductionBatchRunner: Sendable {
                     guard job.configuration.targets[storage.targetIndex(job, slot: slot)].matches(worker) else { continue }
                     let current = try storage.chunk(job, index: claimed.index)
                     if current.records[slot] != nil { continue }
-                    var request = try storage.request(job, slot: slot, reader: reader)
-                    if let started = control.startedAt, Date().timeIntervalSince(started) >= job.configuration.maximumElapsedSeconds {
-                        throw ProductionFailure.budget("Job elapsed-time budget was exhausted.")
+                    if let started = control.startedAt, Date().timeIntervalSince(started) >= job.configuration.maximumElapsedSeconds,
+                       !storage.canFinalizeWithoutExecution(job, attempt: current.attempts[slot]) {
+                        // Other slots in this chunk may still have interrupted evidence
+                        // to finalize. claim reports the budget after recovery is drained.
+                        continue
                     }
+                    var request = try storage.request(job, slot: slot, reader: reader)
                     var attempt = current.attempts[slot]?.number ?? 0
                     var accumulatedCost = current.attempts[slot]?.reportedCost ?? 0
                     var unknownCost = current.attempts[slot].map { $0.hasUnknownCost ?? true } ?? false
                     var response: ProductionResponse
+                    var responseWorker = worker
                     var interrupted = false
                     var cancelled = false
-                    if current.attempts[slot] != nil && job.configuration.replaySafety == .sideEffects {
+                    if let previous = current.attempts[slot], job.configuration.replaySafety == .sideEffects {
+                        responseWorker = previous.worker
                         response = .init(requestID: request.requestID, outcome: .needsEvidence,
                                          explanation: "The previous action was interrupted. Verify its app state and reconcile this request before retrying.")
                     } else if attempt >= job.configuration.maximumAttempts {
+                        responseWorker = current.attempts[slot]?.worker ?? worker
                         response = .init(requestID: request.requestID, outcome: .error, explanation: "Attempt budget exhausted after interruption.")
                     } else {
                         repeat {
@@ -62,10 +70,12 @@ public struct ProductionBatchRunner: Sendable {
                                 // not automatically retry it or dispatch more
                                 // work from this job until explicit resumption.
                                 if interrupted { try storage.setControl(jobID: job.id, paused: true) }
+                                var explanation = String(decoding: (cancelled
+                                    ? "The request was cancelled. Its operation may still be running. The job is paused; inspect its evidence before resuming."
+                                    : error.localizedDescription).utf8.prefix(8_000), as: UTF8.self)
+                                if explanation.utf8.count > 8_000 { explanation.removeLast() }
                                 response = .init(requestID: request.requestID, outcome: job.configuration.replaySafety == .sideEffects ? .needsEvidence : .error,
-                                                 explanation: (cancelled
-                                                    ? "The request was cancelled. Its operation may still be running. The job is paused; inspect its evidence before resuming."
-                                                    : error.localizedDescription).prefix(8_000).description,
+                                                 explanation: explanation,
                                                  latencyMilliseconds: Date().timeIntervalSince(started) * 1000, retryable: !interrupted && error is ProductionTransientFailure)
                             }
                             if let cost = response.cost { accumulatedCost += cost } else { unknownCost = true }
@@ -83,12 +93,12 @@ public struct ProductionBatchRunner: Sendable {
                     response.cost = unknownCost ? nil : accumulatedCost
                     let record = ProductionRecord(slot: slot, sourceID: request.example.sourceID, exampleID: request.example.id,
                         partition: request.example.partition, metadata: request.example.metadata, targetIndex: request.targetIndex,
-                        repetition: request.repetition, attempt: max(1, attempt), worker: worker, response: response, completedAt: Date())
+                        repetition: request.repetition, attempt: max(1, attempt), worker: responseWorker, response: response, completedAt: Date())
                     try storage.updateChunk(job, index: claimed.index, token: token) { chunk in
                         guard chunk.records[slot] == nil else { throw ProductionFailure.integrity("Duplicate result commit.") }
                         chunk.records[slot] = record
                     }
-                    committed += 1; worker.lastSeen = Date(); try storage.register(worker)
+                    committed += 1; onCommit?(); worker.lastSeen = Date(); try storage.register(worker)
                     if cancelled { throw CancellationError() }
                     if interrupted { break }
                 }

@@ -157,6 +157,56 @@ struct MCPTransportRegressionTests {
         await runtime.stop()
     }
 
+    @MainActor
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func concurrentStopAndTerminationWaitForListenerDrain(terminating: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "MCPDrainTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let factory = TestServerFactory(suspendFirstStop: true)
+        let runtime = FoundationEvalsMCPRuntime(
+            store: EvaluationStore(supportDirectory: directory),
+            serverFactory: { configuration in factory.make(configuration) }
+        )
+        let configuration = try CodexMCPConfiguration(credential: String(repeating: "A", count: 43))
+        try await runtime.start(configuration)
+        let server = try #require(factory.latest)
+        let first = Task { await runtime.stop() }
+        await server.waitUntilStopSuspends()
+        var secondStarted = false, secondFinished = false
+        let second = Task {
+            secondStarted = true
+            if terminating { await runtime.prepareForTermination() }
+            else {
+                await runtime.stop()
+                do { try await runtime.start(configuration) }
+                catch { Issue.record("Restart after the second stop returned failed: \(error)") }
+            }
+            secondFinished = true
+        }
+        while !secondStarted { await Task.yield() }
+        #expect(!secondFinished)
+        if !terminating {
+            do {
+                try await runtime.start(configuration)
+                Issue.record("A replacement listener started before the old listener drained.")
+                await runtime.stop()
+            } catch let error as MCPServerError {
+                if case .alreadyRunning = error { } else { Issue.record("Unexpected restart error: \(error)") }
+            } catch { Issue.record("Unexpected restart error: \(error)") }
+        }
+        await server.finishStopping()
+        await first.value
+        await second.value
+        #expect(secondFinished)
+        #expect(await server.stopCount == 1)
+        if !terminating {
+            await runtime.stop()
+            try await runtime.start(configuration)
+            await runtime.stop()
+        }
+    }
+
     private func handler(resource: MCPResourcePayload) -> MCPProtocolHandler {
         MCPProtocolHandler(authority: MCPAuthority(
             call: { _ in .failure(code: "unexpected", message: "Unexpected") },
@@ -190,19 +240,22 @@ struct MCPTransportRegressionTests {
 @MainActor
 private final class TestServerFactory {
     private let suspendFirstStart: Bool
+    private let suspendFirstStop: Bool
     private(set) var creationCount = 0
     private(set) var latest: TestMCPServer?
     private var latestWaiters: [CheckedContinuation<TestMCPServer, Never>] = []
 
-    init(suspendFirstStart: Bool = false) {
+    init(suspendFirstStart: Bool = false, suspendFirstStop: Bool = false) {
         self.suspendFirstStart = suspendFirstStart
+        self.suspendFirstStop = suspendFirstStop
     }
 
     func make(_ configuration: MCPRuntimeServerConfiguration) -> TestMCPServer {
         creationCount += 1
         let server = TestMCPServer(
             configuration: configuration,
-            suspendsStart: suspendFirstStart && creationCount == 1
+            suspendsStart: suspendFirstStart && creationCount == 1,
+            suspendsStop: suspendFirstStop && creationCount == 1
         )
         latest = server
         let waiters = latestWaiters
@@ -220,13 +273,17 @@ private final class TestServerFactory {
 private actor TestMCPServer: MCPServerLifecycle {
     let configuration: MCPRuntimeServerConfiguration
     let suspendsStart: Bool
+    let suspendsStop: Bool
     private(set) var stopCount = 0
     private var startContinuation: CheckedContinuation<Void, Never>?
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var stopContinuation: CheckedContinuation<Void, Never>?
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(configuration: MCPRuntimeServerConfiguration, suspendsStart: Bool) {
+    init(configuration: MCPRuntimeServerConfiguration, suspendsStart: Bool, suspendsStop: Bool) {
         self.configuration = configuration
         self.suspendsStart = suspendsStart
+        self.suspendsStop = suspendsStop
     }
 
     func start() async throws {
@@ -243,6 +300,24 @@ private actor TestMCPServer: MCPServerLifecycle {
         stopCount += 1
         startContinuation?.resume()
         startContinuation = nil
+        if suspendsStop {
+            await withCheckedContinuation { continuation in
+                stopContinuation = continuation
+                let waiters = stopWaiters
+                stopWaiters.removeAll()
+                for waiter in waiters { waiter.resume() }
+            }
+        }
+    }
+
+    func waitUntilStopSuspends() async {
+        if stopContinuation != nil { return }
+        await withCheckedContinuation { stopWaiters.append($0) }
+    }
+
+    func finishStopping() {
+        stopContinuation?.resume()
+        stopContinuation = nil
     }
 
     func waitUntilStartSuspends() async {

@@ -40,15 +40,11 @@ enum UITestStorage {
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
-        // XCTest can launch a menu-only app. Use the normal window-opening command
-        // instead of depending on a window restored by a preceding test.
+        // Use the normal Show Suite Editor shortcut, including when the last window
+        // is closed. Menu hovering asks XCTest to place events in a windowless app's
+        // infinite accessibility frame and can stall WindowServer on hosted macOS.
         app.activate()
-        try requireNoAlert(in: app)
-        let evaluationMenu = app.menuBars.menuBarItems["Evaluation"]
-        try waitFor(evaluationMenu, in: app, timeout: 5, file: file, line: line)
-        evaluationMenu.click()
-        app.menuItems["Show Suite Editor"].click()
-        app.activate()
+        app.typeKey("3", modifierFlags: .command)
         try waitFor(app.windows.firstMatch, in: app, timeout: 5, file: file, line: line)
         try waitFor(app.buttons["Run evaluation"], in: app, timeout: 5, file: file, line: line)
     }

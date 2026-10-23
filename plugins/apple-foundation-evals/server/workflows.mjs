@@ -86,14 +86,19 @@ async function executeExperiment(app, record, source, controller, lockId) {
     const currentRun = { ...runRecord(value.current, source), experimentId: record.id, publicationState: 'pending' }; const candidateRun = { ...runRecord(value.candidate, candidate), experimentId: record.id, publicationState: 'pending' };
     if (!equalID(currentRun.id, currentRunID) || !equalID(candidateRun.id, candidateRunID) || !equalID(currentRun.appRun.suiteID, source.id) || !equalID(candidateRun.appRun.suiteID, source.id)) throw new Error('Experiment run identities do not match the frozen suite');
     if (await optional(app, 'runs', currentRun.id) || await optional(app, 'runs', candidateRun.id)) throw new Error('Experiment run identity already exists');
-    terminal = controller.signal.aborted
-      ? { record: { ...record, partialRuns: [value.current, value.candidate], status: 'cancelled', finishedAt: new Date().toISOString() }, runs: [] }
+    const cancelled = controller.signal.aborted || currentRun.status === 'cancelled' || candidateRun.status === 'cancelled';
+    const incomplete = currentRun.status !== 'completed' || candidateRun.status !== 'completed';
+    terminal = cancelled || incomplete
+      ? { record: { ...record, partialRuns: [value.current, value.candidate], status: cancelled ? 'cancelled' : 'failed', ...(!cancelled ? { error: 'Both experiment variants must complete before publishing paired evidence.' } : {}), finishedAt: new Date().toISOString() }, runs: [] }
       : { record: { ...record, experiment: { ...record.experiment, runIDs: [currentRun.id, candidateRun.id] }, summary: value.summary, status: 'completed', finishedAt: new Date().toISOString() }, runs: [currentRun, candidateRun] };
   } catch (error) {
     await progress;
     terminal = { record: { ...record, status: controller.signal.aborted ? 'cancelled' : 'failed', finishedAt: new Date().toISOString(), error: error.message.slice(0, 4096) }, runs: [] };
   }
   if (app.active?.runId === lockId) app.active.finishing = true;
+  const failedPublication = (error) => ({ ...terminal.record, experiment: record.experiment,
+    ...(terminal.runs.length ? { partialRuns: terminal.runs.map((run) => run.appRun) } : {}),
+    status: 'failed', finishedAt: new Date().toISOString(), error: `Could not save paired experiment evidence: ${error.message}` });
   try {
     await app.store.releaseRunLock(lockId);
     const saved = [];
@@ -101,17 +106,29 @@ async function executeExperiment(app, record, source, controller, lockId) {
       for (const run of terminal.runs) { await app.store.write('runs', run); saved.push(run.id); }
       await app.store.write('experiments', terminal.record);
     } catch (error) {
-      // A paired experiment never publishes one variant as completed evidence.
-      for (const key of saved) await app.store.delete('runs', key);
-      await app.store.write('experiments', { ...record, status: 'failed', finishedAt: new Date().toISOString(), error: `Could not save paired experiment evidence: ${error.message}` });
+      // Retain both native outputs before removing any staged variant. Recovery
+      // can finish cleanup if deletion fails after this checkpoint is durable.
+      await app.store.write('experiments', failedPublication(error));
+      for (const key of saved) {
+        try { await app.store.delete('runs', key); }
+        catch (error) { if (!/not found$/.test(error.message) && error.code !== 'ENOENT') throw error; }
+      }
     }
+  } catch (error) {
+    // Keep this instance's outputs available for retry after storage recovers.
+    // A live PID alone cannot identify a still-running experiment.
+    app.pendingExperimentRecovery.set(record.id, failedPublication(error));
+    throw error;
   } finally { if (app.active?.runId === lockId) app.active = null; }
 }
 async function releaseReport(app, source, run, baselineRunId) {
   const approved = await baselineFor(app, source.id);
   const baseline = baselineRunId ? await readRun(app, baselineRunId) : approved ? await readRun(app, approved.runID) : null;
   if (baseline && baseline.suiteId !== source.id) throw new Error('Baseline belongs to another suite');
-  const result = await native(app, { operation: 'release-check', projectID: source.projectId, suite: portableSuite(source), ...(run ? { run: run.appRun } : {}), ...(baseline ? { baseline: baseline.appRun } : {}), ...(approved ? { approvedBaseline: approved } : {}) });
+  if (baselineRunId && baseline.status !== 'completed') throw new Error('Only completed run evidence can be used as a release baseline');
+  // Retained native output remains inspectable after publication fails, but its
+  // wrapper must be complete before it can qualify as release evidence.
+  const result = await native(app, { operation: 'release-check', projectID: source.projectId, suite: portableSuite(source), ...(run?.status === 'completed' ? { run: run.appRun } : {}), ...(baseline?.status === 'completed' ? { baseline: baseline.appRun } : {}), ...(approved ? { approvedBaseline: approved } : {}) });
   return { ...result, health: run ? health(run, source) : null };
 }
 export async function workflowDispatch(app, name, args) {
@@ -126,7 +143,10 @@ export async function workflowDispatch(app, name, args) {
       await app.store.write('experiments', record);
       return experimentView(app, record);
     }
-    case 'eval_get_experiment': return experimentView(app, await app.store.read('experiments', id(args.experimentId)));
+    case 'eval_get_experiment': {
+      if (app.pendingExperimentRecovery.has(id(args.experimentId))) await app.recover();
+      return experimentView(app, await app.store.read('experiments', id(args.experimentId)));
+    }
     case 'eval_list_experiments': {
       if (args.suiteId) await app.store.read('suites', id(args.suiteId));
       if (args.projectId) await app.store.read('projects', id(args.projectId));
@@ -134,6 +154,7 @@ export async function workflowDispatch(app, name, args) {
       return { experiments: experiments.map(publicRecord) };
     }
     case 'eval_cancel_experiment': {
+      if (app.pendingExperimentRecovery.has(id(args.experimentId))) await app.recover();
       const record = await app.store.read('experiments', id(args.experimentId));
       if (record.status === 'running') {
         if (app.active?.experimentId !== record.id) throw new Error('This experiment is owned by another evaluation server');
@@ -143,6 +164,7 @@ export async function workflowDispatch(app, name, args) {
     }
     case 'eval_run_experiment': {
       requireIdle(app);
+      await app.recover();
       const record = await app.store.read('experiments', id(args.experimentId)); conflict(record, args.expectedRevision);
       const source = await app.store.read('suites', record.suiteId);
       if (record.sourceRevision !== source.revision) throw new Error('The suite changed after this experiment was frozen');
@@ -152,7 +174,13 @@ export async function workflowDispatch(app, name, args) {
       const attemptHistory = [...(record.attemptHistory || []), ...(startedAt ? [{ status: record.status, startedAt, finishedAt, plannedRunIDs, ...(error ? { error } : {}), ...(partialResults ? { partialResults } : {}), ...(partialRuns ? { partialRuns } : {}) }] : [])];
       const lockId = randomUUID(); await app.store.acquireRunLock(lockId);
       const running = { ...frozen, attemptHistory, plannedRunIDs: [randomUUID(), randomUUID()], status: 'running', ownerPid: process.pid, startedAt: new Date().toISOString() };
-      try { await app.store.write('experiments', running); } catch (error) { await app.store.releaseRunLock(lockId); throw error; }
+      try {
+        // Another server may have finished this experiment while this caller
+        // was reading its snapshot, before it acquired the execution lease.
+        if (revision(await app.store.read('experiments', record.id)) !== revision(record)) throw new Error('The experiment changed before execution; reload it before retrying');
+        if ((await app.store.read('suites', source.id)).revision !== source.revision) throw new Error('The suite changed after this experiment was frozen');
+        await app.store.write('experiments', running);
+      } catch (error) { await app.store.releaseRunLock(lockId); throw error; }
       const controller = new AbortController();
       app.active = { runId: lockId, experimentId: record.id, controller, promise: null };
       app.active.promise = executeExperiment(app, running, source, controller, lockId).catch((error) => { process.stderr.write(`Could not finalize experiment: ${error.message}\n`); });

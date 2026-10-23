@@ -99,9 +99,9 @@ struct EvaluationRunAnalysis: Codable, Equatable, Sendable {
         let scored = passed + failed
 
         runID = run.id
-        plannedSampleCount = run.plannedResultCount
+        plannedSampleCount = max(0, run.plannedResultCount)
         completedSampleCount = run.results.count
-        missingSampleCount = max(0, run.plannedResultCount - run.results.count)
+        missingSampleCount = max(0, max(0, run.plannedResultCount) - run.results.count)
         scoredSampleCount = scored
         passedSampleCount = passed
         failedSampleCount = failed
@@ -138,7 +138,7 @@ struct EvaluationRunAnalysis: Codable, Equatable, Sendable {
         var definitions: [UUID: CaseDefinition] = [:]
         var orderedIDs: [UUID] = []
 
-        for evaluationCase in run.plannedCases ?? [] {
+        for evaluationCase in run.plannedCases ?? run.suiteDefinition?.cases ?? [] {
             guard definitions[evaluationCase.id] == nil else { continue }
             definitions[evaluationCase.id] = CaseDefinition(evaluationCase)
             orderedIDs.append(evaluationCase.id)
@@ -174,9 +174,9 @@ struct EvaluationRunAnalysis: Codable, Equatable, Sendable {
                 caseName: definition.name,
                 prompt: definition.prompt,
                 expected: definition.expected,
-                plannedSampleCount: run.repetitions,
+                plannedSampleCount: max(0, run.repetitions),
                 completedSampleCount: results.count,
-                missingSampleCount: max(0, run.repetitions - results.count),
+                missingSampleCount: max(0, max(0, run.repetitions) - results.count),
                 scoredSampleCount: scored,
                 passedSampleCount: passed,
                 failedSampleCount: failed,
@@ -307,7 +307,8 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
 
         if !incompatibilities.isEmpty {
             compatibility = .incompatible
-        } else if comparisons.contains(where: { $0.change == .notComparable }) {
+        } else if currentAnalysis.missingSampleCount > 0 || baselineAnalysis.missingSampleCount > 0
+            || comparisons.isEmpty || comparisons.contains(where: { $0.change == .notComparable }) {
             compatibility = .partialCoverage
         } else {
             compatibility = .compatible
@@ -344,6 +345,9 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
     private static func incompatibilities(current: EvaluationRun, baseline: EvaluationRun) -> [String] {
         var reasons: [String] = []
         if current.suiteID != baseline.suiteID { reasons.append("The runs belong to different suites.") }
+        if !hasValidSampleStructure(current) || !hasValidSampleStructure(baseline) {
+            reasons.append("A run contains invalid planned counts, sample identities, or case/repetition coordinates.")
+        }
         guard let currentScoring = comparisonScoringContract(for: current),
               let baselineScoring = comparisonScoringContract(for: baseline) else {
             reasons.append("The selected assessment's scoring conditions are unavailable or inconsistent with this run.")
@@ -362,6 +366,28 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
             }
         }
         return reasons
+    }
+
+    private static func hasValidSampleStructure(_ run: EvaluationRun) -> Bool {
+        guard run.repetitions > 0,
+              Set(run.results.map(\.id)).count == run.results.count else { return false }
+        if let count = run.plannedSampleCount, count < run.results.count { return false }
+        let plannedCases = run.plannedCases ?? run.suiteDefinition?.cases
+        if let plannedCases {
+            let caseIDs = Set(plannedCases.map(\.id))
+            let expected = plannedCases.count.multipliedReportingOverflow(by: run.repetitions)
+            guard caseIDs.count == plannedCases.count, !expected.overflow,
+                  run.plannedSampleCount.map({ $0 == expected.partialValue }) ?? true,
+                  run.results.allSatisfy({ caseIDs.contains($0.caseID) }) else { return false }
+        }
+        var repetitionsByCase: [UUID: Set<Int>] = [:]
+        for result in run.results {
+            guard result.repetition > 0, result.repetition <= run.repetitions,
+                  repetitionsByCase[result.caseID, default: []].insert(result.repetition).inserted else {
+                return false
+            }
+        }
+        return true
     }
 
     private static func comparisonScoringContract(for run: EvaluationRun) -> EvaluationScoringContract? {

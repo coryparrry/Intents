@@ -33,17 +33,21 @@ async function server(t) {
   const launches = join(directory, 'launches.jsonl');
   await writeFile(binary, `#!${process.execPath}
 const fs = require('node:fs');
+function publishMarker(path) {
+  fs.writeFileSync(path + '.tmp', JSON.stringify({ pid: process.pid }));
+  fs.renameSync(path + '.tmp', path);
+}
 let input = '';
 process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
   JSON.parse(input);
   const keepAlive = setInterval(() => {}, 1000);
   process.once('SIGTERM', () => {
-    fs.writeFileSync(${JSON.stringify(stopping)}, JSON.stringify({ pid: process.pid }));
+    publishMarker(${JSON.stringify(stopping)});
     setTimeout(() => { clearInterval(keepAlive); process.exit(0); }, 400);
   });
   fs.appendFileSync(${JSON.stringify(launches)}, JSON.stringify({ pid: process.pid }) + '\\n');
-  fs.writeFileSync(${JSON.stringify(started)}, JSON.stringify({ pid: process.pid }));
+  publishMarker(${JSON.stringify(started)});
 });
 `);
   await chmod(binary, 0o700);

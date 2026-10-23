@@ -3,6 +3,55 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationExperimentRunnerFatalStopTests {
+    @Test(arguments: ["emptyCases", "negativeRepetitions", "overflow", "duplicateCase", "sameVariant", "unknownVariant", "duplicateVariant", "missingPosition"])
+    func invalidPlansFailBeforeRunningAnyPart(mutation: String) async throws {
+        var (suite, experiment) = makeExperiment()
+        switch mutation {
+        case "emptyCases": suite.cases = []
+        case "negativeRepetitions": suite.repetitions = -1
+        case "overflow": suite.repetitions = Int.max
+        case "duplicateCase": suite.cases.append(suite.cases[0])
+        case "sameVariant": experiment.candidate.id = experiment.current.id
+        case "unknownVariant": experiment.executionOrder[0] = UUID()
+        case "duplicateVariant": experiment.executionOrder[1] = experiment.executionOrder[0]
+        default: experiment.executionOrder.removeLast()
+        }
+        let recorder = PartCallRecorder()
+        let runner = EvaluationExperimentRunner { _, _, _, partSuite, _, _, _ in
+            await recorder.record(partSuite.instructions)
+            return makeRun(suite: partSuite)
+        }
+        do {
+            _ = try await runner.run(suite: suite, experiment: experiment, images: [], externalJudge: nil,
+                                     progress: { _, _, _ in })
+            Issue.record("Expected an invalid experiment plan to be rejected.")
+        } catch {
+            #expect(error is EvaluationStoreError)
+        }
+        #expect(await recorder.count == 0)
+    }
+
+    @Test func cancellationDuringLastPartCannotPublishCompletedVariants() async throws {
+        let (suite, experiment) = makeExperiment()
+        let recorder = PartCallRecorder()
+        let task = Task {
+            let runner = EvaluationExperimentRunner { _, _, _, partSuite, _, _, _ in
+                let call = await recorder.nextCall()
+                if call == experiment.executionOrder.count { withUnsafeCurrentTask { $0?.cancel() } }
+                return makeRun(suite: partSuite)
+            }
+            return try await runner.run(suite: suite, experiment: experiment, images: [], externalJudge: nil,
+                                        progress: { _, _, _ in })
+        }
+        do {
+            _ = try await task.value
+            Issue.record("Expected cancellation after the last part.")
+        } catch {
+            #expect(error is CancellationError)
+        }
+        #expect(await recorder.count == experiment.executionOrder.count)
+    }
+
     @Test
     func fatalFirstPartStopsEveryLaterPositionAndKeepsFailureEvidence() async throws {
         let (suite, experiment) = makeExperiment()
@@ -74,6 +123,32 @@ struct EvaluationExperimentRunnerFatalStopTests {
                 #expect(run.results.allSatisfy { $0.status == .passed })
             }
         }
+    }
+
+    @Test
+    func laterFatalPartMarksIncompleteCounterpartAsStoppedEarly() async throws {
+        let (suite, experiment) = makeExperiment()
+        let recorder = PartCallRecorder()
+        let runner = EvaluationExperimentRunner { _, _, _, partSuite, _, _, _ in
+            let call = await recorder.nextCall()
+            return makeRun(
+                suite: partSuite,
+                response: "part-\(call)",
+                terminationReason: call == 3 ? "serviceUnavailable" : nil
+            )
+        }
+
+        let outcome = try await runner.run(
+            suite: suite, experiment: experiment, images: [], externalJudge: nil,
+            progress: { _, _, _ in }
+        )
+
+        #expect(await recorder.count == 3)
+        #expect(outcome.current.results.map(\.response) == ["part-1", "part-3"])
+        #expect(outcome.candidate.results.map(\.response) == ["part-2"])
+        #expect(outcome.current.terminationReason == "serviceUnavailable")
+        #expect(outcome.candidate.terminationReason == "serviceUnavailable")
+        #expect(outcome.candidate.stoppedEarly)
     }
 
     @Test

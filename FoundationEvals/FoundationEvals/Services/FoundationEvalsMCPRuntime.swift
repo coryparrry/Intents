@@ -23,6 +23,7 @@ final class FoundationEvalsMCPRuntime {
     private let control: EvaluationAppControl
     private let serverFactory: ServerFactory
     private var server: (any MCPServerLifecycle)?
+    private var stopping: (id: UUID, task: Task<Void, Never>)?
     private var serverGeneration: UUID?
     private var isClosing = false
     weak var settingsController: MCPSettingsController?
@@ -47,7 +48,7 @@ final class FoundationEvalsMCPRuntime {
 
     func start(_ configuration: CodexMCPConfiguration) async throws {
         guard !isClosing else { throw MCPServerError.stoppedAfterReady(nil) }
-        guard server == nil, serverGeneration == nil else { throw MCPServerError.alreadyRunning }
+        guard server == nil, serverGeneration == nil, stopping == nil else { throw MCPServerError.alreadyRunning }
         let generation = UUID()
         serverGeneration = generation
         let server = serverFactory(MCPRuntimeServerConfiguration(
@@ -77,13 +78,21 @@ final class FoundationEvalsMCPRuntime {
     }
 
     func stop() async {
-        guard let server else {
+        let drain: (id: UUID, task: Task<Void, Never>)
+        if let stopping {
+            drain = stopping
+        } else {
+            guard let server else {
+                serverGeneration = nil
+                return
+            }
+            self.server = nil
             serverGeneration = nil
-            return
+            drain = (UUID(), Task { await server.stop() })
+            stopping = drain
         }
-        self.server = nil
-        serverGeneration = nil
-        await server.stop()
+        await drain.task.value
+        if stopping?.id == drain.id { stopping = nil }
     }
 
     func prepareForTermination() async {

@@ -4,10 +4,13 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct TelemetryCrashTests {
+    nonisolated static let diagnosticSessionID = "B67CF16E-388F-4EC0-A065-280EB703F8F6"
+
     nonisolated static func report(epoch: UUID, imageID: UUID = UUID()) -> [String: Any] {
         ["app": "intents", "environment": "production", "platform": "macOS", "schema_version": 2,
          "app_version": "1.0", "app_build": "8", "_intents_consent_epoch": epoch.uuidString,
          "_intents_crash_capture": true, "$session_id": UUID().uuidString,
+         "diagnostic_session_id": diagnosticSessionID,
          "private": "PRIVATE_CONTENT", "$exception_steps": [["message": "PRIVATE_CONTENT"]],
          "$exception_level": "fatal", "$exception_list": [[
             "type": "PRIVATE_CONTENT", "value": "PRIVATE_CONTENT", "userInfo": ["prompt": "PRIVATE_CONTENT"],
@@ -39,9 +42,43 @@ import Testing
                 && images?.first?["image_addr"] as? String == "0x100000000"
                 && images?.first?["code_file"] as? String == "native-image"
                 && final["app_build"] as? String == "8"
+                && safe.properties["diagnostic_session_id"] as? String == Self.diagnosticSessionID
+                && final["diagnostic_session_id"] as? String == Self.diagnosticSessionID
                 && final["_intents_crash_capture"] == nil && final["_intents_consent_epoch"] == nil
         }.value
         #expect(passed)
+    }
+
+    @Test(arguments: ["invalid", "missing"])
+    func invalidOrMissingDiagnosticSessionDoesNotSuppressCrash(input: String) throws {
+        let epoch = UUID()
+        var raw = Self.report(epoch: epoch)
+        if input == "invalid" { raw["diagnostic_session_id"] = "PRIVATE_CONTENT_NOT_A_UUID" }
+        else { raw.removeValue(forKey: "diagnostic_session_id") }
+        let event = PostHogEvent(event: "$exception", distinctId: UUID().uuidString, properties: raw)
+        let safe = try #require(TelemetryPayloadFilter.beforeSend(
+            usage: false, diagnostics: true, consentEpoch: epoch
+        )(event))
+        let final = try #require(TelemetryPayloadFilter.properties(safe.properties, event: safe.event))
+        #expect(safe.properties["diagnostic_session_id"] == nil)
+        #expect(final["diagnostic_session_id"] == nil)
+        #expect(final["$exception_list"] != nil)
+        #expect(final["app_build"] as? String == "8")
+        #expect(!String(decoding: try JSONSerialization.data(withJSONObject: final), as: UTF8.self)
+            .contains("PRIVATE_CONTENT"))
+    }
+
+    @Test(arguments: ["foundation_evals_app_opened", "intents_first_use", "$screen", "intents_feature_used"])
+    func usageEventsNeverRetainDiagnosticSession(name: String) throws {
+        let epoch = UUID()
+        let event = PostHogEvent(event: name, distinctId: UUID().uuidString, properties: Self.report(epoch: epoch))
+        let safe = try #require(TelemetryPayloadFilter.beforeSend(
+            usage: true, diagnostics: false, consentEpoch: epoch
+        )(event))
+        let final = try #require(TelemetryPayloadFilter.properties(safe.properties, event: safe.event))
+        #expect(safe.properties["diagnostic_session_id"] == nil)
+        #expect(final["diagnostic_session_id"] == nil)
+        #expect(final["$exception_list"] == nil)
     }
 
     @Test func consentAndCrashTimeContextFailClosed() {
@@ -133,8 +170,10 @@ import Testing
         session.protocolClasses = [CrashRecordingProtocol.self]
         CrashRecordingProtocol.clear()
         let epoch = UUID(), imageID = UUID(), crashedID = UUID().uuidString
+        let relaunchedSessionID = try #require(UUID(uuidString: "22222222-3333-4444-8555-666666666666"))
         var sdk: PostHogSDK?
-        let client = PostHogTelemetryClient(configuration: .init(projectToken: token, host: "https://telemetry.invalid", diagnosticsEnabled: true, consentEpoch: epoch),
+        let client = PostHogTelemetryClient(configuration: .init(projectToken: token, host: "https://telemetry.invalid", diagnosticsEnabled: true,
+            diagnosticSessionID: relaunchedSessionID, consentEpoch: epoch),
             sessionConfiguration: session, makeSDK: { config in
                 #expect(!config.errorTrackingConfig.autoCapture)
                 #expect(!config.errorTrackingConfig.exceptionSteps.enabled)
@@ -163,6 +202,8 @@ import Testing
         let properties = try #require(crash["properties"] as? [String: Any])
         #expect(properties["app_build"] as? String == "8")
         #expect(properties["app_version"] as? String == "1.0")
+        #expect(properties["diagnostic_session_id"] as? String == TelemetryCrashTests.diagnosticSessionID)
+        #expect(properties["diagnostic_session_id"] as? String != relaunchedSessionID.uuidString)
         #expect(properties["$debug_images"] != nil)
         #expect(properties["_intents_consent_epoch"] == nil)
         #expect(properties["_intents_crash_capture"] == nil)

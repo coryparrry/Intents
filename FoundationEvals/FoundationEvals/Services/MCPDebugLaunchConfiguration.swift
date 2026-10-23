@@ -10,6 +10,13 @@ enum MCPDebugLaunchConfiguration {
         arguments.contains(existingCredentialArgument)
     }
 
+    static func requiresReadOnlyAccess(
+        arguments: [String], environment: [String: String], isolatedStorage: URL?
+    ) -> Bool {
+        isolatedStorage != nil || isHostedTest(environment)
+            || requestsExistingCredential(arguments: arguments)
+    }
+
     static func usesExistingCredential(
         arguments: [String], environment: [String: String], isolatedStorage: URL?
     ) -> Bool {
@@ -21,8 +28,8 @@ enum MCPDebugLaunchConfiguration {
         arguments: [String], environment: [String: String], isolatedStorage: URL?,
         existing: MCPCredentialStore
     ) -> MCPCredentialStore {
-        guard isolatedStorage != nil || isHostedTest(environment)
-                || requestsExistingCredential(arguments: arguments) else { return existing }
+        guard requiresReadOnlyAccess(arguments: arguments, environment: environment,
+                                     isolatedStorage: isolatedStorage) else { return existing }
         let load: () throws -> String? = usesExistingCredential(
             arguments: arguments, environment: environment, isolatedStorage: isolatedStorage
         ) ? existing.load : { nil }

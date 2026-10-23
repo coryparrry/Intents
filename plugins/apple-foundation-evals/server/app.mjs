@@ -46,6 +46,8 @@ export class EvaluationApp {
     this.timeoutMs = timeoutMs;
     this.model = { ...UNCHECKED };
     this.active = null;
+    this.pendingExperimentRecovery = new Map();
+    this.pendingRunRecovery = new Map();
     this.closed = false;
     this.tail = Promise.resolve();
   }
@@ -59,31 +61,84 @@ export class EvaluationApp {
     await initProjects(this);
     await this.recover();
   }
+  async recoverPendingRuns(runId) {
+    if (this.active || !this.pendingRunRecovery.size) return;
+    const candidates = runId ? [runId] : [...this.pendingRunRecovery.keys()];
+    const recoveryID = randomUUID();
+    try { await this.store.acquireRunLock(recoveryID); }
+    catch (error) { if (/An evaluation is already active/.test(error.message)) return; throw error; }
+    try {
+      for (const key of candidates) {
+        const pending = this.pendingRunRecovery.get(key);
+        if (!pending) continue;
+        let current;
+        try { current = await this.store.read('runs', key); }
+        catch (error) { if (/not found$/.test(error.message)) { this.pendingRunRecovery.delete(key); continue; } throw error; }
+        // Only this instance retains these outputs. Re-read under the admission
+        // lease, and never replace a record changed since publication failed.
+        if (current.status === 'running' && current.ownerPid === process.pid
+            && revision({ run: current }) === pending.expectedRevision) {
+          await this.store.write('runs', pending.record);
+        }
+        this.pendingRunRecovery.delete(key);
+      }
+    } finally { await this.store.releaseRunLock(recoveryID); }
+  }
   async recover() {
+    await this.recoverPendingRuns();
     for (const run of await this.store.list('runs', ({ id, status, ownerPid }) => ({ id, status, ownerPid }))) {
       if (run.status === 'running' && !processAlive(run.ownerPid)) {
         const fullRun = await this.store.read('runs', run.id);
         await this.store.write('runs', { ...fullRun, status: 'failed', finishedAt: new Date().toISOString(), durationMs: Date.now() - Date.parse(fullRun.startedAt), error: 'Evaluation interrupted before completion' });
       }
     }
-    for await (const experiment of this.store.scan('experiments')) {
-      const interrupted = experiment.status === 'running' && !processAlive(experiment.ownerPid);
-      if (!interrupted && !['failed', 'cancelled'].includes(experiment.status)) continue;
-      const staged = [];
-      for (const key of experiment.plannedRunIDs || []) {
-        let run;
-        try { run = await this.store.read('runs', id(key, 'planned run id')); } catch (error) { if (/not found$/.test(error.message)) continue; throw error; }
-        // Never remove an unrelated record occupying a planned identity.
-        if (run.experimentId?.toLowerCase() === experiment.id) staged.push(run);
-      }
-      if (interrupted || staged.length) {
-        const partialRuns = [...(experiment.partialRuns || [])];
-        for (const run of staged) if (run.appRun && !partialRuns.some((item) => item.id?.toLowerCase() === run.id)) partialRuns.push(run.appRun);
-        await this.store.write('experiments', { ...experiment, ...(partialRuns.length ? { partialRuns } : {}), ...(interrupted ? { status: 'failed', finishedAt: new Date().toISOString(), error: 'Instruction experiment interrupted before completion' } : {}) });
-        // Persist recovered evidence before removing public history candidates.
-        for (const run of staged) await this.store.delete('runs', run.id);
+    const candidates = [];
+    for await (const record of this.store.scan('experiments')) {
+      if (['failed', 'cancelled'].includes(record.status)
+          || record.status === 'running' && (!processAlive(record.ownerPid) || this.pendingExperimentRecovery.has(record.id))) {
+        candidates.push({ id: record.id });
       }
     }
+    if (!candidates.length) return;
+    const recoveryID = randomUUID();
+    try { await this.store.acquireRunLock(recoveryID); }
+    catch (error) { if (/An evaluation is already active/.test(error.message)) return; throw error; }
+    try {
+      for (const candidate of candidates) {
+        // A retry may have completed since the catalog read. Hold the same
+        // lease as run admission and re-read before writing or deleting evidence.
+        let experiment;
+        try { experiment = await this.store.read('experiments', candidate.id); }
+        catch (error) { if (/not found$/.test(error.message)) { this.pendingExperimentRecovery.delete(candidate.id); continue; } throw error; }
+        if (this.active?.experimentId === experiment.id) continue;
+        const pending = this.pendingExperimentRecovery.get(experiment.id);
+        const ownedPending = experiment.status === 'running' && pending
+          && JSON.stringify(pending.plannedRunIDs) === JSON.stringify(experiment.plannedRunIDs) ? pending : null;
+        const interrupted = experiment.status === 'running' && (!processAlive(experiment.ownerPid) || ownedPending);
+        if (!interrupted && !['failed', 'cancelled'].includes(experiment.status)) {
+          this.pendingExperimentRecovery.delete(experiment.id); continue;
+        }
+        const staged = [];
+        for (const key of experiment.plannedRunIDs || []) {
+          let run;
+          try { run = await this.store.read('runs', id(key, 'planned run id')); } catch (error) { if (/not found$/.test(error.message)) continue; throw error; }
+          // Never remove an unrelated record occupying a planned identity.
+          if (run.experimentId?.toLowerCase() === experiment.id) staged.push(run);
+        }
+        if (interrupted || staged.length || ownedPending) {
+          const recovered = ownedPending || experiment;
+          const partialRuns = [...(recovered.partialRuns || [])];
+          for (const run of staged) if (run.appRun && !partialRuns.some((item) => item.id?.toLowerCase() === run.id)) partialRuns.push(run.appRun);
+          await this.store.write('experiments', { ...recovered, ...(partialRuns.length ? { partialRuns } : {}), ...(interrupted ? { status: 'failed', finishedAt: new Date().toISOString(), error: ownedPending?.error || 'Instruction experiment interrupted before completion' } : {}) });
+          // Persist recovered evidence before removing public history candidates.
+          for (const run of staged) {
+            try { await this.store.delete('runs', run.id); }
+            catch (error) { if (!/not found$/.test(error.message) && error.code !== 'ENOENT') throw error; }
+          }
+        }
+        this.pendingExperimentRecovery.delete(experiment.id);
+      }
+    } finally { await this.store.releaseRunLock(recoveryID); }
   }
   async call(name, args = {}) {
     if (this.closed || this.closing) throw new Error('Evaluation server is shutting down');
@@ -154,6 +209,7 @@ export class EvaluationApp {
     }
   }
   async readPublicRun(runId) {
+    if (this.pendingRunRecovery.has(runId)) await this.recoverPendingRuns(runId);
     const run = await this.store.read('runs', runId);
     if (run.experimentId) {
       const experiment = await this.store.read('experiments', id(run.experimentId, 'experiment id'));
@@ -231,6 +287,7 @@ export class EvaluationApp {
   async start(suiteId, expectedRevision) {
     if (this.active?.finishing) await this.active.promise;
     if (this.active) throw new Error('An evaluation is already active');
+    await this.recoverPendingRuns();
     const savedSuite = suite(await this.store.read('suites', suiteId), randomUUID);
     if (expectedRevision !== undefined && expectedRevision !== savedSuite.revision) throw new Error('Suite revision conflict: reload before running');
     const run = { id: randomUUID(), suiteId, projectId: savedSuite.projectId || this.defaultProjectId, suiteRevision: savedSuite.revision || revision(savedSuite), suite: savedSuite, status: 'running', startedAt: new Date().toISOString(), ownerPid: process.pid, results: [] };
@@ -243,6 +300,7 @@ export class EvaluationApp {
   }
   async execute(run, controller) {
     let finished; let progress = Promise.resolve();
+    let expectedRevision = revision({ run });
     const onEvent = (event) => {
       if (event.event === 'liveResponse' && event.value && typeof event.value === 'object') {
         run.liveResponse = event.value;
@@ -257,7 +315,11 @@ export class EvaluationApp {
           if (run.results.some((item) => item.caseId === result.caseId && item.repetition === result.repetition)) return;
           run.results.push(result);
           run.completedSamples = run.results.length;
-          await this.store.write('runs', run);
+          // Live responses can mutate run while storage is awaiting I/O. Keep
+          // the exact last saved record for recovery if the final read fails.
+          const snapshot = structuredClone(run);
+          await this.store.write('runs', snapshot);
+          expectedRevision = revision({ run: snapshot });
         }
       }).catch((error) => { process.stderr.write(`Could not save evaluation progress: ${error.message}\n`); });
     };
@@ -280,10 +342,20 @@ export class EvaluationApp {
     try {
       // Publish completion only after the guardian has reaped its worker and released the lease.
       await this.store.releaseRunLock(run.id);
-      const current = await this.store.read('runs', run.id);
+      let current;
+      try { current = await this.store.read('runs', run.id); }
+      catch (error) {
+        this.pendingRunRecovery.set(run.id, { record: finished, expectedRevision });
+        throw error;
+      }
       if (current.status === 'running') {
         try { await this.store.write('runs', finished); }
-        catch (error) { await this.store.write('runs', { ...run, status: 'failed', finishedAt: new Date().toISOString(), durationMs: Date.now() - Date.parse(run.startedAt), error: `Could not save native result: ${error.message}` }); }
+        catch (error) {
+          const record = { ...finished, status: 'failed', error: `Could not save native result: ${error.message}` };
+          this.pendingRunRecovery.set(run.id, { record, expectedRevision: revision({ run: current }) });
+          await this.store.write('runs', record);
+          this.pendingRunRecovery.delete(run.id);
+        }
       }
     } finally {
       if (this.active?.runId === run.id) this.active = null;

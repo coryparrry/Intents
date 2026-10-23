@@ -113,6 +113,7 @@ actor EvaluationFeatureAdapterRunner {
                         evaluationCase: evaluationCase,
                         repetition: repetition,
                         response: output.response,
+                        responseWasCaptured: true,
                         status: EvaluationFieldAssertions.gatedStatus(
                             baseStatus: score.status,
                             results: assertionResults,
@@ -173,6 +174,13 @@ actor EvaluationFeatureAdapterRunner {
                 }
                 results.append(result)
                 await progress(result, results.count, total)
+                // Checkpoint/progress callbacks can suspend while the owner cancels.
+                // The final sample has no next iteration to observe that cancellation.
+                if Task.isCancelled {
+                    cancelled = true
+                    terminationReason = "cancelled"
+                    break outer
+                }
             }
         }
 
@@ -210,6 +218,7 @@ actor EvaluationFeatureAdapterRunner {
         evaluationCase: EvaluationCase,
         repetition: Int,
         response: String,
+        responseWasCaptured: Bool? = nil,
         status: EvaluationResultStatus,
         rationale: String?,
         usage: EvaluationUsage,
@@ -227,6 +236,7 @@ actor EvaluationFeatureAdapterRunner {
             effectivePrompt: evaluationCase.prompt,
             expected: evaluationCase.expected,
             response: response,
+            responseWasCaptured: responseWasCaptured,
             status: status,
             score: nil,
             rationale: rationale,

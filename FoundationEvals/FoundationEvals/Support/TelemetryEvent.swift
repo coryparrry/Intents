@@ -179,7 +179,7 @@ enum TelemetryEvent: Sendable {
         case "foundation_evals_app_opened", "intents_first_use": return common
         case "$screen": return common.union(["$screen_name"])
         case "intents_feature_used": return common.union(["feature"])
-        case "$exception": return common.union(["$exception_level", "$exception_list", "$debug_images"])
+        case "$exception": return common.union(["diagnostic_session_id", "$exception_level", "$exception_list", "$debug_images"])
         case "foundation_evals_operation_started":
             return common.union(["diagnostic_session_id", "operation", "operation_id"])
         case "foundation_evals_operation_finished":

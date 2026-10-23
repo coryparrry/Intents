@@ -94,6 +94,64 @@ struct WorkspacePresentationTests {
         #expect(draftSummaries.first { $0.id == first }?.name == "Draft name")
     }
 
+    @Test(arguments: ["current", "staleRevision", "foreignSuite"])
+    func overviewOnlyDisplaysDraftsForTheCurrentCanonicalSuite(kind: String) async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        #expect(store.saveSuite())
+        let root = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID
+        )
+        var run = fixture()
+        run.suiteID = store.selectedSuiteID
+        run.suiteRevision = store.suiteRevision
+        try CanonicalJSON.data(for: run).write(to: root.appending(path: "Runs/\(run.id).json"))
+        var draft = store.suite
+        draft.name = "Unsaved draft"
+        draft.cases.append(EvaluationCase(name: "Draft case", prompt: "Draft", expected: "Draft"))
+        if kind == "foreignSuite" { draft.id = UUID() }
+        struct SavedDraft: Encodable {
+            var canonicalRevision: String
+            var suite: EvaluationSuite
+        }
+        let bytes = try CanonicalJSON.data(for: SavedDraft(
+            canonicalRevision: kind == "staleRevision" ? "older-revision" : store.suiteRevision,
+            suite: draft
+        ))
+        let draftURL = root.appending(path: "suite-draft.json")
+        try bytes.write(to: draftURL)
+
+        let summaries = await WorkspaceOverviewLoader().load(project: store.selectedProject, directory: directory)
+        let summary = try #require(summaries.first)
+        let isCurrent = kind == "current"
+        #expect(summary.hasDraft == isCurrent)
+        #expect(summary.name == (isCurrent ? draft.name : store.suite.name))
+        #expect(summary.caseCount == (isCurrent ? draft.cases.count : store.suite.cases.count))
+        #expect(summary.state == (isCurrent ? .changed : .passed))
+        #expect(try Data(contentsOf: draftURL) == bytes)
+    }
+
+    @Test func overviewRejectsAForeignCanonicalSuite() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        #expect(store.saveSuite())
+        let root = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID
+        )
+        var foreign = store.suite
+        foreign.id = UUID()
+        foreign.name = "Foreign suite"
+        try CanonicalJSON.data(for: foreign).write(to: root.appending(path: "suite.json"))
+
+        let summaries = await WorkspaceOverviewLoader().load(project: store.selectedProject, directory: directory)
+        let summary = try #require(summaries.first)
+        #expect(summary.state == .unavailable)
+        #expect(summary.loadError != nil)
+        #expect(summary.name == store.selectedSuiteRecord.name)
+    }
+
     @Test func foreignAndMismatchedRunFilesDoNotReplaceOwnedHistory() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

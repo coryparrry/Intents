@@ -1,4 +1,3 @@
-import Dispatch
 import Foundation
 import Testing
 @testable import ProductionEvals
@@ -29,38 +28,68 @@ private final class ExecutionFixture {
 private actor ExecutionCalls {
     var started = 0
     var finished = 0
-    func begin() { started += 1 }
+    var returned = false
+    private var released = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func waitForRelease() async {
+        started += 1
+        if !released { await withCheckedContinuation { continuation = $0 } }
+    }
+    func release() {
+        released = true
+        continuation?.resume()
+        continuation = nil
+    }
     func end() { finished += 1 }
+    func didReturn() { returned = true }
 }
 
-private func delayedResponse(_ request: ProductionRequest, calls: ExecutionCalls, seconds: Double) async -> ProductionResponse {
-    await calls.begin()
-    let response: ProductionResponse = await withCheckedContinuation { continuation in
-        DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
-            continuation.resume(returning: .init(requestID: request.requestID, outcome: .passed, output: "late answer", cost: 1))
-        }
-    }
+private func gatedResponse(_ request: ProductionRequest, calls: ExecutionCalls) async -> ProductionResponse {
+    // This continuation deliberately ignores cancellation until the test releases it.
+    await calls.waitForRelease()
     await calls.end()
-    return response
+    return .init(requestID: request.requestID, outcome: .passed, output: "late answer", cost: 1)
+}
+
+private func waitForExecution(_ condition: () async -> Bool) async throws -> Bool {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+    while ContinuousClock.now < deadline {
+        if await condition() { return true }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    return await condition()
 }
 
 @Suite(.serialized) struct ProductionExecutionRecoveryTests {
-    @Test func deadlineReturnsBeforeNonCooperativeWorkAndPausesWithoutReplay() async throws {
-        let fixture = try ExecutionFixture(), job = try fixture.job(), calls = ExecutionCalls()
-        let start = ContinuousClock.now
-        let count = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) {
-            await delayedResponse($0, calls: calls, seconds: 0.8)
+    @Test(arguments: [ProductionReplaySafety.inference, .sideEffects])
+    func deadlineReturnsBeforeNonCooperativeWorkAndPausesWithoutReplay(safety: ProductionReplaySafety) async throws {
+        let fixture = try ExecutionFixture(), job = try fixture.job(safety: safety), calls = ExecutionCalls()
+        let task = Task {
+            do {
+                let count = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) {
+                    await gatedResponse($0, calls: calls)
+                }
+                await calls.didReturn()
+                return count
+            } catch { await calls.didReturn(); throw error }
         }
-        #expect(start.duration(to: .now) < .seconds(0.6))
+        let returnedWhileWorkWasBlocked = try await waitForExecution { await calls.returned }
+        let finishedBeforeRelease = await calls.finished
+        await calls.release() // Always unblock the worker, including a regressed runner.
+        let count = try await task.value
+        #expect(returnedWhileWorkWasBlocked, "The request deadline must return without waiting for the executor.")
+        #expect(finishedBeforeRelease == 0)
         #expect(count == 1)
         #expect(try fixture.storage.control(job).paused)
         #expect(await calls.started == 1)
         let record = try fixture.storage.record(jobID: job.id, slot: 0)
-        #expect(record.response.outcome == .error && !record.response.retryable)
+        #expect(record.response.outcome == (safety == .sideEffects ? .needsEvidence : .error))
+        #expect(!record.response.retryable)
         #expect(record.response.explanation?.contains("deadline") == true)
         #expect(record.response.cost == nil)
-        try await Task.sleep(for: .seconds(0.9))
-        #expect(await calls.finished == 1)
+        #expect(try fixture.storage.chunk(job, index: 0).attempts[0]?.number == 1)
+        #expect(try await waitForExecution { await calls.finished == 1 })
         #expect(try fixture.storage.record(jobID: job.id, slot: 0).response == record.response)
         try fixture.storage.setControl(jobID: job.id, paused: false)
         let resumed = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) {
@@ -70,36 +99,30 @@ private func delayedResponse(_ request: ProductionRequest, calls: ExecutionCalls
         #expect(try fixture.storage.record(jobID: job.id, slot: 0).response == record.response)
     }
 
-    @Test func timedOutSideEffectKeepsUncertainEvidenceAndNeverRetriesAutomatically() async throws {
-        let fixture = try ExecutionFixture(), job = try fixture.job(safety: .sideEffects), calls = ExecutionCalls()
-        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) {
-            await delayedResponse($0, calls: calls, seconds: 0.3)
-        }
-        #expect(try fixture.storage.record(jobID: job.id, slot: 0).response.outcome == .needsEvidence)
-        #expect(try fixture.storage.chunk(job, index: 0).attempts[0]?.number == 1)
-        #expect(try fixture.storage.control(job).paused)
-        try await Task.sleep(for: .seconds(0.35))
-        #expect(await calls.started == 1)
-        #expect(await calls.finished == 1)
-    }
-
     @Test func cancellationReturnsBeforeNonCooperativeWorkAndRetainsItsAttempt() async throws {
         let fixture = try ExecutionFixture(), job = try fixture.job(), calls = ExecutionCalls()
         let task = Task {
-            try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) {
-                await delayedResponse($0, calls: calls, seconds: 0.8)
-            }
+            do {
+                let count = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) {
+                    await gatedResponse($0, calls: calls)
+                }
+                await calls.didReturn()
+                return count
+            } catch { await calls.didReturn(); throw error }
         }
-        while await calls.started == 0 { await Task.yield() }
-        let start = ContinuousClock.now
+        let started = try await waitForExecution { await calls.started == 1 }
         task.cancel()
+        let returnedWhileWorkWasBlocked = try await waitForExecution { await calls.returned }
+        let finishedBeforeRelease = await calls.finished
+        await calls.release()
         do { _ = try await task.value; Issue.record("Cancellation must propagate") }
         catch is CancellationError { }
-        #expect(start.duration(to: .now) < .seconds(0.6))
+        #expect(started)
+        #expect(returnedWhileWorkWasBlocked, "Cancellation must return without waiting for the executor.")
+        #expect(finishedBeforeRelease == 0)
         #expect(try fixture.storage.control(job).paused)
         #expect(try fixture.storage.record(jobID: job.id, slot: 0).response.outcome == .error)
-        try await Task.sleep(for: .seconds(0.9))
-        #expect(await calls.finished == 1)
+        #expect(try await waitForExecution { await calls.finished == 1 })
     }
 
     @Test func completedPrefixAdvancesWithoutSkippingPartialChunksAndRebuildsOnReload() async throws {

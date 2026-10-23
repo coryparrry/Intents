@@ -281,7 +281,7 @@ struct CodexMCPInstaller {
         let managed = try managedRange(in: original)
         let unmanaged = managed.map { original.replacingCharacters(in: $0, with: "") } ?? original
         try validateTOML(unmanaged)
-        guard !containsConflictingEntry(unmanaged) else {
+        guard !(try containsConflictingEntry(unmanaged)) else {
             throw CodexMCPInstallerError.conflictingConfiguration
         }
 
@@ -525,6 +525,9 @@ struct CodexMCPInstaller {
 
     private static func managedRange(in text: String) throws -> Range<String.Index>? {
         var markers: [ManagedLine] = []
+        var squareDepth = 0
+        var braceDepth = 0
+        var multilineQuote: Character?
         var start = text.startIndex
         while start < text.endIndex {
             let newline = text[start...].firstIndex(of: "\n")
@@ -532,11 +535,18 @@ struct CodexMCPInstaller {
             var content = text[start..<contentEnd]
             if content.last == "\r" { content = content.dropLast() }
             let fullEnd = newline.map { text.index(after: $0) } ?? text.endIndex
-            if content == beginMarker {
+            let isTopLevel = multilineQuote == nil && squareDepth == 0 && braceDepth == 0
+            if isTopLevel, content == beginMarker {
                 markers.append(ManagedLine(kind: .begin, fullRange: start..<fullEnd))
-            } else if content == endMarker {
+            } else if isTopLevel, content == endMarker {
                 markers.append(ManagedLine(kind: .end, fullRange: start..<fullEnd))
             }
+            _ = try uncommented(
+                String(content),
+                squareDepth: &squareDepth,
+                braceDepth: &braceDepth,
+                multilineQuote: &multilineQuote
+            )
             start = fullEnd
         }
 
@@ -600,7 +610,7 @@ struct CodexMCPInstaller {
         }
     }
 
-    private static func containsConflictingEntry(_ text: String) -> Bool {
+    private static func containsConflictingEntry(_ text: String) throws -> Bool {
         guard let statements = try? statements(in: text) else { return true }
         var section: [String] = []
         for statement in statements {
@@ -624,6 +634,10 @@ struct CodexMCPInstaller {
             if effective == ["mcp_servers"] {
                 let value = statement.text[statement.text.index(after: equals)...]
                 if inlineTableDefinesFoundationEvals(String(value)) { return true }
+                if value.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+                    // TOML inline tables cannot be extended by an appended server table.
+                    throw CodexMCPInstallerError.unsupportedConfiguration
+                }
             }
         }
         return false

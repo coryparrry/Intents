@@ -80,6 +80,86 @@ struct CodexMCPInstallerTests {
         #expect(installed.contains(CodexMCPInstaller.beginMarker))
     }
 
+    @Test(arguments: ["\"\"\"", "'''"])
+    func managedMarkersInsideMultilineStringsArePreserved(delimiter: String) throws {
+        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let original = "developer_instructions = \(delimiter)\nKeep this example:\n"
+            + configuration.tomlBlock + "\nEnd example.\n\(delimiter)\n"
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configURL = directory.appending(path: "config.toml")
+        try Data(original.utf8).write(to: configURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+        let installer = CodexMCPInstaller()
+
+        #expect(!(try installer.isInstalled(in: directory)))
+        #expect(!(try installer.isInstalled(in: directory, matching: configuration)))
+        #expect(try CodexMCPInstaller.removingManagedBlock(from: original) == original)
+        let updated = try CodexMCPInstaller.installing(configuration: configuration, into: original)
+        #expect(updated.hasPrefix(original))
+        #expect(updated.hasSuffix(configuration.tomlBlock + "\n"))
+        #expect(try CodexMCPInstaller.removingManagedBlock(from: updated) == original)
+    }
+
+    @Test(arguments: [1, 2])
+    func managedMarkersInsideArraysArePreserved(depth: Int) throws {
+        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let original = "tools = " + String(repeating: "[", count: depth) + "\n"
+            + CodexMCPInstaller.beginMarker + "\n\"retained-tool\",\n"
+            + CodexMCPInstaller.endMarker + "\n" + String(repeating: "]", count: depth) + "\n"
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configURL = directory.appending(path: "config.toml")
+        try Data(original.utf8).write(to: configURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+        let installer = CodexMCPInstaller()
+
+        #expect(!(try installer.isInstalled(in: directory)))
+        #expect(!(try installer.isInstalled(in: directory, matching: configuration)))
+        #expect(try CodexMCPInstaller.removingManagedBlock(from: original) == original)
+        let updated = try CodexMCPInstaller.installing(configuration: configuration, into: original)
+        #expect(updated.hasPrefix(original))
+        #expect(updated.hasSuffix(configuration.tomlBlock + "\n"))
+        #expect(try CodexMCPInstaller.removingManagedBlock(from: updated) == original)
+
+        try Data(updated.utf8).write(to: configURL)
+        #expect(try installer.isInstalled(in: directory))
+        #expect(try installer.isInstalled(in: directory, matching: configuration))
+    }
+
+    @Test(arguments: ["mcp_servers", "\"mcp_servers\"", "'mcp_servers'"])
+    func inlineMCPNamespaceIsRefusedWithoutChangingTheFile(key: String) throws {
+        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let original = "\(key) = { other = { url = \"http://example.invalid/mcp\" } }\n"
+        #expect(throws: CodexMCPInstallerError.unsupportedConfiguration) {
+            try CodexMCPInstaller.installing(configuration: configuration, into: original)
+        }
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configURL = directory.appending(path: "config.toml")
+        try Data(original.utf8).write(to: configURL)
+
+        #expect(throws: CodexMCPInstallerError.unsupportedConfiguration) {
+            try CodexMCPInstaller().installOrUpdate(in: directory, configuration: configuration)
+        }
+        #expect(try String(contentsOf: configURL, encoding: .utf8) == original)
+        #expect(!FileManager.default.fileExists(
+            atPath: directory.appending(path: "config.toml.foundation-evals.backup").path
+        ))
+    }
+
+    @Test(arguments: [
+        "mcp_servers.other = { url = \"http://example.invalid/mcp\" }\n",
+        "\"mcp_servers\".'other.server' = { url = \"http://example.invalid/mcp\" }\n",
+        "[mcp_servers.other]\nurl = \"http://example.invalid/mcp\"\n",
+    ])
+    func siblingMCPEntriesRemainSupported(original: String) throws {
+        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let updated = try CodexMCPInstaller.installing(configuration: configuration, into: original)
+        #expect(updated.hasPrefix(original))
+        #expect(try CodexMCPInstaller.removingManagedBlock(from: updated) == original)
+    }
+
     @Test func repeatedArrayTablesArePreservedDuringInstallation() throws {
         let original = """
         [[skills.config]]

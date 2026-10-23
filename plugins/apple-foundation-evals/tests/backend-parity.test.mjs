@@ -137,6 +137,22 @@ test('reference file extraction stores original bytes, exports portable bundles 
   await assert.rejects(app.call('eval_add_reference_file', { suiteId: saved.id, name: 'bad.pdf', mimeType: 'application/pdf', base64: 'AAAA=' }), /base64/);
 });
 
+test('portable reference bundles preserve distinct attachments with the same filename', async (t) => {
+  const app = await fixture(t, async (_binary, request) => ({ attachment: { kind: 'text', text: request.name } }));
+  let saved = (await app.call('eval_save_suite', { suite: definition() })).suite;
+  for (const text of ['First reference', 'Second reference']) {
+    saved = (await app.call('eval_add_reference_file', { suiteId: saved.id, name: 'notes.txt', mimeType: 'text/plain', base64: Buffer.from(text).toString('base64'), expectedRevision: saved.revision })).suite;
+  }
+  assert.equal(saved.attachments.length, 2);
+  const exported = await app.call('eval_export_suite', { suiteId: saved.id });
+  const bundle = JSON.parse(exported.json); bundle.suite.id = randomUUID();
+  const imported = (await app.call('eval_import_suite', { json: JSON.stringify(bundle) })).suite;
+  assert.deepEqual(imported.attachments.map(({ id, sha256, storedFilename }) => ({ id, sha256, storedFilename })), saved.attachments.map(({ id, sha256, storedFilename }) => ({ id, sha256, storedFilename })));
+  bundle.suite.id = randomUUID();
+  for (const file of bundle.referenceFiles) delete file.attachmentId;
+  await assert.rejects(app.call('eval_import_suite', { json: JSON.stringify(bundle) }), /ambiguous/);
+});
+
 test('legacy inference receives exactly its historical wire fields despite saved workspace metadata', async (t) => {
   let request;
   const app = await fixture(t, async (_binary, value) => {
