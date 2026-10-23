@@ -21,16 +21,26 @@ args = sys.argv[1:]
 with open(os.environ["CALL_LOG"], "a") as output:
     output.write(json.dumps(args) + "\\n")
 if args[0] == "api":
-    assert args[1] == "repos/owner/repo/contents/.release-please-manifest.json?ref=main"
-    assert args[2:] == ["-H", "Accept: application/vnd.github.raw+json"]
-    if os.environ.get("FAIL_MANIFEST"):
-        sys.exit(1)
-    print(os.environ["MANIFEST"])
-elif args[:2] == ["release", "view"]:
-    assert args[2:] == ["v1.2.0", "--repo", "owner/repo", "--json", "tagName,isDraft"]
-    if os.environ.get("FAIL_RELEASE"):
-        sys.exit(1)
-    print(os.environ["RELEASE"])
+    endpoint = args[1]
+    if endpoint.endswith("/.release-please-manifest.json?ref=main"):
+        assert endpoint == "repos/owner/repo/contents/.release-please-manifest.json?ref=main"
+        assert args[2:] == ["-H", "Accept: application/vnd.github.raw+json"]
+        if os.environ.get("FAIL_MANIFEST"):
+            sys.exit(1)
+        print(os.environ["MANIFEST"])
+    else:
+        assert args[2:] == ["--include"]
+        if endpoint == "repos/owner/repo/releases/tags/v1.2.0":
+            status = os.environ.get("RELEASE_STATUS", "200")
+            body = os.environ["RELEASE"]
+        else:
+            assert endpoint == "repos/owner/repo/git/ref/tags/v1.2.0"
+            status = os.environ.get("TAG_STATUS", "404")
+            body = '{"ref":"refs/tags/v1.2.0"}'
+        if status == "network":
+            sys.exit("network unavailable")
+        print("HTTP/2.0 " + status + " Test\\nX-Test: fixture\\n\\n" + body)
+        sys.exit(0 if status == "200" else 1)
 elif args[:2] == ["workflow", "run"]:
     assert args[2:6] == ["ci.yml", "--repo", "owner/repo", "--ref"]
     assert len(args) == 7
@@ -48,7 +58,7 @@ else:
             GITHUB_OUTPUT=str(self.output_path),
             CALL_LOG=str(self.calls_path),
             MANIFEST=json.dumps({".": "1.2.0"}),
-            RELEASE=json.dumps({"tagName": "v1.2.0", "isDraft": False}),
+            RELEASE=json.dumps({"tag_name": "v1.2.0", "draft": False}),
         )
         self.env.pop("RELEASE_PRS", None)
 
@@ -80,7 +90,7 @@ else:
 
     def test_pending_draft_defers_pr_generation_without_failure(self):
         result = self.run_script(
-            "check-baseline", RELEASE=json.dumps({"tagName": "v1.2.0", "isDraft": True})
+            "check-baseline", RELEASE=json.dumps({"tag_name": "v1.2.0", "draft": True})
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.output(), "ready=false\n")
@@ -88,10 +98,38 @@ else:
         self.assertFalse(any(call[:2] == ["workflow", "run"] for call in self.calls()))
 
 
-    def test_missing_release_or_api_failure_never_allows_pr_generation(self):
-        for failure in ("FAIL_MANIFEST", "FAIL_RELEASE"):
-            with self.subTest(failure=failure):
-                result = self.run_script("check-baseline", **{failure: "1"})
+    def test_missing_150_recovery_starts_after_its_recorded_release(self):
+        repository = self.script.parents[1]
+        config = json.loads((repository / "release-please-config.json").read_text())
+        boundary = config["bootstrap-sha"]
+        self.assertRegex(boundary, r"^[0-9a-f]{40}$")
+        # Inspect the historical manifest, so this remains valid after future releases.
+        # Using the old v1.4.0 anchor would replay the already-recorded 1.5.0 features.
+        historical = subprocess.check_output(
+            ["git", "show", f"{boundary}:.release-please-manifest.json"],
+            cwd=repository, text=True,
+        )
+        self.assertEqual(json.loads(historical)["."], "1.5.0")
+
+    def test_missing_release_and_tag_allows_a_new_proposal(self):
+        result = self.run_script("check-baseline", RELEASE_STATUS="404")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.output(), "ready=true\n")
+        self.assertIn("neither a release nor a tag", result.stdout)
+        self.assertEqual(self.calls()[-1], ["api", "repos/owner/repo/git/ref/tags/v1.2.0", "--include"])
+
+    def test_missing_release_with_existing_tag_never_allows_a_proposal(self):
+        result = self.run_script("check-baseline", RELEASE_STATUS="404", TAG_STATUS="200")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.output(), "")
+
+    def test_api_errors_never_count_as_absent_artifacts(self):
+        cases = [{"FAIL_MANIFEST": "1"}]
+        for status in ("401", "403", "429", "500", "network"):
+            cases += [{"RELEASE_STATUS": status}, {"RELEASE_STATUS": "404", "TAG_STATUS": status}]
+        for environment in cases:
+            with self.subTest(environment=environment):
+                result = self.run_script("check-baseline", **environment)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(self.output(), "")
 
@@ -112,9 +150,11 @@ else:
 
     def test_invalid_release_response_never_allows_pr_generation(self):
         for release in (
-            '{"tagName": "v1.1.1", "isDraft": false}',
-            '{"tagName": "v1.2.0", "isDraft": "false"}',
+            '{"tag_name": "v1.1.1", "draft": false}',
+            '{"tag_name": "v1.2.0", "draft": "false"}',
             "{}",
+            "null",
+            "[]",
             "invalid",
         ):
             with self.subTest(release=release):

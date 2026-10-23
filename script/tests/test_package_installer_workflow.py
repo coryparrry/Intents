@@ -12,16 +12,24 @@ import unittest
 WORKFLOW = (
     Path(__file__).resolve().parents[2] / ".github/workflows/package-installer.yml"
 ).read_text()
+RELEASE_WORKFLOW = (
+    Path(__file__).resolve().parents[2] / ".github/workflows/release-me.yml"
+).read_text()
 
 
-def job(name):
+def job(name, workflow=WORKFLOW):
     return re.search(
-        r"(?ms)^  " + re.escape(name) + r":\n(.*?)(?=^  [\w-]+:|\Z)", WORKFLOW
+        r"(?ms)^  " + re.escape(name) + r":\n(.*?)(?=^  [\w-]+:|\Z)", workflow
     )[1]
 
 
-def step_script(name):
-    step = job("preflight").split("      - name: " + name + "\n", 1)[1]
+def job_permissions(name, workflow=WORKFLOW):
+    block = re.search(r"(?m)^    permissions:\n((?:      [\w-]+: \w+\n)+)", job(name, workflow))
+    return dict(re.findall(r"([\w-]+): (\w+)", block[1])) if block else {}
+
+
+def step_script(name, workflow=WORKFLOW):
+    step = job("preflight", workflow).split("      - name: " + name + "\n", 1)[1]
     return textwrap.dedent(
         re.search(r"(?ms)^        run: \|\n(.*?)(?=^\S|^ {0,8}\S|\Z)", step)[1]
     )
@@ -43,16 +51,25 @@ class PackageInstallerWorkflowTests(unittest.TestCase):
         self.assertIn("ref: ${{ needs.preflight.outputs.source_sha }}\n          path: source", release)
         self.assertNotIn("gh release view", release)
 
-    def test_preflight_has_no_release_credentials_or_writes(self):
+    def test_preflight_can_read_drafts_without_signing_credentials(self):
         preflight, release = job("preflight"), job("release")
-        self.assertIn("contents: read\n      actions: read", preflight)
-        self.assertNotIn("write", preflight)
+        # GitHub hides draft releases from tokens without contents: write.
+        self.assertEqual(job_permissions("preflight"), {"contents": "write", "actions": "read"})
         self.assertNotIn("secrets.", preflight)
         self.assertNotIn("environment:", preflight)
         self.assertIn("environment: release", release)
         self.assertIn("contents: write", release)
         self.assertIn("cancel-in-progress: false", WORKFLOW)
         self.assertIn("needs: release", job("homebrew"))
+
+    def test_release_baseline_can_read_unpublished_drafts(self):
+        self.assertEqual(job_permissions("release", RELEASE_WORKFLOW)["contents"], "write")
+
+    def test_reusable_caller_grants_draft_access(self):
+        caller = job("installer", RELEASE_WORKFLOW)
+        self.assertIn("uses: ./.github/workflows/package-installer.yml", caller)
+        self.assertEqual(job_permissions("installer", RELEASE_WORKFLOW),
+                         {"contents": "write", "actions": "read"})
 
     def test_both_jobs_use_protected_control_and_mac_revalidates_before_build(self):
         for name in ("preflight", "release"):
@@ -79,7 +96,11 @@ class PackageInstallerWorkflowTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode == 0, valid, result.stderr)
 
-    def candidate(self, **overrides):
+    def candidate(self, *, workflow=WORKFLOW, caller=None, **overrides):
+        draft_access = job_permissions("preflight", workflow).get("contents") == "write"
+        if caller is not None:
+            # A reusable workflow cannot elevate the caller's token permissions.
+            draft_access &= job_permissions("installer", caller).get("contents") == "write"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fixture = root / "gh"
@@ -89,6 +110,8 @@ args = sys.argv[1:]
 if os.environ.get("FAIL_API"):
     sys.exit(1)
 if args[:2] == ["release", "view"]:
+    if os.environ["FIXTURE_DRAFT_ACCESS"] != "1":
+        sys.exit("release not found")
     assert args[args.index("--json") + 1] == "targetCommitish,isDraft"
     assert 'if .isDraft' in args[args.index("--jq") + 1]
     if os.environ.get("PUBLISHED"):
@@ -105,8 +128,9 @@ else:
             output = root / "outputs"
             output.touch()
             result = subprocess.run(
-                ["bash", "-e", "-o", "pipefail", "-c", step_script("Resolve the draft's immutable source")],
+                ["bash", "-e", "-o", "pipefail", "-c", step_script("Resolve the draft's immutable source", workflow)],
                 env={**os.environ, "PATH": f"{root}:{os.environ['PATH']}", "GITHUB_OUTPUT": str(output),
+                     "GH_TOKEN": "fixture-token", "FIXTURE_DRAFT_ACCESS": str(int(draft_access)),
                      "GITHUB_REPOSITORY": "owner/repo", "RELEASE_TAG": "v1.2.3", "DRAFT_SHA": "a" * 40,
                      "EXPECTED_SOURCE_SHA": "a" * 40, "REMOTE_SHA": "a" * 40, **overrides},
                 capture_output=True,
@@ -114,11 +138,28 @@ else:
             return result, output.read_text()
 
     def test_source_resolution_accepts_only_exact_immutable_draft(self):
-        for environment in ({}, {"HAS_TAG": "1"}, {"EXPECTED_SOURCE_SHA": ""}):
-            with self.subTest(environment=environment):
-                result, output = self.candidate(**environment)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(output, "source_sha=" + "a" * 40 + "\n")
+        for caller in (None, RELEASE_WORKFLOW):
+            for environment in ({}, {"HAS_TAG": "1"}, {"EXPECTED_SOURCE_SHA": ""}):
+                with self.subTest(reusable=caller is not None, environment=environment):
+                    result, output = self.candidate(caller=caller, **environment)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(output, "source_sha=" + "a" * 40 + "\n")
+
+    def test_read_only_preflight_or_caller_cannot_export_draft_source(self):
+        def read_only(source, name):
+            original = job(name, source)
+            return source.replace(original, original.replace("contents: write", "contents: read"))
+
+        for workflow, caller in (
+            (read_only(WORKFLOW, "preflight"), None),
+            (read_only(WORKFLOW, "preflight"), RELEASE_WORKFLOW),
+            (WORKFLOW, read_only(RELEASE_WORKFLOW, "installer")),
+        ):
+            with self.subTest(preflight=job_permissions("preflight", workflow), caller=caller is not None):
+                result, output = self.candidate(workflow=workflow, caller=caller)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(b"release not found", result.stderr)
+                self.assertEqual(output, "")
 
     def test_rejected_candidate_never_exports_source_for_mac(self):
         for environment in (
